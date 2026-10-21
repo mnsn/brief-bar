@@ -79,7 +79,8 @@ public struct DatabaseContents: Sendable, Equatable {
     /// The apps' bundle identifiers that have an entry in the `app` table.
     public var appIdentifiers: [String]
     public var records: [StoredRecord]
-    /// `app.badge` for the apps, when the column exists and holds a number: the largest.
+    /// `app.badge` for the apps asked for, when the column exists and holds a number: the largest. Nil when
+    /// every app was read.
     public var badge: Int?
 }
 
@@ -99,7 +100,8 @@ public enum NotificationDatabaseError: Error, Sendable, Equatable, CustomStringC
 }
 
 /// Read-only access to Notification Center's database (`db2/db`). Only the rows of the apps asked for
-/// are read: each source passes its own app's bundle identifiers.
+/// are read: each source passes its own app's bundle identifiers. Azure DevOps' pull requests sent in chats
+/// reads every app's, once you turn that on, to find links in what anyone sends you.
 public enum NotificationDatabase {
     /// Without these, nothing can be read reliably, so nothing is guessed.
     static let requiredColumns: [(table: String, column: String)] = [
@@ -107,14 +109,24 @@ public enum NotificationDatabase {
     ]
 
     public static func load(at url: URL, bundleIdentifiers: [String]) throws -> DatabaseContents {
+        try load(at: url, apps: bundleIdentifiers)
+    }
+
+    /// Every app's notifications.
+    public static func loadEveryApp(at url: URL) throws -> DatabaseContents {
+        try load(at: url, apps: nil)
+    }
+
+    /// The notifications of `apps`, by bundle identifier; nil for every app's.
+    private static func load(at url: URL, apps: [String]?) throws -> DatabaseContents {
         do {
-            return try load(from: SQLiteConnection(readOnly: url), bundleIdentifiers: bundleIdentifiers)
+            return try load(from: SQLiteConnection(readOnly: url), apps: apps)
         } catch let error as SQLiteError where error.primaryCode == SQLITE_CANTOPEN && isClosedWALDatabase(url) {
             // A read-only connection can't recreate the write-ahead log, which SQLite removes when the
             // last writer closes the database. Without a log or journal, the file holds every committed
             // change, and a writer only changes it again through a new log, so read it as it is.
             do {
-                return try load(from: SQLiteConnection(readOnly: url, immutable: true), bundleIdentifiers: bundleIdentifiers)
+                return try load(from: SQLiteConnection(readOnly: url, immutable: true), apps: apps)
             } catch let fallback as SQLiteError {
                 throw NotificationDatabaseError.sqlite(fallback)
             }
@@ -130,22 +142,24 @@ public enum NotificationDatabase {
             && !fileManager.fileExists(atPath: url.path + "-journal")
     }
 
-    private static func load(from connection: SQLiteConnection, bundleIdentifiers: [String]) throws -> DatabaseContents {
+    private static func load(from connection: SQLiteConnection, apps wanted: [String]?) throws -> DatabaseContents {
         let layout = try readLayout(connection)
         let missing = requiredColumns.filter { !layout.has($0.table, $0.column) }.map { "\($0.table).\($0.column)" }
         guard missing.isEmpty else {
             throw NotificationDatabaseError.layoutChanged(missing: missing, layout: layout)
         }
 
-        // Quoted as SQL strings: the identifiers come from code, never from the database.
-        let identifiers = bundleIdentifiers.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }.joined(separator: ", ")
-        let badgeColumn = layout.has("app", "badge") ? "badge" : "NULL"
-        let apps = try connection.rows(
-            "SELECT app_id, identifier, \(badgeColumn) FROM app WHERE identifier IN (\(identifiers))"
-        ) { row in (id: row.int64(0), identifier: row.text(1) ?? "", badge: row.int64(2)) }
+        let badgeColumn = layout.has("app", "badge") && wanted != nil ? "badge" : "NULL"
+        var appsQuery = "SELECT app_id, identifier, \(badgeColumn) FROM app"
+        if let wanted {
+            // Quoted as SQL strings: the identifiers come from code, never from the database.
+            let identifiers = wanted.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }.joined(separator: ", ")
+            appsQuery += " WHERE identifier IN (\(identifiers))"
+        }
+        let apps = try connection.rows(appsQuery) { row in (id: row.int64(0), identifier: row.text(1) ?? "", badge: row.int64(2)) }
 
         let appIDs = apps.compactMap(\.id)
-        guard !appIDs.isEmpty else {
+        if wanted != nil, appIDs.isEmpty {
             return DatabaseContents(layout: layout, appIdentifiers: [], records: [], badge: nil)
         }
         let identifierByApp = Dictionary(apps.compactMap { app in app.id.map { ($0, app.identifier) } },
@@ -154,11 +168,11 @@ public enum NotificationDatabase {
         // Optional columns are read only if they exist; the names come from this fixed list.
         let optional = ["rec_id", "uuid", "delivered_date", "request_date"]
             .map { layout.has("record", $0) ? $0 : "NULL" }
-        let sql = """
-            SELECT app_id, data, \(optional.joined(separator: ", "))
-            FROM record WHERE app_id IN (\(appIDs.map(String.init).joined(separator: ", ")))
-            """
-        let records = try connection.rows(sql) { row in
+        var recordsQuery = "SELECT app_id, data, \(optional.joined(separator: ", ")) FROM record"
+        if wanted != nil {
+            recordsQuery += " WHERE app_id IN (\(appIDs.map(String.init).joined(separator: ", ")))"
+        }
+        let records = try connection.rows(recordsQuery) { row in
             StoredRecord(
                 recordID: row.int64(2),
                 uuid: row.blob(3),

@@ -15,6 +15,8 @@ final class MenuBarItemController: NSObject {
     private let panel: ItemPanelModel
     private unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
+    /// The section the open popover shows; nil while it's closed.
+    private var visible: SectionID?
 
     init(id: String, sections: [SectionID], model: AppModel) {
         self.id = id
@@ -27,6 +29,8 @@ final class MenuBarItemController: NSObject {
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
         popover.behavior = .transient
+        popover.delegate = self
+        panel.didSelect = { [weak self] _ in self?.updateVisible() }
 
         if let button = statusItem.button {
             button.target = self
@@ -43,6 +47,7 @@ final class MenuBarItemController: NSObject {
         if let selected = panel.selected, !sections.contains(selected) {
             panel.selected = nil
         }
+        updateVisible()
         cancellables.removeAll()
         let sources = sections.compactMap { model.source(for: $0) }
         var seen = Set<SourceID>()
@@ -57,6 +62,7 @@ final class MenuBarItemController: NSObject {
 
     func remove() {
         closePopover()
+        setVisible(nil)
         cancellables.removeAll()
         NSStatusBar.system.removeStatusItem(statusItem)
     }
@@ -67,11 +73,29 @@ final class MenuBarItemController: NSObject {
         let selected = section.flatMap { sections.contains($0) ? $0 : nil } ?? preferredSection
         panel.selected = selected
         model.source(for: selected)?.panelWillShow(selected)
-        guard !popover.isShown else { return }
+        guard !popover.isShown else {
+            updateVisible()
+            return
+        }
         model.closePanels(except: self)
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        updateVisible()
+    }
+
+    /// Tells the sources which section the popover shows, after it opened, closed or switched tabs.
+    private func updateVisible() {
+        setVisible(popover.isShown ? panel.current : nil)
+    }
+
+    private func setVisible(_ section: SectionID?) {
+        guard section != visible else { return }
+        let hidden = visible
+        visible = section
+        let viewer = SectionViewer(.menuBar, id: id)
+        if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
+        if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
     }
 
     func closePopover() {
@@ -111,11 +135,21 @@ final class MenuBarItemController: NSObject {
     }
 }
 
+extension MenuBarItemController: NSPopoverDelegate {
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            setVisible(nil)
+        }
+    }
+}
+
 /// The popover's content: one section's panel, under a tab for each section when there are several.
 @MainActor
 final class ItemPanelModel: ObservableObject {
     @Published var sections: [SectionID] = []
     @Published var selected: SectionID?
+    /// Another tab was chosen.
+    var didSelect: (SectionID) -> Void = { _ in }
     private unowned let model: AppModel
 
     init(model: AppModel) {
@@ -163,6 +197,7 @@ final class ItemPanelModel: ObservableObject {
     func select(_ section: SectionID) {
         selected = section
         model.source(for: section)?.panelWillShow(section)
+        didSelect(section)
     }
 }
 

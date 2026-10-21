@@ -14,7 +14,7 @@ struct MenuPanelView: View {
 
     static let width: CGFloat = 400
     private static let maxListHeight: CGFloat = 560
-    private static let shownGroups: [PRGroup] = [.needsYou, .failing, .ready, .toReview, .waiting, .done]
+    private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +54,26 @@ struct MenuPanelView: View {
                 ProblemView(problem: problem) { store.signIn() }
             }
 
+            if settings.chatLinksEnabled && store.chatAccess == .denied {
+                HStack(spacing: 6) {
+                    Image(systemName: "paperplane")
+                        .foregroundStyle(.secondary)
+                    Text("Pull requests sent in chats need Full Disk Access.")
+                        .foregroundStyle(.secondary)
+                    Button("Set Up…") { store.showChatAccessSetup?() }
+                        .buttonStyle(.borderless)
+                    Spacer()
+                }
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+            } else if settings.chatLinksEnabled, let problem = store.chatProblem {
+                Label(problem, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if settings.notifications && store.notificationsBlocked {
                 HStack(spacing: 6) {
                     Image(systemName: "bell.slash")
@@ -69,7 +89,8 @@ struct MenuPanelView: View {
                 .help("Allow notifications for BriefBar in System Settings › Notifications, or turn Notifications off in Azure DevOps' settings")
             }
 
-            if store.mode == .live && settings.organizations.isEmpty {
+            // Without organizations to watch, pull requests people sent you may still be listed.
+            if store.mode == .live && settings.organizations.isEmpty && store.items.isEmpty {
                 OrganizationsPlaceholder()
             } else if store.isLoading && store.problem == nil {
                 VStack(spacing: 6) {
@@ -102,7 +123,7 @@ struct MenuPanelView: View {
                 DisclosureGroup(isExpanded: $showIdle) {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true) { store.open(item) }
+                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item)) { store.open(item) }
                         }
                     }
                 } label: {
@@ -125,6 +146,7 @@ struct MenuPanelView: View {
                 Text("\(group.title) (\(items.count))")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(group.color)
+                    .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
                 Spacer()
                 if group == .needsYou || group == .done {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
@@ -135,9 +157,14 @@ struct MenuPanelView: View {
             }
             .padding(.horizontal, 8)
             ForEach(items) { item in
-                PRRowView(item: item, now: store.now) { store.open(item) }
+                PRRowView(item: item, now: store.now, openSource: source(item)) { store.open(item) }
             }
         }
+    }
+
+    /// Opens the message a pull request was sent in, when it was.
+    private func source(_ item: PRSnapshot) -> (() -> Void)? {
+        item.chatSource == nil ? nil : { store.openSource(item) }
     }
 
     private var footer: some View {

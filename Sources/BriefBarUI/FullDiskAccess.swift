@@ -47,6 +47,13 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
     /// Whether any source that's on needs it.
     package var isNeeded: Bool { !requesters.isEmpty }
 
+    /// Whether this source needs it now: Teams while it's on, Azure DevOps while it looks for pull requests sent in
+    /// chats.
+    package func isRequested(by source: SourceID) -> Bool { requesters[source] != nil }
+
+    /// Whether BriefBar could read Notification Center at some point.
+    package var hadAccess: Bool { defaults.bool(forKey: Self.hadAccessKey) }
+
     package var requesterNames: [String] { order.compactMap { requesters[$0]?.name } }
     package var reasons: [String] { order.compactMap { requesters[$0]?.reason } }
 
@@ -146,6 +153,25 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
 
     package func showInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    /// What Settings says when you turn off the last thing that needed the access.
+    package static let removalTitle = "BriefBar doesn't need Full Disk Access now"
+    package static let removalMessage = "Nothing that's on reads Notification Center. You can remove BriefBar from the Full Disk Access list: select it, then click −."
+
+    /// Nothing that's on needs the access anymore, as you just turned it off: offers to open the list, so you can
+    /// remove BriefBar from it.
+    package func offerRemoval() {
+        guard isBundled, !isNeeded, hadAccess else { return }
+        let alert = NSAlert()
+        alert.messageText = Self.removalTitle
+        alert.informativeText = Self.removalMessage
+        alert.addButton(withTitle: "Open Privacy Settings")
+        alert.addButton(withTitle: "Not Now")
+        NSApp.activate()
+        if alert.runModal() == .alertFirstButtonReturn {
+            Self.openPrivacySettingsPane()
+        }
     }
 
     /// Gets BriefBar listed under Full Disk Access, switched off, so you only turn it on. macOS lists an

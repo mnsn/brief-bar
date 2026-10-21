@@ -2,15 +2,18 @@ import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import Foundation
+import NotificationCenterDB
 
 /// Azure DevOps' command-line modes, mainly for checking what its list would show.
 package enum AzureDevOpsCommandLine: SourceCommandLine {
     package static let source = SourceID.azureDevOps
     package static var descriptionVersion: Int { AzureDevOpsSource.descriptionVersion }
-    package static let flags = ["--orgs"]
+    package static let flags = ["--orgs", "--chats"]
     package static let usage = """
         Azure DevOps:
           --orgs             List your organizations, and the ones where you have pull requests
+          --chats            List the pull request links in every app's notifications in Notification
+                             Center (Terminal needs Full Disk Access)
           --org <name>       Read this organization instead of the app's choice (repeatable)
           It signs in with the Azure CLI (az login) and only reads: every request is a GET. Set
           BRIEFBAR_AZ to the path of az to use another one.
@@ -35,9 +38,14 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     package static func run(_ options: CommandLineOptions) -> Int32? {
-        // The demo never uses the Azure CLI, your settings or Azure DevOps.
-        guard options.arguments.contains("--orgs") else { return nil }
-        return options.demo ? listDemoOrganizations() : listOrganizations()
+        // The demo never uses the Azure CLI, your settings, Azure DevOps or Notification Center.
+        if options.arguments.contains("--orgs") {
+            return options.demo ? listDemoOrganizations() : listOrganizations()
+        }
+        if options.arguments.contains("--chats") {
+            return options.demo ? listDemoChatLinks() : listChatLinks()
+        }
+        return nil
     }
 
     package static func dump(_ options: CommandLineOptions) -> Int32 {
@@ -90,14 +98,31 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         )
     }
 
-    private static func seenState() -> SeenState {
-        appDefaults?.data(forKey: SettingsKey.seen).flatMap { try? JSONDecoder().decode(SeenState.self, from: $0) }
-            ?? SeenState.firstRun()
+    /// The links the app found, when pull requests sent in chats are on.
+    private static func chatLinks() -> ChatLinkState {
+        guard appDefaults?.bool(forKey: SettingsKey.chatLinksEnabled) == true else { return ChatLinkState() }
+        return appDefaults?.data(forKey: SettingsKey.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
+            ?? ChatLinkState()
     }
 
-    static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
-        PROrdering.sorted(snapshot.records.compactMap {
-            PRClassifier.snapshot(for: $0, seenCutoff: seen.cutoff(for: $0.id), now: now, options: options)
+    /// What the app's accounts have seen.
+    private static func seenBook() -> SeenBook {
+        let decoder = JSONDecoder()
+        return SeenBook(
+            current: appDefaults?.data(forKey: SettingsKey.seen).flatMap { try? decoder.decode(SeenState.self, from: $0) }
+                ?? SeenState.firstRun(),
+            others: appDefaults?.data(forKey: SettingsKey.otherSeen).flatMap { try? decoder.decode([String: SeenState].self, from: $0) }
+                ?? [:]
+        )
+    }
+
+    static func resolve(
+        _ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, links: ChatLinkState = ChatLinkState(), now: Date = Date()
+    ) -> [PRSnapshot] {
+        PROrdering.sorted(snapshot.records.compactMap { record in
+            var record = record
+            record.chatLinks += links.links(for: record.id).filter { link in !record.chatLinks.contains { $0.id == link.id } }
+            return PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now, options: options)
         })
     }
 
@@ -129,9 +154,12 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             }
         }
         let configuration = PulseEngine.Configuration(organizations: organizations, keepDoneFor: classifierOptions().keepDoneFor)
-        let snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration) }
+        let links = chatLinks()
+        let snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration, linked: links.keys) }
         return Loaded(
-            organizations: organizations, items: resolve(snapshot, seen: seenState(), options: classifierOptions()),
+            organizations: organizations, items: resolve(
+                snapshot, seen: seenBook().state(for: snapshot.account), options: classifierOptions(), links: links
+            ),
             problem: snapshot.problem?.message
         )
     }
@@ -190,6 +218,53 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         }
     }
 
+    /// What `--chats` finds: every pull request link in the stored notifications, with who sent it where.
+    private static func listChatLinks() -> Int32 {
+        let database = ChatLinkDatabase.url()
+        switch DatabaseAccess.check(database) {
+        case .denied:
+            FileHandle.standardError.write(Data("""
+                Can't read Notification Center's database: give Terminal Full Disk Access in System Settings › \
+                Privacy & Security › Full Disk Access, then quit and reopen Terminal and run this again.
+
+                """.utf8))
+            return 1
+        case .missing:
+            FileHandle.standardError.write(Data("There's no Notification Center database at \(database.path).\n".utf8))
+            return 1
+        case .granted:
+            break
+        }
+        let records: [StoredRecord]
+        do {
+            records = try NotificationDatabase.loadEveryApp(at: database).records
+        } catch {
+            FileHandle.standardError.write(Data("\(error)\n".utf8))
+            return 1
+        }
+        let links = ChatLinkScanner.scan(records)
+        let apps = Set(records.map(\.bundleIdentifier)).count
+        print("\(records.count) notifications from \(apps) apps; \(links.count) links to pull requests")
+        printChatLinks(links)
+        return 0
+    }
+
+    /// The made-up links in the demo, without reading Notification Center.
+    private static func listDemoChatLinks() -> Int32 {
+        let links = DemoData.records(now: Date()).flatMap(\.chatLinks)
+        print("Made-up notifications; \(links.count) links to pull requests")
+        printChatLinks(links)
+        return 0
+    }
+
+    private static func printChatLinks(_ links: [ChatLink]) {
+        let now = Date()
+        for link in links.sorted(by: { $0.sentAt > $1.sentAt }) {
+            print([pad(Elapsed.short(since: link.sentAt, now: now), 7), pad(link.appName, 10), pad(link.sender ?? "", 28),
+                   "\(link.key)  \(link.messageURL == nil ? "" : "(message link)")"].joined(separator: " "))
+        }
+    }
+
     private static func listDemoOrganizations() -> Int32 {
         print("1 organization; 1 with pull requests (*); watched by the app (+)")
         print("*+ \(DemoData.organization)")
@@ -201,7 +276,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(DemoData.organization), made-up pull requests")
         let now = Date()
-        let printer = WatchPrinter(seen: DemoData.seenState(now: now), options: ClassifierOptions())
+        let printer = WatchPrinter(seen: SeenBook(current: DemoData.seenState(now: now)), options: ClassifierOptions(), links: ChatLinkState())
         let snapshot = DemoData.snapshot(now: now)
         printer.print(snapshot)
         Thread.sleep(forTimeInterval: 1)
@@ -216,14 +291,18 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         let organizations = options.organizations.isEmpty
             ? appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? []
             : options.organizations
-        let printer = WatchPrinter(seen: seenState(), options: classifierOptions())
+        let links = chatLinks()
+        let printer = WatchPrinter(seen: seenBook(), options: classifierOptions(), links: links)
         let queue = DispatchQueue(label: "BriefBar.AzureDevOps.watch")
         let engine = PulseEngine(
             client: ADOClient(tokens: AzureCLITokenProvider()), configuration: PulseEngine.Configuration(organizations: organizations)
         ) { snapshot in queue.async { printer.print(snapshot) } }
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(organizations.joined(separator: ", ")), refreshing every minute — Ctrl-C to stop")
-        Task { await engine.start() }
+        Task {
+            await engine.setLinkedPullRequests(links.keys)
+            await engine.start()
+        }
         watching = [engine, printer]
     }
 
@@ -246,8 +325,9 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
 
 /// Prints only the pull requests whose status changed. Confined to the watch queue.
 private final class WatchPrinter: @unchecked Sendable {
-    private let seen: SeenState
+    private var seen: SeenBook
     private let options: ClassifierOptions
+    private let links: ChatLinkState
     private var problem: String?
     private var previous: [String: PRSnapshot] = [:]
     private let formatter: DateFormatter = {
@@ -256,9 +336,10 @@ private final class WatchPrinter: @unchecked Sendable {
         return formatter
     }()
 
-    init(seen: SeenState, options: ClassifierOptions) {
+    init(seen: SeenBook, options: ClassifierOptions, links: ChatLinkState) {
         self.seen = seen
         self.options = options
+        self.links = links
     }
 
     func print(_ snapshot: PulseSnapshot) {
@@ -269,7 +350,9 @@ private final class WatchPrinter: @unchecked Sendable {
             problem = message
             if let message { Swift.print("\(formatter.string(from: now))  ! \(message)") }
         }
-        for item in AzureDevOpsCommandLine.resolve(snapshot, seen: seen, options: options, now: now) {
+        // Once, so an account's first run starts when it was first seen.
+        if let account = snapshot.account { seen.signIn(account, now: now) }
+        for item in AzureDevOpsCommandLine.resolve(snapshot, seen: seen.current, options: options, links: links, now: now) {
             let old = previous[item.id]
             previous[item.id] = item
             guard old == nil || old?.group != item.group || old?.headline != item.headline || old?.detail != item.detail else { continue }

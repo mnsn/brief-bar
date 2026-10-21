@@ -51,6 +51,9 @@ make watch                        # changes as they happen
 make diagnose                     # Teams: the structure only, without names, messages or IDs
 ```
 
+`BriefBar --chats` lists the pull request links in every app's notifications, as **Pull Requests Sent
+in Chats** finds them, with Terminal's Full Disk Access.
+
 [How it works](docs/how-it-works.md) explains the sources, the permissions, the menu bar, the signing
 and the updates.
 
@@ -93,6 +96,7 @@ other data:
 | `BRIEFBAR_TEAMS_DB`, `BRIEFBAR_TEAMS_STATE_DIR` | Another Notification Center database, such as `build/demo/teams/db2/db`, and its state. With another database, BriefBar keeps the key of the unread chats in a file next to that state instead of the keychain |
 | `BRIEFBAR_COPILOT_DIR` | Another Copilot data directory, such as `build/demo/copilot` |
 | `BRIEFBAR_AZ` | Another `az` |
+| `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
 | `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, with the on-device model |
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from

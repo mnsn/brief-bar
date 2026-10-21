@@ -31,7 +31,7 @@ item, a desktop widget or a window, and you can hide what you don't need.
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else | Azure DevOps, with the Azure CLI's sign-in | The Azure CLI, signed in; notifications | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 
 Only the Azure DevOps source talks to the network for what you see, and only to Azure DevOps. BriefBar's
@@ -55,6 +55,8 @@ consent.
   (Outlook, say) would use it too, but only if you turn that source on.
 - **Azure DevOps** signs in with the Azure CLI: `brew install azure-cli`, then `az login`, or click
   **Sign In…**, which opens Terminal to run it. macOS asks whether BriefBar may post notifications.
+  **Pull Requests Sent in Chats**, off until you turn it on in its settings, also needs Full Disk
+  Access, the same window as Teams'.
 - **Copilot** needs nothing.
 
 Because macOS asks only once, BriefBar never turns a source on by itself. A source that an update adds
@@ -137,7 +139,8 @@ Apple Intelligence sums up the newest of each.
 
 | Group | When |
 |---|---|
-| **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, or a reviewer who's waiting for you or rejected it |
+| **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on) |
+| **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
 | **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired |
 | **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
@@ -146,11 +149,18 @@ Apple Intelligence sums up the newest of each.
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
 
 **Needs You** works like an inbox: opening a pull request from BriefBar, or **Mark as Seen**, moves it
-on until something new happens. The first time, only the last three days count as new. Notifications
-announce new replies, mentions, comments, review requests, votes, new commits, failed builds, and pull
-requests that become ready or complete. Clicking one opens the comment it's about. The first time,
-BriefBar finds the organizations where you have pull requests; **Organizations** in its settings
-changes them.
+on until something new happens. The first time, only the last three days count as new, and each
+account you sign in to the Azure CLI with has its own. Notifications announce new replies, mentions,
+comments, review requests, votes, new commits, failed builds, and pull requests that become ready or
+complete. Clicking one opens the comment it's about. The first time, BriefBar finds the
+organizations where you have pull requests; **Organizations** in its settings changes them.
+
+**Pull Requests Sent in Chats**, off by default, lists a pull request as needing you when someone
+sends you a link to it, in Teams, Slack, an email or any other app, as "Dana sent this in Teams",
+even if you're not on it. It reads the notifications that every app posts to Notification Center,
+keeps only the links, with who sent them, in which app and when, never the messages, and needs Full
+Disk Access, like Teams. Right-click the pull request to open the message. A link needs you until
+you open the pull request from BriefBar, vote or comment on it, it closes, or a week goes by.
 
 ### GitHub Copilot
 
@@ -269,6 +279,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, while previews are shown |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
+| | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
@@ -294,12 +305,16 @@ there and in its right-click menu.
   pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
   files, and Azure DevOps through GET requests. It never changes any of them.
+- **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
+  only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
+  and when, never the messages, and forgets them when you turn it off.
 - **Summaries are made on your Mac**, by Apple's on-device model, never Private Cloud Compute or any
   other model, and are kept in memory only.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which Azure DevOps pull requests you've seen and your organizations; which Copilot sessions
-  you've cleared; and its settings. Turning a source off deletes what it saved.
+  read; which Azure DevOps pull requests you've seen, with each account, your organizations and the
+  links people sent you; which Copilot sessions you've cleared; and its settings. Turning a source
+  off deletes what it saved.
 - **Programs it runs**, such as the Azure CLI, never get its permissions: macOS would otherwise let
   them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**: a widget puts your chats on the desktop, where anyone who sees your
@@ -309,11 +324,13 @@ there and in its right-click menu.
 
 ## FAQ
 
-### Why does Teams need Full Disk Access?
+### Why do Teams and pull requests sent in chats need Full Disk Access?
 
 Notification Center keeps notifications in a database under
 `~/Library/Group Containers/group.com.apple.usernoted`, which macOS protects. Full Disk Access is the
 only permission that lets an app read it. Teams reads nothing else there but Teams' notifications.
+Azure DevOps' **Pull Requests Sent in Chats**, if you turn it on, reads every app's, and keeps only
+the links to pull requests.
 
 ### Will a Teams, Copilot or macOS update break it?
 
@@ -353,11 +370,13 @@ APP="$HOME/Applications/BriefBar.app/Contents/MacOS/BriefBar"
 "$APP" --watch --source copilot   # one source's changes as they happen
 "$APP" --diagnose                 # Teams: the database's structure only, safe to share
 "$APP" --orgs                     # Azure DevOps: your organizations
+"$APP" --chats                    # Azure DevOps: the pull request links in every app's notifications
 log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --style compact
 ```
 
-Run from Terminal, Teams' modes use Terminal's Full Disk Access. `--dump`, `--watch` and `--json`
-print your chats, titles and sessions, so keep their output to yourself; `--diagnose` is safe to share.
+Run from Terminal, Teams' modes and `--chats` use Terminal's Full Disk Access. `--dump`, `--watch`,
+`--json` and `--chats` print your chats, titles, senders and sessions, so keep their output to
+yourself; `--diagnose` is safe to share.
 
 ## Contributing
 

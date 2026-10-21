@@ -58,7 +58,17 @@ final class AppSettings: ObservableObject {
     @Published var hasDiscovered: Bool {
         didSet { defaults.set(hasDiscovered, forKey: Key.hasDiscovered) }
     }
+    /// Looks for pull request links in the notifications every app posts, such as Teams. Off by default:
+    /// it reads Notification Center, which needs Full Disk Access.
+    @Published var chatLinksEnabled: Bool {
+        didSet { defaults.set(chatLinksEnabled, forKey: Key.chatLinksEnabled) }
+    }
+    /// The links found so far: who sent which pull request, in which app and when. Never the messages.
+    @Published private(set) var chatLinks: ChatLinkState
+    /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
+    /// What the other accounts you've signed in with have seen.
+    private var otherSeen: [String: SeenState]
 
     init(defaults: UserDefaults = .standard, now: Date = Date()) {
         self.defaults = defaults
@@ -71,7 +81,13 @@ final class AppSettings: ObservableObject {
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
+        chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
+        var links = defaults.data(forKey: Key.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
+            ?? ChatLinkState()
+        links.prune(now: now)
+        chatLinks = links
 
+        otherSeen = defaults.data(forKey: Key.otherSeen).flatMap { try? JSONDecoder().decode([String: SeenState].self, from: $0) } ?? [:]
         if let data = defaults.data(forKey: Key.seen), let stored = try? JSONDecoder().decode(SeenState.self, from: data) {
             seen = stored
             hasSavedSeen = true
@@ -90,11 +106,16 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, when Azure DevOps is turned off. Your organizations stay.
+    /// Forgets what you've seen, with every account, and the pull requests people sent you, when Azure DevOps
+    /// is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
+        defaults.removeObject(forKey: Key.otherSeen)
         hasSavedSeen = false
         seen = SeenState.firstRun()
+        otherSeen = [:]
+        chatLinks = ChatLinkState()
+        defaults.removeObject(forKey: Key.chatLinks)
     }
 
     private static func choice(_ value: Int, in choices: [Int], default fallback: Int) -> Int {
@@ -139,9 +160,46 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Replaces the seen state, for the demo.
-    func useSeenState(_ state: SeenState) {
+    /// Keeps newly found links. Returns whether there were any.
+    @discardableResult
+    func addChatLinks(_ found: [ChatLink], now: Date = Date()) -> Bool {
+        var updated = chatLinks
+        let changed = updated.merge(ChatLinkState.canonical(found, organizations: organizations))
+        let pruned = updated.prune(now: now)
+        guard changed || pruned else { return false }
+        chatLinks = updated
+        if let data = try? JSONEncoder().encode(updated) {
+            defaults.set(data, forKey: Key.chatLinks)
+        }
+        return changed
+    }
+
+    /// Forgets every link found, when the feature is turned off.
+    func forgetChatLinks() {
+        guard !chatLinks.links.isEmpty else { return }
+        chatLinks = ChatLinkState()
+        defaults.removeObject(forKey: Key.chatLinks)
+    }
+
+    /// Replaces the seen state, for the demo and for pictures.
+    func useSeenState(_ state: SeenState, others: [String: SeenState] = [:]) {
+        otherSeen = others
         seen = state
+    }
+
+    /// Switches what you've seen to the account signed in now, keeping the last one's for when it's back. Returns
+    /// whether another account was signed in before.
+    func useAccount(_ account: String, now: Date = Date()) -> Bool {
+        var book = SeenBook(current: seen, others: otherSeen)
+        let switched = book.signIn(account, now: now)
+        guard book.current != seen else { return switched }
+        otherSeen = book.others
+        seen = book.current
+        persistSeen()
+        if let data = try? JSONEncoder().encode(otherSeen) {
+            defaults.set(data, forKey: Key.otherSeen)
+        }
+        return switched
     }
 
     /// Organization names are case-insensitive in Azure DevOps.
@@ -177,6 +235,9 @@ enum SettingsKey {
     static let knownOrganizations = "ado.knownOrganizations"
     static let hasDiscovered = "ado.hasDiscoveredOrganizations"
     static let seen = "ado.seenState"
+    static let otherSeen = "ado.otherAccountsSeenState"
+    static let chatLinksEnabled = "ado.chatLinksEnabled"
+    static let chatLinks = "ado.chatLinks"
 }
 
 extension BriefBarUI.WidgetSize {

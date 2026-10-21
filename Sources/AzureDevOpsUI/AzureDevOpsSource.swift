@@ -3,6 +3,7 @@ import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import Combine
+import NotificationCenterDB
 import SwiftUI
 
 /// Your Azure DevOps pull requests, by what they need: you, a fix, completing, or someone else. It reads
@@ -18,9 +19,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
         summary: "Your pull requests: which need you, which are failing and which are ready to complete",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. BriefBar keeps which pull requests you've seen, and your organizations. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model.",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. BriefBar keeps which pull requests you've seen, and your organizations. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages.",
         network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute.",
-        needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on.",
+        needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar.",
         requirements: [.azureCLI, .notifications]
     )
     package let sections = [
@@ -30,6 +31,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         ),
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }
+
+    private static let chatAccessReason = "For pull requests sent in chats, BriefBar looks for links to pull requests in the notifications that every app posts to Notification Center, and keeps only the links."
 
     private let services: AppServices
     let settings: AppSettings
@@ -65,6 +68,30 @@ package final class AzureDevOpsSource: BriefBarSource {
         }
         let store = PRStore(settings: settings, notifier: services.notifier, mode: services.isDemo ? .demo : .live)
         self.store = store
+        let access = services.fullDiskAccess
+        store.showChatAccessSetup = { [weak access] in access?.show() }
+        store.chatAccessChanged = { [weak self, weak access] status in
+            MainActor.assumeIsolated {
+                guard let self, let access, access.isRequested(by: self.id) else { return }
+                access.report(granted: status == .granted)
+            }
+        }
+        // Pull requests sent in chats read Notification Center: the access is needed only while that's on, and
+        // only for its own database (not a copy that BRIEFBAR_CHAT_LINKS_DB names). The demo never reads it.
+        if !services.isDemo {
+            let database = ChatLinkDatabase.url()
+            if ChatLinkDatabase.isSystemDatabase(database) {
+                settings.$chatLinksEnabled.removeDuplicates()
+                    .sink { [weak self] enabled in MainActor.assumeIsolated { self?.chatLinksChanged(enabled, database: database) } }
+                    .store(in: &cancellables)
+            }
+        }
+        // The access window saw it granted: read now rather than at the next check.
+        access.$isGranted
+            .removeDuplicates()
+            .filter { $0 == true }
+            .sink { [weak store] _ in MainActor.assumeIsolated { store?.refreshChats() } }
+            .store(in: &cancellables)
         store.$counts.removeDuplicates().map { _ in () }
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
             .merge(with: store.$problem.map { _ in () })
@@ -81,12 +108,30 @@ package final class AzureDevOpsSource: BriefBarSource {
         if settings.notifications {
             services.notifier.requestAuthorization()
         }
+        // And pull requests sent in chats, if they were on when you turned it off: the steps for Full Disk Access.
+        if settings.chatLinksEnabled {
+            store?.askForChatAccessIfMissing()
+        }
     }
 
     package func stop() {
         cancellables.removeAll()
         store?.stop()
         store = nil
+        services.fullDiskAccess.unregister(.azureDevOps)
+    }
+
+    private func chatLinksChanged(_ enabled: Bool, database: URL) {
+        let access = services.fullDiskAccess
+        if enabled {
+            access.register(.azureDevOps, name: "Azure DevOps", reason: Self.chatAccessReason) {
+                DatabaseAccess.check(database) == .granted
+            }
+        } else if access.isRequested(by: id) {
+            access.unregister(.azureDevOps)
+            // You just turned it off: if nothing else reads Notification Center, BriefBar can be taken off the list.
+            DispatchQueue.main.async { [weak access] in access?.offerRemoval() }
+        }
     }
 
     package func deleteSavedData() {
@@ -135,6 +180,17 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func panelWillShow(_ section: SectionID) {
         store?.refreshIfStale()
+    }
+
+    package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
+        // What a popover or a window's page shows in Answered counts as seen once none shows it; a widget doesn't
+        // count.
+        guard section == .azureDevOpsPullRequests, viewer.surface != .widgets else { return }
+        if isShowing {
+            store?.viewerDidOpen(viewer.name)
+        } else {
+            store?.viewerDidClose(viewer.name)
+        }
     }
 
     // MARK: Widgets

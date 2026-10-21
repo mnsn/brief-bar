@@ -7,6 +7,10 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Three sources, each off until you turn it on.** Microsoft Teams (unread chats), Azure DevOps (pull
   requests) and GitHub Copilot (app sessions) work as their Pulse apps did. Each first says what it
   reads, where it connects and what it needs. Turning one off deletes what it saved.
+- **Azure DevOps as ADO Pulse has it now:** an **Answered** group for what you've taken care of in
+  Azure DevOps, until you've seen it; **Pull Requests Sent in Chats**, off until you turn it on, which
+  lists a pull request when someone sends you a link to it, from the notifications every app posts,
+  keeping only the links; and what you've seen, kept for each Azure CLI account.
 - **Permissions once.** Full Disk Access and notifications are BriefBar's, granted once, and used only
   by the sources you turn on. An update never turns a source on, and one that starts reading more
   pauses until you've looked.

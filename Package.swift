@@ -18,8 +18,9 @@ let package = Package(
             name: "BriefBarCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
-        // Notification Center's database: the notifications of the apps a source asks for. Reading it
-        // needs Full Disk Access. Teams uses it; Outlook could.
+        // Notification Center's database: the notifications of the apps a source asks for, or of every app.
+        // Reading it needs Full Disk Access. Teams uses it, and so do Azure DevOps' pull requests sent in
+        // chats; Outlook could.
         .target(
             name: "NotificationCenterDB",
             dependencies: ["BriefBarCore"],
@@ -31,10 +32,10 @@ let package = Package(
             dependencies: ["BriefBarCore", "NotificationCenterDB"]
         ),
         // Azure DevOps pull requests, read with the Azure CLI's sign-in. The only module that may use
-        // the network (scripts/check-networking.sh).
+        // the network (scripts/check-boundaries.sh).
         .target(
             name: "AzureDevOpsCore",
-            dependencies: ["BriefBarCore"]
+            dependencies: ["BriefBarCore", "NotificationCenterDB"]
         ),
         // GitHub Copilot app sessions, from the app's database and each agent's event log in ~/.copilot.
         .target(
@@ -55,7 +56,7 @@ let package = Package(
         ),
         .target(
             name: "AzureDevOpsUI",
-            dependencies: ["BriefBarCore", "BriefBarUI", "AzureDevOpsCore"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "NotificationCenterDB", "AzureDevOpsCore"]
         ),
         .target(
             name: "CopilotUI",
@@ -85,7 +86,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AzureDevOpsCoreTests",
-            dependencies: ["AzureDevOpsCore", "BriefBarCore"]
+            dependencies: ["AzureDevOpsCore", "NotificationCenterDB", "BriefBarCore"]
         ),
         .testTarget(
             name: "CopilotCoreTests",

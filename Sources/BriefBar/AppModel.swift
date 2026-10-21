@@ -113,11 +113,6 @@ final class AppModel: ObservableObject {
         updateSurfaces()
     }
 
-    /// Whether a source that's on needs this, such as Full Disk Access.
-    func isNeededByOnSource(_ requirement: Requirement) -> Bool {
-        onSources.contains { $0.description.requirements.contains(requirement) }
-    }
-
     // MARK: Layouts
 
     func layout(_ surface: Surface) -> SectionLayout {

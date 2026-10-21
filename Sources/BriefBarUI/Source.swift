@@ -80,6 +80,21 @@ package struct MenuBarSegment: Equatable {
     }
 }
 
+/// What shows a section: one menu-bar item's popover, one window or one desktop widget.
+package struct SectionViewer: Hashable, Sendable {
+    package var surface: Surface
+    /// Which item, window or widget.
+    package var id: String
+
+    package init(_ surface: Surface, id: String) {
+        self.surface = surface
+        self.id = id
+    }
+
+    /// For a source that keeps track of viewers by name.
+    package var name: String { "\(surface.rawValue).\(id)" }
+}
+
 /// Where the Settings window opens.
 package enum SettingsDestination: Hashable, Sendable {
     case general
@@ -125,6 +140,10 @@ package protocol BriefBarSource: AnyObject {
     func page(for section: SectionID) -> AnyView
     /// The section's page is about to show. By default, what `panelWillShow` does.
     func pageWillShow(_ section: SectionID)
+    /// Something started or stopped showing the section on screen: a menu-bar item's popover, a window's page, a
+    /// desktop widget. Calls come in pairs for each viewer: true, then false once it closes, is covered, or another
+    /// section takes its place. Several viewers can show a section at once.
+    func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer)
 
     /// The section's part of a desktop widget, for sections that can show in widgets: a header, then up to
     /// `rows` rows. It fills the widget's width.
@@ -164,6 +183,8 @@ extension BriefBarSource {
     package func pageWillShow(_ section: SectionID) {
         panelWillShow(section)
     }
+
+    package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {}
 
     package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView { AnyView(EmptyView()) }
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat { 0 }

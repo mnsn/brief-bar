@@ -16,11 +16,13 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 - When a source starts reading more, its description's version goes up. A source you turned on for an
   earlier version then pauses, until you've seen what it reads now and kept it on.
 - While a source is off, BriefBar doesn't read its data or check its access: no Notification Center,
-  saved chats or keychain item for Teams, no `az` for Azure DevOps, and no `~/.copilot` for Copilot.
+  saved chats or keychain item for Teams, no `az` or Notification Center for Azure DevOps, and no
+  `~/.copilot` for Copilot.
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
-  requests you've seen; which Copilot sessions you've cleared. Its settings stay.
+  requests each account has seen, and the links to pull requests people sent you; which Copilot
+  sessions you've cleared. Its settings stay.
 
 ## Permissions that macOS grants once
 
@@ -28,10 +30,11 @@ macOS gives some permissions to the whole app, and asks for them only once. That
 consent comes first.
 
 - **Full Disk Access**, for reading Notification Center's database. macOS has no prompt for it: a
-  window (`FullDiskAccess` in `Sources/BriefBarUI`) walks you through System Settings. Sources that
-  need it register when they start and unregister when they stop. While none is registered, nothing
-  checks the access or opens the window. When the last one stops, BriefBar offers to open the list,
-  so you can remove it.
+  window (`FullDiskAccess` in `Sources/BriefBarUI`) walks you through System Settings. Teams
+  registers when it starts and unregisters when it stops; Azure DevOps registers only while
+  **Pull Requests Sent in Chats** is on. While none is registered, nothing checks the access or
+  opens the window. When you turn off the last one, BriefBar offers to open the list, so you can
+  remove it.
 - **Notifications.** Azure DevOps asks when you turn it on. The one answer covers every source that
   posts notifications (`Notifier`), and a click goes to the source that posted it.
 
@@ -312,7 +315,7 @@ The GUID is Azure DevOps's application ID. The CLI answers silently from its own
 refreshes its sign-in by itself, so BriefBar never shows a sign-in screen unless the CLI is signed
 out. A token lasts about an hour; BriefBar reuses it until five minutes before it expires, and asks
 again if Azure DevOps rejects it. The token also says who it's for: when you sign in to the CLI as
-someone else, BriefBar starts over with their pull requests.
+someone else, BriefBar starts over with their pull requests, and what they've seen.
 
 An app started from Finder or as a login item doesn't get your shell's `PATH`, so BriefBar looks
 for `az` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual places, then asks your login
@@ -338,7 +341,8 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
-| `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, again until it works | whether it was completed or abandoned |
+| `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
@@ -378,8 +382,8 @@ The [groups table in the README](../README.md#azure-devops) lists them. In more 
 
 Only blocking policies count. A disabled policy is ignored. When a project doesn't let you read its
 policies, nobody can tell whether a pull request there is ready: it waits, as **Can't read its
-policies**. And ready means ready as the pull request is now: until its policies have been read
-again after a push or a vote, it waits.
+policies**, even when its threads couldn't be read that time. And ready means ready as the pull
+request is now: until its policies have been read again after a push or a vote, it waits.
 
 **Your pull requests** are, in order: in **Needs You** if something new needs you; **Idle** if
 they're drafts or have had no activity (comments, pushes, votes) for two weeks; **Failing** for a
@@ -391,12 +395,17 @@ policies, someone approved); and **Waiting** otherwise, with what it's waiting f
 inactive, or you approved or declined them, **To Review** if you haven't voted, and **Waiting** if
 you asked the author for changes.
 
+A pull request that would be **Idle** or **Waiting** is in **Answered** instead while there's
+something you answered yourself that you haven't seen yet (see below).
+
 ### What counts as new
 
 Azure DevOps has no read or unread state for pull requests, so BriefBar keeps its own
 (`SeenState`): activity up to a pull request's cutoff counts as seen. The cutoff is when you last
 opened the pull request from BriefBar (or clicked **Mark as Seen**), or, if that's earlier, three
-days before BriefBar first ran.
+days before BriefBar first ran. Each account you sign in to the Azure CLI with has its own, since
+two accounts can see the same pull request: switching back to an account picks up where it left off,
+and nothing from the other account is announced.
 
 After the cutoff, these need you:
 
@@ -410,6 +419,61 @@ After the cutoff, these need you:
   haven't voted yet, and new commits since your vote.
 
 Approvals are news too: they're announced, but they don't need you.
+
+### Answered
+
+Each of those can also be answered in Azure DevOps (`PRClassifier.answers`): a reply or mention by
+your comment after it in the same thread (on your pull request, any comment); a review request by
+your vote; new commits since your vote by voting again; a vote that wanted changes on your pull
+request by your push; and a link someone sent you by your vote, your comment or, on your pull
+request, your push. Voting on a pull request you weren't asked to review adds you as a reviewer
+yourself, which doesn't count as a request.
+
+When something that needed you after the cutoff has been answered in the last day, the pull request
+is in **Answered**, with what you did ("You approved") and what it answered ("Dana Whitfield sent
+this in Teams"), unless it's failing, ready to complete or to review. It isn't counted in the menu
+bar, announced, or in the brief. Once no popover or window page shows the pull requests anymore,
+each pull request one of them showed in Answered is marked seen up to when you answered it, not up to
+the time it closed, so anything that came later still counts as new. Widgets don't count as seeing it.
+
+### Pull requests sent in chats
+
+When you turn on **Pull Requests Sent in Chats**, BriefBar reads Notification Center's database,
+`~/Library/Group Containers/group.com.apple.usernoted/db2/db`, which keeps the notifications every app
+has posted (about the latest hundred per app; for Teams, a couple of days). It's off by default, and
+from a menu, turning it on opens its Settings page, which says what it reads.
+
+- It reads through `NotificationCenterDB`, the reader Teams uses, asking for every app's
+  notifications rather than one app's. It opens the database with a read-only SQLite connection, for
+  a short read each time, and never changes it. Like any SQLite reader, it takes brief shared locks
+  and updates SQLite's shared-memory index (`db-shm`) while it reads; neither changes any
+  notification. It reads it when you turn the setting on, whenever the database's write-ahead log
+  changes (watched with kqueue, so a new message shows within a second), when you open the pull
+  requests, and once a minute.
+- Each notification's title, subtitle and text are searched for links to pull requests:
+  `dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}` and the older
+  `{org}.visualstudio.com/…/pullrequest/{id}`.
+- In Teams, only chat messages count: the notification has a reply box and names a chat. Channel
+  posts and reactions don't. The sender is the title in a 1:1 chat and comes before the colon in a
+  group chat. In other apps, the title is taken as the sender.
+- Emails from Azure DevOps itself, and BriefBar's and ADO Pulse's own notifications, are skipped.
+- It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
+  open the message). Never the message itself. Links are kept for two weeks, and forgotten when you
+  turn the setting off, or Azure DevOps.
+
+A pull request that isn't in your lists (you're not its author or a reviewer) is read with a GET by
+its ID, and listed only while the link needs you. A link needs you until you open the pull request
+from BriefBar, vote or comment on it after the message (or push to it, if it's yours), it closes,
+or a week passes. Once you've voted or commented, it's in **Answered** until you've seen that.
+Links aren't announced: the app they came in already did. Right-click one to open the message in
+Teams, or to bring the app it came in forward.
+
+macOS protects that database, so this needs Full Disk Access: the same access Teams uses, granted
+once to all of BriefBar. Azure DevOps registers for it only while the setting is on, and the
+window that walks you through it opens when you turn the setting on without it. `--demo` never
+reads Notification Center: its links are made up. `BRIEFBAR_CHAT_LINKS_DB` points it at a copy of
+the database instead, which needs no access. How the access survives rebuilds and updates is in
+[Signing](#signing).
 
 ### Notifications
 
@@ -432,6 +496,8 @@ back to the plain sentence if the model isn't available or fails. BriefBar expli
 
 ### Limits
 
+- Pull requests sent in chats are only as complete as Notification Center: a message you saw in the
+  app before it posted a notification, or one older than the notifications it keeps, isn't there.
 - Pull requests assigned only to a group or team you're in aren't listed: Azure DevOps's reviewer
   search matches you, not your groups.
 - Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its

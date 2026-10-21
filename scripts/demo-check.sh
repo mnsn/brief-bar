@@ -12,7 +12,7 @@ fail() {
 }
 
 # Each source's counts, by group.
-EXPECTED='{"azureDevOps":{"done":1,"failing":2,"idle":2,"needsYou":3,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1},"teams":{"chats":2,"groups":2}}'
+EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1},"teams":{"chats":2,"groups":2}}'
 COUNTS="$("$BIN" --demo --json | jq -cS 'with_entries(.value |= .counts)')"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 

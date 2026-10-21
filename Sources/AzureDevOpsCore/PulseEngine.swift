@@ -55,6 +55,8 @@ public enum PulseProblem: Sendable, Equatable {
 public struct PulseSnapshot: Sendable, Equatable {
     public var records: [PRRecord]
     public var organizations: [String]
+    /// Who's signed in to the Azure CLI (`AccessToken.account`), when known: the records are theirs.
+    public var account: String?
     /// Your name, as Azure DevOps knows it.
     public var userName: String?
     /// When each organization's lists were first read: what happened there before is in the panel, not news.
@@ -65,11 +67,13 @@ public struct PulseSnapshot: Sendable, Equatable {
     public var hasLoaded: Bool
 
     public init(
-        records: [PRRecord] = [], organizations: [String] = [], userName: String? = nil, firstLoaded: [String: Date] = [:],
-        problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false, hasLoaded: Bool = false
+        records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
+        firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
+        hasLoaded: Bool = false
     ) {
         self.records = records
         self.organizations = organizations
+        self.account = account
         self.userName = userName
         self.firstLoaded = firstLoaded
         self.problem = problem
@@ -116,11 +120,36 @@ public actor PulseEngine {
         var role: PRRole
     }
 
+    /// One read of a pull request's details. Its policies and its threads are read separately, and either can fail
+    /// while the other doesn't.
+    private struct DetailsRead: Sendable {
+        /// The policies, nil when the project doesn't let you read them; or what went wrong reading them.
+        var policies: Result<[ADOPolicyEvaluation]?, ADOError>
+        var threads: Result<[ADOThread], ADOError>
+
+        var errors: [ADOError] {
+            var errors: [ADOError] = []
+            if case .failure(let error) = policies { errors.append(error) }
+            if case .failure(let error) = threads { errors.append(error) }
+            return errors
+        }
+    }
+
     /// One of your pull requests that left the active list without showing up as completed.
     private struct Vanished: Sendable {
         var pullRequest: PullRequest
         /// When it left the list.
         var since: Date
+        /// When it was last looked up, and how many lookups in a row failed.
+        var lastLookup: Date?
+        var failures = 0
+
+        /// Whether to look it up on a refresh at `date`: right away, again on the next refresh if that fails, then
+        /// less and less often, so the ones that keep failing don't cost requests every refresh.
+        func isDue(at date: Date, interval: TimeInterval) -> Bool {
+            guard let lastLookup, failures > 1 else { return true }
+            return date.timeIntervalSince(lastLookup) >= min(interval * pow(2, Double(failures - 2)), 1_800)
+        }
     }
 
     private struct OrganizationLists: Sendable {
@@ -144,6 +173,12 @@ public actor PulseEngine {
     private var account: String?
     private var userName: String?
     private var firstLoaded: [String: Date] = [:]
+    /// Pull requests people sent you, to list even when you're not on them.
+    private var linkedKeys: Set<PRKey> = []
+    /// Linked pull requests that couldn't be read or are closed, and when, to try again only an hour later.
+    private var linkedFailures: [PRKey: Date] = [:]
+    /// Linked pull requests as last read, and when: kept between refreshes, which read only a few each.
+    private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
     private var active: [PRKey: Listed] = [:]
     private var done: [PRKey: PullRequest] = [:]
     private var details: [PRKey: PRDetails] = [:]
@@ -199,7 +234,8 @@ public actor PulseEngine {
         self.configuration = configuration
         if organizationsChanged {
             let kept = Set(configuration.organizations)
-            active = active.filter { kept.contains($0.key.organization) }
+            // Pull requests people sent you stay, whichever organizations are watched.
+            active = active.filter { kept.contains($0.key.organization) || linked[$0.key] != nil }
             done = done.filter { kept.contains($0.key.organization) }
             vanished = vanished.filter { kept.contains($0.key.organization) }
             firstLoaded = firstLoaded.filter { kept.contains($0.key) }
@@ -209,10 +245,30 @@ public actor PulseEngine {
     }
 
     /// One load, without the timer: for the command line and tests.
-    public static func loadOnce(client: ADOClient, configuration: Configuration) async -> PulseSnapshot {
+    public static func loadOnce(client: ADOClient, configuration: Configuration, linked: Set<PRKey> = []) async -> PulseSnapshot {
         let engine = PulseEngine(client: client, configuration: configuration) { _ in }
+        await engine.setLinkedPullRequests(linked)
         await engine.refreshNow()
         return await engine.currentSnapshot()
+    }
+
+    /// Pull requests people sent you. The ones not in your lists are read by ID, and listed as `linked`.
+    public func setLinkedPullRequests(_ keys: Set<PRKey>) {
+        guard keys != linkedKeys else { return }
+        let added = !keys.subtracting(linkedKeys).isEmpty
+        linkedKeys = keys
+        linkedFailures = linkedFailures.filter { keys.contains($0.key) }
+        // The ones listed only because someone sent them go with their links, now rather than on the next refresh.
+        let gone = Set(linked.keys).subtracting(keys)
+        linked = linked.filter { keys.contains($0.key) }
+        for key in gone {
+            active[key] = nil
+            details[key] = nil
+            entries[key] = nil
+        }
+        if configuration.organizations.isEmpty && keys.isEmpty { listNothing() }
+        publish()
+        if added { waker.wake() }
     }
 
     public func currentSnapshot() -> PulseSnapshot {
@@ -223,9 +279,9 @@ public actor PulseEngine {
     public func refreshNow() async {
         let configuration = self.configuration
         let organizations = configuration.organizations
-        guard !organizations.isEmpty else {
-            problem = .noOrganizations
-            hasLoaded = true
+        // Pull requests people sent you are read even without organizations to watch.
+        guard !organizations.isEmpty || !linkedKeys.isEmpty else {
+            listNothing()
             publish()
             return
         }
@@ -315,9 +371,13 @@ public actor PulseEngine {
         }
         // Back in the list, listed as completed, or gone longer than Done shows anything.
         vanished = vanished.filter { key, item in listed[key] == nil && completed[key] == nil && item.since > closedSince }
+        // The ones never looked up first, then the ones looked up longest ago: a few that keep failing don't hold up
+        // the rest.
         let due = vanished.values
-            .filter { succeeded.contains($0.pullRequest.key.organization) }
-            .sorted { ($0.since, $0.pullRequest.key) < ($1.since, $1.pullRequest.key) }
+            .filter { succeeded.contains($0.pullRequest.key.organization) && $0.isDue(at: startedAt, interval: configuration.interval) }
+            .sorted {
+                ($0.lastLookup ?? .distantPast, $0.since, $0.pullRequest.key) < ($1.lastLookup ?? .distantPast, $1.since, $1.pullRequest.key)
+            }
             .prefix(5)
         for item in due {
             let key = item.pullRequest.key
@@ -326,13 +386,14 @@ public actor PulseEngine {
                 let fresh = PullRequest(organization: key.organization, dto)
                 if fresh.status == .completed || fresh.status == .abandoned { completed[key] = fresh }
                 vanished[key] = nil
-            } catch ADOError.notFound {
+            } catch ADOError.notFound, ADOError.forbidden {
                 // Deleted, or moved somewhere you can't read: nothing to show.
                 vanished[key] = nil
             } catch ADOError.throttled {
                 break
             } catch {
-                // Try again next refresh.
+                vanished[key]?.lastLookup = startedAt
+                vanished[key]?.failures += 1
             }
         }
         for (key, pr) in done where completed[key] == nil && listed[key] == nil {
@@ -344,6 +405,7 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization) }
         vanished = vanished.filter { watched.contains($0.key.organization) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key) }
+        await addLinked(to: &listed, at: startedAt)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
@@ -369,6 +431,57 @@ public actor PulseEngine {
         }
     }
 
+    /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read
+    /// first, then the ones read longest ago. Each stays listed as it was last read in between. One that's closed
+    /// or couldn't be read is tried again an hour later.
+    private func addLinked(to listed: inout [PRKey: Listed], at date: Date) async {
+        let wanted = linkedKeys.filter { listed[$0] == nil }
+        linked = linked.filter { wanted.contains($0.key) }
+        let due = wanted
+            .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
+            .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
+        for key in due.prefix(10) {
+            do {
+                let me: String
+                if let known = identities[key.organization] {
+                    me = known
+                } else {
+                    me = try await client.get(ADOEndpoint.connectionData(organization: key.organization), as: ADOConnectionData.self)
+                        .authenticatedUser.id.lowercased()
+                    identities[key.organization] = me
+                }
+                let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+                let pr = PullRequest(organization: key.organization, dto)
+                // A closed one is read again an hour later too, in case it's reopened.
+                linkedFailures[key] = pr.status == .active ? nil : date
+                guard pr.status == .active, linkedKeys.contains(key) else {
+                    linked[key] = nil
+                    continue
+                }
+                let role: PRRole = pr.author.id == me ? .author : pr.reviewer(me) != nil ? .reviewer : .linked
+                linked[key] = (Listed(pullRequest: pr, role: role), date)
+            } catch {
+                linkedFailures[key] = date
+                // Gone, or no access: nothing to list. Otherwise it stays as last read.
+                if case .notFound = error as? ADOError { linked[key] = nil }
+                if case .forbidden = error as? ADOError { linked[key] = nil }
+            }
+        }
+        for (key, read) in linked { listed[key] = read.listed }
+    }
+
+    /// Without organizations to watch or pull requests sent to you, there's nothing to read, or to list.
+    private func listNothing() {
+        active = [:]
+        done = [:]
+        details = [:]
+        entries = [:]
+        vanished = [:]
+        linked = [:]
+        problem = .noOrganizations
+        hasLoaded = true
+    }
+
     private func forgetAccount() {
         identities = [:]
         userName = nil
@@ -378,6 +491,8 @@ public actor PulseEngine {
         details = [:]
         entries = [:]
         vanished = [:]
+        linkedFailures = [:]
+        linked = [:]
     }
 
     /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down.
@@ -387,32 +502,40 @@ public actor PulseEngine {
         let fetchedAt = now()
         var queue = pullRequests[...]
         var throttled: ADOError?
-        await withTaskGroup(of: (PullRequest, Result<PRDetails, ADOError>).self) { group in
+        await withTaskGroup(of: (PullRequest, DetailsRead).self) { group in
             for _ in 0..<max(1, configuration.concurrency) {
                 guard let pr = queue.popFirst() else { break }
-                group.addTask { (pr, await Self.details(of: pr, client: client, at: fetchedAt)) }
+                group.addTask { (pr, await Self.details(of: pr, client: client)) }
             }
-            while let (pr, result) = await group.next() {
-                switch result {
-                case .success(let fetched):
+            while let (pr, read) = await group.next() {
+                switch (read.policies, read.threads) {
+                case (.success(let policies), .success(let threads)):
+                    let fetched = PRDetails(fetchedAt: fetchedAt, pullRequest: pr, evaluations: policies, threads: threads)
                     details[pr.key] = fetched
                     entries[pr.key] = RefreshPlanner.Entry(
                         fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: fetched.hasChecksInProgress,
                         isQuiet: isQuiet(pr, fetched, configuration: configuration, at: fetchedAt)
                     )
-                case .failure(let error):
-                    // Keep the old details, and try again on the normal schedule rather than every refresh.
+                default:
+                    // Keep the old details, and try again on the normal schedule rather than every refresh. But what
+                    // the policies say now replaces what they said, even when the threads couldn't be read: a pull
+                    // request whose policies you may no longer read, or whose build failed since, isn't ready.
+                    if case .success(let policies) = read.policies, var kept = details[pr.key] {
+                        kept.checks = policies?.compactMap(Check.init) ?? []
+                        kept.checksKnown = policies != nil
+                        details[pr.key] = kept
+                    }
                     entries[pr.key] = RefreshPlanner.Entry(
-                        fetchedAt: fetchedAt, fingerprint: pr.fingerprint,
+                        fetchedAt: fetchedAt, fingerprint: pr.fingerprint, isBusy: details[pr.key]?.hasChecksInProgress ?? false,
                         isQuiet: details[pr.key].map { isQuiet(pr, $0, configuration: configuration, at: fetchedAt) } ?? false
                     )
-                    if case .throttled = error {
+                    if let error = read.errors.first(where: { if case .throttled = $0 { true } else { false } }) {
                         throttled = error
                         queue.removeAll()
                     }
                 }
                 if let next = queue.popFirst() {
-                    group.addTask { (next, await Self.details(of: next, client: client, at: fetchedAt)) }
+                    group.addTask { (next, await Self.details(of: next, client: client)) }
                 }
             }
         }
@@ -456,7 +579,7 @@ public actor PulseEngine {
         }
     }
 
-    private static func details(of pr: PullRequest, client: ADOClient, at date: Date) async -> Result<PRDetails, ADOError> {
+    private static func details(of pr: PullRequest, client: ADOClient) async -> DetailsRead {
         let organization = pr.key.organization
         async let evaluations = capture {
             try await client.get(ADOEndpoint.policyEvaluations(
@@ -469,20 +592,15 @@ public actor PulseEngine {
             ), as: ADOList<ADOThread>.self).value
         }
         let (policyResult, threadResult) = await (evaluations, threads)
-        let policies: [ADOPolicyEvaluation]?
+        let policies: Result<[ADOPolicyEvaluation]?, ADOError>
         switch policyResult {
-        case .success(let value): policies = value
+        case .success(let value): policies = .success(value)
         // Some projects don't let everyone read their policies. The pull request still has its threads, but
         // whether it's ready is unknown, which isn't the same as having no policies.
-        case .failure(.forbidden), .failure(.notFound): policies = nil
-        case .failure(let error): return .failure(error)
+        case .failure(.forbidden), .failure(.notFound): policies = .success(nil)
+        case .failure(let error): policies = .failure(error)
         }
-        switch threadResult {
-        case .success(let value):
-            return .success(PRDetails(fetchedAt: date, pullRequest: pr, evaluations: policies, threads: value))
-        case .failure(let error):
-            return .failure(error)
-        }
+        return DetailsRead(policies: policies, threads: threadResult)
     }
 
     private static func capture<T: Sendable>(_ body: () async throws -> T) async -> Result<T, ADOError> {
@@ -518,7 +636,7 @@ public actor PulseEngine {
         }
         records.sort { $0.id < $1.id }
         return PulseSnapshot(
-            records: records, organizations: configuration.organizations, userName: userName, firstLoaded: firstLoaded,
+            records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
             problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
         )
     }

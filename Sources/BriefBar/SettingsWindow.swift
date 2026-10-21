@@ -302,11 +302,11 @@ struct SourcePage: View {
         } message: {
             Text("BriefBar stops reading it, removes it from the menu bar and deletes what it saved for it. Its settings stay.")
         }
-        .alert("BriefBar doesn't need Full Disk Access now", isPresented: $offeringToRemoveAccess) {
+        .alert(FullDiskAccess.removalTitle, isPresented: $offeringToRemoveAccess) {
             Button("Open Privacy Settings") { FullDiskAccess.openPrivacySettingsPane() }
             Button("Not Now", role: .cancel) {}
         } message: {
-            Text("No source that's on reads Notification Center. You can remove BriefBar from the Full Disk Access list: select it, then click −.")
+            Text(FullDiskAccess.removalMessage)
         }
     }
 
@@ -317,9 +317,12 @@ struct SourcePage: View {
     }
 
     private func turnOff() {
-        let neededAccess = source.description.requirements.contains(.fullDiskAccess)
+        // Whether it needs the access now, rather than whether it can: Azure DevOps only does for pull requests
+        // sent in chats.
+        let access = model.services.fullDiskAccess
+        let neededAccess = access.isRequested(by: source.id)
         model.turnOff(source.id)
-        if neededAccess && !model.isNeededByOnSource(.fullDiskAccess) {
+        if neededAccess && !access.isNeeded {
             offeringToRemoveAccess = true
         }
     }

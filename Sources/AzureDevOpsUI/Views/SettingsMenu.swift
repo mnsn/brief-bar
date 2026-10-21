@@ -36,6 +36,7 @@ struct AzureDevOpsSettings: View {
         Toggle("Summaries by Apple Intelligence", isOn: $settings.summaries)
             .disabled(!store.summarizer.isAvailable)
         Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
+        ChatLinksSetting()
 
         SettingsDivider()
 
@@ -53,6 +54,41 @@ struct AzureDevOpsSettings: View {
         .pickerStyle(.menu)
         Menu("Organizations") {
             OrganizationsMenuContent()
+        }
+    }
+}
+
+/// Pull requests sent in chats, off by default: it reads every app's notifications. On its page in Settings, it
+/// says what it reads; in a menu, turning it on opens that page instead.
+struct ChatLinksSetting: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var services: AppServices
+    @Environment(\.inSettingsForm) private var inSettingsForm
+
+    static let title = "Pull Requests Sent in Chats"
+    static let explanation = """
+        Lists a pull request as needing you when someone sends you a link to it. BriefBar looks for links in the \
+        notifications that every app posts to Notification Center, such as Teams, Slack, Outlook and Mail, and keeps \
+        only the links, with who sent them, in which app and when, never the messages. It needs Full Disk Access. \
+        Turning it off forgets the links.
+        """
+
+    var body: some View {
+        if inSettingsForm || settings.chatLinksEnabled {
+            Toggle(isOn: $settings.chatLinksEnabled) {
+                Text(Self.title)
+                if inSettingsForm {
+                    Text(Self.explanation)
+                }
+            }
+            .disabled(store.mode == .demo)
+        } else {
+            Button(Self.title + "…") { services.openSettings(.source(.azureDevOps)) }
+                .disabled(store.mode == .demo)
+        }
+        if settings.chatLinksEnabled && store.chatAccess == .denied {
+            Button("Allow Full Disk Access…") { store.showChatAccessSetup?() }
         }
     }
 }

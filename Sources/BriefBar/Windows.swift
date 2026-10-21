@@ -36,6 +36,7 @@ final class WindowHost: NSObject, NSWindowDelegate {
         content.select(section)
         let window = self.window ?? makeWindow()
         window.makeKeyAndOrderFront(nil)
+        content.isOpen = true
     }
 
     func close() {
@@ -79,6 +80,7 @@ final class WindowHost: NSObject, NSWindowDelegate {
 
     nonisolated func windowWillClose(_ notification: Notification) {
         MainActor.assumeIsolated {
+            content.isOpen = false
             model.windowDidClose(self)
         }
     }
@@ -92,6 +94,12 @@ final class WindowContent: ObservableObject {
     @Published private(set) var selected: SectionID?
     unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
+    /// Whether its window is open, as its host says.
+    var isOpen = false {
+        didSet { updateVisible() }
+    }
+    /// The page the open window shows; nil while it's closed.
+    private var visible: SectionID?
 
     /// Each window's page, as you last left it, by the window's ID.
     private static let pagesKey = "windowPages"
@@ -119,6 +127,7 @@ final class WindowContent: ObservableObject {
 
     func update(sections: [SectionID]) {
         self.sections = sections
+        updateVisible()
         // The sidebar's counts follow the menu bar's.
         cancellables.removeAll()
         var seen = Set<SourceID>()
@@ -142,6 +151,18 @@ final class WindowContent: ObservableObject {
         if notify, let current {
             model.source(for: current)?.pageWillShow(current)
         }
+        updateVisible()
+    }
+
+    /// Tells the sources which page shows, after the window opened, closed or switched pages.
+    private func updateVisible() {
+        let section = isOpen ? current : nil
+        guard section != visible else { return }
+        let hidden = visible
+        visible = section
+        let viewer = SectionViewer(.windows, id: id)
+        if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
+        if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
     }
 }
 
