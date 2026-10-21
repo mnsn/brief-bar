@@ -1,0 +1,26 @@
+# Swift Package Manager and Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+xcuserdata/
+*.dSYM
+
+# Build output: the app bundle, demo data and screenshots
+build/
+# Default `--render` output. Renders of your own data show private names, messages and titles.
+render/
+
+# Signing keys never belong in the repository (see "Signing" in CONTRIBUTING.md).
+*.p12
+*.pfx
+*.pem
+*.key
+*.keychain
+*.keychain-db
+private-key*
+
+# Editors and macOS
+.vscode/
+.idea/
+.DS_Store
