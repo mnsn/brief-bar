@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>BriefBar</string>
+	<key>CFBundleExecutable</key>
+	<string>BriefBar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<!-- Full Disk Access, notifications and the keychain item for Teams' unread chats are tied to this
+	     identifier and the signing certificate (see scripts/make-signing-identity.sh). Changing either
+	     loses them. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.asaf.BriefBar</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>BriefBar</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<!-- The build sets CFBundleVersion to this version too. -->
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Asaf Manassen. Licensed under GPL-3.0-or-later.</string>
+</dict>
+</plist>
