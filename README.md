@@ -1,6 +1,6 @@
 # BriefBar
 
-[![CI](https://github.com/mnsn/briefbar/actions/workflows/ci.yml/badge.svg)](https://github.com/mnsn/briefbar/actions/workflows/ci.yml)
+[![CI](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 A macOS menu-bar app that shows what needs you, from the apps you choose:
@@ -34,8 +34,9 @@ item, a desktop widget or a window, and you can hide what you don't need.
 | **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else | Azure DevOps, with the Azure CLI's sign-in | The Azure CLI, signed in; notifications | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 
-BriefBar itself makes no network requests: no telemetry, and no update checks for now. Only the Azure
-DevOps source talks to the network, and only to Azure DevOps.
+Only the Azure DevOps source talks to the network for what you see, and only to Azure DevOps. BriefBar's
+own requests are for its updates, from this project's GitHub releases, and only if you allow them. No
+telemetry.
 
 ## Turning a source on
 
@@ -46,7 +47,8 @@ consent.
 - **Teams** needs Full Disk Access to read Notification Center's database. macOS has no prompt for
   it, so a window walks you through System Settings:
   1. Click **Open Privacy Settings**.
-  2. Turn on BriefBar. If it isn't in the list, click **+** and choose it, or drag it there.
+  2. Turn on BriefBar. If it isn't in the list, click **+** and choose it, or drag it there. If it's on
+     already, remove it with **−** and add it again.
   3. Choose **Quit & Reopen** if macOS offers it.
 
   macOS gives the access to all of BriefBar, once. A later source that reads Notification Center
@@ -166,57 +168,99 @@ Copilot app.
 
 ## Install
 
-BriefBar needs macOS 15 or later, on Apple silicon or Intel. While the repository is private, the way
-to install it is to build it from source, with Swift 6 from Xcode or the Command Line Tools
-(`xcode-select --install`):
+BriefBar needs macOS 15 or later, on Apple silicon or Intel.
 
-```sh
-git clone https://github.com/mnsn/briefbar.git
-cd briefbar
-make signing-identity   # once per Mac: the certificate every build is signed with
-make install            # builds BriefBar.app, copies it to ~/Applications and opens it
-```
+1. Download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
+   from the [latest release](https://github.com/mnsn/brief-bar/releases/latest) and unzip it.
+2. Drag **BriefBar** to your Applications folder before you open it. Opened from Downloads, macOS runs
+   it from a temporary location, and Full Disk Access, Launch at Login and updates may not work.
+3. Open it. The app isn't notarized by Apple, so the first time, macOS won't open it because it can't
+   verify it. Click **Done**, then go to **System Settings › Privacy & Security**, scroll down to the
+   message that BriefBar was blocked, click **Open Anyway** and confirm.
+4. Settings opens: turn on the sources you want, as [above](#turning-a-source-on). Changing the Full
+   Disk Access list asks for your password or Touch ID, and an administrator's on a standard account.
+5. Turn on **Launch BriefBar at Login** in Settings. If macOS asks you to allow it, use
+   **Allow in Login Items Settings…**.
 
-Each build asks for your login password so that `codesign` can sign it with that certificate: click
-**Allow**, never **Always Allow** ([why](#why-the-signing-certificate)). Then turn on the sources you
-want, and **Launch BriefBar at Login** in Settings. To update, pull and run `make install` again. To
-remove BriefBar, run `make uninstall` and remove it from the Full Disk Access list.
+The second time you open it, BriefBar asks whether to check for updates automatically. If you allow
+it, it checks once a day and offers each new version, which it installs and reopens without the
+Gatekeeper step. Updates keep its Full Disk Access. **Check for Updates…**, in Settings and in each
+list's gear menu, checks right away. To remove BriefBar, quit it, move it to the Trash and remove it
+from the Full Disk Access list.
+
+On a Mac that your organization manages, **Open Anyway** may be missing, or a profile may keep you
+from granting Full Disk Access. Your IT department can grant it for you, as described below.
 
 ### Moving from the Pulse apps
 
 BriefBar doesn't read the Pulse apps' settings: each source starts fresh. Quit Teams Pulse, ADO Pulse
 and Copilot Pulse before you turn on the same source in BriefBar (two copies of Azure DevOps would
-notify you twice), turn off their Launch at Login, and remove Teams Pulse from the Full Disk Access
-list.
-
-### Why the signing certificate?
-
-macOS ties Full Disk Access, and the keychain item that protects Teams' saved chats, to the app's code
-signature. An ad-hoc signature, the usual one for a local build, identifies the app by the hashes of
-its code, so every rebuild looks like a new app and loses both. `make signing-identity` creates a
-self-signed certificate, **BriefBar Signing**, in your login keychain, and every build is signed with
-it, so each build keeps the access you granted once. BriefBar never signs ad hoc.
-
-That makes the certificate's key as powerful as the access: any program that could sign with it could
-sign itself as BriefBar and get the Full Disk Access you gave BriefBar. So no app may use the key
-without asking, not even `codesign`, and each build asks for your password. **Always Allow** would let
-any program running as you use it silently, so `make app` refuses to sign with a key that some app may
-use without asking. If it says so, replace the certificate with
-`scripts/make-signing-identity.sh --replace`, and give the next build Full Disk Access once more.
-[How it works](docs/how-it-works.md#signing) has the details.
+notify you twice), turn off their Launch at Login, and remove them from the Full Disk Access list.
 
 ### For organizations: no Full Disk Access step
 
-On Macs your organization manages, IT can grant BriefBar Full Disk Access ahead of time, with a
-configuration profile deployed through your MDM: `make pppc-profile` writes one for the certificate of
-the copy built here. macOS ignores such a profile installed by hand. The access is the app's, but
-BriefBar reads nothing with it until someone turns on a source that needs it.
+On Macs your organization manages, IT can grant BriefBar Full Disk Access ahead of time, so its users
+never see that step. With this repository cloned, `scripts/make-pppc-profile.sh /Applications/BriefBar.app`
+writes a configuration profile for a release, to deploy with your MDM (for example, in Intune, as a
+custom macOS configuration profile). macOS ignores it if it's installed by hand. The profile names the
+app's signing certificate, which every release shares, so it covers later versions too. For copies
+you build yourself with a certificate of your own ([below](#keeping-full-disk-access-across-rebuilds)),
+`make pppc-profile` writes one for it instead. The access is the app's, but BriefBar reads nothing
+with it until someone turns on a source that needs it.
+
+### Build from source
+
+You need Swift 6, from Xcode or the Command Line Tools (`xcode-select --install`). An app you build
+yourself opens without the Gatekeeper step.
+
+```sh
+git clone https://github.com/mnsn/brief-bar.git
+cd brief-bar
+make install     # builds BriefBar.app, copies it to ~/Applications and opens it
+```
+
+Then turn on the sources you want, as above: BriefBar is in `~/Applications` (press ⌘⇧G in the file
+dialog to type the folder). To remove it, run `make uninstall` and remove it from the Full Disk
+Access list.
+
+It's signed ad hoc, so macOS ties Full Disk Access to that exact build, and you allow each rebuild
+again. Turning BriefBar off and on in the list keeps the old build's signature, so first run
+`tccutil reset SystemPolicyAllFiles com.asaf.BriefBar`, which resets only BriefBar's entry (or remove
+it with −), then add it again with +, and choose **Quit & Reopen**. If you have unread Teams chats
+saved, macOS may also ask whether the new build may use BriefBar's keychain item: **Always Allow** is
+fine there, since it covers only that build.
+
+A copy you build updates itself too, to the release builds, unless you turn off
+**Check for Updates Automatically** in Settings and build each new version yourself. Releases are
+signed with the project's certificate, so after that first update, allow Full Disk Access once more
+the same way, and later updates keep it.
+
+### Keeping Full Disk Access across rebuilds
+
+macOS ties Full Disk Access to the app's code signature. An ad-hoc signature is identified by the
+hashes of the app's code, so every rebuild looks like a new app. If you rebuild often,
+`make signing-identity` creates a self-signed certificate, **BriefBar Signing**, in your login
+keychain. Every build is then signed with it, and keeps the access you granted.
+
+That makes the certificate's key as powerful as the access: any program that can sign with it can sign
+itself as BriefBar, and get the Full Disk Access you gave BriefBar. So no app may use the key without
+asking, not even `codesign`, and it can't be exported: each build asks for your login password. Click
+**Allow** only while a build of yours is signing, since any program can make `codesign` ask, and never
+**Always Allow**, which would let any program running as you use the key silently. `make app` refuses
+to sign with a key that some app may use without asking, and checks again after signing.
+`scripts/make-signing-identity.sh --replace` swaps such a certificate for a new one, and `--delete`
+deletes it, so that builds are signed ad hoc again. Either way, allow the next build again as above.
+
+Releases are signed the same way, with a certificate of the project's own that only GitHub's release
+workflow can use, which is why updates keep the access. [How it works](docs/how-it-works.md#signing)
+has the details.
 
 ## Settings
 
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
-right-click menu of its widget), next to **Launch BriefBar at Login**, **BriefBar Settings…** and
-**Quit BriefBar**.
+right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
+**BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
+**Check for Updates Automatically**.
 
 | Source | Setting | Options |
 |---|---|---|
@@ -239,10 +283,15 @@ there and in its right-click menu.
 
 ## Privacy
 
-- **Teams and Copilot never use the network**, and BriefBar itself doesn't either: no sign-in, no
-  telemetry, no update checks. Only the Azure DevOps source connects, to Azure DevOps, with your Azure
-  CLI sign-in, and every request it makes is a GET. `scripts/check-boundaries.sh` checks that no other
-  part of the app uses networking APIs.
+- **Teams and Copilot never use the network.** Only the Azure DevOps source connects, to Azure DevOps,
+  with your Azure CLI sign-in, and every request it makes is a GET. No sign-in of BriefBar's own, and
+  no telemetry. `scripts/check-boundaries.sh` checks that no other part of BriefBar's code uses
+  networking APIs.
+- **Updates, only if you allow them.** BriefBar's own requests are for its updates, from this
+  project's releases on GitHub: a small file that describes the latest release, once a day, and the
+  new version when you install it. GitHub sees your IP address and the versions of BriefBar and of
+  [Sparkle](https://sparkle-project.org), the updater it uses. They carry nothing about your chats,
+  pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
   files, and Azure DevOps through GET requests. It never changes any of them.
 - **Summaries are made on your Mac**, by Apple's on-device model, never Private Cloud Compute or any
@@ -278,12 +327,20 @@ Azure DevOps can only push changes through service hooks, which need a project a
 server on the internet. So BriefBar asks every minute: about 10 to 25 small requests a minute, and
 right away when you open the list, when your Mac wakes, and when it's back online.
 
-### Why isn't it notarized, and where are the releases?
+### Why isn't it notarized?
 
 Notarization needs a paid Apple Developer Program membership, which this free project doesn't have.
-And while the repository is private, its releases and update feed can't be downloaded, so for now you
-build BriefBar yourself, which also skips Gatekeeper's question. Releases signed by the project's own
-certificate, with in-app updates, come once the repository is public.
+So macOS asks you to allow the app the first time you open it, as described in [Install](#install).
+Each release is built from its tagged source by [GitHub Actions](.github/workflows/release.yml), with
+an attestation you can [verify](SECURITY.md#verifying-a-download). You can also build it yourself.
+
+### How do I know an update is genuine?
+
+Each update, and the file that announces it, is signed with the project's private key. BriefBar
+installs an update only if both signatures match the public key built into the app. Only the
+maintainer holds the private key, and so does the release workflow, which can use it only after the
+maintainer approves the release. Every release is also signed with the same certificate, which is
+what keeps Full Disk Access. [SECURITY.md](SECURITY.md#how-updates-are-verified) has the details.
 
 ### How do I troubleshoot it?
 

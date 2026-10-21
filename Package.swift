@@ -7,6 +7,10 @@ let package = Package(
     products: [
         .executable(name: "BriefBar", targets: ["BriefBar"]),
     ],
+    dependencies: [
+        // In-app updates. Only the app target uses it; the sources and the tests don't.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+    ],
     targets: [
         // Shared by every source, with no UI: watching files, reading SQLite, timestamps, starting
         // programs, and which sources are on and where they show in the menu bar.
@@ -60,7 +64,12 @@ let package = Package(
         // The app: its sources, the menu-bar items, Settings and the command line.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI"]
+            dependencies: [
+                "BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            // scripts/build-app.sh embeds Sparkle.framework in the app's Contents/Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(
             name: "BriefBarCoreTests",

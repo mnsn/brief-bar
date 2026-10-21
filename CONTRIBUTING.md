@@ -7,8 +7,8 @@ Bug reports, ideas and pull requests are welcome.
 You need macOS 15 or later and Swift 6. Xcode works, and so do just the Command Line Tools.
 
 ```sh
-git clone https://github.com/mnsn/briefbar.git
-cd briefbar
+git clone https://github.com/mnsn/brief-bar.git
+cd brief-bar
 make test    # run the tests
 make demo    # run the app with made-up data for every source (Ctrl-C to quit)
 ```
@@ -25,15 +25,21 @@ Other targets:
 make build              # debug build
 make demo-check         # check that each source's made-up data lands in the expected groups
 make check-boundaries   # check that only AzureDevOpsCore uses the network, and only BriefBarCore starts programs
+make signing-key-check  # check what keeps signing keys safe, in throwaway keychains (it asks nothing)
 make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
 make screenshots        # render the README's pictures from the demo data
-make signing-identity   # once per Mac: create the certificate every build is signed with
-make app                # build BriefBar.app into ./build, signed with it
-make package            # the universal app, checked and zipped, in build/release
+make app                # build BriefBar.app into ./build, signed ad hoc
 make install            # build the app, copy it to ~/Applications and open it
+make signing-identity   # optional: a certificate that builds are then signed with, to keep Full Disk Access
 make pppc-profile       # a configuration profile that grants the built app Full Disk Access, for MDM
+make package            # what a release ships: the universal app, checked and zipped, in build/release
 make icon               # regenerate Resources/AppIcon.icns
 ```
+
+Builds are signed ad hoc, so each one needs Full Disk Access again: turning BriefBar off and on in the
+list keeps the old build's signature, so run `tccutil reset SystemPolicyAllFiles com.asaf.BriefBar`
+(or remove it with −) and add it again with +. [Signing](#signing) has the optional certificate that
+keeps the access, and what `make package` needs.
 
 These read your own data, for the sources that are on in the installed app, or the ones `--source`
 names. Teams' modes read Notification Center with Terminal's Full Disk Access:
@@ -45,8 +51,8 @@ make watch                        # changes as they happen
 make diagnose                     # Teams: the structure only, without names, messages or IDs
 ```
 
-[How it works](docs/how-it-works.md) explains the sources, the permissions, the menu bar and the
-signing.
+[How it works](docs/how-it-works.md) explains the sources, the permissions, the menu bar, the signing
+and the updates.
 
 ## Project layout
 
@@ -65,12 +71,13 @@ Sources/TeamsUI/               each source's app code: its lists, settings, widg
 Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
 Sources/BriefBar/              the app: sources and consent, menu-bar items, widgets, windows, Settings,
-                               the command line and --render
+                               updates (Sparkle), the command line and --render
 Tests/                         Swift Testing suites for the shared code and each source's core, with
                                made-up data
-scripts/                       app bundling, signing and checks, the signing certificate, the boundary and
-                               demo checks, the demo data, the MDM profile and the icon
-.github/workflows/             CI
+scripts/                       app bundling, signing and checks, the optional signing certificate,
+                               releases (their keys, signing and appcast), the boundary and demo checks,
+                               the demo data, the MDM profile and the icon
+.github/workflows/             CI and releases
 ```
 
 Each source's code came from its Pulse app (Teams Pulse, ADO Pulse, Copilot Pulse) and keeps its
@@ -114,8 +121,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   `SourceDescription` and raise its `version`, so whoever turned it on sees the change before it reads
   more.
 - **Only Azure DevOps uses the network**, and only Azure DevOps: every request a GET, never a write.
-  Teams and Copilot make no network requests, and neither does anything else. Networking code goes in
-  `AzureDevOpsCore`, and `make check-boundaries` fails if any other module uses networking APIs.
+  Teams and Copilot make no network requests, and neither does anything else but the updater,
+  Sparkle, which fetches only this project's releases, and only if you allow it. Networking code goes
+  in `AzureDevOpsCore`, and `make check-boundaries` fails if any other module uses networking APIs.
 - **Start programs only through `ProcessRunner`**, which keeps them from using BriefBar's privacy
   permissions. `make check-boundaries` fails if any other module starts one.
 - **Never change what a source reads.** Open Notification Center's database and the Copilot app's
@@ -138,49 +146,130 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 ## Pull requests
 
 - Keep each pull request focused, and describe the change users will see.
-- Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them, then builds and
-  checks the app.
+- Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 15 (with
+  Xcode 16, so without summaries) and macOS 26, checks the signing keys' protection, packages the app
+  and runs it on Apple silicon and Intel.
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
 ## Signing
 
-Every build is signed with a certificate, never ad hoc, so Full Disk Access and Teams' keychain item
-survive rebuilds. `make signing-identity` creates **BriefBar Signing** in your login keychain, with a
-key that no app may use without asking. Each build asks for your login password: click **Allow**,
-never **Always Allow**. [How it works](docs/how-it-works.md#signing) explains why.
+Builds from source are signed ad hoc, so there's no key on your Mac that anything could sign as
+BriefBar with, but each build needs Full Disk Access again (see above). To keep it across rebuilds,
+`make signing-identity` creates **BriefBar Signing** in your login keychain, with a key that no app may
+use without asking and that can't be exported. Each build then asks for your login password: click
+**Allow** only while your build is signing, never **Always Allow**
+([why](README.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
+that some app may use without asking, signs with the certificate's SHA-1 rather than its name, and
+checks the signature's certificate afterwards. `scripts/make-signing-identity.sh --check` reads the
+key's protection, `--replace` makes a new certificate and `--delete` goes back to ad hoc.
+`make signing-key-check` tests all of that in throwaway keychains, without asking anything.
 
-CI signs with a throwaway certificate in a throwaway keychain (`scripts/ci-signing-identity.sh`), whose
-key `codesign` may use without asking. You can build with one too, without your own certificate, but
-don't give such a build Full Disk Access:
+`make package` signs with a certificate, as a release does. CI uses a throwaway one in a throwaway
+keychain (`scripts/ci-signing-identity.sh`), whose key `codesign` may use without asking. You can
+package with one too, without a certificate of your own, but don't give such a build Full Disk Access:
 
 ```sh
 export BRIEFBAR_SIGNING_KEYCHAIN="$(scripts/ci-signing-identity.sh)"
 make package
-security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN"
+security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN" && rmdir "$(dirname "$BRIEFBAR_SIGNING_KEYCHAIN")"
 ```
+
+[How it works](docs/how-it-works.md#signing) explains why.
 
 ## CI
 
-`.github/workflows/ci.yml` reads the repository's visibility, so nothing needs editing when it changes:
+`.github/workflows/ci.yml` runs on every push to `main` that changes more than docs, on pull requests,
+and when started by hand:
 
-- **While the repository is private**, where macOS minutes count ten times, one macOS 26 job runs on
-  every push to `main` that changes more than docs, on pull requests and when started by hand. It
-  runs the tests, the boundary and demo checks, then packages the universal app and checks it.
-- **Once it's public**, the same workflow also builds on macOS 15, whose Xcode 16 SDK has no
-  FoundationModels. It then runs the packaged app on macOS 15, on Apple silicon and on Intel.
+- It builds and tests on macOS 15, whose Xcode 16 SDK has no FoundationModels, and on macOS 26. Each
+  runs the boundary and demo checks and `make signing-key-check`, packages the universal app with a
+  throwaway certificate, and signs its update with a throwaway key, the way a release does
+  (`scripts/appcast-dry-run.sh`).
+- The macOS 26 job uploads the package as the `BriefBar` artifact, and the next jobs run it on
+  macOS 15, on Apple silicon and on Intel.
 
 ## Releasing
 
-There are no releases yet: while the repository is private, nobody could download them or their
-update feed, so BriefBar is built from source. Once it's public, releases will follow Teams Pulse's
-process:
+Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
 
-- a tag, built and attested by GitHub Actions,
-- signed with a certificate of the project's own, **BriefBar Release**, and an update signing key,
-  both held only by an approval-gated `release` environment and the maintainer's password manager,
-  never on a Mac,
-- delivered by Sparkle.
+1. Set the new version as `CFBundleShortVersionString` in `Resources/Info.plist`, as three numbers
+   such as `0.2.0`. The build sets `CFBundleVersion` to the same value. Sparkle compares it to decide
+   whether a release is newer, so a release fails unless its version is higher than every earlier
+   tag.
+2. Add a section for it at the top of `CHANGELOG.md`, with the date, such as
+   `## 0.2.0 - 2026-11-30`. It becomes the release notes, on GitHub and in the app's update window, so
+   write it for users.
+3. Push to `main` and wait for CI. If no runner picks a job up, start the workflow again from
+   **Actions** with **Run workflow**.
+4. Tag the commit and push the tag:
+
+   ```sh
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+5. Approve the release: in the run under **Actions**, click **Review deployments**, select `release`
+   and click **Approve and deploy**.
+
+The tag starts the [release workflow](.github/workflows/release.yml). Its first job checks the
+version and the changelog, then builds and tests the universal app on macOS 26, signed with a
+throwaway certificate. After your approval, the second job signs the app again with the release
+certificate (`scripts/sign-release.sh`), checks that it's the certificate in
+`Resources/ReleaseRequirement.txt` and deletes it from the runner. It then signs the zip and writes
+`appcast.xml` (`scripts/make-appcast.sh`), checks the signatures with the public key
+(`scripts/verify-appcast.swift`), attests both files, and publishes the release with `BriefBar.zip`,
+its SHA-256, `appcast.xml` and the changelog section.
+
+### The release keys
+
+A release needs two private keys, which only the `release` environment and the maintainer's password
+manager hold. `scripts/make-release-keys.sh` makes both, once, in memory, and copies them one at a
+time to the clipboard for the environment's secrets. They're never written to a file or stored in a
+keychain, so no program on the maintainer's Mac can use them. The clipboard keeps them on that Mac:
+Universal Clipboard doesn't offer them to other devices, and clipboard managers skip them.
+
+- **The release certificate**, **BriefBar Release**, signs the app. macOS ties Full Disk Access to
+  it, so every release must be signed with the same one, or every user loses the access. It's a
+  certificate of its own, never one in a keychain like **BriefBar Signing**: anything that could sign
+  with it could sign itself as a release and inherit BriefBar's Full Disk Access on every Mac, so it
+  exists only where it's needed. That's also why builds from source don't share Full Disk Access with
+  the releases. Secrets: `RELEASE_CERTIFICATE_P12` and `RELEASE_CERTIFICATE_PASSWORD`.
+  `Resources/ReleaseRequirement.txt` holds the designated requirement it gives the app, and the
+  release workflow refuses to publish an app that doesn't have it.
+- **The update signing key** signs each update and the appcast. Installed apps accept only updates
+  signed with the key that matches `SUPublicEDKey` in `Resources/Info.plist`. It's an Ed25519 key in
+  the form Sparkle's `generate_keys -x` exports, but kept out of the keychain, where any program could
+  export it with `generate_keys`. Secret: `SPARKLE_PRIVATE_KEY`.
+
+To set up a repository:
+
+1. In its **Settings › Environments**, create an environment named `release`. Under
+   **Deployment protection rules**, turn on **Required reviewers** and add the maintainers. Under
+   **Deployment branches and tags**, choose **Selected branches and tags** and add a rule for the tag
+   pattern `v*`.
+2. Run `scripts/make-release-keys.sh` in Terminal. For each secret it copies, click
+   **Add environment secret** in the environment, paste the value, and name it as the script says.
+   Paste each into your password manager too: it keeps the only other copy. The script writes the
+   public halves only once you've copied all three, and refuses to run again after that.
+3. Commit the public halves it wrote, `Resources/Info.plist` and `Resources/ReleaseRequirement.txt`,
+   and push.
+
+Never put either private key anywhere else: in a file you keep, a keychain, a command-line argument
+or a log. Don't change `SUPublicEDKey` or the release certificate either, unless one leaks or is
+lost, and then never both in one release: Sparkle accepts an update with a new certificate or a new
+update signing key, not both.
+
+- If the update signing key leaks, run `scripts/make-release-keys.sh --new-update-key`. It sets the
+  new public key in `Info.plist` and copies the new private key for your password manager, but the
+  next release must still be signed with the old key, which installed apps know: keep the old
+  `SPARKLE_PRIVATE_KEY` until it's out. `scripts/make-appcast.sh` refuses that mismatch, so sign that
+  release by hand with Sparkle's `sign_update`. Then replace the secret, and later releases are
+  signed with the new key. If the key is lost, the installed apps can't be updated anymore: publish
+  a release with a new key and ask users to download it by hand once.
+- If the release certificate leaks or is lost, run `scripts/make-release-keys.sh --new-certificate`
+  and replace the two certificate secrets. Users lose Full Disk Access with the next update and have
+  to grant it again, so say so in its release notes.
 
 ## License
 

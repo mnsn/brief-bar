@@ -31,6 +31,7 @@ package struct AppMenuItems: View {
                 Text("Launch at Login failed: \(error)")
             }
         }
+        UpdateMenuItems(updates: services.updates)
         Button("BriefBar Settings…") { services.openSettings(source.map { .source($0) } ?? .general) }
         Button("Quit BriefBar") { NSApp.terminate(nil) }
     }

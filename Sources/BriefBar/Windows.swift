@@ -227,6 +227,9 @@ struct WindowSidebar: View {
             }
             .scrollBounceBehavior(.basedOnSize)
 
+            WindowUpdateButton(updates: model.services.updates)
+                .padding(.horizontal, 8)
+
             HStack {
                 Spacer()
                 Menu {
@@ -248,6 +251,24 @@ struct WindowSidebar: View {
         }
         .padding(.horizontal, 10)
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// That an update is waiting, in the sidebar.
+private struct WindowUpdateButton: View {
+    @ObservedObject var updates: UpdateStatus
+
+    var body: some View {
+        if let version = updates.pendingVersion {
+            Button {
+                updates.check()
+            } label: {
+                Label("BriefBar \(version) is available", systemImage: "arrow.down.circle")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.borderless)
+            .help("Update BriefBar")
+        }
     }
 }
 

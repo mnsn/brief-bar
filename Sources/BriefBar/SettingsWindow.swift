@@ -170,11 +170,32 @@ struct GeneralPage: View {
                 }
             }
 
+            UpdateSettings(updates: model.services.updates)
+
             HStack {
                 Text("Version \(AppIdentity.version)")
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit BriefBar") { NSApp.terminate(nil) }
+            }
+        }
+    }
+}
+
+/// Whether BriefBar checks for updates by itself, and a way to check now, when it updates itself.
+struct UpdateSettings: View {
+    @ObservedObject var updates: UpdateStatus
+
+    var body: some View {
+        if updates.isAvailable {
+            HStack {
+                Toggle("Check for Updates Automatically", isOn: Binding(
+                    get: { updates.automaticallyChecks },
+                    set: { updates.setAutomaticallyChecks($0) }
+                ))
+                Spacer()
+                Button("Check for Updates…") { updates.check() }
+                    .disabled(!updates.canCheck)
             }
         }
     }

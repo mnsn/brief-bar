@@ -1,10 +1,9 @@
 name: CI
 
-# While the repository is private, macOS minutes count ten times, so this runs one job: on pushes to
-# main that change more than docs, on pull requests, and when started by hand. Once the repository is
-# public, the same workflow runs the full matrix by itself, with nothing to edit: builds on the oldest
-# supported macOS, whose Xcode 16 SDK has no FoundationModels, and the current one, then the packaged
-# app on macOS 15 on Apple silicon and Intel.
+# On pushes to main that change more than docs, on pull requests, and when started by hand. Builds and tests on
+# the oldest supported macOS, whose Xcode 16 SDK has no FoundationModels, and the current one, packages the
+# universal app and signs its update the way a release does, then runs the package on macOS 15 on Apple silicon
+# and Intel.
 on:
   push:
     branches: [main]
@@ -27,11 +26,11 @@ jobs:
   build:
     name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event.repository.private && '["macos-26"]' || '["macos-15", "macos-26"]') }}
+        os: [macos-15, macos-26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,16 +52,27 @@ jobs:
       - name: Check the demo data
         run: make demo-check
 
-      # A throwaway certificate in a keychain of its own.
+      # On both versions of macOS, since it's macOS that enforces what keeps the keys safe.
+      - name: Check the signing keys' protection
+        run: make signing-key-check
+
+      # A throwaway certificate in a keychain of its own, on the search list. Only the release workflow's
+      # approved job has the release certificate.
       - name: Create a signing certificate
         run: |
           KEYCHAIN="$(./scripts/ci-signing-identity.sh "$RUNNER_TEMP")"
           echo "BRIEFBAR_SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
-      # The universal app, checked and zipped (see scripts/package.sh).
+      # The universal app that a release ships, checked and zipped (see scripts/package.sh).
       - name: Package the app
         run: make package
 
+      # Signs the package's update the way a release does, with a throwaway key instead of the real one.
+      - name: Check the update signing
+        run: ./scripts/appcast-dry-run.sh
+
+      # The release workflow builds on macos-26 too, so this is what a release would contain, apart from the
+      # certificate.
       - name: Upload the package
         if: matrix.os == 'macos-26'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -74,8 +84,6 @@ jobs:
   run-package:
     name: Run the package (${{ matrix.os }})
     needs: build
-    # Once the repository is public, where macOS minutes don't count ten times.
-    if: ${{ !github.event.repository.private }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -98,6 +106,7 @@ jobs:
           (cd build/release && shasum -a 256 -c BriefBar.zip.sha256)
           ditto -x -k build/release/BriefBar.zip build
 
-      # Launches it, without FoundationModels, and runs the demo check.
+      # Launches it, so Sparkle loads under the hardened runtime, without FoundationModels, and runs the demo
+      # check.
       - name: Check the app
         run: ./scripts/check-app.sh build/BriefBar.app --universal

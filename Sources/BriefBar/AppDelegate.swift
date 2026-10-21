@@ -4,12 +4,16 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let mainMenu: MainMenu
+    private let updater: Updater
+    private let demo: Bool
     private let opensWindow: Bool
 
     /// - Parameter openWindow: opens the window once the app has started (`--window`).
     init(demo: Bool, openWindow: Bool = false) {
         model = AppModel(demo: demo)
         mainMenu = MainMenu(model: model)
+        updater = Updater(status: model.services.updates)
+        self.demo = demo
         opensWindow = openWindow
         super.init()
     }
@@ -21,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.launch()
         if opensWindow {
             model.openWindow(at: nil)
+        }
+        // Only the app checks for updates: never the demo, which makes no network requests, the command-line
+        // modes or --render (see main.swift).
+        if !demo {
+            updater.start()
         }
     }
 

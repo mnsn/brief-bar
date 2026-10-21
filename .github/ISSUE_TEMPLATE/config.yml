@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/mnsn/briefbar/security/advisories/new
+    url: https://github.com/mnsn/brief-bar/security/advisories/new
     about: Please report security issues privately, not in a public issue.
   - name: Problems with Microsoft Teams or Azure DevOps themselves
     url: https://support.microsoft.com

@@ -208,15 +208,17 @@ package struct FullDiskAccessView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if access.lostAccess {
-                Label("BriefBar had access before. That happens when it's rebuilt with another signature: remove BriefBar from the list with −, then add it again.", systemImage: "exclamationmark.triangle.fill")
+                // Selectable, to copy the command.
+                Label("BriefBar had access before. That happens when it's rebuilt with another signature, and turning it off and on keeps the old one: remove BriefBar from the list with −, then add it again with +. If it still has no access, run `tccutil reset SystemPolicyAllFiles \(AppIdentity.bundleIdentifier)` in Terminal, then add it again.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
 
             if access.isBundled {
                 VStack(alignment: .leading, spacing: 6) {
                     step(1, "Click **Open Privacy Settings**.")
-                    step(2, "Turn on **BriefBar**. If it isn't in the list, click **+** under the list and choose it in **\(access.appFolder)** (press ⌘⇧G to type the folder), or click **Show in Finder** and drag it into the list.")
+                    step(2, "Turn on **BriefBar**. If it isn't in the list, click **+** under the list and choose it in **\(access.appFolder)** (press ⌘⇧G to type the folder), or click **Show in Finder** and drag it into the list. If it's on already, remove it with **−** and add it again.")
                     step(3, "If macOS offers to, choose **Quit & Reopen**.")
                 }
             } else {

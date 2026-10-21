@@ -58,6 +58,10 @@ disclaimed one reports itself. A test (`startsProgramsResponsibleForThemselves`)
 `scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`
 or the C library's other ways to start programs.
 
+Sparkle, the updater, is a framework of its own, which that check doesn't read. It starts no program
+either: its framework imports neither `posix_spawn` nor `NSTask`, and it submits its installer to
+launchd (`SMJobSubmit`), which starts it. The installer replaces the app and opens it again.
+
 ## Menu bar, widgets and windows
 
 Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' **Pull
@@ -555,69 +559,121 @@ Tools alone.
 
 macOS records each Full Disk Access grant, and the access list of the keychain item that protects
 Teams' saved chats, with the app's **designated requirement**: the part of its signature that says
-how to recognize it again.
+how to recognize it again. It checks the running app against it.
 
-- An ad-hoc signature's designated requirement is its code hashes. Apple's
+- An ad-hoc signature's designated requirement is its code hashes (`cdhash H"…"`). Apple's
   [TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
   puts it this way: ad hoc signed code "has a DR but it's tied to that specific version of the code",
-  so "macOS can't track this authorization across versions of your app". Every build would lose
-  Full Disk Access, although System Settings may still show the switch on.
+  so "macOS can't track this authorization across versions of your app". Every build loses Full Disk
+  Access, although System Settings may still show the switch on. macOS keeps the requirement of the
+  build you allowed, and turning the switch off and on keeps it too: remove BriefBar from the list, or
+  run `tccutil reset SystemPolicyAllFiles com.asaf.BriefBar`, which resets only BriefBar's entry, and
+  add it again.
 - Signed with a certificate, the requirement names the certificate instead:
   `identifier "com.asaf.BriefBar" and certificate leaf = H"<the certificate's hash>"`. A rebuilt app
-  still satisfies it, so macOS keeps the access.
+  with different code hashes still satisfies it, so macOS keeps the access.
 
-`scripts/make-signing-identity.sh` creates that certificate, **BriefBar Signing**: self-signed, for
-code signing only, valid for 10 years, in the login keychain. Nothing has to trust it: macOS matches
-the certificate itself.
+Builds from source are signed ad hoc (`scripts/build-app.sh`, through `scripts/sign-app.sh`), with the
+hardened runtime and no timestamp, so signing makes no network request. Each build needs Full Disk
+Access again, but there's no key on the Mac that anything could sign as BriefBar with. The keychain
+item for Teams' unread chats trusts the app by its signature too, so macOS may ask whether a new build
+may use it; declined, the saved chats are left alone.
 
-- `scripts/build-app.sh` signs every build with it, through `scripts/sign-app.sh`, with no timestamp,
-  so signing makes no network request. There's no ad-hoc option.
-- `scripts/check-app.sh` fails if a build's requirement names code hashes.
+### An optional certificate for builds from source
 
-### Who may use the signing key
+`scripts/make-signing-identity.sh` (`make signing-identity`) creates a certificate, **BriefBar
+Signing**: self-signed, for code signing only, valid for 10 years, in the login keychain.
+`scripts/build-app.sh` then signs every build with it, so Full Disk Access survives rebuilds. Nothing
+has to trust the certificate: macOS matches the certificate itself. `--delete` deletes it and its key,
+and builds are signed ad hoc again.
 
-Matching a certificate is only as strong as the private key behind it. Anything that can sign with
+Matching a certificate is only as strong as the private key behind it: anything that can sign with
 the key can sign itself as `com.asaf.BriefBar`, satisfy the requirement, and get the Full Disk Access
-you gave BriefBar. So no app may use the key without asking:
+you gave BriefBar. So no app may use the key without asking, and nothing can take it:
 
-- `scripts/signing-key.swift` imports the key with an access list that trusts no app, not even
-  `codesign`, so `codesign` asks for your login password every time. (`security import` can't make
-  such a key: with `-T /usr/bin/codesign`, codesign may use it silently; without, `/usr/bin/security`
-  may.)
-- **Always Allow** in that prompt would add `codesign` to the list. `scripts/build-app.sh` reads the
-  list before every build, without prompting, and refuses to sign while any app is on it.
-  `scripts/make-signing-identity.sh --replace` swaps such a certificate for a new one.
-- The app embeds no framework, so each build uses the key once, and asks once.
-- The certificate and its key are made in memory and reach the keychain through a pipe, never a file.
+- `security import` can't make such a key. With `-T /usr/bin/codesign`, codesign may use the key
+  silently; without it, `/usr/bin/security`, the app that imported it, may. Either way, any program
+  running as you could have it sign. `scripts/signing-key.swift` imports the key with an access list
+  that trusts no app, so codesign asks for your login password every time, and as non-extractable, so
+  it can't be exported even with the password. It then reads back what macOS made of it, and if that
+  isn't so, `scripts/make-signing-identity.sh` deletes the certificate again.
+- **Always Allow** in that prompt would add codesign to the list. `scripts/build-app.sh` reads the
+  list before every build, and again after signing (without prompting), and refuses to go on while
+  any app is on it or the key can be exported; after signing, it deletes the build.
+  `scripts/make-signing-identity.sh --replace` swaps such a certificate for a new one, and `--check`
+  reads the list. Any program can make codesign ask, too, so allow the prompt only while a build of
+  yours is signing.
+- It signs with the certificate's SHA-1 (`sign_with` in `scripts/signing.sh`), never its name, which
+  could also match a look-alike or an identity preference, and then checks that the signature names
+  that certificate. Every check that fails stops the build.
+- Sparkle.framework is signed ad hoc, so each build uses the key once, and asks once. With library
+  validation off (below), the app loads the framework whoever signed it, and the app's own signature
+  records the framework's exact code hash.
+- The certificate and its key are made in memory, with macOS's own `openssl`, and reach the keychain
+  through a pipe, never a file.
 
-Only CI's throwaway keychains (`scripts/ci-signing-identity.sh`) let `codesign` use their key without
-asking, since nothing could answer a prompt there. Don't give a build signed with one Full Disk Access.
+`scripts/test-signing-key.sh` (`make signing-key-check`) checks all of that in throwaway keychains,
+with nothing that makes macOS ask. Only CI's throwaway keychains (`scripts/ci-signing-identity.sh`)
+let codesign use their key without asking, since nothing could answer a prompt there. Don't give a
+build signed with one Full Disk Access.
+
+### Releases
+
+Releases are signed with a certificate too, all with the same one, **BriefBar Release**, which isn't
+on any Mac. `scripts/make-release-keys.sh` makes it in memory, once, for the `release` environment's
+secrets and the maintainer's password manager, so only the release workflow's approved job can sign
+with it. That job imports it into a keychain of its own (`scripts/import-release-identity.sh`), where
+only codesign may use it and nothing can export it, and signs with it (`scripts/sign-release.sh`). It
+checks that the signed app has the designated requirement in `Resources/ReleaseRequirement.txt`, so a
+release can't quietly cost everyone their access, then deletes the keychain. `scripts/check-app.sh`
+fails if a release's requirement names code hashes. CI, and the release's build job, sign with a
+throwaway certificate instead.
 
 Changing the certificate, or the bundle identifier, loses Full Disk Access once: remove BriefBar from
-the list and add it again.
+the list (or reset its entry with `tccutil`, as above) and add it again. That's also what happens when
+a copy you built updates itself to a release.
 
 ### The hardened runtime and library validation
 
-Every build runs with the hardened runtime, so other processes can't use BriefBar's Full Disk Access
-by injecting code into it: macOS ignores `DYLD_` environment variables for it, such as
+Every build runs with the hardened runtime, so other processes can't use BriefBar's Full Disk Access by
+injecting code into it: macOS ignores `DYLD_` environment variables for it, such as
 `DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach.
 
 The hardened runtime also turns on library validation, which loads only libraries signed by Apple or by
-the app's own team. BriefBar has no entitlements and embeds no framework, so library validation stays
-on, and nothing but Apple's libraries and BriefBar's own code runs with its access.
-`scripts/check-app.sh` fails on any entitlement. (Teams Pulse and Copilot Pulse turn library
-validation off to load Sparkle, their updater, which a self-signed certificate has no team for.)
+the app's own team. A self-signed certificate has no team, so macOS would refuse Sparkle, even signed
+with the same certificate ("mapping process and mapped file (non-platform) have different Team IDs").
+The app's one entitlement, `com.apple.security.cs.disable-library-validation` in
+`Resources/BriefBar.entitlements`, turns that check off. The cost: macOS recognizes the app by its own
+executable's signature, and with library validation off, the app loads whatever its Sparkle.framework
+holds. So anything running as you could copy the app anywhere, put its own code in the copy's
+framework, and run the copy with BriefBar's Full Disk Access; where the app is installed doesn't
+change that ([SECURITY.md](../SECURITY.md#how-the-app-is-signed)). A Developer ID certificate would
+make the entitlement unnecessary, and so would running Sparkle in a process of its own.
 
-## Updates
+So that the app loads libraries only from itself and the system, the build also removes every run
+path but `@executable_path/../Frameworks` and `/usr/lib/swift`: one that named the toolchain's or the
+build's folder would be a place to put a look-alike library. `scripts/check-app.sh` checks that.
 
-BriefBar doesn't update itself yet. While the repository is private, its releases and an update feed
-couldn't be downloaded, so you update by building again. Once it's public, releases will be:
+## Updating the app
 
-- built by GitHub Actions,
-- signed with a certificate of the project's own, held only by an approval-gated `release` environment
-  and the maintainer's password manager, never on a Mac,
-- delivered by Sparkle, with signed updates. Sparkle will then need library validation off, as in
-  the Pulse apps.
+BriefBar updates itself with [Sparkle](https://sparkle-project.org) 2, embedded as
+`Contents/Frameworks/Sparkle.framework`, without the XPC services that only sandboxed apps need
+(`Sources/BriefBar/Updater.swift`).
+
+- **Only if you allow it.** Sparkle asks on the second launch whether to check automatically, and
+  then checks once a day. **Check for Updates…** checks right away. A build without `SUPublicEDKey`
+  in its `Info.plist` never checks, and has no update settings, and neither do the command-line modes,
+  `--demo` or `--render`.
+- **What it fetches**: `appcast.xml` from
+  `https://github.com/mnsn/brief-bar/releases/latest/download/`, and the zip that it names. These are
+  BriefBar's only network requests apart from the Azure DevOps source's. They send no cookies, and
+  the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays off.
+- **What it accepts**: only an appcast and a zip signed with the project's EdDSA key, and it checks the
+  zip before unpacking it. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
+- **Gently**: right after launch, Sparkle shows a new version itself. A later, scheduled check doesn't
+  take the focus from the app you're using: the lists, the window and every gear menu say that an
+  update is waiting instead.
+- **Full Disk Access survives**, because every release is signed with the same certificate.
 
 ## Checks
 
@@ -626,7 +682,15 @@ couldn't be downloaded, so you update by building again. Once it's public, relea
   same checks the Pulse apps ran on their demos.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
   `AzureDevOpsCore` uses networking APIs, and only `BriefBarCore` starts programs. It also fails if
-  those two stop using them, since the check could no longer tell.
-- `scripts/check-app.sh` checks a built app: its signature and designated requirement, the hardened
-  runtime, no entitlements, FoundationModels linked weakly so it opens on macOS 15, and that it runs
-  and passes the demo check.
+  those two stop using them, since the check could no longer tell. It reads BriefBar's own modules,
+  not Sparkle, whose requests are only for updates.
+- `scripts/check-app.sh` checks a built app: its signatures, the hardened runtime and the one
+  entitlement; a designated requirement that names a certificate, unless `--allow-ad-hoc` says a build
+  of your own may be ad hoc; Sparkle embedded without its XPC services, with its license, for every
+  architecture, and loaded; the run paths; the update settings (the feed, the signed-appcast keys,
+  and with `--release` the public key); FoundationModels linked weakly so it opens on macOS 15; and
+  that it runs and passes the demo check.
+- `make signing-key-check` checks, in throwaway keychains, everything that keeps a signing key safe
+  (above).
+- `scripts/appcast-dry-run.sh` signs a packaged app's update and appcast with a throwaway key, the way
+  a release does, and checks them as the app would.

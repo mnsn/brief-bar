@@ -255,6 +255,8 @@ package final class AppServices: ObservableObject {
     package let loginItem: LoginItem
     package let notifier: Notifier
     package let fullDiskAccess: FullDiskAccess
+    /// In-app updates, which the app's updater reports here.
+    package let updates = UpdateStatus()
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.

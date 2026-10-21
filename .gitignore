@@ -11,7 +11,7 @@ build/
 # Default `--render` output. Renders of your own data show private names, messages and titles.
 render/
 
-# Signing keys never belong in the repository (see "Signing" in CONTRIBUTING.md).
+# Signing keys never belong in the repository (see "Signing" and "The release keys" in CONTRIBUTING.md).
 *.p12
 *.pfx
 *.pem

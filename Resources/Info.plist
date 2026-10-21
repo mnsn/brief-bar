@@ -11,8 +11,9 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<!-- Full Disk Access, notifications and the keychain item for Teams' unread chats are tied to this
-	     identifier and the signing certificate (see scripts/make-signing-identity.sh). Changing either
-	     loses them. -->
+	     identifier and the app's signature: the release certificate, which every release is signed with,
+	     or for builds from source, the build itself (see "Signing" in docs/how-it-works.md). Changing the
+	     identifier loses them. -->
 	<key>CFBundleIdentifier</key>
 	<string>com.asaf.BriefBar</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -21,7 +22,7 @@
 	<string>BriefBar</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<!-- The build sets CFBundleVersion to this version too. -->
+	<!-- The build sets CFBundleVersion to this version too: Sparkle compares it to find updates. -->
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
 	<key>LSApplicationCategoryType</key>
@@ -34,5 +35,21 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Asaf Manassen. Licensed under GPL-3.0-or-later.</string>
+	<!-- Sparkle: the appcast is an asset of the latest GitHub release. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/mnsn/brief-bar/releases/latest/download/appcast.xml</string>
+	<!-- Updates, the appcast and its release notes must be signed with this key's private key.
+	     scripts/make-release-keys.sh sets it once. Never change it afterwards: installed apps would
+	     reject every update (see CONTRIBUTING.md). While it's empty, the app doesn't check for updates. -->
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<!-- Never fall back to accepting an unsigned appcast. The fallback is for rotating keys with a
+	     Developer ID signature, which this app doesn't have. -->
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
 </dict>
 </plist>

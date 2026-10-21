@@ -1,17 +1,33 @@
-// Imports and checks the private key of the certificate that builds are signed with, for
-// scripts/make-signing-identity.sh and scripts/build-app.sh. macOS ties BriefBar's Full Disk Access
-// to that certificate, so any app that may use the key without asking could sign itself as BriefBar
-// and get the access. That's why the key trusts no app, not even codesign: codesign asks for your
-// login password each time it signs.
+// Finds the certificate that BriefBar may be signed with, and imports, checks and deletes its private key,
+// for scripts/signing.sh (which scripts/build-app.sh, scripts/sign-release.sh and
+// scripts/make-signing-identity.sh use), scripts/import-release-identity.sh and scripts/ci-signing-identity.sh.
+// macOS ties BriefBar's Full Disk Access to the certificate, so any app that may use its key without
+// asking could sign itself as BriefBar and get that access. So the key trusts no app, not even codesign
+// or security, and macOS asks for your login password each time it's used. And it can't be exported,
+// not even by an app you allow. (security import -T "" trusts no app either, but its -x has no effect on
+// a PKCS #12: the key can still be exported.)
 //
 //   swift scripts/signing-key.swift import <keychain> <name> [--trust <app>]
-//       Imports a PKCS #12 identity: its password on the first line of standard input, then the
-//       file in base64. --trust lets that app use the key without asking, for a keychain of its own
-//       (CI) only.
-//   swift scripts/signing-key.swift check <name> [keychain]
-//       Fails with status 3 if any app may use the key of the certificate named <name> without
-//       asking, and names them; with status 1 if there's no such certificate. It reads only the key's
-//       access list, with user interaction off, so macOS never asks anything.
+//       Imports a PKCS #12 identity: its password on the first line of standard input, then the file
+//       in base64. <name> describes the key when macOS asks to use it. --trust lets that app use the key
+//       without asking: only for a keychain of its own, like CI's and the release workflow's. Fails with
+//       status 3, after importing it, if the key can be exported or another app may use it without asking.
+//   swift scripts/signing-key.swift find <name> [keychain]
+//       Prints the SHA-1 of the one identity whose certificate is named exactly <name>, to sign with
+//       rather than the name: given a name, codesign uses an identity preference by that name if there is
+//       one, and otherwise a certificate whose name merely contains it. Fails with status 1 if there's
+//       none, and 4 if there's more than one.
+//   swift scripts/signing-key.swift check <name or SHA-1> [keychain]
+//       Fails with status 3 if the key of the certificate named exactly <name>, or with that SHA-1, can
+//       be exported, or some app may use it without asking, and says which; with status 1 if there's no
+//       such certificate, and 2 if it can't tell.
+//   swift scripts/signing-key.swift delete <name> <keychain>
+//       Deletes each certificate named exactly <name> from the keychain, with its private key, one item
+//       at a time, and checks that they're gone. Nothing else is touched.
+// They read only certificates and the keys' attributes and access lists, and delete only those items,
+// with user interaction off, so macOS never asks anything. Without a keychain, they look where codesign
+// does: the search list.
+import CryptoKit
 import Foundation
 import Security
 
@@ -26,7 +42,71 @@ func openKeychain(_ path: String) -> SecKeychain {
     return keychain
 }
 
-func importIdentity(into path: String, name: String, trusting apps: [String]) -> Never {
+/// The access list entries that let an app use the private key, or change who may. The others let any
+/// app encrypt, which a private key isn't used for, or are macOS's own bookkeeping.
+let usesOfTheKey = Set([
+    kSecACLAuthorizationAny, kSecACLAuthorizationSign, kSecACLAuthorizationDecrypt, kSecACLAuthorizationDerive,
+    kSecACLAuthorizationMAC, kSecACLAuthorizationExportWrapped, kSecACLAuthorizationExportClear,
+    kSecACLAuthorizationChangeACL, kSecACLAuthorizationChangeOwner,
+].map { $0 as String })
+
+/// Who may use a key without asking, and whether it can be exported.
+struct Exposure {
+    var apps: Set<String> = []
+    var exportable = false
+}
+
+/// Nil if it can't tell.
+func exposure(of identity: SecIdentity) -> Exposure? {
+    var key: SecKey?
+    guard SecIdentityCopyPrivateKey(identity, &key) == errSecSuccess, let key,
+          let attributes = SecKeyCopyAttributes(key) as? [String: Any],
+          let exportable = attributes[kSecAttrIsExtractable as String] as? Bool
+    else { return nil }
+    var exposure = Exposure(exportable: exportable)
+
+    var access: SecAccess?
+    var list: CFArray?
+    guard SecKeychainItemCopyAccess(unsafeBitCast(key, to: SecKeychainItem.self), &access) == errSecSuccess, let access,
+          SecAccessCopyACLList(access, &list) == errSecSuccess, let entries = list as? [SecACL]
+    else { return nil }
+    for entry in entries {
+        let authorizations = SecACLCopyAuthorizations(entry) as? [String] ?? []
+        guard !usesOfTheKey.isDisjoint(with: authorizations) else { continue }
+        var apps: CFArray?
+        var description: CFString?
+        var prompt = SecKeychainPromptSelector()
+        guard SecACLCopyContents(entry, &apps, &description, &prompt) == errSecSuccess else { return nil }
+        // No list at all means any app.
+        guard let apps = apps as? [SecTrustedApplication] else {
+            exposure.apps.insert("any app")
+            continue
+        }
+        for app in apps {
+            var data: CFData?
+            SecTrustedApplicationCopyData(app, &data)
+            let path = data.map { String(decoding: $0 as Data, as: UTF8.self) }?
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            exposure.apps.insert(path ?? "an app")
+        }
+    }
+    return exposure
+}
+
+/// What's wrong with a key, beyond the apps it's meant to trust.
+func issues(with exposure: Exposure, name: String, trusting trusted: Set<String> = []) -> [String] {
+    var problems: [String] = []
+    let others = exposure.apps.subtracting(trusted)
+    if !others.isEmpty {
+        problems.append("these may use the key of \"\(name)\" without asking: \(others.sorted().joined(separator: ", "))")
+    }
+    if exposure.exportable {
+        problems.append("the key of \"\(name)\" can be exported")
+    }
+    return problems
+}
+
+func importIdentity(into path: String, name: String, trusting trustedPaths: [String]) -> Never {
     let input = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
     let lines = input.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
     guard lines.count == 2, !lines[0].isEmpty,
@@ -34,7 +114,7 @@ func importIdentity(into path: String, name: String, trusting apps: [String]) ->
     else { fail("expected a password line, then a base64 PKCS #12, on standard input") }
     let passphrase = String(lines[0]) as CFString
 
-    let trusted = apps.map { app -> SecTrustedApplication in
+    let trusted = trustedPaths.map { app -> SecTrustedApplication in
         var trustedApp: SecTrustedApplication?
         guard SecTrustedApplicationCreateFromPath(app, &trustedApp) == errSecSuccess, let trustedApp else {
             fail("can't trust \(app)")
@@ -47,22 +127,38 @@ func importIdentity(into path: String, name: String, trusting apps: [String]) ->
     guard SecAccessCreate(name as CFString, trusted as CFArray, &access) == errSecSuccess, let access else {
         fail("can't create the key's access list")
     }
+    // Without kSecAttrIsExtractable, the key never leaves the keychain.
+    let attributes = [kSecAttrIsPermanent, kSecAttrIsSensitive] as CFArray
 
     var parameters = SecItemImportExportKeyParameters()
     parameters.version = UInt32(SEC_KEY_IMPORT_EXPORT_PARAMS_VERSION)
     parameters.passphrase = Unmanaged<AnyObject>.passUnretained(passphrase)
     parameters.accessRef = Unmanaged.passUnretained(access)
+    parameters.keyAttributes = Unmanaged.passUnretained(attributes)
     var format = SecExternalFormat.formatPKCS12
     var type = SecExternalItemType.itemTypeAggregate
+    var items: CFArray?
     let keychain = openKeychain(path)
-    let status = withExtendedLifetime((passphrase, access)) {
-        SecItemImport(data as CFData, nil, &format, &type, [], &parameters, keychain, nil)
+    let status = withExtendedLifetime((passphrase, access, attributes)) {
+        SecItemImport(data as CFData, nil, &format, &type, [], &parameters, keychain, &items)
     }
     guard status == errSecSuccess else { fail("the import failed (\(status))") }
+
+    // Check what macOS made of it.
+    let identities = (items as? [AnyObject] ?? []).filter { CFGetTypeID($0) == SecIdentityGetTypeID() }
+    guard !identities.isEmpty else { fail("the PKCS #12 has no certificate and private key") }
+    for item in identities {
+        guard let exposure = exposure(of: item as! SecIdentity) else {
+            fail("can't tell who may use the key it imported", status: 2)
+        }
+        let found = issues(with: exposure, name: name, trusting: Set(trustedPaths))
+        guard found.isEmpty else { fail(found.joined(separator: "; "), status: 3) }
+    }
     exit(0)
 }
 
-func checkKey(named name: String, in path: String?) -> Never {
+/// Every identity in the keychain at `path`, or on the search list, with its certificate's common name and SHA-1.
+func identities(in path: String?) -> [(identity: SecIdentity, name: String?, sha1: String)] {
     // Anything that would need a prompt fails instead.
     SecKeychainSetUserInteractionAllowed(false)
     var query: [String: Any] = [
@@ -75,48 +171,114 @@ func checkKey(named name: String, in path: String?) -> Never {
     }
     var result: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &result)
-    let identities = status == errSecSuccess ? (result as? [SecIdentity] ?? []) : []
-
-    var found = false
-    var openTo: Set<String> = []
-    for identity in identities {
+    guard status == errSecSuccess || status == errSecItemNotFound else { fail("can't list the identities (\(status))", status: 2) }
+    return (result as? [SecIdentity] ?? []).compactMap { identity in
         var certificate: SecCertificate?
-        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate,
-              SecCertificateCopySubjectSummary(certificate) as String? == name
-        else { continue }
+        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate else { return nil }
+        var name: CFString?
+        SecCertificateCopyCommonName(certificate, &name)
+        let sha1 = Insecure.SHA1.hash(data: SecCertificateCopyData(certificate) as Data).map { String(format: "%02X", $0) }.joined()
+        return (identity, name as String?, sha1)
+    }
+}
+
+func isSHA1(_ text: String) -> Bool {
+    text.count == 40 && text.allSatisfy(\.isHexDigit)
+}
+
+func findIdentity(named name: String, in path: String?) -> Never {
+    // The same certificate in more than one keychain is still one identity.
+    let hashes = Set(identities(in: path).filter { $0.name == name }.map(\.sha1))
+    guard let hash = hashes.first else { fail("there's no certificate named \"\(name)\" with its private key") }
+    guard hashes.count == 1 else {
+        fail("there's more than one certificate named \"\(name)\": \(hashes.sorted().joined(separator: ", "))", status: 4)
+    }
+    print(hash)
+    exit(0)
+}
+
+/// Fails unless no app but `trusted` may use the key without asking, and the key can't be exported.
+func checkKey(of certificate: String, in path: String?, trusting trusted: Set<String> = []) -> Never {
+    let sha1 = isSHA1(certificate) ? certificate.uppercased() : nil
+    var found = false
+    var problems: [String] = []
+    for item in identities(in: path) where sha1.map({ $0 == item.sha1 }) ?? (item.name == certificate) {
         found = true
-        var key: SecKey?
-        var access: SecAccess?
-        guard SecIdentityCopyPrivateKey(identity, &key) == errSecSuccess, let key,
-              SecKeychainItemCopyAccess(unsafeBitCast(key, to: SecKeychainItem.self), &access) == errSecSuccess,
-              let access
-        else { fail("can't read who may use the key of \"\(name)\"", status: 2) }
-        let entries = SecAccessCopyMatchingACLList(access, kSecACLAuthorizationSign) as? [SecACL] ?? []
-        for entry in entries {
-            var apps: CFArray?
-            var description: CFString?
-            var prompt = SecKeychainPromptSelector()
-            guard SecACLCopyContents(entry, &apps, &description, &prompt) == errSecSuccess else {
-                fail("can't read who may use the key of \"\(name)\"", status: 2)
-            }
-            // No list at all means any app.
-            guard let apps = apps as? [SecTrustedApplication] else {
-                openTo.insert("any app")
-                continue
-            }
-            for app in apps {
-                var data: CFData?
-                SecTrustedApplicationCopyData(app, &data)
-                let path = data.map { String(decoding: $0 as Data, as: UTF8.self) }?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-                openTo.insert(path ?? "an app")
-            }
+        let name = item.name ?? item.sha1
+        guard let exposure = exposure(of: item.identity) else {
+            fail("can't tell who may use the key of \"\(name)\"", status: 2)
         }
+        problems += issues(with: exposure, name: name, trusting: trusted)
     }
-    guard found else { fail("there's no certificate named \"\(name)\"") }
-    guard openTo.isEmpty else {
-        fail("these may use the key of \"\(name)\" without asking: \(openTo.sorted().joined(separator: ", "))", status: 3)
+    guard found else { fail("there's no certificate \(sha1 == nil ? "named " : "")\"\(certificate)\" with its private key") }
+    guard problems.isEmpty else { fail(Array(Set(problems)).sorted().joined(separator: "; "), status: 3) }
+    exit(0)
+}
+
+/// The certificates named exactly `name` in the keychain (security's -c matches part of a name).
+func certificates(named name: String, in keychain: SecKeychain, path: String) -> [SecCertificate] {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassCertificate,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+        kSecReturnRef as String: true,
+        kSecMatchSearchList as String: [keychain],
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return [] }
+    guard status == errSecSuccess else { fail("can't search \(path) (\(status))") }
+    return (result as? [SecCertificate] ?? []).filter { SecCertificateCopySubjectSummary($0) as String? == name }
+}
+
+/// The private keys in the keychain with this application label, the SHA-1 of the public key.
+func privateKeyCount(label: Data, in keychain: SecKeychain, path: String) -> Int {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassKey,
+        kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+        kSecAttrApplicationLabel as String: label,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+        kSecReturnRef as String: true,
+        kSecMatchSearchList as String: [keychain],
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return 0 }
+    guard status == errSecSuccess else { fail("can't search \(path) (\(status))") }
+    return (result as? [AnyObject])?.count ?? 0
+}
+
+func deleteIdentities(named name: String, in path: String) -> Never {
+    // Never asks: whatever would need a prompt fails instead.
+    SecKeychainSetUserInteractionAllowed(false)
+    let keychain = openKeychain(path)
+    let found = certificates(named: name, in: keychain, path: path)
+    guard !found.isEmpty else {
+        print("There's no \"\(name)\" certificate in \(path).")
+        exit(0)
     }
+    var labels: [Data] = []
+    for certificate in found {
+        var identity: SecIdentity?
+        var key: SecKey?
+        if SecIdentityCreateWithCertificate(keychain, certificate, &identity) == errSecSuccess, let identity,
+           SecIdentityCopyPrivateKey(identity, &key) == errSecSuccess, let key {
+            guard let label = (SecKeyCopyAttributes(key) as? [String: Any])?[kSecAttrApplicationLabel as String] as? Data
+            else { fail("can't identify the private key of \"\(name)\"") }
+            labels.append(label)
+            // Item by item, so that nothing but this key and its certificate can match.
+            let status = SecKeychainItemDelete(unsafeBitCast(key, to: SecKeychainItem.self))
+            guard status == errSecSuccess else { fail("can't delete the private key of \"\(name)\" (\(status))") }
+        }
+        let status = SecKeychainItemDelete(unsafeBitCast(certificate, to: SecKeychainItem.self))
+        guard status == errSecSuccess else { fail("can't delete the \"\(name)\" certificate (\(status))") }
+    }
+    guard certificates(named: name, in: keychain, path: path).isEmpty else {
+        fail("a \"\(name)\" certificate is still in \(path)")
+    }
+    for label in labels where privateKeyCount(label: label, in: keychain, path: path) > 0 {
+        fail("the private key of \"\(name)\" is still in \(path)")
+    }
+    print("Deleted \(found.count) \"\(name)\" certificate(s) and \(labels.count) private key(s) from \(path).")
     exit(0)
 }
 
@@ -126,8 +288,15 @@ case "import" where arguments.count == 3:
     importIdentity(into: arguments[1], name: arguments[2], trusting: [])
 case "import" where arguments.count == 5 && arguments[3] == "--trust":
     importIdentity(into: arguments[1], name: arguments[2], trusting: [arguments[4]])
+case "find" where arguments.count == 2 || arguments.count == 3:
+    findIdentity(named: arguments[1], in: arguments.count == 3 ? arguments[2] : nil)
 case "check" where arguments.count == 2 || arguments.count == 3:
-    checkKey(named: arguments[1], in: arguments.count == 3 ? arguments[2] : nil)
+    checkKey(of: arguments[1], in: arguments.count == 3 ? arguments[2] : nil)
+case "check" where arguments.count == 5 && arguments[3] == "--trust":
+    checkKey(of: arguments[1], in: arguments[2], trusting: [arguments[4]])
+case "delete" where arguments.count == 3:
+    deleteIdentities(named: arguments[1], in: arguments[2])
 default:
-    fail("usage: signing-key.swift import <keychain> <name> [--trust <app>] | check <name> [keychain]", status: 64)
+    fail("usage: signing-key.swift import <keychain> <name> [--trust <app>] | find <name> [keychain] | "
+        + "check <name or SHA-1> [keychain] | check <name or SHA-1> <keychain> --trust <app> | delete <name> <keychain>", status: 64)
 }

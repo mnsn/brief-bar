@@ -1,113 +1,112 @@
 #!/bin/bash
-# Creates "BriefBar Signing", a self-signed code-signing certificate, in your login keychain. Every
-# build is signed with it (scripts/build-app.sh), so the app's designated requirement names this
-# certificate rather than the code's hashes, and macOS keeps BriefBar's Full Disk Access, and its
-# keychain item, across rebuilds. Ad-hoc signed builds lose both every time. Run it once per Mac.
-#   scripts/make-signing-identity.sh [--replace] [keychain]
-#
-# No app may use the certificate's private key without asking, not even codesign: any program that
-# could would be able to sign itself as BriefBar and get the Full Disk Access you gave it. So each
-# build asks for your login password: click Allow, never Always Allow. scripts/build-app.sh refuses to
-# sign with a key that some app may use without asking. --replace deletes the certificate and makes a
-# new one, and the next build then needs Full Disk Access once more.
-#
-# BRIEFBAR_SIGNING_IDENTITY picks another name. With BRIEFBAR_KEYCHAIN_PASSWORD set, for a
-# throwaway keychain of its own (CI, scripts/ci-signing-identity.sh), codesign may use the key without
-# asking.
+# Optional: creates "BriefBar Signing", a self-signed code-signing certificate, in your login keychain.
+# Without it, builds from source are signed ad hoc, and macOS ties Full Disk Access to that exact build, so
+# each rebuild needs the access again. With it, scripts/build-app.sh signs every build with exactly this
+# certificate, so the app's designated requirement names it rather than the code's hashes, and macOS keeps
+# BriefBar's Full Disk Access across rebuilds. Run it once per Mac; running it again checks that the key works.
+#   scripts/make-signing-identity.sh [--replace | --delete | --check] [keychain]
+# The key is as powerful as that access: anything that can sign with it can sign itself as BriefBar, and get
+# the Full Disk Access you gave BriefBar. So no app may use it without asking, not even codesign or security,
+# and it can't be exported (scripts/signing-key.swift): macOS asks for your login password each time something
+# signs with it, a build included. Choose Allow, never Always Allow. Builds won't sign with a key that some app
+# may use without asking, or that can be exported, and check again after signing.
+# --replace deletes the certificate and its key first, and makes new ones. Then allow the next build again.
+# --delete only deletes them: builds are then signed ad hoc again, and each one needs the access again.
+# --check only says, without asking for anything, whether the key is still safe: it fails with status 3 if
+# some app may use it without asking, or it can be exported. Without a keychain, it checks every one that
+# codesign would look in.
+# BRIEFBAR_SIGNING_IDENTITY picks another name.
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
-NAME="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Signing}"
 REPLACE=false
-if [[ "${1:-}" == "--replace" ]]; then
-    REPLACE=true
-    shift
-fi
-KEYCHAIN="${1:-$HOME/Library/Keychains/login.keychain-db}"
-OPEN_TO_CODESIGN=false
-if [[ -n "${BRIEFBAR_KEYCHAIN_PASSWORD:-}" ]]; then
-    if [[ "$KEYCHAIN" == *"/login.keychain"* ]]; then
-        echo "BRIEFBAR_KEYCHAIN_PASSWORD is only for a keychain of its own, not the login keychain." >&2
-        exit 1
-    fi
-    OPEN_TO_CODESIGN=true
-fi
-# macOS's own LibreSSL, on every Mac. Homebrew's OpenSSL 3, the default openssl on some Macs and on
-# GitHub's macOS 26 runners, writes PKCS #12 files with AES and SHA-256, which older versions of
-# macOS can't import.
-OPENSSL=/usr/bin/openssl
-signing_key() { swift -suppress-warnings scripts/signing-key.swift "$@"; }
+DELETE=false
+CHECK=false
+case "${1:-}" in
+    --replace) REPLACE=true; shift ;;
+    --delete) DELETE=true; shift ;;
+    --check) CHECK=true; shift ;;
+    -*) echo "Usage: $0 [--replace | --delete | --check] [keychain]" >&2; exit 2 ;;
+esac
+NAME="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Signing}"
+KEYCHAIN_ARGUMENT="${1:-}"
+KEYCHAIN="${KEYCHAIN_ARGUMENT:-$HOME/Library/Keychains/login.keychain-db}"
+source "$(dirname "$0")/signing.sh"
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$SIGNING_SCRIPTS/../Resources/Info.plist")"
+# Full Disk Access keeps the requirement of the build that was allowed, even when it's turned off and on.
+ALLOW_AGAIN="run tccutil reset SystemPolicyAllFiles $BUNDLE_ID (or remove BriefBar from Privacy & Security › Full Disk Access with −), and add it again with +"
 
-if security find-certificate -c "$NAME" "$KEYCHAIN" >/dev/null 2>&1; then
-    if $REPLACE; then
-        # find-certificate -c matches part of the name, so only exact matches are deleted.
-        HASHES="$(security find-certificate -a -c "$NAME" -Z "$KEYCHAIN" | awk -v name="$NAME" '
-            /^SHA-1 hash:/ { hash = $3 }
-            /"labl"<blob>=/ { label = $0; sub(/^[^=]*="/, "", label); sub(/"$/, "", label); if (label == name) print hash }
-        ')"
-        for hash in $HASHES; do
-            security delete-identity -Z "$hash" "$KEYCHAIN" >/dev/null 2>&1 ||
-                security delete-certificate -Z "$hash" "$KEYCHAIN" >/dev/null
-        done
-        echo "Deleted the old \"$NAME\" from $KEYCHAIN."
-    else
-        STATUS=0
-        $OPEN_TO_CODESIGN || signing_key check "$NAME" "$KEYCHAIN" || STATUS=$?
-        if [[ $STATUS -eq 0 ]]; then
-            echo "\"$NAME\" is already in $KEYCHAIN. Nothing to do."
-            exit 0
-        elif [[ $STATUS -eq 3 ]]; then
-            cat >&2 <<EOF
-So any program running as you could sign itself with it as BriefBar, and get the Full Disk Access
-you gave BriefBar. Replace it with a certificate that every app has to ask to use:
-  scripts/make-signing-identity.sh --replace
-Then give the next build Full Disk Access once more.
-EOF
-        else
-            echo "To start over with a new \"$NAME\", run: scripts/make-signing-identity.sh --replace" >&2
-        fi
-        exit 1
-    fi
-fi
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 
-# A leaf certificate for code signing only, valid for 10 years. Nothing needs to trust it: macOS
-# matches the certificate itself against the app's designated requirement. The key and the certificate
-# stay in variables, and reach openssl and the keychain through pipes, never files.
-CONFIG="[ req ]
-distinguished_name = subject
-prompt = no
-x509_extensions = codesigning
-[ subject ]
-CN = $NAME
-[ codesigning ]
-basicConstraints = critical, CA:false
-keyUsage = critical, digitalSignature
-extendedKeyUsage = critical, codeSigning
-subjectKeyIdentifier = hash"
-KEY="$("$OPENSSL" genrsa 3072 2>/dev/null)"
-CERTIFICATE="$("$OPENSSL" req -x509 -new -sha256 -days 3650 -config <(printf '%s\n' "$CONFIG") -key <(printf '%s\n' "$KEY"))"
-P12_PASSWORD="$("$OPENSSL" rand -hex 16)"
-P12="$("$OPENSSL" pkcs12 -export -name "$NAME" -inkey <(printf '%s\n' "$KEY") -in <(printf '%s\n' "$CERTIFICATE") \
-    -passout "file:"<(printf '%s\n' "$P12_PASSWORD") | base64)"
-KEY=""
+# Whether the key is still safe: no app may use it without asking, and it can't be exported. Only its
+# attributes and access list are read, so macOS doesn't ask anything.
+key_is_safe() {
+    require_safe_key "$NAME" "$NAME" ${KEYCHAIN_ARGUMENT:+"$KEYCHAIN_ARGUMENT"}
+}
 
-if $OPEN_TO_CODESIGN; then
-    printf '%s\n%s\n' "$P12_PASSWORD" "$P12" | signing_key import "$KEYCHAIN" "$NAME" --trust /usr/bin/codesign
-    # Lets Apple's tools use every key in the keychain, which is why it's only for a keychain of its own.
-    security set-key-partition-list -S apple-tool:,apple: -s -k "$BRIEFBAR_KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-    # Sign a throwaway copy of a tool to check that the identity works, and show what macOS will match.
-    WORK="$(mktemp -d)"
-    trap 'rm -rf "$WORK"' EXIT
+# Signs a throwaway copy of a tool with the certificate, by its SHA-1, to check that the key works (macOS
+# asks) and to show what macOS will match. Then checks that the answer wasn't Always Allow.
+check_identity() {
+    local hash
+    hash="$(signing_identity "$NAME" "$KEYCHAIN")" || exit 1
     cp /usr/bin/true "$WORK/probe"
-    codesign --force --sign "$NAME" --keychain "$KEYCHAIN" --timestamp=none "$WORK/probe"
-    REQUIREMENT="$(codesign -d -r- "$WORK/probe" 2>&1 | sed -n 's/^#* *designated => //p')"
-    echo "Created \"$NAME\" in $KEYCHAIN."
-    echo "Code signed with it is identified by: $REQUIREMENT"
-else
-    printf '%s\n%s\n' "$P12_PASSWORD" "$P12" | signing_key import "$KEYCHAIN" "$NAME"
-    signing_key check "$NAME" "$KEYCHAIN"
-    LEAF="$(printf '%s\n' "$CERTIFICATE" | "$OPENSSL" x509 -outform DER | shasum -a 1 | cut -d ' ' -f 1)"
-    echo "Created \"$NAME\" in $KEYCHAIN (certificate leaf = H\"$LEAF\")."
-    echo "No app may use its key without asking. Each build asks for your login password so that codesign"
-    echo "can sign with it: click Allow, never Always Allow."
+    echo "macOS asks whether codesign may use the key: enter your login password and choose Allow."
+    if ! sign_with "$hash" "$WORK/probe" "$KEYCHAIN" --timestamp=none; then
+        echo "codesign couldn't use the \"$NAME\" key. Run this again, and when macOS asks whether codesign" >&2
+        echo "may use it, enter your login password and choose Allow." >&2
+        exit 1
+    fi
+    echo "Code signed with it is identified by: $(codesign -d -r- "$WORK/probe" 2>&1 | sed -n 's/^#* *designated => //p')"
+    key_is_safe || exit 1
+}
+
+if $CHECK; then
+    STATUS=0
+    key_is_safe || STATUS=$?
+    exit $STATUS
 fi
+
+if $REPLACE || $DELETE; then
+    # Each certificate named exactly so, and its key, one item at a time: nothing else is touched.
+    signing_key delete "$NAME" "$KEYCHAIN"
+    if $DELETE; then
+        echo "Builds are signed ad hoc now. To allow each new one, $ALLOW_AGAIN."
+        exit 0
+    fi
+fi
+
+STATUS=0
+signing_identity "$NAME" "$KEYCHAIN" >/dev/null 2>"$WORK/found" || STATUS=$?
+case $STATUS in
+    0)
+        echo "\"$NAME\" is already in $KEYCHAIN."
+        key_is_safe || exit 1
+        check_identity
+        exit 0
+        ;;
+    1) ;;
+    *)
+        cat "$WORK/found" >&2
+        echo "Run this again with --replace, to start over with one." >&2
+        exit 1
+        ;;
+esac
+# security's -c matches part of a name, so only a certificate named exactly so counts.
+if security find-certificate -a -c "$NAME" "$KEYCHAIN" 2>/dev/null | grep -F "\"labl\"<blob>=\"$NAME\"" >/dev/null; then
+    echo "$KEYCHAIN has a \"$NAME\" certificate but not its private key. Run this again with --replace." >&2
+    exit 1
+fi
+
+# It never leaves the keychain after this. If macOS imported it otherwise than asked, it's deleted.
+P12_PASSWORD="$(/usr/bin/openssl rand -hex 16)"
+if ! { printf '%s\n' "$P12_PASSWORD"; printf '%s\n' "$P12_PASSWORD" | make_identity "$NAME"; } |
+    signing_key import "$KEYCHAIN" "$NAME"; then
+    signing_key delete "$NAME" "$KEYCHAIN" >/dev/null || true
+    echo "Couldn't create \"$NAME\" in $KEYCHAIN." >&2
+    exit 1
+fi
+echo "Created \"$NAME\" in $KEYCHAIN. No app may use its key without asking, and it can't be exported."
+check_identity
+echo "macOS asks like that each time a build is signed. Choose Allow, never Always Allow: that would let anything"
+echo "running as you sign code as BriefBar, and get the Full Disk Access you gave it. To allow the next build,"
+echo "$ALLOW_AGAIN; later builds keep the access."

@@ -126,6 +126,10 @@ final class ItemPanelModel: ObservableObject {
         selected.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first
     }
 
+    var updates: UpdateStatus {
+        model.services.updates
+    }
+
     /// The widest of its sections' panels, so the popover keeps its width as you switch tabs.
     var width: CGFloat {
         sections.compactMap { model.source(for: $0)?.panelWidth }.max() ?? 360
@@ -167,6 +171,7 @@ struct ItemPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            UpdateBanner(updates: panel.updates)
             if panel.sections.count > 1, let current = panel.current {
                 // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
                 // fitting the popover's width.
@@ -224,6 +229,30 @@ struct ItemPanelView: View {
         .pickerStyle(.menu)
         .labelsHidden()
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// That an update is waiting, after a scheduled check found it, at the top of every list until you look at it.
+struct UpdateBanner: View {
+    @ObservedObject var updates: UpdateStatus
+
+    var body: some View {
+        if let version = updates.pendingVersion {
+            VStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundStyle(.tint)
+                    Text("BriefBar \(version) is available")
+                    Spacer()
+                    Button("Update…") { updates.check() }
+                        .buttonStyle(.borderless)
+                }
+                .font(.system(size: 12))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                Divider()
+            }
+        }
     }
 }
 

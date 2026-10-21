@@ -1,48 +1,57 @@
 #!/bin/bash
-# Builds "BriefBar.app" into ./build, for this Mac's architecture, signed with the certificate that
-# scripts/make-signing-identity.sh creates. Never ad hoc: macOS ties Full Disk Access, and the keychain
-# item that keeps Teams' unread chats, to the app's signature, and an ad-hoc signature changes with
-# every build.
+# Builds "BriefBar.app" into ./build, for this Mac's architecture, signed ad hoc: macOS ties Full Disk Access to
+# that exact build, so each new one needs the access again (see the note at the end). If you made the optional
+# "BriefBar Signing" certificate (scripts/make-signing-identity.sh), it's signed with exactly that certificate
+# instead, by its SHA-1 (scripts/signing.sh), and keeps the access across rebuilds; never with one whose key some
+# app may use without asking, or that can be exported. Every check that fails stops the build.
 #   --universal   builds for both Apple silicon and Intel instead.
 #   --install     also copies it to ~/Applications and (re)launches it.
-# BRIEFBAR_SIGNING_IDENTITY names another certificate; BRIEFBAR_SIGNING_KEYCHAIN is a keychain to find
-# it in, instead of the search list.
+#   --ad-hoc      signs it ad hoc even when the certificate exists.
+# BRIEFBAR_SIGNING_IDENTITY names another certificate. BRIEFBAR_SIGNING_KEYCHAIN is a keychain of its own that
+# holds it, whose key codesign may use without asking (scripts/ci-signing-identity.sh), and must.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/signing.sh
 
 APP_NAME="BriefBar"
 EXECUTABLE="BriefBar"
 APP="build/$APP_NAME.app"
 IDENTITY="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Signing}"
 KEYCHAIN="${BRIEFBAR_SIGNING_KEYCHAIN:-}"
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Resources/Info.plist)"
 
 UNIVERSAL=false
 INSTALL=false
+AD_HOC=false
 for arg in "$@"; do
     case "$arg" in
         --universal) UNIVERSAL=true ;;
         --install) INSTALL=true ;;
+        --ad-hoc) AD_HOC=true ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
 
-if ! security find-certificate -c "$IDENTITY" ${KEYCHAIN:+"$KEYCHAIN"} >/dev/null 2>&1; then
-    echo "There's no signing certificate named \"$IDENTITY\". Create it once with 'make signing-identity'." >&2
-    exit 1
-fi
-# If some app may use the key without asking, any program running as you could sign itself as
-# BriefBar with it, and get its Full Disk Access. A throwaway keychain of its own (CI) is the exception.
-if [[ -z "$KEYCHAIN" ]]; then
+# The certificate named exactly $IDENTITY, by its SHA-1; ad hoc when there's none, unless a keychain of its own
+# was named, which must hold it.
+HASH=""
+if ! $AD_HOC; then
     STATUS=0
-    swift -suppress-warnings scripts/signing-key.swift check "$IDENTITY" || STATUS=$?
-    if [[ $STATUS -eq 3 ]]; then
-        echo "So any program running as you could sign itself as BriefBar, and get its Full Disk Access." >&2
-        echo "Replace the certificate with one that every app has to ask to use, then build again:" >&2
-        echo "  scripts/make-signing-identity.sh --replace" >&2
-        exit 1
+    FOUND="$(mktemp)"
+    trap 'rm -f "$FOUND"' EXIT
+    HASH="$(signing_identity "$IDENTITY" ${KEYCHAIN:+"$KEYCHAIN"} 2>"$FOUND")" || STATUS=$?
+    if [[ $STATUS -eq 1 && -z "$KEYCHAIN" ]]; then
+        AD_HOC=true
     elif [[ $STATUS -ne 0 ]]; then
-        echo "warning: couldn't check which apps may use the key of \"$IDENTITY\"." >&2
+        cat "$FOUND" >&2
+        echo "error: not signing with \"$IDENTITY\"${KEYCHAIN:+ from $KEYCHAIN (BRIEFBAR_SIGNING_KEYCHAIN)}. Or build with --ad-hoc." >&2
+        exit 1
     fi
+fi
+# Your own key, unless it's in a keychain of its own, like CI's.
+if ! $AD_HOC && [[ -z "$KEYCHAIN" ]] && ! require_safe_key "$HASH" "$IDENTITY"; then
+    echo "error: not signing with \"$IDENTITY\". Or build with --ad-hoc." >&2
+    exit 1
 fi
 
 BUILD_FLAGS=(-c release)
@@ -52,6 +61,25 @@ fi
 swift build "${BUILD_FLAGS[@]}" --product "$EXECUTABLE"
 BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 
+# The build copies Sparkle.framework, the in-app updater, next to the executable.
+SPARKLE=""
+for candidate in "$BIN_DIR/Sparkle.framework" "$BIN_DIR/PackageFrameworks/Sparkle.framework"; do
+    if [[ -d "$candidate" ]]; then
+        SPARKLE="$candidate"
+        break
+    fi
+done
+if [[ -z "$SPARKLE" ]]; then
+    echo "Sparkle.framework isn't in $BIN_DIR." >&2
+    exit 1
+fi
+# Sparkle's license covers the code it bundles too. The app ships the copy in Resources.
+SPARKLE_LICENSE=".build/artifacts/sparkle/Sparkle/LICENSE"
+if ! cmp -s Resources/Sparkle-LICENSE.txt "$SPARKLE_LICENSE"; then
+    echo "Resources/Sparkle-LICENSE.txt differs from $SPARKLE_LICENSE. Copy the new license over it." >&2
+    exit 1
+fi
+
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 if /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist >/dev/null 2>&1; then
     echo "Resources/Info.plist sets CFBundleVersion. Remove it: the build sets it to CFBundleShortVersionString." >&2
@@ -59,18 +87,49 @@ if /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist >/de
 fi
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# Sparkle is the only library found through the rpaths, and it's in the app's Frameworks. With library
+# validation off (see Resources/BriefBar.entitlements), any other folder they name, such as the toolchain's or
+# the build's, would be a place to put a look-alike for the app to load, so only Apple's Swift folder stays.
+while IFS= read -r RPATH; do
+    case "$RPATH" in
+        /usr/lib/swift | @executable_path/../Frameworks) ;;
+        *) install_name_tool -delete_rpath "$RPATH" "$APP/Contents/MacOS/$EXECUTABLE" ;;
+    esac
+done < <(otool -l "$APP/Contents/MacOS/$EXECUTABLE" | sed -n 's/^ *path \(.*\) (offset [0-9]*)$/\1/p' | sort -u)
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-# The version itself, so a later update can compare versions.
+# Sparkle offers an update when its CFBundleVersion is higher than the running app's, so it's the version
+# itself (scripts/package.sh checks that each release's version is higher).
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/Sparkle-LICENSE.txt "$APP/Contents/Resources/Sparkle-LICENSE.txt"
 
-if [[ -z "$KEYCHAIN" ]]; then
-    echo "Signing with \"$IDENTITY\": macOS asks for your login password so that codesign can use its key." >&2
-    echo "Click Allow, never Always Allow." >&2
+# ditto keeps the framework's symlinks. An app outside the sandbox doesn't use Sparkle's XPC services, so leave
+# them out: less code shipped, and less to attack.
+FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+ditto "$SPARKLE" "$FRAMEWORK"
+rm -rf "$FRAMEWORK/XPCServices" "$FRAMEWORK/Versions/Current/XPCServices"
+
+if $AD_HOC; then
+    ./scripts/sign-app.sh "$APP"
+else
+    if [[ -z "$KEYCHAIN" ]]; then
+        echo "Signing with \"$IDENTITY\": macOS asks for your login password so that codesign can use its key." >&2
+        echo "Choose Allow, never Always Allow." >&2
+    fi
+    if ! ./scripts/sign-app.sh "$APP" "$HASH" "$KEYCHAIN"; then
+        echo "error: couldn't sign with \"$IDENTITY\" ($HASH). When macOS asks whether codesign may use its key," >&2
+        echo "       enter your login password and choose Allow (never Always Allow), or build with --ad-hoc." >&2
+        exit 1
+    fi
+    # Your own key: Always Allow, just now, would let anything running as you sign with it from now on.
+    if [[ -z "$KEYCHAIN" ]] && ! require_safe_key "$HASH" "$IDENTITY"; then
+        rm -rf "$APP"
+        echo "error: deleted the build: make a new certificate, or delete it to build ad hoc, and build again." >&2
+        exit 1
+    fi
 fi
-./scripts/sign-app.sh "$APP"
 REQUIREMENT="$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^#* *designated => //p')"
 echo "Built $APP (version $VERSION, $(lipo -archs "$APP/Contents/MacOS/$EXECUTABLE"))"
 echo "Designated requirement: $REQUIREMENT"
@@ -93,4 +152,13 @@ if $INSTALL; then
     cp -R "$APP" "$DEST/"
     open "$DEST/$APP_NAME.app"
     echo "Installed and launched $DEST/$APP_NAME.app"
+fi
+if $AD_HOC; then
+    # Full Disk Access keeps the requirement of the build that was allowed, even when it's turned off and on, so
+    # the entry has to go before this build can be allowed.
+    echo "note: signed ad hoc, so macOS ties Full Disk Access, which Teams needs, to this exact build, and turning" >&2
+    echo "      BriefBar off and on in the list keeps the old build's. To allow this one, run" >&2
+    echo "      tccutil reset SystemPolicyAllFiles $BUNDLE_ID" >&2
+    echo "      (or remove BriefBar with − in Privacy & Security › Full Disk Access), and add it again with +." >&2
+    echo "      To keep the access across rebuilds, see \"Keeping Full Disk Access across rebuilds\" in the README." >&2
 fi

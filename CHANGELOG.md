@@ -20,7 +20,12 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Settings in a window of their own**, and in each list's gear menu.
 - **Programs it starts can't use its permissions:** the Azure CLI and the login shell that finds it
   run responsible for themselves.
-- **Builds are always signed with a certificate**, whose key no app may use without asking, so Full
-  Disk Access survives rebuilds. The app has no entitlements, so library validation stays on.
-- **No in-app updates yet**, and no releases: while the repository is private, BriefBar is built from
-  source.
+- **Releases with in-app updates.** Each release is built from its tagged source by GitHub Actions,
+  with an attestation, and signed with the project's own certificate, so updates keep Full Disk
+  Access. BriefBar checks for updates only if you allow it, and installs only updates signed with the
+  project's key.
+- **Builds from source are signed ad hoc**, so no key on your Mac can sign as BriefBar. An optional
+  certificate keeps their Full Disk Access across rebuilds: no app may use its key without asking, and
+  it can't be exported.
+- **The hardened runtime**, with library validation off only so that the app can load Sparkle, its
+  updater.

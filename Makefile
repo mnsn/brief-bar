@@ -1,4 +1,4 @@
-.PHONY: build test check-boundaries app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
+.PHONY: build test check-boundaries signing-key-check app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -27,10 +27,16 @@ test:
 check-boundaries: build
 	./scripts/check-boundaries.sh
 
+# What keeps signing keys safe, in throwaway keychains: nothing here makes macOS ask anything. CI runs it.
+signing-key-check:
+	./scripts/test-signing-key.sh
+
+# BriefBar.app in ./build, signed ad hoc (or with your certificate, if you made one: make signing-identity).
 app:
 	./scripts/build-app.sh
 
-# The universal app, checked and zipped, with its SHA-256, in build/release.
+# What a release ships, in build/release: the universal app, checked and zipped, and its notes. It's signed with
+# a certificate, as a release is (see "Signing" in CONTRIBUTING.md).
 package:
 	./scripts/package.sh
 
@@ -41,7 +47,9 @@ uninstall:
 	-pgrep -f "/BriefBar.app/Contents/MacOS/BriefBar" | xargs kill 2>/dev/null
 	rm -rf "$(HOME)/Applications/BriefBar.app"
 
-# Creates the certificate every build is signed with, so Full Disk Access survives rebuilds. Run it once.
+# Optional: a self-signed certificate that every build is then signed with, instead of ad hoc, so Full Disk
+# Access survives rebuilds. Each build asks for your login password. scripts/make-signing-identity.sh --delete
+# goes back to ad hoc.
 signing-identity:
 	./scripts/make-signing-identity.sh
 
