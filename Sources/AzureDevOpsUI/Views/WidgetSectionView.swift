@@ -1,26 +1,24 @@
+import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
-import CopilotCore
 import SwiftUI
 
-/// The desktop widget: sessions that need attention first, then the most recent idle ones to fill the space.
-struct WidgetView: View {
-    @EnvironmentObject private var store: SessionStore
+/// Pull requests' part of a desktop widget: those that need attention first, then the most recent idle ones to
+/// fill the space.
+struct WidgetSectionView: View {
+    @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
-    /// A size of its own, instead of the setting's, for `--render`.
-    var size: AppSettings.WidgetSize?
+    let size: AppSettings.WidgetSize
+    let rows: Int
 
     private static let headerHeight: CGFloat = 36
-    private static let bottomPadding: CGFloat = 10
 
     var body: some View {
-        let size = size ?? settings.widgetSize
-        let rows = size.rows
-        let active = store.activeSessions
+        let active = store.activeItems
         // Reserve the last row for the "+N more" line when everything doesn't fit.
         let visible = active.count > rows ? Array(active.prefix(rows - 1)) : active
         let hidden = active.count - visible.count
-        let recent = hidden > 0 ? [] : Array(store.sessions(in: .idle).prefix(rows - visible.count))
+        let recent = hidden > 0 ? [] : Array(store.items(in: .idle).prefix(rows - visible.count))
 
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -43,8 +41,8 @@ struct WidgetView: View {
                             .padding(.leading, 37)
                             .padding(.top, 4)
                     }
-                    ForEach(Array(recent.enumerated()), id: \.element.id) { index, session in
-                        row(session)
+                    ForEach(Array(recent.enumerated()), id: \.element.id) { index, item in
+                        row(item)
                             .overlay(alignment: .top) {
                                 if index == 0 && !visible.isEmpty {
                                     Rectangle()
@@ -59,36 +57,34 @@ struct WidgetView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.bottom, Self.bottomPadding)
-        .frame(width: size.width, height: Self.height(for: size))
-        .contextMenu { SettingsMenuContent() }
+        .frame(height: Self.height(rows: rows))
     }
 
-    private func row(_ session: SessionSnapshot) -> some View {
-        SessionRowView(session: session, now: store.now, compact: true) { store.open(session) }
-            .frame(height: SessionRowView.compactHeight)
+    private func row(_ item: PRSnapshot) -> some View {
+        PRRowView(item: item, now: store.now, compact: true) { store.open(item) }
+            .frame(height: PRRowView.compactHeight)
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "waveform.path.ecg")
+            Image(systemName: "arrow.triangle.pull")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
-            Text("Copilot")
+            Text("Pull Requests")
                 .font(.system(size: 13, weight: .semibold))
             if let problem = store.problem {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .help(problem)
+                    .help(problem.message)
             }
             Spacer()
             if store.hasLoaded && store.counts.active == 0 {
-                Text("All quiet")
+                Text("All clear")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             } else {
-                CountChips(counts: store.counts)
+                CountChips(counts: store.counts, groups: size == .compact ? [.needsYou, .failing, .ready] : [.needsYou, .failing, .ready, .toReview])
             }
         }
     }
@@ -96,16 +92,27 @@ struct WidgetView: View {
     @ViewBuilder
     private var placeholder: some View {
         if let problem = store.problem {
-            Label(problem, systemImage: "exclamationmark.triangle")
+            VStack(alignment: .leading, spacing: 6) {
+                Label(problem.message, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if problem.needsSignIn {
+                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
+                        .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 14)
+        } else if store.mode == .live && settings.organizations.isEmpty {
+            Text(settings.hasDiscovered ? "No organizations to watch" : "Finding your organizations…")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
         } else if store.hasLoaded {
             QuietView(idleCount: store.counts.idle)
         }
     }
 
-    static func height(for size: AppSettings.WidgetSize) -> CGFloat {
-        headerHeight + CGFloat(size.rows) * SessionRowView.compactHeight + bottomPadding
+    static func height(rows: Int) -> CGFloat {
+        headerHeight + CGFloat(rows) * PRRowView.compactHeight
     }
 }

@@ -15,9 +15,9 @@ make demo    # run the app with made-up data for every source (Ctrl-C to quit)
 
 `make demo` writes made-up Teams notifications in Notification Center's layout to `build/demo/teams`
 and a made-up Copilot data directory to `build/demo/copilot`, and starts the app with `--demo`, which
-turns every source on in a throwaway set of preferences. Azure DevOps makes up its own pull requests,
+turns every source on in preferences kept in memory. Azure DevOps makes up its own pull requests,
 and never runs `az` or reaches Azure DevOps. Use it to work on the UI and to take screenshots without
-showing your own chats, pull requests or sessions.
+showing your own chats, pull requests or sessions. `make demo ARGS=--window` also opens the window.
 
 Other targets:
 
@@ -25,7 +25,7 @@ Other targets:
 make build              # debug build
 make demo-check         # check that each source's made-up data lands in the expected groups
 make check-boundaries   # check that only AzureDevOpsCore uses the network, and only BriefBarCore starts programs
-make render             # draw the menu bar, lists, widgets and Settings from your own data into render/
+make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
 make screenshots        # render the README's pictures from the demo data
 make signing-identity   # once per Mac: create the certificate every build is signed with
 make app                # build BriefBar.app into ./build, signed with it
@@ -53,7 +53,7 @@ signing.
 ```text
 Sources/BriefBarCore/          shared, with no UI: file watching (FSEvents, kqueue), read-only SQLite,
                                timestamps, ProcessRunner (every program BriefBar starts), and the models
-                               of the sources you turned on and of the menu-bar layout
+                               of the sources you turned on and of where sections show
 Sources/NotificationCenterDB/  Notification Center's database: the records of the apps a source asks for
 Sources/TeamsCore/             Teams' notifications, the unread rules, the encrypted unread chats
 Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the client (the only networking),
@@ -64,8 +64,8 @@ Sources/BriefBarUI/            shared app code: the source protocol, menu-bar dr
 Sources/TeamsUI/               each source's app code: its lists, settings, widget and command-line
 Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
-Sources/BriefBar/              the app: sources and consent, menu-bar items, Settings, the command line
-                               and --render
+Sources/BriefBar/              the app: sources and consent, menu-bar items, widgets, windows, Settings,
+                               the command line and --render
 Tests/                         Swift Testing suites for the shared code and each source's core, with
                                made-up data
 scripts/                       app bundling, signing and checks, the signing certificate, the boundary and

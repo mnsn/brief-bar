@@ -22,7 +22,12 @@ package final class CopilotSource: BriefBarSource {
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
     )
-    package let sections = [SectionInfo(id: .copilotSessions, title: "Sessions")]
+    package let sections = [
+        SectionInfo(
+            id: .copilotSessions, title: "Sessions", symbol: "waveform.path.ecg",
+            tint: Color(red: 0.86, green: 0.30, blue: 0.56), surfaces: [.menuBar, .widgets, .windows]
+        ),
+    ]
     package var panelWidth: CGFloat { MenuPanelView.width }
 
     /// The groups counted in the menu bar: what to look at. Idle only shows in the list.
@@ -31,10 +36,6 @@ package final class CopilotSource: BriefBarSource {
     private let services: AppServices
     let settings: AppSettings
     let store: SessionStore
-    private lazy var widget = DesktopWidgetController(autosaveName: "BriefBar.copilot.widget", title: name) { [unowned self] in
-        AnyView(self.environment(WidgetView()))
-    }
-    private var cancellables: Set<AnyCancellable> = []
 
     package init(services: AppServices) {
         self.services = services
@@ -55,21 +56,9 @@ package final class CopilotSource: BriefBarSource {
 
     package func start() {
         store.start()
-        settings.$showWidget
-            .combineLatest(settings.$placement, settings.$widgetSize)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] show, placement, size in
-                MainActor.assumeIsolated {
-                    self?.widget.update(show: show, placement: placement,
-                                        size: CGSize(width: size.width, height: WidgetView.height(for: size)))
-                }
-            }
-            .store(in: &cancellables)
     }
 
     package func stop() {
-        cancellables.removeAll()
-        widget.hide()
         store.stop()
     }
 
@@ -111,6 +100,24 @@ package final class CopilotSource: BriefBarSource {
         store.refresh()
     }
 
+    // MARK: Widgets
+
+    package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView {
+        AnyView(environment(WidgetSectionView(rows: rows)))
+    }
+
+    package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
+        WidgetSectionView.height(rows: rows)
+    }
+
+    package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {
+        size.width
+    }
+
+    package func widgetMenu(for section: SectionID) -> AnyView {
+        AnyView(environment(SourceMenuContent()))
+    }
+
     // MARK: Settings
 
     package func settingsView() -> AnyView {
@@ -125,15 +132,5 @@ package final class CopilotSource: BriefBarSource {
             return
         }
         store.receive(SessionEngine.loadOnce(paths: paths))
-    }
-
-    package func extraRenderings() -> [(name: String, view: AnyView)] {
-        AppSettings.WidgetSize.allCases.map { size in
-            let widget = environment(WidgetView(size: size))
-                .background(Color(nsColor: .windowBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .padding(16)
-            return (name: "widget-\(size.rawValue)", view: AnyView(widget))
-        }
     }
 }

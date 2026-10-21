@@ -17,7 +17,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   earlier version then pauses, until you've seen what it reads now and kept it on.
 - While a source is off, BriefBar doesn't read its data or check its access: no Notification Center,
   saved chats or keychain item for Teams, no `az` for Azure DevOps, and no `~/.copilot` for Copilot.
-- Turning a source off stops it, closes its windows and widget, removes its notifications, and deletes
+- Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
+  its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
   requests you've seen; which Copilot sessions you've cleared. Its settings stay.
 
@@ -57,28 +58,49 @@ disclaimed one reports itself. A test (`startsProgramsResponsibleForThemselves`)
 `scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`
 or the C library's other ways to start programs.
 
-## The menu bar
+## Menu bar, widgets and windows
 
-Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' pull
-requests, and Copilot's sessions. `MenuBarLayout` (in `Sources/BriefBarCore`) lists the menu-bar
-items, left to right, the sections each one shows, and the sections you've hidden:
+Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' **Pull
+Requests**, and Copilot's **Sessions**. Each says where it can show (`SectionInfo`): every section in
+the menu bar and in windows, and these four in widgets too. BriefBar shows them on three surfaces,
+each with a layout of its own (`SectionLayout` in `Sources/BriefBarCore`, saved as `menuBarLayout`,
+`widgetLayout` and `windowLayout`): its items, in order (menu-bar items, widgets or windows), the
+sections each one shows, and the sections you've hidden from it.
 
-- Each section gets an item of its own until you put it in another, or hide it, in **Settings › Menu
-  Bar**. **Put All in One Item** puts every section in one item: those that show, left to right, then
-  those of the sources that are off, so a source you turn on later joins it. **Give Each Its Own
-  Item** undoes it.
-- An item shows its sections' counts side by side, each drawn the way its source draws it, and its
-  popover has a tab for each, opening at the first that needs you. Every tab is as wide as the widest
-  of the item's lists, and the tabs get smaller when they don't fit.
-- A hidden section keeps its place, for when you show it again, and its source keeps running: Azure
-  DevOps still notifies you, and the widgets still show. A notification that would open the hidden
-  pull requests opens them in Azure DevOps instead. Turning on a source whose sections were all
-  hidden when you turned it off shows them again.
+- Each section starts in a menu-bar item and a widget of its own, and every section starts in one
+  window. Teams' widgets start hidden, so an update doesn't put your chats on the desktop.
+- In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), you put a section in
+  another item or hide it. **Put All in One** puts every section in one item: those that show, in
+  order, then those of the sources that are off, so a source you turn on later joins it. **Give Each
+  Its Own** undoes it.
+- A hidden section keeps its place, for when you show it again, and its source keeps running: it
+  still shows on the other surfaces, and Azure DevOps still notifies you. A notification that would
+  open the hidden pull requests opens them in Azure DevOps instead. Turning on a source whose
+  sections were all hidden from the menu bar when you turned it off shows them there again.
 - Where a section goes is remembered while its source is off, so it comes back to the same item.
-  Sections a later version adds get items of their own.
-- Each item has a stable ID, which macOS uses to keep it where you ⌘-dragged it.
+  Sections a later version adds get items of their own, or join the first window.
+- Each item has a stable ID: macOS keeps a menu-bar item where you ⌘-dragged it, and BriefBar keeps a
+  widget or a window where you left it (`BriefBar.widget.<ID>`, `BriefBar.window.<ID>`). The demo
+  keeps neither, so it never moves yours.
 
-With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
+**Menu-bar items** show their sections' counts side by side, each drawn the way its source draws it,
+and their popover has a tab for each, opening at the first that needs you. Every tab is as wide as the
+widest of the item's lists, and as tabs stop fitting, they get smaller, then become symbols with counts,
+then a menu. With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens
+Settings.
+
+**Widgets** (`WidgetHost`) show their sections one above the other: each source draws its section's
+header and rows, and the widget is as wide as its widest section needs. A widget's size gives each
+section 2, 4 or 8 rows, or 2, 3 or 5 when it shares the widget. Each widget keeps its own position and
+size (`widgetOptions`). Widgets were once each source's own: the first time, BriefBar brings over
+their settings and positions (`WidgetMigration`).
+
+**Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
+each with its count, and ⌘1 to ⌘9. A section's page is its list, filling the window
+(`PanelStyle.page`); a source can draw a page of its own instead. A window opens at the page of the
+list or widget you opened it from, and remembers the page you left it at. BriefBar is a menu-bar app
+(`LSUIElement`): while a window is open, it shows a Dock icon and the usual menus, and it goes back once
+they're all closed.
 
 ## Microsoft Teams
 
@@ -494,8 +516,8 @@ log format, and the `ghapp://` link. An app update could change them.
 
 ## Desktop widgets
 
-Azure DevOps and Copilot can show a desktop widget, each its own (`DesktopWidgetController` in
-`Sources/BriefBarUI`).
+Each widget is a window of BriefBar's own (`DesktopWidgetController` in `Sources/BriefBarUI`). A new
+one goes in the top-right corner of the screen, below the widgets already there.
 
 ### Why not a WidgetKit widget?
 

@@ -2,20 +2,20 @@ import Foundation
 import Testing
 @testable import BriefBarCore
 
-@Suite struct MenuBarLayoutTests {
+@Suite struct SectionLayoutTests {
     private let chats = SectionID.teamsChats
     private let groups = SectionID.teamsGroupChats
     private let pullRequests = SectionID.azureDevOpsPullRequests
     private let sessions = SectionID.copilotSessions
 
     @Test func everySectionHasAnItemOfItsOwnAtFirst() {
-        let items = MenuBarLayout().visibleItems(showing: [chats, groups, pullRequests])
+        let items = SectionLayout().visibleItems(showing: [chats, groups, pullRequests])
         #expect(items.map(\.sections) == [[chats], [groups], [pullRequests]])
         #expect(items.map(\.id) == ["teams.chats", "teams.groupChats", "azureDevOps.pullRequests"])
     }
 
     @Test func combinesAndSeparatesSections() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests, sessions])
         layout.combine(sessions, with: pullRequests)
         #expect(layout.items.map(\.sections) == [[chats], [groups], [pullRequests, sessions]])
@@ -30,7 +30,7 @@ import Testing
     }
 
     @Test func separatingASectionThatsAloneChangesNothing() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups])
         let before = layout
         layout.separate(chats)
@@ -40,7 +40,7 @@ import Testing
     }
 
     @Test func showsOnlySectionsThatAreOnButRemembersWhereTheOthersGo() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests, sessions])
         layout.combine(sessions, with: pullRequests)
         // Azure DevOps is off: Copilot shows in the item they share.
@@ -55,7 +55,7 @@ import Testing
 
     @Test func keepsButNeverShowsSectionsThisVersionDoesntKnow() {
         let outlook = SectionID(rawValue: "outlook.mail")
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, outlook])
         layout.combine(outlook, with: chats)
         #expect(layout.visibleItems(showing: [chats]).map(\.sections) == [[chats]])
@@ -63,7 +63,7 @@ import Testing
     }
 
     @Test func hidesASectionButRemembersWhereItGoes() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests])
         layout.combine(groups, with: chats)
         layout.hide(groups)
@@ -77,7 +77,7 @@ import Testing
     }
 
     @Test func anItemWithOnlyHiddenSectionsDisappears() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, pullRequests, sessions])
         layout.combine(sessions, with: pullRequests)
         layout.hide(pullRequests)
@@ -90,7 +90,7 @@ import Testing
     }
 
     @Test func puttingAHiddenSectionSomewhereShowsIt() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests])
         layout.hide(groups)
         layout.separate(groups)
@@ -104,7 +104,7 @@ import Testing
     }
 
     @Test func turningASourceOnShowsItIfAllOfItWasHidden() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests])
         layout.hide(groups)
         layout.sourceTurnedOn([chats, groups])
@@ -122,7 +122,7 @@ import Testing
     }
 
     @Test func putsEverySectionInOneItem() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests, sessions])
         layout.combine(chats, with: sessions)
         layout.hide(groups)
@@ -134,7 +134,7 @@ import Testing
         #expect(layout.visibleItems(showing: [chats, groups, pullRequests, sessions]).map(\.sections) == [[pullRequests, sessions, chats]])
 
         // Azure DevOps was off: turned on, it joins the others.
-        var later = MenuBarLayout()
+        var later = SectionLayout()
         later.place([chats, sessions])
         later.combineAll([chats, sessions, pullRequests])
         #expect(later.visibleItems(showing: [chats, sessions]).map(\.sections) == [[chats, sessions]])
@@ -143,7 +143,7 @@ import Testing
     }
 
     @Test func givesEverySectionAnItemOfItsOwn() {
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([chats, groups, pullRequests, sessions])
         layout.hide(groups)
         layout.combineAll([chats, groups, pullRequests, sessions])
@@ -153,13 +153,13 @@ import Testing
         #expect(layout.items.map(\.id) == ["teams.chats", "teams.groupChats", "azureDevOps.pullRequests", "copilot.sessions"])
         #expect(layout.isHidden(groups))
 
-        var renamed = MenuBarLayout(items: [.init(id: "a", sections: [chats, groups]), .init(id: "teams.groupChats", sections: [sessions])])
+        var renamed = SectionLayout(items: [.init(id: "a", sections: [chats, groups]), .init(id: "teams.groupChats", sections: [sessions])])
         renamed.separateAll()
         #expect(renamed.items.map(\.id) == ["a", "teams.groupChats-2", "teams.groupChats"])
     }
 
     @Test func repairsASavedLayoutThatRepeatsSectionsOrIDs() throws {
-        let saved = MenuBarLayout(items: [
+        let saved = SectionLayout(items: [
             .init(id: "a", sections: [chats, chats, groups]),
             .init(id: "a", sections: [groups, pullRequests]),
             .init(id: "b", sections: []),
@@ -169,24 +169,89 @@ import Testing
         #expect(saved.hidden == [groups])
 
         let data = try JSONEncoder().encode(saved)
-        #expect(try JSONDecoder().decode(MenuBarLayout.self, from: data) == saved)
+        #expect(try JSONDecoder().decode(SectionLayout.self, from: data) == saved)
     }
 
     @Test func readsALayoutSavedBeforeSectionsCouldBeHidden() throws {
         let data = Data(#"{"items":[{"id":"teams.chats","sections":["teams.chats","teams.groupChats"]}]}"#.utf8)
-        let layout = try JSONDecoder().decode(MenuBarLayout.self, from: data)
+        let layout = try JSONDecoder().decode(SectionLayout.self, from: data)
         #expect(layout.items.map(\.sections) == [[chats, groups]])
         #expect(layout.hidden.isEmpty)
     }
 
     @Test func somethingUnreadableStartsOver() {
         let defaults = MemorySettings()
-        defaults.set(Data("[1,2]".utf8), forKey: MenuBarLayout.defaultsKey)
-        #expect(MenuBarLayout.load(from: defaults) == MenuBarLayout())
+        defaults.set(Data("[1,2]".utf8), forKey: Surface.menuBar.defaultsKey)
+        #expect(SectionLayout.load(.menuBar, from: defaults) == SectionLayout())
 
-        var layout = MenuBarLayout()
+        var layout = SectionLayout()
         layout.place([sessions, chats])
         layout.save(to: defaults)
-        #expect(MenuBarLayout.load(from: defaults) == layout)
+        #expect(SectionLayout.load(.menuBar, from: defaults) == layout)
+    }
+
+    // MARK: Widgets and windows
+
+    @Test func eachSurfaceKeepsALayoutOfItsOwn() {
+        let defaults = MemorySettings()
+        var menuBar = SectionLayout(.menuBar)
+        menuBar.place([pullRequests, sessions])
+        menuBar.combine(sessions, with: pullRequests)
+        menuBar.save(to: defaults)
+        var widgets = SectionLayout(.widgets)
+        widgets.place([pullRequests, sessions])
+        widgets.hide(sessions)
+        widgets.save(to: defaults)
+
+        #expect(SectionLayout.load(.menuBar, from: defaults) == menuBar)
+        #expect(SectionLayout.load(.widgets, from: defaults) == widgets)
+        #expect(SectionLayout.load(.widgets, from: defaults).surface == .widgets)
+        #expect(SectionLayout.load(.windows, from: defaults) == SectionLayout(.windows))
+        #expect(Set(Surface.allCases.map(\.defaultsKey)).count == Surface.allCases.count)
+    }
+
+    @Test func widgetsStartOnePerSection() {
+        let items = SectionLayout(.widgets).visibleItems(showing: [pullRequests, sessions])
+        #expect(items.map(\.sections) == [[pullRequests], [sessions]])
+        #expect(items.map(\.id) == ["azureDevOps.pullRequests", "copilot.sessions"])
+    }
+
+    @Test func windowsStartAsOneWithEveryPage() {
+        var layout = SectionLayout(.windows)
+        #expect(layout.visibleItems(showing: [chats, groups, pullRequests]).map(\.sections) == [[chats, groups, pullRequests]])
+        layout.place([chats, groups, pullRequests])
+        #expect(layout.items.map(\.id) == [Surface.firstItemID])
+
+        // A page of its own, then a source turned on later: it joins the first window.
+        layout.separate(pullRequests)
+        layout.sourceTurnedOn([sessions])
+        #expect(layout.items.map(\.sections) == [[chats, groups, sessions], [pullRequests]])
+        #expect(layout.items.map(\.id) == [Surface.firstItemID, "azureDevOps.pullRequests"])
+    }
+
+    @Test func aPageThatWasNeverPlacedCanHaveAWindowOfItsOwn() {
+        var layout = SectionLayout(.windows)
+        layout.place([chats])
+        layout.separate(sessions)
+        #expect(layout.items.map(\.sections) == [[chats], [sessions]])
+        layout.hide(groups)
+        #expect(layout.items.map(\.sections) == [[chats, groups], [sessions]])
+        #expect(layout.visibleItems(showing: [chats, groups, sessions]).map(\.sections) == [[chats], [sessions]])
+    }
+
+    @Test func windowsCombineAndSeparateLikeMenuBarItems() {
+        var layout = SectionLayout(.windows)
+        layout.place([chats, groups, pullRequests, sessions])
+        layout.separateAll()
+        #expect(layout.items.map(\.sections) == [[chats], [groups], [pullRequests], [sessions]])
+        #expect(layout.items.first?.id == Surface.firstItemID)
+        layout.combine(sessions, with: pullRequests)
+        #expect(layout.items.map(\.sections) == [[chats], [groups], [pullRequests, sessions]])
+        layout.combineAll([sessions, chats])
+        #expect(layout.items.map(\.sections) == [[sessions, chats, groups, pullRequests]])
+        // Starting from a page that was never placed, the window is the first one.
+        var fresh = SectionLayout(.windows)
+        fresh.combineAll([chats, groups])
+        #expect(fresh.items.map(\.id) == [Surface.firstItemID])
     }
 }

@@ -13,7 +13,6 @@ struct MenuPanelView: View {
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showRecent = false
-    @Environment(\.panelWidth) private var panelWidth
 
     static let width: CGFloat = 360
     private static let maxListHeight: CGFloat = 520
@@ -28,11 +27,11 @@ struct MenuPanelView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(max(contentHeight, 60), Self.maxListHeight))
+            .panelListHeight(contentHeight, max: Self.maxListHeight)
             Divider()
             footer
         }
-        .frame(width: panelWidth ?? Self.width)
+        .panelFrame(width: Self.width)
     }
 
     private var unread: [ConversationSummary] { store.state.unread(in: group) }

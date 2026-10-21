@@ -13,8 +13,8 @@ Every source is off until you turn it on, and each one first says what it reads.
 
 BriefBar brings Teams Pulse, ADO Pulse and Copilot Pulse together in one app: one install, one login
 item, and permissions that macOS grants once. Full Disk Access for Teams and notifications for Azure
-DevOps cover later sources too, but only the ones you turn on. Several sources can also share a single
-menu-bar item.
+DevOps cover later sources too, but only the ones you turn on. Several sources can share a menu-bar
+item, a desktop widget or a window, and you can hide what you don't need.
 
 <p align="center">
   <picture>
@@ -63,16 +63,25 @@ Turning a source off stops it and deletes what it saved, such as Teams' unread c
 stay. When no source that needs Full Disk Access is on anymore, BriefBar offers to open the list so you
 can remove it.
 
-## The menu bar
+## Menu bar, widgets and windows
 
-Each section has a menu-bar item of its own: **Chats** and **Group Chats** for Teams, then Azure
-DevOps and Copilot. Click one for its list.
+Each source has sections: **Chats** and **Group Chats** for Teams, **Pull Requests** for Azure DevOps
+and **Sessions** for Copilot. BriefBar shows them in three places, each arranged in Settings:
 
-In **Settings › Menu Bar** you can put sections together, such as Azure DevOps with Copilot, or all of
-them in one item with **Put All in One Item**. Their counts then sit side by side in one item, and its
-list has a tab for each, opening at the one that needs you. You can also hide a section you don't need,
-such as Group Chats: its source stays on, so Azure DevOps still notifies you and the widgets still
-show. To move items, hold ⌘ and drag them.
+- **The menu bar** (Settings › Menu Bar): each section starts with an item of its own. Click one for
+  its list.
+- **Desktop widgets** (Settings › Widgets): Azure DevOps and Copilot each start with a widget, behind
+  your windows or floating above them, in three sizes. Teams' widgets start hidden. Drag a widget by
+  its header, and right-click it for its settings.
+- **Windows** (Settings › Windows): one BriefBar window with a page for every section, and a sidebar
+  with their counts. Open it with **Open in Window** from a list's gear menu or a widget's menu.
+  BriefBar shows a Dock icon while a window is open.
+
+Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
+item, widget or window, then give each its own again. Items that share sections show their counts side
+by side, with a tab for each in the list, opening at the one that needs you. You can also hide a
+section you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever
+you didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 
 <p align="center">
   <picture>
@@ -81,13 +90,15 @@ show. To move items, hold ⌘ and drag them.
   </picture>
 </p>
 
-Azure DevOps and Copilot also offer a desktop widget, in three sizes, behind your windows or floating
-above them. Drag it by its header, and right-click it for settings.
-
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/copilot-widget-large-dark.png">
-    <img src="docs/images/copilot-widget-large-light.png" width="352" alt="Copilot's large desktop widget, listing sessions with an icon for each state">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-azureDevOps.pullRequests-dark.jpg">
+    <img src="docs/images/window-azureDevOps.pullRequests-light.jpg" width="560" align="top" alt="The BriefBar window: a sidebar with Teams' Chats and Group Chats, Azure DevOps' Pull Requests and Copilot's Sessions, each with its count, open on the pull requests that need you, are failing or are ready to complete">
+  </picture>
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/widget-all-medium-dark.png">
+    <img src="docs/images/widget-all-medium-light.png" width="210" align="top" alt="One desktop widget showing Azure DevOps' pull requests and Copilot's sessions, one above the other">
   </picture>
 </p>
 
@@ -220,10 +231,11 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **BriefBa
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
-| Azure DevOps, Copilot | Show Desktop Widget, Widget Position, Widget Size | on/off; on the desktop or floating; compact, medium or large |
 
-In **Settings › Menu Bar**, each section shows on its own, with others or not at all. **Put All in One
-Item** and **Give Each Its Own Item** change them all at once.
+In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
+not at all, and **Put All in One** and **Give Each Its Own** change them all at once. Each widget has
+its own **Position** (on the desktop or floating above windows) and **Size** (compact, medium or large),
+there and in its right-click menu.
 
 ## Privacy
 
@@ -241,6 +253,9 @@ Item** and **Give Each Its Own Item** change them all at once.
   you've cleared; and its settings. Turning a source off deletes what it saved.
 - **Programs it runs**, such as the Azure CLI, never get its permissions: macOS would otherwise let
   them use BriefBar's Full Disk Access.
+- **Teams' widgets start hidden**: a widget puts your chats on the desktop, where anyone who sees your
+  screen, or your screen share, can read them. With **Show Message Previews** off, the widgets and
+  lists show only how many messages are new.
 - Its log never contains names, messages, titles or IDs.
 
 ## FAQ

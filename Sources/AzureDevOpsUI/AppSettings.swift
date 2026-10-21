@@ -9,7 +9,6 @@ final class AppSettings: ObservableObject {
     /// The installed app's preferences, which the command line reads too.
     nonisolated static var appDefaults: UserDefaults? { AppIdentity.installedAppDefaults }
 
-    typealias Placement = WidgetPlacement
     typealias WidgetSize = BriefBarUI.WidgetSize
 
     static let refreshChoices: [(seconds: Int, title: String)] = [
@@ -26,15 +25,6 @@ final class AppSettings: ObservableObject {
 
     private let defaults: UserDefaults
 
-    @Published var showWidget: Bool {
-        didSet { defaults.set(showWidget, forKey: Key.showWidget) }
-    }
-    @Published var placement: Placement {
-        didSet { defaults.set(placement.rawValue, forKey: Key.placement) }
-    }
-    @Published var widgetSize: WidgetSize {
-        didSet { defaults.set(widgetSize.rawValue, forKey: Key.widgetSize) }
-    }
     @Published var refreshSeconds: Int {
         didSet { defaults.set(refreshSeconds, forKey: Key.refreshSeconds) }
     }
@@ -72,9 +62,6 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard, now: Date = Date()) {
         self.defaults = defaults
-        showWidget = defaults.object(forKey: Key.showWidget) as? Bool ?? true
-        placement = defaults.string(forKey: Key.placement).flatMap(Placement.init) ?? .desktop
-        widgetSize = defaults.string(forKey: Key.widgetSize).flatMap(WidgetSize.init) ?? .medium
         refreshSeconds = Self.choice(defaults.integer(forKey: Key.refreshSeconds), in: Self.refreshChoices.map(\.seconds), default: 60)
         keepDoneHours = Self.choice(defaults.integer(forKey: Key.keepDoneHours), in: Self.keepDoneChoices.map(\.hours), default: 24)
         idleDays = Self.choice(defaults.object(forKey: Key.idleDays) as? Int ?? -1, in: Self.idleChoices.map(\.days), default: 14)
@@ -180,9 +167,6 @@ final class AppSettings: ObservableObject {
 
 /// UserDefaults keys, shared with the command line, which reads them.
 enum SettingsKey {
-    static let showWidget = "ado.showWidget"
-    static let placement = "ado.widgetPlacement"
-    static let widgetSize = "ado.widgetSize"
     static let refreshSeconds = "ado.refreshSeconds"
     static let keepDoneHours = "ado.keepDoneHours"
     static let idleDays = "ado.idleDays"
@@ -196,6 +180,6 @@ enum SettingsKey {
 }
 
 extension BriefBarUI.WidgetSize {
-    /// Azure DevOps' widget width at this size.
+    /// How wide a widget needs to be for pull requests, at this size.
     var width: CGFloat { self == .compact ? 290 : 330 }
 }

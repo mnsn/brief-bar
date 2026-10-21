@@ -3,7 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// BriefBar's Settings window: General, then a page for each source.
+/// BriefBar's Settings window: General, where sections show, then a page for each source.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private unowned let model: AppModel
@@ -52,8 +52,10 @@ struct SettingsView: View {
             List(selection: $navigation.destination) {
                 Label("General", systemImage: "gearshape")
                     .tag(SettingsDestination.general)
-                Label("Menu Bar", systemImage: "menubar.rectangle")
-                    .tag(SettingsDestination.menuBar)
+                ForEach(Surface.allCases, id: \.self) { surface in
+                    Label(surface.title, systemImage: surface.symbol)
+                        .tag(SettingsDestination.layout(surface))
+                }
                 Section("Sources") {
                     ForEach(model.sources.map(\.id), id: \.self) { id in
                         if let source = model.source(id) {
@@ -87,8 +89,9 @@ struct SettingsView: View {
                 SourcePage(model: model, source: source)
                     .id(id)
             }
-        case .menuBar:
-            MenuBarPage(model: model)
+        case .layout(let surface):
+            LayoutPage(model: model, surface: surface)
+                .id(surface)
         }
     }
 }

@@ -6,6 +6,15 @@ import TeamsCore
 
 /// The gear menu, shared by both lists.
 struct SettingsMenuContent: View {
+    var body: some View {
+        SourceMenuContent()
+        Divider()
+        AppMenuItems(source: .teams)
+    }
+}
+
+/// Teams' settings and ways to fix and open it: in the gear menu, and in a widget's context menu.
+struct SourceMenuContent: View {
     @EnvironmentObject private var store: ConversationStore
     @EnvironmentObject private var fullDiskAccess: FullDiskAccess
 
@@ -17,8 +26,6 @@ struct SettingsMenuContent: View {
         }
         Button("Copy Diagnostics") { Diagnose.copyReport(paths: store.paths) }
         Button("Open Microsoft Teams") { TeamsApp.activate() }
-        Divider()
-        AppMenuItems(source: .teams)
     }
 }
 

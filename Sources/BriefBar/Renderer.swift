@@ -3,8 +3,8 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// `--render <dir>`: draws, in light and dark, the menu bar with each item's list open, each source's other
-/// pictures (such as its widget at each size), and the Settings window. Useful for checking layouts without
+/// `--render <dir>`: draws, in light and dark, the menu bar with each item's list open, the widgets, the window
+/// at each page, each source's other pictures, and the Settings window. Useful for checking layouts without
 /// screen-recording permission, and for the README's pictures. With `--demo`, from made-up data.
 @MainActor
 enum Renderer {
@@ -19,9 +19,9 @@ enum Renderer {
         Snapshot.useOverlayScrollers()
         _ = NSApplication.shared
 
-        // Never the app's own preferences: a copy of them, or the demo's.
+        // Never the app's own preferences: a copy of them in memory, or the demo's.
         let model = AppModel(demo: demo, rendering: true)
-        defer { UserDefaults.standard.removePersistentDomain(forName: AppModel.renderSuite) }
+        model.placeSections()
         let sources = model.onSources
         var loaded = false
         Task {
@@ -33,24 +33,38 @@ enum Renderer {
         }
 
         var written: [String] = []
-        let items = model.visibleItems()
-        // Examples, drawn from copies of the layout, so nothing is saved: Azure DevOps and Copilot sharing an
-        // item, when both are on, and every section in one item.
-        var combined = model.layout
-        combined.place(model.onSections)
+        func write(_ image: NSBitmapImageRep?, _ name: String) {
+            if let image, let file = Snapshot.write(image, to: output.appending(path: "\(name).png")) {
+                written.append(file)
+            }
+        }
+
+        // Examples, drawn from copies of the layouts, so nothing is saved.
+        let shown = model.sections(.menuBar)
+        let items = model.visibleItems(.menuBar)
+        // Azure DevOps and Copilot sharing an item, when both are on.
+        var combined = model.layout(.menuBar)
+        combined.place(shown)
         combined.combine(.copilotSessions, with: .azureDevOpsPullRequests)
-        let combinedItems = combined.visibleItems(showing: model.onSections)
+        let combinedItems = combined.visibleItems(showing: shown)
         let combinedIndex = combinedItems.firstIndex { $0.sections.count > 1 }
-        var all = model.layout
+        // Every section in one item.
+        var all = model.layout(.menuBar)
         all.combineAll(items.flatMap(\.sections))
-        let allItems = all.visibleItems(showing: model.onSections)
+        let allItems = all.visibleItems(showing: shown)
         // The Menu Bar settings' example: Azure DevOps with Copilot, and Group Chats hidden.
         var example = combined
         example.hide(.teamsGroupChats)
+        // A widget for each section that has one, and one for all that show.
+        let widgetSections = model.sections(.widgets)
+        let shownWidgetSections = model.visibleItems(.widgets).flatMap(\.sections)
+        let windowSections = model.sections(.windows)
+
         for dark in [false, true] {
             guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { continue }
             let suffix = dark ? "dark" : "light"
-            func picture(of items: [MenuBarLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String) {
+
+            func picture(of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String) {
                 let segments = items.map { item in
                     item.sections.compactMap { section in model.source(for: section)?.segment(for: section) }
                 }
@@ -61,10 +75,8 @@ enum Renderer {
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
-                if let image = Snapshot.render(view, appearance: appearance),
-                   let picture = MenuBarPicture.draw(panel: image, items: segments, pressed: index, appearance: appearance),
-                   let file = Snapshot.write(picture, to: output.appending(path: "\(name)-\(suffix).png")) {
-                    written.append(file)
+                if let image = Snapshot.render(view, appearance: appearance) {
+                    write(MenuBarPicture.draw(panel: image, items: segments, pressed: index, appearance: appearance), "\(name)-\(suffix)")
                 }
             }
             for (index, item) in items.enumerated() {
@@ -79,16 +91,60 @@ enum Renderer {
                     picture(of: allItems, pressed: 0, at: section, name: "menubar-all-\(section.rawValue)")
                 }
             }
-            for source in sources {
-                for rendering in source.extraRenderings() {
-                    if let image = Snapshot.render(rendering.view, appearance: appearance),
-                       let file = Snapshot.write(image, to: output.appending(path: "\(source.id.rawValue)-\(rendering.name)-\(suffix).png")) {
-                        written.append(file)
-                    }
+
+            func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
+                let content = WidgetContent(id: "render", model: model)
+                content.sections = sections
+                content.options = WidgetOptions(size: size)
+                let view = WidgetView(content: content)
+                    .environmentObject(model.services)
+                    .environmentObject(model.services.loginItem)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .padding(16)
+                write(Snapshot.render(view, appearance: appearance), "\(name)-\(suffix)")
+            }
+            for size in WidgetSize.allCases {
+                for section in widgetSections {
+                    widget([section], size: size, name: "widget-\(section.rawValue)-\(size.rawValue)")
+                }
+                if shownWidgetSections.count > 1 {
+                    widget(shownWidgetSections, size: size, name: "widget-all-\(size.rawValue)")
                 }
             }
-            let pages: [(String, SettingsDestination)] = [("general", .general), ("menu-bar", .menuBar)]
-                + model.sources.map { ($0.id.rawValue, .source($0.id)) }
+
+            // A window with one page: no sidebar.
+            if let section = windowSections.first {
+                let content = WindowContent(id: "render-alone", model: model)
+                content.update(sections: [section])
+                let view = WindowView(content: content)
+                    .environment(\.isRendering, true)
+                    .environmentObject(model.services)
+                    .environmentObject(model.services.loginItem)
+                    .frame(width: 560, height: 640)
+                write(Snapshot.render(view, appearance: appearance), "window-alone-\(suffix)")
+            }
+            // One window with every page, open at each.
+            if !windowSections.isEmpty {
+                let content = WindowContent(id: "render", model: model)
+                content.update(sections: windowSections)
+                for section in windowSections {
+                    content.select(section, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
+                }
+            }
+
+            for source in sources {
+                for rendering in source.extraRenderings() {
+                    write(Snapshot.render(rendering.view, appearance: appearance), "\(source.id.rawValue)-\(rendering.name)-\(suffix)")
+                }
+            }
+
             func page(_ destination: SettingsDestination, name: String) {
                 let navigation = SettingsNavigation()
                 navigation.destination = destination
@@ -96,17 +152,17 @@ enum Renderer {
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
-                if let image = Snapshot.render(view, appearance: appearance),
-                   let file = Snapshot.write(image, to: output.appending(path: "settings-\(name)-\(suffix).png")) {
-                    written.append(file)
-                }
+                write(Snapshot.render(view, appearance: appearance), "settings-\(name)-\(suffix)")
             }
+            let pages: [(String, SettingsDestination)] = [("general", .general)]
+                + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
+                + model.sources.map { ($0.id.rawValue, .source($0.id)) }
             for (name, destination) in pages {
                 page(destination, name: name)
             }
-            let saved = model.layout
+            let saved = model.layout(.menuBar)
             model.useForRendering(example)
-            page(.menuBar, name: "menu-bar-example")
+            page(.layout(.menuBar), name: "menu-bar-example")
             model.useForRendering(saved)
         }
         written.forEach { print($0) }

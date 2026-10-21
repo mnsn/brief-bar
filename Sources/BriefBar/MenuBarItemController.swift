@@ -133,9 +133,23 @@ final class ItemPanelModel: ObservableObject {
 
     func title(for section: SectionID) -> String {
         guard let source = model.source(for: section) else { return section.rawValue }
-        let title = source.sections.first { $0.id == section }?.title ?? source.name
+        let title = source.info(for: section)?.title ?? source.name
         let count = source.segment(for: section).count
         return count > 0 ? "\(title) \(count)" : title
+    }
+
+    /// The section's symbol and count, for tabs too small for titles.
+    func shortTitle(for section: SectionID) -> Text {
+        let symbol = Image(systemName: model.info(for: section)?.symbol ?? "circle")
+        let count = model.source(for: section)?.segment(for: section).count ?? 0
+        return count > 0 ? Text("\(symbol) \(count)") : Text(symbol)
+    }
+
+    /// For VoiceOver and a tab's tooltip.
+    func spokenTitle(for section: SectionID) -> String {
+        guard let source = model.source(for: section) else { return section.rawValue }
+        let title = source.info(for: section)?.title ?? source.name
+        return source.sections.count > 1 ? "\(source.name): \(title)" : title
     }
 
     func panel(for section: SectionID) -> AnyView {
@@ -154,11 +168,15 @@ struct ItemPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             if panel.sections.count > 1, let current = panel.current {
-                // Smaller tabs when there are too many for the popover's width.
+                // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
+                // fitting the popover's width.
                 ViewThatFits(in: .horizontal) {
-                    tabs(current: current)
-                    tabs(current: current)
+                    tabs(current: current, short: false)
+                    tabs(current: current, short: false)
                         .controlSize(.small)
+                    tabs(current: current, short: true)
+                        .controlSize(.small)
+                    menu(current: current)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -167,20 +185,45 @@ struct ItemPanelView: View {
             }
             if let current = panel.current {
                 panel.panel(for: current)
+                    .environment(\.shownSection, current)
                     .id(current)
             }
         }
-        .environment(\.panelWidth, panel.sections.count > 1 ? panel.width : nil)
+        .environment(\.panelStyle, .popover(width: panel.sections.count > 1 ? panel.width : nil))
     }
 
-    private func tabs(current: SectionID) -> some View {
-        Picker("Section", selection: Binding(get: { current }, set: { panel.select($0) })) {
+    private func selection(_ current: SectionID) -> Binding<SectionID> {
+        Binding(get: { current }, set: { panel.select($0) })
+    }
+
+    private func tabs(current: SectionID, short: Bool) -> some View {
+        Picker("Section", selection: selection(current)) {
             ForEach(panel.sections, id: \.self) { section in
-                Text(panel.title(for: section)).tag(section)
+                Group {
+                    if short {
+                        panel.shortTitle(for: section)
+                    } else {
+                        Text(panel.title(for: section))
+                    }
+                }
+                .help(panel.spokenTitle(for: section))
+                .accessibilityLabel(panel.spokenTitle(for: section))
+                .tag(section)
             }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+    }
+
+    private func menu(current: SectionID) -> some View {
+        Picker("Section", selection: selection(current)) {
+            ForEach(panel.sections, id: \.self) { section in
+                Text(panel.title(for: section)).tag(section)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -204,7 +247,7 @@ final class PlaceholderItem: NSObject {
 
     /// - Parameter everythingHidden: sources are on, but you've hidden all their sections.
     func update(everythingHidden: Bool) {
-        destination = everythingHidden ? .menuBar : .general
+        destination = everythingHidden ? .layout(.menuBar) : .general
         statusItem.button?.toolTip = everythingHidden ? "BriefBar: every section is hidden" : "BriefBar: nothing is on"
 
         let menu = NSMenu()
@@ -222,6 +265,11 @@ final class PlaceholderItem: NSObject {
         )
         choose.target = self
         menu.addItem(choose)
+        if everythingHidden {
+            let window = NSMenuItem(title: "Open in Window", action: #selector(openWindow), keyEquivalent: "")
+            window.target = self
+            menu.addItem(window)
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit BriefBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -233,6 +281,10 @@ final class PlaceholderItem: NSObject {
 
     @objc private func openSettings() {
         model.openSettings(destination)
+    }
+
+    @objc private func openWindow() {
+        model.openWindow(at: nil)
     }
 }
 

@@ -13,7 +13,9 @@ DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DI
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
 BRIEFBAR = $(shell swift build --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
-	copilot-widget-large-light copilot-widget-large-dark
+	widget-all-medium-light widget-all-medium-dark
+# The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
+WINDOW_SHOTS := window-azureDevOps.pullRequests-light window-azureDevOps.pullRequests-dark
 
 build:
 	swift build
@@ -67,15 +69,16 @@ demo-data:
 	swift scripts/make-teams-demo-data.swift "$(DEMO_DIR)/teams"
 	swift scripts/make-copilot-demo-data.swift "$(DEMO_DIR)/copilot"
 
-# Runs the app with made-up data for every source instead of yours. Ctrl-C quits.
+# Runs the app with made-up data for every source instead of yours; ARGS=--window opens its window. Ctrl-C quits.
 demo: build demo-data
-	$(DEMO_ENV) "$(BRIEFBAR)" --demo
+	$(DEMO_ENV) "$(BRIEFBAR)" --demo $(ARGS)
 
 # Checks that the made-up data lands in the expected groups. CI runs this.
 demo-check: $(if $(filter command line,$(origin BRIEFBAR)),,build) demo-data
 	@$(DEMO_ENV) ./scripts/demo-check.sh "$(BRIEFBAR)"
 
-# Draws the menu bar with each list open, the widgets and Settings from your own data, into the ignored render/.
+# Draws the menu bar with each list open, the widgets, the window and Settings from your own data, into the
+# ignored render/.
 render: build
 	"$(BRIEFBAR)" --render render $(ARGS)
 
@@ -85,6 +88,7 @@ screenshots: build demo-data
 	$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots
 	mkdir -p docs/images
 	for name in $(SCREENSHOTS); do cp build/screenshots/$$name.png docs/images/; done
+	for name in $(WINDOW_SHOTS); do sips -s format jpeg -s formatOptions 88 build/screenshots/$$name.png --out docs/images/$$name.jpg >/dev/null; done
 
 icon:
 	swift scripts/make-icon.swift build/AppIcon.iconset

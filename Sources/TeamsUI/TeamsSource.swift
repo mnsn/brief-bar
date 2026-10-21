@@ -24,10 +24,13 @@ package final class TeamsSource: BriefBarSource {
         needs: "Full Disk Access, which macOS requires to read Notification Center's database. macOS has no prompt for it, so BriefBar walks you through System Settings. It's for all of BriefBar, once: only sources you turn on that read Notification Center use it.",
         requirements: [.fullDiskAccess]
     )
-    package let sections = [
-        SectionInfo(id: .teamsChats, title: "Chats"),
-        SectionInfo(id: .teamsGroupChats, title: "Group Chats"),
-    ]
+    /// Their widgets start hidden: a widget would put your chats on the desktop after an update.
+    package let sections = [ChatGroup.chats, .groups].map { group in
+        SectionInfo(
+            id: group == .chats ? .teamsChats : .teamsGroupChats, title: group.title, symbol: group.symbol,
+            tint: group.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.widgets]
+        )
+    }
     package var panelWidth: CGFloat { MenuPanelView.width }
 
     private static let accessReason = "BriefBar finds your unread Teams chats in the notifications that macOS keeps in Notification Center."
@@ -173,6 +176,26 @@ package final class TeamsSource: BriefBarSource {
 
     package func panelWillShow(_ section: SectionID) {
         store?.refresh()
+    }
+
+    // MARK: Widgets
+
+    package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView {
+        guard let store else { return AnyView(EmptyView()) }
+        return AnyView(environment(WidgetSectionView(group: group(section), rows: rows), store: store))
+    }
+
+    package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
+        WidgetSectionView.height(rows: rows)
+    }
+
+    package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {
+        size == .compact ? 270 : 320
+    }
+
+    package func widgetMenu(for section: SectionID) -> AnyView {
+        guard let store else { return AnyView(EmptyView()) }
+        return AnyView(environment(SourceMenuContent(), store: store))
     }
 
     // MARK: Settings

@@ -22,7 +22,7 @@ MainActor.assumeIsolated {
     }
 
     let app = NSApplication.shared
-    let delegate = AppDelegate(demo: demo)
+    let delegate = AppDelegate(demo: demo, openWindow: arguments.contains("--window"))
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     withExtendedLifetime(delegate) {

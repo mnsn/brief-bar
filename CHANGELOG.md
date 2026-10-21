@@ -10,9 +10,13 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Permissions once.** Full Disk Access and notifications are BriefBar's, granted once, and used only
   by the sources you turn on. An update never turns a source on, and one that starts reading more
   pauses until you've looked.
-- **Several sources in one menu-bar item.** Settings › Menu Bar puts sections together, or all of
-  them in one item, with their counts side by side and a tab for each, and hides the ones you don't
-  need.
+- **Menu bar, widgets and windows, arranged as you like.** Each section (Teams' Chats and Group
+  Chats, pull requests, sessions) can share a menu-bar item, a desktop widget or a window with
+  others, have one of its own, or be hidden from any of them. Settings › Menu Bar, Widgets and
+  Windows also put everything in one, or give each its own.
+- **A window** with a page for each section, and a sidebar with their counts. BriefBar shows a Dock
+  icon only while it's open.
+- **Widgets for every source**, each with its own position and size. Teams' start hidden.
 - **Settings in a window of their own**, and in each list's gear menu.
 - **Programs it starts can't use its permissions:** the Azure CLI and the login shell that finds it
   run responsible for themselves.

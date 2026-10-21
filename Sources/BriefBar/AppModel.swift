@@ -3,39 +3,38 @@ import BriefBarCore
 import BriefBarUI
 import Combine
 
-/// The app: its sources, which of them are on, and the menu-bar items that show them.
+/// The app: its sources, which of them are on, and where their sections show: menu-bar items, desktop widgets
+/// and windows, each arranged by a layout of its own.
 @MainActor
 final class AppModel: ObservableObject {
     let services: AppServices
     let sources: [any BriefBarSource]
     @Published private(set) var choices: SourceChoices
-    @Published private(set) var layout: MenuBarLayout
+    @Published private(set) var layouts: [Surface: SectionLayout] = [:]
+    /// Each widget's position and size, by the widget's ID.
+    @Published private(set) var widgetOptions: [String: WidgetOptions]
 
     private var items: [String: MenuBarItemController] = [:]
     /// The visible items' IDs, left to right.
     private var itemOrder: [String] = []
     private var placeholder: PlaceholderItem?
+    private var widgets: [String: WidgetHost] = [:]
+    private var windows: [String: WindowHost] = [:]
     private lazy var settingsWindow = SettingsWindowController(model: self)
     private var cancellables: Set<AnyCancellable> = []
 
     private static let launchedKey = "hasLaunched"
 
-    /// Throwaway preferences for `--demo` and `--render`, which never touch the app's own.
-    static let demoSuite = "\(AppIdentity.bundleIdentifier).demo"
-    static let renderSuite = "\(AppIdentity.bundleIdentifier).render"
-
     /// - Parameters:
     ///   - demo: made-up data for every source, which are all on.
-    ///   - rendering: for `--render`: a copy of the installed app's preferences, deleted afterwards.
+    ///   - rendering: for `--render`: a copy of the installed app's preferences, kept in memory.
     init(demo: Bool, rendering: Bool = false) {
+        // `--demo` and `--render` never touch the app's own preferences.
         let defaults: UserDefaults
-        let suiteName = rendering ? Self.renderSuite : Self.demoSuite
-        if demo || rendering, let suite = UserDefaults(suiteName: suiteName) {
-            suite.removePersistentDomain(forName: suiteName)
-            if rendering, !demo, let app = UserDefaults.standard.persistentDomain(forName: AppIdentity.bundleIdentifier) {
-                suite.setPersistentDomain(app, forName: suiteName)
-            }
-            defaults = suite
+        if rendering && !demo {
+            defaults = MemoryDefaults(values: UserDefaults.standard.persistentDomain(forName: AppIdentity.bundleIdentifier) ?? [:])
+        } else if demo || rendering {
+            defaults = MemoryDefaults()
         } else {
             defaults = .standard
         }
@@ -46,11 +45,14 @@ final class AppModel: ObservableObject {
             for source in sources { choices.turnOn(source.id, version: source.description.version) }
         }
         self.choices = choices
-        layout = MenuBarLayout.load(from: defaults)
+        WidgetMigration.run(defaults)
+        widgetOptions = WidgetOptions.load(from: defaults)
+        layouts = Dictionary(uniqueKeysWithValues: Surface.allCases.map { ($0, SectionLayout.load($0, from: defaults)) })
 
         services.openSettings = { [weak self] destination in self?.openSettings(destination) }
         services.showPanel = { [weak self] section in self?.showPanel(section) ?? false }
         services.closePanels = { [weak self] in self?.closePanels() }
+        services.openWindow = { [weak self] section in self?.openWindow(at: section) }
         services.notifier.onOpen = { [weak self] source, info in
             guard let self, let source, self.state(of: source) == .on else { return }
             self.source(source)?.openNotification(info)
@@ -77,6 +79,10 @@ final class AppModel: ObservableObject {
         sources.first { $0.sections.contains { $0.id == section } }
     }
 
+    func info(for section: SectionID) -> SectionInfo? {
+        source(for: section)?.info(for: section)
+    }
+
     var onSources: [any BriefBarSource] {
         sources.filter { state(of: $0.id) == .on }
     }
@@ -87,17 +93,11 @@ final class AppModel: ObservableObject {
         let wasOff = state(of: id) == .off
         choices.turnOn(id, version: source.description.version)
         choices.save(to: services.defaults)
-        let sections = source.sections.map(\.id)
-        // Keep It On, after an update, leaves the menu bar as it was.
-        if wasOff {
-            layout.sourceTurnedOn(sections)
-        } else {
-            layout.place(sections)
-        }
-        layout.save(to: services.defaults)
+        // Keep It On, after an update, leaves everything where it was.
+        place(source, turnedOn: wasOff)
         Log.app.info("Turned on \(id.rawValue, privacy: .public)")
         source.start()
-        updateMenuBar()
+        updateSurfaces()
         source.didTurnOn()
     }
 
@@ -110,7 +110,7 @@ final class AppModel: ObservableObject {
         choices.turnOff(id)
         choices.save(to: services.defaults)
         Log.app.info("Turned off \(id.rawValue, privacy: .public)")
-        updateMenuBar()
+        updateSurfaces()
     }
 
     /// Whether a source that's on needs this, such as Full Disk Access.
@@ -118,62 +118,134 @@ final class AppModel: ObservableObject {
         onSources.contains { $0.description.requirements.contains(requirement) }
     }
 
+    // MARK: Layouts
+
+    func layout(_ surface: Surface) -> SectionLayout {
+        layouts[surface] ?? SectionLayout(surface)
+    }
+
+    /// The sections that can show on `surface`, of every source or only those that are on, in the sources'
+    /// order, hidden ones included.
+    func sections(_ surface: Surface, onlyOn: Bool = true) -> [SectionID] {
+        (onlyOn ? onSources : sources).flatMap { source in
+            source.sections.filter { $0.surfaces.contains(surface) }.map(\.id)
+        }
+    }
+
+    /// The sections of the sources that are on that you've hidden from `surface`.
+    func hiddenSections(_ surface: Surface) -> [SectionID] {
+        sections(surface).filter(layout(surface).isHidden)
+    }
+
+    /// The sources that are on with no section that can show on `surface`, such as a source without widgets.
+    func sourcesMissing(from surface: Surface) -> [any BriefBarSource] {
+        onSources.filter { source in !source.sections.contains { $0.surfaces.contains(surface) } }
+    }
+
+    func visibleItems(_ surface: Surface) -> [SectionLayout.Item] {
+        layout(surface).visibleItems(showing: sections(surface))
+    }
+
+    func combine(_ section: SectionID, with other: SectionID, on surface: Surface) {
+        change(surface) { $0.combine(section, with: other) }
+    }
+
+    func separate(_ section: SectionID, on surface: Surface) {
+        change(surface) { $0.separate(section) }
+    }
+
+    /// Hides a section from one surface. Its source stays on.
+    func hide(_ section: SectionID, on surface: Surface) {
+        change(surface) { $0.hide(section) }
+    }
+
+    /// Hides every section of an item, such as a widget.
+    func hideItem(_ id: String, on surface: Surface) {
+        guard let item = visibleItems(surface).first(where: { $0.id == id }) else { return }
+        change(surface) { layout in item.sections.forEach { layout.hide($0) } }
+    }
+
+    /// Puts every section in one item: as they show now, then those of the sources that are off, so they join
+    /// it when you turn them on.
+    func combineAll(on surface: Surface) {
+        let order = visibleItems(surface).flatMap(\.sections) + sections(surface, onlyOn: false)
+        change(surface) { $0.combineAll(order) }
+    }
+
+    func separateAll(on surface: Surface) {
+        change(surface) { $0.separateAll() }
+    }
+
+    func options(forWidget id: String) -> WidgetOptions {
+        widgetOptions[id] ?? WidgetOptions()
+    }
+
+    func setOptions(_ options: WidgetOptions, forWidget id: String) {
+        widgetOptions[id] = options
+        // Only the widgets there are; a widget that's gone starts over if it comes back.
+        let ids = Set(layout(.widgets).items.map(\.id))
+        widgetOptions = widgetOptions.filter { ids.contains($0.key) }
+        WidgetOptions.save(widgetOptions, to: services.defaults)
+        updateWidgets()
+    }
+
+    /// For `--render`: draws Settings with `layout`, without saving it or changing what shows.
+    func useForRendering(_ layout: SectionLayout) {
+        layouts[layout.surface] = layout
+    }
+
+    private func change(_ surface: Surface, _ body: (inout SectionLayout) -> Void) {
+        var layout = layout(surface)
+        body(&layout)
+        layouts[surface] = layout
+        layout.save(to: services.defaults)
+        update(surface)
+    }
+
+    /// Places the sections of the sources that are on, as at launch: `--render` draws them where they'd be.
+    func placeSections() {
+        for source in onSources {
+            place(source, turnedOn: false)
+        }
+    }
+
+    /// Places a source's sections on every surface: where they were, or where each surface puts new sections.
+    /// A section that starts hidden on a surface, such as a Teams widget, is hidden there the first time.
+    private func place(_ source: any BriefBarSource, turnedOn: Bool) {
+        for surface in Surface.allCases {
+            var layout = layout(surface)
+            let sections = source.sections.filter { $0.surfaces.contains(surface) }
+            for info in sections where layout.item(containing: info.id) == nil && info.hiddenAtFirst.contains(surface) {
+                layout.hide(info.id)
+            }
+            let ids = sections.map(\.id)
+            // Turning a source on always shows it in the menu bar, even if you'd hidden all of it.
+            if turnedOn && surface == .menuBar {
+                layout.sourceTurnedOn(ids)
+            } else {
+                layout.place(ids)
+            }
+            layouts[surface] = layout
+            layout.save(to: services.defaults)
+        }
+    }
+
+    private func update(_ surface: Surface) {
+        switch surface {
+        case .menuBar: updateMenuBar()
+        case .widgets: updateWidgets()
+        case .windows: updateWindows()
+        }
+    }
+
+    private func updateSurfaces() {
+        Surface.allCases.forEach(update)
+    }
+
     // MARK: Menu bar
 
-    /// The sections of the sources that are on, in the sources' order, including hidden ones.
-    var onSections: [SectionID] {
-        onSources.flatMap { $0.sections.map(\.id) }
-    }
-
-    /// The sections of the sources that are on that you've hidden.
-    var hiddenSections: [SectionID] {
-        onSections.filter(layout.isHidden)
-    }
-
-    func visibleItems() -> [MenuBarLayout.Item] {
-        layout.visibleItems(showing: onSections)
-    }
-
-    func combine(_ section: SectionID, with other: SectionID) {
-        layout.combine(section, with: other)
-        layoutChanged()
-    }
-
-    func separate(_ section: SectionID) {
-        layout.separate(section)
-        layoutChanged()
-    }
-
-    /// Hides a section from the menu bar. Its source stays on.
-    func hide(_ section: SectionID) {
-        layout.hide(section)
-        layoutChanged()
-    }
-
-    /// Puts every section in one item, as they show now, left to right, then those of the sources that are off,
-    /// so they join it when you turn them on.
-    func combineAll() {
-        layout.combineAll(visibleItems().flatMap(\.sections) + sources.flatMap { $0.sections.map(\.id) })
-        layoutChanged()
-    }
-
-    func separateAll() {
-        layout.separateAll()
-        layoutChanged()
-    }
-
-    /// For `--render`: draws Settings with `layout`, without saving it or changing the menu bar.
-    func useForRendering(_ layout: MenuBarLayout) {
-        self.layout = layout
-    }
-
-    private func layoutChanged() {
-        layout.save(to: services.defaults)
-        updateMenuBar()
-    }
-
     private func updateMenuBar() {
-        let visible = visibleItems()
+        let visible = visibleItems(.menuBar)
         let ids = Set(visible.map(\.id))
         for (id, item) in items where !ids.contains(id) {
             item.remove()
@@ -200,7 +272,7 @@ final class AppModel: ObservableObject {
     /// Opens the list that shows `section`. False when no item shows it, because it's hidden.
     @discardableResult
     func showPanel(_ section: SectionID) -> Bool {
-        guard let entry = visibleItems().first(where: { $0.sections.contains(section) }),
+        guard let entry = visibleItems(.menuBar).first(where: { $0.sections.contains(section) }),
               let item = items[entry.id]
         else { return false }
         item.showPopover(at: section)
@@ -213,15 +285,74 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: Widgets
+
+    private func updateWidgets() {
+        let visible = visibleItems(.widgets)
+        let ids = Set(visible.map(\.id))
+        for (id, widget) in widgets where !ids.contains(id) {
+            widget.close()
+            widgets[id] = nil
+        }
+        for entry in visible {
+            let widget = widgets[entry.id] ?? WidgetHost(id: entry.id, model: self)
+            widgets[entry.id] = widget
+            widget.update(sections: entry.sections, options: options(forWidget: entry.id))
+        }
+    }
+
+    // MARK: Windows
+
+    /// Opens the window that shows `section`'s page, at that page; for nil, or a page you've hidden, the first
+    /// window. With every page hidden, Settings › Windows.
+    func openWindow(at section: SectionID?) {
+        closePanels()
+        let visible = visibleItems(.windows)
+        guard let entry = section.flatMap({ section in visible.first { $0.sections.contains(section) } }) ?? visible.first else {
+            openSettings(.layout(.windows))
+            return
+        }
+        let window = windows[entry.id] ?? WindowHost(id: entry.id, model: self)
+        windows[entry.id] = window
+        window.update(sections: entry.sections)
+        window.show(at: section)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+    }
+
+    /// Whether a BriefBar window is open, for the Dock icon.
+    var hasOpenWindow: Bool {
+        windows.values.contains { $0.isOpen }
+    }
+
+    /// A window closed: BriefBar goes back to being a menu-bar app once none is open.
+    func windowDidClose(_ window: WindowHost) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.hasOpenWindow else { return }
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    private func updateWindows() {
+        let visible = visibleItems(.windows)
+        for (id, window) in windows {
+            if let entry = visible.first(where: { $0.id == id }) {
+                window.update(sections: entry.sections)
+            } else {
+                window.close()
+                windows[id] = nil
+            }
+        }
+    }
+
     // MARK: Lifecycle
 
     func launch() {
         for source in onSources {
             source.start()
         }
-        layout.place(onSections)
-        layout.save(to: services.defaults)
-        updateMenuBar()
+        placeSections()
+        updateSurfaces()
 
         let firstLaunch = !services.defaults.bool(forKey: Self.launchedKey)
         services.defaults.set(true, forKey: Self.launchedKey)
@@ -240,12 +371,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings when nothing shows.
+    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, the first window when the menu bar
+    /// shows nothing, or Settings when nothing is on.
     func reopen() {
         if let first = itemOrder.first, let item = items[first] {
             item.showPopover(at: nil)
+        } else if !onSources.isEmpty, !visibleItems(.windows).isEmpty {
+            openWindow(at: nil)
         } else {
-            openSettings(onSources.isEmpty ? .general : .menuBar)
+            openSettings(onSources.isEmpty ? .general : .layout(.menuBar))
         }
     }
 

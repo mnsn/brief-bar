@@ -6,6 +6,8 @@ import SwiftUI
 package struct AppMenuItems: View {
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var loginItem: LoginItem
+    @Environment(\.panelStyle) private var panelStyle
+    @Environment(\.shownSection) private var shownSection
     /// The source whose menu this is, for BriefBar Settings… to open at.
     private let source: SourceID?
 
@@ -14,6 +16,10 @@ package struct AppMenuItems: View {
     }
 
     package var body: some View {
+        // Not on a window's own page.
+        if panelStyle != .page {
+            Button("Open in Window") { services.openWindow(shownSection) }
+        }
         if loginItem.isAvailable {
             Toggle("Launch BriefBar at Login", isOn: Binding(
                 get: { loginItem.isEnabled },

@@ -3,16 +3,23 @@ import AzureDevOpsCore
 import BriefBarUI
 import SwiftUI
 
-/// The gear menu in the popover, and the widget's context menu.
+/// The gear menu in the popover.
 struct SettingsMenuContent: View {
+    var body: some View {
+        SourceMenuContent()
+        Divider()
+        AppMenuItems(source: .azureDevOps)
+    }
+}
+
+/// Azure DevOps' settings and a way to open it: in the gear menu, and in a widget's context menu.
+struct SourceMenuContent: View {
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
         AzureDevOpsSettings()
         Divider()
         Button("Open Azure DevOps") { store.openPullRequestsPage() }
-        Divider()
-        AppMenuItems(source: .azureDevOps)
     }
 }
 
@@ -29,18 +36,6 @@ struct AzureDevOpsSettings: View {
         Toggle("Summaries by Apple Intelligence", isOn: $settings.summaries)
             .disabled(!store.summarizer.isAvailable)
         Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
-
-        SettingsDivider()
-
-        Toggle("Show Desktop Widget", isOn: $settings.showWidget)
-        Picker("Widget Position", selection: $settings.placement) {
-            ForEach(AppSettings.Placement.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.menu)
-        Picker("Widget Size", selection: $settings.widgetSize) {
-            ForEach(AppSettings.WidgetSize.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.menu)
 
         SettingsDivider()
 

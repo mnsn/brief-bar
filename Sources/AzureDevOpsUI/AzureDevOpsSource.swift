@@ -23,14 +23,18 @@ package final class AzureDevOpsSource: BriefBarSource {
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on.",
         requirements: [.azureCLI, .notifications]
     )
-    package let sections = [SectionInfo(id: .azureDevOpsPullRequests, title: "Pull Requests")]
+    package let sections = [
+        SectionInfo(
+            id: .azureDevOpsPullRequests, title: "Pull Requests", symbol: "arrow.triangle.pull",
+            tint: Color(red: 0.33, green: 0.45, blue: 0.96), surfaces: [.menuBar, .widgets, .windows]
+        ),
+    ]
     package var panelWidth: CGFloat { MenuPanelView.width }
 
     private let services: AppServices
     let settings: AppSettings
     /// Made when Azure DevOps starts, so its notifications count from then.
     private var store: PRStore?
-    private var widget: DesktopWidgetController?
     private let changes = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
 
@@ -68,21 +72,6 @@ package final class AzureDevOpsSource: BriefBarSource {
             .sink { [weak self] in MainActor.assumeIsolated { self?.changes.send() } }
             .store(in: &cancellables)
 
-        let widget = DesktopWidgetController(autosaveName: "BriefBar.azureDevOps.widget", title: name) { [unowned self] in
-            AnyView(self.environment(WidgetView(), store: store))
-        }
-        self.widget = widget
-        settings.$showWidget
-            .combineLatest(settings.$placement, settings.$widgetSize)
-            .receive(on: DispatchQueue.main)
-            .sink { show, placement, size in
-                MainActor.assumeIsolated {
-                    widget.update(show: show, placement: placement,
-                                  size: CGSize(width: size.width, height: WidgetView.height(for: size)))
-                }
-            }
-            .store(in: &cancellables)
-
         store.start()
         changes.send()
     }
@@ -96,8 +85,6 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func stop() {
         cancellables.removeAll()
-        widget?.hide()
-        widget = nil
         store?.stop()
         store = nil
     }
@@ -150,6 +137,26 @@ package final class AzureDevOpsSource: BriefBarSource {
         store?.refreshIfStale()
     }
 
+    // MARK: Widgets
+
+    package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView {
+        guard let store else { return AnyView(EmptyView()) }
+        return AnyView(environment(WidgetSectionView(size: size, rows: rows), store: store))
+    }
+
+    package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
+        WidgetSectionView.height(rows: rows)
+    }
+
+    package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {
+        size.width
+    }
+
+    package func widgetMenu(for section: SectionID) -> AnyView {
+        guard let store else { return AnyView(EmptyView()) }
+        return AnyView(environment(SourceMenuContent(), store: store))
+    }
+
     package func openNotification(_ userInfo: [String: String]) {
         if let link = userInfo["url"].flatMap(URL.init(string:)) {
             store?.openFromNotification(key: userInfo["pullRequest"], url: link)
@@ -179,17 +186,6 @@ package final class AzureDevOpsSource: BriefBarSource {
         // Let the on-device model word the brief before drawing.
         await store.loadOnce()
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
-    }
-
-    package func extraRenderings() -> [(name: String, view: AnyView)] {
-        guard let store else { return [] }
-        return AppSettings.WidgetSize.allCases.map { size in
-            let widget = environment(WidgetView(size: size), store: store)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .padding(16)
-            return (name: "widget-\(size.rawValue)", view: AnyView(widget))
-        }
     }
 }
 

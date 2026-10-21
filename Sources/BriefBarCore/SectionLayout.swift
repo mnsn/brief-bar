@@ -1,13 +1,44 @@
 import Foundation
 
-/// BriefBar's menu-bar items, left to right, the sections each one shows, and the sections you've hidden.
+/// Where BriefBar shows the sources' sections.
+public enum Surface: String, CaseIterable, Codable, Sendable {
+    /// Items in the menu bar, each with a list that has a tab for each of its sections.
+    case menuBar
+    /// Desktop widgets, each with its sections one above the other.
+    case widgets
+    /// Windows, each with a page for each of its sections.
+    case windows
+
+    /// Where its layout is saved.
+    public var defaultsKey: String {
+        switch self {
+        case .menuBar: return "menuBarLayout"
+        case .widgets: return "widgetLayout"
+        case .windows: return "windowLayout"
+        }
+    }
+
+    /// Whether sections that aren't placed yet join the first item, rather than getting items of their own:
+    /// BriefBar starts with one window for every page, but with a menu-bar item and a widget for each section.
+    public var startsTogether: Bool {
+        self == .windows
+    }
+
+    /// The ID of the item that sections join when they start together.
+    public static let firstItemID = "main"
+}
+
+/// The items of a surface (menu-bar items, widgets or windows), in order, the sections each one shows, and the
+/// sections you've hidden from it.
 ///
-/// Each section has its own item until you put it in another one, such as Azure DevOps with Copilot, or hide it.
-/// Where a section goes is remembered while its source is off or it's hidden, so it comes back to the same item.
-/// Sections that this version doesn't know are kept, for a later version, but never shown.
-public struct MenuBarLayout: Codable, Equatable, Sendable {
+/// Each section starts in an item of its own, or for windows in the first one, until you put it in another
+/// item, or hide it. Where a section goes is remembered while its source is off or it's hidden, so it comes
+/// back to the same item. Sections that this version doesn't know are kept, for a later version, but never
+/// shown.
+public struct SectionLayout: Codable, Equatable, Sendable {
     public struct Item: Codable, Equatable, Sendable, Identifiable {
-        /// Stable, so the item keeps the place you dragged it to in the menu bar.
+        /// Stable, so the item keeps its place: in the menu bar where you dragged it, and a widget's or a
+        /// window's position on screen.
         public var id: String
         public var sections: [SectionID]
 
@@ -20,8 +51,15 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
     public private(set) var items: [Item]
     /// Sections no item shows. Each keeps its place in `items`, for when you show it again.
     public private(set) var hidden: [SectionID]
+    /// Which surface this is. It isn't saved: it's where the layout is saved.
+    public private(set) var surface: Surface
 
-    public init(items: [Item] = [], hidden: [SectionID] = []) {
+    private enum CodingKeys: String, CodingKey {
+        case items, hidden
+    }
+
+    public init(_ surface: Surface = .menuBar, items: [Item] = [], hidden: [SectionID] = []) {
+        self.surface = surface
         self.items = []
         self.hidden = []
         for item in items {
@@ -45,20 +83,15 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
     }
 
     /// The items for the sections that are on and not hidden, in order, each with the sections of its own that
-    /// show. Sections that aren't placed yet get items of their own, after the others.
+    /// show. Sections that aren't placed yet go where `place` would put them.
     public func visibleItems(showing sections: [SectionID]) -> [Item] {
         let shown = sections.filter { !isHidden($0) }
-        var visible = items.compactMap { item -> Item? in
-            let sections = item.sections.filter(shown.contains)
-            return sections.isEmpty ? nil : Item(id: item.id, sections: sections)
-        }
         var layout = self
-        for section in shown where item(containing: section) == nil {
-            let id = layout.uniqueID(section.rawValue)
-            layout.items.append(Item(id: id, sections: [section]))
-            visible.append(Item(id: id, sections: [section]))
+        layout.place(shown)
+        return layout.items.compactMap { item in
+            let visible = item.sections.filter(shown.contains)
+            return visible.isEmpty ? nil : Item(id: item.id, sections: visible)
         }
-        return visible
     }
 
     public func item(containing section: SectionID) -> Item? {
@@ -81,7 +114,7 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
     }
 
     /// For a source you've just turned on: places its sections, and shows them again if you'd hidden all of them,
-    /// so turning it on always puts it in the menu bar.
+    /// so turning it on always shows it.
     public mutating func sourceTurnedOn(_ sections: [SectionID]) {
         place(sections)
         if sections.allSatisfy(isHidden) {
@@ -89,10 +122,19 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
         }
     }
 
-    /// Gives each section that isn't in an item yet an item of its own, at the end, in the given order.
+    /// Places each section that isn't in an item yet, in the given order: in an item of its own at the end, or
+    /// for a surface whose sections start together, in the first item.
     public mutating func place(_ sections: [SectionID]) {
         for section in sections where item(containing: section) == nil {
-            items.append(Item(id: uniqueID(section.rawValue), sections: [section]))
+            if surface.startsTogether {
+                if items.isEmpty {
+                    items.append(Item(id: uniqueID(Surface.firstItemID), sections: [section]))
+                } else {
+                    items[0].sections.append(section)
+                }
+            } else {
+                items.append(Item(id: uniqueID(section.rawValue), sections: [section]))
+            }
         }
     }
 
@@ -111,7 +153,7 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
     public mutating func separate(_ section: SectionID) {
         show(section)
         guard let index = items.firstIndex(where: { $0.sections.contains(section) }) else {
-            place([section])
+            items.append(Item(id: uniqueID(section.rawValue), sections: [section]))
             return
         }
         guard items[index].sections.count > 1 else { return }
@@ -121,14 +163,15 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
 
     /// Puts every section in one item: `sections` first, in their order, then the others already placed, so a
     /// source you turn on later joins it too. The item keeps the ID of the one that had the first section, so it
-    /// stays where that one was in the menu bar. Hidden sections stay hidden.
+    /// stays where that one was. Hidden sections stay hidden.
     public mutating func combineAll(_ sections: [SectionID]) {
         var all: [SectionID] = []
         for section in sections + items.flatMap(\.sections) where !all.contains(section) {
             all.append(section)
         }
         guard let first = all.first else { return }
-        items = [Item(id: item(containing: first)?.id ?? first.rawValue, sections: all)]
+        let id = item(containing: first)?.id ?? (surface.startsTogether ? Surface.firstItemID : first.rawValue)
+        items = [Item(id: id, sections: all)]
     }
 
     /// Gives every section an item of its own, in their order. Each item stays with its first section; the
@@ -166,20 +209,19 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
 
     // MARK: Saving
 
-    public static let defaultsKey = "menuBarLayout"
-
-    /// What's saved, or no items when there's nothing saved or it can't be read: every section then gets an
-    /// item of its own.
-    public static func load(from defaults: some SettingsStorage) -> MenuBarLayout {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let layout = try? JSONDecoder().decode(MenuBarLayout.self, from: data)
-        else { return MenuBarLayout() }
+    /// What's saved for the surface, or no items when there's nothing saved or it can't be read: every section
+    /// then starts where the surface puts it.
+    public static func load(_ surface: Surface, from defaults: some SettingsStorage) -> SectionLayout {
+        guard let data = defaults.data(forKey: surface.defaultsKey),
+              var layout = try? JSONDecoder().decode(SectionLayout.self, from: data)
+        else { return SectionLayout(surface) }
+        layout.surface = surface
         return layout
     }
 
     public func save(to defaults: some SettingsStorage) {
         if let data = try? JSONEncoder().encode(self) {
-            defaults.set(data, forKey: Self.defaultsKey)
+            defaults.set(data, forKey: surface.defaultsKey)
         }
     }
 }

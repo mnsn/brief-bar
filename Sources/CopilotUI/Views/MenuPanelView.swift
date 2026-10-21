@@ -11,7 +11,6 @@ struct MenuPanelView: View {
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
-    @Environment(\.panelWidth) private var panelWidth
 
     static let width: CGFloat = 380
     private static let maxListHeight: CGFloat = 540
@@ -26,11 +25,11 @@ struct MenuPanelView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(max(contentHeight, 60), Self.maxListHeight))
+            .panelListHeight(contentHeight, max: Self.maxListHeight)
             Divider()
             footer
         }
-        .frame(width: panelWidth ?? Self.width)
+        .panelFrame(width: Self.width)
         .onAppear { loginItem.refresh() }
     }
 
