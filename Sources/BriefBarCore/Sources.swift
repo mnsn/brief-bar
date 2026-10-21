@@ -95,14 +95,14 @@ public struct SourceChoices: Codable, Equatable, Sendable {
     public static let defaultsKey = "sources"
 
     /// What's saved, or nothing on when there's nothing saved or it can't be read.
-    public static func load(from defaults: UserDefaults) -> SourceChoices {
+    public static func load(from defaults: some SettingsStorage) -> SourceChoices {
         guard let data = defaults.data(forKey: defaultsKey),
               let choices = try? JSONDecoder().decode(SourceChoices.self, from: data)
         else { return SourceChoices() }
         return choices
     }
 
-    public func save(to defaults: UserDefaults) {
+    public func save(to defaults: some SettingsStorage) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         if let data = try? encoder.encode(self) {

@@ -7,10 +7,8 @@ import Testing
 /// source that's on.
 @MainActor
 @Suite struct FullDiskAccessTests {
-    private func makeAccess() -> (FullDiskAccess, UserDefaults) {
-        let name = "BriefBarTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
+    private func makeAccess() -> (FullDiskAccess, MemorySettings) {
+        let defaults = MemorySettings()
         return (FullDiskAccess(defaults: defaults), defaults)
     }
 

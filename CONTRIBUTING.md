@@ -130,6 +130,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share;
   `--dump`, `--watch` and `--json` output isn't.
 - **Logic goes in the core modules**, free of UI code and covered by tests.
+- **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
+  `MemorySettings`: a UserDefaults suite leaves a file in `~/Library/Preferences`, even once removed.
 - **The formats are undocumented.** When you rely on a new field, handle its absence and add a test
   with a small made-up sample.
 

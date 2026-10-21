@@ -27,10 +27,10 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
     private var order: [SourceID] = []
     private var window: NSWindow?
     private var timer: Timer?
-    private let defaults: UserDefaults
+    private let defaults: any SettingsStorage
     private static let hadAccessKey = "fullDiskAccess.hadAccess"
 
-    package init(defaults: UserDefaults = .standard) {
+    package init(defaults: any SettingsStorage = UserDefaults.standard) {
         self.defaults = defaults
         super.init()
     }

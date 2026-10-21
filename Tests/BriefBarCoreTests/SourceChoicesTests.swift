@@ -3,11 +3,8 @@ import Testing
 @testable import BriefBarCore
 
 @Suite struct SourceChoicesTests {
-    private func freshDefaults() -> UserDefaults {
-        let name = "BriefBarTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
+    private func freshDefaults() -> MemorySettings {
+        MemorySettings()
     }
 
     @Test func nothingIsOnAtFirst() {

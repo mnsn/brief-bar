@@ -104,14 +104,14 @@ public struct MenuBarLayout: Codable, Equatable, Sendable {
 
     /// What's saved, or no items when there's nothing saved or it can't be read: every section then gets an
     /// item of its own.
-    public static func load(from defaults: UserDefaults) -> MenuBarLayout {
+    public static func load(from defaults: some SettingsStorage) -> MenuBarLayout {
         guard let data = defaults.data(forKey: defaultsKey),
               let layout = try? JSONDecoder().decode(MenuBarLayout.self, from: data)
         else { return MenuBarLayout() }
         return layout
     }
 
-    public func save(to defaults: UserDefaults) {
+    public func save(to defaults: some SettingsStorage) {
         if let data = try? JSONEncoder().encode(self) {
             defaults.set(data, forKey: Self.defaultsKey)
         }

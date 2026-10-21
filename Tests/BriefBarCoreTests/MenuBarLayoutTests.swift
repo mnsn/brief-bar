@@ -76,9 +76,7 @@ import Testing
     }
 
     @Test func somethingUnreadableStartsOver() {
-        let name = "BriefBarTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = MemorySettings()
         defaults.set(Data("[1,2]".utf8), forKey: MenuBarLayout.defaultsKey)
         #expect(MenuBarLayout.load(from: defaults) == MenuBarLayout())
 
