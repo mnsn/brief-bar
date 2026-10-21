@@ -86,6 +86,10 @@ package final class DesktopWidgetController {
     /// A new widget, with no saved position: placed once it has its size.
     private var needsPosition = false
     private var cancellables: Set<AnyCancellable> = []
+    /// Whether the widget shows on screen: not hidden, and not covered by windows (on the desktop, they cover it).
+    package private(set) var isOnScreen = false
+    /// Called when `isOnScreen` changes.
+    package var onScreenChanged: (Bool) -> Void = { _ in }
 
     /// - Parameters:
     ///   - autosaveName: where the widget's position is kept; nil to keep it nowhere, as in the demo.
@@ -107,6 +111,7 @@ package final class DesktopWidgetController {
     package func update(show: Bool, placement: WidgetPlacement, size: CGSize) {
         guard show else {
             panel?.orderOut(nil)
+            updateOnScreen()
             return
         }
         let panel = self.panel ?? makePanel()
@@ -120,17 +125,27 @@ package final class DesktopWidgetController {
         }
         keepOnScreen()
         panel.orderFrontRegardless()
+        updateOnScreen()
         Log.app.info("\(self.title, privacy: .public) widget \(placement.rawValue, privacy: .public) at \(NSStringFromRect(panel.frame), privacy: .public)")
     }
 
     package func hide() {
         panel?.orderOut(nil)
+        updateOnScreen()
     }
 
     /// Removes the widget for good. Its position stays saved.
     package func close() {
         panel?.close()
         panel = nil
+        updateOnScreen()
+    }
+
+    private func updateOnScreen() {
+        let onScreen = panel.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+        guard onScreen != isOnScreen else { return }
+        isOnScreen = onScreen
+        onScreenChanged(onScreen)
     }
 
     /// For VoiceOver and the window list, such as "Azure DevOps and GitHub Copilot".
@@ -172,6 +187,10 @@ package final class DesktopWidgetController {
             host.bottomAnchor.constraint(equalTo: background.bottomAnchor),
         ])
         panel.contentView = background
+        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: panel)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateOnScreen() } }
+            .store(in: &cancellables)
 
         if let autosaveName {
             if !panel.setFrameUsingName(autosaveName) {

@@ -250,6 +250,19 @@ extension Locked where Value == Int {
         #expect(request.httpBody == nil)
     }
 
+    @Test func noContentIsNothingThereNotASignInProblem() async throws {
+        let server = StubServer()
+        server.on("/timeline") { _ in StubServer.Reply(status: 204, headers: [:], body: Data()) }
+        let tokens = FakeTokens(server.id)
+        await #expect(throws: ADOError.notFound) {
+            try await server.client(tokens: tokens).get(
+                ADOEndpoint.timeline(organization: "contoso", projectId: "p1", buildId: 7), as: ADOTimeline.self
+            )
+        }
+        #expect(await tokens.invalidations == 0)
+        #expect(server.requests.count == 1)
+    }
+
     @Test func retriesOnceWithAFreshTokenWhenTheTokenIsRejected() async throws {
         let server = StubServer()
         let attempts = Locked(0)

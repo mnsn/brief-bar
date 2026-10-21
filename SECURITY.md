@@ -12,15 +12,16 @@ sessions. This is a personal project maintained in spare time, so a reply may ta
 
 ## Scope
 
-BriefBar can hold Full Disk Access, which macOS grants to the whole app, to read the Teams
-notifications in Notification Center's database. It keeps Teams' unread chats on disk, encrypted,
+BriefBar can hold Full Disk Access, which macOS grants to the whole app, to read notifications in
+Notification Center's database: Teams', and, only if you turn on Azure DevOps' Pull Requests Sent in
+Chats, every app's, for links to pull requests. It keeps Teams' unread chats on disk, encrypted,
 until they're read, and makes summaries on the Mac. Only its Azure DevOps source uses the network for
 what it shows, with the Azure CLI's sign-in. BriefBar's own requests are for its updates, from this
 project's GitHub releases. Worth reporting:
 
-- any way it could send anything about your chats, pull requests or sessions anywhere but Azure DevOps
-  (and anything but GET requests there), or expose it to other users or apps on the Mac (its saved
-  chats, its log, its summaries),
+- any way it could send anything about your chats, pull requests, work items, pipelines or sessions
+  anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
+  on the Mac (its saved chats, its log, its summaries),
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it, through a
   program it starts, or by signing itself with a key that BriefBar's builds are signed with (beyond
   the known trade-off of library validation, below),

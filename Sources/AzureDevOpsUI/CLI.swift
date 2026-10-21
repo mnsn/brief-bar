@@ -8,12 +8,19 @@ import NotificationCenterDB
 package enum AzureDevOpsCommandLine: SourceCommandLine {
     package static let source = SourceID.azureDevOps
     package static var descriptionVersion: Int { AzureDevOpsSource.descriptionVersion }
-    package static let flags = ["--orgs", "--chats"]
+    package static let flags = ["--orgs", "--chats", "--sprint", "--teams", "--pipelines"]
     package static let usage = """
         Azure DevOps:
           --orgs             List your organizations, and the ones where you have pull requests
           --chats            List the pull request links in every app's notifications in Notification
                              Center (Terminal needs Full Disk Access)
+          --sprint           Print your team's current sprint: its stories and bugs, with their tasks
+            --team <name>    …of this team instead of the app's choice
+            --mine           …only your stories and tasks
+          --teams            List your teams, and which have a sprint going on today
+          --pipelines        Print the pipelines pinned in the app: their latest runs and stages
+            --search <text> --project <name>   Find pipelines to pin in a project instead
+              --status       …and show how the first five are doing
           --org <name>       Read this organization instead of the app's choice (repeatable)
           It signs in with the Azure CLI (az login) and only reads: every request is a GET. Set
           BRIEFBAR_AZ to the path of az to use another one.
@@ -22,15 +29,35 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     struct Options {
         var demo = false
         var organizations: [String] = []
+        var team: String?
+        var mine = false
+        var search: String?
+        var project: String?
+        var status = false
 
         init(_ options: CommandLineOptions) {
             demo = options.demo
             let arguments = options.arguments
+            mine = arguments.contains("--mine")
+            status = arguments.contains("--status")
             var index = 0
             while index < arguments.count {
-                if arguments[index] == "--org", index + 1 < arguments.count {
-                    organizations.append(arguments[index + 1])
+                let value = index + 1 < arguments.count ? arguments[index + 1] : nil
+                switch (arguments[index], value) {
+                case ("--org", let value?):
+                    organizations.append(value)
                     index += 1
+                case ("--team", let value?):
+                    team = value
+                    index += 1
+                case ("--search", let value?):
+                    search = value
+                    index += 1
+                case ("--project", let value?):
+                    project = value
+                    index += 1
+                default:
+                    break
                 }
                 index += 1
             }
@@ -44,6 +71,16 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         }
         if options.arguments.contains("--chats") {
             return options.demo ? listDemoChatLinks() : listChatLinks()
+        }
+        let work = Options(options)
+        if options.arguments.contains("--sprint") {
+            return WorkCLI.sprint(work)
+        }
+        if options.arguments.contains("--teams") {
+            return WorkCLI.teams(work)
+        }
+        if options.arguments.contains("--pipelines") {
+            return work.search != nil ? WorkCLI.searchPipelines(work) : WorkCLI.pipelines(work)
         }
         return nil
     }
@@ -86,7 +123,12 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     /// The installed app's settings (read-only), so the output matches its list.
-    private static var appDefaults: UserDefaults? { AppSettings.appDefaults }
+    static var appDefaults: UserDefaults? { AppSettings.appDefaults }
+
+    /// The organizations to read: `--org`, or the app's.
+    static func organizations(_ options: Options) -> [String] {
+        options.organizations.isEmpty ? appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? [] : options.organizations
+    }
 
     private static func classifierOptions() -> ClassifierOptions {
         let defaults = appDefaults
@@ -184,7 +226,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         [pad(group, 9), pad(status, 30), pad(since, 7), pad(title, 50), String(detail.prefix(70))].joined(separator: " ")
     }
 
-    private static func pad(_ text: String, _ width: Int) -> String {
+    static func pad(_ text: String, _ width: Int) -> String {
         let clipped = text.count > width ? String(text.prefix(width - 1)) + "…" : text
         return clipped.padding(toLength: width, withPad: " ", startingAt: 0)
     }

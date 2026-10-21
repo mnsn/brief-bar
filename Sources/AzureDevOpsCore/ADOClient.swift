@@ -94,6 +94,9 @@ public struct ADOClient: Sendable {
                 await gate.hold(for: retryAfter)
             }
             switch http.statusCode {
+            case 204:
+                // Nothing there, such as the timeline of a run that has none yet: not a sign-in problem.
+                throw ADOError.notFound
             case 200..<300 where http.statusCode != 203 && Self.isJSON(http):
                 return data
             case 200..<300, 401:
@@ -229,6 +232,76 @@ public enum ADOEndpoint {
         url("https://app.vssps.visualstudio.com", ["_apis", "accounts"], [("memberId", memberId), ("api-version", apiVersion)])
     }
 
+    // MARK: Sprints
+
+    /// The teams you're in, across the organization's projects.
+    public static func myTeams(organization: String) -> URL {
+        url("https://dev.azure.com", [organization, "_apis", "teams"],
+            [("$mine", "true"), ("$top", "500"), ("api-version", "7.1-preview.3")])
+    }
+
+    /// A team's current sprint.
+    public static func currentIteration(team: TeamRef) -> URL {
+        url("https://dev.azure.com", [team.organization, team.projectId, team.id, "_apis", "work", "teamsettings", "iterations"],
+            [("$timeframe", "current"), ("api-version", apiVersion)])
+    }
+
+    /// The work items in a team's sprint, and which tasks are under which story or bug.
+    public static func iterationWorkItems(team: TeamRef, iterationId: String) -> URL {
+        url("https://dev.azure.com",
+            [team.organization, team.projectId, team.id, "_apis", "work", "teamsettings", "iterations", iterationId, "workitems"],
+            [("api-version", apiVersion)])
+    }
+
+    /// Which work item types are tasks on the team's board, and each state's category.
+    public static func backlogConfiguration(team: TeamRef) -> URL {
+        url("https://dev.azure.com", [team.organization, team.projectId, team.id, "_apis", "work", "backlogconfiguration"],
+            [("api-version", apiVersion)])
+    }
+
+    /// Up to 200 work items by ID, with the given fields. Ones that were deleted or can't be read are left out.
+    public static func workItems(organization: String, ids: [Int], fields: [String] = ADOWorkItem.fieldNames) -> URL {
+        url("https://dev.azure.com", [organization, "_apis", "wit", "workitems"], [
+            ("ids", ids.map(String.init).joined(separator: ",")), ("fields", fields.joined(separator: ",")),
+            ("errorPolicy", "omit"), ("api-version", apiVersion),
+        ])
+    }
+
+    // MARK: Pipelines
+
+    /// A project's pipelines whose names contain `text`, by name.
+    public static func buildDefinitions(organization: String, projectId: String, containing text: String, top: Int = 50) -> URL {
+        let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "*", with: "")
+        var query: [(String, String)] = []
+        if !trimmed.isEmpty { query.append(("name", "*\(trimmed)*")) }
+        query += [("queryOrder", "definitionNameAscending"), ("$top", String(top)), ("api-version", apiVersion)]
+        return url("https://dev.azure.com", [organization, projectId, "_apis", "build", "definitions"], query)
+    }
+
+    /// The latest runs of each of a project's pipelines, newest first, in one request.
+    public static func builds(
+        organization: String, projectId: String, definitionIds: [Int], branch: String? = nil, perDefinition: Int = 10
+    ) -> URL {
+        var query: [(String, String)] = [
+            ("definitions", definitionIds.sorted().map(String.init).joined(separator: ",")),
+            ("maxBuildsPerDefinition", String(perDefinition)), ("queryOrder", "queueTimeDescending"),
+        ]
+        if let branch { query.append(("branchName", branch.hasPrefix("refs/") ? branch : "refs/heads/\(branch)")) }
+        query.append(("api-version", apiVersion))
+        return url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds"], query)
+    }
+
+    /// A run's stages, jobs and tasks.
+    public static func timeline(organization: String, projectId: String, buildId: Int) -> URL {
+        url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds", String(buildId), "timeline"],
+            [("api-version", apiVersion)])
+    }
+
+    /// The organization's projects, to search for pipelines in.
+    public static func projects(organization: String) -> URL {
+        url("https://dev.azure.com", [organization, "_apis", "projects"], [("$top", "1000"), ("api-version", apiVersion)])
+    }
+
     // MARK: Web pages
 
     public static func pullRequestPage(organization: String, project: String, repository: String, id: Int, threadId: Int? = nil) -> URL {
@@ -239,6 +312,10 @@ public enum ADOEndpoint {
     /// The organization's "My pull requests" page.
     public static func myPullRequestsPage(organization: String) -> URL {
         url("https://dev.azure.com", [organization, "_pulls"], [])
+    }
+
+    public static func workItemPage(organization: String, project: String, id: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_workitems", "edit", String(id)], [])
     }
 
     /// Builds a URL from unencoded path segments and query items, percent-encoding everything that

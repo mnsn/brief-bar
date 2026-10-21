@@ -17,6 +17,8 @@ final class MenuBarItemController: NSObject {
     private var cancellables: Set<AnyCancellable> = []
     /// The section the open popover shows; nil while it's closed.
     private var visible: SectionID?
+    /// The sections whose counts the item shows.
+    private var counted: [SectionID] = []
 
     init(id: String, sections: [SectionID], model: AppModel) {
         self.id = id
@@ -48,6 +50,7 @@ final class MenuBarItemController: NSObject {
             panel.selected = nil
         }
         updateVisible()
+        setCounted(sections)
         cancellables.removeAll()
         let sources = sections.compactMap { model.source(for: $0) }
         var seen = Set<SourceID>()
@@ -63,6 +66,7 @@ final class MenuBarItemController: NSObject {
     func remove() {
         closePopover()
         setVisible(nil)
+        setCounted([])
         cancellables.removeAll()
         NSStatusBar.system.removeStatusItem(statusItem)
     }
@@ -93,9 +97,19 @@ final class MenuBarItemController: NSObject {
         guard section != visible else { return }
         let hidden = visible
         visible = section
-        let viewer = SectionViewer(.menuBar, id: id)
+        let viewer = SectionViewer(.popover, id: id)
         if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
         if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
+    }
+
+    /// Tells the sources which sections' counts the item shows, in the menu bar all the time.
+    private func setCounted(_ sections: [SectionID]) {
+        let viewer = SectionViewer(.menuBarItem, id: id)
+        let gone = counted.filter { !sections.contains($0) }
+        let added = sections.filter { !counted.contains($0) }
+        counted = sections
+        for section in gone { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: false, by: viewer) }
+        for section in added { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
     }
 
     func closePopover() {
@@ -177,10 +191,11 @@ final class ItemPanelModel: ObservableObject {
     }
 
     /// The section's symbol and count, for tabs too small for titles.
-    func shortTitle(for section: SectionID) -> Text {
-        let symbol = Image(systemName: model.info(for: section)?.symbol ?? "circle")
+    func shortTitle(for section: SectionID) -> some View {
+        let symbol = model.info(for: section)?.symbol ?? "circle"
         let count = model.source(for: section)?.segment(for: section).count ?? 0
-        return count > 0 ? Text("\(symbol) \(count)") : Text(symbol)
+        return Label(count > 0 ? "\(count)" : "", systemImage: symbol)
+            .labelStyle(.titleAndIcon)
     }
 
     /// For VoiceOver and a tab's tooltip.
@@ -211,11 +226,10 @@ struct ItemPanelView: View {
                 // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
                 // fitting the popover's width.
                 ViewThatFits(in: .horizontal) {
-                    tabs(current: current, short: false)
-                    tabs(current: current, short: false)
+                    tabs(current: current)
+                    tabs(current: current)
                         .controlSize(.small)
-                    tabs(current: current, short: true)
-                        .controlSize(.small)
+                    symbolTabs(current: current)
                     menu(current: current)
                 }
                 .padding(.horizontal, 12)
@@ -236,16 +250,10 @@ struct ItemPanelView: View {
         Binding(get: { current }, set: { panel.select($0) })
     }
 
-    private func tabs(current: SectionID, short: Bool) -> some View {
+    private func tabs(current: SectionID) -> some View {
         Picker("Section", selection: selection(current)) {
             ForEach(panel.sections, id: \.self) { section in
-                Group {
-                    if short {
-                        panel.shortTitle(for: section)
-                    } else {
-                        Text(panel.title(for: section))
-                    }
-                }
+                Text(panel.title(for: section))
                 .help(panel.spokenTitle(for: section))
                 .accessibilityLabel(panel.spokenTitle(for: section))
                 .tag(section)
@@ -253,6 +261,38 @@ struct ItemPanelView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+    }
+
+    /// Each section's symbol and count, for when titles don't fit: a segmented picker draws a label's title but not
+    /// its icon.
+    private func symbolTabs(current: SectionID) -> some View {
+        HStack(spacing: 2) {
+            ForEach(panel.sections, id: \.self) { section in
+                let isSelected = section == current
+                Button {
+                    panel.select(section)
+                } label: {
+                    panel.shortTitle(for: section)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(panel.spokenTitle(for: section))
+                .accessibilityLabel(panel.spokenTitle(for: section))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
     }
 
     private func menu(current: SectionID) -> some View {

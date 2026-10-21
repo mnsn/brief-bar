@@ -6,7 +6,7 @@
 A macOS menu-bar app that shows what needs you, from the apps you choose:
 
 - your unread **Microsoft Teams** chats,
-- your **Azure DevOps** pull requests,
+- your **Azure DevOps** pull requests, your team's sprint and the pipelines you follow,
 - what your **GitHub Copilot** app sessions are doing.
 
 Every source is off until you turn it on, and each one first says what it reads.
@@ -31,7 +31,7 @@ item, a desktop widget or a window, and you can hide what you don't need.
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 
 Only the Azure DevOps source talks to the network for what you see, and only to Azure DevOps. BriefBar's
@@ -69,14 +69,15 @@ can remove it.
 
 ## Menu bar, widgets and windows
 
-Each source has sections: **Chats** and **Group Chats** for Teams, **Pull Requests** for Azure DevOps
-and **Sessions** for Copilot. BriefBar shows them in three places, each arranged in Settings:
+Each source has sections: **Chats** and **Group Chats** for Teams, **Pull Requests**, **Sprint** and
+**Pipelines** for Azure DevOps, and **Sessions** for Copilot. BriefBar shows them in three places, each
+arranged in Settings:
 
-- **The menu bar** (Settings › Menu Bar): each section starts with an item of its own. Click one for
-  its list.
-- **Desktop widgets** (Settings › Widgets): Azure DevOps and Copilot each start with a widget, behind
-  your windows or floating above them, in three sizes. Teams' widgets start hidden. Drag a widget by
-  its header, and right-click it for its settings.
+- **The menu bar** (Settings › Menu Bar): each section starts with an item of its own, but Sprint and
+  Pipelines start hidden there. Click one for its list.
+- **Desktop widgets** (Settings › Widgets): Azure DevOps' pull requests and Copilot each start with a
+  widget, behind your windows or floating above them, in three sizes. Teams' widgets, Sprint and
+  Pipelines start hidden. Drag a widget by its header, and right-click it for its settings.
 - **Windows** (Settings › Windows): one BriefBar window with a page for every section, and a sidebar
   with their counts. Open it with **Open in Window** from a list's gear menu or a widget's menu.
   BriefBar shows a Dock icon while a window is open.
@@ -90,14 +91,14 @@ you didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-combined-dark.png">
-    <img src="docs/images/menubar-combined-light.png" width="572" alt="Azure DevOps and Copilot sharing one menu-bar item, with both their counts; its list is open on the Pull Requests tab, showing a brief by Apple Intelligence and the pull requests that need you and are failing">
+    <img src="docs/images/menubar-combined-light.png" width="572" alt="Azure DevOps and Copilot sharing one menu-bar item, with both their counts; its list is open on the Pull Requests tab, showing a brief by Apple Intelligence, the pull requests that need you, one of them sent in Teams, and one you answered">
   </picture>
 </p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-azureDevOps.pullRequests-dark.jpg">
-    <img src="docs/images/window-azureDevOps.pullRequests-light.jpg" width="560" align="top" alt="The BriefBar window: a sidebar with Teams' Chats and Group Chats, Azure DevOps' Pull Requests and Copilot's Sessions, each with its count, open on the pull requests that need you, are failing or are ready to complete">
+    <img src="docs/images/window-azureDevOps.pullRequests-light.jpg" width="560" align="top" alt="The BriefBar window: a sidebar with Teams' Chats and Group Chats, Azure DevOps' Pull Requests, Sprint and Pipelines, and Copilot's Sessions, each with its count, open on the pull requests that need you, that you answered, that are failing or are ready to complete">
   </picture>
   &nbsp;
   <picture>
@@ -161,6 +162,28 @@ even if you're not on it. It reads the notifications that every app posts to Not
 keeps only the links, with who sent them, in which app and when, never the messages, and needs Full
 Disk Access, like Teams. Right-click the pull request to open the message. A link needs you until
 you open the pull request from BriefBar, vote or comment on it, it closes, or a week goes by.
+
+**Sprint** shows your team's current sprint at a glance: how much is done, how many days are left and
+where your own work stands, then each story and bug with its tasks, in **In Progress** (when they, or
+any of their tasks, have started), **Not Started** and **Done**. Tasks without a story in the sprint
+are in a card of their own, and your avatar has a blue ring. **Just Mine** shows only yours, and the
+team menu shows another team's sprint. Its widget and menu-bar item list your own work.
+
+**Pipelines** shows the pipelines you pin, from any of your projects: how each one's latest run is
+going stage by stage, where it failed, and how its recent runs went. **Add Pipeline** searches a
+project's pipelines by name, and a pinned pipeline's menu shows only one branch's runs, moves it, or
+unpins it.
+
+Both start in BriefBar's window only, and read Azure DevOps only while something shows them on screen:
+the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
+covered, a menu-bar item or its list. Click anything to open it in Azure DevOps.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-azureDevOps.sprint-dark.jpg">
+    <img src="docs/images/window-azureDevOps.sprint-light.jpg" width="800" alt="The Sprint page in BriefBar's window: rings for the tasks done and the days left, your own work, then each story in progress as a card with its tasks">
+  </picture>
+</p>
 
 ### GitHub Copilot
 
@@ -284,6 +307,8 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
+| | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
+| | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 
@@ -305,6 +330,8 @@ there and in its right-click menu.
   pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
   files, and Azure DevOps through GET requests. It never changes any of them.
+- **Your sprint and pipelines** are read only while something shows them on screen, with the same
+  sign-in and GET requests as your pull requests.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and when, never the messages, and forgets them when you turn it off.
@@ -342,7 +369,15 @@ For Teams, **Copy Diagnostics** describes the database's structure, without your
 
 Azure DevOps can only push changes through service hooks, which need a project administrator and a
 server on the internet. So BriefBar asks every minute: about 10 to 25 small requests a minute, and
-right away when you open the list, when your Mac wakes, and when it's back online.
+right away when you open the list, when your Mac wakes, and when it's back online. Your sprint and
+pipelines add a few requests a minute, and only while something shows them.
+
+### How does it pick my team's sprint?
+
+The first time, it looks through your teams for one with a sprint going on today. When several have
+one, it picks the team with the most work assigned to you, and keeps it. Choose another team from the
+Sprint page's team menu. Azure DevOps keeps calling a team's last sprint "current" after it's over,
+when the team stops planning sprints: BriefBar shows no sprint then.
 
 ### Why isn't it notarized?
 
@@ -371,6 +406,9 @@ APP="$HOME/Applications/BriefBar.app/Contents/MacOS/BriefBar"
 "$APP" --diagnose                 # Teams: the database's structure only, safe to share
 "$APP" --orgs                     # Azure DevOps: your organizations
 "$APP" --chats                    # Azure DevOps: the pull request links in every app's notifications
+"$APP" --teams                    # Azure DevOps: your teams, and which have a sprint going on today
+"$APP" --sprint                   # Azure DevOps: your team's current sprint
+"$APP" --pipelines                # Azure DevOps: the pipelines you pinned, with their latest runs
 log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --style compact
 ```
 

@@ -11,11 +11,14 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
   Azure DevOps, until you've seen it; **Pull Requests Sent in Chats**, off until you turn it on, which
   lists a pull request when someone sends you a link to it, from the notifications every app posts,
   keeping only the links; and what you've seen, kept for each Azure CLI account.
+- **Your sprint and pipelines**, from ADO Pulse's window: your team's current sprint as a task board,
+  with **Just Mine**, and the pipelines you pin, stage by stage. Each is a section of its own, a page
+  in BriefBar's window to start with, and reads Azure DevOps only while something shows it.
 - **Permissions once.** Full Disk Access and notifications are BriefBar's, granted once, and used only
   by the sources you turn on. An update never turns a source on, and one that starts reading more
   pauses until you've looked.
 - **Menu bar, widgets and windows, arranged as you like.** Each section (Teams' Chats and Group
-  Chats, pull requests, sessions) can share a menu-bar item, a desktop widget or a window with
+  Chats, pull requests, the sprint, pipelines, sessions) can share a menu-bar item, a desktop widget or a window with
   others, have one of its own, or be hidden from any of them. Settings › Menu Bar, Widgets and
   Windows also put everything in one, or give each its own.
 - **A window** with a page for each section, and a sidebar with their counts. BriefBar shows a Dock

@@ -65,6 +65,18 @@ final class AppSettings: ObservableObject {
     }
     /// The links found so far: who sent which pull request, in which app and when. Never the messages.
     @Published private(set) var chatLinks: ChatLinkState
+    /// The team whose sprint the Sprint section shows; nil until it's chosen, or found.
+    @Published var sprintTeam: TeamRef? {
+        didSet { Self.store(sprintTeam, in: defaults, forKey: Key.sprintTeam) }
+    }
+    /// Only your stories and tasks in the Sprint section.
+    @Published var sprintJustMine: Bool {
+        didSet { defaults.set(sprintJustMine, forKey: Key.sprintJustMine) }
+    }
+    /// The pipelines in the Pipelines section, in the order you pinned them.
+    @Published var pinnedPipelines: [PipelineRef] {
+        didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
+    }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
     /// What the other accounts you've signed in with have seen.
@@ -82,6 +94,9 @@ final class AppSettings: ObservableObject {
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
         chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
+        sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
+        sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
+        pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         var links = defaults.data(forKey: Key.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
             ?? ChatLinkState()
         links.prune(now: now)
@@ -116,6 +131,18 @@ final class AppSettings: ObservableObject {
         otherSeen = [:]
         chatLinks = ChatLinkState()
         defaults.removeObject(forKey: Key.chatLinks)
+    }
+
+    private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
+
+    private static func store<T: Encodable>(_ value: T?, in defaults: UserDefaults, forKey key: String) {
+        if let value, let data = try? JSONEncoder().encode(value) {
+            defaults.set(data, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private static func choice(_ value: Int, in choices: [Int], default fallback: Int) -> Int {
@@ -238,6 +265,9 @@ enum SettingsKey {
     static let otherSeen = "ado.otherAccountsSeenState"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
     static let chatLinks = "ado.chatLinks"
+    static let sprintTeam = "ado.sprintTeam"
+    static let sprintJustMine = "ado.sprintJustMine"
+    static let pinnedPipelines = "ado.pinnedPipelines"
 }
 
 extension BriefBarUI.WidgetSize {

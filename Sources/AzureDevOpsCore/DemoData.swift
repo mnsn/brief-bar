@@ -11,16 +11,16 @@ public enum DemoData {
         "needsYou": 4, "answered": 1, "failing": 2, "ready": 2, "toReview": 1, "waiting": 2, "done": 1, "idle": 2,
     ]
 
-    private static let sam = person("b001", "Sam Rivera")
-    private static let priya = person("b002", "Priya Shah")
-    private static let alex = person("b003", "Alex Kim")
-    private static let jordan = person("b004", "Jordan Lee")
-    private static let maria = person("b005", "Maria Garcia")
-    private static let chen = person("b006", "Chen Wei")
+    static let sam = person("b001", "Sam Rivera")
+    static let priya = person("b002", "Priya Shah")
+    static let alex = person("b003", "Alex Kim")
+    static let jordan = person("b004", "Jordan Lee")
+    static let maria = person("b005", "Maria Garcia")
+    static let chen = person("b006", "Chen Wei")
     private static let dana = person("b007", "Dana Whitfield")
     private static let buildService = Person(id: "6f1c1a52-0000-4000-8000-00000000c001", name: "Storefront Build Service", isBot: true)
 
-    private static func person(_ suffix: String, _ name: String) -> Person {
+    static func person(_ suffix: String, _ name: String) -> Person {
         Person(id: "6f1c1a52-0000-4000-8000-00000000\(suffix)", name: name)
     }
 

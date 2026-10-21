@@ -47,7 +47,8 @@ final class PRStore: ObservableObject {
     let mode: Mode
     private let notifier: Notifier?
     private let tokens = AzureCLITokenProvider()
-    private let client: ADOClient
+    /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
+    let client: ADOClient
     private var engine: PulseEngine?
     private var state = PulseSnapshot()
     private let startedAt = Date()

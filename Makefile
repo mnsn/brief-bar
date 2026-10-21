@@ -15,7 +15,8 @@ BRIEFBAR = $(shell swift build --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
 	widget-all-medium-light widget-all-medium-dark
 # The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
-WINDOW_SHOTS := window-azureDevOps.pullRequests-light window-azureDevOps.pullRequests-dark
+WINDOW_SHOTS := window-azureDevOps.pullRequests-light window-azureDevOps.pullRequests-dark \
+	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark
 
 build:
 	swift build

@@ -6,31 +6,46 @@ import Combine
 import NotificationCenterDB
 import SwiftUI
 
-/// Your Azure DevOps pull requests, by what they need: you, a fix, completing, or someone else. It reads
-/// Azure DevOps with the Azure CLI's sign-in, the only source that uses the network, and posts
-/// notifications.
+/// Your Azure DevOps pull requests, by what they need: you, a fix, completing, or someone else; and, while you
+/// show them, your team's sprint and the pipelines you follow. It reads Azure DevOps with the Azure CLI's sign-in,
+/// the only source that uses the network, and posts notifications.
 @MainActor
 package final class AzureDevOpsSource: BriefBarSource {
-    nonisolated package static let descriptionVersion = 1
+    /// 2: the Sprint and Pipelines sections.
+    nonisolated package static let descriptionVersion = 2
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
     package let symbol = "arrow.triangle.pull"
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
-        summary: "Your pull requests: which need you, which are failing and which are ready to complete",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. BriefBar keeps which pull requests you've seen, and your organizations. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages.",
-        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute.",
+        summary: "Your pull requests: which need you, which are failing and which are ready to complete; and your team's sprint and your pipelines",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. BriefBar keeps which pull requests you've seen, your organizations, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages.",
+        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, and a few more while the Sprint or Pipelines section is on screen.",
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar.",
         requirements: [.azureCLI, .notifications]
     )
+    /// Sprint and Pipelines start in windows only: they read Azure DevOps while they're on screen.
     package let sections = [
         SectionInfo(
-            id: .azureDevOpsPullRequests, title: "Pull Requests", symbol: "arrow.triangle.pull",
-            tint: Color(red: 0.33, green: 0.45, blue: 0.96), surfaces: [.menuBar, .widgets, .windows]
+            id: .azureDevOpsPullRequests, title: AzureDevOpsPage.pullRequests.title, symbol: AzureDevOpsPage.pullRequests.symbol,
+            tint: AzureDevOpsPage.pullRequests.color, surfaces: [.menuBar, .widgets, .windows]
+        ),
+        SectionInfo(
+            id: .azureDevOpsSprint, title: AzureDevOpsPage.sprint.title, symbol: AzureDevOpsPage.sprint.symbol,
+            tint: AzureDevOpsPage.sprint.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
+        ),
+        SectionInfo(
+            id: .azureDevOpsPipelines, title: AzureDevOpsPage.pipelines.title, symbol: AzureDevOpsPage.pipelines.symbol,
+            tint: AzureDevOpsPage.pipelines.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
         ),
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }
+
+    package func pageMaxWidth(for section: SectionID) -> CGFloat {
+        // The Sprint page's cards fill as many columns as fit; the others keep their lines to a readable width.
+        section == .azureDevOpsPullRequests ? 900 : .infinity
+    }
 
     private static let chatAccessReason = "For pull requests sent in chats, BriefBar looks for links to pull requests in the notifications that every app posts to Notification Center, and keeps only the links."
 
@@ -38,6 +53,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     let settings: AppSettings
     /// Made when Azure DevOps starts, so its notifications count from then.
     private var store: PRStore?
+    /// Made with it, sharing its client: they read only while their sections are on screen.
+    private var sprint: SprintStore?
+    private var pipelines: PipelinesStore?
     private let changes = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
 
@@ -51,12 +69,24 @@ package final class AzureDevOpsSource: BriefBarSource {
         showToReview ? [.needsYou, .failing, .ready, .toReview] : [.needsYou, .failing, .ready]
     }
 
-    private func environment<V: View>(_ view: V, store: PRStore) -> some View {
-        view
+    private func environment<V: View>(_ view: V) -> AnyView {
+        guard let store, let sprint, let pipelines else { return AnyView(EmptyView()) }
+        return AnyView(view
             .environmentObject(store)
+            .environmentObject(sprint)
+            .environmentObject(pipelines)
             .environmentObject(settings)
             .environmentObject(services)
-            .environmentObject(services.loginItem)
+            .environmentObject(services.loginItem))
+    }
+
+    /// The pull requests' store, and the Sprint and Pipelines sections' stores, sharing its client.
+    private func makeStores(notifier: Notifier?) -> PRStore {
+        let store = PRStore(settings: settings, notifier: notifier, mode: services.isDemo ? .demo : .live)
+        self.store = store
+        sprint = SprintStore(settings: settings, mode: store.mode, client: store.client)
+        pipelines = PipelinesStore(settings: settings, mode: store.mode, client: store.client)
+        return store
     }
 
     // MARK: Lifecycle
@@ -66,8 +96,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         if !services.isDemo {
             settings.startSeeing()
         }
-        let store = PRStore(settings: settings, notifier: services.notifier, mode: services.isDemo ? .demo : .live)
-        self.store = store
+        let store = makeStores(notifier: services.notifier)
         let access = services.fullDiskAccess
         store.showChatAccessSetup = { [weak access] in access?.show() }
         store.chatAccessChanged = { [weak self, weak access] status in
@@ -95,11 +124,15 @@ package final class AzureDevOpsSource: BriefBarSource {
         store.$counts.removeDuplicates().map { _ in () }
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
             .merge(with: store.$problem.map { _ in () })
+            .merge(with: sprint?.$board.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
+            .merge(with: pipelines?.$statuses.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.changes.send() } }
             .store(in: &cancellables)
 
         store.start()
+        sprint?.start()
+        pipelines?.start()
         changes.send()
     }
 
@@ -117,7 +150,11 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func stop() {
         cancellables.removeAll()
         store?.stop()
+        sprint?.stop()
+        pipelines?.stop()
         store = nil
+        sprint = nil
+        pipelines = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -141,6 +178,43 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Menu bar
 
     package func segment(for section: SectionID) -> MenuBarSegment {
+        switch section {
+        case .azureDevOpsSprint: return sprintSegment()
+        case .azureDevOpsPipelines: return pipelinesSegment()
+        default: return pullRequestsSegment()
+        }
+    }
+
+    /// How many of your stories and tasks are left in the sprint.
+    private func sprintSegment() -> MenuBarSegment {
+        let mine = sprint?.board?.myWork ?? []
+        let title = NSMutableAttributedString()
+        if !mine.isEmpty {
+            title.append(NSAttributedString(string: " "))
+            title.append(MenuBarDrawing.count(mine.count))
+        }
+        let summary = sprint?.board == nil ? "Sprint" : mine.isEmpty ? "Sprint: nothing left for you" : "Sprint: \(mine.count) of yours left"
+        return MenuBarSegment(glyph: AzureDevOpsPage.sprint.symbol, title: title, summary: summary, count: mine.count, needsAttention: false)
+    }
+
+    /// How many pinned pipelines failed, and how many are running.
+    private func pipelinesSegment() -> MenuBarSegment {
+        let counts = pipelines?.counts ?? PipelineCounts([])
+        let font = NSFont.menuBarFont(ofSize: 0)
+        let title = NSMutableAttributedString()
+        for (count, symbol, color) in [(counts.failed, "xmark.circle.fill", NSColor.systemRed), (counts.running, "arrow.triangle.2.circlepath.circle.fill", .systemBlue)] where count > 0 {
+            title.append(NSAttributedString(string: " "))
+            title.append(MenuBarDrawing.symbol(symbol, color: color, font: font, sizeDelta: -2, monochrome: true))
+            title.append(MenuBarDrawing.count(count, font: font))
+        }
+        let spoken = [(counts.failed, "failed"), (counts.running, "running")].filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
+        let summary = spoken.isEmpty ? "Pipelines" : "Pipelines: " + spoken.joined(separator: ", ")
+        return MenuBarSegment(
+            glyph: AzureDevOpsPage.pipelines.symbol, title: title, summary: summary, count: counts.failed, needsAttention: counts.failed > 0
+        )
+    }
+
+    private func pullRequestsSegment() -> MenuBarSegment {
         let counts = store?.counts ?? GroupCounts()
         let needsSignIn = store?.problem?.needsSignIn == true
         let groups = Self.shownGroups(showToReview: settings.showToReview)
@@ -174,8 +248,20 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func panel(for section: SectionID) -> AnyView {
-        guard let store else { return AnyView(EmptyView()) }
-        return AnyView(environment(MenuPanelView(), store: store))
+        switch section {
+        case .azureDevOpsSprint: return environment(WorkPanelView(page: .sprint))
+        case .azureDevOpsPipelines: return environment(WorkPanelView(page: .pipelines))
+        default: return environment(MenuPanelView())
+        }
+    }
+
+    package func page(for section: SectionID) -> AnyView {
+        let page: AnyView = switch section {
+        case .azureDevOpsSprint: environment(SprintPage())
+        case .azureDevOpsPipelines: environment(PipelinesPage())
+        default: environment(PullRequestsPage())
+        }
+        return AnyView(page.environment(\.panelStyle, .page))
     }
 
     package func panelWillShow(_ section: SectionID) {
@@ -183,9 +269,20 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
-        // What a popover or a window's page shows in Answered counts as seen once none shows it; a widget doesn't
-        // count.
-        guard section == .azureDevOpsPullRequests, viewer.surface != .widgets else { return }
+        // The sprint and pipelines are read only while something shows them.
+        switch section {
+        case .azureDevOpsSprint:
+            sprint?.setVisible(isShowing, for: viewer.name)
+            return
+        case .azureDevOpsPipelines:
+            pipelines?.setVisible(isShowing, for: viewer.name)
+            return
+        default:
+            break
+        }
+        // What a popover or a window's page shows in Answered counts as seen once none shows it; a widget or the
+        // menu bar's count doesn't.
+        guard viewer.kind == .popover || viewer.kind == .window else { return }
         if isShowing {
             store?.viewerDidOpen(viewer.name)
         } else {
@@ -196,12 +293,19 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Widgets
 
     package func widget(for section: SectionID, size: WidgetSize, rows: Int) -> AnyView {
-        guard let store else { return AnyView(EmptyView()) }
-        return AnyView(environment(WidgetSectionView(size: size, rows: rows), store: store))
+        switch section {
+        case .azureDevOpsSprint: return environment(SprintWidgetSection(rows: rows))
+        case .azureDevOpsPipelines: return environment(PipelinesWidgetSection(rows: rows))
+        default: return environment(WidgetSectionView(size: size, rows: rows))
+        }
     }
 
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
-        WidgetSectionView.height(rows: rows)
+        switch section {
+        case .azureDevOpsSprint: return SprintWidgetSection.height(rows: rows)
+        case .azureDevOpsPipelines: return PipelinesWidgetSection.height(rows: rows)
+        default: return WidgetSectionView.height(rows: rows)
+        }
     }
 
     package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {
@@ -209,8 +313,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func widgetMenu(for section: SectionID) -> AnyView {
-        guard let store else { return AnyView(EmptyView()) }
-        return AnyView(environment(SourceMenuContent(), store: store))
+        environment(SourceMenuContent())
     }
 
     package func openNotification(_ userInfo: [String: String]) {
@@ -225,22 +328,22 @@ package final class AzureDevOpsSource: BriefBarSource {
     // MARK: Settings
 
     package func settingsView() -> AnyView {
-        guard let store else { return AnyView(EmptyView()) }
-        return AnyView(environment(AzureDevOpsSettings(), store: store))
+        environment(AzureDevOpsSettings())
     }
 
     package func statusView() -> AnyView? {
-        guard let store else { return nil }
-        return AnyView(environment(SignInStatusView(), store: store).environmentObject(services.notifier))
+        guard store != nil else { return nil }
+        return environment(SignInStatusView().environmentObject(services.notifier))
     }
 
     // MARK: Rendering
 
     package func loadForRendering() async {
-        let store = PRStore(settings: settings, mode: services.isDemo ? .demo : .live)
-        self.store = store
-        // Let the on-device model word the brief before drawing.
+        let store = makeStores(notifier: nil)
         await store.loadOnce()
+        await sprint?.loadOnce()
+        await pipelines?.loadOnce()
+        // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }
 }
@@ -296,5 +399,72 @@ struct SignInStatusView: View {
                 Button(action, action: perform)
             }
         }
+    }
+}
+
+/// The Sprint or Pipelines section in a menu-bar item's popover: its widget's rows, every one of them, and a way to
+/// open its page in a window, where there's room for the whole board.
+struct WorkPanelView: View {
+    let page: AzureDevOpsPage
+    @EnvironmentObject private var sprint: SprintStore
+    @EnvironmentObject private var pipelines: PipelinesStore
+    @EnvironmentObject private var services: AppServices
+
+    @LocalState private var contentHeight: CGFloat = 0
+    private static let maxListHeight: CGFloat = 560
+
+    private var rows: Int {
+        switch page {
+        case .sprint: max(sprint.board?.myWork.count ?? 0, 2)
+        default: max(pipelines.statuses.count, 2)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                section
+                    .padding(.bottom, 6)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .panelListHeight(contentHeight, max: Self.maxListHeight)
+            Divider()
+            footer
+        }
+        .panelFrame(width: MenuPanelView.width)
+    }
+
+    @ViewBuilder
+    private var section: some View {
+        switch page {
+        case .sprint: SprintWidgetSection(rows: rows, draggable: false)
+        default: PipelinesWidgetSection(rows: rows, draggable: false)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Button {
+                services.openWindow(page.section)
+            } label: {
+                Label("Open \(page.title)", systemImage: "macwindow")
+            }
+            .buttonStyle(.borderless)
+            .help("Open the \(page.title) page in BriefBar's window")
+            Spacer()
+            Menu {
+                SettingsMenuContent()
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Settings")
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }

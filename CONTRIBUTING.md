@@ -16,7 +16,8 @@ make demo    # run the app with made-up data for every source (Ctrl-C to quit)
 `make demo` writes made-up Teams notifications in Notification Center's layout to `build/demo/teams`
 and a made-up Copilot data directory to `build/demo/copilot`, and starts the app with `--demo`, which
 turns every source on in preferences kept in memory. Azure DevOps makes up its own pull requests,
-and never runs `az` or reaches Azure DevOps. Use it to work on the UI and to take screenshots without
+links sent in chats, sprint and pipelines, and never runs `az`, reaches Azure DevOps or reads
+Notification Center. Use it to work on the UI and to take screenshots without
 showing your own chats, pull requests or sessions. `make demo ARGS=--window` also opens the window.
 
 Other targets:
@@ -52,7 +53,9 @@ make diagnose                     # Teams: the structure only, without names, me
 ```
 
 `BriefBar --chats` lists the pull request links in every app's notifications, as **Pull Requests Sent
-in Chats** finds them, with Terminal's Full Disk Access.
+in Chats** finds them, with Terminal's Full Disk Access. `--teams`, `--sprint` (`--team <name>`,
+`--mine`) and `--pipelines` (`--search <text> --project <name>` to find more) print what the Sprint
+and Pipelines sections show. They read the app's settings but never change them.
 
 [How it works](docs/how-it-works.md) explains the sources, the permissions, the menu bar, the signing
 and the updates.
@@ -66,10 +69,12 @@ Sources/BriefBarCore/          shared, with no UI: file watching (FSEvents, kque
 Sources/NotificationCenterDB/  Notification Center's database: the records of the apps a source asks for
 Sources/TeamsCore/             Teams' notifications, the unread rules, the encrypted unread chats
 Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the client (the only networking),
-                               the engine, groups, notifications and the brief
+                               the engines (pull requests, sprint, pipelines), groups, notifications, the
+                               brief, and the links people send you in chats
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/BriefBarUI/            shared app code: the source protocol, menu-bar drawing, desktop widgets,
-                               the notifier, Full Disk Access, the on-device model, Launch at Login
+                               the windows' look, the notifier, Full Disk Access, the on-device model,
+                               Launch at Login
 Sources/TeamsUI/               each source's app code: its lists, settings, widget and command-line
 Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
@@ -116,6 +121,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - The `@State`, `@Entry` and `#Preview` SwiftUI macros aren't available without Xcode, so the views
   use a small `@LocalState` property wrapper instead of `@State`, and environment values are written
   out by hand.
+- Liquid Glass (`glassEffect`, the glass button style) is in the macOS 26 SDK only: use it inside
+  `#if compiler(>=6.2)` and `if #available(macOS 26.0, *)`, so CI's macOS 15 build still compiles.
+  `--render` can't draw glass or materials, so views draw a stand-in when `isRendering` is set
+  (`Sources/BriefBarUI/WindowStyle.swift`).
 
 ## Ground rules
 

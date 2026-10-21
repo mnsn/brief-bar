@@ -9,9 +9,13 @@ final class WidgetHost {
     let id: String
     private let content: WidgetContent
     private let controller: DesktopWidgetController
+    private unowned let model: AppModel
+    /// The sections the widget shows on screen: none while it's hidden or covered by windows.
+    private var visible: [SectionID] = []
 
     init(id: String, model: AppModel) {
         self.id = id
+        self.model = model
         let content = WidgetContent(id: id, model: model)
         self.content = content
         // The demo's widgets go where new ones do, and never move yours.
@@ -24,6 +28,7 @@ final class WidgetHost {
                 .environmentObject(model.services)
                 .environmentObject(model.services.loginItem))
         }
+        controller.onScreenChanged = { [weak self] _ in self?.updateVisible() }
     }
 
     func update(sections: [SectionID], options: WidgetOptions) {
@@ -31,10 +36,23 @@ final class WidgetHost {
         content.options = options
         controller.setTitle(content.title)
         controller.update(show: true, placement: options.placement, size: content.size)
+        updateVisible()
     }
 
     func close() {
         controller.close()
+        updateVisible()
+    }
+
+    /// Tells the sources which sections the widget shows on screen.
+    private func updateVisible() {
+        let sections = controller.isOnScreen ? content.sections : []
+        let viewer = SectionViewer(.widget, id: id)
+        let gone = visible.filter { !sections.contains($0) }
+        let added = sections.filter { !visible.contains($0) }
+        visible = sections
+        for section in gone { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: false, by: viewer) }
+        for section in added { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
     }
 }
 

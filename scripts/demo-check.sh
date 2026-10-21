@@ -28,5 +28,13 @@ done
     fail "--demo --orgs doesn't list only the made-up organization"
 "$BIN" --demo --source ado --watch | grep 'needsYou  Priya Shah commented: !4091' >/dev/null ||
     fail "--demo --source ado --watch doesn't show the made-up change"
+"$BIN" --demo --chats | grep 'Dana Whitfield' >/dev/null ||
+    fail "--demo --chats doesn't show the made-up link"
+"$BIN" --demo --sprint | grep '^Sprint 42 · Storefront Team' >/dev/null ||
+    fail "--demo --sprint doesn't show the made-up sprint"
+[[ "$("$BIN" --demo --sprint --mine | grep -c '(you)')" == 5 ]] ||
+    fail "--demo --sprint --mine doesn't show your 5 tasks"
+"$BIN" --demo --pipelines | grep '^shop-web CI .*Failed in Test' >/dev/null ||
+    fail "--demo --pipelines doesn't show the made-up failed run"
 
 echo "demo-check passed: $COUNTS"

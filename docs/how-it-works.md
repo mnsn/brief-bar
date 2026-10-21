@@ -475,6 +475,57 @@ reads Notification Center: its links are made up. `BRIEFBAR_CHAT_LINKS_DB` point
 the database instead, which needs no access. How the access survives rebuilds and updates is in
 [Signing](#signing).
 
+### Your sprint and pipelines
+
+The Sprint and Pipelines sections read Azure DevOps only while something shows them on screen: a
+window's page while the window is open, not minimized and not hidden behind other windows; a widget
+that isn't covered by windows; a menu-bar item that shows them, or its list. Each of those tells the
+source when it starts and stops showing a section (`sectionVisibilityChanged`). Then they refresh as
+often as the pull requests (the **Refresh** setting), and right away when they come on screen with data
+more than half a refresh old. They back off when Azure DevOps can't be read, and honor `Retry-After`,
+like the pull requests, with the same client and sign-in. They start in windows only, hidden in the
+menu bar and in widgets. All GETs:
+
+| Request | When | Provides |
+|---|---|---|
+| `_apis/teams?$mine=true` | every six hours while the sprint shows | your teams, in every project |
+| `{project}/{team}/_apis/work/teamsettings/iterations?$timeframe=current` | every hour, and once per team to find one with a sprint today | the team's current sprint and its dates |
+| `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, and each state's category |
+| `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
+| `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
+| `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
+| `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress (up to six), once for a finished one | its stages, and where it failed |
+| `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
+| `_apis/projects` | when you open **Add Pipeline** | the projects to search in |
+
+**Which sprint.** The first time, BriefBar looks through your teams (up to 25) for one with a sprint
+going on today, and when several have one, picks the team with the most work assigned to you. It
+keeps that team until you choose another. Azure DevOps keeps calling a team's last sprint "current"
+after it's over, when the team stops planning sprints, so a sprint counts only while today is one of
+its days: its first and last days are dates, which Azure DevOps keeps in UTC, and today is the day
+it is on your Mac.
+
+**The board.** The sprint's work items come with their hierarchy: each story or bug, with the tasks
+under it. Which types are tasks comes from the team's settings (a team can track bugs as tasks),
+and each state's category (to do, in progress, resolved, done or removed) too, whatever the process
+calls its states; without them, Task is the task type and the categories are guessed from the
+states' names. Removed work items aren't shown. Stories and bugs are in backlog order, in **In
+Progress** when they're in progress or any of their tasks has started or is done (stories aren't
+always moved along), **Not Started** otherwise, and **Done** once they're done. Tasks whose story
+isn't in the sprint are together in a card of their own. **Just Mine** keeps your stories and bugs,
+with all their tasks, and your tasks under anyone else's. Your work, in the summary, the sidebar, the
+widget and the menu bar, is your tasks, and your stories and bugs without tasks, that aren't done.
+
+**Pipelines.** A pinned pipeline shows its twelve latest runs, or its latest runs of one branch. Its
+latest run's stages come from the run's timeline: its stages in order or, for a pipeline without
+stages, its jobs. A stage waiting for an approval or a check is shown as waiting. When the run
+failed, it names the first task that failed, the stage it's in and its first error. Runs started by
+Azure DevOps itself, such as scheduled ones, don't name who started them.
+
+In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
+menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines
+section each pinned pipeline's latest run.
+
 ### Notifications
 
 After each refresh, BriefBar compares the new list with the previous one (`NotificationPlanner`)
@@ -504,6 +555,9 @@ back to the plain sentence if the model isn't available or fails. BriefBar expli
   token.
 - A failed build's errors aren't part of a pull request's policies, so the panel names the build
   without saying why it failed.
+- The Sprint section shows one team's current sprint at a time, from your teams in the organizations
+  BriefBar watches.
+- Pipelines are build pipelines, YAML or classic; classic release pipelines aren't shown.
 
 ## GitHub Copilot
 

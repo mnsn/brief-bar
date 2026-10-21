@@ -38,6 +38,8 @@ public struct SectionID: RawRepresentable, Hashable, Codable, Sendable, CustomSt
     public static let teamsChats = SectionID(rawValue: "teams.chats")
     public static let teamsGroupChats = SectionID(rawValue: "teams.groupChats")
     public static let azureDevOpsPullRequests = SectionID(rawValue: "azureDevOps.pullRequests")
+    public static let azureDevOpsSprint = SectionID(rawValue: "azureDevOps.sprint")
+    public static let azureDevOpsPipelines = SectionID(rawValue: "azureDevOps.pipelines")
     public static let copilotSessions = SectionID(rawValue: "copilot.sessions")
 }
 

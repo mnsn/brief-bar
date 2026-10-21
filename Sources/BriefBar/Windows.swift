@@ -36,7 +36,13 @@ final class WindowHost: NSObject, NSWindowDelegate {
         content.select(section)
         let window = self.window ?? makeWindow()
         window.makeKeyAndOrderFront(nil)
-        content.isOpen = true
+        updateOnScreen()
+    }
+
+    /// Whether the window shows on screen: open, not minimized, and not hidden behind other windows. Sources read
+    /// some sections only while they're on screen.
+    private func updateOnScreen() {
+        content.isOnScreen = window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
     }
 
     func close() {
@@ -80,9 +86,21 @@ final class WindowHost: NSObject, NSWindowDelegate {
 
     nonisolated func windowWillClose(_ notification: Notification) {
         MainActor.assumeIsolated {
-            content.isOpen = false
+            content.isOnScreen = false
             model.windowDidClose(self)
         }
+    }
+
+    nonisolated func windowDidChangeOcclusionState(_ notification: Notification) {
+        MainActor.assumeIsolated { updateOnScreen() }
+    }
+
+    nonisolated func windowDidMiniaturize(_ notification: Notification) {
+        MainActor.assumeIsolated { updateOnScreen() }
+    }
+
+    nonisolated func windowDidDeminiaturize(_ notification: Notification) {
+        MainActor.assumeIsolated { updateOnScreen() }
     }
 }
 
@@ -94,11 +112,11 @@ final class WindowContent: ObservableObject {
     @Published private(set) var selected: SectionID?
     unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
-    /// Whether its window is open, as its host says.
-    var isOpen = false {
+    /// Whether its window shows on screen, as its host says.
+    var isOnScreen = false {
         didSet { updateVisible() }
     }
-    /// The page the open window shows; nil while it's closed.
+    /// The page the window shows on screen; nil while it's closed, minimized or hidden behind other windows.
     private var visible: SectionID?
 
     /// Each window's page, as you last left it, by the window's ID.
@@ -154,13 +172,13 @@ final class WindowContent: ObservableObject {
         updateVisible()
     }
 
-    /// Tells the sources which page shows, after the window opened, closed or switched pages.
+    /// Tells the sources which page shows, after the window opened, closed, was covered or switched pages.
     private func updateVisible() {
-        let section = isOpen ? current : nil
+        let section = isOnScreen ? current : nil
         guard section != visible else { return }
         let hidden = visible
         visible = section
-        let viewer = SectionViewer(.windows, id: id)
+        let viewer = SectionViewer(.window, id: id)
         if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
         if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
     }
@@ -173,8 +191,6 @@ struct WindowView: View {
     static let sidebarWidth: CGFloat = 220
     /// The sidebar floats this far from the window's edges.
     static let inset: CGFloat = 10
-    /// A page's lines stay readable on a wide window.
-    static let pageWidth: CGFloat = 760
 
     var body: some View {
         HStack(spacing: 0) {
@@ -185,11 +201,17 @@ struct WindowView: View {
                     .padding(Self.inset)
                     .ignoresSafeArea(edges: .top)
             }
+            // A page's lines stay readable on a wide window.
             page
-                .frame(maxWidth: Self.pageWidth, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: pageMaxWidth, maxHeight: .infinity, alignment: .top)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(WindowBackdrop().ignoresSafeArea())
+    }
+
+    private var pageMaxWidth: CGFloat {
+        guard let section = content.current, let source = content.model.source(for: section) else { return .infinity }
+        return source.pageMaxWidth(for: section)
     }
 
     @ViewBuilder
@@ -356,103 +378,5 @@ private struct PageShortcut: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-// MARK: - Style
-
-private struct RenderingKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// Drawing offscreen for `--render`, which can't draw materials: views use plain colors instead.
-    var isRendering: Bool {
-        get { self[RenderingKey.self] }
-        set { self[RenderingKey.self] = newValue }
-    }
-}
-
-/// The desktop the README's pictures put the window on: offscreen drawing can't see the real one.
-struct DesktopWallpaper: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color(red: 0.10, green: 0.14, blue: 0.32), Color(red: 0.24, green: 0.15, blue: 0.40), Color(red: 0.38, green: 0.16, blue: 0.34)]
-                : [Color(red: 0.62, green: 0.76, blue: 0.98), Color(red: 0.78, green: 0.72, blue: 0.96), Color(red: 0.97, green: 0.78, blue: 0.86)],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        )
-    }
-}
-
-/// The window's translucent background: the desktop, blurred, through the sidebar material. Offscreen, where
-/// materials don't draw, the made-up desktop with the material's tint over it.
-struct WindowBackdrop: View {
-    @Environment(\.isRendering) private var isRendering
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        if isRendering {
-            DesktopWallpaper()
-                .overlay(colorScheme == .dark ? Color(white: 0.08).opacity(0.72) : Color(white: 0.97).opacity(0.66))
-        } else {
-            VisualEffectBackground(material: .sidebar)
-        }
-    }
-}
-
-struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
-    }
-}
-
-/// A floating panel, such as the sidebar: Liquid Glass from macOS 26, a frosted fill before it and offscreen.
-struct FloatingPanel: ViewModifier {
-    var cornerRadius: CGFloat = 20
-
-    @Environment(\.isRendering) private var isRendering
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *), !isRendering {
-            content.glassEffect(.regular, in: shape)
-        } else {
-            frosted(content, shape)
-        }
-        #else
-        frosted(content, shape)
-        #endif
-    }
-
-    private func frosted(_ content: Content, _ shape: RoundedRectangle) -> some View {
-        let dark = colorScheme == .dark
-        return content
-            .background(
-                shape
-                    .fill(dark ? Color.white.opacity(0.08) : Color.white.opacity(0.52))
-                    .overlay(shape.strokeBorder(Color.white.opacity(dark ? 0.14 : 0.85), lineWidth: 1))
-                    .shadow(color: .black.opacity(dark ? 0.35 : 0.10), radius: 16, y: 6)
-            )
-    }
-}
-
-extension View {
-    func floatingPanel(cornerRadius: CGFloat = 20) -> some View {
-        modifier(FloatingPanel(cornerRadius: cornerRadius))
     }
 }

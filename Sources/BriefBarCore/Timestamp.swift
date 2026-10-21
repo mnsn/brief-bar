@@ -84,7 +84,7 @@ public enum Timestamp {
     }
 
     /// Howard Hinnant's days-from-civil algorithm (proleptic Gregorian calendar).
-    static func daysFromCivil(year: Int, month: Int, day: Int) -> Int {
+    public static func daysFromCivil(year: Int, month: Int, day: Int) -> Int {
         let y = month <= 2 ? year - 1 : year
         let era = (y >= 0 ? y : y - 399) / 400
         let yearOfEra = y - era * 400
