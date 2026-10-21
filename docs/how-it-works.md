@@ -1,0 +1,602 @@
+# How BriefBar works
+
+BriefBar is one app with three sources: Microsoft Teams, Azure DevOps and GitHub Copilot. This explains
+how it decides what a source may do, then how each source reads what it shows. The sources come from
+Teams Pulse, ADO Pulse and Copilot Pulse, and work as those apps did.
+
+## Sources, and turning them on
+
+A source is off until you turn it on in Settings, on a page that says what it reads, where it connects
+and what it needs (`SourceDescription`). Turning it on is your consent, which BriefBar records with
+the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
+
+- A source is on only while the preferences hold your consent for it. When there's nothing saved, or
+  it can't be read, nothing is on. A source that an update adds, or one this version doesn't know, is
+  off: nothing but turning it on adds consent.
+- When a source starts reading more, its description's version goes up. A source you turned on for an
+  earlier version then pauses, until you've seen what it reads now and kept it on.
+- While a source is off, BriefBar doesn't read its data or check its access: no Notification Center,
+  saved chats or keychain item for Teams, no `az` for Azure DevOps, and no `~/.copilot` for Copilot.
+- Turning a source off stops it, closes its windows and widget, removes its notifications, and deletes
+  what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
+  requests you've seen; which Copilot sessions you've cleared. Its settings stay.
+
+## Permissions that macOS grants once
+
+macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
+consent comes first.
+
+- **Full Disk Access**, for reading Notification Center's database. macOS has no prompt for it: a
+  window (`FullDiskAccess` in `Sources/BriefBarUI`) walks you through System Settings. Sources that
+  need it register when they start and unregister when they stop. While none is registered, nothing
+  checks the access or opens the window. When the last one stops, BriefBar offers to open the list,
+  so you can remove it.
+- **Notifications.** Azure DevOps asks when you turn it on. The one answer covers every source that
+  posts notifications (`Notifier`), and a click goes to the source that posted it.
+
+### Programs BriefBar runs
+
+macOS holds a process's "responsible process" accountable for what it does, and lets it use that
+process's privacy permissions. A program that an app starts is attributed to the app. On this Mac,
+Microsoft Teams' helper processes report Teams as theirs. So, once BriefBar has Full Disk Access, a
+program it started would have it too. That includes:
+
+- the Azure CLI, a Python program in a folder you can write to (`/opt/homebrew/bin`),
+- your login shell, which BriefBar asks where `az` is, and which runs your shell's startup files.
+
+Every program BriefBar runs therefore goes through `ProcessRunner` (in `Sources/BriefBarCore`). It
+starts the program with `posix_spawn` and its responsibility disclaimed
+(`responsibility_spawnattrs_setdisclaim`, as Chromium does), so the program is responsible for itself
+and gets only the permissions macOS gave it. The GitHub Copilot app does the same for its agents.
+That call is private to macOS, so it's looked up at run time, and without it nothing starts. After
+starting a program, BriefBar asks macOS who's responsible for it and logs a fault if it's anyone but
+the program itself.
+
+Started from an app that LaunchServices opened, a plain child reports the app as responsible, and a
+disclaimed one reports itself. A test (`startsProgramsResponsibleForThemselves`) checks the second.
+`scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`
+or the C library's other ways to start programs.
+
+## The menu bar
+
+Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' pull
+requests, and Copilot's sessions. `MenuBarLayout` (in `Sources/BriefBarCore`) lists the menu-bar
+items, left to right, and the sections each one shows:
+
+- Each section gets an item of its own until you put it in another, in **Settings › Menu Bar**.
+- An item shows its sections' counts side by side, each drawn the way its source draws it, and its
+  popover has a tab for each, opening at the first that needs you.
+- Where a section goes is remembered while its source is off, so it comes back to the same item.
+  Sections a later version adds get items of their own.
+- Each item has a stable ID, which macOS uses to keep it where you ⌘-dragged it.
+
+With nothing on, BriefBar shows its own icon, whose menu opens Settings.
+
+## Microsoft Teams
+
+### Where the data comes from
+
+When Teams shows a notification, macOS keeps a copy in Notification Center's database:
+
+| | |
+|---|---|
+| File | `~/Library/Group Containers/group.com.apple.usernoted/db2/db` (SQLite, WAL mode), protected by macOS: reading it needs Full Disk Access |
+| Tables | `app(app_id, identifier, badge)`, `record(rec_id, app_id, uuid, data, request_date, request_last_date, delivered_date, presented, style, snooze_fire_date)`, and `categories`, `dbinfo`, `delivered`, `displayed`, `requests` |
+| Teams' rows | `record` rows whose `app` is `com.microsoft.teams2` (new Teams) or `com.microsoft.teams` (classic) |
+| Each row's `data` | A binary plist: `{app, date, req: {titl, body, iden, cate, usda, …}, uuid, …}`. `req.usda` is the notification's user info, archived with NSKeyedArchiver |
+
+Teams' user info, as of Teams 26261 on macOS 27:
+
+| Notification | `default_type` | `default_id` | Message ID | Title / body |
+|---|---|---|---|---|
+| 1:1 message | `chats` | `19:…@unq.gbl.spaces` | `default_options` JSON `messageId` | sender / text |
+| Group or meeting chat message | `chats` | `19:…@thread.v2` (meeting chats `19:meeting_…`) | the same | chat name / `Sender: text` |
+| Reaction to your message | `chats` | the 1:1 chat's ID | the same | `<emoji> <Name> reacted to your message` / empty |
+| Channel post or reply | `channels` | JSON `{channelId: 19:…@thread.tacv2, replyChainId}` | `default_options` JSON `messageId` | `<Name> posted a new message`, `<Name> replied to …` / text |
+
+Messages, unlike reactions, have a reply box: `textInputsend_type` `chats`, and
+`textInputsend_options` JSON whose `convId` is the conversation ID again. That's how BriefBar
+tells them apart. No field holds a link, so BriefBar builds one (see
+[Opening a chat](#opening-a-chat)).
+
+Notification Center keeps a limited number of notifications per app: 100 for Teams on the Mac this
+was built on, about two days' worth, half of them channel posts. It drops old ones as new ones
+arrive, and nothing in the database records whether you've read a chat: `app.badge` stays empty,
+and `presented` and `style` don't track it. Reading a chat in Teams doesn't remove its notifications
+either (Teams 26276 on macOS 27): they stay until Notification Center makes room, or you clear them.
+
+BriefBar never changes the database. It opens it with a read-only SQLite connection, for a few
+milliseconds per read, and never copies it. Like any SQLite reader, it takes brief shared locks and
+updates SQLite's shared-memory index (`db-shm`) while it reads; neither changes any data.
+
+### Deciding what's unread
+
+The [table in the README](../README.md#microsoft-teams) lists the rules. In more detail
+(`UnreadTracker` in `Sources/TeamsCore`):
+
+- **Arrival.** A chat message is unread if it was delivered after the chat was last read, or after
+  BriefBar started (on its very first launch, everything already stored counts as read, so the
+  counts are never wrong on day one). A message posted twice, for example after an edit, is counted
+  once: messages are keyed by conversation and message ID.
+- **Leaving Notification Center.** When notifications leave the database, either Notification
+  Center made room for new ones, or you clicked or cleared them (or Teams withdrew them). BriefBar
+   tells the two apart by the count: if the database holds as many Teams notifications as it
+  ever has, and at least as many arrived as left, it made room, and those chats stay unread. BriefBar
+   keeps them, although Notification Center no longer has them. Otherwise their chat is read up
+  to them.
+- **Expiry.** Unread messages older than **Keep Unread For** count as read, since BriefBar can't
+  see which chat you read in Teams.
+- **Teams' dock badge**, while **Mark All Read When Teams' Badge Clears** is on, as it is by default.
+  Reading a chat in Teams leaves its notifications alone, but the badge gets smaller as you read, and
+  disappears once nothing in Teams is unread. `lsappinfo info -long -only StatusLabel -app
+  com.microsoft.teams2` reads it every 5 s while Teams runs, and when Teams comes to the front or
+  leaves it, without any permission. It needs `-long`: without it, macOS 27's `lsappinfo` leaves
+  `StatusLabel` out. When a badge BriefBar saw disappears, in the same Teams process, and is still
+  gone 10 s later, everything delivered until it went counts as read. The wait passes over a badge
+  that's back right away, as it might be while Teams reloads. No badge says nothing by itself: not
+  while Teams isn't running, and not in the first minute after it starts, before it has set one. A
+  badge that only gets smaller doesn't say which chat you read, so it changes nothing.
+- **Launching again.** Notifications delivered after the last read BriefBar took in count as
+  unread. It records when that read started every minute and when it quits, so a stretch when it
+  couldn't read the database never counts as seen.
+
+Counts are chats with unread messages, like Teams' own badge.
+
+### What's saved
+
+Unread chats must survive a restart even after Notification Center dropped them, so BriefBar
+saves them, and only them, to `~/Library/Application Support/BriefBar/Teams/unread`:
+
+- Per unread chat: its ID, kind and name, and its unread messages (ID, time, sender and text), at
+  most 20.
+- Sealed with AES-GCM (CryptoKit). The 256-bit key is a generic-password item in the login keychain,
+  which macOS lets only BriefBar read, identified by its signature.
+- Written atomically, readable only by you (0600), in a folder only you can open (0700) that Time
+  Machine skips.
+- A chat leaves the file as soon as it's read or expires, even while the database can't be read,
+  and the file is deleted when nothing is unread. A file that can't be opened with the key is
+  deleted, with the key.
+- If the key can't be read when BriefBar starts (a locked keychain, or a declined prompt), the
+  file is left alone and never overwritten. BriefBar tries again after 1, 5, 15 and 60 minutes,
+  and merges what it loads, minus what was read since. Until then it doesn't record how far it has
+  seen, so the next launch counts everything since as unread.
+
+Next to it, `state.json` holds when BriefBar first read Teams' notifications, when it last did and
+whether it ever had access. Nothing else about Teams touches the disk. Turning Teams off deletes both
+files and the key, without reading them, and the folder if that leaves it empty.
+
+### Updates are pushed, not polled
+
+Notification Center keeps its database open. FSEvents reports a file's writes only once the writer
+closes it, so it never sees them. BriefBar instead watches SQLite's write-ahead log (`db-wal`)
+with **kqueue** (`EVFILT_VNODE`), which reports every write as it happens, and reads Teams' rows
+again 0.3 s later, combining bursts. FSEvents on the `db2` folder reports the log being created or
+replaced, so the kqueue watch can move to the new file. `db` itself is deliberately not opened for
+watching: closing an extra file descriptor on a SQLite database drops the process's SQLite locks.
+
+Notification Center writes for every app, so most writes change nothing for Teams; BriefBar
+publishes only when Teams' notifications changed. Four timers exist, and none drives updates:
+
+- a 15 s tick that refreshes relative times and expires old unread messages,
+- a 60 s safety rescan that catches anything missed, for example after the Mac wakes from sleep,
+- while BriefBar can't read the database, a check for access: every 2 s while the Full Disk
+  Access window is open, every 30 s otherwise, and
+- while **Mark All Read When Teams' Badge Clears** is on, as it is by default, a 5 s check of Teams'
+  dock badge, which runs `lsappinfo` only while Teams runs (see
+  [Deciding what's unread](#deciding-whats-unread)).
+
+### Opening a chat
+
+Clicking a chat opens Teams' documented link to a message in a chat, with Teams' own URL scheme so no
+browser is involved, at the chat's oldest unread message:
+
+```text
+msteams:/l/message/<conversation ID, percent-encoded>/<message ID>?context=%7B%22contextType%22%3A%22chat%22%7D
+```
+
+It's opened with Teams itself as the handler. A message without an ID falls back to
+`msteams:/l/chat/<conversation ID>/0`.
+
+### Getting listed under Full Disk Access
+
+macOS lists an app under **Full Disk Access**, switched off, once it has been denied a folder that
+Full Disk Access protects. Notification Center's database doesn't get BriefBar listed: it's in a
+group container, which macOS guards with its App Data protection
+(`kTCCServiceSystemPolicyAppDataDetailed`, "found app sharing this group container" in `tccd`'s log),
+and that denies quietly. So while it has no access, and Teams is on, when its Full Disk Access window
+opens and when you click **Open Privacy Settings**, BriefBar tries to list the folders Apple's Stocks and Safari
+keep, as the [FullDiskAccess](https://github.com/inket/FullDiskAccess) package does. That reaches
+`tccd` as a Full Disk Access check (`kTCCServiceSystemPolicyAllFiles`), which it denies without a
+prompt. Without access, nothing is read. Whether macOS then lists the app was confirmed up to
+macOS 14 by that package's author. On later versions, the window still explains how to add it with
+**+**.
+
+Organizations can skip the step entirely: a configuration profile with a
+`com.apple.TCC.configuration-profile-policy` payload that allows `SystemPolicyAllFiles` for
+`com.asaf.BriefBar`, with its designated requirement, grants the access when their MDM installs it.
+`scripts/make-pppc-profile.sh` writes one for a built app.
+
+### Summaries
+
+The ✨ button on a chat asks Apple's on-device model for one sentence: what the chat is about, and
+anything it asks of you (`Summarizer` in `TeamsUI`, `SummaryPrompt` in `TeamsCore`, the model in `OnDeviceModel`).
+
+- The session is created with `SystemLanguageModel.default`, the model that runs on the Mac. The
+  framework also offers `PrivateCloudComputeLanguageModel`, which runs on Apple's servers; BriefBar
+   never uses it, so nothing leaves the Mac.
+- The prompt holds the chat's name and kind, and its unread messages with their senders, oldest
+  first (its latest messages if none are unread). The newest messages that fit in 3,000 characters
+  are kept, each cut at 600, to stay within the model's context window.
+- A summary is kept in memory for as long as it covers the chat's newest message, and never saved.
+- With **Show Message Previews** off, summaries are hidden too, since they'd reveal the same.
+- Without Apple Intelligence (before macOS 26, on a Mac that can't run it, or with it turned off),
+  the setting says why. An unsupported language, a refusal or a busy model shows a short note
+  instead of a summary.
+- FoundationModels is linked weakly, so the app still opens on macOS 15. Built with an SDK that
+  doesn't have it, such as Xcode 16's, the app leaves the summarizer out, and the setting says that
+  summaries need a build made with the macOS 26 SDK.
+
+### When the formats change
+
+Both formats are undocumented, so every read is checked:
+
+- **The database's layout.** `PRAGMA table_info` lists its tables and columns first. Without
+  `app(app_id, identifier)` or `record(app_id, data)`, BriefBar reports which are missing and shows
+  nothing rather than guess. The other columns are optional.
+- **Each notification.** Records that aren't a plist, have no request, user info or `default_type`,
+  or are chat notifications without a valid `19:…@…` conversation ID are counted. If none of the
+  stored Teams notifications can be read, the lists say Teams' notifications have changed; if more
+  than a quarter can't, they say how many. Well-formed notifications of kinds BriefBar doesn't
+  show, such as calls, are set aside without counting against it, unless they look like chat
+  messages (a reply box, or a chat's ID): that's more likely a renamed chat type, so they count.
+- **Archives** are decoded with secure coding and plist classes only, so an unexpected class makes a
+  record unreadable instead of being instantiated.
+
+`--diagnose` and **Copy Diagnostics** describe all of this by structure only: table and field names,
+counts, and the shapes of values, such as `<oneOnOne ID>`, `<13-digit>` or
+`json {actionType: view, messageId: <13-digit>, userContextId: <guid>}`. They also show Teams' dock
+badge as BriefBar reads it.
+
+### Why not Microsoft Graph or a server?
+
+Graph would need your organization to consent to an app, lets an app poll a user's chats only once
+a day, and delivers changes as they happen only to a public webhook, so a server. Organizations
+that use Teams also rarely allow chat content, or summaries of it, to leave their Macs. Notification
+Center already has everything a glance needs, on the Mac.
+
+## Azure DevOps
+
+### Signing in
+
+BriefBar gets bearer tokens from the Azure CLI:
+
+```sh
+az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json
+```
+
+The GUID is Azure DevOps's application ID. The CLI answers silently from its own token cache and
+refreshes its sign-in by itself, so BriefBar never shows a sign-in screen unless the CLI is signed
+out. A token lasts about an hour; BriefBar reuses it until five minutes before it expires, and asks
+again if Azure DevOps rejects it. The token also says who it's for: when you sign in to the CLI as
+someone else, BriefBar starts over with their pull requests.
+
+An app started from Finder or as a login item doesn't get your shell's `PATH`, so BriefBar looks
+for `az` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual places, then asks your login
+shell (`command -v az`). Its runs of `az` turn off the CLI's telemetry and warnings, and each is
+limited to a minute: `az` runs in a process group of its own, which is ended at the time limit, and
+anything it leaves running that keeps its output open is ended half a second after it exits. Both `az`
+and the login shell are responsible for themselves, so they never get BriefBar's Full Disk Access (see
+[Programs BriefBar runs](#programs-briefbar-runs)). Set `BRIEFBAR_AZ` to the path of `az` to use another
+one.
+
+Signing in sits behind a small protocol (`AccessTokenProvider`). A provider using Microsoft's
+authentication library (MSAL) can be added once there's an app registration to sign in with.
+
+### Where the data comes from
+
+All requests are GETs to the Azure DevOps REST API (version 7.1):
+
+| Request | When | Provides |
+|---|---|---|
+| `_apis/connectionData` | once per organization, and again when you sign in as someone else | your identity ID and name |
+| `_apis/git/pullrequests?searchCriteria.creatorId=…&status=active` | every refresh | your active pull requests, across all projects |
+| `_apis/git/pullrequests?searchCriteria.reviewerId=…&status=active` | every refresh | the ones you review |
+| `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
+| `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
+| `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, again until it works | whether it was completed or abandoned |
+| `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
+
+The list endpoints have no "last updated" field, and new comments don't change anything in them,
+so a pull request's details (policies and threads, two requests) are fetched on a schedule
+(`RefreshPlanner`):
+
+- every pull request without details, which is all of them on the first load, in parallel, four at a
+  time;
+- then, at most eight others a refresh: changed ones first (a push, a vote, a merge status or draft
+  change), then those with a build or check in progress (every minute), the others every three
+  minutes, and drafts and idle ones every fifteen.
+
+Requests honor `Retry-After`: when Azure DevOps asks to slow down, nothing is sent until the time it
+gave. When nothing can be read (offline, for example), refreshes back off up to ten minutes, and
+waking the Mac or getting back online refreshes right away.
+
+Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
+server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a
+minute is plenty.
+
+### How a pull request's group is decided
+
+The [groups table in the README](../README.md#azure-devops) lists them. In more detail:
+
+**Checks.** Each branch policy becomes a check:
+
+- **Build**: approved is passed, rejected is failed, running is running. A queued build whose
+  context says `isExpired` has expired and has to run again; a queued build without a build ID
+  hasn't run at all (for example, because it's queued by hand).
+- **Status** (posted by another service): rejected is failed; queued means waiting for it.
+- **Minimum number of reviewers**, **Required reviewers** and **Proof Of Presence** are about
+  approvals.
+- **Require a merge strategy** is checked when the pull request is completed, so it doesn't count
+  against being ready.
+- Other requirements, such as **Work item linking** and **Comment requirements**, are reported as
+  rejected until they're met: that means pending, not failed.
+
+Only blocking policies count. A disabled policy is ignored. When a project doesn't let you read its
+policies, nobody can tell whether a pull request there is ready: it waits, as **Can't read its
+policies**. And ready means ready as the pull request is now: until its policies have been read
+again after a push or a vote, it waits.
+
+**Your pull requests** are, in order: in **Needs You** if something new needs you; **Idle** if
+they're drafts or have had no activity (comments, pushes, votes) for two weeks; **Failing** for a
+failed build or status check, merge conflicts or an expired build; **Waiting** while a reviewer
+wants changes; **Ready to Complete** when every blocking policy passes (or, without reviewer
+policies, someone approved); and **Waiting** otherwise, with what it's waiting for.
+
+**Pull requests you review** are in **Needs You** for something new, **Idle** if they're drafts,
+inactive, or you approved or declined them, **To Review** if you haven't voted, and **Waiting** if
+you asked the author for changes.
+
+### What counts as new
+
+Azure DevOps has no read or unread state for pull requests, so BriefBar keeps its own
+(`SeenState`): activity up to a pull request's cutoff counts as seen. The cutoff is when you last
+opened the pull request from BriefBar (or clicked **Mark as Seen**), or, if that's earlier, three
+days before BriefBar first ran.
+
+After the cutoff, these need you:
+
+- a comment by someone else (not a build service or bot) in a thread you've commented in, after your
+  last comment there: a **reply**;
+- a comment that @mentions you: a **mention**;
+- on your pull request, a comment by someone else in a thread you haven't joined: a **comment**;
+- a reviewer's "waiting for author" or "rejected" vote on your pull request, while it still stands
+  and you haven't pushed since;
+- on a pull request you review: being added as a reviewer (or the draft being published) when you
+  haven't voted yet, and new commits since your vote.
+
+Approvals are news too: they're announced, but they don't need you.
+
+### Notifications
+
+After each refresh, BriefBar compares the new list with the previous one (`NotificationPlanner`)
+and announces events it hasn't seen before, as well as your pull requests that start failing,
+become ready or complete. Events from before BriefBar started aren't announced: they're in the
+panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
+Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
+about, and marks the pull request seen.
+
+### The brief
+
+The brief picks, in code, the newest pull request that needs you, the newest failure and the newest
+one that's ready (then more of what needs you, up to three). Items about a comment go to Apple
+Intelligence's on-device model one at a time, with the commenter, the title and the comment, and
+come back as one sentence such as "Sam asks you to cap the backoff at 30 seconds on …". The others
+are plain sentences. Results are kept for as long as the app runs, never block the panel, and fall
+back to the plain sentence if the model isn't available or fails. BriefBar explicitly uses
+`SystemLanguageModel.default`: nothing goes to Private Cloud Compute or any other model.
+
+### Limits
+
+- Pull requests assigned only to a group or team you're in aren't listed: Azure DevOps's reviewer
+  search matches you, not your groups.
+- Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its
+  token.
+- A failed build's errors aren't part of a pull request's policies, so the panel names the build
+  without saying why it failed.
+
+## GitHub Copilot
+
+### Where the data comes from
+
+The Copilot app already records everything needed, in two places under `~/.copilot`:
+
+| Source | Written by | Provides |
+|---|---|---|
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, the "is running" flag, unread markers, the activity feed, how full each session's context window is |
+| `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
+
+BriefBar combines the two. The database says which sessions exist and whether the app
+thinks they're running. The tail of each log says exactly where a session is, for example
+"asked a question at 14:02 and is still waiting".
+
+BriefBar never changes either of them:
+
+- The logs are opened read-only. After the first read, only what's been appended is read.
+- The database is opened with a read-only SQLite connection. Like any SQLite reader, it briefly
+  takes shared locks and updates SQLite's shared-memory index (`data.db-shm`) while it reads;
+  neither changes any data. When the app has quit and SQLite has removed the write-ahead log, a
+  read-only connection can't open the database, so BriefBar reads it in SQLite's
+  [immutable mode](https://www.sqlite.org/uri.html#uriimmutable) instead.
+
+### How a status is decided
+
+The [states table in the README](../README.md#github-copilot) lists every status and when
+it applies. A few more details:
+
+- "Needs you" sorts the longest-waiting session first; the other groups show the most recent
+  first.
+- **Done** and **Stopped** sessions stay highlighted until you've seen them. That happens when:
+  - you open the session from BriefBar, or click **Clear** on its group in the menu-bar
+    panel,
+  - you're looking at it in the Copilot app (the app is frontmost and showing that session),
+  - the Copilot app clears its own unread marker for the session's workspace, or
+  - the **Keep Finished Sessions For** time passes (1 hour by default).
+
+  After that, the session moves to Idle.
+- Detailed states (questions, plans, permissions, the current step) come from the agent's log on
+  this Mac. A session without a local log only shows Running, Interrupted or Idle, based on the
+  app's own flags.
+- **Show Context Usage** shows the app's latest measurement of each session's context window
+  (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
+  limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns
+  orange from 70%. Sessions the app hasn't measured show nothing.
+- Clicking a session opens it through the Copilot app's `ghapp://sessions/<id>` link.
+
+### Updates are pushed, not polled
+
+- **Agent logs** are watched with **FSEvents**. The agent closes `events.jsonl` after every
+  append, so each write produces an event (about 0.15 s latency).
+- **The app's database** is watched with **kqueue** on `data.db-wal`. This was a key finding:
+  FSEvents only reports a file's content changes once the writer **closes** it. The Copilot app
+  keeps its SQLite connection open, so its writes to `data.db-wal` produce no FSEvents at all,
+  even though the file changes. A kqueue `EVFILT_VNODE` watch reports every write immediately.
+  Bursts (one tool call causes about 10 writes) are combined into one reload after 0.25 s.
+  When the app quits and SQLite deletes the WAL file, the watch is re-armed as soon as the file
+  is recreated. `data.db` itself is deliberately not opened for watching: closing an extra file
+  descriptor on a SQLite database drops the process's SQLite locks.
+
+On real data, a session rename (a database-only change) reached the UI about 0.26 s after the
+app wrote it.
+
+Two timers exist, and neither drives status updates:
+
+- a 15 s tick that refreshes relative times ("3m") and expires the "keep finished" window, and
+- a 60 s safety rescan that catches anything missed, for example after the Mac wakes from sleep.
+
+### When the Copilot app's files change
+
+This relies on the Copilot app's **undocumented** local files: the database schema, the event
+log format, and the `ghapp://` link. An app update could change them.
+
+- If the main database query fails, the app uses a simpler one: session names only, without the
+  running flag, projects or branches.
+- If the database can't be read at all, sessions are listed from their log folders, and the
+  problem is shown in the panel and the widget.
+
+## Desktop widgets
+
+Azure DevOps and Copilot can show a desktop widget, each its own (`DesktopWidgetController` in
+`Sources/BriefBarUI`).
+
+### Why not a WidgetKit widget?
+
+WidgetKit widgets are drawn by the system from a timeline, and the system **budgets** how often
+they can reload. Per Apple's [Keeping a widget up to date](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date),
+a frequently viewed widget typically gets 40–70 refreshes a day, "roughly every 15 to 60 minutes".
+That is the delay you see with polling-based widgets.
+
+- `WidgetCenter.reloadAllTimelines()` doesn't avoid that. A reload requested by a background app
+  counts against the budget. The exceptions are narrow, such as the containing app being in the
+  foreground.
+- [Widget push updates](https://developer.apple.com/documentation/widgetkit/updating-widgets-with-widgetkit-push-notifications)
+  through APNs are "budgeted … and delivered opportunistically" as well. They also need a server,
+  push entitlements and a paid developer account.
+- Third-party widget hosts such as Pushcut or Scriptable are WidgetKit widgets themselves, so they
+  have the same limit. Shortcuts and App Intents run from a script don't avoid it either.
+
+Copilot hooks aren't needed: the app and the agent already write every state change to disk,
+so watching those files sees changes without changing any Copilot configuration.
+
+So BriefBar uses a different approach: a borderless, non-activating panel drawn by the app
+itself. It sits at desktop level (behind windows, on every Space) and is styled like a macOS
+widget. A running app can redraw its own window whenever it likes, so there is no refresh budget.
+
+The trade-offs:
+
+- it isn't in the system widget gallery or Notification Center,
+- it doesn't follow the desktop widget tinting, and
+- the app must be running (that's what Launch at Login is for).
+
+A WidgetKit extension also needs Xcode to build, and this project builds with the Command Line
+Tools alone.
+
+## Signing
+
+macOS records each Full Disk Access grant, and the access list of the keychain item that protects
+Teams' saved chats, with the app's **designated requirement**: the part of its signature that says
+how to recognize it again.
+
+- An ad-hoc signature's designated requirement is its code hashes. Apple's
+  [TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
+  puts it this way: ad hoc signed code "has a DR but it's tied to that specific version of the code",
+  so "macOS can't track this authorization across versions of your app". Every build would lose
+  Full Disk Access, although System Settings may still show the switch on.
+- Signed with a certificate, the requirement names the certificate instead:
+  `identifier "com.asaf.BriefBar" and certificate leaf = H"<the certificate's hash>"`. A rebuilt app
+  still satisfies it, so macOS keeps the access.
+
+`scripts/make-signing-identity.sh` creates that certificate, **BriefBar Signing**: self-signed, for
+code signing only, valid for 10 years, in the login keychain. Nothing has to trust it: macOS matches
+the certificate itself.
+
+- `scripts/build-app.sh` signs every build with it, through `scripts/sign-app.sh`, with no timestamp,
+  so signing makes no network request. There's no ad-hoc option.
+- `scripts/check-app.sh` fails if a build's requirement names code hashes.
+
+### Who may use the signing key
+
+Matching a certificate is only as strong as the private key behind it. Anything that can sign with
+the key can sign itself as `com.asaf.BriefBar`, satisfy the requirement, and get the Full Disk Access
+you gave BriefBar. So no app may use the key without asking:
+
+- `scripts/signing-key.swift` imports the key with an access list that trusts no app, not even
+  `codesign`, so `codesign` asks for your login password every time. (`security import` can't make
+  such a key: with `-T /usr/bin/codesign`, codesign may use it silently; without, `/usr/bin/security`
+  may.)
+- **Always Allow** in that prompt would add `codesign` to the list. `scripts/build-app.sh` reads the
+  list before every build, without prompting, and refuses to sign while any app is on it.
+  `scripts/make-signing-identity.sh --replace` swaps such a certificate for a new one.
+- The app embeds no framework, so each build uses the key once, and asks once.
+- The certificate and its key are made in memory and reach the keychain through a pipe, never a file.
+
+Only CI's throwaway keychains (`scripts/ci-signing-identity.sh`) let `codesign` use their key without
+asking, since nothing could answer a prompt there. Don't give a build signed with one Full Disk Access.
+
+Changing the certificate, or the bundle identifier, loses Full Disk Access once: remove BriefBar from
+the list and add it again.
+
+### The hardened runtime and library validation
+
+Every build runs with the hardened runtime, so other processes can't use BriefBar's Full Disk Access
+by injecting code into it: macOS ignores `DYLD_` environment variables for it, such as
+`DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach.
+
+The hardened runtime also turns on library validation, which loads only libraries signed by Apple or by
+the app's own team. BriefBar has no entitlements and embeds no framework, so library validation stays
+on, and nothing but Apple's libraries and BriefBar's own code runs with its access.
+`scripts/check-app.sh` fails on any entitlement. (Teams Pulse and Copilot Pulse turn library
+validation off to load Sparkle, their updater, which a self-signed certificate has no team for.)
+
+## Updates
+
+BriefBar doesn't update itself yet. While the repository is private, its releases and an update feed
+couldn't be downloaded, so you update by building again. Once it's public, releases will be:
+
+- built by GitHub Actions,
+- signed with a certificate of the project's own, held only by an approval-gated `release` environment
+  and the maintainer's password manager, never on a Mac,
+- delivered by Sparkle, with signed updates. Sparkle will then need library validation off, as in
+  the Pulse apps.
+
+## Checks
+
+- `make test` runs every module's tests, with made-up data.
+- `make demo-check` checks that every source's made-up data lands in the expected groups. It runs the
+  same checks the Pulse apps ran on their demos.
+- `scripts/check-boundaries.sh` reads each module's object files and fails unless only
+  `AzureDevOpsCore` uses networking APIs, and only `BriefBarCore` starts programs. It also fails if
+  those two stop using them, since the check could no longer tell.
+- `scripts/check-app.sh` checks a built app: its signature and designated requirement, the hardened
+  runtime, no entitlements, FoundationModels linked weakly so it opens on macOS 15, and that it runs
+  and passes the demo check.

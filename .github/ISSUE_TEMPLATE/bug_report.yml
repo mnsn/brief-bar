@@ -1,0 +1,61 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report!
+
+        **Never post anything from your own data**: no chat or people's names, messages, pull request titles or comments, session names or prompts, or IDs, and no screenshots that show them. They're private, and often confidential to your organization. Describe the problem in general terms. To show something on screen, reproduce it with the made-up data of `make demo`. For Teams, share the `--diagnose` output asked for below, which describes only the structure of Teams' notifications.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Which source?
+      options:
+        - Microsoft Teams
+        - Azure DevOps
+        - GitHub Copilot
+        - BriefBar itself (Settings, the menu bar, signing…)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead? Describe your data in general terms, such as "a group chat with 3 new messages" or "a pull request with a failed build".
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Someone sends me a message in a 1:1 chat while BriefBar is running
+        2. …
+  - type: input
+    id: briefbar-version
+    attributes:
+      label: BriefBar version or commit
+      placeholder: 0.1.0, or a commit like abc1234
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Version of the app the source reads (Teams, the Copilot app or the Azure CLI)
+      description: '`mdls -raw -name kMDItemVersion "/Applications/Microsoft Teams.app"` prints Teams'' version; `az version` the Azure CLI''s.'
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.1, Apple silicon
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (Teams)
+      description: |
+        For Teams, click **Copy Diagnostics** in its gear menu and paste it here, or paste the output of `"$HOME/Applications/BriefBar.app/Contents/MacOS/BriefBar" --diagnose`. It describes Notification Center's database and Teams' notifications by structure only, without names, messages or IDs. Never paste the output of `--dump`, `--watch`, `--json` or `--summaries`, which shows your data.
+      render: text

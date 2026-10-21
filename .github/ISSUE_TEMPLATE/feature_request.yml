@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an idea, an improvement or a new source
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could it work?
+      description: For a new source, say what it would read, where it would connect and what it would need. Sketches and mockups are welcome, with made-up data only (`make demo` shows some). Never post real names, messages, titles, IDs or screenshots of your own data.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered

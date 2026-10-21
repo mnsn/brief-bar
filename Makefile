@@ -11,8 +11,9 @@ DEMO_DIR := $(abspath build/demo)
 DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DIR="$(DEMO_DIR)/teams/state" \
 	BRIEFBAR_COPILOT_DIR="$(DEMO_DIR)/copilot"
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
-PULSE = $(shell swift build --show-bin-path)/BriefBar
-SCREENSHOTS :=
+BRIEFBAR = $(shell swift build --show-bin-path)/BriefBar
+SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
+	copilot-widget-large-light copilot-widget-large-dark
 
 build:
 	swift build
@@ -50,17 +51,17 @@ pppc-profile: app
 # data, for the sources that are on in the installed app, or the ones --source names, as in
 # make dump ARGS="--source copilot".
 run: build
-	"$(PULSE)" $(ARGS)
+	"$(BRIEFBAR)" $(ARGS)
 
 dump: build
-	"$(PULSE)" --dump $(ARGS)
+	"$(BRIEFBAR)" --dump $(ARGS)
 
 watch: build
-	"$(PULSE)" --watch $(ARGS)
+	"$(BRIEFBAR)" --watch $(ARGS)
 
 # Teams' structure only: no names, messages or IDs. Safe to paste into an issue.
 diagnose: build
-	"$(PULSE)" --diagnose
+	"$(BRIEFBAR)" --diagnose
 
 demo-data:
 	swift scripts/make-teams-demo-data.swift "$(DEMO_DIR)/teams"
@@ -68,19 +69,20 @@ demo-data:
 
 # Runs the app with made-up data for every source instead of yours. Ctrl-C quits.
 demo: build demo-data
-	$(DEMO_ENV) "$(PULSE)" --demo
+	$(DEMO_ENV) "$(BRIEFBAR)" --demo
 
 # Checks that the made-up data lands in the expected groups. CI runs this.
-demo-check: $(if $(filter command line,$(origin PULSE)),,build) demo-data
-	@$(DEMO_ENV) ./scripts/demo-check.sh "$(PULSE)"
+demo-check: $(if $(filter command line,$(origin BRIEFBAR)),,build) demo-data
+	@$(DEMO_ENV) ./scripts/demo-check.sh "$(BRIEFBAR)"
 
 # Draws the menu bar with each list open, the widgets and Settings from your own data, into the ignored render/.
 render: build
-	"$(PULSE)" --render render $(ARGS)
+	"$(BRIEFBAR)" --render render $(ARGS)
 
-# Renders the README's pictures from the demo data.
+# Renders the README's pictures from the demo data, with Teams' summaries if Apple Intelligence is on.
 screenshots: build demo-data
-	$(DEMO_ENV) "$(PULSE)" --demo --render build/screenshots
+	rm -rf build/screenshots
+	$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots
 	mkdir -p docs/images
 	for name in $(SCREENSHOTS); do cp build/screenshots/$$name.png docs/images/; done
 

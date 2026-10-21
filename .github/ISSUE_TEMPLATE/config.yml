@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/mnsn/briefbar/security/advisories/new
+    about: Please report security issues privately, not in a public issue.
+  - name: Problems with Microsoft Teams or Azure DevOps themselves
+    url: https://support.microsoft.com
+    about: BriefBar is an independent project. For Teams or Azure DevOps, contact Microsoft support or your IT department.

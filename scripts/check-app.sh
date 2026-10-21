@@ -61,5 +61,5 @@ fi
 
 # Running it shows that it launches under the hardened runtime.
 "$BIN" --help >/dev/null || fail "doesn't launch."
-make -s demo-check PULSE="$BIN"
+make -s demo-check BRIEFBAR="$BIN"
 echo "Checked $APP: valid signature, hardened runtime, no entitlements, $ARCHS, designated requirement: $REQUIREMENT"
