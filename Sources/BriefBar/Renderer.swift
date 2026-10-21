@@ -34,24 +34,37 @@ enum Renderer {
 
         var written: [String] = []
         let items = model.visibleItems()
+        // Azure DevOps and Copilot sharing an item, when both are on: the Menu Bar settings' example. Drawn
+        // from a copy of the layout, so nothing is saved.
+        var combined = model.layout
+        combined.place(model.shownSections)
+        combined.combine(.copilotSessions, with: .azureDevOpsPullRequests)
+        let combinedItems = combined.visibleItems(showing: model.shownSections)
+        let combinedIndex = combinedItems.firstIndex { $0.sections.count > 1 }
         for dark in [false, true] {
             guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { continue }
             let suffix = dark ? "dark" : "light"
-            let segments = items.map { item in
-                item.sections.compactMap { section in model.source(for: section)?.segment(for: section) }
-            }
-            for (index, item) in items.enumerated() {
+            func picture(of items: [MenuBarLayout.Item], pressed index: Int, name: String) {
+                let segments = items.map { item in
+                    item.sections.compactMap { section in model.source(for: section)?.segment(for: section) }
+                }
                 let panel = ItemPanelModel(model: model)
-                panel.sections = item.sections
+                panel.sections = items[index].sections
                 let view = ItemPanelView(panel: panel)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
                 if let image = Snapshot.render(view, appearance: appearance),
                    let picture = MenuBarPicture.draw(panel: image, items: segments, pressed: index, appearance: appearance),
-                   let file = Snapshot.write(picture, to: output.appending(path: "menubar-\(item.id)-\(suffix).png")) {
+                   let file = Snapshot.write(picture, to: output.appending(path: "\(name)-\(suffix).png")) {
                     written.append(file)
                 }
+            }
+            for (index, item) in items.enumerated() {
+                picture(of: items, pressed: index, name: "menubar-\(item.id)")
+            }
+            if let combinedIndex {
+                picture(of: combinedItems, pressed: combinedIndex, name: "menubar-combined")
             }
             for source in sources {
                 for rendering in source.extraRenderings() {

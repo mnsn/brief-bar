@@ -114,7 +114,7 @@ final class AppModel: ObservableObject {
     // MARK: Menu bar
 
     /// The sections of the sources that are on, in the sources' order.
-    private var shownSections: [SectionID] {
+    var shownSections: [SectionID] {
         onSources.flatMap { $0.sections.map(\.id) }
     }
 

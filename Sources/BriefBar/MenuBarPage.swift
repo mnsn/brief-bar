@@ -38,8 +38,8 @@ struct MenuBarPage: View {
                     .foregroundStyle(.secondary)
             } else {
                 Form {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        Section(items.count > 1 ? "Item \(index + 1), from the left" : "Item") {
+                    ForEach(items) { item in
+                        Section(item.sections.count > 1 ? "Together in one item" : "") {
                             ForEach(item.sections, id: \.self) { section in
                                 Picker(name(of: section), selection: placement(of: section, in: item, items: items)) {
                                     if item.sections.count > 1 {
