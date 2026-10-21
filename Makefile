@@ -4,9 +4,10 @@
 # plugin (it lives in a subfolder), so point it there explicitly.
 TESTING_PLUGINS := $(abspath $(dir $(shell xcrun --find swift))../lib/swift/host/plugins/testing)
 
-# Made-up data for every source (see scripts/demo-data.sh).
+# Made-up data for every source: Copilot's data directory (scripts/make-copilot-demo-data.swift).
+# Azure DevOps makes up its own (--demo).
 DEMO_DIR := $(abspath build/demo)
-DEMO_ENV :=
+DEMO_ENV := BRIEFBAR_COPILOT_DIR="$(DEMO_DIR)/copilot"
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
 PULSE = $(shell swift build --show-bin-path)/BriefBar
 SCREENSHOTS :=
@@ -52,7 +53,7 @@ watch: build
 	"$(PULSE)" --watch $(ARGS)
 
 demo-data:
-	@true
+	swift scripts/make-copilot-demo-data.swift "$(DEMO_DIR)/copilot"
 
 # Runs the app with made-up data for every source instead of yours. Ctrl-C quits.
 demo: build demo-data

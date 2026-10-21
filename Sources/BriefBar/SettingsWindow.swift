@@ -261,6 +261,7 @@ struct SourcePage: View {
                     source.settingsView()
                 }
                 .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
                 .scrollDisabled(true)
                 .fixedSize(horizontal: false, vertical: true)
                 DisclosureGroup("What it reads") {

@@ -14,20 +14,35 @@ let package = Package(
             name: "BriefBarCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        // GitHub Copilot app sessions, from the app's database and each agent's event log in ~/.copilot.
+        .target(
+            name: "CopilotCore",
+            dependencies: ["BriefBarCore"],
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
         // Shared by every source's app code: the source protocol, menu-bar drawing, widgets,
         // notifications, Full Disk Access and the gear menu's own items.
         .target(
             name: "BriefBarUI",
             dependencies: ["BriefBarCore"]
         ),
+        // Each source's app code: its lists, settings, widget and command-line modes.
+        .target(
+            name: "CopilotUI",
+            dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
+        ),
         // The app: its sources, the menu-bar items, Settings and the command line.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "CopilotUI"]
         ),
         .testTarget(
             name: "BriefBarCoreTests",
             dependencies: ["BriefBarCore"]
+        ),
+        .testTarget(
+            name: "CopilotCoreTests",
+            dependencies: ["CopilotCore", "BriefBarCore"]
         ),
     ]
 )
