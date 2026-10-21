@@ -10,8 +10,9 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Permissions once.** Full Disk Access and notifications are BriefBar's, granted once, and used only
   by the sources you turn on. An update never turns a source on, and one that starts reading more
   pauses until you've looked.
-- **Several sources in one menu-bar item.** Settings › Menu Bar puts sections together, with their
-  counts side by side and a tab for each.
+- **Several sources in one menu-bar item.** Settings › Menu Bar puts sections together, or all of
+  them in one item, with their counts side by side and a tab for each, and hides the ones you don't
+  need.
 - **Settings in a window of their own**, and in each list's gear menu.
 - **Programs it starts can't use its permissions:** the Azure CLI and the login shell that finds it
   run responsible for themselves.

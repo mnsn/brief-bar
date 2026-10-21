@@ -13,7 +13,9 @@ struct MenuPanelView: View {
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showRecent = false
+    @Environment(\.panelWidth) private var panelWidth
 
+    static let width: CGFloat = 360
     private static let maxListHeight: CGFloat = 520
 
     var body: some View {
@@ -30,7 +32,7 @@ struct MenuPanelView: View {
             Divider()
             footer
         }
-        .frame(width: 360)
+        .frame(width: panelWidth ?? Self.width)
     }
 
     private var unread: [ConversationSummary] { store.state.unread(in: group) }

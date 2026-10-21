@@ -49,7 +49,7 @@ final class AppModel: ObservableObject {
         layout = MenuBarLayout.load(from: defaults)
 
         services.openSettings = { [weak self] destination in self?.openSettings(destination) }
-        services.showPanel = { [weak self] section in self?.showPanel(section) }
+        services.showPanel = { [weak self] section in self?.showPanel(section) ?? false }
         services.closePanels = { [weak self] in self?.closePanels() }
         services.notifier.onOpen = { [weak self] source, info in
             guard let self, let source, self.state(of: source) == .on else { return }
@@ -84,9 +84,16 @@ final class AppModel: ObservableObject {
     /// Turns a source on, with your consent to what it says it reads now, and asks for what it needs.
     func turnOn(_ id: SourceID) {
         guard let source = source(id), state(of: id) != .on else { return }
+        let wasOff = state(of: id) == .off
         choices.turnOn(id, version: source.description.version)
         choices.save(to: services.defaults)
-        layout.place(source.sections.map(\.id))
+        let sections = source.sections.map(\.id)
+        // Keep It On, after an update, leaves the menu bar as it was.
+        if wasOff {
+            layout.sourceTurnedOn(sections)
+        } else {
+            layout.place(sections)
+        }
         layout.save(to: services.defaults)
         Log.app.info("Turned on \(id.rawValue, privacy: .public)")
         source.start()
@@ -113,23 +120,54 @@ final class AppModel: ObservableObject {
 
     // MARK: Menu bar
 
-    /// The sections of the sources that are on, in the sources' order.
-    var shownSections: [SectionID] {
+    /// The sections of the sources that are on, in the sources' order, including hidden ones.
+    var onSections: [SectionID] {
         onSources.flatMap { $0.sections.map(\.id) }
     }
 
+    /// The sections of the sources that are on that you've hidden.
+    var hiddenSections: [SectionID] {
+        onSections.filter(layout.isHidden)
+    }
+
     func visibleItems() -> [MenuBarLayout.Item] {
-        layout.visibleItems(showing: shownSections)
+        layout.visibleItems(showing: onSections)
     }
 
     func combine(_ section: SectionID, with other: SectionID) {
         layout.combine(section, with: other)
-        layout.save(to: services.defaults)
-        updateMenuBar()
+        layoutChanged()
     }
 
     func separate(_ section: SectionID) {
         layout.separate(section)
+        layoutChanged()
+    }
+
+    /// Hides a section from the menu bar. Its source stays on.
+    func hide(_ section: SectionID) {
+        layout.hide(section)
+        layoutChanged()
+    }
+
+    /// Puts every section in one item, as they show now, left to right, then those of the sources that are off,
+    /// so they join it when you turn them on.
+    func combineAll() {
+        layout.combineAll(visibleItems().flatMap(\.sections) + sources.flatMap { $0.sections.map(\.id) })
+        layoutChanged()
+    }
+
+    func separateAll() {
+        layout.separateAll()
+        layoutChanged()
+    }
+
+    /// For `--render`: draws Settings with `layout`, without saving it or changing the menu bar.
+    func useForRendering(_ layout: MenuBarLayout) {
+        self.layout = layout
+    }
+
+    private func layoutChanged() {
         layout.save(to: services.defaults)
         updateMenuBar()
     }
@@ -152,15 +190,21 @@ final class AppModel: ObservableObject {
         itemOrder = visible.map(\.id)
         if visible.isEmpty {
             if placeholder == nil { placeholder = PlaceholderItem(model: self) }
+            placeholder?.update(everythingHidden: !onSources.isEmpty)
         } else {
             placeholder?.remove()
             placeholder = nil
         }
     }
 
-    func showPanel(_ section: SectionID) {
-        guard let entry = visibleItems().first(where: { $0.sections.contains(section) }) else { return }
-        items[entry.id]?.showPopover(at: section)
+    /// Opens the list that shows `section`. False when no item shows it, because it's hidden.
+    @discardableResult
+    func showPanel(_ section: SectionID) -> Bool {
+        guard let entry = visibleItems().first(where: { $0.sections.contains(section) }),
+              let item = items[entry.id]
+        else { return false }
+        item.showPopover(at: section)
+        return true
     }
 
     func closePanels(except kept: MenuBarItemController? = nil) {
@@ -175,7 +219,7 @@ final class AppModel: ObservableObject {
         for source in onSources {
             source.start()
         }
-        layout.place(shownSections)
+        layout.place(onSections)
         layout.save(to: services.defaults)
         updateMenuBar()
 
@@ -196,12 +240,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings when nothing's on.
+    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings when nothing shows.
     func reopen() {
         if let first = itemOrder.first, let item = items[first] {
             item.showPopover(at: nil)
         } else {
-            openSettings(.general)
+            openSettings(onSources.isEmpty ? .general : .menuBar)
         }
     }
 

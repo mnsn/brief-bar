@@ -34,22 +34,29 @@ enum Renderer {
 
         var written: [String] = []
         let items = model.visibleItems()
-        // Azure DevOps and Copilot sharing an item, when both are on: the Menu Bar settings' example. Drawn
-        // from a copy of the layout, so nothing is saved.
+        // Examples, drawn from copies of the layout, so nothing is saved: Azure DevOps and Copilot sharing an
+        // item, when both are on, and every section in one item.
         var combined = model.layout
-        combined.place(model.shownSections)
+        combined.place(model.onSections)
         combined.combine(.copilotSessions, with: .azureDevOpsPullRequests)
-        let combinedItems = combined.visibleItems(showing: model.shownSections)
+        let combinedItems = combined.visibleItems(showing: model.onSections)
         let combinedIndex = combinedItems.firstIndex { $0.sections.count > 1 }
+        var all = model.layout
+        all.combineAll(items.flatMap(\.sections))
+        let allItems = all.visibleItems(showing: model.onSections)
+        // The Menu Bar settings' example: Azure DevOps with Copilot, and Group Chats hidden.
+        var example = combined
+        example.hide(.teamsGroupChats)
         for dark in [false, true] {
             guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { continue }
             let suffix = dark ? "dark" : "light"
-            func picture(of items: [MenuBarLayout.Item], pressed index: Int, name: String) {
+            func picture(of items: [MenuBarLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String) {
                 let segments = items.map { item in
                     item.sections.compactMap { section in model.source(for: section)?.segment(for: section) }
                 }
                 let panel = ItemPanelModel(model: model)
                 panel.sections = items[index].sections
+                panel.selected = section
                 let view = ItemPanelView(panel: panel)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
@@ -66,6 +73,12 @@ enum Renderer {
             if let combinedIndex {
                 picture(of: combinedItems, pressed: combinedIndex, name: "menubar-combined")
             }
+            if allItems.count == 1, allItems[0].sections.count > 1 {
+                // Opened at each tab, which all keep the widest panel's width.
+                for section in allItems[0].sections {
+                    picture(of: allItems, pressed: 0, at: section, name: "menubar-all-\(section.rawValue)")
+                }
+            }
             for source in sources {
                 for rendering in source.extraRenderings() {
                     if let image = Snapshot.render(rendering.view, appearance: appearance),
@@ -76,7 +89,7 @@ enum Renderer {
             }
             let pages: [(String, SettingsDestination)] = [("general", .general), ("menu-bar", .menuBar)]
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
-            for (name, destination) in pages {
+            func page(_ destination: SettingsDestination, name: String) {
                 let navigation = SettingsNavigation()
                 navigation.destination = destination
                 let view = SettingsView(model: model, navigation: navigation)
@@ -88,6 +101,13 @@ enum Renderer {
                     written.append(file)
                 }
             }
+            for (name, destination) in pages {
+                page(destination, name: name)
+            }
+            let saved = model.layout
+            model.useForRendering(example)
+            page(.menuBar, name: "menu-bar-example")
+            model.useForRendering(saved)
         }
         written.forEach { print($0) }
         return written.isEmpty ? 1 : 0

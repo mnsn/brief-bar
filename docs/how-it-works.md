@@ -61,16 +61,24 @@ or the C library's other ways to start programs.
 
 Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' pull
 requests, and Copilot's sessions. `MenuBarLayout` (in `Sources/BriefBarCore`) lists the menu-bar
-items, left to right, and the sections each one shows:
+items, left to right, the sections each one shows, and the sections you've hidden:
 
-- Each section gets an item of its own until you put it in another, in **Settings › Menu Bar**.
+- Each section gets an item of its own until you put it in another, or hide it, in **Settings › Menu
+  Bar**. **Put All in One Item** puts every section in one item: those that show, left to right, then
+  those of the sources that are off, so a source you turn on later joins it. **Give Each Its Own
+  Item** undoes it.
 - An item shows its sections' counts side by side, each drawn the way its source draws it, and its
-  popover has a tab for each, opening at the first that needs you.
+  popover has a tab for each, opening at the first that needs you. Every tab is as wide as the widest
+  of the item's lists, and the tabs get smaller when they don't fit.
+- A hidden section keeps its place, for when you show it again, and its source keeps running: Azure
+  DevOps still notifies you, and the widgets still show. A notification that would open the hidden
+  pull requests opens them in Azure DevOps instead. Turning on a source whose sections were all
+  hidden when you turned it off shows them again.
 - Where a section goes is remembered while its source is off, so it comes back to the same item.
   Sections a later version adds get items of their own.
 - Each item has a stable ID, which macOS uses to keep it where you ⌘-dragged it.
 
-With nothing on, BriefBar shows its own icon, whose menu opens Settings.
+With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
 
 ## Microsoft Teams
 

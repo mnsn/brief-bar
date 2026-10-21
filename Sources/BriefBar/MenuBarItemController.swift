@@ -126,6 +126,11 @@ final class ItemPanelModel: ObservableObject {
         selected.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first
     }
 
+    /// The widest of its sections' panels, so the popover keeps its width as you switch tabs.
+    var width: CGFloat {
+        sections.compactMap { model.source(for: $0)?.panelWidth }.max() ?? 360
+    }
+
     func title(for section: SectionID) -> String {
         guard let source = model.source(for: section) else { return section.rawValue }
         let title = source.sections.first { $0.id == section }?.title ?? source.name
@@ -149,15 +154,15 @@ struct ItemPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             if panel.sections.count > 1, let current = panel.current {
-                Picker("Section", selection: Binding(get: { current }, set: { panel.select($0) })) {
-                    ForEach(panel.sections, id: \.self) { section in
-                        Text(panel.title(for: section)).tag(section)
-                    }
+                // Smaller tabs when there are too many for the popover's width.
+                ViewThatFits(in: .horizontal) {
+                    tabs(current: current)
+                    tabs(current: current)
+                        .controlSize(.small)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                .frame(width: panel.width)
                 Divider()
             }
             if let current = panel.current {
@@ -165,14 +170,27 @@ struct ItemPanelView: View {
                     .id(current)
             }
         }
+        .environment(\.panelWidth, panel.sections.count > 1 ? panel.width : nil)
+    }
+
+    private func tabs(current: SectionID) -> some View {
+        Picker("Section", selection: Binding(get: { current }, set: { panel.select($0) })) {
+            ForEach(panel.sections, id: \.self) { section in
+                Text(panel.title(for: section)).tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 }
 
-/// BriefBar's own icon in the menu bar, while no source is on, so you can always get to Settings.
+/// BriefBar's own icon in the menu bar, while no source is on or you've hidden every section, so you can always
+/// get to Settings.
 @MainActor
 final class PlaceholderItem: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private unowned let model: AppModel
+    private var destination = SettingsDestination.general
 
     init(model: AppModel) {
         self.model = model
@@ -180,14 +198,28 @@ final class PlaceholderItem: NSObject {
         let image = NSImage(systemSymbolName: AppSymbols.app, accessibilityDescription: AppIdentity.name)
         image?.isTemplate = true
         statusItem.button?.image = image
-        statusItem.button?.toolTip = "BriefBar: nothing is on"
         statusItem.autosaveName = "BriefBar.placeholder"
+        update(everythingHidden: false)
+    }
+
+    /// - Parameter everythingHidden: sources are on, but you've hidden all their sections.
+    func update(everythingHidden: Bool) {
+        destination = everythingHidden ? .menuBar : .general
+        statusItem.button?.toolTip = everythingHidden ? "BriefBar: every section is hidden" : "BriefBar: nothing is on"
 
         let menu = NSMenu()
-        let note = NSMenuItem(title: "BriefBar shows nothing until you turn on a source.", action: nil, keyEquivalent: "")
+        let note = NSMenuItem(
+            title: everythingHidden
+                ? "You've hidden every section from the menu bar."
+                : "BriefBar shows nothing until you turn on a source.",
+            action: nil, keyEquivalent: ""
+        )
         note.isEnabled = false
         menu.addItem(note)
-        let choose = NSMenuItem(title: "Choose What BriefBar Shows…", action: #selector(openSettings), keyEquivalent: ",")
+        let choose = NSMenuItem(
+            title: everythingHidden ? "Choose What the Menu Bar Shows…" : "Choose What BriefBar Shows…",
+            action: #selector(openSettings), keyEquivalent: ","
+        )
         choose.target = self
         menu.addItem(choose)
         menu.addItem(.separator())
@@ -200,7 +232,7 @@ final class PlaceholderItem: NSObject {
     }
 
     @objc private func openSettings() {
-        model.openSettings(.general)
+        model.openSettings(destination)
     }
 }
 

@@ -11,7 +11,9 @@ struct MenuPanelView: View {
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
+    @Environment(\.panelWidth) private var panelWidth
 
+    static let width: CGFloat = 380
     private static let maxListHeight: CGFloat = 540
 
     var body: some View {
@@ -28,7 +30,7 @@ struct MenuPanelView: View {
             Divider()
             footer
         }
-        .frame(width: 380)
+        .frame(width: panelWidth ?? Self.width)
         .onAppear { loginItem.refresh() }
     }
 

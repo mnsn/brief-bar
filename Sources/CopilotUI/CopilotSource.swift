@@ -23,6 +23,7 @@ package final class CopilotSource: BriefBarSource {
         requirements: []
     )
     package let sections = [SectionInfo(id: .copilotSessions, title: "Sessions")]
+    package var panelWidth: CGFloat { MenuPanelView.width }
 
     /// The groups counted in the menu bar: what to look at. Idle only shows in the list.
     private static let shownPhases: [DisplayPhase] = [.needsYou, .running, .done, .stopped]

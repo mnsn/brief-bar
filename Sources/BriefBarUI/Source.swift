@@ -98,6 +98,9 @@ package protocol BriefBarSource: AnyObject {
     var segmentsChanged: AnyPublisher<Void, Never> { get }
     /// What the section's popover shows.
     func panel(for section: SectionID) -> AnyView
+    /// How wide its panels are. An item that shows several sections makes each as wide as the widest
+    /// (`\.panelWidth`).
+    var panelWidth: CGFloat { get }
     /// The section's popover is about to open.
     func panelWillShow(_ section: SectionID)
 
@@ -122,6 +125,19 @@ extension BriefBarSource {
     package func extraRenderings() -> [(name: String, view: AnyView)] { [] }
 }
 
+private struct PanelWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// How wide a section's panel is when its item shows several sections: the widest of their panels, so the
+    /// popover keeps its width as you switch tabs. Nil for the panel's own width.
+    package var panelWidth: CGFloat? {
+        get { self[PanelWidthKey.self] }
+        set { self[PanelWidthKey.self] = newValue }
+    }
+}
+
 /// What the app gives every source: shared services, and ways to reach the app's own windows and items.
 @MainActor
 package final class AppServices: ObservableObject {
@@ -134,7 +150,8 @@ package final class AppServices: ObservableObject {
     package let fullDiskAccess: FullDiskAccess
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
-    package var showPanel: (SectionID) -> Void = { _ in }
+    /// Opens the list that shows a section: false when it's hidden from the menu bar.
+    package var showPanel: (SectionID) -> Bool = { _ in false }
     package var closePanels: () -> Void = {}
 
     package init(defaults: UserDefaults, isDemo: Bool) {

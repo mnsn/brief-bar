@@ -68,9 +68,11 @@ can remove it.
 Each section has a menu-bar item of its own: **Chats** and **Group Chats** for Teams, then Azure
 DevOps and Copilot. Click one for its list.
 
-In **Settings › Menu Bar** you can put sections together, such as Azure DevOps with Copilot. Their
-counts then sit side by side in one item, and its list has a tab for each, opening at the one that needs
-you. To move items, hold ⌘ and drag them.
+In **Settings › Menu Bar** you can put sections together, such as Azure DevOps with Copilot, or all of
+them in one item with **Put All in One Item**. Their counts then sit side by side in one item, and its
+list has a tab for each, opening at the one that needs you. You can also hide a section you don't need,
+such as Group Chats: its source stays on, so Azure DevOps still notifies you and the widgets still
+show. To move items, hold ⌘ and drag them.
 
 <p align="center">
   <picture>
@@ -219,6 +221,9 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **BriefBa
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 | Azure DevOps, Copilot | Show Desktop Widget, Widget Position, Widget Size | on/off; on the desktop or floating; compact, medium or large |
+
+In **Settings › Menu Bar**, each section shows on its own, with others or not at all. **Put All in One
+Item** and **Give Each Its Own Item** change them all at once.
 
 ## Privacy
 

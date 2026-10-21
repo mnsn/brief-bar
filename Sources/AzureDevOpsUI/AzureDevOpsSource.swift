@@ -24,6 +24,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         requirements: [.azureCLI, .notifications]
     )
     package let sections = [SectionInfo(id: .azureDevOpsPullRequests, title: "Pull Requests")]
+    package var panelWidth: CGFloat { MenuPanelView.width }
 
     private let services: AppServices
     let settings: AppSettings
@@ -152,8 +153,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func openNotification(_ userInfo: [String: String]) {
         if let link = userInfo["url"].flatMap(URL.init(string:)) {
             store?.openFromNotification(key: userInfo["pullRequest"], url: link)
-        } else {
-            services.showPanel(.azureDevOpsPullRequests)
+        } else if !services.showPanel(.azureDevOpsPullRequests) {
+            // Hidden from the menu bar: the pull requests in Azure DevOps instead.
+            store?.openPullRequestsPage()
         }
     }
 

@@ -11,7 +11,9 @@ struct MenuPanelView: View {
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
+    @Environment(\.panelWidth) private var panelWidth
 
+    static let width: CGFloat = 400
     private static let maxListHeight: CGFloat = 560
     private static let shownGroups: [PRGroup] = [.needsYou, .failing, .ready, .toReview, .waiting, .done]
 
@@ -29,7 +31,7 @@ struct MenuPanelView: View {
             Divider()
             footer
         }
-        .frame(width: 400)
+        .frame(width: panelWidth ?? Self.width)
         .onAppear { loginItem.refresh() }
     }
 

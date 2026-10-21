@@ -28,6 +28,7 @@ package final class TeamsSource: BriefBarSource {
         SectionInfo(id: .teamsChats, title: "Chats"),
         SectionInfo(id: .teamsGroupChats, title: "Group Chats"),
     ]
+    package var panelWidth: CGFloat { MenuPanelView.width }
 
     private static let accessReason = "BriefBar finds your unread Teams chats in the notifications that macOS keeps in Notification Center."
 
