@@ -180,14 +180,16 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
 }
 
 /// The window that walks you through granting Full Disk Access.
-struct FullDiskAccessView: View {
+package struct FullDiskAccessView: View {
     @EnvironmentObject private var access: FullDiskAccess
+
+    package init() {}
 
     private var names: String {
         ListFormatter.localizedString(byJoining: access.requesterNames)
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
                 AppIconView(isBundled: access.isBundled)

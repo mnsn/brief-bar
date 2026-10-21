@@ -12,12 +12,14 @@ fail() {
 }
 
 # Each source's counts, by group.
-EXPECTED='{"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1}}'
+EXPECTED='{"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1},"teams":{"chats":2,"groups":2}}'
 COUNTS="$("$BIN" --demo --json | jq -cS 'with_entries(.value |= .counts)')"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 
 # Each source alone, too.
-[[ "$("$BIN" --demo --source copilot --json | jq -cS 'keys')" == '["copilot"]' ]] ||
-    fail "--source copilot doesn't print only Copilot"
+for source in teams copilot; do
+    [[ "$("$BIN" --demo --source "$source" --json | jq -cS 'keys')" == "[\"$source\"]" ]] ||
+        fail "--source $source doesn't print only that source"
+done
 
 echo "demo-check passed: $COUNTS"

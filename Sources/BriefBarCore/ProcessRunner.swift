@@ -87,6 +87,38 @@ public struct ProcessRunner: ProcessRunning {
         return await process.result(timeout: timeout, drainTime: drainTime)
     }
 
+    /// Runs a program to completion, like `run`, blocking the calling thread. Don't call it on the main
+    /// thread of an app.
+    public func runAndWait(
+        _ executable: URL, arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval
+    ) throws -> ProcessResult {
+        let outcome = Outcome()
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            do {
+                outcome.set(.success(try await self.run(executable, arguments: arguments, environment: environment, timeout: timeout)))
+            } catch {
+                outcome.set(.failure(error))
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return try outcome.get()
+    }
+
+    private final class Outcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: Result<ProcessResult, any Error> = .failure(ProcessRunnerError.cantDisclaim)
+
+        func set(_ result: Result<ProcessResult, any Error>) {
+            lock.withLock { self.result = result }
+        }
+
+        func get() throws -> ProcessResult {
+            try lock.withLock { result }.get()
+        }
+    }
+
     /// Starts a program that outlives BriefBar, such as the one that opens it again after it quits, in a
     /// session of its own, with no input or output, and doesn't wait for it.
     public static func launch(_ executable: URL, arguments: [String]) throws {

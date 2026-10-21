@@ -14,6 +14,18 @@ let package = Package(
             name: "BriefBarCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        // Notification Center's database: the notifications of the apps a source asks for. Reading it
+        // needs Full Disk Access. Teams uses it; Outlook could.
+        .target(
+            name: "NotificationCenterDB",
+            dependencies: ["BriefBarCore"],
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
+        // Unread Microsoft Teams chats, from the notifications Teams sends to Notification Center.
+        .target(
+            name: "TeamsCore",
+            dependencies: ["BriefBarCore", "NotificationCenterDB"]
+        ),
         // GitHub Copilot app sessions, from the app's database and each agent's event log in ~/.copilot.
         .target(
             name: "CopilotCore",
@@ -28,17 +40,29 @@ let package = Package(
         ),
         // Each source's app code: its lists, settings, widget and command-line modes.
         .target(
+            name: "TeamsUI",
+            dependencies: ["BriefBarCore", "BriefBarUI", "NotificationCenterDB", "TeamsCore"]
+        ),
+        .target(
             name: "CopilotUI",
             dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
         ),
         // The app: its sources, the menu-bar items, Settings and the command line.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI", "CopilotUI"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "CopilotUI"]
         ),
         .testTarget(
             name: "BriefBarCoreTests",
             dependencies: ["BriefBarCore"]
+        ),
+        .testTarget(
+            name: "BriefBarUITests",
+            dependencies: ["BriefBarUI", "BriefBarCore"]
+        ),
+        .testTarget(
+            name: "TeamsCoreTests",
+            dependencies: ["TeamsCore", "NotificationCenterDB", "BriefBarCore"]
         ),
         .testTarget(
             name: "CopilotCoreTests",
