@@ -95,9 +95,11 @@ enum CLI {
             return status
         }
         // --watch
+        var keepsWatching = false
         for commandLine in selected {
-            commandLine.watch(options)
+            keepsWatching = commandLine.watch(options) || keepsWatching
         }
+        guard keepsWatching else { return 0 }
         dispatchMain()
     }
 

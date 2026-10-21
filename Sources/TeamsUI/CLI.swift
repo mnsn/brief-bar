@@ -163,7 +163,7 @@ package enum TeamsCommandLine: SourceCommandLine {
     /// What `--watch` keeps running.
     nonisolated(unsafe) private static var watching: [Any] = []
 
-    package static func watch(_ options: CommandLineOptions) {
+    package static func watch(_ options: CommandLineOptions) -> Bool {
         guard let storage = storage(options) else { exit(1) }
         let queue = DispatchQueue(label: "BriefBar.Teams.watch")
         let printer = WatchPrinter(storage: storage, settings: trackerSettings)
@@ -177,6 +177,7 @@ package enum TeamsCommandLine: SourceCommandLine {
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(storage.paths.database.path). Ctrl-C stops.")
         watching = [engine, timer, printer]
+        return true
     }
 }
 

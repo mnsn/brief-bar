@@ -260,6 +260,7 @@ struct SourcePage: View {
                 Form {
                     source.settingsView()
                 }
+                .environment(\.inSettingsForm, true)
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
                 .scrollDisabled(true)

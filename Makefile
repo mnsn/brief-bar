@@ -1,4 +1,4 @@
-.PHONY: build test check-networking app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
+.PHONY: build test check-boundaries app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -20,9 +20,9 @@ build:
 test:
 	swift test $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
-# Only the Azure DevOps source may use the network; this fails if any other module does.
-check-networking: build
-	./scripts/check-networking.sh
+# Only the Azure DevOps source may use the network, and only BriefBarCore starts programs.
+check-boundaries: build
+	./scripts/check-boundaries.sh
 
 app:
 	./scripts/build-app.sh

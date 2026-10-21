@@ -28,8 +28,9 @@ package protocol SourceCommandLine {
     static func dump(_ options: CommandLineOptions) -> Int32
     /// `--json`: what the source shows, as a JSON object, with its counts under `counts`.
     static func json(_ options: CommandLineOptions) -> [String: Any]?
-    /// `--watch`: starts printing changes as they happen, and returns.
-    static func watch(_ options: CommandLineOptions)
+    /// `--watch`: starts printing changes as they happen, and returns whether it keeps doing so (the demo
+    /// of a source that polls prints its changes and is done).
+    static func watch(_ options: CommandLineOptions) -> Bool
     /// Its own modes, such as `--diagnose`. Nil when the arguments have none of them.
     static func run(_ options: CommandLineOptions) -> Int32?
 }

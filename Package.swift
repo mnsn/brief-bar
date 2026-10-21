@@ -26,6 +26,12 @@ let package = Package(
             name: "TeamsCore",
             dependencies: ["BriefBarCore", "NotificationCenterDB"]
         ),
+        // Azure DevOps pull requests, read with the Azure CLI's sign-in. The only module that may use
+        // the network (scripts/check-networking.sh).
+        .target(
+            name: "AzureDevOpsCore",
+            dependencies: ["BriefBarCore"]
+        ),
         // GitHub Copilot app sessions, from the app's database and each agent's event log in ~/.copilot.
         .target(
             name: "CopilotCore",
@@ -44,13 +50,17 @@ let package = Package(
             dependencies: ["BriefBarCore", "BriefBarUI", "NotificationCenterDB", "TeamsCore"]
         ),
         .target(
+            name: "AzureDevOpsUI",
+            dependencies: ["BriefBarCore", "BriefBarUI", "AzureDevOpsCore"]
+        ),
+        .target(
             name: "CopilotUI",
             dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
         ),
         // The app: its sources, the menu-bar items, Settings and the command line.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "CopilotUI"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI"]
         ),
         .testTarget(
             name: "BriefBarCoreTests",
@@ -63,6 +73,10 @@ let package = Package(
         .testTarget(
             name: "TeamsCoreTests",
             dependencies: ["TeamsCore", "NotificationCenterDB", "BriefBarCore"]
+        ),
+        .testTarget(
+            name: "AzureDevOpsCoreTests",
+            dependencies: ["AzureDevOpsCore", "BriefBarCore"]
         ),
         .testTarget(
             name: "CopilotCoreTests",

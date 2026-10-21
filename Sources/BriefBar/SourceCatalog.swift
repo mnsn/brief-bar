@@ -1,3 +1,4 @@
+import AzureDevOpsUI
 import BriefBarCore
 import BriefBarUI
 import CopilotUI
@@ -8,9 +9,9 @@ import TeamsUI
 @MainActor
 enum SourceCatalog {
     static func sources(services: AppServices) -> [any BriefBarSource] {
-        [TeamsSource(services: services), CopilotSource(services: services)]
+        [TeamsSource(services: services), AzureDevOpsSource(services: services), CopilotSource(services: services)]
     }
 
     /// Each source's command-line modes.
-    static let commandLines: [any SourceCommandLine.Type] = [TeamsCommandLine.self, CopilotCommandLine.self]
+    static let commandLines: [any SourceCommandLine.Type] = [TeamsCommandLine.self, AzureDevOpsCommandLine.self, CopilotCommandLine.self]
 }

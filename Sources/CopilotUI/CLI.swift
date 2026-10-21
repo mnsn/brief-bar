@@ -79,7 +79,7 @@ package enum CopilotCommandLine: SourceCommandLine {
     /// What `--watch` keeps running.
     nonisolated(unsafe) private static var watching: [Any] = []
 
-    package static func watch(_ options: CommandLineOptions) {
+    package static func watch(_ options: CommandLineOptions) -> Bool {
         guard let paths = paths(options) else { exit(1) }
         let queue = DispatchQueue(label: "BriefBar.Copilot.watch")
         let printer = WatchPrinter()
@@ -93,6 +93,7 @@ package enum CopilotCommandLine: SourceCommandLine {
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(engine.paths.root.path) — Ctrl-C to stop")
         watching = [engine, timer, printer]
+        return true
     }
 }
 

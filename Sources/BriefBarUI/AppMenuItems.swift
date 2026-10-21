@@ -29,3 +29,29 @@ package struct AppMenuItems: View {
         Button("Quit BriefBar") { NSApp.terminate(nil) }
     }
 }
+
+/// A divider in a source's settings when they're a menu; nothing in the Settings window's form, whose
+/// rows are already apart.
+package struct SettingsDivider: View {
+    @Environment(\.inSettingsForm) private var inSettingsForm
+
+    package init() {}
+
+    package var body: some View {
+        if !inSettingsForm {
+            Divider()
+        }
+    }
+}
+
+private struct InSettingsFormKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether a source's settings show in the Settings window's form, rather than in a menu.
+    package var inSettingsForm: Bool {
+        get { self[InSettingsFormKey.self] }
+        set { self[InSettingsFormKey.self] = newValue }
+    }
+}

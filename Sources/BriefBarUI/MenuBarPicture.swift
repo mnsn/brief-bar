@@ -5,8 +5,9 @@ import AppKit
 /// wallpaper, bar, highlight and popover use plain colors, since offscreen rendering doesn't capture materials.
 @MainActor
 package enum MenuBarPicture {
-    /// In points: room for four items and the system's.
-    private static let width: CGFloat = 520
+    /// In points, at least: the README's width for a picture that sits next to the widget's. Wider when the
+    /// items need it.
+    private static let minimumWidth: CGFloat = 440
     private static let barHeight: CGFloat = 24
     /// Between status buttons, on top of their own padding.
     private static let itemGap: CGFloat = 4
@@ -34,6 +35,8 @@ package enum MenuBarPicture {
         let pulse = buttons[pressed]
         let items = buttons + [symbolButton("battery.75percent"), symbolButton("wifi"), symbolButton("switch.2"),
                                clockButton()]
+        let itemsWidth = items.reduce(0) { $0 + ceil($1.fittingSize.width) + itemGap }
+        let width = max(minimumWidth, ceil(itemsWidth + trailingInset + margin))
         let bar = NSView(frame: NSRect(x: 0, y: 0, width: width, height: barHeight))
         var x = width - trailingInset
         for item in items.reversed() {
