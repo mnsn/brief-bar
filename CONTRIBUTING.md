@@ -162,7 +162,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   `--check-updater`, which read nothing of yours; `-key value` arguments don't reach its preferences,
   its standard output and error go to `/dev/null`, and the variables that point it at other data are
   read only through `Attribution.environment`, which is empty then. A test fails if code reads the
-  environment anywhere else, until it's checked and listed with its reason. Variables that move where
+  environment anywhere else (`environ` included), until it's checked and listed with its reason; and
+  `BuiltAppTests` starts the built `BriefBar` both ways, responsible for itself, where `--chats` and
+  `--render` refuse, and plainly, where `--chats` lists a made-up copy's link. Variables that move where
   macOS keeps your files, such as `HOME`, which chooses the keychain, are put back first thing
   (`LaunchEnvironment`): add any other you find there. Keychain items go in the login keychain by its
   file (`KeychainKeyStore`), never the default keychain, which any program running as you can change.

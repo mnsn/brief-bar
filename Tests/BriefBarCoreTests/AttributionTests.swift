@@ -70,7 +70,18 @@ import Testing
             "AzureDevOpsCore/Auth.swift": "finds az (BRIEFBAR_AZ, SHELL, PATH), which runs with its own permissions",
             "TeamsUI/TeamsSource.swift": "BRIEFBAR_RENDER_SUMMARIES, for --render, which runs only with the caller's",
         ]
-        let readers = try sourcesMatching(/processInfo\.environment|getenv\(/)
+        let reads = /processInfo\.environment|ProcessInfo\(\)\.environment|\bgetenv\(|\benviron\b|_NSGetEnviron/
+        // The check itself: every way of reading the environment is caught, and what only names one isn't.
+        for read in [
+            "ProcessInfo.processInfo.environment", "ProcessInfo().environment", #"getenv("HOME")"#,
+            "posix_spawn(&pid, path, nil, nil, argv, environ)", "_NSGetEnviron().pointee",
+        ] {
+            #expect(read.contains(reads), "\(read)")
+        }
+        for other in ["Attribution.environment", "environment: [String: String]", ".environmentObject(store)", "unsetenv(name)"] {
+            #expect(!other.contains(reads), "\(other)")
+        }
+        let readers = try sourcesMatching(reads)
         #expect(!readers.isEmpty)
         #expect(readers.subtracting(allowed.keys).isEmpty, "Read these through Attribution.environment: \(readers.subtracting(allowed.keys).sorted())")
     }
