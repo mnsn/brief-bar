@@ -16,14 +16,14 @@ struct StorageMode {
     /// - Another database (demo data, fixtures) holds nothing private: its key sits in a file next to
     ///   its state.
     /// - Notification Center's own database: only the installed app saves chats from it, with the key
-    ///   in the keychain. A bare binary (`make run`) saves nothing, so it never touches the installed
-    ///   app's files or keychain item.
-    static func current(paths: NotificationPaths = .default()) -> StorageMode {
+    ///   in the keychain, and only the app reads them back (`readOnly`). A bare binary (`make run`)
+    ///   saves nothing, so it never touches the installed app's files or keychain item.
+    static func current(paths: NotificationPaths = .default(), isBundled: Bool = AppIdentity.isBundled) -> StorageMode {
         if !paths.isSystemDatabase {
             return StorageMode(paths: paths, keyStore: FileKeyStore(url: paths.stateDirectory.appendingPathComponent("key")),
                                writes: true)
         }
-        if AppIdentity.isBundled {
+        if isBundled {
             return StorageMode(paths: paths, keyStore: KeychainKeyStore(), writes: true)
         }
         return StorageMode(paths: paths, keyStore: nil, writes: false)
@@ -38,11 +38,12 @@ struct StorageMode {
                            keyStore: nil, writes: false)
     }
 
-    /// For the command line and `--render`: reads what it may, writes nothing.
+    /// For the command line and `--render`: writes nothing, and reads only what whoever runs it can read.
+    /// Any program can run BriefBar's binary, and the keychain gives that binary the key to the chats the app
+    /// saved from Notification Center's database without asking, so that key is the app's alone: these show
+    /// Notification Center as it is now. Another database keeps its key file, which sits next to its state.
     var readOnly: StorageMode {
-        var copy = self
-        copy.writes = false
-        return copy
+        StorageMode(paths: paths, keyStore: paths.isSystemDatabase ? nil : keyStore, writes: false)
     }
 
     /// Unread chats as of now, from one read of the database (command line).

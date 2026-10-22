@@ -92,5 +92,9 @@ let package = Package(
             name: "CopilotCoreTests",
             dependencies: ["CopilotCore", "BriefBarCore"]
         ),
+        .testTarget(
+            name: "TeamsUITests",
+            dependencies: ["TeamsUI", "TeamsCore", "NotificationCenterDB"]
+        ),
     ]
 )

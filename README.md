@@ -451,9 +451,13 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates
 ```
 
-Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. Except for
-`--diagnose`, which is safe to share, their output shows your own chats, names, titles and sessions,
-so keep it to yourself. `--demo --render` draws made-up data instead.
+Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. Teams'
+modes and `--render` never read the unread chats that BriefBar saved: any program can run the app's
+binary, so only the app itself reads them. They show what Notification Center has now, and count as
+unread only what arrived since BriefBar last read it (while BriefBar runs, the last minute or so). So
+they usually show fewer unread chats than BriefBar, and never one that Notification Center has
+already dropped. Except for `--diagnose`, which is safe to share, their output shows your own chats,
+names, titles and sessions, so keep it to yourself. `--demo --render` draws made-up data instead.
 
 ## Contributing
 

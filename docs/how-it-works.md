@@ -188,6 +188,12 @@ saves them, and only them, to `~/Library/Application Support/BriefBar/Teams/unre
   most 20.
 - Sealed with AES-GCM (CryptoKit). The 256-bit key is a generic-password item in the login keychain,
   which macOS lets only BriefBar read, identified by its signature.
+- Only the app opens it. Any program can run BriefBar's binary: macOS then holds that program
+  responsible, so the binary gets none of BriefBar's Full Disk Access, but the keychain would still
+  give it the key without asking. So the command-line modes and `--render` never use the key. They
+  read Notification Center with the access of whoever runs them, and count as unread only what
+  arrived since the app last read it: a chat that only this file still has, because Notification
+  Center dropped it, doesn't show there.
 - Written atomically, readable only by you (0600), in a folder only you can open (0700) that Time
   Machine skips.
 - A chat leaves the file as soon as it's read or expires, even while the database can't be read,

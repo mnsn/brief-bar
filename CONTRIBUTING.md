@@ -43,7 +43,8 @@ list keeps the old build's signature, so run `tccutil reset SystemPolicyAllFiles
 keeps the access, and what `make package` needs.
 
 These read your own data, for the sources that are on in the installed app, or the ones `--source`
-names. Teams' modes read Notification Center with Terminal's Full Disk Access:
+names. Teams' modes read Notification Center with Terminal's Full Disk Access, never the unread chats
+the app saved, so they count as unread only what arrived since the app last read Notification Center:
 
 ```sh
 make run                          # the app, from a debug build, with its own preferences
@@ -80,8 +81,8 @@ Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
 Sources/BriefBar/              the app: sources and consent, menu-bar items, widgets, windows, Settings,
                                updates (Sparkle), the command line and --render
-Tests/                         Swift Testing suites for the shared code and each source's core, with
-                               made-up data
+Tests/                         Swift Testing suites for the shared code, each source's core and some of
+                               its app code, with made-up data
 scripts/                       app bundling, signing and checks, the optional signing certificate,
                                releases (their keys, signing and appcast), the boundary and demo checks,
                                the demo data, the MDM profile and the icon
@@ -106,7 +107,9 @@ other data:
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from
 Notification Center's own database are only ever saved by the installed app, with the key in the
-keychain.
+keychain, and only the running app reads them back: the command line and `--render` never use that
+key, even run from the installed app, since any program can run its binary. With another database,
+they use its key file.
 
 Diagnostics go to the system log, each source under its own category:
 
