@@ -59,9 +59,11 @@ Only the latest release, and the latest commit on `main`, are supported.
 - **Only one module uses the network**, `AzureDevOpsCore`, and `scripts/check-boundaries.sh` checks
   that too. The other requests are Sparkle's, for this project's releases.
 - **What it reads with Full Disk Access stays with it.** Teams' unread chats are on disk only
-  encrypted, with a key in your login keychain that the command line never uses. The links it finds
-  in other apps' notifications, and which of those pull requests you've seen, stay in memory. Its
-  preferences, which any program running as you can read and change, hold its settings, which of
+  encrypted, with a key in your login keychain that the command line never uses. BriefBar names that
+  keychain by its file, in your home folder as the user database names it, rather than using the
+  default keychain and the search list, which any program running as you can change. The links it
+  finds in other apps' notifications, and which of those pull requests you've seen, stay in memory.
+  Its preferences, which any program running as you can read and change, hold its settings, which of
   your own pull requests you've seen and which Copilot sessions you've cleared, but nothing from
   Notification Center.
 
@@ -87,8 +89,9 @@ it, and the app isn't notarized.
   chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar
   runs none of its command-line modes or `--render`, ignores the variables that point it at other
   data and the preferences in its arguments, puts back `HOME` and drops the variables that would move
-  your keychain, your home folder, your temporary folders or SQLite's files, and sends its output to
-  `/dev/null` ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
+  your keychain, your home folder, your temporary folders or SQLite's files, keeps the key to Teams'
+  saved chats in your login keychain whatever they say, and sends its output to `/dev/null`
+  ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - `scripts/check-app.sh` checks each build for these settings, and CI runs it.
 - Anything that can sign with the certificate's key can sign itself as BriefBar and inherit its Full
   Disk Access. So the release certificate, **BriefBar Release**, is on no Mac: it's made in memory,

@@ -33,7 +33,8 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
   `HOME` chooses the keychain macOS uses: in a keychain that program made, BriefBar would seal the
   Teams chats it read with a new key there, where they're saved for any program to read. So BriefBar
   puts back `HOME` from the user database, and drops `CFFIXED_USER_HOME`, `DIRHELPER_USER_DIR_SUFFIX`
-  and SQLite's variables, before anything reads them.
+  and SQLite's variables, before anything reads them. And the key to Teams' saved chats always goes
+  in your login keychain, by its file, whatever the default keychain and the search list say.
 - **Releases with in-app updates.** Each release is built from its tagged source by GitHub Actions,
   with an attestation, and signed with the project's own certificate, so updates keep Full Disk
   Access. BriefBar checks for updates only if you allow it, and installs only updates signed with the

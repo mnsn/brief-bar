@@ -111,6 +111,11 @@ executable. The process macOS names isn't enough. On macOS 27, a command that th
 agents run is its own responsible process, yet attributed to the Copilot app, whose permissions it
 gets. Whether macOS names BriefBar, or can't say, it counts as BriefBar's own permissions.
 
+However it's started, BriefBar keeps the key to Teams' saved chats in your login keychain, which it
+names by its file in the home folder the user database names. The default keychain and the search
+list don't move it: `HOME` chooses them, and any program running as you can also change them with
+`security`, without starting BriefBar at all (see [What's saved](#whats-saved)).
+
 ## Menu bar, widgets and windows
 
 Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' **Pull
@@ -235,8 +240,14 @@ saves them, and only them, to `~/Library/Application Support/BriefBar/Teams/unre
 
 - Per unread chat: its ID, kind and name, and its unread messages (ID, time, sender and text), at
   most 20.
-- Sealed with AES-GCM (CryptoKit). The 256-bit key is a generic-password item in the login keychain,
-  which macOS lets only BriefBar read, identified by its signature.
+- Sealed with AES-GCM (CryptoKit). The 256-bit key is a generic-password item in your login
+  keychain, which macOS lets only BriefBar read, identified by its signature. BriefBar names that
+  keychain by its file, `Library/Keychains/login.keychain-db` in your home folder as the user
+  database names it, to look for, add, update and delete the key. It doesn't use the default
+  keychain or the search list, which any program running as you can change with
+  `security default-keychain -s` and `security list-keychains -s`. Given a keychain that isn't
+  there, macOS adds to the default one instead, so without that file BriefBar saves no key, and so
+  no chats.
 - Only the app opens it. Any program can run BriefBar's binary. From a shell, macOS holds the app
   that shell runs in responsible, so the binary gets none of BriefBar's Full Disk Access, but the
   keychain would still give it the key without asking. So the command-line modes and `--render` never
