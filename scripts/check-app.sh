@@ -42,7 +42,17 @@ fail() {
 }
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "${2:-$PLIST}" 2>/dev/null; }
 requirement() { codesign -d -r- "$1" 2>&1 | sed -n 's/^#* *designated => //p'; }
-entitlements() { codesign -d --entitlements - --xml "$1" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || true; }
+# The entitlements of signed code, as JSON, or nothing when it has none. macOS 15's codesign prints nothing then, and
+# its plutil writes its error about that to standard output, so only what codesign printed is converted, and output
+# that plutil can't read fails the check.
+entitlements() {
+    local xml json
+    xml="$(codesign -d --entitlements - --xml "$1" 2>/dev/null || true)"
+    [[ "$xml" =~ [^[:space:]] ]] || return 0
+    json="$(printf '%s' "$xml" | plutil -convert json -o - - 2>/dev/null)" ||
+        fail "has entitlements that plutil can't read, in ${1#"$APP/"}: $xml"
+    printf '%s' "$json"
+}
 rpaths() { otool -arch "$1" -l "$2" | sed -n 's/^ *path \(.*\) (offset [0-9]*)$/\1/p' | sort -u | tr '\n' ' '; }
 # The libraries a binary links, for one architecture, but those that match a pattern. (No grep -q in these pipes:
 # with pipefail, its early exit could make a match look like none.)

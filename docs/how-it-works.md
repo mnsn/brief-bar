@@ -1049,7 +1049,10 @@ certificate, which has a team, would let Sparkle load with library validation on
 `scripts/test-updater-isolation.sh` shows it on a copy of a build that macOS opens: BriefBar loads only
 Apple's libraries, and an ad-hoc library put in place of Sparkle, in the updater and in BriefBar's own
 `Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS holds
-responsible for itself. `BriefBar --check-updater` reports the same about any copy.
+responsible for itself. `BriefBar --check-updater` reports the same about any copy. With System Integrity
+Protection off, as on GitHub's runners, macOS lets the updater load the library `DYLD_INSERT_LIBRARIES`
+names instead of its own Sparkle, and `--check-updater` reports that: the test accepts it only where
+`csrutil status` says so, and checks where the library ran either way.
 
 ## Updating the app
 
