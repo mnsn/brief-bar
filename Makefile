@@ -21,8 +21,10 @@ WINDOW_SHOTS := window-overview-light window-overview-dark \
 build:
 	swift build
 
+# With a single thread in Swift's cooperative pool, rather than one per core, code that blocks a thread of it while
+# waiting for async work hangs here too, as it would on a runner with few cores.
 test:
-	swift test $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
+	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
 # Only the Azure DevOps source may use the network, and only BriefBarCore starts programs.
 check-boundaries: build

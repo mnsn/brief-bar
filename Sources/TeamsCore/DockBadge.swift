@@ -40,11 +40,11 @@ public enum DockBadge: Sendable, Equatable {
     }
 
     /// Reads an app's dock badge with `lsappinfo`, which needs no permission. Nil when there's nothing
-    /// to read, as when the app isn't running. Waits for `lsappinfo`, so call it off the main thread.
-    public static func read(bundleIdentifier: String) -> DockBadge? {
-        guard let result = try? ProcessRunner().runAndWait(
+    /// to read, as when the app isn't running.
+    public static func read(bundleIdentifier: String) async -> DockBadge? {
+        guard let result = try? await ProcessRunner().run(
             URL(fileURLWithPath: "/usr/bin/lsappinfo"), arguments: lsappinfoArguments(bundleIdentifier: bundleIdentifier),
-            timeout: 10
+            environment: nil, timeout: 10
         ), result.status == 0 else { return nil }
         return parse(lsappinfo: String(decoding: result.stdout, as: UTF8.self))
     }

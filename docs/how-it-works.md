@@ -1081,7 +1081,9 @@ when BriefBar does.
 
 ## Checks
 
-- `make test` runs every module's tests, with made-up data.
+- `make test` runs every module's tests, with made-up data, and with a single thread in Swift's
+  cooperative pool (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so that code that blocks a thread of it
+  while waiting for async work hangs on any Mac, not only on one with few cores.
 - `make demo-check` checks that every source's made-up data lands in the expected groups, and in the
   expected states, each section's and all of them added up. It runs the same checks the Pulse apps ran
   on their demos.

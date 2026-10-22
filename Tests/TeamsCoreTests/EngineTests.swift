@@ -40,27 +40,27 @@ import BriefBarCore
 }
 
 @Suite struct DiagnosticsTests {
-    @Test func describesStructureWithoutNamesMessagesOrIDs() throws {
-        try withTemporaryDirectory { directory in
-            let paths = paths(in: directory)
-            let db = try TestDatabase(at: paths.database)
-            defer { db.close() }
-            try db.add(Record.message(Chat.avery, title: "Avery Quinn", body: "The merger closes Friday", at: t(0)), delivered: t(0))
-            try db.add(Record.message(Chat.launchCrew, title: "Launch crew & Ops", body: "Jordan Lee: Budget is 4M", at: t(1)), delivered: t(1))
-            try db.add(Record.reaction(Chat.avery, title: "👍 Avery Quinn reacted to your message", at: t(2)), delivered: t(2))
-            try db.add(Record.channelPost(title: "Sam Rivera posted a new message", body: "Q3 numbers", at: t(3)), delivered: t(3))
+    @Test func describesStructureWithoutNamesMessagesOrIDs() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let paths = paths(in: directory)
+        let db = try TestDatabase(at: paths.database)
+        defer { db.close() }
+        try db.add(Record.message(Chat.avery, title: "Avery Quinn", body: "The merger closes Friday", at: t(0)), delivered: t(0))
+        try db.add(Record.message(Chat.launchCrew, title: "Launch crew & Ops", body: "Jordan Lee: Budget is 4M", at: t(1)), delivered: t(1))
+        try db.add(Record.reaction(Chat.avery, title: "👍 Avery Quinn reacted to your message", at: t(2)), delivered: t(2))
+        try db.add(Record.channelPost(title: "Sam Rivera posted a new message", body: "Q3 numbers", at: t(3)), delivered: t(3))
 
-            let report = Diagnostics.report(paths: paths, appVersion: "0.1.0")
-            #expect(report.contains("Teams notifications: 4 (chat messages 2, chat activity 1, channel posts 1, other kinds 0, unrecognized 0)"))
-            #expect(report.contains("Chats with messages: oneOnOne 1, group 1, meeting 0"))
-            #expect(report.contains("default_id: "))
-            #expect(report.contains("<oneOnOne ID>"))
-            #expect(report.contains("json {actionType: quickReply, convId: <oneOnOne ID>, userContextId: <guid>}"))
-            #expect(report.contains("record(rec_id, app_id, uuid, data"))
-            for secret in ["Avery", "Quinn", "merger", "Friday", "Launch crew", "Jordan", "Budget", "Sam Rivera", "Q3",
-                           "11111111-aaaa", "0123456789abcdef", Chat.userContext, "abcdefabcdef", "deep-link"] {
-                #expect(!report.contains(secret), "The report contains \(secret)")
-            }
+        let report = await Diagnostics.report(paths: paths, appVersion: "0.1.0")
+        #expect(report.contains("Teams notifications: 4 (chat messages 2, chat activity 1, channel posts 1, other kinds 0, unrecognized 0)"))
+        #expect(report.contains("Chats with messages: oneOnOne 1, group 1, meeting 0"))
+        #expect(report.contains("default_id: "))
+        #expect(report.contains("<oneOnOne ID>"))
+        #expect(report.contains("json {actionType: quickReply, convId: <oneOnOne ID>, userContextId: <guid>}"))
+        #expect(report.contains("record(rec_id, app_id, uuid, data"))
+        for secret in ["Avery", "Quinn", "merger", "Friday", "Launch crew", "Jordan", "Budget", "Sam Rivera", "Q3",
+                       "11111111-aaaa", "0123456789abcdef", Chat.userContext, "abcdefabcdef", "deep-link"] {
+            #expect(!report.contains(secret), "The report contains \(secret)")
         }
     }
 
@@ -74,12 +74,12 @@ import BriefBarCore
         #expect(Diagnostics.shape(value) == shape)
     }
 
-    @Test func saysWhenItHasNoAccess() throws {
-        try withTemporaryDirectory { directory in
-            let report = Diagnostics.report(paths: paths(in: directory), appVersion: "0.1.0")
-            #expect(report.contains("access missing"))
-            #expect(report.contains("Teams' dock badge, from lsappinfo: "))
-        }
+    @Test func saysWhenItHasNoAccess() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let report = await Diagnostics.report(paths: paths(in: directory), appVersion: "0.1.0")
+        #expect(report.contains("access missing"))
+        #expect(report.contains("Teams' dock badge, from lsappinfo: "))
     }
 }
 
@@ -112,10 +112,11 @@ import BriefBarCore
         #expect(DockBadge.parse(lsappinfo: output) == badge)
     }
 
-    @Test func asksLsappinfoForTheLongFormat() {
+    @Test func asksLsappinfoForTheLongFormat() async {
         #expect(DockBadge.lsappinfoArguments(bundleIdentifier: "com.microsoft.teams2")
             == ["info", "-long", "-only", "StatusLabel", "-app", "com.microsoft.teams2"])
-        #expect(DockBadge.read(bundleIdentifier: "com.example.teams-pulse-tests.not-running") == nil)
+        let badge = await DockBadge.read(bundleIdentifier: "com.example.teams-pulse-tests.not-running")
+        #expect(badge == nil)
     }
 
     @Test func noticesOnlyABadgeThatStaysGoneInTheSameTeams() {

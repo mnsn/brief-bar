@@ -54,12 +54,10 @@ enum Diagnose {
     @MainActor
     static func copyReport(paths: NotificationPaths) {
         let version = AppIdentity.version
-        DispatchQueue.global(qos: .userInitiated).async {
-            let report = Diagnostics.report(paths: paths, appVersion: version)
-            DispatchQueue.main.async {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(report, forType: .string)
-            }
+        Task(priority: .userInitiated) { @MainActor in
+            let report = await Diagnostics.report(paths: paths, appVersion: version)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(report, forType: .string)
         }
     }
 }

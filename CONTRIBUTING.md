@@ -210,6 +210,12 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
   `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves
   a file in `~/Library/Preferences`, even once removed.
+- **Never block a thread while waiting for async work.** Swift's cooperative pool has a thread per core,
+  so code that blocks one of them until a task finishes (on a semaphore, say) can hang where there are
+  few cores, as on CI's runners, and blocking the main actor that way hangs as soon as the task needs
+  it. Await the work instead; the command-line modes, which are synchronous, use
+  `SourceCommandLine.wait`. `make test` runs with a single thread in the pool
+  (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so such a wait hangs on any Mac.
 - **The formats are undocumented.** When you rely on a new field, handle its absence and add a test
   with a small made-up sample.
 

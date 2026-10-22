@@ -341,22 +341,6 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         Task { await engine.start() }
         watching = [engine, printer]
     }
-
-    /// Runs async work from the synchronous command line.
-    static func wait<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = Box<T>()
-        Task.detached {
-            box.value = await body()
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return box.value!
-    }
-
-    private final class Box<T>: @unchecked Sendable {
-        var value: T?
-    }
 }
 
 /// Prints only the pull requests whose status changed. Confined to the watch queue.

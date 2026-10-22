@@ -61,4 +61,24 @@ extension SourceCommandLine {
         guard let data = try? encoder.encode(value) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
+
+    /// Runs async work from a mode, which is synchronous and runs on the main thread. The main run loop keeps
+    /// turning while it waits, rather than the thread blocking, so work that needs the main actor still runs.
+    package static func wait<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let result = CommandLineResult<T>()
+        Task.detached {
+            let value = await body()
+            DispatchQueue.main.async { result.value = value }
+        }
+        while result.value == nil {
+            RunLoop.main.run(mode: .default, before: .distantFuture)
+        }
+        return result.value!
+    }
+}
+
+/// What `wait` waits for. Only read and written on the main thread.
+private final class CommandLineResult<T>: @unchecked Sendable {
+    var value: T?
 }

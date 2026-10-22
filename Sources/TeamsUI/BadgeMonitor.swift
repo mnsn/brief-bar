@@ -10,7 +10,6 @@ import TeamsCore
 final class BadgeMonitor {
     private let store: ConversationStore
     private let settings: AppSettings
-    private let queue = DispatchQueue(label: "BriefBar.Teams.BadgeMonitor", qos: .utility)
     private var timer: Timer?
     private var isReading = false
     private var cancellables: Set<AnyCancellable> = []
@@ -77,20 +76,16 @@ final class BadgeMonitor {
         if let launched = teams.launchDate, Date().timeIntervalSince(launched) < Self.launchGrace { return }
         let process = teams.processIdentifier
         isReading = true
-        queue.async { [weak self] in
-            let reading = DockBadge.read(bundleIdentifier: bundleIdentifier)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.isReading = false
-                    // Teams may have quit meanwhile: a reading about a process that's gone means nothing.
-                    guard TeamsApp.runningApplication?.processIdentifier == process else {
-                        self.store.resetDockBadge()
-                        return
-                    }
-                    self.store.dockBadgeChanged(reading, teamsProcess: process)
-                }
+        Task(priority: .utility) { [weak self] in
+            let reading = await DockBadge.read(bundleIdentifier: bundleIdentifier)
+            guard let self else { return }
+            self.isReading = false
+            // Teams may have quit meanwhile: a reading about a process that's gone means nothing.
+            guard TeamsApp.runningApplication?.processIdentifier == process else {
+                self.store.resetDockBadge()
+                return
             }
+            self.store.dockBadgeChanged(reading, teamsProcess: process)
         }
     }
 }

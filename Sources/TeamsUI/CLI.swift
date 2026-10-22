@@ -24,7 +24,9 @@ package enum TeamsCommandLine: SourceCommandLine {
     package static func run(_ options: CommandLineOptions) -> Int32? {
         if options.arguments.contains("--diagnose") {
             guard let storage = storage(options) else { return 1 }
-            print(Diagnostics.report(paths: storage.paths, appVersion: AppIdentity.version))
+            let paths = storage.paths
+            let version = AppIdentity.version
+            print(wait { await Diagnostics.report(paths: paths, appVersion: version) })
             return 0
         }
         if options.arguments.contains("--summaries") {

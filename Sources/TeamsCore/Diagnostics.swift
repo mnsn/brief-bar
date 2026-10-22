@@ -6,14 +6,15 @@ import NotificationCenterDB
 /// structure: table and field names, counts, and the shapes of values. Never names, message text
 /// or IDs, so it's safe to paste into an issue.
 public enum Diagnostics {
-    public static func report(paths: NotificationPaths, appVersion: String) -> String {
+    public static func report(paths: NotificationPaths, appVersion: String) async -> String {
         var lines = [
             "BriefBar \(appVersion) diagnostics (structure only: no names, messages or IDs)",
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
         ]
         let access = DatabaseAccess.check(paths.database)
         lines.append("Database: \(paths.isSystemDatabase ? "Notification Center's" : "overridden by \(NotificationPaths.databaseVariable)"), access \(access.rawValue)")
-        lines.append("Teams' dock badge, from lsappinfo: \(dockBadge())")
+        let badge = await dockBadge()
+        lines.append("Teams' dock badge, from lsappinfo: \(badge)")
         guard access == .granted else { return lines.joined(separator: "\n") }
         do {
             lines += describe(try NotificationDatabase.load(at: paths.database, bundleIdentifiers: TeamsBundle.identifiers))
@@ -83,9 +84,9 @@ public enum Diagnostics {
     }
 
     /// What BriefBar sees of Teams' dock badge, which tells it when everything was read.
-    private static func dockBadge() -> String {
+    private static func dockBadge() async -> String {
         for identifier in TeamsBundle.identifiers {
-            switch DockBadge.read(bundleIdentifier: identifier) {
+            switch await DockBadge.read(bundleIdentifier: identifier) {
             case .count(let count): return "\(count) (\(identifier))"
             case .mark: return "a mark (\(identifier))"
             case .noBadge: return "none (\(identifier))"
