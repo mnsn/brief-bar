@@ -574,9 +574,10 @@ window's page while the window is open, not minimized and not hidden behind othe
 that isn't covered by windows; a menu-bar item that shows them, or its list. Each of those tells the
 source when it starts and stops showing a section (`sectionVisibilityChanged`). Then they refresh as
 often as the pull requests (the **Refresh** setting), and right away when they come on screen with data
-more than half a refresh old. They back off when Azure DevOps can't be read, and honor `Retry-After`,
-like the pull requests, with the same client and sign-in. They start in windows only, hidden in the
-menu bar and in widgets. All GETs:
+more than half a refresh old. A refresh under way when they go off screen stops before its next request.
+They back off when Azure DevOps can't be read, and honor `Retry-After`, like the pull requests, with the
+same client and sign-in; when you sign in to the Azure CLI as someone else, they start over with what
+that account can read. They start in windows only, hidden in the menu bar and in widgets. All GETs:
 
 | Request | When | Provides |
 |---|---|---|
@@ -586,7 +587,7 @@ menu bar and in widgets. All GETs:
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
-| `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress (up to six), once for a finished one | its stages, and where it failed |
+| `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
 | `_apis/projects` | when you open **Add Pipeline** | the projects to search in |
 
@@ -612,7 +613,11 @@ widget and the menu bar, is your tasks, and your stories and bugs without tasks,
 latest run's stages come from the run's timeline: its stages in order or, for a pipeline without
 stages, its jobs. A stage waiting for an approval or a check is shown as waiting. When the run
 failed, it names the first task that failed, the stage it's in and its first error. Runs started by
-Azure DevOps itself, such as scheduled ones, don't name who started them.
+Azure DevOps itself, such as scheduled ones, don't name who started them. The timelines never read
+go first, then the ones read longest ago; one that fails is tried again on the next refresh, then
+less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
+the run changes. Stages are kept by organization, project and run, since run IDs are unique only
+within an organization.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines

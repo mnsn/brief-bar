@@ -73,6 +73,8 @@ public actor SprintEngine {
     private var forced = false
     /// Just activated: refresh if the data is more than half an interval old.
     private var catchUp = false
+    /// The timer's refresh, which stops when nothing shows the sprint any more; a one-off load doesn't.
+    private var isPolling = false
 
     /// Whose sign-in the identities, teams and board are for.
     private var account: String?
@@ -109,7 +111,7 @@ public actor SprintEngine {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if await self.isDue() { await self.refreshNow() }
+                if await self.isDue() { await self.refresh(polling: true) }
                 await self.waker.wait(for: await self.sleepTime())
             }
         }
@@ -121,8 +123,8 @@ public actor SprintEngine {
         waker.wake()
     }
 
-    /// Whether something shows the sprint. While nothing does, nothing is read; once something does, it's
-    /// refreshed if it's more than half an interval old.
+    /// Whether something shows the sprint. While nothing does, nothing is read, and a refresh under way stops before
+    /// its next request; once something does, it's refreshed if it's more than half an interval old.
     public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
@@ -209,27 +211,44 @@ public actor SprintEngine {
 
     // MARK: Refreshing
 
-    /// One refresh: your teams if they're not known yet, the team's sprint, and its work items.
+    /// One refresh, start to finish: your teams if they're not known yet, the team's sprint, and its work items.
     public func refreshNow() async {
+        await refresh(polling: false)
+    }
+
+    /// A refresh by the timer stops before its next request once nothing shows the sprint, keeping what it read.
+    private func refresh(polling: Bool) async {
         forced = false
+        isPolling = polling
+        defer { isPolling = false }
         isRefreshing = true
         publish()
-        defer {
-            isRefreshing = false
-            hasLoaded = true
-            refreshedAt = now()
-            publish()
-        }
         do {
             problem = try await load()
             failures = 0
+            hasLoaded = true
+            refreshedAt = now()
+        } catch is CancellationError {
+            // Hidden while it read: the rest waits until something shows the sprint again.
         } catch let error as ADOError {
             problem = PulseProblem.from(error)
             failures += 1
+            hasLoaded = true
+            refreshedAt = now()
         } catch {
             problem = .unreachable(error.localizedDescription)
             failures += 1
+            hasLoaded = true
+            refreshedAt = now()
         }
+        isRefreshing = false
+        publish()
+    }
+
+    /// Stops a refresh by the timer before another request when nothing shows the sprint any more.
+    private func get<T: Decodable>(_ url: URL, as type: T.Type) async throws -> T {
+        if isPolling && !isActive { throw CancellationError() }
+        return try await client.get(url, as: type)
     }
 
     /// Reads what's due, and returns what's wrong when it can't show a sprint for a reason other than an error.
@@ -262,7 +281,7 @@ public actor SprintEngine {
         }
         let me = try await identity(in: team.organization)
         let setup = try await boardSetup(of: team)
-        let relations = try await client.get(
+        let relations = try await get(
             ADOEndpoint.iterationWorkItems(team: team, iterationId: sprint.id), as: ADOIterationWorkItems.self
         ).workItemRelations.elements
         var ids: [Int] = []
@@ -275,7 +294,7 @@ public actor SprintEngine {
         var items: [WorkItem] = []
         for start in stride(from: 0, to: ids.count, by: Self.batchSize) {
             let batch = Array(ids[start..<min(start + Self.batchSize, ids.count)])
-            let list = try await client.get(ADOEndpoint.workItems(organization: team.organization, ids: batch), as: ADOList<ADOWorkItem>.self)
+            let list = try await get(ADOEndpoint.workItems(organization: team.organization, ids: batch), as: ADOList<ADOWorkItem>.self)
             items += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
         }
         // The team may have changed while this loaded.
@@ -290,7 +309,7 @@ public actor SprintEngine {
         var lastError: ADOError?
         for organization in organizations where teams[organization].map({ date.timeIntervalSince($0.readAt) > Self.teamsLifetime }) ?? true {
             do {
-                let list = try await client.get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
+                let list = try await get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
                 let found = list.value.compactMap { TeamRef(organization: organization, $0) }
                     .sorted { ($0.projectName.lowercased(), $0.name.lowercased()) < ($1.projectName.lowercased(), $1.name.lowercased()) }
                 teams[organization] = (found, date)
@@ -351,12 +370,12 @@ public actor SprintEngine {
     /// How many of a sprint's work items are assigned to you.
     private func assignedToMe(in sprint: Sprint, of team: TeamRef) async throws -> Int {
         let me = try await identity(in: team.organization)
-        let relations = try await client.get(
+        let relations = try await get(
             ADOEndpoint.iterationWorkItems(team: team, iterationId: sprint.id), as: ADOIterationWorkItems.self
         ).workItemRelations.elements
         let ids = Array(Set(relations.map(\.target.id))).sorted().prefix(Self.batchSize)
         guard !ids.isEmpty else { return 0 }
-        let items = try await client.get(
+        let items = try await get(
             ADOEndpoint.workItems(organization: team.organization, ids: Array(ids), fields: ["System.AssignedTo"]), as: ADOList<ADOWorkItem>.self
         ).value
         return items.filter { $0.fields.assignedTo?.id.lowercased() == me }.count
@@ -369,7 +388,7 @@ public actor SprintEngine {
            cached.sprint.map({ $0.isCurrent(now: date, calendar: calendar) }) ?? true {
             return cached.sprint
         }
-        let list = try await client.get(ADOEndpoint.currentIteration(team: team), as: ADOList<ADOIteration>.self)
+        let list = try await get(ADOEndpoint.currentIteration(team: team), as: ADOList<ADOIteration>.self)
         let sprint = list.value.map(Sprint.init).first { $0.isCurrent(now: date, calendar: calendar) || $0.start == nil }
         sprints[team.id] = (sprint, date)
         return sprint
@@ -386,7 +405,7 @@ public actor SprintEngine {
 
     private func identity(in organization: String) async throws -> String {
         if let known = identities[organization] { return known }
-        let me = try await client.get(ADOEndpoint.connectionData(organization: organization), as: ADOConnectionData.self)
+        let me = try await get(ADOEndpoint.connectionData(organization: organization), as: ADOConnectionData.self)
             .authenticatedUser.id.lowercased()
         identities[organization] = me
         return me
@@ -398,7 +417,7 @@ public actor SprintEngine {
         if let setup = setups[team.id] { return setup }
         var setup = BoardSetup(taskTypes: ["Task"], categories: [:])
         do {
-            let configuration = try await client.get(ADOEndpoint.backlogConfiguration(team: team), as: ADOBacklogConfiguration.self)
+            let configuration = try await get(ADOEndpoint.backlogConfiguration(team: team), as: ADOBacklogConfiguration.self)
             let types = configuration.taskBacklog?.workItemTypes?.elements.map(\.name) ?? []
             if !types.isEmpty { setup.taskTypes = Set(types) }
             for mapped in configuration.workItemTypeMappedStates?.elements ?? [] {

@@ -7,6 +7,10 @@
   permissions: BriefBar starts it responsible for itself, and ends it if macOS says otherwise. A copy of
   BriefBar with other code in place of Sparkle can no longer run that code with BriefBar's Full Disk
   Access. Updates look and work as before, and keep the access.
+- **Your sprint and pipelines**, as ADO Pulse fixed them: they start over when you sign in to the Azure
+  CLI as someone else, and a refresh stops once nothing shows them. A retried run's stages are read
+  again, runs in different organizations no longer mix, and a timeline that keeps failing doesn't hold
+  up the rest.
 - `BriefBar --check-updater` shows how macOS treats the updater. `make updater-check` checks it in a
   copy of a build that macOS opens, with other code in place of Sparkle, and `make update-rehearsal`
   installs an update through it, from a feed on the Mac.

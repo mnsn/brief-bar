@@ -23,8 +23,8 @@ public struct PipelinesSnapshot: Sendable, Equatable {
 
 /// Reads the pipelines you pinned: every refresh, their recent runs (one request per project, for all its pinned
 /// pipelines), and the stages of each one's latest run while it runs (one request each; a finished run's are read
-/// once). It polls only while something shows them, and backs off when Azure DevOps can't be read. Every request
-/// is a GET.
+/// once). It polls only while something shows them, stops reading when they're hidden mid-refresh, and backs off
+/// when Azure DevOps can't be read. Every request is a GET.
 public actor PipelinesEngine {
     public typealias ChangeHandler = @Sendable (PipelinesSnapshot) -> Void
 
@@ -41,14 +41,48 @@ public actor PipelinesEngine {
         }
     }
 
-    /// The most timelines read in one refresh: running runs first.
+    /// The most timelines read in one refresh: the ones never read first, then the ones read longest ago.
     static let timelinesPerRefresh = 6
+    /// A timeline that keeps failing is tried less and less often, up to this.
+    static let longestTimelineBackoff: TimeInterval = 1_800
+
+    /// A run: build IDs are unique only within an organization.
+    struct RunKey: Hashable, Sendable {
+        var organization: String
+        var projectId: String
+        var buildId: Int
+
+        init(_ pipeline: PipelineRef, _ run: PipelineRun) {
+            organization = pipeline.organization
+            projectId = pipeline.projectId
+            buildId = run.id
+        }
+    }
+
+    /// What a timeline was read for: a run that's retried runs again, under the same build ID.
+    struct RunState: Equatable, Sendable {
+        var status: PipelineRun.Status
+        var finishedAt: Date?
+
+        init(_ run: PipelineRun) {
+            status = run.status
+            finishedAt = run.finishedAt
+        }
+    }
 
     private struct Stages: Sendable {
         var stages: [PipelineStage]
         var failure: PipelineFailure?
-        /// Read after the run finished: it won't change.
+        var readFor: RunState
+        var readAt: Date
+        /// It won't change until the run does: the run had finished, or its timeline may not be read.
         var isFinal: Bool
+    }
+
+    /// Timeline reads in a row that failed, and when the last one was.
+    private struct Attempts: Sendable {
+        var last: Date
+        var failures: Int
     }
 
     private let client: ADOClient
@@ -60,10 +94,14 @@ public actor PipelinesEngine {
     private var isActive = false
     private var forced = false
     private var catchUp = false
+    /// The timer's refresh, which stops when nothing shows the pipelines any more; a one-off load doesn't.
+    private var isPolling = false
 
+    /// Whose sign-in the runs and stages were read with.
+    private var account: String?
     private var runs: [String: [PipelineRun]] = [:]
-    /// Build ID → its stages.
-    private var stages: [Int: Stages] = [:]
+    private var stages: [RunKey: Stages] = [:]
+    private var attempts: [RunKey: Attempts] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -87,7 +125,7 @@ public actor PipelinesEngine {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if await self.isDue() { await self.refreshNow() }
+                if await self.isDue() { await self.refresh(polling: true) }
                 await self.waker.wait(for: await self.sleepTime())
             }
         }
@@ -99,8 +137,8 @@ public actor PipelinesEngine {
         waker.wake()
     }
 
-    /// Whether something shows the pipelines. While nothing does, nothing is read; once something does, they're
-    /// refreshed if they're more than half an interval old.
+    /// Whether something shows the pipelines. While nothing does, nothing is read, and a refresh under way stops
+    /// before its next request; once something does, they're refreshed if they're more than half an interval old.
     public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
@@ -175,9 +213,17 @@ public actor PipelinesEngine {
 
     // MARK: Refreshing
 
-    /// One refresh: the recent runs of every pinned pipeline, then the stages of the latest runs that need them.
+    /// One refresh, start to finish: the recent runs of every pinned pipeline, then the stages of the latest runs
+    /// that need them.
     public func refreshNow() async {
+        await refresh(polling: false)
+    }
+
+    /// A refresh by the timer stops before its next request once nothing shows the pipelines, keeping what it read.
+    private func refresh(polling: Bool) async {
         forced = false
+        isPolling = polling
+        defer { isPolling = false }
         let configuration = self.configuration
         guard !configuration.pipelines.isEmpty else {
             problem = nil
@@ -189,11 +235,49 @@ public actor PipelinesEngine {
         }
         isRefreshing = true
         publish()
-        defer {
-            isRefreshing = false
+        let startedAt = now()
+        do {
+            try await load(configuration, at: startedAt)
             hasLoaded = true
             refreshedAt = now()
-            publish()
+        } catch is CancellationError {
+            // Hidden while it read: the rest waits until something shows the pipelines again.
+        } catch let error as ADOError {
+            problem = PulseProblem.from(error)
+            failures += 1
+            hasLoaded = true
+            refreshedAt = now()
+        } catch {
+            problem = .unreachable(error.localizedDescription)
+            failures += 1
+            hasLoaded = true
+            refreshedAt = now()
+        }
+        isRefreshing = false
+        publish()
+    }
+
+    /// Stops a refresh by the timer before another request when nothing shows the pipelines any more.
+    private func get<T: Decodable>(_ url: URL, as type: T.Type) async throws -> T {
+        if isPolling && !isActive { throw CancellationError() }
+        return try await client.get(url, as: type)
+    }
+
+    private func load(_ configuration: Configuration, at startedAt: Date) async throws {
+        // Someone else signed in to the Azure CLI: the runs and stages read as the last one aren't theirs to see.
+        let token: AccessToken
+        do {
+            token = try await client.tokens.token()
+        } catch let error as AuthError {
+            throw ADOError.auth(error)
+        }
+        if let signedIn = token.account {
+            if let account, account != signedIn {
+                runs = [:]
+                stages = [:]
+                attempts = [:]
+            }
+            account = signedIn
         }
 
         // One request per project and branch filter, for all of its pinned pipelines.
@@ -211,7 +295,7 @@ public actor PipelinesEngine {
                     organization: first.organization, projectId: first.projectId, definitionIds: pipelines.map(\.definitionId),
                     branch: first.branch, perDefinition: configuration.runs
                 )
-                let builds = try await client.get(url, as: ADOList<ADOBuild>.self).value
+                let builds = try await get(url, as: ADOList<ADOBuild>.self).value
                 for pipeline in pipelines {
                     runs[pipeline.id] = builds
                         .filter { $0.definition.id == pipeline.definitionId }
@@ -224,39 +308,62 @@ public actor PipelinesEngine {
                     throttled = error
                     break
                 }
-            } catch {
-                errors.append(.network(error.localizedDescription))
             }
         }
 
-        // The latest runs' stages: running ones every time, finished ones once.
-        let latest = configuration.pipelines.compactMap { pipeline in runs[pipeline.id]?.first.map { (pipeline, $0) } }
+        // The latest runs' stages: while a run runs, and once more each time it finishes (again, when it's retried).
+        let latest = configuration.pipelines.compactMap { pipeline in
+            runs[pipeline.id]?.first.map { (pipeline: pipeline, run: $0, key: RunKey(pipeline, $0)) }
+        }
+        let interval = configuration.interval
         let due = latest
-            .filter { _, run in stages[run.id].map { !$0.isFinal } ?? true }
-            .sorted { lhs, rhs in (lhs.1.status.isFinished ? 1 : 0, lhs.1.id) < (rhs.1.status.isFinished ? 1 : 0, rhs.1.id) }
+            .filter { item in
+                if let read = stages[item.key], read.isFinal, read.readFor == RunState(item.run) { return false }
+                // One that keeps failing: again on the next refresh, then less and less often.
+                guard let tried = attempts[item.key], tried.failures > 1 else { return true }
+                let wait = min(interval * pow(2, Double(tried.failures - 2)), Self.longestTimelineBackoff)
+                return startedAt.timeIntervalSince(tried.last) >= wait
+            }
+            // The ones never read first, then the ones read or tried longest ago: a few that keep failing don't hold
+            // up the rest.
+            .sorted { lhs, rhs in
+                (lastTouched(lhs.key), lhs.run.status.isFinished ? 1 : 0, lhs.key.organization, lhs.run.id)
+                    < (lastTouched(rhs.key), rhs.run.status.isFinished ? 1 : 0, rhs.key.organization, rhs.run.id)
+            }
             .prefix(Self.timelinesPerRefresh)
-        for (pipeline, run) in due where throttled == nil {
+        for item in due where throttled == nil {
+            let state = RunState(item.run)
             do {
-                let timeline = try await client.get(
-                    ADOEndpoint.timeline(organization: pipeline.organization, projectId: pipeline.projectId, buildId: run.id), as: ADOTimeline.self
+                let timeline = try await get(
+                    ADOEndpoint.timeline(organization: item.pipeline.organization, projectId: item.pipeline.projectId, buildId: item.run.id),
+                    as: ADOTimeline.self
                 )
-                stages[run.id] = Stages(
-                    stages: PipelineStage.stages(from: timeline, runFinished: run.status.isFinished),
-                    failure: run.status == .failed ? PipelineFailure.first(in: timeline) : nil,
-                    isFinal: run.status.isFinished
+                stages[item.key] = Stages(
+                    stages: PipelineStage.stages(from: timeline, runFinished: item.run.status.isFinished),
+                    failure: item.run.status == .failed ? PipelineFailure.first(in: timeline) : nil,
+                    readFor: state, readAt: startedAt, isFinal: item.run.status.isFinished
                 )
+                attempts[item.key] = nil
             } catch ADOError.notFound {
                 // A run that hasn't started has no timeline yet (Azure DevOps answers with no content).
-                stages[run.id] = Stages(stages: [], failure: nil, isFinal: run.status.isFinished)
+                stages[item.key] = Stages(stages: [], failure: nil, readFor: state, readAt: startedAt, isFinal: item.run.status.isFinished)
+                attempts[item.key] = nil
+            } catch ADOError.forbidden {
+                // You may see the run but not its timeline: don't ask again until the run changes.
+                stages[item.key] = Stages(stages: [], failure: nil, readFor: state, readAt: startedAt, isFinal: true)
+                attempts[item.key] = nil
             } catch ADOError.throttled(let seconds) {
                 throttled = .throttled(retryAfter: seconds)
-            } catch {
-                // Its stages stay as they were, and are read again next time.
+            } catch is ADOError {
+                // Its stages stay as they were, and are tried again later.
+                let failures = (attempts[item.key]?.failures ?? 0) + 1
+                attempts[item.key] = Attempts(last: startedAt, failures: failures)
             }
         }
-        // Keep only the stages of runs still shown as the latest.
-        let latestIds = Set(latest.map(\.1.id))
-        stages = stages.filter { latestIds.contains($0.key) }
+        // Keep only what's about runs still shown as the latest.
+        let latestKeys = Set(latest.map(\.key))
+        stages = stages.filter { latestKeys.contains($0.key) }
+        attempts = attempts.filter { latestKeys.contains($0.key) }
 
         if let throttled {
             problem = PulseProblem.from(throttled)
@@ -273,10 +380,16 @@ public actor PipelinesEngine {
         }
     }
 
+    /// When a run's timeline was last read or tried; never, first.
+    private func lastTouched(_ key: RunKey) -> Date {
+        max(stages[key]?.readAt ?? .distantPast, attempts[key]?.last ?? .distantPast)
+    }
+
     private func snapshot() -> PipelinesSnapshot {
         let statuses = configuration.pipelines.compactMap { pipeline -> PipelineStatus? in
             guard let runs = runs[pipeline.id] else { return hasLoaded ? PipelineStatus(pipeline: pipeline, runs: []) : nil }
-            let latest = runs.first.flatMap { stages[$0.id] }
+            // Stages read for the run as it is now: not a retried run's last attempt.
+            let latest = runs.first.flatMap { run in stages[RunKey(pipeline, run)].flatMap { $0.readFor == RunState(run) ? $0 : nil } }
             return PipelineStatus(pipeline: pipeline, runs: runs, stages: latest?.stages ?? [], failure: latest?.failure)
         }
         return PipelinesSnapshot(

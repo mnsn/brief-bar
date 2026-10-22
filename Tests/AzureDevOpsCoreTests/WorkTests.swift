@@ -119,6 +119,59 @@ enum WorkFixture {
     }
 }
 
+/// Hands out tokens like `FakeTokens`, but holds the `holdAt`-th request (each request asks for a token first) until
+/// released: a refresh caught in the middle.
+actor HeldTokens: AccessTokenProvider {
+    private let value: String
+    private let holdAt: Int
+    private var calls = 0
+    private var held: CheckedContinuation<Void, Never>?
+    private(set) var isHolding = false
+
+    init(_ value: String, holdAt: Int) {
+        self.value = value
+        self.holdAt = holdAt
+    }
+
+    func token() async throws -> AccessToken {
+        calls += 1
+        if calls == holdAt {
+            isHolding = true
+            await withCheckedContinuation { held = $0 }
+        }
+        return AccessToken(value: value, expiresOn: .distantFuture)
+    }
+
+    func invalidate() {}
+
+    func release() {
+        held?.resume()
+        held = nil
+    }
+}
+
+/// Waits until the engine is caught in the middle of a refresh.
+func waitUntilHeld(_ tokens: HeldTokens) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(10))
+    while clock.now < deadline {
+        if await tokens.isHolding { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw TestError("Timed out waiting for a request to be held")
+}
+
+/// Waits until the server has had a number of requests, however busy the machine is.
+func waitUntilRequests(_ server: StubServer, reach count: Int) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(10))
+    while clock.now < deadline {
+        if server.requests.count >= count { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw TestError("Timed out waiting for \(count) requests")
+}
+
 /// Collects what a running engine publishes.
 final class Collected<Snapshot: Sendable>: Sendable {
     private let snapshots = Mutex<[Snapshot]>([])
@@ -677,6 +730,29 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(server.requests.count == count)
     }
 
+    @Test func stopsReadingWhenHiddenMidRefresh() async throws {
+        let server = StubServer()
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1)])
+        // The first token is for checking who's signed in; the second is for the first request, your teams.
+        let tokens = HeldTokens(server.id, holdAt: 2)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org], team: WorkFixture.team), now: { t(0) },
+            calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.start()
+        defer { Task { await engine.stop() } }
+        await engine.setActive(true)
+        try await waitUntilHeld(tokens)
+        await engine.setActive(false)
+        await tokens.release()
+        // The request under way finishes, however busy the machine is; then none after it starts.
+        try await waitUntilRequests(server, reach: 1)
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(server.requests.count == 1)
+        #expect(await engine.currentSnapshot().refreshedAt == nil)
+    }
+
     @Test func backsOffWhenAzureDevOpsCantBeRead() async {
         let server = StubServer()
         WorkFixture.serve(server)
@@ -776,6 +852,150 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         await engine.refreshNow()
         #expect(await engine.sleepTime() >= 3_600)
         #expect(server.requests.isEmpty)
+    }
+
+    @Test func forgetsTheLastAccountsRunsWhenSomeoneElseSignsIn() async throws {
+        let server = StubServer()
+        serve(server, running: false)
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/robin")
+        let engine = PipelinesEngine(client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [web])) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().statuses.first?.failure?.message == "Boom")
+
+        // The new account may not read the pipeline: nothing of the last one's stays.
+        await tokens.signIn(as: "tenant/sam")
+        server.on("/p1/_apis/build/builds") { _ in .status(403) }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        let status = try #require(snapshot.statuses.first)
+        #expect(status.runs.isEmpty)
+        #expect(status.stages.isEmpty)
+        #expect(status.failure == nil)
+        #expect(snapshot.problem == .unreachable("No access to this organization."))
+    }
+
+    @Test func stopsReadingWhenHiddenMidRefresh() async throws {
+        let server = StubServer()
+        serve(server)
+        // The first token is for checking who's signed in; the second is for the first request, the first project's runs.
+        let tokens = HeldTokens(server.id, holdAt: 2)
+        let engine = PipelinesEngine(client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [web, release])) { _ in }
+        await engine.start()
+        defer { Task { await engine.stop() } }
+        await engine.setActive(true)
+        try await waitUntilHeld(tokens)
+        await engine.setActive(false)
+        await tokens.release()
+        // The request under way finishes, however busy the machine is; then not the other project's runs, nor any
+        // stages.
+        try await waitUntilRequests(server, reach: 1)
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(server.requests.count == 1)
+        #expect(await engine.currentSnapshot().refreshedAt == nil)
+    }
+
+    @Test func keepsTwoOrganizationsRunsApart() async throws {
+        let server = StubServer()
+        let contoso = PipelineRef(organization: "contoso", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        let fabrikam = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        for organization in ["contoso", "fabrikam"] {
+            server.on("/\(organization)/p1/_apis/build/builds", json: Fixture.list([WorkFixture.build(42, definition: 31, queued: t(-hour))]))
+        }
+        server.on("/contoso/p1/_apis/build/builds/42/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1)]))
+        server.on("/fabrikam/p1/_apis/build/builds/42/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Deploy", order: 1)]))
+        let engine = PipelinesEngine(client: server.client(), configuration: PipelinesEngine.Configuration(pipelines: [contoso, fabrikam])) { _ in }
+        await engine.refreshNow()
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().statuses.map { $0.stages.map(\.name) } == [["Build"], ["Deploy"]])
+        // Each read once: they're finished.
+        #expect(server.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/42/timeline") }.count == 2)
+    }
+
+    @Test func readsARetriedRunsStagesAgain() async throws {
+        let server = StubServer()
+        let attempt = Locked(0)
+        server.on("/p1/_apis/build/builds") { _ in
+            switch attempt.value {
+            case 0: return .json(Fixture.list([WorkFixture.build(42, definition: 31, result: "failed", queued: t(-hour), minutes: 3)]))
+            case 1: return .json(Fixture.list([WorkFixture.build(42, definition: 31, status: "inProgress", result: nil, queued: t(-hour))]))
+            default: return .json(Fixture.list([WorkFixture.build(42, definition: 31, queued: t(-hour), minutes: 20)]))
+            }
+        }
+        server.on("/_apis/build/builds/42/timeline") { _ in
+            switch attempt.value {
+            case 0: return .json(WorkFixture.timeline([
+                WorkFixture.record("s", "Stage", "Test", order: 1, result: "failed"),
+                WorkFixture.record("t", "Task", "Run tests", parent: "s", result: "failed", issues: [["type": "error", "message": "Boom"]]),
+            ]))
+            case 1: return .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Test", order: 1, state: "inProgress", result: nil)]))
+            default: return .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Test", order: 1)]))
+            }
+        }
+        let engine = PipelinesEngine(client: server.client(), configuration: PipelinesEngine.Configuration(pipelines: [web])) { _ in }
+        await engine.refreshNow()
+        var status = try #require(await engine.currentSnapshot().statuses.first)
+        #expect(status.stages.map(\.state) == [.failed])
+        #expect(status.failure?.message == "Boom")
+
+        // Run again: the same build, running.
+        attempt.set(1)
+        await engine.refreshNow()
+        status = try #require(await engine.currentSnapshot().statuses.first)
+        #expect(status.latest?.status == .running)
+        #expect(status.stages.map(\.state) == [.running])
+        #expect(status.failure == nil)
+
+        attempt.set(2)
+        await engine.refreshNow()
+        status = try #require(await engine.currentSnapshot().statuses.first)
+        #expect(status.stages.map(\.state) == [.succeeded])
+        #expect(status.headline == "Succeeded")
+        #expect(server.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/42/timeline") }.count == 3)
+    }
+
+    @Test func timelinesThatKeepFailingDontHoldUpTheRest() async throws {
+        let server = StubServer()
+        let pipelines = (1...7).map {
+            PipelineRef(organization: Fixture.org, projectId: "p1", projectName: "Shop", definitionId: $0, name: "CI \($0)")
+        }
+        server.on("/p1/_apis/build/builds", json: Fixture.list((1...7).map {
+            WorkFixture.build(100 + $0, definition: $0, queued: t(-Double($0) * minute))
+        }))
+        for build in 101...106 {
+            server.on("/_apis/build/builds/\(build)/timeline") { _ in .status(500) }
+        }
+        server.on("/_apis/build/builds/107/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1)]))
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(), configuration: PipelinesEngine.Configuration(pipelines: pipelines), now: { clock.value }
+        ) { _ in }
+        func timelines() -> Int { server.requests.compactMap(\.url?.path).filter { $0.hasSuffix("/timeline") }.count }
+
+        await engine.refreshNow()
+        #expect(timelines() == 6)
+        clock.set(t(60))
+        await engine.refreshNow()
+        // The seventh, never read, goes before the six that failed.
+        #expect(await engine.currentSnapshot().statuses.last?.stages.map(\.name) == ["Build"])
+        #expect(await engine.currentSnapshot().problem == nil)
+        // A second later, the ones that failed twice wait; only the one that failed once is tried again.
+        let before = timelines()
+        clock.set(t(61))
+        await engine.refreshNow()
+        #expect(timelines() - before == 1)
+    }
+
+    @Test func aTimelineYouMayNotReadIsntAskedForAgain() async throws {
+        let server = StubServer()
+        serve(server)
+        server.on("/_apis/build/builds/102/timeline") { _ in .status(403) }
+        let engine = PipelinesEngine(client: server.client(), configuration: PipelinesEngine.Configuration(pipelines: [api])) { _ in }
+        await engine.refreshNow()
+        await engine.refreshNow()
+        // It's running, so its stages would be read every refresh; but not when you may not read them.
+        #expect(server.requests.compactMap(\.url?.path).filter { $0.contains("/102/timeline") }.count == 1)
+        #expect(await engine.currentSnapshot().problem == nil)
     }
 
     @Test func waitsWhenAzureDevOpsAsksToSlowDown() async {
