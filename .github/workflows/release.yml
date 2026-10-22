@@ -28,8 +28,11 @@ jobs:
           xcode-select --print-path
           swift --version
 
+      # make test, build included, takes two to three minutes on GitHub's runners, so a test run that hangs ends
+      # at ten minutes, not at the job's limit.
       - name: Test
         run: make test
+        timeout-minutes: 10
 
       # Only AzureDevOpsCore uses the network, and only BriefBarCore starts programs.
       - name: Check the boundaries
