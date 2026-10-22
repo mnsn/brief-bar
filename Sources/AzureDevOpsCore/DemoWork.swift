@@ -173,9 +173,10 @@ extension DemoData {
 
         let nightly = PipelineStatus(
             pipeline: ref(51, "Nightly load test", "Storefront"),
+            // The sums are Doubles: Swift 6.1 would take a sum of whole numbers in this list for an Int.
             runs: runs([
-                (.succeeded, 42, 8_640 + 420), (.succeeded, 44, 7_200 + 420), (.succeeded, 41, 5_760 + 420), (.failed, 18, 4_320 + 420),
-                (.succeeded, 43, 2_880 + 420), (.succeeded, 45, 1_440 + 420), (.partiallySucceeded, 47, 420),
+                (.succeeded, 42, 8_640.0 + 420), (.succeeded, 44, 7_200.0 + 420), (.succeeded, 41, 5_760.0 + 420), (.failed, 18, 4_320.0 + 420),
+                (.succeeded, 43, 2_880.0 + 420), (.succeeded, 45, 1_440.0 + 420), (.partiallySucceeded, 47, 420),
             ], trigger: .schedule),
             stages: [stage(11, "Load test", .warning, 467, 39), stage(12, "Report", .succeeded, 428, 8)]
         )
