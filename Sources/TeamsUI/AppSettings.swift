@@ -44,10 +44,10 @@ final class AppSettings: ObservableObject {
         static let showSummaries = "teams.showSummaries"
     }
 
-    static let followReadsInTeamsKey = "teams.followReadsInTeams"
+    nonisolated static let followReadsInTeamsKey = "teams.followReadsInTeams"
 
     /// The saved choice, for the command line, which runs without the app's settings object.
-    static func followsReadsInTeams(in defaults: UserDefaults = .standard) -> Bool {
+    nonisolated static func followsReadsInTeams(in defaults: UserDefaults = .standard) -> Bool {
         defaults.object(forKey: followReadsInTeamsKey) as? Bool ?? true
     }
 
