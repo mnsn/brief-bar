@@ -517,13 +517,13 @@ struct SignInStatusView: View {
     }
 }
 
-/// The Sprint or Pipelines section in a menu-bar item's popover: its widget's rows, every one of them, and a way to
-/// open its page in a window, where there's room for the whole board.
+/// The Sprint or Pipelines section in a menu-bar item's popover: its widget's rows, every one of them, under a title that
+/// opens its page in BriefBar's window, where there's room for the whole board. The sprint's footer opens its task
+/// board in Azure DevOps.
 struct WorkPanelView: View {
     let page: AzureDevOpsPage
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var pipelines: PipelinesStore
-    @EnvironmentObject private var services: AppServices
 
     @LocalState private var contentHeight: CGFloat = 0
     private static let maxListHeight: CGFloat = 560
@@ -560,13 +560,16 @@ struct WorkPanelView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button {
-                services.openWindow(page.section)
-            } label: {
-                Label("Open \(page.title)", systemImage: "macwindow")
+            if page == .sprint {
+                Button {
+                    sprint.openBoard()
+                } label: {
+                    Label("Open Task Board", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
+                .disabled(sprint.board == nil)
+                .help("Open the sprint's task board in Azure DevOps")
             }
-            .buttonStyle(.borderless)
-            .help("Open the \(page.title) page in BriefBar's window")
             Spacer()
             Menu {
                 SettingsMenuContent()

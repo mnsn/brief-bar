@@ -188,7 +188,7 @@ final class WindowContent: ObservableObject {
 
     /// What needs you on the window's pages, for the Overview's place in the sidebar.
     var overviewSegment: MenuBarSegment {
-        let states = sections.compactMap { model.source(for: $0)?.segment(for: $0).states }.reduce(StateCounts(), +)
+        let states = model.states(of: sections)
         return MenuBarSegment(
             glyph: nil, title: NSAttributedString(), summary: states.needsYou == 0 ? "Nothing needs you" : "Needs you: \(states.needsYou)",
             count: states.needsYou, needsAttention: states.needsYou > 0, states: states

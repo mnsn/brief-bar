@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+  Makes Tests/Fixtures/ChromiumIndexedDB, with made-up data shaped like Teams' conversation-manager records.
+  Serve this folder (python3 -m http.server 8766 --bind 127.0.0.1), then run a Chromium browser on its own profile
+  twice, quitting it after each page has loaded:
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --headless=new --user-data-dir=/tmp/fixture \
+      "http://teams.localhost:8766/make-fixture.html?phase=1"   (then again with ?phase=2)
+  Copy the log, CURRENT and MANIFEST of /tmp/fixture/Default/IndexedDB/http_teams.localhost_8766.indexeddb.leveldb,
+  and the .blob folder next to it. The second run appends to the same log: the tests split it where it starts.
+-->
+<meta charset="utf-8"><title>fixture</title><script>
+// Made-up data only, shaped like Teams' conversation-manager records.
+const TENANT = "00000000-1111-4222-8333-444444444444", ME = "99999999-ffff-4fff-8fff-999999999999";
+const AVERY = "19:11111111-aaaa-4aaa-8aaa-111111111111_99999999-ffff-4fff-8fff-999999999999@unq.gbl.spaces";
+const SAM = "19:22222222-bbbb-4bbb-8bbb-222222222222_99999999-ffff-4fff-8fff-999999999999@unq.gbl.spaces";
+const CREW = "19:0123456789abcdef0123456789abcdef@thread.v2";
+const SYNC = "19:meeting_ZmFrZS1tZWV0aW5nLWlkLWZvci10ZXN0cw@thread.v2";
+const CHANNEL = "19:abcdefabcdefabcdefabcdefabcdef12@thread.tacv2";
+const BIG = "19:bigbigbigbigbigbigbigbigbigbig12@thread.v2";
+const WRAPPED = "19:wrapwrapwrapwrapwrapwrapwrapwrap@thread.v2";
+const base = 1792317600000; // 2026-10-18T10:00:00Z
+const q = new URLSearchParams(location.search), phase = q.get("phase") || "1", bulk = +(q.get("bulk") || 0);
+function conv(id, read, last, extra = {}) {
+  return Object.assign({
+    id, type: id.endsWith("tacv2") ? "Topic" : "Chat", version: base + 1,
+    properties: { consumptionhorizon: read === null ? "" : `${read};${read + 900};${read + 7}`, isemptyconversation: "False", addedBy: `8:orgid:${ME}`, alerts: "true" },
+    threadProperties: { threadType: "chat", topic: "Made-up topic", createdat: String(base - 9e8), isRead: true },
+    lastMessage: { id: String(last), messagetype: "RichText/Html", content: "Made-up text", from: `https://example.invalid/v1/users/ME/contacts/8:orgid:${ME}`, composetime: new Date(last).toISOString() },
+    members: [{ id: `8:orgid:${ME}`, role: "Admin" }], chatTitle: { shortTitle: "Made-up chat" }, clientUpdateTime: new Date(base).toISOString(),
+    nested: { list: [1, 2.5, -3, true, null, "two-byte ☃"], when: new Date(base), set: new Set(["a"]), map: new Map([["k", 1]]) },
+  }, extra);
+}
+function random(n) { let s = ""; while (s.length < n) s += Math.random().toString(36).slice(2); return s.slice(0, n); }
+function open(name, stores) {
+  return new Promise((ok, fail) => { const r = indexedDB.open(name, 1);
+    r.onupgradeneeded = () => stores.forEach(([s, kp]) => r.result.createObjectStore(s, kp ? { keyPath: kp } : undefined));
+    r.onsuccess = () => ok(r.result); r.onerror = fail; });
+}
+function tx(db, store, f) { return new Promise((ok, fail) => { const t = db.transaction(store, "readwrite"); f(t.objectStore(store)); t.oncomplete = ok; t.onerror = fail; }); }
+(async () => {
+  const convDB = await open(`Teams:conversation-manager:react-web-client:${TENANT}:${ME}:en-us`, [["conversations", "id"], ["conversations-internal-data", null]]);
+  const otherDB = await open(`Teams:replychain-manager:react-web-client:${TENANT}:${ME}:en-us`, [["replychains", "id"]]);
+  if (phase === "1") {
+    await tx(otherDB, "replychains", s => { for (let i = 0; i < 20; i++) s.put({ id: String(base + i), content: "Made-up message " + i }); });
+    await tx(convDB, "conversations-internal-data", s => s.put({ lastSync: base }, "sync"));
+    await tx(convDB, "conversations", s => {
+      s.put(conv(AVERY, base + 1000, base + 5000));           // unread 1:1
+      s.put(conv(SAM, base + 7000, base + 7000));             // read 1:1
+      s.put(conv(CREW, base + 2000, base + 9000, { members: Array.from({ length: 40 }, (_, i) => ({ id: `8:orgid:${random(36)}`, role: "User" })) }));
+      s.put(conv(SYNC, 0, base + 4000));                      // never opened meeting chat
+      s.put(conv(CHANNEL, null, base + 3000));                // channel: empty horizon
+      s.put(conv(BIG, base + 100, base + 200, { threadProperties: { threadType: "chat", note: "x".repeat(300000) } })); // compressed
+      s.put(conv(WRAPPED, base + 300, base + 400, { threadProperties: { threadType: "chat", note: random(70000) } })); // wrapped
+      s.put({ id: "48:notes", type: "StreamOfNotes", properties: { consumptionhorizon: `${base};${base};1` } });
+    });
+    for (let b = 0; b < bulk; b += 500) {
+      await tx(otherDB, "replychains", s => { for (let i = 0; i < 500; i++) s.put({ id: String(base + 1e6 + b + i), content: random(400) }); });
+    }
+  } else {
+    await tx(convDB, "conversations", s => {
+      s.put(conv(AVERY, base + 5000, base + 5000));           // read in Teams
+      s.put(conv(SAM, base + 7000, base + 8000));             // a new message
+      s.delete(CHANNEL);                                       // left the channel
+    });
+  }
+  document.title = "done";
+})();
+</script>

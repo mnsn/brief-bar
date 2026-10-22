@@ -8,7 +8,7 @@ struct SprintWidgetSection: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var store: PRStore
     let rows: Int
-    /// In a widget, its header moves it; in a popover, it doesn't.
+    /// In a widget, its header moves it; in a popover, it doesn't, and its title opens the Sprint page.
     var draggable = true
 
     private static let headerHeight: CGFloat = 36
@@ -19,7 +19,7 @@ struct SprintWidgetSection: View {
                 .padding(.horizontal, 14)
                 .frame(height: Self.headerHeight)
                 .contentShape(Rectangle())
-                .gesture(WindowDragGesture(), including: draggable ? .all : .none)
+                .gesture(WindowDragGesture(), including: draggable ? .all : .subviews)
             content
                 .frame(height: CGFloat(rows) * PRRowView.compactHeight, alignment: .top)
         }
@@ -32,17 +32,21 @@ struct SprintWidgetSection: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: AzureDevOpsPage.sprint.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AzureDevOpsPage.sprint.color)
-            Text(sprint.board?.sprint.name ?? "Sprint")
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-            if let days = sprint.board?.sprint.daysLeft(now: store.now) {
-                Text(days == 1 ? "· last day" : "· \(days)d left")
-                    .font(.system(size: 11))
-                    .foregroundStyle(days <= 2 ? Color.orange : .secondary)
-                    .fixedSize()
+            PageLink(.azureDevOpsSprint, name: AzureDevOpsPage.sprint.title) {
+                HStack(spacing: 6) {
+                    Image(systemName: AzureDevOpsPage.sprint.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AzureDevOpsPage.sprint.color)
+                    Text(sprint.board?.sprint.name ?? "Sprint")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    if let days = sprint.board?.sprint.daysLeft(now: store.now) {
+                        Text(days == 1 ? "· last day" : "· \(days)d left")
+                            .font(.system(size: 11))
+                            .foregroundStyle(days <= 2 ? Color.orange : .secondary)
+                            .fixedSize()
+                    }
+                }
             }
             if let problem = sprint.problem {
                 Image(systemName: "exclamationmark.triangle")
@@ -105,7 +109,7 @@ struct PipelinesWidgetSection: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
     let rows: Int
-    /// In a widget, its header moves it; in a popover, it doesn't.
+    /// In a widget, its header moves it; in a popover, it doesn't, and its title opens the Pipelines page.
     var draggable = true
 
     private static let headerHeight: CGFloat = 36
@@ -116,7 +120,7 @@ struct PipelinesWidgetSection: View {
                 .padding(.horizontal, 14)
                 .frame(height: Self.headerHeight)
                 .contentShape(Rectangle())
-                .gesture(WindowDragGesture(), including: draggable ? .all : .none)
+                .gesture(WindowDragGesture(), including: draggable ? .all : .subviews)
             content
                 .frame(height: CGFloat(rows) * PRRowView.compactHeight, alignment: .top)
         }
@@ -129,11 +133,15 @@ struct PipelinesWidgetSection: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: AzureDevOpsPage.pipelines.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AzureDevOpsPage.pipelines.color)
-            Text("Pipelines")
-                .font(.system(size: 13, weight: .semibold))
+            PageLink(.azureDevOpsPipelines, name: AzureDevOpsPage.pipelines.title) {
+                HStack(spacing: 6) {
+                    Image(systemName: AzureDevOpsPage.pipelines.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AzureDevOpsPage.pipelines.color)
+                    Text(AzureDevOpsPage.pipelines.title)
+                        .font(.system(size: 13, weight: .semibold))
+                }
+            }
             if let problem = pipelines.problem {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 11))

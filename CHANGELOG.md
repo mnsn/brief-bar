@@ -51,7 +51,9 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
   Previews** is on, and chats go to Apple Intelligence only while **Summarize with Apple Intelligence**
   is on too.
 - **A window** that opens on an **Overview** of everything by state, with the brief, then has a page
-  for each section, and a sidebar with their counts. BriefBar shows a Dock icon only while it's open.
+  for each section, and a sidebar with their counts. Every list opens it: **Overview** at the top, with
+  how many things need you, at the Overview, and the list's title, such as **Pull Requests ›**, at its
+  page. BriefBar shows a Dock icon only while it's open.
 - **Widgets for every source**, each with its own position and size, and an **Overview** widget: every
   source's counts, the brief's first line and what needs you. Teams' and the Overview start hidden.
 - **Settings in a window of their own**, and in each list's gear menu.

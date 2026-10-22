@@ -8,10 +8,11 @@ import TeamsCore
 
 /// Your unread Microsoft Teams chats, from the notifications Teams sends to Notification Center: 1:1 chats
 /// and group chats, each a section of its own. Reading Notification Center's database needs Full Disk
-/// Access, which macOS grants to all of BriefBar.
+/// Access, which macOS grants to all of BriefBar, and so does reading how far you've read each chat from Teams'
+/// own data.
 @MainActor
 package final class TeamsSource: BriefBarSource {
-    nonisolated package static let descriptionVersion = 1
+    nonisolated package static let descriptionVersion = 2
 
     package let id = SourceID.teams
     package let name = "Microsoft Teams"
@@ -19,9 +20,9 @@ package final class TeamsSource: BriefBarSource {
     package let description = SourceDescription(
         version: TeamsSource.descriptionVersion,
         summary: "Your unread Teams chats: 1:1 chats, and group and meeting chats",
-        reads: "The notifications Teams sends to Notification Center, from Notification Center's database on this Mac, read-only. BriefBar keeps only your unread chats (each chat's name, and its unread messages' sender and text), encrypted with a key in your login keychain, until they're read. It also reads Teams' dock badge, to see when you've read everything in Teams. With Show Message Previews and Summarize with Apple Intelligence on, Apple's on-device model writes summaries on your Mac: a chat's when you ask for one, and the brief's while a list by state or the window's Overview shows your chats.",
+        reads: "The notifications Teams sends to Notification Center, from Notification Center's database on this Mac, read-only. BriefBar keeps only your unread chats (each chat's name, and its unread messages' sender and text), encrypted with a key in your login keychain, until they're read. It also reads how far you've read each chat in Teams, from Teams' own data on this Mac, read-only, keeping only that, in memory, so chats you read in Teams are read here too (you can turn this off); and Teams' dock badge, to see when you've read everything in Teams. With Show Message Previews and Summarize with Apple Intelligence on, Apple's on-device model writes summaries on your Mac: a chat's when you ask for one, and the brief's while a list by state or the window's Overview shows your chats.",
         network: "None. Nothing about your chats leaves your Mac.",
-        needs: "Full Disk Access, which macOS requires to read Notification Center's database. macOS has no prompt for it, so BriefBar walks you through System Settings. It's for all of BriefBar, once: only sources you turn on that read Notification Center use it.",
+        needs: "Full Disk Access, which macOS requires to read Notification Center's database and Teams' own data. macOS has no prompt for it, so BriefBar walks you through System Settings. It's for all of BriefBar, once: only sources you turn on that read Notification Center use it.",
         requirements: [.fullDiskAccess]
     )
     /// Their widgets start hidden: a widget would put your chats on the desktop after an update.
@@ -266,6 +267,9 @@ package final class TeamsSource: BriefBarSource {
     package func loadForRendering() async {
         let store = ConversationStore(settings: settings, storage: storage(readOnly: true))
         store.receive(NotificationEngine.loadOnce(paths: store.paths))
+        if settings.followReadsInTeams, let cache = store.storage.cache {
+            store.receive(ReadMarkerEngine.loadOnce(location: cache))
+        }
         self.store = store
         if store.paths.isSystemDatabase {
             services.fullDiskAccess.register(.teams, name: "Teams", reason: Self.accessReason) { false }

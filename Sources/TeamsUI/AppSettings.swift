@@ -40,7 +40,15 @@ final class AppSettings: ObservableObject {
         static let keepUnread = KeepUnread.defaultsKey
         static let showPreviews = "teams.showMessagePreviews"
         static let clearWithDockBadge = "teams.clearWithDockBadge"
+        static let followReadsInTeams = AppSettings.followReadsInTeamsKey
         static let showSummaries = "teams.showSummaries"
+    }
+
+    static let followReadsInTeamsKey = "teams.followReadsInTeams"
+
+    /// The saved choice, for the command line, which runs without the app's settings object.
+    static func followsReadsInTeams(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: followReadsInTeamsKey) as? Bool ?? true
     }
 
     private let defaults: UserDefaults
@@ -58,6 +66,10 @@ final class AppSettings: ObservableObject {
     @Published var clearWithDockBadge: Bool {
         didSet { defaults.set(clearWithDockBadge, forKey: Key.clearWithDockBadge) }
     }
+    /// Reads each chat as far as you've read it in Teams, from Teams' own data on this Mac.
+    @Published var followReadsInTeams: Bool {
+        didSet { defaults.set(followReadsInTeams, forKey: Key.followReadsInTeams) }
+    }
     /// Offers one-sentence summaries from Apple's on-device model, and lets it word chats in the brief, while previews
     /// are shown.
     @Published var showSummaries: Bool {
@@ -69,6 +81,7 @@ final class AppSettings: ObservableObject {
         keepUnread = KeepUnread.saved(in: defaults)
         showPreviews = defaults.object(forKey: Key.showPreviews) as? Bool ?? true
         clearWithDockBadge = defaults.object(forKey: Key.clearWithDockBadge) as? Bool ?? true
+        followReadsInTeams = Self.followsReadsInTeams(in: defaults)
         showSummaries = defaults.object(forKey: Key.showSummaries) as? Bool ?? true
     }
 

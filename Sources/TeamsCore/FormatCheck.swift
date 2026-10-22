@@ -55,6 +55,9 @@ public enum PulseProblem: Sendable, Equatable {
     case readFailed(String)
     case formatChanged(total: Int)
     case partlyUnreadable(unreadable: Int, total: Int)
+    /// Teams' own record of how far you've read each chat was found, but not understood.
+    case readMarkersChanged
+    case readMarkersPartlyUnreadable
 
     public var title: String {
         switch self {
@@ -64,6 +67,8 @@ public enum PulseProblem: Sendable, Equatable {
         case .readFailed: return "Couldn't read Notification Center's database"
         case .formatChanged: return "Teams' notifications have changed"
         case .partlyUnreadable: return "Some Teams notifications couldn't be read"
+        case .readMarkersChanged: return "Teams' read markers have changed"
+        case .readMarkersPartlyUnreadable: return "Some of Teams' read markers couldn't be read"
         }
     }
 
@@ -81,12 +86,18 @@ public enum PulseProblem: Sendable, Equatable {
             return "None of the \(total) stored Teams notifications could be read. A Teams update probably changed them."
         case .partlyUnreadable(let unreadable, let total):
             return "\(unreadable) of \(total) couldn't be read, so some chats may be missing."
+        case .readMarkersChanged:
+            return "BriefBar can't see which chats you've read in Teams, probably since a Teams update. Chats still become read when you open them from BriefBar, when Teams' badge clears, and after Keep Unread For."
+        case .readMarkersPartlyUnreadable:
+            return "Some chats you read in Teams may stay unread here until you open them from BriefBar, Teams' badge clears, or Keep Unread For passes."
         }
     }
 
     /// Whether BriefBar can show nothing at all.
     public var isBlocking: Bool {
-        if case .partlyUnreadable = self { return false }
-        return true
+        switch self {
+        case .partlyUnreadable, .readMarkersChanged, .readMarkersPartlyUnreadable: return false
+        default: return true
+        }
     }
 }

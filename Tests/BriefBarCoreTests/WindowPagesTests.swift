@@ -18,6 +18,17 @@ import Testing
         #expect(window.page(for: .azureDevOpsPipelines) == nil)
     }
 
+    @Test func theOverviewOpensTheFirstWindowWithSeveralPages() {
+        let sessions = SectionLayout.Item(id: "sessions", sections: [.copilotSessions])
+        let work = SectionLayout.Item(id: "work", sections: [.azureDevOpsPullRequests, .azureDevOpsSprint])
+        let chats = SectionLayout.Item(id: "chats", sections: [.teamsChats, .teamsGroupChats])
+        #expect(WindowPages.overviewWindow(in: [sessions, work, chats]) == work)
+        #expect(WindowPages.overviewWindow(in: [chats, work]) == chats)
+        // With a window for each section, or none, there's no Overview to open.
+        #expect(WindowPages.overviewWindow(in: [sessions]) == nil)
+        #expect(WindowPages.overviewWindow(in: []) == nil)
+    }
+
     @Test func aWindowWithOnePageHasNoOverview() {
         let window = WindowPages(sections: [.copilotSessions])
         #expect(window.pages == [.copilotSessions])

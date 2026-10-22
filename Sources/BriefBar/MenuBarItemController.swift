@@ -197,8 +197,8 @@ extension MenuBarItemController: NSPopoverDelegate {
     }
 }
 
-/// The popover's content: one section's panel, under a tab for each section when there are several; or every section's
-/// things together, by state.
+/// The popover's content, under the Overview at the top: one section's panel, under a tab for each section when there
+/// are several; or every section's things together, by state.
 @MainActor
 final class ItemPanelModel: ObservableObject {
     @Published var sections: [SectionID] = []
@@ -266,6 +266,7 @@ struct ItemPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OverviewLinkView(link: panel.model.overviewLink)
             UpdateBanner(updates: panel.updates)
             if panel.listByState {
                 StateListView(list: panel.stateList, model: panel.model, width: panel.width)
@@ -296,8 +297,10 @@ struct ItemPanelView: View {
             Divider()
         }
         if let current = panel.current {
+            // Its title opens its page in BriefBar's window.
             panel.panel(for: current)
                 .environment(\.shownSection, current)
+                .environment(\.titleOpensPage, true)
                 .id(current)
         }
     }

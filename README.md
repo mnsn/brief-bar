@@ -22,7 +22,7 @@ overview.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-teams.chats-dark.png">
-    <img src="docs/images/menubar-teams.chats-light.png" width="595" alt="BriefBar's items in the menu bar: Teams' Chats and Group Chats with their counts, Azure DevOps and Copilot with theirs; the Chats list is open, showing two unread chats with their latest messages and one-sentence summaries">
+    <img src="docs/images/menubar-teams.chats-light.png" width="595" alt="BriefBar's items in the menu bar: Teams' Chats and Group Chats with their counts, Azure DevOps and Copilot with theirs; the Chats list is open, under Overview and 11 that need you, showing two unread chats with their latest messages and one-sentence summaries">
   </picture>
 </p>
 
@@ -84,8 +84,9 @@ arranged in Settings:
   first line and what needs you. Drag a widget by its header, and right-click it for its settings.
 - **Windows** (Settings › Windows): one BriefBar window, which opens on an **Overview** of everything
   by state, with the brief, then has a page for every section, and a sidebar with their counts. Open
-  it with **Open in Window** from a list's gear menu or a widget's menu. BriefBar shows a Dock icon
-  while a window is open.
+  it from the top of any list: **Overview** opens it on the Overview, with how many things need you
+  there, and the list's title, such as **Pull Requests ›**, at the list's page. A widget's menu has
+  **Open in Window** too. BriefBar shows a Dock icon while a window is open.
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again. Items that share sections show their counts side
@@ -115,14 +116,14 @@ switch them.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-combined-dark.png">
-    <img src="docs/images/menubar-combined-light.png" width="572" alt="Azure DevOps and Copilot sharing one menu-bar item, with both their counts; its list is open on the Pull Requests tab, showing a brief by Apple Intelligence, the pull requests that need you, one of them sent in Teams, and one you answered">
+    <img src="docs/images/menubar-combined-light.png" width="572" alt="Azure DevOps and Copilot sharing one menu-bar item, with both their counts; its list is open on the Pull Requests tab, under Overview and 11 that need you, showing a brief by Apple Intelligence, the pull requests that need you, one of them sent in Teams, and one you answered">
   </picture>
 </p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-by-state-dark.png">
-    <img src="docs/images/menubar-by-state-light.png" width="420" alt="Every section in one menu-bar item, by meaning: 11 that need you, 3 wrong and 3 done or ready; its list is open, with a brief of five lines from Copilot, Teams and Azure DevOps, then everything that needs you, from every source, the newest first">
+    <img src="docs/images/menubar-by-state-light.png" width="420" alt="Every section in one menu-bar item, by meaning: 11 that need you, 3 wrong and 3 done or ready; its list is open, under Overview, with a brief of five lines from Copilot, Teams and Azure DevOps, then everything that needs you, from every source, the newest first">
   </picture>
 </p>
 
@@ -225,7 +226,8 @@ opened but not voted or commented on needs you again.
 where your own work stands, then each story and bug with its tasks, in **In Progress** (when they, or
 any of their tasks, have started), **Not Started** and **Done**. Tasks without a story in the sprint
 are in a card of their own, and your avatar has a blue ring. **Just Mine** shows only yours, and the
-team menu shows another team's sprint. Its widget and menu-bar item list your own work.
+team menu shows another team's sprint. Its widget and menu-bar item list your own work; in the list,
+its title opens this page, and **Open Task Board** the sprint's task board in Azure DevOps.
 
 **Pipelines** shows the pipelines you pin, from any of your projects: how each one's latest run is
 going stage by stage, where it failed, and how its recent runs went. **Add Pipeline** searches a

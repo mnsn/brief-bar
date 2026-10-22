@@ -36,10 +36,14 @@ struct MenuPanelView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(.tint)
-            Text("Azure DevOps")
-                .font(.headline)
+            PageLink(.azureDevOpsPullRequests, name: AzureDevOpsPage.pullRequests.title) {
+                HStack {
+                    Image(systemName: AzureDevOpsPage.pullRequests.symbol)
+                        .foregroundStyle(.tint)
+                    Text(AzureDevOpsPage.pullRequests.title)
+                        .font(.headline)
+                }
+            }
             Spacer()
             CountChips(counts: store.counts)
         }

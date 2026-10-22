@@ -109,6 +109,7 @@ public struct TrackerSettings: Sendable, Equatable {
 ///
 /// - A message that arrives while BriefBar runs, or arrived while it didn't, is unread.
 /// - Opening a chat from BriefBar, or marking it read, reads it.
+/// - Teams' own read markers read each chat up to the newest message you've seen in Teams (`setReadMarkers`).
 /// - Notifications that leave Notification Center were clicked or cleared there, or withdrawn by
 ///   Teams: their chat is read up to them. Except when it's full and drops old notifications as new
 ///   ones arrive: those chats stay unread, kept here although Notification Center no longer has them.
@@ -134,6 +135,8 @@ public struct UnreadTracker: Sendable {
     /// since launch, which saved chats restored late must respect.
     private var everythingReadThrough: Date?
     private var hasBaseline = false
+    /// How far Teams says you've read each chat, by conversation ID.
+    private var readMarkers: [String: ReadMarker] = [:]
 
     /// Read messages that Notification Center no longer has are forgotten after this.
     static let retention: TimeInterval = 2 * 86_400
@@ -157,7 +160,7 @@ public struct UnreadTracker: Sendable {
     public mutating func restore(_ conversations: [CachedConversation]) {
         for message in conversations.flatMap(\.messages) {
             let readUntil = max(readThrough[message.conversationID] ?? .distantPast, everythingReadThrough ?? .distantPast)
-            guard message.deliveredAt > readUntil else { continue }
+            guard message.deliveredAt > readUntil, !isReadInTeams(message) else { continue }
             if tracked[message.key] != nil {
                 tracked[message.key]?.isUnread = true
             } else {
@@ -201,7 +204,8 @@ public struct UnreadTracker: Sendable {
             } else {
                 let readUntil = max(readThrough[message.conversationID] ?? .distantPast, allReadThrough)
                 tracked[message.key] = Tracked(
-                    message: message, isUnread: message.deliveredAt > readUntil, stored: [notification.key]
+                    message: message, isUnread: message.deliveredAt > readUntil && !isReadInTeams(message),
+                    stored: [notification.key]
                 )
             }
         }
@@ -232,6 +236,20 @@ public struct UnreadTracker: Sendable {
         for (key, item) in tracked where item.isUnread && item.message.deliveredAt <= date {
             tracked[key]?.isUnread = false
         }
+    }
+
+    /// Takes in how far Teams says you've read each chat: in each, every message up to the newest you've seen there
+    /// is read, now and when its notification arrives later. Nothing becomes unread again: a chat that Teams no longer
+    /// lists, or says less of, keeps what it read.
+    public mutating func setReadMarkers(_ markers: [String: ReadMarker]) {
+        readMarkers = markers
+        for (key, item) in tracked where item.isUnread && isReadInTeams(item.message) {
+            tracked[key]?.isUnread = false
+        }
+    }
+
+    private func isReadInTeams(_ message: ChatMessage) -> Bool {
+        readMarkers[message.conversationID]?.covers(message) ?? false
     }
 
     /// Unread messages older than the setting count as read from now on.

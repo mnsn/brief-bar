@@ -12,30 +12,37 @@ struct StorageMode {
     var keyStore: (any KeyStore)?
     /// Whether to save its state and the unread chats.
     var writes: Bool
+    /// Where Teams keeps how far you've read each chat: its own data with Notification Center's own database,
+    /// otherwise only what `BRIEFBAR_TEAMS_CACHE` names. Nil when there's nothing to read.
+    var cache: TeamsCacheLocation?
 
     /// - Another database (demo data, fixtures) holds nothing private: its key sits in a file next to
     ///   its state.
     /// - Notification Center's own database: only the installed app saves chats from it, with the key
     ///   in the keychain, and only the app reads them back (`readOnly`). A bare binary (`make run`)
     ///   saves nothing, so it never touches the installed app's files or keychain item.
-    static func current(paths: NotificationPaths = .default(), isBundled: Bool = AppIdentity.isBundled) -> StorageMode {
+    static func current(
+        paths: NotificationPaths = .default(), isBundled: Bool = AppIdentity.isBundled,
+        cacheOverride: TeamsCacheLocation? = .override()
+    ) -> StorageMode {
+        let cache = cacheOverride ?? (paths.isSystemDatabase ? .teams() : nil)
         if !paths.isSystemDatabase {
             return StorageMode(paths: paths, keyStore: FileKeyStore(url: paths.stateDirectory.appendingPathComponent("key")),
-                               writes: true)
+                               writes: true, cache: cache)
         }
         if isBundled {
-            return StorageMode(paths: paths, keyStore: KeychainKeyStore(), writes: true)
+            return StorageMode(paths: paths, keyStore: KeychainKeyStore(), writes: true, cache: cache)
         }
-        return StorageMode(paths: paths, keyStore: nil, writes: false)
+        return StorageMode(paths: paths, keyStore: nil, writes: false, cache: cache)
     }
 
-    /// For the demo: only a database that `BRIEFBAR_TEAMS_DB` names, never Notification Center's own.
-    /// Without one, a database that doesn't exist, which shows as missing.
-    static func demo(paths: NotificationPaths = .default()) -> StorageMode {
-        guard paths.isSystemDatabase else { return current(paths: paths) }
+    /// For the demo: only a database that `BRIEFBAR_TEAMS_DB` names, never Notification Center's own, and only Teams
+    /// data that `BRIEFBAR_TEAMS_CACHE` names. Without one, a database that doesn't exist, which shows as missing.
+    static func demo(paths: NotificationPaths = .default(), cacheOverride: TeamsCacheLocation? = .override()) -> StorageMode {
+        guard paths.isSystemDatabase else { return current(paths: paths, cacheOverride: cacheOverride) }
         let nowhere = URL(fileURLWithPath: "/var/empty/BriefBar demo/db2/db")
         return StorageMode(paths: NotificationPaths(database: nowhere, stateDirectory: nowhere.deletingLastPathComponent()),
-                           keyStore: nil, writes: false)
+                           keyStore: nil, writes: false, cache: cacheOverride)
     }
 
     /// For the command line and `--render`: writes nothing, and reads only what whoever runs it can read.
@@ -43,11 +50,12 @@ struct StorageMode {
     /// saved from Notification Center's database without asking, so that key is the app's alone: these show
     /// Notification Center as it is now. Another database keeps its key file, which sits next to its state.
     var readOnly: StorageMode {
-        StorageMode(paths: paths, keyStore: paths.isSystemDatabase ? nil : keyStore, writes: false)
+        StorageMode(paths: paths, keyStore: paths.isSystemDatabase ? nil : keyStore, writes: false, cache: cache)
     }
 
-    /// Unread chats as of now, from one read of the database (command line).
-    func loadState(settings: TrackerSettings, now: Date = Date()) -> (UnreadState, EngineSnapshot) {
+    /// Unread chats as of now, from one read of the database, and of Teams' read markers if `followReadsInTeams`
+    /// (command line).
+    func loadState(settings: TrackerSettings, followReadsInTeams: Bool, now: Date = Date()) -> (UnreadState, EngineSnapshot) {
         let cached = keyStore.map { UnreadCache(url: paths.unreadFile, keyStore: $0).load(discardingUnreadable: false) }?
             .conversations ?? []
         var tracker = UnreadTracker(launch: LaunchContext(state: StateStore(url: paths.stateFile).load(), cached: cached,
@@ -55,6 +63,9 @@ struct StorageMode {
         let snapshot = NotificationEngine.loadOnce(paths: paths)
         if let notifications = snapshot.notifications {
             tracker.apply(notifications, now: now)
+        }
+        if followReadsInTeams, let cache {
+            tracker.setReadMarkers(ReadMarkerEngine.loadOnce(location: cache).markers)
         }
         return (tracker.state(now: now, settings: settings), snapshot)
     }
@@ -96,6 +107,11 @@ final class ConversationStore: ObservableObject {
     /// when the database couldn't be read never counts as seen.
     private var lastAppliedReadAt: Date?
     private var badge = DockBadgeTracker()
+    /// Reads Teams' read markers while **Mark Chats Read When You Read Them in Teams** is on.
+    private var markerEngine: ReadMarkerEngine?
+    /// What BriefBar last read of Teams' read markers; nil while it doesn't read them.
+    @Published private(set) var readMarkers: ReadMarkerSnapshot?
+    private var notificationProblem: PulseProblem?
     private var timers: [Timer] = []
     private var cancellables: Set<AnyCancellable> = []
 
@@ -118,6 +134,9 @@ final class ConversationStore: ObservableObject {
 
     var paths: NotificationPaths { storage.paths }
 
+    /// Whether **Mark Chats Read When You Read Them in Teams** is on.
+    var followsReadsInTeams: Bool { settings.followReadsInTeams }
+
     func start() {
         guard engine == nil else { return }
         let engine = NotificationEngine(paths: storage.paths) { [weak self] snapshot in
@@ -131,6 +150,11 @@ final class ConversationStore: ObservableObject {
         settings.$keepUnread.dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
+            .store(in: &cancellables)
+        settings.$followReadsInTeams
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] follow in MainActor.assumeIsolated { self?.followReadsInTeams(follow) } }
             .store(in: &cancellables)
 
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -154,6 +178,8 @@ final class ConversationStore: ObservableObject {
     /// Saves everything before the app quits.
     func stop() {
         engine?.stop()
+        markerEngine?.stop()
+        markerEngine = nil
         timers.forEach { $0.invalidate() }
         recordRun()
         saveQueue.sync {}
@@ -186,13 +212,10 @@ final class ConversationStore: ObservableObject {
     }
 
     func receive(_ snapshot: EngineSnapshot) {
+        let hadAccess = access == .granted
         access = snapshot.access
-        if problem != snapshot.problem {
-            problem = snapshot.problem
-            if let problem {
-                Log.app.error("\(problem.title, privacy: .public)")
-            }
-        }
+        notificationProblem = snapshot.problem
+        updateProblem()
         hasTeamsNotifications = snapshot.notifications.map { !$0.isEmpty || !snapshot.teamsIdentifiers.isEmpty } ?? true
         if snapshot.access == .granted, snapshot.notifications != nil, !pulseState.hadAccess {
             pulseState.hadAccess = true
@@ -207,8 +230,55 @@ final class ConversationStore: ObservableObject {
                 recordRun()
             }
         }
+        // Full Disk Access covers Teams' own data too: read it now rather than at the next check.
+        if !hadAccess, snapshot.access == .granted {
+            markerEngine?.refresh()
+        }
         hasLoaded = true
         recompute()
+    }
+
+    /// Takes in Teams' read markers: each chat is read as far as you've read it in Teams.
+    func receive(_ snapshot: ReadMarkerSnapshot) {
+        if readMarkers?.access != snapshot.access || readMarkers?.report.problem != snapshot.report.problem {
+            Log.app.info("Teams' read markers: access \(snapshot.access.rawValue, privacy: .public), \(snapshot.report.withMarker) chats, \(snapshot.report.unreadableCount) unreadable")
+        }
+        readMarkers = snapshot
+        tracker.setReadMarkers(snapshot.markers)
+        updateProblem()
+        recompute()
+    }
+
+    /// Starts or stops reading Teams' read markers. Stopping reads nothing back as unread.
+    private func followReadsInTeams(_ follow: Bool) {
+        if follow, markerEngine == nil, let cache = storage.cache {
+            let engine = ReadMarkerEngine(location: cache) { [weak self] snapshot in
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, self.markerEngine != nil else { return }
+                        self.receive(snapshot)
+                    }
+                }
+            }
+            markerEngine = engine
+            engine.start()
+        } else if !follow, let engine = markerEngine {
+            engine.stop()
+            markerEngine = nil
+            readMarkers = nil
+            tracker.setReadMarkers([:])
+            updateProblem()
+        }
+    }
+
+    /// Notification Center's problems first: they decide what BriefBar can show at all.
+    private func updateProblem() {
+        let combined = notificationProblem ?? readMarkers?.problem
+        guard problem != combined else { return }
+        problem = combined
+        if let combined {
+            Log.app.error("\(combined.title, privacy: .public)")
+        }
     }
 
     /// Opens the chat in Teams, at its oldest unread message, and marks it read.

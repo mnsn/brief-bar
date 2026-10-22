@@ -30,4 +30,10 @@ public struct WindowPages: Equatable, Sendable {
         guard let section else { return hasOverview ? Self.overview : nil }
         return pages.contains(section) ? section : nil
     }
+
+    /// The window that the Overview at the top of every list opens: of `windows`, in order, the first with several
+    /// pages, which is the first with an Overview. Nil when none has one, as when each window shows one section.
+    public static func overviewWindow(in windows: [SectionLayout.Item]) -> SectionLayout.Item? {
+        windows.first { WindowPages(sections: $0.sections).hasOverview }
+    }
 }
