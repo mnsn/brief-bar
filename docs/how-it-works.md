@@ -161,11 +161,13 @@ sections each one shows, and the sections you've hidden from it.
   keeps neither, so it never moves yours.
 
 **Menu-bar items** show their sections' counts side by side, each drawn the way its source draws it,
-and their popover has a tab for each. It opens at the tab it showed last, whether it opened there or
-you switched to it, which each item keeps by its ID (`MenuBarTabs`, saved as `menuBarTabs`), so it
-outlasts a restart. When something opens it at a section, such as a notification about several pull
-requests, it shows that one, and opens there next time too. The first time, or once that tab is in
-another item, it opens at the first that needs you, or the first. Every tab is as wide as the
+or added up by meaning ([below](#everything-by-meaning)), and their popover has a tab for each, or
+one list by state. It opens at the tab it showed last, whether it opened there or you switched to it,
+which each item keeps by its ID (`MenuBarTabs`, saved as `menuBarTabs`), so it outlasts a restart.
+When something opens it at a section, such as a notification about several pull requests, it shows
+that one, and opens there next time too. The first time, or once that tab is in another item, it opens
+at the first that needs you, or the first. A list by state has no tabs: it shows every section's
+things, and leaves the tab the item opens at as it was. Every tab is as wide as the
 widest of the item's lists, and as tabs stop fitting, they get smaller, then become symbols with counts,
 then a menu. A popover opens from an invisible window over the item (`PopoverAnchor`), so it stays on
 the display you clicked: macOS moves an item's own window to whichever menu bar is active, and a click
@@ -180,11 +182,93 @@ size (`widgetOptions`). Widgets were once each source's own: the first time, Bri
 their settings and positions (`WidgetMigration`).
 
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
-each with its count, and ⌘1 to ⌘9. A section's page is its list, filling the window
-(`PanelStyle.page`); a source can draw a page of its own instead. A window opens at the page of the
-list or widget you opened it from, and remembers the page you left it at. BriefBar is a menu-bar app
+each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
+([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`); a
+source can draw a page of its own instead. A window opens at the page of the list or widget you opened
+it from, or at its Overview when no page is asked for, and remembers the page you left it at. BriefBar is a menu-bar app
 (`LSUIElement`): while a window is open, it shows a Dock icon and the usual menus, and it goes back once
 they're all closed.
+
+## Everything by meaning
+
+### Counts by state
+
+Every section counts its things in four states that mean the same for every source (`ItemState` and
+`StateCounts` in `Sources/BriefBarCore`), mapped next to each source's own groups:
+
+| State | Teams (`UnreadState.states`) | Azure DevOps (`PRGroup.state`, `PipelineStatus.state`) | Copilot (`DisplayPhase.state`) |
+|---|---|---|---|
+| ✋ Needs you | Unread chats, 1:1 and group | Needs You; To Review only while **Show To Review in the Menu Bar** is on | Questions, plans and permission prompts |
+| ✕ Something's wrong | | Failing; failed pipelines | Stopped: interrupted, failed or not responding |
+| ⚡ Running | | Pipelines running or queued | Running |
+| ✓ Done or ready | | Ready to Complete | Done |
+
+What the menu bar doesn't count, such as an answered, waiting or idle pull request, an idle session or
+the sprint's work, is in no state. Each section reports its counts in `MenuBarSegment.states`, as it
+draws them: Azure DevOps reports none while it needs a sign-in. `--json` prints them by section, and
+`make demo-check` checks them, each section's and their sum.
+
+### An item by meaning
+
+A menu-bar item that shows several sections has options of its own (`MenuBarItemOptions`, saved as
+`menuBarItemOptions` by the item's ID, like a widget's): **Counts** side by side or by meaning, with
+the states it shows, and its **List**. They start as items always were, side by side with a tab per
+section, with ✋, ✕ and ✓ but not ⚡, and an item that goes away takes its options with it, so one
+that later gets its ID starts over. By meaning, the item draws one symbol and count per state, in
+Azure DevOps' and Copilot's colors (`MenuBarItemContent`), then a small ⚠ if a section can't show what
+it should (`MenuBarSegment.problem`, such as Teams without Full Disk Access). Its tooltip and VoiceOver
+say what's in each count: "Needs you: 2 chats, 2 group chats, 4 pull requests, 3 Copilot sessions"
+(`SectionInfo.counted`). With nothing to count, it shows BriefBar's own symbol.
+
+### Lists by state
+
+An item's list, the window's Overview and the Overview widget can show several sections' things
+together by state (`StateListModel`): Needs You, Something's Wrong, Running, then Done or Ready, each
+the newest first. Each source hands over the rows its own list draws (`stateRows`), with their actions
+and menus, and says when they change (`stateRowsChanged`), not only when their counts do. Only
+sections whose things can be in a state are in it (`SectionInfo.states`), so not the sprint, and the
+list reads them only while it's on screen. For the sources it's a viewer of its own
+(`SectionViewer.Kind.stateList`): Azure DevOps reads pipelines while it shows them, but doesn't count
+pull requests as seen there, since Answered isn't in it.
+
+### The brief
+
+The list by state and the Overview start with a brief (`Briefing.pick`): up to five lines, each
+source's most pressing first, so that it covers every source with something to say, then the newest
+of what's wrong and of what's done or ready if those aren't in it yet, then the most pressing of the
+rest. Most pressing is what needs you, then what's wrong, then what's done or ready, the newest first;
+what's running isn't in it. Each source says its lines in BriefBar's own words (`briefLines`), and
+says which, if any, Apple Intelligence may reword, by its own settings:
+
+- Teams says who wrote and how many messages (`SummaryPrompt.briefSentence`). What the newest says
+  goes in only while **Show Message Previews** is on, and the chat goes to the model, with the
+  instructions Teams' summaries use, only while **Summarize with Apple Intelligence** is on too. Once a
+  chat has its ✨ summary, the brief uses it.
+- Azure DevOps says each pull request as its own brief does (`Brief.item`), and a comment goes to the
+  model only while **Summaries** is on. A failed pipeline gets a sentence of its own.
+- Copilot says what a session waits for or how it ended (`SessionSnapshot.briefSentence`), without
+  the model.
+
+`BriefWriter` asks Apple Intelligence's on-device model (`SystemLanguageModel.default`, never Private
+Cloud Compute) for one line at a time, only for lines a list or the window shows, never in the
+background, and keeps what it writes in memory for ten minutes after the line was last on screen,
+never on disk or in the log. Without the model, or when it fails, a line keeps BriefBar's words, and
+the brief shows no ✨. `--render` keeps BriefBar's words, unless `BRIEFBAR_RENDER_SUMMARIES=1` makes it
+wait for the model.
+
+### The Overview
+
+A window with several pages starts with an Overview (`WindowPages`): the brief, then its pages'
+sections by state, in cards like the other pages'. It's ⌘1, with a count of what needs you in the
+sidebar, and the window opens on it when no page is asked for: from a menu-bar list's gear menu, from
+`--window`, or from Settings › Windows.
+
+The Overview widget (`OverviewWidgetHost`) sums up every section of the sources that are on: how many
+things are in each state, the brief's first line, then the newest of what needs you, each opening its
+thing. It isn't one of the layout's widgets, which show sections: it has options of its own
+(`OverviewWidgetOptions`, saved as `overviewWidget`), and starts hidden, like Teams' widgets, since it
+can show your chats. Being always on screen, it never asks the model for words: it shows the brief as
+a list or the window last had it worded.
 
 ## Microsoft Teams
 
@@ -644,13 +728,15 @@ about, and marks the pull request seen.
 
 ### The brief
 
-The brief picks, in code, the newest pull request that needs you, the newest failure and the newest
-one that's ready (then more of what needs you, up to three). Items about a comment go to Apple
-Intelligence's on-device model one at a time, with the commenter, the title and the comment, and
-come back as one sentence such as "Sam asks you to cap the backoff at 30 seconds on …". The others
-are plain sentences. Results are kept for as long as the app runs, never block the panel, and fall
-back to the plain sentence if the model isn't available or fails. BriefBar explicitly uses
-`SystemLanguageModel.default`: nothing goes to Private Cloud Compute or any other model.
+Azure DevOps' own brief, at the top of its list and its page, picks, in code, the newest pull
+request that needs you, the newest failure and the newest one that's ready (then more of what needs
+you, up to three). The brief across sources ([above](#the-brief)) says each pull request the same
+way. Items about a comment go to Apple Intelligence's on-device model one at a time, with the
+commenter, the title and the comment, and come back as one sentence such as "Sam asks you to cap the
+backoff at 30 seconds on …". The others are plain sentences. Results are kept for as long as the app
+runs, never block the panel, and fall back to the plain sentence if the model isn't available or
+fails. BriefBar explicitly uses `SystemLanguageModel.default`: nothing goes to Private Cloud Compute
+or any other model.
 
 ### Limits
 

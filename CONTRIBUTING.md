@@ -109,7 +109,7 @@ other data:
 | `BRIEFBAR_COPILOT_DIR` | Another Copilot data directory, such as `build/demo/copilot` |
 | `BRIEFBAR_AZ` | Another `az` |
 | `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
-| `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, with the on-device model |
+| `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model |
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from
 Notification Center's own database are only ever saved by the installed app, with the key in the
@@ -180,7 +180,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   only because of them you've seen, stay in memory. `ChatLinkSettingsTests` checks that the
   preferences hold none of it.
 - **Summaries stay on the Mac.** Use `SystemLanguageModel.default`, through `OnDeviceModel`, never
-  Private Cloud Compute or any other model.
+  Private Cloud Compute or any other model. A brief across sources says a chat's text only while Teams
+  shows message previews, and asks the model only as each source's settings allow.
 - **No content in logs.** Log counts, states and errors, never names, messages, titles or IDs.
 - **Use made-up data.** Real chats, pull requests and sessions are private, and often confidential.
   Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share,

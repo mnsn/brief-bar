@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **One count by meaning.** A menu-bar item that shows several sections can add their counts up by
+  what they mean, the same for every source: ✋ what needs you (unread chats, pull requests that need
+  you, Copilot's questions, plans and permission prompts), ✕ what's wrong, ✓ what's done or ready,
+  and ⚡ what's running if you turn it on. Choose it for each item under **Counts** in Settings › Menu
+  Bar; every item stays as it was until you do.
+- **Everything in one list, by state**, for such an item (**List** › **Everything by State**): what
+  needs you, what's wrong, what's running and what's done or ready, from every section, the newest
+  first, each with the actions its own list has.
+- **A brief across sources** at the top of that list and of the window's Overview: up to five lines,
+  from every source with something to say, each opening its thing. Apple Intelligence rewords the
+  ones with something to condense, on your Mac; without it, they stay in BriefBar's own words. Teams'
+  message text goes in only while **Show Message Previews** is on.
+- **An Overview**: the window's first page, which it opens on, and a new widget, hidden until you turn
+  it on in Settings › Widgets. The other widgets stay as they are.
+- `--json` prints each section's counts by state as well.
 - **Library validation is back on in BriefBar.** Sparkle, the updater, needs it off, so it now runs in
   an app of its own inside BriefBar, `Contents/Helpers/BriefBar Updater.app`, with none of BriefBar's
   permissions: BriefBar starts it responsible for itself, and ends it if macOS says otherwise. A copy of

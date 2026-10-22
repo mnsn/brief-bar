@@ -14,7 +14,10 @@ Every source is off until you turn it on, and each one first says what it reads.
 BriefBar brings Teams Pulse, ADO Pulse and Copilot Pulse together in one app: one install, one login
 item, and permissions that macOS grants once. Full Disk Access for Teams and notifications for Azure
 DevOps cover later sources too, but only the ones you turn on. Several sources can share a menu-bar
-item, a desktop widget or a window, and you can hide what you don't need.
+item, a desktop widget or a window, and you can hide what you don't need. An item they share can add
+their counts up by what they mean, ✋ needs you, ✕ something's wrong, ✓ done or ready, and list
+everything together by state under a brief of what matters; the window and a widget give you the same
+overview.
 
 <p align="center">
   <picture>
@@ -77,10 +80,12 @@ arranged in Settings:
   Pipelines start hidden there. Click one for its list.
 - **Desktop widgets** (Settings › Widgets): Azure DevOps' pull requests and Copilot each start with a
   widget, behind your windows or floating above them, in three sizes. Teams' widgets, Sprint and
-  Pipelines start hidden. Drag a widget by its header, and right-click it for its settings.
-- **Windows** (Settings › Windows): one BriefBar window with a page for every section, and a sidebar
-  with their counts. Open it with **Open in Window** from a list's gear menu or a widget's menu.
-  BriefBar shows a Dock icon while a window is open.
+  Pipelines start hidden, and so does the **Overview** widget: every source's counts, the brief's
+  first line and what needs you. Drag a widget by its header, and right-click it for its settings.
+- **Windows** (Settings › Windows): one BriefBar window, which opens on an **Overview** of everything
+  by state, with the brief, then has a page for every section, and a sidebar with their counts. Open
+  it with **Open in Window** from a list's gear menu or a widget's menu. BriefBar shows a Dock icon
+  while a window is open.
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again. Items that share sections show their counts side
@@ -88,6 +93,24 @@ by side, with a tab for each in the list. The list opens at the tab you looked a
 BriefBar restarts, and the first time at the one that needs you. You can also hide a section you don't
 need, such as Group Chats, from any of them: its source stays on, and shows wherever you didn't hide
 it. To move menu-bar items, hold ⌘ and drag them.
+
+A menu-bar item that shows several sections can instead add its counts up by what they mean, the same
+for every source: set its **Counts** to **By Meaning** in Settings › Menu Bar. With everything in one
+item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
+
+| | Teams | Azure DevOps | Copilot |
+|---|---|---|---|
+| ✋ Needs you | Unread chats, 1:1 and group | Needs You, and To Review while it shows in the menu bar | Questions, plans and permission prompts |
+| ✕ Something's wrong | | Failing pull requests, failed pipelines | Sessions that stopped |
+| ✓ Done or ready | | Ready to complete | Finished sessions |
+| ⚡ Running | | Running pipelines | Running sessions |
+
+⚡ is off until you turn it on there. A source that can't show what it should, such as Teams without
+Full Disk Access or Azure DevOps without a sign-in, adds a small ⚠, and the item's tooltip says
+what's in each count. Its **List** can also show **Everything by State**: under a brief, what needs
+you, what's wrong, what's running, then what's done or ready, from every section, the newest first,
+each with the actions its own list has. Each item keeps its counts and its list as they were until you
+switch them.
 
 <p align="center">
   <picture>
@@ -98,8 +121,15 @@ it. To move menu-bar items, hold ⌘ and drag them.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-azureDevOps.pullRequests-dark.jpg">
-    <img src="docs/images/window-azureDevOps.pullRequests-light.jpg" width="560" align="top" alt="The BriefBar window: a sidebar with Teams' Chats and Group Chats, Azure DevOps' Pull Requests, Sprint and Pipelines, and Copilot's Sessions, each with its count, open on the pull requests that need you, that you answered, that are failing or are ready to complete">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-by-state-dark.png">
+    <img src="docs/images/menubar-by-state-light.png" width="420" alt="Every section in one menu-bar item, by meaning: 11 that need you, 3 wrong and 3 done or ready; its list is open, with a brief of five lines from Copilot, Teams and Azure DevOps, then everything that needs you, from every source, the newest first">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-overview-dark.jpg">
+    <img src="docs/images/window-overview-light.jpg" width="560" align="top" alt="The BriefBar window, open on its Overview: the brief, then everything that needs you from Teams, Azure DevOps and Copilot; the sidebar has the Overview, then Teams' Chats and Group Chats, Azure DevOps' Pull Requests, Sprint and Pipelines, and Copilot's Sessions, each with its count">
   </picture>
   &nbsp;
   <picture>
@@ -107,6 +137,26 @@ it. To move menu-bar items, hold ⌘ and drag them.
     <img src="docs/images/widget-all-medium-light.png" width="210" align="top" alt="One desktop widget showing Azure DevOps' pull requests and Copilot's sessions, one above the other">
   </picture>
 </p>
+
+## The brief
+
+A list by state and the window's Overview start with a brief, and the Overview widget with its first
+line: a few lines about what needs you, what's wrong and what's done or ready, from every source
+that has something to say, each opening its thing. BriefBar picks the lines, and says each in its
+own words. With Apple Intelligence, Apple's on-device model rewords those with something to
+condense, such as a chat or a review comment (✨), on your Mac, as it does for Azure DevOps' brief
+and Teams' summaries:
+
+- Teams' lines say who wrote and how many messages. What a message says shows only while **Show
+  Message Previews** is on, and the model reads a chat only while **Summarize with Apple
+  Intelligence** is on too.
+- Azure DevOps' lines condense a comment only while its **Summaries** setting is on.
+- Copilot's lines stay in BriefBar's own words.
+
+The model only words the lines BriefBar picked, and only while a list or the window shows them, never
+for the widget. Without Apple Intelligence (an Intel Mac, macOS 15, Apple Intelligence turned off or
+still getting ready), the brief stays in BriefBar's own words, without ✨, and Settings › Menu Bar says
+why.
 
 ## What each source shows
 
@@ -325,9 +375,11 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Show Context Usage | off by default: how full each session's context window is |
 
 In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
-not at all, and **Put All in One** and **Give Each Its Own** change them all at once. Each widget has
-its own **Position** (on the desktop or floating above windows) and **Size** (compact, medium or large),
-there and in its right-click menu.
+not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
+that shows several sections has **Counts**, **Side by Side** or **By Meaning** with the states it
+shows, and **List**, **A Tab for Each Section** or **Everything by State**. Each widget has its own
+**Position** (on the desktop or floating above windows) and **Size** (compact, medium or large), there
+and in its right-click menu, and Settings › Widgets turns on the **Overview** widget.
 
 ## Privacy
 
@@ -349,8 +401,9 @@ there and in its right-click menu.
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
   you've seen: nothing about them goes to its preferences or to disk, where other programs running
   as you could read it. It forgets them when you turn it off.
-- **Summaries are made on your Mac**, by Apple's on-device model, never Private Cloud Compute or any
-  other model, and are kept in memory only.
+- **Summaries and the brief are made on your Mac**, by Apple's on-device model, never Private Cloud
+  Compute or any other model, and are kept in memory only: the brief's, for ten minutes after its
+  line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
   read; which of your Azure DevOps pull requests you've seen, with each account, and your
@@ -358,9 +411,9 @@ there and in its right-click menu.
   deletes what it saved.
 - **Programs it runs**, such as the Azure CLI, never get its permissions: macOS would otherwise let
   them use BriefBar's Full Disk Access.
-- **Teams' widgets start hidden**: a widget puts your chats on the desktop, where anyone who sees your
-  screen, or your screen share, can read them. With **Show Message Previews** off, the widgets and
-  lists show only how many messages are new.
+- **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the
+  desktop, where anyone who sees your screen, or your screen share, can read them. With **Show
+  Message Previews** off, the widgets and lists show only how many messages are new.
 - Its log never contains names, messages, titles or IDs.
 
 ## FAQ
@@ -419,8 +472,9 @@ flags.
 ### Which languages can it summarize?
 
 Those Apple's on-device model supports, which depend on your macOS version. For others it may still
-manage; if not, Teams says it can't summarize that language yet, and Azure DevOps shows no brief.
-Summaries and the brief need macOS 26 or later, and Apple Intelligence turned on in System Settings.
+manage; if not, Teams says it can't summarize that language yet, Azure DevOps shows no brief, and the
+brief across sources keeps BriefBar's own words. Summaries and the briefs need macOS 26 or later, and
+Apple Intelligence turned on in System Settings.
 
 ### Why isn't it notarized?
 

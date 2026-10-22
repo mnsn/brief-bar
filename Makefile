@@ -13,9 +13,9 @@ DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DI
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
 BRIEFBAR = $(shell swift build --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
-	widget-all-medium-light widget-all-medium-dark
+	menubar-by-state-light menubar-by-state-dark widget-all-medium-light widget-all-medium-dark
 # The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
-WINDOW_SHOTS := window-azureDevOps.pullRequests-light window-azureDevOps.pullRequests-dark \
+WINDOW_SHOTS := window-overview-light window-overview-dark \
 	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark
 
 build:
