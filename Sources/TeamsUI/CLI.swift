@@ -47,6 +47,7 @@ package enum TeamsCommandLine: SourceCommandLine {
             access: snapshot.access.rawValue,
             problem: snapshot.problem.map { "\($0.title). \($0.message)" },
             counts: Dictionary(uniqueKeysWithValues: groups.map { ($0.rawValue, state.count($0)) }),
+            states: Dictionary(uniqueKeysWithValues: groups.map { ($0.section.rawValue, state.states($0)) }),
             unread: Dictionary(uniqueKeysWithValues: groups.map { ($0.rawValue, state.unread(in: $0).map(ChatOutput.init)) }),
             recent: Dictionary(uniqueKeysWithValues: groups.map { ($0.rawValue, state.recent(in: $0).map(ChatOutput.init)) })
         ))
@@ -90,6 +91,8 @@ package enum TeamsCommandLine: SourceCommandLine {
         var access: String
         var problem: String?
         var counts: [String: Int]
+        /// By section, the counts by state that a menu-bar item can add up across sources.
+        var states: [String: StateCounts]
         var unread: [String: [ChatOutput]]
         var recent: [String: [ChatOutput]]
     }

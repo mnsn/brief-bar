@@ -84,7 +84,8 @@ package final class CopilotSource: BriefBarSource {
             title: title,
             summary: spoken.isEmpty ? "Copilot: all quiet" : "Copilot: " + spoken.joined(separator: ", "),
             count: counts.needsYou,
-            needsAttention: counts.needsYou > 0
+            needsAttention: counts.needsYou > 0,
+            states: counts.states
         )
     }
 

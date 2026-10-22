@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// A pipeline you follow on the Pipelines page.
@@ -341,6 +342,10 @@ public struct PipelineCounts: Sendable, Equatable {
             }
         }
     }
+
+    /// By state, for an item that adds them up across sources: a failed pipeline is something wrong, and one
+    /// that's running or queued is running. One that succeeded isn't counted.
+    public var states: StateCounts { StateCounts(failing: failed, running: running) }
 }
 
 public enum RunDuration {

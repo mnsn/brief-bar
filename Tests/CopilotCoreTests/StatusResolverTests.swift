@@ -265,6 +265,9 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         let counts = PhaseCounts(phases.enumerated().map { item("\($0.offset)", $0.element, since: nil) })
         #expect(DisplayPhase.allCases.map { counts[$0] } == [2, 1, 1, 1, 3])
         #expect(counts.active == 5)
+        // By state, the same for every source: a session that stopped is something wrong, and idle ones aren't counted.
+        #expect(DisplayPhase.allCases.map(\.state) == [.needsYou, .running, .done, .failing, nil])
+        #expect(counts.states == StateCounts(needsYou: 2, failing: 1, running: 1, done: 1))
 
         var edited = PhaseCounts()
         edited[.done] += 2

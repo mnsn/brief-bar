@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// The coarse buckets the UI groups sessions into, in display order.
@@ -253,4 +254,23 @@ public struct PhaseCounts: Sendable, Equatable, Codable {
 
     /// Sessions worth showing (everything except idle).
     public var active: Int { needsYou + running + done + stopped }
+
+    /// The sessions the menu bar counts, by state, for an item that adds them up across sources.
+    public var states: StateCounts {
+        StateCounts(DisplayPhase.allCases, count: { self[$0] }, state: \.state)
+    }
+}
+
+extension DisplayPhase {
+    /// The state it counts in, the same for every source: a session that stopped (interrupted, failed or stopped
+    /// responding) is something wrong. Idle sessions aren't counted.
+    public var state: ItemState? {
+        switch self {
+        case .needsYou: return .needsYou
+        case .running: return .running
+        case .done: return .done
+        case .stopped: return .failing
+        case .idle: return nil
+        }
+    }
 }

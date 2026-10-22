@@ -473,6 +473,20 @@ import BriefBarCore
         #expect(counts.active == 9)
     }
 
+    @Test func countsOnlyWhatTheMenuBarShowsByState() {
+        // Needs You, Failing and Ready to Complete are ✋, ✕ and ✓ for every source. Answered, waiting, done and
+        // idle pull requests are in no state, and To Review is only while you show it in the menu bar.
+        #expect(PRGroup.allCases.map { $0.state(showToReview: false) } == [.needsYou, nil, .failing, .done, nil, nil, nil, nil])
+        #expect(PRGroup.allCases.map { $0.state(showToReview: true) } == [.needsYou, nil, .failing, .done, .needsYou, nil, nil, nil])
+
+        var counts = GroupCounts()
+        for (offset, group) in PRGroup.allCases.enumerated() {
+            counts[group] = 1 << offset
+        }
+        #expect(counts.states(showToReview: false) == StateCounts(needsYou: 1, failing: 4, done: 8))
+        #expect(counts.states(showToReview: true) == StateCounts(needsYou: 1 + 16, failing: 4, done: 8))
+    }
+
 
     @Test func theDemoDataCoversEveryGroup() {
         let now = Date()
@@ -484,6 +498,10 @@ import BriefBarCore
         for group in PRGroup.allCases {
             #expect(counts[group] == DemoData.expectedCounts[group.rawValue], "\(group)")
         }
+        // As an item that adds up its sections by state counts them: To Review joins what needs you only while
+        // it's in the menu bar.
+        #expect(counts.states(showToReview: false) == StateCounts(needsYou: 4, failing: 2, done: 2))
+        #expect(counts.states(showToReview: true) == StateCounts(needsYou: 5, failing: 2, done: 2))
         // The build service's comment on the failing pull request doesn't need you.
         #expect(snapshots.first { $0.key.number == 4088 }?.group == .failing)
 

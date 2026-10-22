@@ -24,7 +24,7 @@ Other targets:
 
 ```sh
 make build              # debug build
-make demo-check         # check that each source's made-up data lands in the expected groups
+make demo-check         # check that each source's made-up data lands in the expected groups and states
 make check-boundaries   # check that only AzureDevOpsCore uses the network, and only BriefBarCore starts programs
 make signing-key-check  # check what keeps signing keys safe, in throwaway keychains (it asks nothing)
 make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions

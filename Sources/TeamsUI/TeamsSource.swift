@@ -27,7 +27,7 @@ package final class TeamsSource: BriefBarSource {
     /// Their widgets start hidden: a widget would put your chats on the desktop after an update.
     package let sections = [ChatGroup.chats, .groups].map { group in
         SectionInfo(
-            id: group == .chats ? .teamsChats : .teamsGroupChats, title: group.title, symbol: group.symbol,
+            id: group.section, title: group.title, symbol: group.symbol,
             tint: group.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.widgets]
         )
     }
@@ -141,6 +141,7 @@ package final class TeamsSource: BriefBarSource {
     package func segment(for section: SectionID) -> MenuBarSegment {
         let group = group(section)
         let count = store?.state.count(group) ?? 0
+        let states = store?.state.states(group) ?? StateCounts()
         let problem = store?.problem
         let attention = problem?.isBlocking == true
         var summary = "Teams: " + group.unreadDescription(count).lowercased()
@@ -150,7 +151,8 @@ package final class TeamsSource: BriefBarSource {
         // With nothing unread, just the symbol in the menu bar's own color; with unread chats, the
         // symbol in the section's color and the count.
         guard count > 0 || attention else {
-            return MenuBarSegment(glyph: group.symbol, title: NSAttributedString(), summary: summary, count: 0, needsAttention: false)
+            return MenuBarSegment(glyph: group.symbol, title: NSAttributedString(), summary: summary, count: 0, needsAttention: false,
+                                  states: states)
         }
         let font = NSFont.menuBarFont(ofSize: 0)
         let title = NSMutableAttributedString()
@@ -162,7 +164,7 @@ package final class TeamsSource: BriefBarSource {
             title.append(NSAttributedString(string: "\u{2009}"))
             title.append(MenuBarDrawing.symbol("exclamationmark.triangle.fill", color: .systemOrange, font: font, scale: 0.75))
         }
-        return MenuBarSegment(glyph: nil, title: title, summary: summary, count: count, needsAttention: true)
+        return MenuBarSegment(glyph: nil, title: title, summary: summary, count: count, needsAttention: true, states: states)
     }
 
     package var segmentsChanged: AnyPublisher<Void, Never> {
@@ -266,4 +268,9 @@ struct AccessStatusView: View {
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
+}
+
+extension ChatGroup {
+    /// The section that lists its chats.
+    var section: SectionID { self == .chats ? .teamsChats : .teamsGroupChats }
 }

@@ -72,6 +72,19 @@ private struct Store {
         #expect(state.recent(in: .chats).map(\.name) == ["Avery Quinn"])
     }
 
+    @Test func unreadChatsNeedYouInBothGroups() {
+        var store = Store()
+        store.message(Chat.avery, "Avery Quinn", "Lunch?", at: t(10))
+        store.message(Chat.sam, "Sam Rivera", "Call?", at: t(11))
+        store.message(Chat.launchCrew, "Launch crew", "Shipping at 5", at: t(20))
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(0), launchedAt: t(30)))
+        tracker.apply(store.notifications, now: t(30))
+        let state = tracker.state(now: t(30), settings: settings)
+        #expect(state.states(.chats) == StateCounts(needsYou: 2))
+        #expect(state.states(.groups) == StateCounts(needsYou: 1))
+        #expect(UnreadState().states(.chats) == StateCounts())
+    }
+
     @Test func restoresSavedUnreadChatsThatNotificationCenterDropped() {
         let saved = ChatMessage(conversationID: Chat.launchCrew, kind: .group, messageID: messageID(t(-5_000)),
                                 notificationKey: "gone", deliveredAt: t(-5_000), chatName: "Launch crew",

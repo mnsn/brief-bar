@@ -70,13 +70,16 @@ package struct MenuBarSegment: Equatable {
     package var count: Int
     /// Something needs you here, or something's wrong: an item that shows several sections opens at it.
     package var needsAttention: Bool
+    /// Its counts by state, the same for every source, which an item can add up across its sections.
+    package var states: StateCounts
 
-    package init(glyph: String?, title: NSAttributedString, summary: String, count: Int, needsAttention: Bool) {
+    package init(glyph: String?, title: NSAttributedString, summary: String, count: Int, needsAttention: Bool, states: StateCounts) {
         self.glyph = glyph
         self.title = title
         self.summary = summary
         self.count = count
         self.needsAttention = needsAttention
+        self.states = states
     }
 }
 

@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// The groups the panel shows, in display order.
@@ -755,4 +756,23 @@ public struct GroupCounts: Sendable, Equatable, Codable {
 
     /// Pull requests worth showing (everything except idle).
     public var active: Int { PRGroup.allCases.filter { $0 != .idle }.map { self[$0] }.reduce(0, +) }
+
+    /// The pull requests the menu bar counts, by state, for an item that adds them up across sources.
+    public func states(showToReview: Bool) -> StateCounts {
+        StateCounts(PRGroup.allCases, count: { self[$0] }, state: { $0.state(showToReview: showToReview) })
+    }
+}
+
+extension PRGroup {
+    /// The state it counts in, the same for every source, or nil for the groups the menu bar doesn't count:
+    /// answered, waiting, done and idle. To Review needs you too, but only while you show it in the menu bar.
+    public func state(showToReview: Bool) -> ItemState? {
+        switch self {
+        case .needsYou: return .needsYou
+        case .toReview: return showToReview ? .needsYou : nil
+        case .failing: return .failing
+        case .ready: return .done
+        case .answered, .waiting, .done, .idle: return nil
+        }
+    }
 }

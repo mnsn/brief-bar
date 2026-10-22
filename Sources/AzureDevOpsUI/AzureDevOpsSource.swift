@@ -194,7 +194,9 @@ package final class AzureDevOpsSource: BriefBarSource {
             title.append(MenuBarDrawing.count(mine.count))
         }
         let summary = sprint?.board == nil ? "Sprint" : mine.isEmpty ? "Sprint: nothing left for you" : "Sprint: \(mine.count) of yours left"
-        return MenuBarSegment(glyph: AzureDevOpsPage.sprint.symbol, title: title, summary: summary, count: mine.count, needsAttention: false)
+        // What's left of the sprint isn't in any state: it doesn't add up with what needs you or what's done.
+        return MenuBarSegment(glyph: AzureDevOpsPage.sprint.symbol, title: title, summary: summary, count: mine.count, needsAttention: false,
+                              states: StateCounts())
     }
 
     /// How many pinned pipelines failed, and how many are running.
@@ -210,7 +212,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         let spoken = [(counts.failed, "failed"), (counts.running, "running")].filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
         let summary = spoken.isEmpty ? "Pipelines" : "Pipelines: " + spoken.joined(separator: ", ")
         return MenuBarSegment(
-            glyph: AzureDevOpsPage.pipelines.symbol, title: title, summary: summary, count: counts.failed, needsAttention: counts.failed > 0
+            glyph: AzureDevOpsPage.pipelines.symbol, title: title, summary: summary, count: counts.failed, needsAttention: counts.failed > 0,
+            states: counts.states
         )
     }
 
@@ -239,7 +242,9 @@ package final class AzureDevOpsSource: BriefBarSource {
             : spoken.isEmpty ? "Azure DevOps: nothing needs you" : "Azure DevOps: " + spoken.joined(separator: ", ")
         return MenuBarSegment(
             glyph: symbol, title: title, summary: summary, count: counts.needsYou,
-            needsAttention: counts.needsYou > 0 || needsSignIn
+            needsAttention: counts.needsYou > 0 || needsSignIn,
+            // Like the counts it draws: none until you've signed in.
+            states: needsSignIn ? StateCounts() : counts.states(showToReview: settings.showToReview)
         )
     }
 

@@ -96,14 +96,22 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     private struct Output: Encodable {
         var organizations: [String]
         var counts: GroupCounts
+        /// By section, the counts by state that a menu-bar item can add up across sources.
+        var states: [String: StateCounts]
         var items: [PRSnapshot]
         var problem: String?
     }
 
     package static func json(_ options: CommandLineOptions) -> [String: Any]? {
         let loaded = load(Options(options))
-        return jsonObject(Output(organizations: loaded.organizations, counts: GroupCounts(loaded.items), items: loaded.items,
-                                 problem: loaded.problem))
+        let counts = GroupCounts(loaded.items)
+        // To Review needs you only while the app shows it in the menu bar. The demo never reads your settings.
+        let showToReview = !options.demo && appDefaults?.bool(forKey: SettingsKey.showToReview) == true
+        return jsonObject(Output(
+            organizations: loaded.organizations, counts: counts,
+            states: [SectionID.azureDevOpsPullRequests.rawValue: counts.states(showToReview: showToReview)],
+            items: loaded.items, problem: loaded.problem
+        ))
     }
 
     package static func watch(_ options: CommandLineOptions) -> Bool {

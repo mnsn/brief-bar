@@ -919,8 +919,9 @@ when BriefBar does.
 ## Checks
 
 - `make test` runs every module's tests, with made-up data.
-- `make demo-check` checks that every source's made-up data lands in the expected groups. It runs the
-  same checks the Pulse apps ran on their demos.
+- `make demo-check` checks that every source's made-up data lands in the expected groups, and in the
+  expected states, each section's and all of them added up. It runs the same checks the Pulse apps ran
+  on their demos.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
   `AzureDevOpsCore` uses networking APIs, and only `BriefBarCore` starts programs. It also fails if
   those two stop using them, since the check could no longer tell. It reads BriefBar's own modules,

@@ -454,7 +454,7 @@ The app binary has command-line modes, and logs to the system log:
 APP="/Applications/BriefBar.app/Contents/MacOS/BriefBar"   # ~/Applications after make install
 "$APP" --help
 "$APP" --dump                     # what each source that's on shows
-"$APP" --json                     # the same, as JSON, with each source's counts
+"$APP" --json                     # the same, as JSON, with each source's counts, also by state
 "$APP" --watch --source copilot   # one source's changes as they happen
 "$APP" --render ~/Desktop/render  # the menu bar, its lists, widgets, window and Settings, as PNGs
 "$APP" --diagnose                 # Teams: the database's structure only, safe to share

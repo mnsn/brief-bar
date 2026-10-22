@@ -36,6 +36,10 @@ public struct UnreadState: Sendable, Equatable {
     public func recent(in group: ChatGroup) -> [ConversationSummary] { recent[group] ?? [] }
     /// The menu-bar count: chats with unread messages, as Teams counts them.
     public func count(_ group: ChatGroup) -> Int { unread(in: group).count }
+
+    /// The menu-bar count by state, for an item that adds them up across sources: unread chats need you, 1:1 and
+    /// group chats alike.
+    public func states(_ group: ChatGroup) -> StateCounts { StateCounts(needsYou: count(group)) }
 }
 
 /// An unread chat as BriefBar saves it, so it survives a restart after Notification Center

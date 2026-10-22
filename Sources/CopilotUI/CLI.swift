@@ -36,6 +36,8 @@ package enum CopilotCommandLine: SourceCommandLine {
     private struct Output: Encodable {
         var sessions: [SessionSnapshot]
         var counts: PhaseCounts
+        /// By section, the counts by state that a menu-bar item can add up across sources.
+        var states: [String: StateCounts]
         var problem: String?
     }
 
@@ -43,7 +45,9 @@ package enum CopilotCommandLine: SourceCommandLine {
         guard let paths = paths(options) else { return nil }
         let state = SessionEngine.loadOnce(paths: paths)
         let sessions = resolve(state, now: Date())
-        return jsonObject(Output(sessions: sessions, counts: PhaseCounts(sessions), problem: state.problem))
+        let counts = PhaseCounts(sessions)
+        return jsonObject(Output(sessions: sessions, counts: counts, states: [SectionID.copilotSessions.rawValue: counts.states],
+                                 problem: state.problem))
     }
 
     static func resolve(_ state: EngineSnapshot, now: Date) -> [SessionSnapshot] {
