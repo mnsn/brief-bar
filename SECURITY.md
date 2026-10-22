@@ -17,7 +17,8 @@ Notification Center's database: Teams', and, only if you turn on Azure DevOps' P
 Chats, every app's, for links to pull requests. It keeps Teams' unread chats on disk, encrypted,
 until they're read; keeps the links it finds in other apps' notifications in memory only; and makes
 summaries on the Mac. Nothing else it reads in Notification Center is kept anywhere other programs
-running as you can read it, such as its preferences. Only its Azure DevOps source uses the network for
+running as you can read it, such as its preferences or a temporary file: what its queries sort stays
+in memory. Only its Azure DevOps source uses the network for
 what it shows, with the Azure CLI's sign-in. BriefBar's own requests are for its updates, from this
 project's GitHub releases. Worth reporting:
 

@@ -33,6 +33,8 @@
 - **Started by another program with its own permissions, BriefBar puts back `TMPDIR` too**, as the
   temporary folder macOS gives you. SQLite falls back to `TMPDIR` when it can't write to that folder,
   and a program running as you can make it unwritable: macOS only stops it being deleted or renamed.
+- **What SQLite sorts stays in memory** (`PRAGMA temp_store = MEMORY` on every connection), never in
+  a temporary file that a program running as you could open before SQLite deletes it.
 - **Only the app itself reads Notification Center for pull requests sent in chats**, never `--render`,
   the demo or the tests, and the log keeps how many links it found private.
 - **Your sprint and pipelines**, as ADO Pulse fixed them: they start over when you sign in to the Azure

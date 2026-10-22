@@ -175,8 +175,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   app that holds no permissions, started as a `RunningProgram`. `scripts/check-app.sh` fails
   otherwise.
 - **Never change what a source reads.** Open Notification Center's database and the Copilot app's
-  database read-only, keep reads short, and never run SQL that writes, including `PRAGMA` settings
-  and checkpoints. Never copy them.
+  database read-only, keep reads short, and never run SQL that writes, including checkpoints and any
+  `PRAGMA` setting but one: `SQLiteConnection` sets `temp_store = MEMORY` on every connection, which
+  writes nothing to the database and keeps what a query sorts out of temporary files. Never copy them.
 - **Only unread chats touch the disk**, encrypted, and only until they're read. Summaries, read chats
   and anything else about chats stay in memory.
 - **Nothing from Notification Center goes to the preferences**, which any program running as you can

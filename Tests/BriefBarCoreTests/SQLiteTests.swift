@@ -53,4 +53,21 @@ import Testing
             #expect(throws: SQLiteError.self) { try connection.rows("SELECT nope FROM item") { $0.int(0) } }
         }
     }
+
+    /// What a query sorts stays in memory, on every connection, rather than in a temporary file, which a program
+    /// running as you could open before SQLite deletes it. 2 is MEMORY.
+    @Test func keepsWhatAQuerySortsInMemory() throws {
+        try withTemporaryDirectory { directory in
+            let url = try makeDatabase(in: directory)
+            for immutable in [false, true] {
+                let connection = try SQLiteConnection(readOnly: url, immutable: immutable)
+                #expect(try connection.rows("PRAGMA temp_store") { $0.int(0) } == [2], "immutable: \(immutable)")
+            }
+        }
+    }
+
+    /// So every connection BriefBar opens is a `SQLiteConnection`.
+    @Test func opensDatabasesOnlyThroughSQLiteConnection() throws {
+        #expect(try sourcesMatching(/sqlite3_open/) == ["BriefBarCore/SQLite.swift"])
+    }
 }
