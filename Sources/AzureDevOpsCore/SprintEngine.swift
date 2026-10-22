@@ -246,7 +246,7 @@ public actor SprintEngine {
     }
 
     /// Stops a refresh by the timer before another request when nothing shows the sprint any more.
-    private func get<T: Decodable>(_ url: URL, as type: T.Type) async throws -> T {
+    private func get<T: Decodable & Sendable>(_ url: URL, as type: T.Type) async throws -> T {
         if isPolling && !isActive { throw CancellationError() }
         return try await client.get(url, as: type)
     }
