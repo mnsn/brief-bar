@@ -18,8 +18,8 @@ final class MenuBarItemController: NSObject {
     private let panel: ItemPanelModel
     private unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
-    /// The section the open popover shows; nil while it's closed.
-    private var visible: SectionID?
+    /// The sections the open popover shows, and as what: one tab's, or a list by state's. Empty while it's closed.
+    private var visible: [SectionID: SectionViewer.Kind] = [:]
     /// The sections whose counts the item shows.
     private var counted: [SectionID] = []
 
@@ -57,6 +57,8 @@ final class MenuBarItemController: NSObject {
         if let selected = panel.selected, !sections.contains(selected) {
             panel.selected = nil
         }
+        panel.listByState = options.listByState && sections.count > 1
+        panel.stateList.update(sections: panel.listByState ? sections : [])
         updateVisible()
         setCounted(sections)
         cancellables.removeAll()
@@ -74,14 +76,15 @@ final class MenuBarItemController: NSObject {
     func remove() {
         closePopover()
         anchor.remove()
-        setVisible(nil)
+        setVisible([:])
         setCounted([])
         cancellables.removeAll()
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     /// Shows the popover at `section`'s tab, which it then opens at next time too; for nil, at the tab it showed
-    /// last, or the first time, the one that needs you.
+    /// last, or the first time, the one that needs you. A list by state has no tabs: it shows every section's things,
+    /// and leaves the tab the item opens at as it was.
     func showPopover(at section: SectionID?) {
         guard let button = statusItem.button,
               let selected = MenuBarTabs.load(from: model.services.defaults).tab(
@@ -90,8 +93,14 @@ final class MenuBarItemController: NSObject {
               )
         else { return }
         panel.selected = selected
-        remember(selected)
-        model.source(for: selected)?.panelWillShow(selected)
+        if panel.listByState {
+            for section in panel.stateList.sections {
+                model.source(for: section)?.panelWillShow(section)
+            }
+        } else {
+            remember(selected)
+            model.source(for: selected)?.panelWillShow(selected)
+        }
         guard !popover.isShown else {
             updateVisible()
             return
@@ -105,18 +114,30 @@ final class MenuBarItemController: NSObject {
         updateVisible()
     }
 
-    /// Tells the sources which section the popover shows, after it opened, closed or switched tabs.
+    /// Tells the sources which sections the popover shows, after it opened, closed or switched tabs.
     private func updateVisible() {
-        setVisible(popover.isShown ? panel.current : nil)
+        var shown: [SectionID: SectionViewer.Kind] = [:]
+        if popover.isShown {
+            if panel.listByState {
+                for section in panel.stateList.sections { shown[section] = .stateList }
+            } else if let current = panel.current {
+                shown[current] = .popover
+            }
+        }
+        panel.stateList.isShowing = popover.isShown && panel.listByState
+        setVisible(shown)
     }
 
-    private func setVisible(_ section: SectionID?) {
-        guard section != visible else { return }
-        let hidden = visible
-        visible = section
-        let viewer = SectionViewer(.popover, id: id)
-        if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
-        if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
+    private func setVisible(_ shown: [SectionID: SectionViewer.Kind]) {
+        guard shown != visible else { return }
+        let before = visible
+        visible = shown
+        for (section, kind) in before where shown[section] != kind {
+            model.source(for: section)?.sectionVisibilityChanged(section, isShowing: false, by: SectionViewer(kind, id: id))
+        }
+        for (section, kind) in shown where before[section] != kind {
+            model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: SectionViewer(kind, id: id))
+        }
     }
 
     /// Tells the sources which sections' counts the item shows, in the menu bar all the time.
@@ -165,7 +186,7 @@ final class MenuBarItemController: NSObject {
 extension MenuBarItemController: NSPopoverDelegate {
     nonisolated func popoverDidClose(_ notification: Notification) {
         MainActor.assumeIsolated {
-            setVisible(nil)
+            updateVisible()
             // Unless it opened again as it was closing, from the same anchor.
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.popover.isShown else { return }
@@ -176,17 +197,22 @@ extension MenuBarItemController: NSPopoverDelegate {
     }
 }
 
-/// The popover's content: one section's panel, under a tab for each section when there are several.
+/// The popover's content: one section's panel, under a tab for each section when there are several; or every section's
+/// things together, by state.
 @MainActor
 final class ItemPanelModel: ObservableObject {
     @Published var sections: [SectionID] = []
     @Published var selected: SectionID?
+    /// One list by state rather than a tab for each section.
+    @Published var listByState = false
+    let stateList: StateListModel
     /// Another tab was chosen.
     var didSelect: (SectionID) -> Void = { _ in }
-    private unowned let model: AppModel
+    fileprivate unowned let model: AppModel
 
     init(model: AppModel) {
         self.model = model
+        stateList = StateListModel(model: model)
     }
 
     var current: SectionID? {
@@ -241,28 +267,39 @@ struct ItemPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             UpdateBanner(updates: panel.updates)
-            if panel.sections.count > 1, let current = panel.current {
-                // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
-                // fitting the popover's width.
-                ViewThatFits(in: .horizontal) {
-                    tabs(current: current)
-                    tabs(current: current)
-                        .controlSize(.small)
-                    symbolTabs(current: current)
-                    menu(current: current)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(width: panel.width)
-                Divider()
-            }
-            if let current = panel.current {
-                panel.panel(for: current)
-                    .environment(\.shownSection, current)
-                    .id(current)
+            if panel.listByState {
+                StateListView(list: panel.stateList, model: panel.model, width: panel.width)
+                    .environmentObject(panel.model.services)
+                    .environmentObject(panel.model.services.loginItem)
+            } else {
+                tabbed
             }
         }
         .environment(\.panelStyle, .popover(width: panel.sections.count > 1 ? panel.width : nil))
+    }
+
+    @ViewBuilder
+    private var tabbed: some View {
+        if panel.sections.count > 1, let current = panel.current {
+            // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
+            // fitting the popover's width.
+            ViewThatFits(in: .horizontal) {
+                tabs(current: current)
+                tabs(current: current)
+                    .controlSize(.small)
+                symbolTabs(current: current)
+                menu(current: current)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(width: panel.width)
+            Divider()
+        }
+        if let current = panel.current {
+            panel.panel(for: current)
+                .environment(\.shownSection, current)
+                .id(current)
+        }
     }
 
     private func selection(_ current: SectionID) -> Binding<SectionID> {

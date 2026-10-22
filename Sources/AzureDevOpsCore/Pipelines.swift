@@ -302,6 +302,16 @@ public struct PipelineStatus: Sendable, Equatable, Identifiable {
     public var id: String { pipeline.id }
     public var latest: PipelineRun? { runs.first }
 
+    /// Its state, the same for every source, as `PipelineCounts` counts it: something's wrong when its latest run
+    /// failed, and running while it runs or waits in the queue. One that succeeded, or was canceled, isn't in any.
+    public var state: ItemState? {
+        switch latest?.status {
+        case .failed?: return .failing
+        case .running?, .queued?: return .running
+        default: return nil
+        }
+    }
+
     /// The stage that's running, waiting, or failed first.
     public var currentStage: PipelineStage? {
         stages.first { $0.state == .running } ?? stages.first { $0.state == .waiting } ?? stages.first { $0.state == .failed }

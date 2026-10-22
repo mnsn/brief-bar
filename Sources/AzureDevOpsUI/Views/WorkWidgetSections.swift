@@ -258,8 +258,8 @@ private struct WidgetWorkRow: View {
     }
 }
 
-/// A pinned pipeline in the widget: how its latest run went, and its stages as dots.
-private struct WidgetPipelineRow: View {
+/// A pinned pipeline in the widget, and in a list by state: how its latest run went, and its stages as dots.
+struct WidgetPipelineRow: View {
     let status: PipelineStatus
     let now: Date
     let action: () -> Void

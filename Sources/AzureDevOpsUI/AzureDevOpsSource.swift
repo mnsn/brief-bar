@@ -30,7 +30,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         SectionInfo(
             id: .azureDevOpsPullRequests, title: AzureDevOpsPage.pullRequests.title, symbol: AzureDevOpsPage.pullRequests.symbol,
             tint: AzureDevOpsPage.pullRequests.color, counted: CountNoun("pull request", "pull requests"),
-            surfaces: [.menuBar, .widgets, .windows]
+            states: [.needsYou, .failing, .done], surfaces: [.menuBar, .widgets, .windows]
         ),
         SectionInfo(
             id: .azureDevOpsSprint, title: AzureDevOpsPage.sprint.title, symbol: AzureDevOpsPage.sprint.symbol,
@@ -39,7 +39,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         ),
         SectionInfo(
             id: .azureDevOpsPipelines, title: AzureDevOpsPage.pipelines.title, symbol: AzureDevOpsPage.pipelines.symbol,
-            tint: AzureDevOpsPage.pipelines.color, counted: CountNoun("pipeline", "pipelines"),
+            tint: AzureDevOpsPage.pipelines.color, counted: CountNoun("pipeline", "pipelines"), states: [.failing, .running],
             surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
         ),
     ]
@@ -60,6 +60,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var sprint: SprintStore?
     private var pipelines: PipelinesStore?
     private let changes = PassthroughSubject<Void, Never>()
+    /// What a list by state shows changed: any pull request or pipeline, not only the counts.
+    private let rowChanges = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
 
     package init(services: AppServices) {
@@ -131,6 +133,13 @@ package final class AzureDevOpsSource: BriefBarSource {
             .merge(with: pipelines?.$statuses.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.changes.send() } }
+            .store(in: &cancellables)
+        store.$items.map { _ in () }
+            .merge(with: store.$problem.map { _ in () })
+            .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
+            .merge(with: pipelines?.$statuses.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in MainActor.assumeIsolated { self?.rowChanges.send() } }
             .store(in: &cancellables)
 
         store.start()
@@ -254,6 +263,33 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package var segmentsChanged: AnyPublisher<Void, Never> {
         changes.eraseToAnyPublisher()
+    }
+
+    /// Pull requests that need you (and those to review, while the menu bar shows them), that are failing, or that are
+    /// ready to complete; pinned pipelines that failed or are running. The sprint's work isn't in any state.
+    package func stateRows(for section: SectionID) -> [StateRow] {
+        switch section {
+        case .azureDevOpsPullRequests:
+            guard let store, store.problem?.needsSignIn != true else { return [] }
+            let showToReview = settings.showToReview
+            return store.items.compactMap { item in
+                item.group.state(showToReview: showToReview).map { state in
+                    StateRow(id: item.id, state: state, date: item.since, view: environment(PullRequestRow(item: item)))
+                }
+            }
+        case .azureDevOpsPipelines:
+            return (pipelines?.statuses ?? []).compactMap { status in
+                status.state.map { state in
+                    StateRow(id: status.id, state: state, date: status.latest?.changedAt, view: environment(PipelineRow(status: status)))
+                }
+            }
+        default:
+            return []
+        }
+    }
+
+    package var stateRowsChanged: AnyPublisher<Void, Never> {
+        rowChanges.eraseToAnyPublisher()
     }
 
     package func panel(for section: SectionID) -> AnyView {

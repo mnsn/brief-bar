@@ -28,7 +28,7 @@ package final class TeamsSource: BriefBarSource {
     package let sections = [ChatGroup.chats, .groups].map { group in
         SectionInfo(
             id: group.section, title: group.title, symbol: group.symbol, tint: group.color,
-            counted: group == .chats ? CountNoun("chat", "chats") : CountNoun("group chat", "group chats"),
+            counted: group == .chats ? CountNoun("chat", "chats") : CountNoun("group chat", "group chats"), states: [.needsYou],
             surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.widgets]
         )
     }
@@ -172,6 +172,17 @@ package final class TeamsSource: BriefBarSource {
 
     package var segmentsChanged: AnyPublisher<Void, Never> {
         changes.eraseToAnyPublisher()
+    }
+
+    /// Unread chats need you, the newest message first.
+    package func stateRows(for section: SectionID) -> [StateRow] {
+        guard let store else { return [] }
+        return store.state.unread(in: group(section)).map { conversation in
+            StateRow(
+                id: conversation.id, state: .needsYou, date: conversation.unread.last?.deliveredAt ?? conversation.lastActivity,
+                view: AnyView(environment(ChatRow(conversation: conversation), store: store))
+            )
+        }
     }
 
     package func panel(for section: SectionID) -> AnyView {

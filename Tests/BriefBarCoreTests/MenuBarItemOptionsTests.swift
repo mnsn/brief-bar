@@ -6,6 +6,7 @@ import Testing
     @Test func anItemStartsSideBySideAndAddsUpWithoutRunning() {
         let options = MenuBarItemOptions()
         #expect(!options.byState)
+        #expect(!options.listByState)
         #expect(options.shownStates == [.needsYou, .failing, .done])
 
         var withRunning = options
@@ -21,6 +22,7 @@ import Testing
         let saved = [
             "teams.chats": MenuBarItemOptions(byState: true),
             "copilot.sessions": MenuBarItemOptions(byState: true, states: [.running, .needsYou]),
+            "azureDevOps.pullRequests": MenuBarItemOptions(listByState: true),
         ]
         MenuBarItemOptions.save(saved, to: defaults)
         #expect(MenuBarItemOptions.load(from: defaults) == saved)
@@ -34,11 +36,12 @@ import Testing
     @Test func keepsDefaultsForWhatsMissingAndSkipsStatesItDoesntKnow() throws {
         let decoded = try JSONDecoder().decode(
             [String: MenuBarItemOptions].self,
-            from: Data(#"{"a":{},"b":{"byState":true,"states":["needsYou","waiting","running"]},"c":{"states":[]}}"#.utf8)
+            from: Data(#"{"a":{},"b":{"byState":true,"states":["needsYou","waiting","running"]},"c":{"states":[]},"d":{"listByState":true}}"#.utf8)
         )
         #expect(decoded["a"] == MenuBarItemOptions())
         #expect(decoded["b"] == MenuBarItemOptions(byState: true, states: [.needsYou, .running]))
         #expect(decoded["c"]?.states.isEmpty == true)
+        #expect(decoded["d"] == MenuBarItemOptions(listByState: true))
 
         // Something it can't read at all counts as nothing saved.
         let defaults = MemorySettings()
@@ -72,5 +75,8 @@ import Testing
         #expect(layout.item(containing: .copilotSessions)?.id == "copilot.sessions")
         #expect(options["copilot.sessions"] == nil)
         #expect(options["azureDevOps.pullRequests"] == MenuBarItemOptions(byState: true))
+        // A list by state alone isn't the default either.
+        let listOnly = ["azureDevOps.pullRequests": MenuBarItemOptions(listByState: true)]
+        #expect(MenuBarItemOptions.kept(listOnly, in: layout) == listOnly)
     }
 }

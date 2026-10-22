@@ -106,7 +106,7 @@ struct MenuPanelView: View {
             }
             .padding(.horizontal, 8)
             ForEach(sessions) { session in
-                SessionRowView(session: session, now: store.now) { store.open(session) }
+                SessionRow(session: session)
             }
         }
     }
@@ -133,6 +133,18 @@ struct MenuPanelView: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// A session in a list: Copilot's own, and a list by state that mixes every source's. It opens the session in the
+/// Copilot app.
+struct SessionRow: View {
+    let session: SessionSnapshot
+
+    @EnvironmentObject private var store: SessionStore
+
+    var body: some View {
+        SessionRowView(session: session, now: store.now) { store.open(session) }
     }
 }
 

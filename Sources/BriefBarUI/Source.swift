@@ -58,6 +58,9 @@ package struct SectionInfo: Sendable, Identifiable {
     package var tint: Color
     /// What it counts, such as group chats, for an item that adds its sections up by state.
     package var counted: CountNoun
+    /// The states its things can be in, for a list by state: none for a section such as the sprint, which it
+    /// leaves out.
+    package var states: Set<ItemState>
     /// Where it can show. Every section can show in the menu bar and in windows.
     package var surfaces: Set<Surface>
     /// Where it's hidden until you show it, such as a widget that would cover your desktop after an update.
@@ -65,13 +68,14 @@ package struct SectionInfo: Sendable, Identifiable {
 
     package init(
         id: SectionID, title: String, symbol: String, tint: Color, counted: CountNoun = CountNoun("item", "items"),
-        surfaces: Set<Surface> = [.menuBar, .windows], hiddenAtFirst: Set<Surface> = []
+        states: Set<ItemState> = [], surfaces: Set<Surface> = [.menuBar, .windows], hiddenAtFirst: Set<Surface> = []
     ) {
         self.id = id
         self.title = title
         self.symbol = symbol
         self.tint = tint
         self.counted = counted
+        self.states = states
         self.surfaces = surfaces.union([.menuBar, .windows])
         self.hiddenAtFirst = hiddenAtFirst
     }
@@ -109,6 +113,24 @@ package struct MenuBarSegment: Equatable {
     }
 }
 
+/// One of a section's things in a list by state, which mixes every section's, such as a chat or a pull request.
+package struct StateRow: Identifiable {
+    /// Unique within its section.
+    package var id: String
+    package var state: ItemState
+    /// When it got to its state, or last changed, for showing the newest first. Nil goes last.
+    package var date: Date?
+    /// The row that the section's own list shows for it, with its actions and its menu.
+    package var view: AnyView
+
+    package init(id: String, state: ItemState, date: Date?, view: AnyView) {
+        self.id = id
+        self.state = state
+        self.date = date
+        self.view = view
+    }
+}
+
 /// What shows a section on screen.
 package struct SectionViewer: Hashable, Sendable {
     package enum Kind: String, Sendable {
@@ -116,6 +138,8 @@ package struct SectionViewer: Hashable, Sendable {
         case menuBarItem
         /// A menu-bar item's popover, open at the section.
         case popover
+        /// A list by state, open, which shows only the section's things that are in a state.
+        case stateList
         /// A window, at the section's page, and not hidden behind other windows.
         case window
         /// A desktop widget that isn't covered by windows.
@@ -168,6 +192,11 @@ package protocol BriefBarSource: AnyObject {
     func segment(for section: SectionID) -> MenuBarSegment
     /// Fires when what its sections show in the menu bar may have changed.
     var segmentsChanged: AnyPublisher<Void, Never> { get }
+    /// The section's things that are in a state, for a list by state. None by default.
+    func stateRows(for section: SectionID) -> [StateRow]
+    /// Fires when what `stateRows` returns may have changed, such as a session's new question. By default,
+    /// `segmentsChanged`.
+    var stateRowsChanged: AnyPublisher<Void, Never> { get }
     /// What the section's popover shows. It reads `\.panelStyle` to fit a popover or a window's page.
     func panel(for section: SectionID) -> AnyView
     /// How wide its panels are in a popover. An item that shows several sections makes each as wide as the
@@ -221,6 +250,10 @@ extension BriefBarSource {
     package func page(for section: SectionID) -> AnyView {
         AnyView(panel(for: section).environment(\.panelStyle, .page))
     }
+
+    package func stateRows(for section: SectionID) -> [StateRow] { [] }
+
+    package var stateRowsChanged: AnyPublisher<Void, Never> { segmentsChanged }
 
     package func pageWillShow(_ section: SectionID) {
         panelWillShow(section)

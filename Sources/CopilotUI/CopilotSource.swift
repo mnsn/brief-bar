@@ -26,7 +26,7 @@ package final class CopilotSource: BriefBarSource {
         SectionInfo(
             id: .copilotSessions, title: "Sessions", symbol: "waveform.path.ecg",
             tint: Color(red: 0.86, green: 0.30, blue: 0.56), counted: CountNoun("Copilot session", "Copilot sessions"),
-            surfaces: [.menuBar, .widgets, .windows]
+            states: Set(ItemState.allCases), surfaces: [.menuBar, .widgets, .windows]
         ),
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }
@@ -92,6 +92,20 @@ package final class CopilotSource: BriefBarSource {
 
     package var segmentsChanged: AnyPublisher<Void, Never> {
         store.$counts.removeDuplicates().map { _ in () }.eraseToAnyPublisher()
+    }
+
+    /// Sessions that need you, are running, finished or stopped. Idle ones aren't in any state.
+    package func stateRows(for section: SectionID) -> [StateRow] {
+        store.sessions.compactMap { session in
+            session.phase.state.map { state in
+                StateRow(id: session.id, state: state, date: session.since, view: AnyView(environment(SessionRow(session: session))))
+            }
+        }
+    }
+
+    /// Any session's change, such as a new question, not only the counts.
+    package var stateRowsChanged: AnyPublisher<Void, Never> {
+        store.$sessions.map { _ in () }.eraseToAnyPublisher()
     }
 
     package func panel(for section: SectionID) -> AnyView {

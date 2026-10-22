@@ -82,6 +82,16 @@ final class AppModel: ObservableObject {
         sources.first { $0.sections.contains { $0.id == section } }
     }
 
+    /// The first section of each source among `sections`, for a menu with each source's own items.
+    func sourceParts(of sections: [SectionID]) -> [(section: SectionID, source: any BriefBarSource)] {
+        var parts: [(section: SectionID, source: any BriefBarSource)] = []
+        for section in sections {
+            guard let source = source(for: section), !parts.contains(where: { $0.source.id == source.id }) else { continue }
+            parts.append((section, source))
+        }
+        return parts
+    }
+
     func info(for section: SectionID) -> SectionInfo? {
         source(for: section)?.info(for: section)
     }

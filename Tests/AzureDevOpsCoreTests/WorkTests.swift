@@ -533,6 +533,9 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect((counts.failed, counts.running, counts.succeeded) == (1, 1, 1))
         // By state: a failed pipeline is something wrong, a queued one is running, and one that succeeded isn't counted.
         #expect(counts.states == StateCounts(failing: 1, running: 1))
+        #expect([run(.failed), run(.queued), run(.running), run(.succeeded), run(.partiallySucceeded), run(.canceled)]
+            .map { PipelineStatus(pipeline: pipeline, runs: [$0]).state } == [.failing, .running, .running, nil, nil, nil])
+        #expect(PipelineStatus(pipeline: pipeline, runs: []).state == nil)
         // The demo's: one failed its tests, and one runs while a release waits for approval.
         #expect(PipelineCounts(DemoData.pipelines()).states == StateCounts(failing: 1, running: 2))
         #expect(RunDuration.short(42) == "42s")

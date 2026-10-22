@@ -53,6 +53,8 @@ enum Renderer {
         all.combineAll(items.flatMap(\.sections))
         let allItems = all.visibleItems(showing: shown)
         let merged = allItems.first.map { [$0.id: MenuBarItemOptions(byState: true)] } ?? [:]
+        // And with everything in one list by state.
+        let byState = allItems.first.map { [$0.id: MenuBarItemOptions(byState: true, listByState: true)] } ?? [:]
         // The Menu Bar settings' example: Azure DevOps with Copilot, and Group Chats hidden.
         var example = combined
         example.hide(.teamsGroupChats)
@@ -69,12 +71,18 @@ enum Renderer {
                 of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String,
                 options: [String: MenuBarItemOptions] = [:]
             ) {
-                let contents = items.map { item in
-                    model.menuBarContent(sections: item.sections, options: options[item.id] ?? model.options(forMenuBarItem: item.id))
+                func itemOptions(_ item: SectionLayout.Item) -> MenuBarItemOptions {
+                    options[item.id] ?? model.options(forMenuBarItem: item.id)
                 }
+                let contents = items.map { model.menuBarContent(sections: $0.sections, options: itemOptions($0)) }
                 let panel = ItemPanelModel(model: model)
                 panel.sections = items[index].sections
                 panel.selected = section
+                panel.listByState = itemOptions(items[index]).listByState && items[index].sections.count > 1
+                if panel.listByState {
+                    panel.stateList.update(sections: items[index].sections)
+                    panel.stateList.isShowing = true
+                }
                 let view = ItemPanelView(panel: panel)
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
@@ -95,6 +103,7 @@ enum Renderer {
                     picture(of: allItems, pressed: 0, at: section, name: "menubar-all-\(section.rawValue)")
                 }
                 picture(of: allItems, pressed: 0, name: "menubar-merged", options: merged)
+                picture(of: allItems, pressed: 0, name: "menubar-by-state", options: byState)
             }
 
             func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
@@ -171,7 +180,7 @@ enum Renderer {
             page(.layout(.menuBar), name: "menu-bar-example")
             if allItems.count == 1, allItems[0].sections.count > 1 {
                 model.useForRendering(all)
-                model.useForRendering(merged)
+                model.useForRendering(byState)
                 page(.layout(.menuBar), name: "menu-bar-merged")
             }
             model.useForRendering(saved)

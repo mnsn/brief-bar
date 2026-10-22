@@ -163,6 +163,10 @@ struct LayoutPage: View {
                 }
             }
         }
+        Picker("List", selection: Binding(get: { options.listByState }, set: { listByState in change { $0.listByState = listByState } })) {
+            Text("A Tab for Each Section").tag(false)
+            Text("Everything by State").tag(true)
+        }
     }
 
     /// Where `section` shows: in `item`, or nowhere when that's nil.
@@ -268,7 +272,7 @@ extension Surface {
     var explanation: String {
         switch self {
         case .menuBar:
-            return "Each section starts with a menu-bar item of its own. Put sections together in one item, whose list has a tab for each, to show their counts side by side or added up by what they mean, and hide the ones you don't need. To move items in the menu bar, hold ⌘ and drag them."
+            return "Each section starts with a menu-bar item of its own. Put sections together in one item to show their counts side by side or added up by what they mean, with a tab for each in its list or everything in one list by state, and hide the ones you don't need. To move items in the menu bar, hold ⌘ and drag them."
         case .widgets:
             return "A widget shows its sections one above the other, behind your windows or floating above them. Each section starts with a widget of its own; Teams' start hidden. Drag a widget by its header, and right-click it for its settings."
         case .windows:

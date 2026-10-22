@@ -8,8 +8,6 @@ struct MenuPanelView: View {
     let group: ChatGroup
 
     @EnvironmentObject private var store: ConversationStore
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var summarizer: Summarizer
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showRecent = false
@@ -58,24 +56,8 @@ struct MenuPanelView: View {
         .padding(.vertical, 10)
     }
 
-    /// Summaries need the previews on (they'd reveal the same), the setting, and Apple Intelligence.
-    private var canSummarize: Bool {
-        settings.showPreviews && settings.showSummaries && Summarizer.unavailableReason == nil
-    }
-
-    private func row(_ conversation: ConversationSummary, canSummarize: Bool) -> some View {
-        ConversationRowView(
-            conversation: conversation, now: store.now, showPreview: settings.showPreviews,
-            open: { store.open(conversation) },
-            markRead: conversation.isUnread ? { store.markRead(conversation) } : nil,
-            summary: settings.showSummaries ? summarizer.state(for: conversation) : nil,
-            summarize: canSummarize ? { summarizer.summarize(conversation) } : nil
-        )
-    }
-
     @ViewBuilder
     private var list: some View {
-        let canSummarize = canSummarize
         VStack(alignment: .leading, spacing: 4) {
             if let problem = store.problem {
                 ProblemView(problem: problem, lostAccess: store.lostAccess)
@@ -89,7 +71,7 @@ struct MenuPanelView: View {
             }
 
             ForEach(unread) { conversation in
-                row(conversation, canSummarize: canSummarize)
+                ChatRow(conversation: conversation)
             }
 
             let recent = store.state.recent(in: group)
@@ -97,7 +79,7 @@ struct MenuPanelView: View {
                 DisclosureGroup(isExpanded: $showRecent) {
                     VStack(spacing: 0) {
                         ForEach(recent) { conversation in
-                            row(conversation, canSummarize: canSummarize)
+                            ChatRow(conversation: conversation)
                         }
                     }
                 } label: {
@@ -136,6 +118,31 @@ struct MenuPanelView: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// A chat in a list: Teams' own lists, and a list by state that mixes every source's. It opens the chat, and its menu
+/// marks it read and summarizes it.
+struct ChatRow: View {
+    let conversation: ConversationSummary
+
+    @EnvironmentObject private var store: ConversationStore
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var summarizer: Summarizer
+
+    /// Summaries need the previews on (they'd reveal the same), the setting, and Apple Intelligence.
+    private var canSummarize: Bool {
+        settings.showPreviews && settings.showSummaries && Summarizer.unavailableReason == nil
+    }
+
+    var body: some View {
+        ConversationRowView(
+            conversation: conversation, now: store.now, showPreview: settings.showPreviews,
+            open: { store.open(conversation) },
+            markRead: conversation.isUnread ? { store.markRead(conversation) } : nil,
+            summary: settings.showSummaries ? summarizer.state(for: conversation) : nil,
+            summarize: canSummarize ? { summarizer.summarize(conversation) } : nil
+        )
     }
 }
 

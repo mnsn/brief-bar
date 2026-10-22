@@ -158,30 +158,12 @@ struct WidgetMenu: View {
         Divider()
 
         // Each source's own items: right here for one source, in a submenu each for several.
-        let parts = sourceParts
-        if parts.count == 1, let part = parts.first {
-            part.source.widgetMenu(for: part.section)
-        } else {
-            ForEach(parts, id: \.section) { part in
-                Menu(part.source.name) {
-                    part.source.widgetMenu(for: part.section)
-                }
-            }
-        }
+        let parts = content.model.sourceParts(of: content.sections)
+        SourceMenuItems(parts: parts)
         Divider()
         Button("Arrange Widgets…") { model.openSettings(.layout(.widgets)) }
         Button("Hide This Widget") { model.hideItem(content.id, on: .widgets) }
         Divider()
         AppMenuItems(source: parts.count == 1 ? parts.first?.source.id : nil)
-    }
-
-    /// The first section of each source in the widget.
-    private var sourceParts: [(section: SectionID, source: any BriefBarSource)] {
-        var parts: [(section: SectionID, source: any BriefBarSource)] = []
-        for section in content.sections {
-            guard let source = content.model.source(for: section), !parts.contains(where: { $0.source.id == source.id }) else { continue }
-            parts.append((section, source))
-        }
-        return parts
     }
 }

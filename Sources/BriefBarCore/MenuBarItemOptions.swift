@@ -1,22 +1,26 @@
 import Foundation
 
 /// How a menu-bar item shows its sections: side by side, each with its source's own symbols, as items always did, or
-/// added up by what they mean (`ItemState`), the same for every source. Each item starts side by side, until you
-/// switch it over in Settings.
+/// added up by what they mean (`ItemState`), the same for every source; and its list, with a tab for each section,
+/// or one list by state. Each item starts as items always did, until you switch it over in Settings.
 public struct MenuBarItemOptions: Codable, Equatable, Sendable {
     /// Adds its sections' counts up by state. Only for an item that shows several sections.
     public var byState: Bool
     /// The states it shows when it adds them up. Running starts off.
     public var states: Set<ItemState>
+    /// Its list shows every section's things together, by state, rather than a tab for each section. Only for an item
+    /// that shows several sections.
+    public var listByState: Bool
 
     public static let defaultStates: Set<ItemState> = [.needsYou, .failing, .done]
 
     /// The order an item shows states in: ✋ ✕ ✓, then ⚡.
     public static let order: [ItemState] = [.needsYou, .failing, .done, .running]
 
-    public init(byState: Bool = false, states: Set<ItemState> = defaultStates) {
+    public init(byState: Bool = false, states: Set<ItemState> = defaultStates, listByState: Bool = false) {
         self.byState = byState
         self.states = states
+        self.listByState = listByState
     }
 
     /// The states it shows, in the menu bar's order.
@@ -25,7 +29,7 @@ public struct MenuBarItemOptions: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case byState, states
+        case byState, states, listByState
     }
 
     /// What's missing keeps its default, and states this version doesn't know are left out, so options that a
@@ -38,12 +42,14 @@ public struct MenuBarItemOptions: Codable, Equatable, Sendable {
         } else {
             states = Self.defaultStates
         }
+        listByState = try container.decodeIfPresent(Bool.self, forKey: .listByState) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(byState, forKey: .byState)
         try container.encode(ItemState.allCases.filter(states.contains), forKey: .states)
+        try container.encode(listByState, forKey: .listByState)
     }
 
     // MARK: Saving

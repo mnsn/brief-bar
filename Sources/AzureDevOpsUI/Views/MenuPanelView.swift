@@ -157,7 +157,7 @@ struct MenuPanelView: View {
             }
             .padding(.horizontal, 8)
             ForEach(items) { item in
-                PRRowView(item: item, now: store.now, openSource: source(item)) { store.open(item) }
+                PullRequestRow(item: item)
             }
         }
     }
@@ -190,6 +190,34 @@ struct MenuPanelView: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// A pull request in a list by state that mixes every source's: the row Azure DevOps' own list shows, which opens it,
+/// and from its menu, the message it was sent in.
+struct PullRequestRow: View {
+    let item: PRSnapshot
+
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        PRRowView(item: item, now: store.now, openSource: item.chatSource == nil ? nil : { store.openSource(item) }) {
+            store.open(item)
+        }
+    }
+}
+
+/// A pinned pipeline in a list by state: the row its widget shows, which opens its latest run.
+struct PipelineRow: View {
+    let status: PipelineStatus
+
+    @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var pipelines: PipelinesStore
+
+    var body: some View {
+        WidgetPipelineRow(status: status, now: store.now) {
+            if let latest = status.latest { pipelines.open(latest) } else { pipelines.open(status.pipeline) }
+        }
     }
 }
 
