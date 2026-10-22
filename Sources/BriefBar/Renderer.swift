@@ -48,10 +48,11 @@ enum Renderer {
         combined.combine(.copilotSessions, with: .azureDevOpsPullRequests)
         let combinedItems = combined.visibleItems(showing: shown)
         let combinedIndex = combinedItems.firstIndex { $0.sections.count > 1 }
-        // Every section in one item.
+        // Every section in one item, side by side, then added up by what they mean, as Settings suggests.
         var all = model.layout(.menuBar)
         all.combineAll(items.flatMap(\.sections))
         let allItems = all.visibleItems(showing: shown)
+        let merged = allItems.first.map { [$0.id: MenuBarItemOptions(byState: true)] } ?? [:]
         // The Menu Bar settings' example: Azure DevOps with Copilot, and Group Chats hidden.
         var example = combined
         example.hide(.teamsGroupChats)
@@ -64,9 +65,12 @@ enum Renderer {
             guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { continue }
             let suffix = dark ? "dark" : "light"
 
-            func picture(of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String) {
-                let segments = items.map { item in
-                    item.sections.compactMap { section in model.source(for: section)?.segment(for: section) }
+            func picture(
+                of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String,
+                options: [String: MenuBarItemOptions] = [:]
+            ) {
+                let contents = items.map { item in
+                    model.menuBarContent(sections: item.sections, options: options[item.id] ?? model.options(forMenuBarItem: item.id))
                 }
                 let panel = ItemPanelModel(model: model)
                 panel.sections = items[index].sections
@@ -76,7 +80,7 @@ enum Renderer {
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
                 if let image = Snapshot.render(view, appearance: appearance) {
-                    write(MenuBarPicture.draw(panel: image, items: segments, pressed: index, appearance: appearance), "\(name)-\(suffix)")
+                    write(MenuBarPicture.draw(panel: image, items: contents, pressed: index, appearance: appearance), "\(name)-\(suffix)")
                 }
             }
             for (index, item) in items.enumerated() {
@@ -90,6 +94,7 @@ enum Renderer {
                 for section in allItems[0].sections {
                     picture(of: allItems, pressed: 0, at: section, name: "menubar-all-\(section.rawValue)")
                 }
+                picture(of: allItems, pressed: 0, name: "menubar-merged", options: merged)
             }
 
             func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
@@ -161,9 +166,16 @@ enum Renderer {
                 page(destination, name: name)
             }
             let saved = model.layout(.menuBar)
+            let savedOptions = model.menuBarItemOptions
             model.useForRendering(example)
             page(.layout(.menuBar), name: "menu-bar-example")
+            if allItems.count == 1, allItems[0].sections.count > 1 {
+                model.useForRendering(all)
+                model.useForRendering(merged)
+                page(.layout(.menuBar), name: "menu-bar-merged")
+            }
             model.useForRendering(saved)
+            model.useForRendering(savedOptions)
         }
         written.forEach { print($0) }
         return written.isEmpty ? 1 : 0

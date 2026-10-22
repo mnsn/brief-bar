@@ -97,12 +97,14 @@ struct LayoutPage: View {
         }
     }
 
-    /// A widget's position and size; a window's button to open it.
+    /// How a menu-bar item shows several sections; a widget's position and size; a window's button to open it.
     @ViewBuilder
     private func itemOptions(_ item: SectionLayout.Item) -> some View {
         switch surface {
         case .menuBar:
-            EmptyView()
+            if item.sections.count > 1 {
+                menuBarOptions(item)
+            }
         case .widgets:
             let options = model.options(forWidget: item.id)
             Picker("Position", selection: Binding(
@@ -128,6 +130,37 @@ struct LayoutPage: View {
         case .windows:
             LabeledContent(item.sections.count > 1 ? "\(item.sections.count) pages" : "One page") {
                 Button("Open") { model.openWindow(at: item.sections.first) }
+            }
+        }
+    }
+
+    /// Side by side, or added up by what they mean, with which states.
+    @ViewBuilder
+    private func menuBarOptions(_ item: SectionLayout.Item) -> some View {
+        let options = model.options(forMenuBarItem: item.id)
+        let change = { (body: (inout MenuBarItemOptions) -> Void) in
+            var changed = options
+            body(&changed)
+            model.setOptions(changed, forMenuBarItem: item.id)
+        }
+        Picker("Counts", selection: Binding(get: { options.byState }, set: { byState in change { $0.byState = byState } })) {
+            Text("Side by Side").tag(false)
+            Text("By Meaning").tag(true)
+        }
+        if options.byState {
+            ForEach(MenuBarItemOptions.order, id: \.self) { state in
+                Toggle(isOn: Binding(
+                    get: { options.states.contains(state) },
+                    set: { on in change { if on { $0.states.insert(state) } else { $0.states.remove(state) } } }
+                )) {
+                    Label {
+                        Text(state.title)
+                        Text(state.explanation)
+                    } icon: {
+                        Image(systemName: state.symbol)
+                            .foregroundStyle(state.color)
+                    }
+                }
             }
         }
     }
@@ -235,7 +268,7 @@ extension Surface {
     var explanation: String {
         switch self {
         case .menuBar:
-            return "Each section starts with a menu-bar item of its own. Put sections together to show their counts side by side in one item, whose list has a tab for each, and hide the ones you don't need. To move items in the menu bar, hold ⌘ and drag them."
+            return "Each section starts with a menu-bar item of its own. Put sections together in one item, whose list has a tab for each, to show their counts side by side or added up by what they mean, and hide the ones you don't need. To move items in the menu bar, hold ⌘ and drag them."
         case .widgets:
             return "A widget shows its sections one above the other, behind your windows or floating above them. Each section starts with a widget of its own; Teams' start hidden. Drag a widget by its header, and right-click it for its settings."
         case .windows:

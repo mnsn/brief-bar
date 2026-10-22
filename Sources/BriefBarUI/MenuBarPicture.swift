@@ -18,17 +18,17 @@ package enum MenuBarPicture {
     private static let cornerRadius: CGFloat = 12
 
     /// - Parameters:
-    ///   - items: each item's sections' segments, left to right.
+    ///   - items: what each item shows, left to right.
     ///   - pressed: the item whose list is open.
     package static func draw(
-        panel: NSBitmapImageRep, items: [[MenuBarSegment]], pressed: Int, appearance: NSAppearance
+        panel: NSBitmapImageRep, items: [MenuBarItemContent], pressed: Int, appearance: NSAppearance
     ) -> NSBitmapImageRep? {
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
 
         // Right-aligned like the system's items: BriefBar's, then battery, Wi-Fi, Control Center and the clock.
-        let buttons = items.map { segments in
+        let buttons = items.map { item in
             let button = NSStatusBarButton(frame: .zero)
-            MenuBarDrawing.configure(button, segments: segments)
+            MenuBarDrawing.configure(button, item: item)
             return button
         }
         guard buttons.indices.contains(pressed) else { return nil }

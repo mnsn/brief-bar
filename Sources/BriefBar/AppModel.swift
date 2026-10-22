@@ -13,6 +13,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var layouts: [Surface: SectionLayout] = [:]
     /// Each widget's position and size, by the widget's ID.
     @Published private(set) var widgetOptions: [String: WidgetOptions]
+    /// How each menu-bar item shows its sections, by the item's ID: side by side, unless you chose otherwise.
+    @Published private(set) var menuBarItemOptions: [String: MenuBarItemOptions]
 
     private var items: [String: MenuBarItemController] = [:]
     /// The visible items' IDs, left to right.
@@ -47,6 +49,7 @@ final class AppModel: ObservableObject {
         self.choices = choices
         WidgetMigration.run(defaults)
         widgetOptions = WidgetOptions.load(from: defaults)
+        menuBarItemOptions = MenuBarItemOptions.load(from: defaults)
         layouts = Dictionary(uniqueKeysWithValues: Surface.allCases.map { ($0, SectionLayout.load($0, from: defaults)) })
 
         services.openSettings = { [weak self] destination in self?.openSettings(destination) }
@@ -184,9 +187,33 @@ final class AppModel: ObservableObject {
         updateWidgets()
     }
 
+    func options(forMenuBarItem id: String) -> MenuBarItemOptions {
+        menuBarItemOptions[id] ?? MenuBarItemOptions()
+    }
+
+    func setOptions(_ options: MenuBarItemOptions, forMenuBarItem id: String) {
+        menuBarItemOptions[id] = options
+        keepMenuBarItemOptions()
+        updateMenuBar()
+    }
+
+    /// Only the items there are, and only what isn't the default: an item that's gone takes its options with it.
+    private func keepMenuBarItemOptions() {
+        let kept = MenuBarItemOptions.kept(menuBarItemOptions, in: layout(.menuBar))
+        if kept != menuBarItemOptions {
+            menuBarItemOptions = kept
+        }
+        MenuBarItemOptions.save(kept, to: services.defaults)
+    }
+
     /// For `--render`: draws Settings with `layout`, without saving it or changing what shows.
     func useForRendering(_ layout: SectionLayout) {
         layouts[layout.surface] = layout
+    }
+
+    /// For `--render`: draws Settings with these menu-bar items' options, without saving them.
+    func useForRendering(_ options: [String: MenuBarItemOptions]) {
+        menuBarItemOptions = options
     }
 
     private func change(_ surface: Surface, _ body: (inout SectionLayout) -> Void) {
@@ -194,6 +221,9 @@ final class AppModel: ObservableObject {
         body(&layout)
         layouts[surface] = layout
         layout.save(to: services.defaults)
+        if surface == .menuBar {
+            keepMenuBarItemOptions()
+        }
         update(surface)
     }
 
@@ -239,6 +269,16 @@ final class AppModel: ObservableObject {
 
     // MARK: Menu bar
 
+    /// What a menu-bar item that shows these sections draws, with its options.
+    func menuBarContent(sections: [SectionID], options: MenuBarItemOptions) -> MenuBarItemContent {
+        let shown = sections.filter { source(for: $0) != nil }
+        return MenuBarItemContent(
+            segments: shown.compactMap { source(for: $0)?.segment(for: $0) },
+            counted: shown.map { info(for: $0)?.counted ?? CountNoun("item", "items") },
+            byState: options.byState ? options.shownStates : nil
+        )
+    }
+
     private func updateMenuBar() {
         let visible = visibleItems(.menuBar)
         let ids = Set(visible.map(\.id))
@@ -248,10 +288,11 @@ final class AppModel: ObservableObject {
         }
         // New items appear to the left of earlier ones, so create them right to left: the first is leftmost.
         for entry in visible.reversed() {
+            let options = options(forMenuBarItem: entry.id)
             if let item = items[entry.id] {
-                item.update(sections: entry.sections)
+                item.update(sections: entry.sections, options: options)
             } else {
-                items[entry.id] = MenuBarItemController(id: entry.id, sections: entry.sections, model: self)
+                items[entry.id] = MenuBarItemController(id: entry.id, sections: entry.sections, options: options, model: self)
             }
         }
         itemOrder = visible.map(\.id)

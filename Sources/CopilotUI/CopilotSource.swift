@@ -25,7 +25,8 @@ package final class CopilotSource: BriefBarSource {
     package let sections = [
         SectionInfo(
             id: .copilotSessions, title: "Sessions", symbol: "waveform.path.ecg",
-            tint: Color(red: 0.86, green: 0.30, blue: 0.56), surfaces: [.menuBar, .widgets, .windows]
+            tint: Color(red: 0.86, green: 0.30, blue: 0.56), counted: CountNoun("Copilot session", "Copilot sessions"),
+            surfaces: [.menuBar, .widgets, .windows]
         ),
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }

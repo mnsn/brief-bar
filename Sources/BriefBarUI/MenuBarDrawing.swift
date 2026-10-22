@@ -1,24 +1,96 @@
 import AppKit
+import BriefBarCore
 
-/// Draws menu-bar items: one section the way its source draws it, several side by side.
+/// What a menu-bar item shows: its sections' segments, side by side, or added up by state.
+package struct MenuBarItemContent {
+    package var segments: [MenuBarSegment]
+    /// What each section counts, in the same order, for the tooltip of an item that adds them up.
+    package var counted: [CountNoun]
+    /// The states it adds up, in the order it shows them; nil to show its sections side by side, as an item with
+    /// one section always does.
+    package var byState: [ItemState]?
+
+    package init(segments: [MenuBarSegment], counted: [CountNoun] = [], byState: [ItemState]? = nil) {
+        self.segments = segments
+        self.counted = counted
+        self.byState = segments.count > 1 ? byState : nil
+    }
+
+    /// What its sections count in each state, added up.
+    package var totals: StateCounts {
+        segments.reduce(StateCounts()) { $0 + $1.states }
+    }
+
+    /// For the tooltip and VoiceOver: each section's own summary; or, for an item that adds them up, a line for each
+    /// state it shows that has anything, with what each section has in it, then what keeps a section from showing.
+    package var summary: String {
+        guard let states = byState else { return segments.map(\.summary).joined(separator: "\n") }
+        var lines: [String] = []
+        for state in states {
+            let parts = segments.indices.compactMap { index -> String? in
+                let count = segments[index].states[state]
+                guard count > 0 else { return nil }
+                return (counted.indices.contains(index) ? counted[index] : CountNoun("item", "items"))(count)
+            }
+            if !parts.isEmpty {
+                lines.append("\(state.label): \(parts.joined(separator: ", "))")
+            }
+        }
+        if lines.isEmpty {
+            lines.append("Nothing needs you")
+        }
+        return (lines + segments.compactMap(\.problem)).joined(separator: "\n")
+    }
+}
+
+/// Draws menu-bar items: one section the way its source draws it, several side by side or added up by state.
 @MainActor
 package enum MenuBarDrawing {
     /// Between the sections of an item that shows several.
     private static let sectionGap = "\u{2002}"
 
-    /// Sets up a status button for the segments of the sections it shows. `--render` uses it too, so the
-    /// README's pictures can't drift from the real items.
+    /// Sets up a status button for an item. `--render` uses it too, so the README's pictures can't drift from the
+    /// real items.
+    package static func configure(_ button: NSButton, item: MenuBarItemContent) {
+        guard let states = item.byState else {
+            configure(button, segments: item.segments)
+            return
+        }
+        // Each state's symbol and count, as Azure DevOps and Copilot draw theirs, then a small ⚠ if a section has a
+        // problem.
+        let font = NSFont.menuBarFont(ofSize: 0)
+        let totals = item.totals
+        let title = NSMutableAttributedString()
+        for state in states where totals[state] > 0 {
+            if title.length > 0 {
+                title.append(NSAttributedString(string: " ", attributes: [.font: font]))
+            }
+            title.append(symbol(state.symbol, color: state.nsColor, font: font, sizeDelta: -2, monochrome: true))
+            title.append(count(totals[state], font: font))
+        }
+        if item.segments.contains(where: { $0.problem != nil }) {
+            if title.length > 0 {
+                title.append(NSAttributedString(string: "\u{2009}", attributes: [.font: font]))
+            }
+            title.append(symbol("exclamationmark.triangle.fill", color: .systemOrange, font: font, scale: 0.75))
+        }
+        guard title.length > 0 else {
+            // Nothing to count: BriefBar's own symbol, so the item keeps its place.
+            let image = NSImage(systemSymbolName: AppSymbols.app, accessibilityDescription: item.summary)
+            image?.isTemplate = true
+            show(NSAttributedString(), image: image, position: .imageOnly, in: button)
+            return
+        }
+        show(title, image: nil, position: .noImage, in: button)
+    }
+
+    /// Sets up a status button for the segments of the sections it shows, side by side.
     package static func configure(_ button: NSButton, segments: [MenuBarSegment]) {
         if segments.count == 1, let segment = segments.first {
-            if let glyph = segment.glyph {
-                let image = NSImage(systemSymbolName: glyph, accessibilityDescription: segment.summary)
-                image?.isTemplate = true
-                button.image = image
-            } else {
-                button.image = nil
-            }
-            button.attributedTitle = segment.title
-            button.imagePosition = segment.title.length == 0 ? .imageOnly : (segment.glyph == nil ? .noImage : .imageLeading)
+            let image = segment.glyph.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: segment.summary) }
+            image?.isTemplate = true
+            let position: NSControl.ImagePosition = segment.title.length == 0 ? .imageOnly : (segment.glyph == nil ? .noImage : .imageLeading)
+            show(segment.title, image: image, position: position, in: button)
             return
         }
         let font = NSFont.menuBarFont(ofSize: 0)
@@ -33,9 +105,14 @@ package enum MenuBarDrawing {
             }
             title.append(segment.title)
         }
-        button.image = nil
+        show(title, image: nil, position: .noImage, in: button)
+    }
+
+    /// The image goes last: setting a title puts back the image a button had before.
+    private static func show(_ title: NSAttributedString, image: NSImage?, position: NSControl.ImagePosition, in button: NSButton) {
         button.attributedTitle = title
-        button.imagePosition = .noImage
+        button.imagePosition = position
+        button.image = image
     }
 
     /// A symbol as text, in one color, sized to the menu bar's text.

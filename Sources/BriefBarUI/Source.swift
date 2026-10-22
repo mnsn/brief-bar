@@ -30,6 +30,22 @@ package struct SourceDescription: Sendable {
     }
 }
 
+/// What a section counts, for sentences such as "3 pull requests".
+package struct CountNoun: Sendable, Equatable {
+    package var one: String
+    package var many: String
+
+    package init(_ one: String, _ many: String) {
+        self.one = one
+        self.many = many
+    }
+
+    /// "1 chat", "3 chats".
+    package func callAsFunction(_ count: Int) -> String {
+        "\(count) \(count == 1 ? one : many)"
+    }
+}
+
 /// One of a source's sections: a list it shows in the menu bar, a page in a window and, for some, a part of a
 /// desktop widget.
 package struct SectionInfo: Sendable, Identifiable {
@@ -40,19 +56,22 @@ package struct SectionInfo: Sendable, Identifiable {
     package var symbol: String
     /// The color of its page's tile in a window's sidebar.
     package var tint: Color
+    /// What it counts, such as group chats, for an item that adds its sections up by state.
+    package var counted: CountNoun
     /// Where it can show. Every section can show in the menu bar and in windows.
     package var surfaces: Set<Surface>
     /// Where it's hidden until you show it, such as a widget that would cover your desktop after an update.
     package var hiddenAtFirst: Set<Surface>
 
     package init(
-        id: SectionID, title: String, symbol: String, tint: Color,
+        id: SectionID, title: String, symbol: String, tint: Color, counted: CountNoun = CountNoun("item", "items"),
         surfaces: Set<Surface> = [.menuBar, .windows], hiddenAtFirst: Set<Surface> = []
     ) {
         self.id = id
         self.title = title
         self.symbol = symbol
         self.tint = tint
+        self.counted = counted
         self.surfaces = surfaces.union([.menuBar, .windows])
         self.hiddenAtFirst = hiddenAtFirst
     }
@@ -72,14 +91,21 @@ package struct MenuBarSegment: Equatable {
     package var needsAttention: Bool
     /// Its counts by state, the same for every source, which an item can add up across its sections.
     package var states: StateCounts
+    /// What keeps it from showing what it should, such as a sign-in it needs, in a sentence that names the source.
+    /// An item that adds its sections up by state shows a small ⚠ for it, and says it in its tooltip. Nil for none.
+    package var problem: String?
 
-    package init(glyph: String?, title: NSAttributedString, summary: String, count: Int, needsAttention: Bool, states: StateCounts) {
+    package init(
+        glyph: String?, title: NSAttributedString, summary: String, count: Int, needsAttention: Bool, states: StateCounts,
+        problem: String? = nil
+    ) {
         self.glyph = glyph
         self.title = title
         self.summary = summary
         self.count = count
         self.needsAttention = needsAttention
         self.states = states
+        self.problem = problem
     }
 }
 

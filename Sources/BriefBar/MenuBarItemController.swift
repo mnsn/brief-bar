@@ -4,12 +4,13 @@ import BriefBarUI
 import Combine
 import SwiftUI
 
-/// One menu-bar item: one or more sections, with their counts side by side, and a popover with a tab for
-/// each section when it shows several.
+/// One menu-bar item: one or more sections, with their counts side by side or added up by state, and a popover with
+/// a tab for each section when it shows several.
 @MainActor
 final class MenuBarItemController: NSObject {
     let id: String
     private(set) var sections: [SectionID]
+    private var options: MenuBarItemOptions
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     /// What the popover opens from, so it stays on the display you clicked.
@@ -22,9 +23,10 @@ final class MenuBarItemController: NSObject {
     /// The sections whose counts the item shows.
     private var counted: [SectionID] = []
 
-    init(id: String, sections: [SectionID], model: AppModel) {
+    init(id: String, sections: [SectionID], options: MenuBarItemOptions, model: AppModel) {
         self.id = id
         self.sections = sections
+        self.options = options
         self.model = model
         panel = ItemPanelModel(model: model)
         super.init()
@@ -45,11 +47,12 @@ final class MenuBarItemController: NSObject {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         statusItem.autosaveName = "BriefBar.\(id)"
-        update(sections: sections)
+        update(sections: sections, options: options)
     }
 
-    func update(sections: [SectionID]) {
+    func update(sections: [SectionID], options: MenuBarItemOptions) {
         self.sections = sections
+        self.options = options
         panel.sections = sections
         if let selected = panel.selected, !sections.contains(selected) {
             panel.selected = nil
@@ -150,9 +153,9 @@ final class MenuBarItemController: NSObject {
 
     private func render() {
         guard let button = statusItem.button else { return }
-        let segments = sections.compactMap { section in model.source(for: section)?.segment(for: section) }
-        MenuBarDrawing.configure(button, segments: segments)
-        let summary = segments.map(\.summary).joined(separator: "\n")
+        let content = model.menuBarContent(sections: sections, options: options)
+        MenuBarDrawing.configure(button, item: content)
+        let summary = content.summary
         button.toolTip = summary
         button.setAccessibilityLabel(summary)
         panel.objectWillChange.send()
@@ -406,9 +409,4 @@ final class PlaceholderItem: NSObject {
     @objc private func openWindow() {
         model.openWindow(at: nil)
     }
-}
-
-enum AppSymbols {
-    /// BriefBar's own symbol, in the menu bar and in Settings.
-    static let app = "rectangle.stack"
 }

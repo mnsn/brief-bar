@@ -29,15 +29,18 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let sections = [
         SectionInfo(
             id: .azureDevOpsPullRequests, title: AzureDevOpsPage.pullRequests.title, symbol: AzureDevOpsPage.pullRequests.symbol,
-            tint: AzureDevOpsPage.pullRequests.color, surfaces: [.menuBar, .widgets, .windows]
+            tint: AzureDevOpsPage.pullRequests.color, counted: CountNoun("pull request", "pull requests"),
+            surfaces: [.menuBar, .widgets, .windows]
         ),
         SectionInfo(
             id: .azureDevOpsSprint, title: AzureDevOpsPage.sprint.title, symbol: AzureDevOpsPage.sprint.symbol,
-            tint: AzureDevOpsPage.sprint.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
+            tint: AzureDevOpsPage.sprint.color, counted: CountNoun("work item", "work items"),
+            surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
         ),
         SectionInfo(
             id: .azureDevOpsPipelines, title: AzureDevOpsPage.pipelines.title, symbol: AzureDevOpsPage.pipelines.symbol,
-            tint: AzureDevOpsPage.pipelines.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
+            tint: AzureDevOpsPage.pipelines.color, counted: CountNoun("pipeline", "pipelines"),
+            surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.menuBar, .widgets]
         ),
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }
@@ -244,7 +247,8 @@ package final class AzureDevOpsSource: BriefBarSource {
             glyph: symbol, title: title, summary: summary, count: counts.needsYou,
             needsAttention: counts.needsYou > 0 || needsSignIn,
             // Like the counts it draws: none until you've signed in.
-            states: needsSignIn ? StateCounts() : counts.states(showToReview: settings.showToReview)
+            states: needsSignIn ? StateCounts() : counts.states(showToReview: settings.showToReview),
+            problem: needsSignIn ? summary : nil
         )
     }
 

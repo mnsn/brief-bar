@@ -27,8 +27,9 @@ package final class TeamsSource: BriefBarSource {
     /// Their widgets start hidden: a widget would put your chats on the desktop after an update.
     package let sections = [ChatGroup.chats, .groups].map { group in
         SectionInfo(
-            id: group.section, title: group.title, symbol: group.symbol,
-            tint: group.color, surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.widgets]
+            id: group.section, title: group.title, symbol: group.symbol, tint: group.color,
+            counted: group == .chats ? CountNoun("chat", "chats") : CountNoun("group chat", "group chats"),
+            surfaces: [.menuBar, .widgets, .windows], hiddenAtFirst: [.widgets]
         )
     }
     package var panelWidth: CGFloat { MenuPanelView.width }
@@ -144,6 +145,7 @@ package final class TeamsSource: BriefBarSource {
         let states = store?.state.states(group) ?? StateCounts()
         let problem = store?.problem
         let attention = problem?.isBlocking == true
+        let blocking = attention ? problem.map { "Teams: \($0.title)" } : nil
         var summary = "Teams: " + group.unreadDescription(count).lowercased()
         if let problem, attention {
             summary += ". " + problem.title
@@ -164,7 +166,8 @@ package final class TeamsSource: BriefBarSource {
             title.append(NSAttributedString(string: "\u{2009}"))
             title.append(MenuBarDrawing.symbol("exclamationmark.triangle.fill", color: .systemOrange, font: font, scale: 0.75))
         }
-        return MenuBarSegment(glyph: nil, title: title, summary: summary, count: count, needsAttention: true, states: states)
+        return MenuBarSegment(glyph: nil, title: title, summary: summary, count: count, needsAttention: true, states: states,
+                              problem: blocking)
     }
 
     package var segmentsChanged: AnyPublisher<Void, Never> {
