@@ -202,7 +202,7 @@ final class CopilotTasksStore: ObservableObject {
             workItem: item, prompt: prompt, options: options, repository: repository,
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }
         )
-        Task {
+        Task { [self] in
             // Asked again for each send, so a tool you've just installed is found.
             let environment = await environment(fresh: true)
             let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
