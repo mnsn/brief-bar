@@ -34,7 +34,10 @@ final class MenuBarItemController: NSObject {
         popover.contentViewController = host
         popover.behavior = .transient
         popover.delegate = self
-        panel.didSelect = { [weak self] _ in self?.updateVisible() }
+        panel.didSelect = { [weak self] section in
+            self?.remember(section)
+            self?.updateVisible()
+        }
 
         if let button = statusItem.button {
             button.target = self
@@ -74,11 +77,17 @@ final class MenuBarItemController: NSObject {
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
-    /// Shows the popover, at this section's tab, or the one that needs you.
+    /// Shows the popover at `section`'s tab, which it then opens at next time too; for nil, at the tab it showed
+    /// last, or the first time, the one that needs you.
     func showPopover(at section: SectionID?) {
-        guard let button = statusItem.button else { return }
-        let selected = section.flatMap { sections.contains($0) ? $0 : nil } ?? preferredSection
+        guard let button = statusItem.button,
+              let selected = MenuBarTabs.load(from: model.services.defaults).tab(
+                  for: id, sections: sections, asked: section,
+                  needsYou: { model.source(for: $0)?.segment(for: $0).needsAttention == true }
+              )
+        else { return }
         panel.selected = selected
+        remember(selected)
         model.source(for: selected)?.panelWillShow(selected)
         guard !popover.isShown else {
             updateVisible()
@@ -131,16 +140,12 @@ final class MenuBarItemController: NSObject {
         }
     }
 
-    /// The first section that needs you, or the one shown last.
-    private var preferredSection: SectionID {
-        let segments = sections.map { ($0, model.source(for: $0)?.segment(for: $0)) }
-        if let attention = segments.first(where: { $0.1?.needsAttention == true }) {
-            return attention.0
-        }
-        if let selected = panel.selected, sections.contains(selected) {
-            return selected
-        }
-        return sections[0]
+    /// Remembers the tab the popover shows, to open at it next time, even after BriefBar restarts.
+    private func remember(_ section: SectionID) {
+        var tabs = MenuBarTabs.load(from: model.services.defaults)
+        guard tabs.last(for: id) != section else { return }
+        tabs.remember(section, for: id)
+        tabs.save(to: model.services.defaults)
     }
 
     private func render() {

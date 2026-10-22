@@ -142,7 +142,11 @@ sections each one shows, and the sections you've hidden from it.
   keeps neither, so it never moves yours.
 
 **Menu-bar items** show their sections' counts side by side, each drawn the way its source draws it,
-and their popover has a tab for each, opening at the first that needs you. Every tab is as wide as the
+and their popover has a tab for each. It opens at the tab it showed last, whether it opened there or
+you switched to it, which each item keeps by its ID (`MenuBarTabs`, saved as `menuBarTabs`), so it
+outlasts a restart. When something opens it at a section, such as a notification about several pull
+requests, it shows that one, and opens there next time too. The first time, or once that tab is in
+another item, it opens at the first that needs you, or the first. Every tab is as wide as the
 widest of the item's lists, and as tabs stop fitting, they get smaller, then become symbols with counts,
 then a menu. A popover opens from an invisible window over the item (`PopoverAnchor`), so it stays on
 the display you clicked: macOS moves an item's own window to whichever menu bar is active, and a click

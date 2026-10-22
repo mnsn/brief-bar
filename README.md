@@ -84,9 +84,10 @@ arranged in Settings:
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again. Items that share sections show their counts side
-by side, with a tab for each in the list, opening at the one that needs you. You can also hide a
-section you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever
-you didn't hide it. To move menu-bar items, hold ⌘ and drag them.
+by side, with a tab for each in the list. The list opens at the tab you looked at last, even after
+BriefBar restarts, and the first time at the one that needs you. You can also hide a section you don't
+need, such as Group Chats, from any of them: its source stays on, and shows wherever you didn't hide
+it. To move menu-bar items, hold ⌘ and drag them.
 
 <p align="center">
   <picture>
