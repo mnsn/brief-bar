@@ -267,7 +267,8 @@ package final class TeamsSource: BriefBarSource {
     package func loadForRendering() async {
         let store = ConversationStore(settings: settings, storage: storage(readOnly: true))
         store.receive(NotificationEngine.loadOnce(paths: store.paths))
-        if settings.followReadsInTeams, let cache = store.storage.cache {
+        if ConversationStore.readsMarkers(following: settings.followReadsInTeams, cache: store.storage.cache, access: store.access),
+           let cache = store.storage.cache {
             store.receive(ReadMarkerEngine.loadOnce(location: cache))
         }
         self.store = store

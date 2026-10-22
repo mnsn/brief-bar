@@ -412,11 +412,16 @@ its last message, is read only to get past it.
 The log is watched as Notification Center's is: kqueue on the `.log`, which LevelDB keeps open, and
 FSEvents on the folder, for the log being replaced as LevelDB moves its writes into tables. A write
 is read 0.5 s later, from where the last read stopped: only the bytes appended since, and only write
-batches that are all there. The folder is read again from scratch when its log is replaced or its
-databases change, and every 10 minutes, which also finds Teams' folder once you sign in.
+batches that are all there. A record in a blob file is read again when its blob entry arrives, which
+Chromium writes after it, often in a later batch. The folder is read again from scratch when its log
+is replaced or its databases change, and every 10 minutes, which also finds Teams' folder once you
+sign in.
 
-Teams' own data is read only with Notification Center's own database. With another one, such as the
-demo's, BriefBar reads only what `BRIEFBAR_TEAMS_CACHE` names, laid out as `EBWebView` is.
+Teams' own data is read only while BriefBar can read Notification Center's database, which takes the
+same Full Disk Access: opening Teams' container without it would have macOS ask to let BriefBar access
+data from other apps, and an answer there would let it read Teams' data without Full Disk Access. With
+another Notification Center database, such as the demo's, BriefBar reads only what
+`BRIEFBAR_TEAMS_CACHE` names, laid out as `EBWebView` is.
 
 ### What's saved
 
@@ -548,9 +553,12 @@ All three formats are undocumented, so every read is checked:
 - **Teams' read markers.** Files, log records and values that can't be read are counted, values by
   why. If Teams' folder has no `conversations` store, or none of its conversations has a marker
   BriefBar understands, the lists say Teams' read markers have changed; if more than a quarter can't
-  be read, or a file can't, they say some couldn't be read. Neither keeps the lists from showing:
-  chats you read in Teams then stay unread until another rule reads them. Lengths and nesting are
-  checked against what's there, so a value can't make BriefBar read past it.
+  be read, or a file can't, they say some couldn't be read. A table counts only if it still can't be
+  read, unchanged, 5 s later: LevelDB writes a table where it'll stay, so one being written reads as
+  broken until it's done. Neither keeps the lists from showing: chats you read in Teams then stay
+  unread until another rule reads them. Lengths, nesting, blocks' keys and sparse arrays are checked
+  against what's there and capped, so a value can't make BriefBar read past it, or hold much more
+  than it.
 
 `--diagnose` and **Copy Diagnostics** describe all of this by structure only: table and field names,
 counts, and the shapes of values, such as `<oneOnOne ID>`, `<13-digit>` or

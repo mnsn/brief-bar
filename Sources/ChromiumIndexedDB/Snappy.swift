@@ -1,9 +1,9 @@
 /// Snappy's raw format, without framing: LevelDB compresses table blocks with it, and Chromium large IndexedDB values.
 enum Snappy {
-    /// No block or value BriefBar reads comes near this; a length beyond it is corrupt.
-    static let limit = 256 << 20
+    /// No value BriefBar reads comes near this; a length beyond it is corrupt.
+    static let limit = 64 << 20
 
-    static func decompress<Bytes: Collection<UInt8>>(_ compressed: Bytes) throws -> [UInt8] {
+    static func decompress<Bytes: Collection<UInt8>>(_ compressed: Bytes, limit: Int = Snappy.limit) throws -> [UInt8] {
         let input = Array(compressed)
         var position = 0
         var length = 0

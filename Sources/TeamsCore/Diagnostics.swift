@@ -36,6 +36,9 @@ public enum Diagnostics {
         }
         if !followsReadsInTeams {
             lines.append("Teams' read markers: not read (Mark Chats Read When You Read Them in Teams is off)")
+        } else if let cache, cache.isTeamsOwn, access != .granted {
+            // Opening Teams' container without Full Disk Access would have macOS ask for access to other apps' data.
+            lines.append("Teams' read markers: not read without Full Disk Access")
         } else if let cache {
             let snapshot = ReadMarkerEngine.loadOnce(location: cache)
             lines += describe(snapshot, location: cache)

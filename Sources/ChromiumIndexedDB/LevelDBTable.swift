@@ -82,9 +82,10 @@ public enum LevelDBTable {
 
     /// A block's contents, checked against its checksum and uncompressed.
     static func block(_ file: FileHandle, _ handle: Handle, fileSize: Int) throws -> [UInt8] {
-        guard handle.offset + handle.size + blockTrailerSize <= fileSize - footerSize else {
-            throw FormatError.corrupt("block handle")
-        }
+        // Blocks come before the footer; a handle that says otherwise is corrupt, and mustn't overflow saying so.
+        let limit = fileSize - footerSize - blockTrailerSize
+        guard handle.size <= limit, handle.offset <= limit - handle.size else { throw FormatError.corrupt("block handle") }
+        guard handle.size <= maxBlockSize else { throw FormatError.unsupported("block size") }
         let bytes = try readBytes(file, at: handle.offset, count: handle.size + blockTrailerSize)
         var trailer = ByteReader(bytes, from: handle.size)
         let compression = try trailer.byte()
@@ -95,13 +96,16 @@ public enum LevelDBTable {
         }
         switch compression {
         case 0: return Array(contents)
-        case 1: return try Snappy.decompress(contents)
+        case 1: return try Snappy.decompress(contents, limit: maxBlockSize)
         default: throw FormatError.unsupported("block compression \(compression)")
         }
     }
 
+    /// LevelDB's blocks are a few KiB, and Chromium keeps IndexedDB values over 64 KiB out of them.
+    static let maxBlockSize = 16 << 20
+
     /// A block's keys and values. Keys share a prefix with the one before, except at the restart points listed at
-    /// the end of the block.
+    /// the end of the block. Shared prefixes can't make the keys add up to much more than the block.
     static func blockEntries(_ block: [UInt8]) throws -> [(key: [UInt8], value: ArraySlice<UInt8>)] {
         guard block.count >= 4 else { throw FormatError.corrupt("block") }
         var tail = ByteReader(block, from: block.count - 4)
@@ -110,6 +114,8 @@ public enum LevelDBTable {
         var reader = ByteReader(block, to: block.count - 4 - 4 * restarts)
         var entries: [(key: [UInt8], value: ArraySlice<UInt8>)] = []
         var key: [UInt8] = []
+        var keyBytes = 0
+        let maxKeyBytes = 64 * block.count + (64 << 10)
         while !reader.isAtEnd {
             let shared = Int(try reader.varint32())
             let unshared = Int(try reader.varint32())
@@ -117,6 +123,8 @@ public enum LevelDBTable {
             guard shared <= key.count else { throw FormatError.corrupt("block key") }
             key.removeSubrange(shared...)
             key += try reader.bytes(unshared)
+            keyBytes += key.count
+            guard keyBytes <= maxKeyBytes else { throw FormatError.corrupt("block keys") }
             entries.append((key, try reader.bytes(valueLength)))
         }
         return entries

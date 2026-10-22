@@ -83,6 +83,19 @@ import Testing
         #expect(!AppSettings.followsReadsInTeams(in: defaults))
     }
 
+    /// Opening Teams' container without Full Disk Access would have macOS ask to let BriefBar access other apps' data.
+    @Test func readsTeamsOwnDataOnlyOnceNotificationCenterOpens() {
+        let teams = TeamsCacheLocation.teams(home: URL(fileURLWithPath: "/Users/made-up"))
+        let madeUp = TeamsCacheLocation(root: URL(fileURLWithPath: "/tmp/made-up/EBWebView"), isTeamsOwn: false)
+        #expect(ConversationStore.readsMarkers(following: true, cache: teams, access: .granted))
+        for access in [nil, AccessStatus.denied, .missing] {
+            #expect(!ConversationStore.readsMarkers(following: true, cache: teams, access: access))
+            #expect(ConversationStore.readsMarkers(following: true, cache: madeUp, access: access))
+        }
+        #expect(!ConversationStore.readsMarkers(following: false, cache: teams, access: .granted))
+        #expect(!ConversationStore.readsMarkers(following: true, cache: nil, access: .granted))
+    }
+
     /// Stands in for Notification Center's own database, in a temporary folder.
     private func systemPaths(in directory: URL) -> NotificationPaths {
         NotificationPaths(database: directory.appendingPathComponent("db2/db"),

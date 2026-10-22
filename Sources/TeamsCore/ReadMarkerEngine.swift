@@ -50,9 +50,15 @@ public final class ReadMarkerEngine: @unchecked Sendable {
     private let onChange: ChangeHandler
     private let reloadDelay: TimeInterval
     private let safetyInterval: TimeInterval
+    private let confirmationDelay: TimeInterval
 
     private var folders: [URL: TeamsCacheFolder] = [:]
     private var unreadableFolders = 0
+    /// Tables that couldn't be read at the last scan, by path, as they were then. LevelDB writes a table where it'll
+    /// stay, so one being written reads as broken: only one still the same, and still unreadable, a while later counts.
+    private var suspectTables: [String: FileInfo] = [:]
+    private var unreadableTables = 0
+    private var confirmationScheduled = false
     private var streams: [URL: FileEventStream] = [:]
     private var logWatchers: [URL: FileWriteWatcher] = [:]
     private var snapshot = ReadMarkerSnapshot()
@@ -65,12 +71,14 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         location: TeamsCacheLocation,
         reloadDelay: TimeInterval = 0.5,
         safetyInterval: TimeInterval = 600,
+        confirmationDelay: TimeInterval = 5,
         onChange: @escaping ChangeHandler
     ) {
         self.location = location
         queue = DispatchQueue(label: "BriefBar.Teams.ReadMarkerEngine", qos: .utility)
         self.reloadDelay = reloadDelay
         self.safetyInterval = safetyInterval
+        self.confirmationDelay = confirmationDelay
         self.onChange = onChange
     }
 
@@ -111,11 +119,12 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         }
     }
 
-    /// One read, without watching (command line and tests).
+    /// One read, without watching (command line and tests). Tables that can't be read count as such at once.
     public static func loadOnce(location: TeamsCacheLocation) -> ReadMarkerSnapshot {
         let engine = ReadMarkerEngine(location: location) { _ in }
         engine.rescan()
-        return engine.snapshot
+        engine.unreadableTables = engine.suspectTables.count
+        return engine.makeSnapshot(access: engine.snapshot.access, readAt: engine.snapshot.readAt ?? Date())
     }
 
     // MARK: - Queue-confined
@@ -137,10 +146,33 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             }
         }
         folders = current
+        confirmUnreadableTables()
         if isActive {
             watch()
         }
         snapshot = makeSnapshot(access: access, readAt: started)
+    }
+
+    /// Counts the tables that couldn't be read at this scan and the one before, unchanged; for the others, scans again
+    /// a little later, by when LevelDB has finished writing a table it was.
+    private func confirmUnreadableTables() {
+        var current: [String: FileInfo] = [:]
+        for folder in folders.values {
+            for (name, info) in folder.unreadableTables {
+                current[folder.folder.url.appendingPathComponent(name).path] = info
+            }
+        }
+        unreadableTables = current.filter { suspectTables[$0.key] == $0.value }.count
+        suspectTables = current
+        guard isActive, current.count > unreadableTables, !confirmationScheduled else { return }
+        confirmationScheduled = true
+        queue.asyncAfter(deadline: .now() + confirmationDelay) { [weak self] in
+            guard let self else { return }
+            self.confirmationScheduled = false
+            guard self.isActive else { return }
+            self.rescan()
+            self.publish()
+        }
     }
 
     /// Reads on in each folder's log; reads a folder again from scratch when that's needed.
@@ -167,7 +199,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             report.add(folder.report)
         }
         report.folders += unreadableFolders
-        report.unreadableFiles += unreadableFolders
+        report.unreadableFiles = unreadableTables + unreadableFolders
         return ReadMarkerSnapshot(access: access, markers: markers, report: report, readAt: readAt)
     }
 

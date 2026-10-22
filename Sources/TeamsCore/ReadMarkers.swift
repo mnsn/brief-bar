@@ -159,8 +159,14 @@ struct TeamsCacheFolder {
     private(set) var stores: Set<IndexedDBFolder.StoreID> = []
     private(set) var conversations: [IndexedDBFolder.RecordKey: Conversation] = [:]
     private var externalObjects: [IndexedDBFolder.RecordKey: [ExternalObject]] = [:]
+    /// The raw values of records in a blob file: Chromium writes their blob entry after them, often in a later batch,
+    /// so they're read again when it arrives.
+    private var inBlobFiles: [IndexedDBFolder.RecordKey: [UInt8]] = [:]
     private(set) var log: LevelDBFolder.LogPosition?
-    private var files = (unreadable: 0, corruptLogRecords: 0, blocksRead: 0, blocksSkipped: 0)
+    /// Tables that couldn't be read, as they were then. LevelDB writes a table where it'll stay, so one being written
+    /// reads as broken until it's done.
+    private(set) var unreadableTables: [String: FileInfo] = [:]
+    private var files = (corruptLogRecords: 0, blocksRead: 0, blocksSkipped: 0)
 
     init(_ url: URL) {
         folder = IndexedDBFolder(url: url)
@@ -177,13 +183,17 @@ struct TeamsCacheFolder {
         stores = catalog.stores(where: Self.isConversations)
         let records = try folder.records(in: stores)
         externalObjects = records.externalObjects
+        inBlobFiles = records.values.filter { IndexedDBFolder.isInBlobFile($0.value) }
         conversations = [:]
         for (key, raw) in records.values {
             conversations[key] = read(raw, key: key)
         }
         log = records.read.log ?? catalogRead.log
+        unreadableTables = [:]
+        for name in Set(catalogRead.unreadable.keys).union(records.read.unreadable.keys) {
+            unreadableTables[name] = FileInfo(path: folder.url.appendingPathComponent(name).path)
+        }
         files = (
-            unreadable: Set(catalogRead.unreadable.keys).union(records.read.unreadable.keys).count,
             corruptLogRecords: records.read.corruptLogRecords,
             blocksRead: catalogRead.blocksRead + records.read.blocksRead,
             blocksSkipped: catalogRead.blocksSkipped + records.read.blocksSkipped
@@ -220,25 +230,42 @@ struct TeamsCacheFolder {
         }
         self.log?.offset = parsed.end
         files.corruptLogRecords += parsed.corrupt
-        var changed = false
         var catalog = catalog
+        var records: [(IndexedDBFolder.RecordKey, [UInt8]?)] = []
+        var newBlobEntries: Set<IndexedDBFolder.RecordKey> = []
         for entry in parsed.entries {
             guard let key = try? IndexedDBKey(entry.key) else { continue }
             switch key {
             case .databaseName, .objectStoreName:
                 if catalog.take(key, value: entry.value) { return .rescan }
             case .record(let database, let objectStore, let id):
-                let record = IndexedDBFolder.RecordKey(store: .init(database: database, objectStore: objectStore), key: id)
-                let conversation = entry.value.map { read($0, key: record) }
-                if conversations[record] != conversation {
-                    conversations[record] = conversation
-                    changed = true
-                }
+                records.append((IndexedDBFolder.RecordKey(store: .init(database: database, objectStore: objectStore), key: id),
+                                entry.value))
             case .blobEntry(let database, let objectStore, let id):
                 let record = IndexedDBFolder.RecordKey(store: .init(database: database, objectStore: objectStore), key: id)
                 externalObjects[record] = entry.value.flatMap { try? IndexedDBKey.externalObjects($0) }
+                newBlobEntries.insert(record)
             case .otherMetadata, .other:
                 break
+            }
+        }
+        // Each record as it is now, with its blob entry as it is now: those come later than their record.
+        var changed = false
+        func take(_ record: IndexedDBFolder.RecordKey, _ raw: [UInt8]?) {
+            inBlobFiles[record] = raw.flatMap { IndexedDBFolder.isInBlobFile($0) ? $0 : nil }
+            let conversation = raw.map { read($0, key: record) }
+            if conversations[record] != conversation {
+                conversations[record] = conversation
+                changed = true
+            }
+        }
+        for (record, raw) in records {
+            take(record, raw)
+            newBlobEntries.remove(record)
+        }
+        for record in newBlobEntries {
+            if let raw = inBlobFiles[record] {
+                take(record, raw)
             }
         }
         return changed ? .changed : .unchanged
@@ -271,7 +298,7 @@ struct TeamsCacheFolder {
                 report.formats[format, default: 0] += 1
             }
         }
-        report.unreadableFiles = files.unreadable
+        report.unreadableFiles = unreadableTables.count
         report.corruptLogRecords = files.corruptLogRecords
         report.blocksRead = files.blocksRead
         report.blocksSkipped = files.blocksSkipped

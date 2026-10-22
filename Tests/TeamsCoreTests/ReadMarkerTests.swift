@@ -16,6 +16,9 @@ enum TeamsData {
     static let logName = "000003.log"
     /// Where the second run's writes start in the log.
     static let firstRunLength = 39_357
+    /// Where the batch with the chat that's in a blob file starts, and where the later batch with its blob entry does.
+    static let wrappedRecord = 37_545
+    static let wrappedBlobEntry = 38_436
     /// 2026-10-18T10:00:00Z in milliseconds, which the made-up message IDs count from.
     static let base: Int64 = 1_792_317_600_000
     static let big = "19:bigbigbigbigbigbigbigbigbigbig12@thread.v2"
@@ -232,6 +235,74 @@ final class MarkerCollector: Sendable {
 
         try append(try TeamsData.secondRun(), to: newLog)
         try await collector.wait("more written to it") { $0.markers[Chat.avery]?.messageID == TeamsData.base + 5000 }
+    }
+
+    @Test func readsAChatInABlobFileOnceItsBlobEntryArrives() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (location, log) = try TeamsData.copy(to: directory, logLength: TeamsData.wrappedRecord)
+        let bytes = try Data(contentsOf: TeamsData.fixture.appendingPathComponent(TeamsData.folderName)
+            .appendingPathComponent(TeamsData.logName))
+        let collector = MarkerCollector()
+        let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        try await collector.wait("the first read") { $0.markers[TeamsData.big] != nil }
+
+        // Chromium writes the record first, and which blob file it's in only when the transaction commits.
+        try append(bytes[TeamsData.wrappedRecord..<TeamsData.wrappedBlobEntry], to: log)
+        try await collector.wait("the record") { $0.report.unreadable == ["corrupt blob reference": 1] }
+        #expect(collector.latest?.markers[TeamsData.wrapped] == nil)
+        try append(bytes[TeamsData.wrappedBlobEntry..<TeamsData.firstRunLength], to: log)
+        let read = try await collector.wait("its blob entry") { $0.markers[TeamsData.wrapped] != nil }
+        #expect(read.markers[TeamsData.wrapped]?.messageID == TeamsData.base + 300)
+        #expect(read.report.unreadable.isEmpty)
+    }
+
+    @Test func countsATableAsUnreadableOnlyWhenItStaysSo() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (location, log) = try TeamsData.copy(to: directory)
+        // As LevelDB writes a table: where it'll stay, footer last.
+        try Data(repeating: 7, count: 100).write(to: log.deletingLastPathComponent().appendingPathComponent("000010.ldb"))
+        let collector = MarkerCollector()
+        let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.3) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        let first = try await collector.wait("the first read") { $0.markers[Chat.avery] != nil }
+        #expect(first.report.unreadableFiles == 0 && first.problem == nil)
+        let later = try await collector.wait("a second look") { $0.report.unreadableFiles == 1 }
+        #expect(later.problem == .readMarkersPartlyUnreadable)
+        #expect(later.markers == first.markers)
+    }
+
+    @Test func forgetsATableThatWasOnlyBeingWritten() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (location, log) = try TeamsData.copy(to: directory)
+        let table = log.deletingLastPathComponent().appendingPathComponent("000010.ldb")
+        try Data(repeating: 7, count: 100).write(to: table)
+        let collector = MarkerCollector()
+        let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.5) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        try await collector.wait("the first read") { $0.markers[Chat.avery] != nil }
+        try FileManager.default.removeItem(at: table)
+        try await Task.sleep(for: .milliseconds(1_200))
+        #expect(collector.latest?.report.unreadableFiles == 0)
+        #expect(collector.latest?.problem == nil)
+    }
+
+    @Test func readsTeamsOwnDataOnlyWithFullDiskAccess() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (copy, _) = try TeamsData.copy(to: directory)
+        let teamsOwn = TeamsCacheLocation(root: copy.root, isTeamsOwn: true)
+        // There's no Notification Center database here, so no sign of Full Disk Access.
+        let report = await Diagnostics.report(paths: paths(in: directory), cache: teamsOwn, followsReadsInTeams: true,
+                                              appVersion: "0.1.0")
+        #expect(report.contains("Teams' read markers: not read without Full Disk Access"))
+        #expect(!report.contains("Conversation stores"))
     }
 
     @Test func describesTeamsDataWithoutIDs() async throws {
