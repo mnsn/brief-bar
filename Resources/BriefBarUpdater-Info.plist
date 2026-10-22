@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- BriefBar's updater, Sparkle in an app of its own inside BriefBar.app (Contents/Helpers), from
+	     Sources/BriefBarUpdater. Sparkle reads the feed and the update key from BriefBar's Info.plist. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>BriefBar Updater</string>
+	<key>CFBundleExecutable</key>
+	<string>BriefBarUpdater</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<!-- BriefBar's identifier and ".Updater": the updater only updates the app it's in, which it checks. An
+	     identity of its own, so none of the privacy permissions you give BriefBar applies to it. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.asaf.BriefBar.Updater</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>BriefBar Updater</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<!-- The build sets CFBundleShortVersionString and CFBundleVersion to BriefBar's version. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<!-- No Dock icon or menus: only Sparkle's windows. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Asaf Manassen. Licensed under GPL-3.0-or-later.</string>
+</dict>
+</plist>

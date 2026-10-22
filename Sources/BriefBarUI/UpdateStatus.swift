@@ -1,8 +1,8 @@
 import Combine
 import SwiftUI
 
-/// In-app updates, as the app's updater (Sparkle, in the app target) reports them, for menus, Settings and the
-/// reminder that an update is waiting.
+/// In-app updates, as BriefBar's updater (Sparkle, in a helper app: Sources/BriefBarUpdater) reports them, for
+/// menus, Settings and the reminder that an update is waiting.
 @MainActor
 package final class UpdateStatus: ObservableObject {
     /// Whether this copy of the app updates itself: the installed app, once its release keys are set.

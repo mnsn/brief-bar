@@ -27,6 +27,8 @@ make build              # debug build
 make demo-check         # check that each source's made-up data lands in the expected groups
 make check-boundaries   # check that only AzureDevOpsCore uses the network, and only BriefBarCore starts programs
 make signing-key-check  # check what keeps signing keys safe, in throwaway keychains (it asks nothing)
+make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions
+make update-rehearsal   # install an update through the updater, in copies of build/BriefBar.app
 make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
 make screenshots        # render the README's pictures from the demo data
 make app                # build BriefBar.app into ./build, signed ad hoc
@@ -82,7 +84,9 @@ Sources/TeamsUI/               each source's app code: its lists, settings, widg
 Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
 Sources/BriefBar/              the app: sources and consent, menu-bar items, widgets, windows, Settings,
-                               updates (Sparkle), the command line and --render
+                               starting the updater, the command line and --render
+Sources/BriefBarUpdater/       the updater: Sparkle, in a helper app inside BriefBar.app, with library
+                               validation off and none of BriefBar's permissions
 Tests/                         Swift Testing suites for the shared code, each source's core and some of
                                its app code, with made-up data
 scripts/                       app bundling, signing and checks, the optional signing certificate,
@@ -154,14 +158,18 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller
   chooses may decide what it reads with that access, or carry what it read anywhere the caller can
-  read: no command-line mode or `--render` runs (`CommandLineAccess`), `-key value` arguments don't
-  reach its preferences, its standard output and error go to `/dev/null`, and the variables that point
-  it at other data are read only through `Attribution.environment`, which is empty then. A test fails
-  if code reads the environment anywhere else, until it's checked and listed with its reason.
-  Variables that move where macOS keeps your files, such as `HOME`, which chooses the keychain, are
-  put back first thing (`LaunchEnvironment`): add any other you find there. Keychain items go in the
-  login keychain by its file (`KeychainKeyStore`), never the default keychain, which any program
-  running as you can change.
+  read: no command-line mode or `--render` runs (`CommandLineAccess`), only `--help` and
+  `--check-updater`, which read nothing of yours; `-key value` arguments don't reach its preferences,
+  its standard output and error go to `/dev/null`, and the variables that point it at other data are
+  read only through `Attribution.environment`, which is empty then. A test fails if code reads the
+  environment anywhere else, until it's checked and listed with its reason. Variables that move where
+  macOS keeps your files, such as `HOME`, which chooses the keychain, are put back first thing
+  (`LaunchEnvironment`): add any other you find there. Keychain items go in the login keychain by its
+  file (`KeychainKeyStore`), never the default keychain, which any program running as you can change.
+- **Keep library validation on in BriefBar.** It links only Apple's libraries and has no entitlements.
+  Code that needs other libraries, or library validation off, belongs in the updater or another helper
+  app that holds no permissions, started as a `RunningProgram`. `scripts/check-app.sh` fails
+  otherwise.
 - **Never change what a source reads.** Open Notification Center's database and the Copilot app's
   database read-only, keep reads short, and never run SQL that writes, including `PRAGMA` settings
   and checkpoints. Never copy them.
@@ -192,8 +200,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 
 - Keep each pull request focused, and describe the change users will see.
 - Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 15 (with
-  Xcode 16, so without summaries) and macOS 26, checks the signing keys' protection, packages the app
-  and runs it on Apple silicon and Intel.
+  Xcode 16, so without summaries) and macOS 26, checks the signing keys' protection, packages the app,
+  checks its updater, and runs it on Apple silicon and Intel.
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
@@ -202,8 +210,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 Builds from source are signed ad hoc, so there's no key on your Mac that anything could sign as
 BriefBar with, but each build needs Full Disk Access again (see above). To keep it across rebuilds,
 `make signing-identity` creates **BriefBar Signing** in your login keychain, with a key that no app may
-use without asking and that can't be exported. Each build then asks for your login password: click
-**Allow** only while your build is signing, never **Always Allow**
+use without asking and that can't be exported. Each build then asks for your login password twice,
+for the updater and the app: click **Allow** only while your build is signing, never **Always Allow**
 ([why](README.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
 that some app may use without asking, signs with the certificate's SHA-1 rather than its name, and
 checks the signature's certificate afterwards. `scripts/make-signing-identity.sh --check` reads the
@@ -229,10 +237,12 @@ and when started by hand:
 
 - It builds and tests on macOS 15, whose Xcode 16 SDK has no FoundationModels, and on macOS 26. Each
   runs the boundary and demo checks and `make signing-key-check`, packages the universal app with a
-  throwaway certificate, and signs its update with a throwaway key, the way a release does
-  (`scripts/appcast-dry-run.sh`).
+  throwaway certificate, signs its update with a throwaway key, the way a release does
+  (`scripts/appcast-dry-run.sh`), checks that its updater can't use BriefBar's permissions
+  (`scripts/test-updater-isolation.sh`), and installs an update through it
+  (`scripts/update-rehearsal.sh`).
 - The macOS 26 job uploads the package as the `BriefBar` artifact, and the next jobs run it on
-  macOS 15, on Apple silicon and on Intel.
+  macOS 15, on Apple silicon and on Intel, with the updater check too.
 
 ## Releasing
 

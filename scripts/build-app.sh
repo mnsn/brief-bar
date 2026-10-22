@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds "BriefBar.app" into ./build, for this Mac's architecture, signed ad hoc: macOS ties Full Disk Access to
+# Builds "BriefBar.app" into ./build, for this Mac's architecture, with its updater inside it
+# (Contents/Helpers/BriefBar Updater.app, which holds Sparkle), signed ad hoc: macOS ties Full Disk Access to
 # that exact build, so each new one needs the access again (see the note at the end). If you made the optional
 # "BriefBar Signing" certificate (scripts/make-signing-identity.sh), it's signed with exactly that certificate
 # instead, by its SHA-1 (scripts/signing.sh), and keeps the access across rebuilds; never with one whose key some
@@ -16,6 +17,8 @@ source scripts/signing.sh
 APP_NAME="BriefBar"
 EXECUTABLE="BriefBar"
 APP="build/$APP_NAME.app"
+UPDATER="$APP/Contents/Helpers/BriefBar Updater.app"
+UPDATER_EXECUTABLE="BriefBarUpdater"
 IDENTITY="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Signing}"
 KEYCHAIN="${BRIEFBAR_SIGNING_KEYCHAIN:-}"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Resources/Info.plist)"
@@ -59,9 +62,10 @@ if $UNIVERSAL; then
     BUILD_FLAGS+=(--arch arm64 --arch x86_64)
 fi
 swift build "${BUILD_FLAGS[@]}" --product "$EXECUTABLE"
+swift build "${BUILD_FLAGS[@]}" --product "$UPDATER_EXECUTABLE"
 BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 
-# The build copies Sparkle.framework, the in-app updater, next to the executable.
+# The build copies Sparkle.framework, which the updater uses, next to the executables.
 SPARKLE=""
 for candidate in "$BIN_DIR/Sparkle.framework" "$BIN_DIR/PackageFrameworks/Sparkle.framework"; do
     if [[ -d "$candidate" ]]; then
@@ -73,7 +77,7 @@ if [[ -z "$SPARKLE" ]]; then
     echo "Sparkle.framework isn't in $BIN_DIR." >&2
     exit 1
 fi
-# Sparkle's license covers the code it bundles too. The app ships the copy in Resources.
+# Sparkle's license covers the code it bundles too. The updater ships the copy in its Resources.
 SPARKLE_LICENSE=".build/artifacts/sparkle/Sparkle/LICENSE"
 if ! cmp -s Resources/Sparkle-LICENSE.txt "$SPARKLE_LICENSE"; then
     echo "Resources/Sparkle-LICENSE.txt differs from $SPARKLE_LICENSE. Copy the new license over it." >&2
@@ -81,33 +85,50 @@ if ! cmp -s Resources/Sparkle-LICENSE.txt "$SPARKLE_LICENSE"; then
 fi
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-if /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist >/dev/null 2>&1; then
-    echo "Resources/Info.plist sets CFBundleVersion. Remove it: the build sets it to CFBundleShortVersionString." >&2
+for plist in Resources/Info.plist Resources/BriefBarUpdater-Info.plist; do
+    if /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" >/dev/null 2>&1; then
+        echo "$plist sets CFBundleVersion. Remove it: the build sets it to BriefBar's CFBundleShortVersionString." >&2
+        exit 1
+    fi
+done
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Resources/BriefBarUpdater-Info.plist)" != "$BUNDLE_ID.Updater" ]]; then
+    echo "Resources/BriefBarUpdater-Info.plist must name the updater $BUNDLE_ID.Updater: it only updates the app it's in." >&2
     exit 1
 fi
 
+# Removes every rpath from a binary but the ones given. BriefBar links only Apple's libraries, by their full
+# paths, so it keeps none; the updater keeps its own Frameworks, for Sparkle. Any other folder, such as the
+# toolchain's or the build's, would be a place to put a look-alike library for them to load.
+keep_only_rpaths() {
+    local binary="$1" rpath
+    shift
+    while IFS= read -r rpath; do
+        [[ " $* " == *" $rpath "* ]] || install_name_tool -delete_rpath "$rpath" "$binary"
+    done < <(otool -l "$binary" | sed -n 's/^ *path \(.*\) (offset [0-9]*)$/\1/p' | sort -u)
+}
+
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" \
+    "$UPDATER/Contents/MacOS" "$UPDATER/Contents/Resources" "$UPDATER/Contents/Frameworks"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
-# Sparkle is the only library found through the rpaths, and it's in the app's Frameworks. With library
-# validation off (see Resources/BriefBar.entitlements), any other folder they name, such as the toolchain's or
-# the build's, would be a place to put a look-alike for the app to load, so only Apple's Swift folder stays.
-while IFS= read -r RPATH; do
-    case "$RPATH" in
-        /usr/lib/swift | @executable_path/../Frameworks) ;;
-        *) install_name_tool -delete_rpath "$RPATH" "$APP/Contents/MacOS/$EXECUTABLE" ;;
-    esac
-done < <(otool -l "$APP/Contents/MacOS/$EXECUTABLE" | sed -n 's/^ *path \(.*\) (offset [0-9]*)$/\1/p' | sort -u)
+keep_only_rpaths "$APP/Contents/MacOS/$EXECUTABLE"
+cp "$BIN_DIR/$UPDATER_EXECUTABLE" "$UPDATER/Contents/MacOS/$UPDATER_EXECUTABLE"
+keep_only_rpaths "$UPDATER/Contents/MacOS/$UPDATER_EXECUTABLE" @executable_path/../Frameworks
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 # Sparkle offers an update when its CFBundleVersion is higher than the running app's, so it's the version
-# itself (scripts/package.sh checks that each release's version is higher).
+# itself (scripts/package.sh checks that each release's version is higher). The updater has the same.
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP/Contents/Info.plist"
+cp Resources/BriefBarUpdater-Info.plist "$UPDATER/Contents/Info.plist"
+for key in CFBundleShortVersionString CFBundleVersion; do
+    /usr/libexec/PlistBuddy -c "Add :$key string $VERSION" "$UPDATER/Contents/Info.plist"
+done
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-cp Resources/Sparkle-LICENSE.txt "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+cp Resources/AppIcon.icns "$UPDATER/Contents/Resources/AppIcon.icns"
+cp Resources/Sparkle-LICENSE.txt "$UPDATER/Contents/Resources/Sparkle-LICENSE.txt"
 
 # ditto keeps the framework's symlinks. An app outside the sandbox doesn't use Sparkle's XPC services, so leave
 # them out: less code shipped, and less to attack.
-FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+FRAMEWORK="$UPDATER/Contents/Frameworks/Sparkle.framework"
 ditto "$SPARKLE" "$FRAMEWORK"
 rm -rf "$FRAMEWORK/XPCServices" "$FRAMEWORK/Versions/Current/XPCServices"
 
@@ -115,8 +136,8 @@ if $AD_HOC; then
     ./scripts/sign-app.sh "$APP"
 else
     if [[ -z "$KEYCHAIN" ]]; then
-        echo "Signing with \"$IDENTITY\": macOS asks for your login password so that codesign can use its key." >&2
-        echo "Choose Allow, never Always Allow." >&2
+        echo "Signing with \"$IDENTITY\": macOS asks for your login password so that codesign can use its key," >&2
+        echo "twice: for the updater, then the app. Choose Allow, never Always Allow." >&2
     fi
     if ! ./scripts/sign-app.sh "$APP" "$HASH" "$KEYCHAIN"; then
         echo "error: couldn't sign with \"$IDENTITY\" ($HASH). When macOS asks whether codesign may use its key," >&2

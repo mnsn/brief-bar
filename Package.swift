@@ -6,9 +6,10 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "BriefBar", targets: ["BriefBar"]),
+        .executable(name: "BriefBarUpdater", targets: ["BriefBarUpdater"]),
     ],
     dependencies: [
-        // In-app updates. Only the app target uses it; the sources and the tests don't.
+        // In-app updates. Only the updater uses it; the app, the sources and the tests don't.
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
     ],
     targets: [
@@ -62,14 +63,18 @@ let package = Package(
             name: "CopilotUI",
             dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
         ),
-        // The app: its sources, the menu-bar items, Settings and the command line.
+        // The app: its sources, the menu-bar items, Settings and the command line. It loads no library but
+        // Apple's, so it keeps library validation on, and starts the updater for in-app updates.
         .executableTarget(
             name: "BriefBar",
-            dependencies: [
-                "BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI",
-                .product(name: "Sparkle", package: "Sparkle"),
-            ],
-            // scripts/build-app.sh embeds Sparkle.framework in the app's Contents/Frameworks.
+            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI"]
+        ),
+        // The updater: Sparkle, in a helper app inside BriefBar.app, with library validation off and none of
+        // BriefBar's privacy permissions (see Sources/BriefBarUpdater/UpdaterController.swift).
+        // scripts/build-app.sh embeds Sparkle.framework in the helper's Contents/Frameworks.
+        .executableTarget(
+            name: "BriefBarUpdater",
+            dependencies: ["BriefBarCore", .product(name: "Sparkle", package: "Sparkle")],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(

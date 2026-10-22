@@ -64,9 +64,16 @@ public enum Responsibility {
 public enum ProcessRunnerError: Error, Sendable, Equatable, CustomStringConvertible {
     /// macOS doesn't offer the call that keeps a program from using BriefBar's permissions.
     case cantDisclaim
+    /// macOS held BriefBar responsible for a program it started after all, so it was ended (`RunningProgram`).
+    case notResponsibleForItself
 
     public var description: String {
-        "BriefBar can't start programs on this version of macOS without giving them its permissions, so it doesn't."
+        switch self {
+        case .cantDisclaim:
+            "BriefBar can't start programs on this version of macOS without giving them its permissions, so it doesn't."
+        case .notResponsibleForItself:
+            "macOS attributed a program that BriefBar started to BriefBar, which would let it use BriefBar's permissions, so BriefBar ended it."
+        }
     }
 }
 

@@ -338,8 +338,8 @@ there and in its right-click menu.
 - **Updates, only if you allow them.** BriefBar's own requests are for its updates, from this
   project's releases on GitHub: a small file that describes the latest release, once a day, and the
   new version when you install it. GitHub sees your IP address and the versions of BriefBar and of
-  [Sparkle](https://sparkle-project.org), the updater it uses. They carry nothing about your chats,
-  pull requests or sessions.
+  [Sparkle](https://sparkle-project.org), which BriefBar's updater uses: a helper app inside BriefBar,
+  with none of BriefBar's permissions. They carry nothing about your chats, pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
   files, and Azure DevOps through GET requests. It never changes any of them.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
@@ -463,21 +463,23 @@ APP="/Applications/BriefBar.app/Contents/MacOS/BriefBar"   # ~/Applications afte
 "$APP" --teams                    # Azure DevOps: your teams, and which have a sprint going on today
 "$APP" --sprint                   # Azure DevOps: your team's current sprint
 "$APP" --pipelines                # Azure DevOps: the pipelines you pinned, with their latest runs
+"$APP" --check-updater            # that the updater can't use BriefBar's permissions
 log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --style compact
 log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates
 ```
 
 Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. They run
 only from a shell like that: started as an app, with `open` say, BriefBar has its own Full Disk
-Access, and whoever started it could read its output, so it refuses every mode but `--help`. Teams'
-modes and `--render` never read the unread chats that BriefBar saved: any program can run the app's
-binary, so only the app itself reads them. They show what Notification Center has now, and count as
-unread only what arrived since BriefBar last read it (while BriefBar runs, the last minute or so). So
-they usually show fewer unread chats than BriefBar, and never one that Notification Center has
-already dropped. Azure DevOps' part of `--dump`, `--json` and `--watch` leaves out pull requests
-sent in chats, which only the app keeps, in memory: `--chats` lists the links Notification Center
-has. Except for `--diagnose`, which is safe to share, their output shows your own chats,
-names, titles and sessions, so keep it to yourself. `--demo --render` draws made-up data instead.
+Access, and whoever started it could read its output, so it refuses every mode but `--help` and
+`--check-updater`, which read nothing of yours. Teams' modes and `--render` never read the unread
+chats that BriefBar saved: any program can run the app's binary, so only the app itself reads them.
+They show what Notification Center has now, and count as unread only what arrived since BriefBar
+last read it (while BriefBar runs, the last minute or so). So they usually show fewer unread chats
+than BriefBar, and never one that Notification Center has already dropped. Azure DevOps' part of
+`--dump`, `--json` and `--watch` leaves out pull requests sent in chats, which only the app keeps,
+in memory: `--chats` lists the links Notification Center has. Except for `--diagnose`, which is safe
+to share, their output shows your own chats, names, titles and sessions, so keep it to yourself.
+`--demo --render` draws made-up data instead.
 
 ## Contributing
 

@@ -24,10 +24,10 @@ project's GitHub releases. Worth reporting:
 - any way it could send anything about your chats, pull requests, work items, pipelines or sessions
   anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
   on the Mac (its saved chats, the links it finds in chats, its preferences, its log, its summaries),
-- any way another app could use BriefBar's Full Disk Access: by injecting code into it, through a
-  program it starts, by starting it (with its command-line modes, arguments, environment or output),
-  or by signing itself with a key that BriefBar's builds are signed with (beyond the known trade-off
-  of library validation, below),
+- any way another app could use BriefBar's Full Disk Access: by injecting code into it or into a copy
+  of it, through a program it starts, its updater included, by starting it (with its command-line
+  modes, arguments, environment or output), or by signing itself with a key that BriefBar's builds
+  are signed with,
 - any way a source could read anything, or check its access, while it's off, or turn on without you,
 - any way it could change Notification Center's data, the Copilot app's data, or anything in Azure
   DevOps,
@@ -52,10 +52,11 @@ Only the latest release, and the latest commit on `main`, are supported.
   itself show what it reads: it keeps nothing it reads with Full Disk Access where such a program
   could read it ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - **Programs it starts are responsible for themselves.** macOS lets a program use the permissions of
-  the app that started it. BriefBar starts every program (the Azure CLI, the login shell that finds
-  it, `lsappinfo`) with that responsibility disclaimed, so none of them gets its Full Disk Access.
-  `scripts/check-boundaries.sh` checks that nothing else in the app starts programs. Sparkle, the
-  updater, starts none either: it hands its installer to launchd.
+  the app that started it. BriefBar starts every program (its updater, the Azure CLI, the login shell
+  that finds it, `lsappinfo`) with that responsibility disclaimed, so none of them gets its Full Disk
+  Access, and the updater runs only once macOS confirms it. `scripts/check-boundaries.sh` checks that
+  nothing else in the app starts programs. Sparkle, in the updater, starts none either: it hands its
+  installer to launchd.
 - **Only one module uses the network**, `AzureDevOpsCore`, and `scripts/check-boundaries.sh` checks
   that too. The other requests are Sparkle's, for this project's releases.
 - **What it reads with Full Disk Access stays with it.** Teams' unread chats are on disk only
@@ -76,23 +77,32 @@ it, and the app isn't notarized.
 
 - The app runs with the hardened runtime, so other processes can't inject code into it with `DYLD_`
   environment variables or a debugger, and use its Full Disk Access that way.
-- Library validation is off (`com.apple.security.cs.disable-library-validation`, the app's only
+- It has no entitlements, so library validation is on: macOS loads into it only libraries that Apple
+  signed, and it links only Apple's. macOS recognizes the app by its own executable's signature, so
+  with library validation off, software running as you could copy the app anywhere, put its own code
+  in one of the copy's frameworks, and run that code with BriefBar's Full Disk Access. 0.1.0 had it
+  off to load Sparkle, the updater, and had that hole.
+- Sparkle is in an app of its own inside BriefBar, `Contents/Helpers/BriefBar Updater.app`, the only
+  part with library validation off (`com.apple.security.cs.disable-library-validation`, its only
   entitlement). With it on, macOS loads only libraries signed by Apple or by the app's own team, and a
-  self-signed certificate has no team, so macOS would refuse even the app's own copy of Sparkle, its
-  updater. The trade-off: macOS recognizes the app by its own executable's signature, so software
-  running as you, such as malware, could copy BriefBar anywhere, put its own code in the copy's
-  Sparkle.framework, and run the copy with BriefBar's Full Disk Access. Where the app is installed
-  doesn't change that. A Developer ID, or running Sparkle in a process of its own, would let the app
-  turn library validation back on.
+  self-signed certificate has no team, so macOS would refuse even the updater's own copy of Sparkle.
+  Code put in that copy runs as the updater, which has none of BriefBar's permissions: it has an
+  identity of its own (`com.asaf.BriefBar.Updater`), and BriefBar starts it responsible for itself,
+  and ends it if macOS says otherwise. A Developer ID would let Sparkle load with library validation
+  on.
 - Software running as you can also start BriefBar itself, unchanged, through LaunchServices (`open`)
   or with its responsibility disclaimed, and BriefBar then has its own Full Disk Access. That software
   chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar
-  runs none of its command-line modes or `--render`, ignores the variables that point it at other
-  data and the preferences in its arguments, puts back `HOME` and drops the variables that would move
-  your keychain, your home folder, your temporary folders or SQLite's files, keeps the key to Teams'
-  saved chats in your login keychain whatever they say, and sends its output to `/dev/null`
+  runs none of its command-line modes or `--render`, only `--help` and `--check-updater`, which read
+  nothing of yours; it ignores the variables that point it at other data and the preferences in its
+  arguments, puts back `HOME` and drops the variables that would move your keychain, your home folder,
+  your temporary folders or SQLite's files, keeps the key to Teams' saved chats in your login keychain
+  whatever they say, and sends its output to `/dev/null`
   ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - `scripts/check-app.sh` checks each build for these settings, and CI runs it.
+  `scripts/test-updater-isolation.sh` shows, on a copy of a build that macOS opens, that the updater
+  is responsible for itself, and that an ad-hoc library put in place of Sparkle never runs as
+  BriefBar; CI runs it too.
 - Anything that can sign with the certificate's key can sign itself as BriefBar and inherit its Full
   Disk Access. So the release certificate, **BriefBar Release**, is on no Mac: it's made in memory,
   once, and kept only in the `release` environment's secrets and the maintainer's password manager.
@@ -104,10 +114,10 @@ it, and the app isn't notarized.
 
 ## How updates are verified
 
-The app updates itself with [Sparkle](https://sparkle-project.org). It reads the appcast, a small file
-that describes the latest release, from
-`https://github.com/mnsn/brief-bar/releases/latest/download/appcast.xml`, and downloads the update from
-the same release.
+The app updates itself with [Sparkle](https://sparkle-project.org), in its updater. It reads the
+appcast, a small file that describes the latest release, from
+`https://github.com/mnsn/brief-bar/releases/latest/download/appcast.xml`, and downloads the update
+from the same release.
 
 - The release workflow signs both the update's zip and the appcast with an EdDSA (Ed25519) key. The
   app has the public key in its `Info.plist` (`SUPublicEDKey`).

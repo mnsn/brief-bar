@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For BriefBar's updater only (Contents/Helpers/BriefBar Updater.app). It's signed with the hardened
+	     runtime, like BriefBar. Library validation, though, only loads frameworks with the app's Team ID, and a
+	     self-signed certificate or an ad-hoc signature has none, so it would refuse Sparkle.framework, even
+	     signed the same way. This turns off only that check, and only in the updater, which holds none of
+	     BriefBar's privacy permissions: BriefBar starts it responsible for itself (RunningProgram in
+	     BriefBarCore). BriefBar itself has no entitlements, so it keeps library validation on, and a copy of it
+	     with other code in a framework can't run that code with BriefBar's Full Disk Access (see "How the app
+	     is signed" in SECURITY.md). scripts/check-app.sh fails on any other entitlement, or on any for BriefBar. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

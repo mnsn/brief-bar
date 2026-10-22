@@ -1,7 +1,8 @@
 #!/bin/bash
 # Signs a packaged release with the release certificate, in the release workflow's approved job: unzips
-# build/release/BriefBar.zip, signs the app again with exactly "BriefBar Release" (or the certificate
-# BRIEFBAR_SIGNING_IDENTITY names), by its SHA-1, from BRIEFBAR_SIGNING_KEYCHAIN, checks it, and zips it again,
+# build/release/BriefBar.zip, signs its updater and the app again with exactly "BriefBar Release" (or the
+# certificate BRIEFBAR_SIGNING_IDENTITY names), by its SHA-1, from BRIEFBAR_SIGNING_KEYCHAIN, checks them
+# (scripts/check-app.sh checks that the updater's requirement names the same certificate), and zips it again,
 # with its new SHA-256 in BriefBar.zip.sha256 and notes.md.
 #   scripts/sign-release.sh [release dir]   (default: build/release)
 # Every release must be signed with the same certificate: macOS ties Full Disk Access to the app's designated

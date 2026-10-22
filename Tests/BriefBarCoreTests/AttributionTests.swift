@@ -66,6 +66,7 @@ import Testing
             "BriefBarCore/Attribution.swift": "where the variables are read",
             "BriefBarCore/LaunchEnvironment.swift": "puts back HOME, and drops what moves where macOS keeps your files, before anything reads them",
             "BriefBarCore/ProcessRunner.swift": "hands the environment to programs, which run with their own permissions",
+            "BriefBarCore/RunningProgram.swift": "hands the environment to the updater, which runs with its own permissions",
             "AzureDevOpsCore/Auth.swift": "finds az (BRIEFBAR_AZ, SHELL, PATH), which runs with its own permissions",
             "TeamsUI/TeamsSource.swift": "BRIEFBAR_RENDER_SUMMARIES, for --render, which runs only with the caller's",
         ]

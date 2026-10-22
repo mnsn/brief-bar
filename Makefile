@@ -1,4 +1,4 @@
-.PHONY: build test check-boundaries signing-key-check app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
+.PHONY: build test check-boundaries signing-key-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -31,6 +31,17 @@ check-boundaries: build
 # What keeps signing keys safe, in throwaway keychains: nothing here makes macOS ask anything. CI runs it.
 signing-key-check:
 	./scripts/test-signing-key.sh
+
+# That BriefBar's updater, which holds Sparkle with library validation off, can't use BriefBar's privacy
+# permissions, and that other code in Sparkle's place never runs as BriefBar: in a copy of build/BriefBar.app
+# (make app) that macOS opens.
+updater-check:
+	./scripts/test-updater-isolation.sh
+
+# An update through the updater, as an installed copy gets one: a copy of build/BriefBar.app (make app) installs a
+# newer one from a feed on this Mac, signed with throwaway keys, under a bundle identifier of its own.
+update-rehearsal:
+	./scripts/update-rehearsal.sh
 
 # BriefBar.app in ./build, signed ad hoc (or with your certificate, if you made one: make signing-identity).
 app:

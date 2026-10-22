@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Library validation is back on in BriefBar.** Sparkle, the updater, needs it off, so it now runs in
+  an app of its own inside BriefBar, `Contents/Helpers/BriefBar Updater.app`, with none of BriefBar's
+  permissions: BriefBar starts it responsible for itself, and ends it if macOS says otherwise. A copy of
+  BriefBar with other code in place of Sparkle can no longer run that code with BriefBar's Full Disk
+  Access. Updates look and work as before, and keep the access.
+- `BriefBar --check-updater` shows how macOS treats the updater. `make updater-check` checks it in a
+  copy of a build that macOS opens, with other code in place of Sparkle, and `make update-rehearsal`
+  installs an update through it, from a feed on the Mac.
+
 ## 0.1.0 - Unreleased
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.

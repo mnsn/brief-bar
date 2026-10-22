@@ -71,6 +71,15 @@ jobs:
       - name: Check the update signing
         run: ./scripts/appcast-dry-run.sh
 
+      # The updater holds Sparkle with library validation off. In a copy of the package that macOS opens, it's
+      # responsible for itself, and other code in Sparkle's place never runs as BriefBar.
+      - name: Check the updater's isolation
+        run: ./scripts/test-updater-isolation.sh build/BriefBar.app
+
+      # A copy of the package installs a newer one through the updater, from a signed feed on the runner.
+      - name: Rehearse an update
+        run: ./scripts/update-rehearsal.sh build/BriefBar.app
+
       # The release workflow builds on macos-26 too, so this is what a release would contain, apart from the
       # certificate.
       - name: Upload the package
@@ -106,7 +115,10 @@ jobs:
           (cd build/release && shasum -a 256 -c BriefBar.zip.sha256)
           ditto -x -k build/release/BriefBar.zip build
 
-      # Launches it, so Sparkle loads under the hardened runtime, without FoundationModels, and runs the demo
-      # check.
+      # Launches it without FoundationModels, starts its updater, which loads Sparkle under the hardened
+      # runtime, and runs the demo check.
       - name: Check the app
         run: ./scripts/check-app.sh build/BriefBar.app --universal
+
+      - name: Check the updater's isolation
+        run: ./scripts/test-updater-isolation.sh build/BriefBar.app

@@ -20,6 +20,8 @@ enum CLI {
             "  --source <name>    Only this source: teams, ado or copilot (repeatable). Without it, the modes",
             "                     cover the sources that are on in the app.",
             "  --demo             Use made-up data for every source, with any of the above or the app",
+            "  --check-updater    Start the updater as the app does, and show that macOS doesn't let it use",
+            "                     BriefBar's privacy permissions",
             "  --help             Show this help",
         ]
         for commandLine in SourceCatalog.commandLines where !commandLine.usage.isEmpty {
@@ -30,7 +32,7 @@ enum CLI {
             "",
             "Their output shows your own names, messages and titles, so keep it to yourself. They run only",
             "from a shell, such as Terminal's, with its permissions: started as an app (by open, say),",
-            "BriefBar has its own Full Disk Access, so it refuses them.",
+            "BriefBar has its own Full Disk Access, so it refuses them, all but --help and --check-updater.",
         ]
         return lines.joined(separator: "\n")
     }
@@ -40,6 +42,9 @@ enum CLI {
         if arguments.contains("--help") || arguments.contains("-h") {
             print(usage)
             return 0
+        }
+        if arguments.contains("--check-updater") {
+            return UpdaterCheck.run()
         }
         let commandLines = SourceCatalog.commandLines
         let ownFlags = commandLines.flatMap { $0.flags }
