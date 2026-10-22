@@ -87,8 +87,8 @@ it, and the app isn't notarized.
   chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar
   runs none of its command-line modes or `--render`, ignores the variables that point it at other
   data and the preferences in its arguments, puts back `HOME` and drops the variables that would move
-  your keychain, your home folder or SQLite's temporary files, and sends its output to `/dev/null`
-  ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
+  your keychain, your home folder, your temporary folders or SQLite's files, and sends its output to
+  `/dev/null` ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - `scripts/check-app.sh` checks each build for these settings, and CI runs it.
 - Anything that can sign with the certificate's key can sign itself as BriefBar and inherit its Full
   Disk Access. So the release certificate, **BriefBar Release**, is on no Mac: it's made in memory,

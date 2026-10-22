@@ -9,8 +9,8 @@ MainActor.assumeIsolated {
     // finds your files, the keychain included: they're put back before anything reads them. And `-key value`
     // arguments would override its preferences, such as which sources are on, so none of them reach it.
     let attribution = Attribution.current
+    LaunchEnvironment.secure(attribution)
     if attribution == .itself {
-        LaunchEnvironment.secure()
         UserDefaults.standard.setVolatileDomain([:], forName: UserDefaults.argumentDomain)
     }
     // `BriefBar --dump | --json | --watch | --help …` work from a terminal without the UI.

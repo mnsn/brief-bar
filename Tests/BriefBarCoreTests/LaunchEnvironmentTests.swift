@@ -24,6 +24,27 @@ import Testing
         #expect(LaunchEnvironment.changes(usual, home: "/Users/avery").isEmpty)
     }
 
+    /// The per-user temporary and cache folders follow `DIRHELPER_USER_DIR_SUFFIX`, and SQLite has variables of its own,
+    /// none of which BriefBar uses.
+    @Test func dropsWhatMovesTheTemporaryFoldersAndSQLitesVariables() {
+        let chosen = [
+            "HOME": "/Users/avery", "DIRHELPER_USER_DIR_SUFFIX": "elsewhere", "SQLITE_SQLLOG_DIR": "/tmp/elsewhere",
+            "SQLITE_AUTO_TRACE": "1", "TMPDIR": "/var/folders/xy/T/", "BRIEFBAR_TEAMS_DB": "/tmp/demo/db2/db",
+        ]
+        #expect(LaunchEnvironment.changes(chosen, home: "/Users/avery") == [
+            "DIRHELPER_USER_DIR_SUFFIX": .remove, "SQLITE_SQLLOG_DIR": .remove, "SQLITE_AUTO_TRACE": .remove,
+        ])
+    }
+
+    /// Only with its own permissions: run from a shell, with that app's, BriefBar keeps the environment it was given.
+    @Test func changesTheEnvironmentOnlyWithItsOwnPermissions() {
+        let chosen = ["HOME": "/tmp/elsewhere", "CFFIXED_USER_HOME": "/tmp/elsewhere", "SQLITE_TMPDIR": "/tmp/elsewhere"]
+        #expect(LaunchEnvironment.changes(chosen, home: "/Users/avery", attribution: .itself) == [
+            "HOME": .set("/Users/avery"), "CFFIXED_USER_HOME": .remove, "SQLITE_TMPDIR": .remove,
+        ])
+        #expect(LaunchEnvironment.changes(chosen, home: "/Users/avery", attribution: .caller).isEmpty)
+    }
+
     /// The home folder the user database names, which no variable moves.
     @Test func findsYourHomeInTheUserDatabase() throws {
         let home = UserHome.url.path
