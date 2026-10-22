@@ -17,10 +17,17 @@ final class StateListModel: ObservableObject {
     @Published private(set) var problems: [String] = []
     /// The sections it shows: those whose things can be in a state, so not the sprint.
     private(set) var sections: [SectionID] = []
-    /// While nothing shows it, it only notes that it needs to look again.
+    /// While nothing shows it, it only notes that it needs to look again, and the model isn't asked for its brief.
     var isShowing = false {
         didSet {
-            if isShowing && needsRefresh { refresh() }
+            guard isShowing != oldValue else { return }
+            if !isShowing {
+                if wordsBrief { model.briefWriter.stop(self) }
+            } else if needsRefresh {
+                refresh()
+            } else if wordsBrief {
+                model.briefWriter.write(brief, for: self)
+            }
         }
     }
 
@@ -63,8 +70,8 @@ final class StateListModel: ObservableObject {
         // Worded on screen only: never while the list is closed.
         lines = sections.flatMap { model.source(for: $0)?.briefLines(for: $0) ?? [] }
         brief = Briefing.pick(lines)
-        if wordsBrief {
-            model.briefWriter.write(brief)
+        if wordsBrief, isShowing {
+            model.briefWriter.write(brief, for: self)
         }
         var problems: [String] = []
         for section in sections {

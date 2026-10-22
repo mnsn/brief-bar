@@ -19,7 +19,7 @@ package final class TeamsSource: BriefBarSource {
     package let description = SourceDescription(
         version: TeamsSource.descriptionVersion,
         summary: "Your unread Teams chats: 1:1 chats, and group and meeting chats",
-        reads: "The notifications Teams sends to Notification Center, from Notification Center's database on this Mac, read-only. BriefBar keeps only your unread chats (each chat's name, and its unread messages' sender and text), encrypted with a key in your login keychain, until they're read. It also reads Teams' dock badge, to see when you've read everything in Teams. A summary, when you ask for one, is written on your Mac by Apple's on-device model.",
+        reads: "The notifications Teams sends to Notification Center, from Notification Center's database on this Mac, read-only. BriefBar keeps only your unread chats (each chat's name, and its unread messages' sender and text), encrypted with a key in your login keychain, until they're read. It also reads Teams' dock badge, to see when you've read everything in Teams. With Show Message Previews and Summarize with Apple Intelligence on, Apple's on-device model writes summaries on your Mac: a chat's when you ask for one, and the brief's while a list by state or the window's Overview shows your chats.",
         network: "None. Nothing about your chats leaves your Mac.",
         needs: "Full Disk Access, which macOS requires to read Notification Center's database. macOS has no prompt for it, so BriefBar walks you through System Settings. It's for all of BriefBar, once: only sources you turn on that read Notification Center use it.",
         requirements: [.fullDiskAccess]
@@ -200,9 +200,14 @@ package final class TeamsSource: BriefBarSource {
         }
     }
 
-    /// The chats, and their summaries as they arrive.
+    /// The chats, and their summaries as they arrive; and what the brief may say of them, at once when you change it.
     package var stateRowsChanged: AnyPublisher<Void, Never> {
-        changes.merge(with: summarizer.objectWillChange.map { _ in () }).eraseToAnyPublisher()
+        changes
+            .merge(with: summarizer.objectWillChange.map { _ in () })
+            // Sent once the new value is stored: `@Published` sends before.
+            .merge(with: settings.$showPreviews.removeDuplicates().dropFirst().receive(on: DispatchQueue.main).map { _ in () })
+            .merge(with: settings.$showSummaries.removeDuplicates().dropFirst().receive(on: DispatchQueue.main).map { _ in () })
+            .eraseToAnyPublisher()
     }
 
     /// Unread chats need you, the newest message first.

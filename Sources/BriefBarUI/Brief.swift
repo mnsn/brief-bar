@@ -98,24 +98,49 @@ extension Briefing {
 
 /// Words a brief's lines with Apple Intelligence's on-device model, on this Mac: nothing leaves it, and what it writes
 /// stays in memory, for lines shown in the last few minutes, never on disk or in the log. The model words the lines
-/// BriefBar picked; it doesn't decide what matters.
+/// BriefBar picked; it doesn't decide what matters. It's asked only for lines that a list or a page on screen shows:
+/// once that hides, or a refresh takes a line away, what's still waiting isn't asked for.
 @MainActor
 package final class BriefWriter: ObservableObject {
+    /// What the model answers for one line.
+    package typealias Respond = @MainActor (BriefRequest) async -> Result<String, OnDeviceModel.Failure>
+
+    /// A list or page on screen, and the lines it shows that ask the model. Held weakly, so one that goes away without
+    /// saying so stops counting.
+    private struct Viewer {
+        weak var object: AnyObject?
+        var requests: Set<BriefRequest>
+    }
+
     @Published private var results: [BriefRequest: String] = [:]
     private var failed: Set<BriefRequest> = []
     private var queue: [BriefRequest] = []
-    private var isWorking = false
-    /// When each line was last on screen: what it wrote is kept that long, for lists and pages that show it again.
+    /// The line the model is writing now.
+    private var asking: BriefRequest?
+    private var viewers: [ObjectIdentifier: Viewer] = [:]
+    /// When each line stopped being on screen: what the model wrote for it is kept that long, for lists and pages that
+    /// show it again, and then forgotten.
     private var lastShown: [BriefRequest: Date] = [:]
-    private static let keepFor: TimeInterval = 600
+    package static let keepFor: TimeInterval = 600
+    private var forgetTimer: Timer?
     /// Off while BriefBar draws pictures that shouldn't wait for the model (`--render`): lines keep their sentences.
     package var isEnabled: Bool
+    private let available: @MainActor () -> Bool
+    private let respond: Respond
 
-    package init(isEnabled: Bool = true) {
+    package init(
+        isEnabled: Bool = true,
+        isAvailable: @escaping @MainActor () -> Bool = { OnDeviceModel.isAvailable },
+        respond: @escaping Respond = { request in
+            await OnDeviceModel.respond(to: request.prompt, instructions: request.instructions, maximumTokens: 90)
+        }
+    ) {
         self.isEnabled = isEnabled
+        available = isAvailable
+        self.respond = respond
     }
 
-    package var isAvailable: Bool { OnDeviceModel.isAvailable }
+    package var isAvailable: Bool { available() }
 
     /// What a line says: what the model wrote, once it has, or BriefBar's own sentence; and whether the model wrote it.
     package func text(for line: BriefLine) -> (text: String, isWritten: Bool) {
@@ -124,22 +149,28 @@ package final class BriefWriter: ObservableObject {
         return (request.lead + written, true)
     }
 
-    /// Asks the model for the lines on screen that need it, and forgets what it wrote for lines no longer shown.
-    package func write(_ lines: [BriefLine], now: Date = Date()) {
+    /// The lines a list or page on screen shows now, replacing what it showed before: asks the model for those that
+    /// need it, and no longer for the ones it stopped showing.
+    package func write(_ lines: [BriefLine], for viewer: AnyObject, now: Date = Date()) {
         let requests = lines.compactMap(\.request)
-        for request in requests { lastShown[request] = now }
-        lastShown = lastShown.filter { now.timeIntervalSince($0.value) < Self.keepFor }
-        let kept = Set(lastShown.keys)
-        if results.keys.contains(where: { !kept.contains($0) }) {
-            results = results.filter { kept.contains($0.key) }
-        }
-        failed = failed.intersection(kept)
-        queue.removeAll { !kept.contains($0) }
+        let id = ObjectIdentifier(viewer)
+        for request in viewers[id]?.requests ?? [] { lastShown[request] = now }
+        viewers[id] = Viewer(object: viewer, requests: Set(requests))
+        forget(now: now)
         guard isEnabled, isAvailable else { return }
-        for request in requests.reversed() where results[request] == nil && !failed.contains(request) && !queue.contains(request) {
+        for request in requests.reversed()
+        where results[request] == nil && !failed.contains(request) && !queue.contains(request) && request != asking {
             queue.insert(request, at: 0)
         }
         runNext()
+    }
+
+    /// A list or page is no longer on screen: what it showed isn't asked for anymore, and what was written for it is
+    /// kept for a while.
+    package func stop(_ viewer: AnyObject, now: Date = Date()) {
+        guard let shown = viewers.removeValue(forKey: ObjectIdentifier(viewer)) else { return }
+        for request in shown.requests { lastShown[request] = now }
+        forget(now: now)
     }
 
     /// Whether every line that asked has its words, or the model couldn't (for `--render`).
@@ -147,19 +178,58 @@ package final class BriefWriter: ObservableObject {
         lines.compactMap(\.request).allSatisfy { results[$0] != nil || failed.contains($0) }
     }
 
+    /// The lines that lists and pages on screen show now.
+    private func showing(now: Date) -> Set<BriefRequest> {
+        for (id, viewer) in viewers where viewer.object == nil {
+            viewers[id] = nil
+            for request in viewer.requests { lastShown[request] = now }
+        }
+        return viewers.values.reduce(into: []) { $0.formUnion($1.requests) }
+    }
+
+    /// Forgets what it wrote for lines off screen for longer than `keepFor`, stops asking for lines off screen, and
+    /// comes back when the next of what it keeps is due to go.
+    private func forget(now: Date) {
+        let onScreen = showing(now: now)
+        lastShown = lastShown.filter { !onScreen.contains($0.key) && now.timeIntervalSince($0.value) < Self.keepFor }
+        let kept = onScreen.union(lastShown.keys)
+        if results.keys.contains(where: { !kept.contains($0) }) {
+            results = results.filter { kept.contains($0.key) }
+        }
+        failed = failed.intersection(kept)
+        queue.removeAll { !onScreen.contains($0) }
+
+        forgetTimer?.invalidate()
+        forgetTimer = nil
+        guard let next = lastShown.values.min() else { return }
+        let timer = Timer(fire: next.addingTimeInterval(Self.keepFor + 1), interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.forget(now: Date()) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        forgetTimer = timer
+    }
+
     private func runNext() {
-        guard !isWorking, !queue.isEmpty else { return }
+        guard asking == nil else { return }
+        let onScreen = showing(now: Date())
+        queue.removeAll { !onScreen.contains($0) }
+        guard !queue.isEmpty else { return }
         let next = queue.removeFirst()
-        isWorking = true
+        asking = next
         Task {
-            switch await OnDeviceModel.respond(to: next.prompt, instructions: next.instructions, maximumTokens: 90) {
-            case .success(let text):
-                if let line = Self.clean(text) { results[next] = line } else { failed.insert(next) }
-            case .failure(let failure):
-                Log.app.info("The brief's line stays in BriefBar's own words: \(String(describing: failure), privacy: .public)")
-                failed.insert(next)
+            let answer = await respond(next)
+            asking = nil
+            // Kept like the rest: while its line is on screen, or was in the last few minutes.
+            let now = Date()
+            if showing(now: now).contains(next) || lastShown[next].map({ now.timeIntervalSince($0) < Self.keepFor }) == true {
+                switch answer {
+                case .success(let text):
+                    if let line = Self.clean(text) { results[next] = line } else { failed.insert(next) }
+                case .failure(let failure):
+                    Log.app.info("The brief's line stays in BriefBar's own words: \(String(describing: failure), privacy: .public)")
+                    failed.insert(next)
+                }
             }
-            isWorking = false
             runNext()
         }
     }

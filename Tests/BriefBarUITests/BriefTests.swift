@@ -66,7 +66,7 @@ import Testing
         let writer = BriefWriter(isEnabled: false)
         var asking = line(.teams, "chat", .needsYou, 1)
         asking.request = BriefRequest(prompt: "Chat: …", instructions: "…", lead: "Avery Quinn: ")
-        writer.write([asking])
+        writer.write([asking], for: List())
         #expect(writer.text(for: asking).text == "chat.")
         #expect(!writer.text(for: asking).isWritten)
         // A line that asks for nothing is done at once.
@@ -77,6 +77,124 @@ import Testing
         summarized.written = "Avery Quinn: The deck is in the shared folder."
         #expect(writer.text(for: summarized) == ("Avery Quinn: The deck is in the shared folder.", true))
         #expect(writer.isDone(with: [summarized]))
+    }
+
+    /// A list or page that shows a brief.
+    private final class List {}
+
+    /// Stands in for the on-device model: notes what it's asked, and answers at once, or once let go.
+    @MainActor
+    private final class Model {
+        private(set) var asked: [String] = []
+        var holds = false
+        private var held: [CheckedContinuation<Void, Never>] = []
+
+        func respond(_ request: BriefRequest) async -> Result<String, OnDeviceModel.Failure> {
+            asked.append(request.prompt)
+            if holds {
+                await withCheckedContinuation { held.append($0) }
+            }
+            return .success("Written for \(request.prompt).")
+        }
+
+        func letGo() {
+            holds = false
+            let waiting = held
+            held = []
+            waiting.forEach { $0.resume() }
+        }
+    }
+
+    private func asking(_ prompt: String) -> BriefLine {
+        var asking = line(.teams, prompt, .needsYou, 1)
+        asking.request = BriefRequest(prompt: prompt, instructions: "…", lead: "Avery Quinn: ")
+        return asking
+    }
+
+    /// Lets the writer's work on the main actor go on until `done`, or a second goes by.
+    private func settle(until done: () -> Bool) async {
+        for _ in 0..<100 where !done() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// Lets it go on for a moment, for what shouldn't happen to have the chance.
+    private func settle() async {
+        try? await Task.sleep(for: .milliseconds(200))
+    }
+
+    @Test func asksTheModelOnlyForWhatsOnScreen() async {
+        let model = Model()
+        model.holds = true
+        let writer = BriefWriter(isAvailable: { true }, respond: { await model.respond($0) })
+        let list = List()
+        let lines = ["first", "second", "third"].map(asking)
+        writer.write(lines, for: list)
+        await settle { !model.asked.isEmpty }
+        // One at a time.
+        #expect(model.asked == ["first"])
+
+        // The list hides: what's still waiting isn't asked for. What was being written is kept, for when it shows again.
+        writer.stop(list)
+        model.letGo()
+        await settle { writer.text(for: lines[0]).isWritten }
+        #expect(writer.text(for: lines[0]).text == "Avery Quinn: Written for first.")
+        await settle()
+        #expect(model.asked == ["first"])
+
+        // A refresh that takes a line away: it isn't asked for either.
+        model.holds = true
+        writer.write(Array(lines[1...]), for: list)
+        await settle { model.asked.count == 2 }
+        writer.write([lines[1]], for: list)
+        model.letGo()
+        await settle()
+        #expect(model.asked == ["first", "second"])
+        #expect(writer.text(for: lines[1]).isWritten && !writer.text(for: lines[2]).isWritten)
+
+        // Nor once a list goes away without saying so.
+        model.holds = true
+        var other: List? = List()
+        writer.write([lines[2], asking("fourth")], for: other!)
+        await settle { model.asked.count == 3 }
+        other = nil
+        model.letGo()
+        await settle()
+        #expect(model.asked == ["first", "second", "third"])
+        #expect(other == nil)
+    }
+
+    @Test func asksNothingWhileOffOrWithoutTheModel() async {
+        let model = Model()
+        let off = BriefWriter(isEnabled: false, isAvailable: { true }, respond: { await model.respond($0) })
+        let unavailable = BriefWriter(isAvailable: { false }, respond: { await model.respond($0) })
+        let list = List()
+        off.write([asking("chat")], for: list)
+        unavailable.write([asking("chat")], for: list)
+        await settle()
+        #expect(model.asked.isEmpty)
+    }
+
+    @Test func forgetsWhatItWroteTenMinutesAfterItsLineLeftTheScreen() async {
+        let model = Model()
+        let writer = BriefWriter(isAvailable: { true }, respond: { await model.respond($0) })
+        let list = List()
+        let other = List()
+        let chat = asking("chat")
+        let start = Date()
+        writer.write([chat], for: list, now: start)
+        await settle { writer.text(for: chat).isWritten }
+
+        // On screen for an hour: kept.
+        writer.write([], for: other, now: start.addingTimeInterval(3_600))
+        #expect(writer.text(for: chat).isWritten)
+        // Then off screen: kept ten minutes, for when a list shows it again, then forgotten.
+        writer.stop(list, now: start.addingTimeInterval(3_600))
+        writer.write([], for: other, now: start.addingTimeInterval(3_600 + BriefWriter.keepFor - 1))
+        #expect(writer.text(for: chat).isWritten)
+        writer.write([], for: other, now: start.addingTimeInterval(3_600 + BriefWriter.keepFor + 1))
+        #expect(!writer.text(for: chat).isWritten)
+        #expect(model.asked == ["chat"])
     }
 
     @Test func cleansWhatTheModelWrites() {

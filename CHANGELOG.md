@@ -12,8 +12,10 @@
   first, each with the actions its own list has.
 - **A brief across sources** at the top of that list and of the window's Overview: up to five lines,
   from every source with something to say, each opening its thing. Apple Intelligence rewords the
-  ones with something to condense, on your Mac; without it, they stay in BriefBar's own words. Teams'
-  message text goes in only while **Show Message Previews** is on.
+  ones with something to condense, on your Mac, only while the list or the Overview is on screen;
+  without it, they stay in BriefBar's own words. Teams' message text goes in only while **Show Message
+  Previews** is on, and chats go to Apple Intelligence only while **Summarize with Apple Intelligence**
+  is on too.
 - **An Overview**: the window's first page, which it opens on, and a new widget, hidden until you turn
   it on in Settings › Widgets. The other widgets stay as they are.
 - `--json` prints each section's counts by state as well.

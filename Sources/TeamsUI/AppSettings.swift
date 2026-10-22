@@ -58,7 +58,8 @@ final class AppSettings: ObservableObject {
     @Published var clearWithDockBadge: Bool {
         didSet { defaults.set(clearWithDockBadge, forKey: Key.clearWithDockBadge) }
     }
-    /// Offers one-sentence summaries from Apple's on-device model, while previews are shown.
+    /// Offers one-sentence summaries from Apple's on-device model, and lets it word chats in the brief, while previews
+    /// are shown.
     @Published var showSummaries: Bool {
         didSet { defaults.set(showSummaries, forKey: Key.showSummaries) }
     }

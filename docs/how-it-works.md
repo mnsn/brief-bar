@@ -251,8 +251,9 @@ says which, if any, Apple Intelligence may reword, by its own settings:
 
 `BriefWriter` asks Apple Intelligence's on-device model (`SystemLanguageModel.default`, never Private
 Cloud Compute) for one line at a time, only for lines a list or the window shows, never in the
-background, and keeps what it writes in memory for ten minutes after the line was last on screen,
-never on disk or in the log. Without the model, or when it fails, a line keeps BriefBar's words, and
+background: once a list hides, or a refresh takes a line away, what's still waiting isn't asked for.
+It keeps what it writes in memory for ten minutes after the line was last on screen, never on disk or
+in the log. Without the model, or when it fails, a line keeps BriefBar's words, and
 the brief shows no ✨. `--render` keeps BriefBar's words, unless `BRIEFBAR_RENDER_SUMMARIES=1` makes it
 wait for the model.
 
@@ -431,6 +432,8 @@ Organizations can skip the step entirely: a configuration profile with a
 
 The ✨ button on a chat asks Apple's on-device model for one sentence: what the chat is about, and
 anything it asks of you (`Summarizer` in `TeamsUI`, `SummaryPrompt` in `TeamsCore`, the model in `OnDeviceModel`).
+The brief asks it the same of the chats it shows, while a list by state or the Overview is on screen
+([The brief](#the-brief)).
 
 - The session is created with `SystemLanguageModel.default`, the model that runs on the Mac. The
   framework also offers `PrivateCloudComputeLanguageModel`, which runs on Apple's servers; BriefBar

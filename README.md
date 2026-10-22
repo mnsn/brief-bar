@@ -361,7 +361,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 |---|---|---|
 | Teams | Keep Unread For | 4 hours, 1 day (default), 3 days, until I read it |
 | | Show Message Previews | on/off: off shows only how many messages are new, for screen sharing |
-| | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, while previews are shown |
+| | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, and chats worded in [the brief](#the-brief), while previews are shown |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |

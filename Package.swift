@@ -99,7 +99,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TeamsUITests",
-            dependencies: ["TeamsUI", "TeamsCore", "NotificationCenterDB"]
+            dependencies: ["TeamsUI", "TeamsCore", "NotificationCenterDB", "BriefBarUI"]
         ),
         .testTarget(
             name: "AzureDevOpsUITests",

@@ -54,4 +54,24 @@ import Testing
         source.settings.summaries = false
         #expect(source.briefLines(for: .azureDevOpsPullRequests).allSatisfy { $0.request == nil })
     }
+
+    /// Turning Summaries off asks lists to look again at once, though no pull request changed.
+    @Test func listsLookAgainWhenSummariesChange() async {
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true))
+        source.start()
+        defer { source.stop() }
+        final class Count: @unchecked Sendable { var value = 0 }
+        let count = Count()
+        let subscription = source.stateRowsChanged.sink { count.value += 1 }
+        defer { subscription.cancel() }
+        // What starting sends first.
+        try? await Task.sleep(for: .milliseconds(200))
+        count.value = 0
+
+        source.settings.summaries = false
+        for _ in 0..<100 where count.value == 0 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(count.value == 1)
+    }
 }

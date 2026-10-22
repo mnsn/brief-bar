@@ -137,6 +137,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         store.$items.map { _ in () }
             .merge(with: store.$problem.map { _ in () })
             .merge(with: settings.$showToReview.removeDuplicates().map { _ in () })
+            // Whether the brief asks Apple Intelligence for its lines, at once when you change it.
+            .merge(with: settings.$summaries.removeDuplicates().dropFirst().map { _ in () })
             .merge(with: pipelines?.$statuses.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher())
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.rowChanges.send() } }
