@@ -129,8 +129,11 @@ Reactions and channel posts aren't unread chats, so they aren't counted. Read ch
 **Recent** for a day.
 
 Teams must post notifications for BriefBar to see them. Check that **System Settings › Notifications ›
-Microsoft Teams** allows them, with **Show in Notification Center** on. Muted chats, and messages that
-arrive while Teams' status is **Do not disturb**, don't produce notifications. A macOS Focus is fine.
+Microsoft Teams** allows them, with **Show in Notification Center** on, and keep **Badge application
+icon** on too: BriefBar watches Teams' dock badge to tell when you've read everything in Teams. In
+Teams' own settings, under **Notifications and activity**, chat notifications must be on. Muted chats,
+and messages that arrive while Teams' status is **Do not disturb** or while you're looking at the
+chat, don't produce notifications. A macOS Focus is fine: notifications are still stored.
 
 ### Azure DevOps
 
@@ -158,10 +161,12 @@ organizations where you have pull requests; **Organizations** in its settings ch
 
 **Pull Requests Sent in Chats**, off by default, lists a pull request as needing you when someone
 sends you a link to it, in Teams, Slack, an email or any other app, as "Dana sent this in Teams",
-even if you're not on it. It reads the notifications that every app posts to Notification Center,
-keeps only the links, with who sent them, in which app and when, never the messages, and needs Full
-Disk Access, like Teams. Right-click the pull request to open the message. A link needs you until
-you open the pull request from BriefBar, vote or comment on it, it closes, or a week goes by.
+even if you're not on it. In Teams, only chat messages count, not channel posts or reactions, and
+emails from Azure DevOps itself don't count. It reads the notifications that every app posts to
+Notification Center, keeps only the links, with who sent them, in which app and when, never the
+messages, and needs Full Disk Access, like Teams. Right-click the pull request to open the message. A
+link needs you until you open the pull request from BriefBar, vote or comment on it, it closes, or a
+week goes by.
 
 **Sprint** shows your team's current sprint at a glance: how much is done, how many days are left and
 where your own work stands, then each story and bug with its tasks, in **In Progress** (when they, or
@@ -222,7 +227,9 @@ list's gear menu, checks right away. To remove BriefBar, quit it, move it to the
 from the Full Disk Access list.
 
 On a Mac that your organization manages, **Open Anyway** may be missing, or a profile may keep you
-from granting Full Disk Access. Your IT department can grant it for you, as described below.
+from granting Full Disk Access, and security software may flag an app that reads Notification
+Center's database, so check your organization's policy first. Your IT department can grant the access
+for you, as described below.
 
 ### Moving from the Pulse apps
 
@@ -365,6 +372,13 @@ It could: Notification Center's database, Teams' notifications and the Copilot a
 documented. BriefBar checks them every time it reads them, and says what changed instead of guessing.
 For Teams, **Copy Diagnostics** describes the database's structure, without your data.
 
+### How do Teams and Copilot update without polling?
+
+Notification Center and the Copilot app keep what BriefBar shows in SQLite databases, and each of the
+Copilot app's agents writes a log file. They write every change to disk as it happens, so BriefBar
+watches those files with kqueue and FSEvents, and reads them again only when they change.
+[How it works](docs/how-it-works.md) has the details.
+
 ### Why does Azure DevOps poll instead of getting pushed updates?
 
 Azure DevOps can only push changes through service hooks, which need a project administrator and a
@@ -372,12 +386,34 @@ server on the internet. So BriefBar asks every minute: about 10 to 25 small requ
 right away when you open the list, when your Mac wakes, and when it's back online. Your sprint and
 pipelines add a few requests a minute, and only while something shows them.
 
+### Why isn't a pull request assigned to my team shown?
+
+Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
+requests where you were added yourself, including by a policy, are shown.
+
+### Why does a failed build show no error details?
+
+Azure DevOps doesn't include a build's errors with a pull request's policies, so the list shows which
+build failed. Click the pull request to see it.
+
 ### How does it pick my team's sprint?
 
 The first time, it looks through your teams for one with a sprint going on today. When several have
 one, it picks the team with the most work assigned to you, and keeps it. Choose another team from the
 Sprint page's team menu. Azure DevOps keeps calling a team's last sprint "current" after it's over,
 when the team stops planning sprints: BriefBar shows no sprint then.
+
+### Why do some Copilot sessions show less detail?
+
+Questions, plans, permission prompts and the current step come from the agent's log on this Mac. A
+session without a local log only shows Running, Interrupted or Idle, based on the Copilot app's own
+flags.
+
+### Which languages can it summarize?
+
+Those Apple's on-device model supports, which depend on your macOS version. For others it may still
+manage; if not, Teams says it can't summarize that language yet, and Azure DevOps shows no brief.
+Summaries and the brief need macOS 26 or later, and Apple Intelligence turned on in System Settings.
 
 ### Why isn't it notarized?
 
@@ -399,10 +435,12 @@ what keeps Full Disk Access. [SECURITY.md](SECURITY.md#how-updates-are-verified)
 The app binary has command-line modes, and logs to the system log:
 
 ```sh
-APP="$HOME/Applications/BriefBar.app/Contents/MacOS/BriefBar"
+APP="/Applications/BriefBar.app/Contents/MacOS/BriefBar"   # ~/Applications after make install
 "$APP" --help
 "$APP" --dump                     # what each source that's on shows
+"$APP" --json                     # the same, as JSON, with each source's counts
 "$APP" --watch --source copilot   # one source's changes as they happen
+"$APP" --render ~/Desktop/render  # the menu bar, its lists, widgets, window and Settings, as PNGs
 "$APP" --diagnose                 # Teams: the database's structure only, safe to share
 "$APP" --orgs                     # Azure DevOps: your organizations
 "$APP" --chats                    # Azure DevOps: the pull request links in every app's notifications
@@ -410,11 +448,12 @@ APP="$HOME/Applications/BriefBar.app/Contents/MacOS/BriefBar"
 "$APP" --sprint                   # Azure DevOps: your team's current sprint
 "$APP" --pipelines                # Azure DevOps: the pipelines you pinned, with their latest runs
 log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --style compact
+log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates
 ```
 
-Run from Terminal, Teams' modes and `--chats` use Terminal's Full Disk Access. `--dump`, `--watch`,
-`--json` and `--chats` print your chats, titles, senders and sessions, so keep their output to
-yourself; `--diagnose` is safe to share.
+Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. Except for
+`--diagnose`, which is safe to share, their output shows your own chats, names, titles and sessions,
+so keep it to yourself. `--demo --render` draws made-up data instead.
 
 ## Contributing
 

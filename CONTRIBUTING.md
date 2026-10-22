@@ -148,8 +148,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   Private Cloud Compute or any other model.
 - **No content in logs.** Log counts, states and errors, never names, messages, titles or IDs.
 - **Use made-up data.** Real chats, pull requests and sessions are private, and often confidential.
-  Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share;
-  `--dump`, `--watch` and `--json` output isn't.
+  Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share,
+  and so are the pictures from `--demo --render`; the other modes' output isn't, and neither are the
+  pictures `--render` draws from your own data.
 - **Logic goes in the core modules**, free of UI code and covered by tests.
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
   `MemorySettings`: a UserDefaults suite leaves a file in `~/Library/Preferences`, even once removed.
