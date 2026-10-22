@@ -1025,7 +1025,9 @@ a copy you built updates itself to a release.
 
 BriefBar and its updater run with the hardened runtime, so other processes can't use BriefBar's Full
 Disk Access by injecting code into them: macOS ignores `DYLD_` environment variables for them, such as
-`DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach.
+`DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach. That takes System Integrity Protection,
+which is on unless you turn it off: with it off, macOS doesn't stop programs from loading code into
+BriefBar, or into any other app, and BriefBar can't prevent that.
 
 The hardened runtime also turns on library validation, which loads only libraries signed by Apple or by
 the app's own team. A self-signed certificate has no team, so macOS would refuse Sparkle, even signed
@@ -1048,11 +1050,12 @@ certificate, which has a team, would let Sparkle load with library validation on
 
 `scripts/test-updater-isolation.sh` shows it on a copy of a build that macOS opens: BriefBar loads only
 Apple's libraries, and an ad-hoc library put in place of Sparkle, in the updater and in BriefBar's own
-`Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS holds
-responsible for itself. `BriefBar --check-updater` reports the same about any copy. With System Integrity
-Protection off, as on GitHub's runners, macOS lets the updater load the library `DYLD_INSERT_LIBRARIES`
-names instead of its own Sparkle, and `--check-updater` reports that: the test accepts it only where
-`csrutil status` says so, and checks where the library ran either way.
+`Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS
+holds responsible for itself. `BriefBar --check-updater` reports the same about any copy, listing every
+library loaded into BriefBar but its executable, which it tells by its Mach-O header: dyld lists a
+library that `DYLD_INSERT_LIBRARIES` inserts before the executable. With System Integrity Protection
+off, as on GitHub's runners, that variable loads code into any app, so there the test leaves it out,
+and puts the library only in Sparkle's places; it prints `csrutil status`, and says which it did.
 
 ## Updating the app
 
