@@ -236,6 +236,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
+`main` requires a pull request, all four CI jobs to pass on an up-to-date branch, and all review
+conversations to be resolved. A second person's approval isn't required, so a solo maintainer can
+merge their own pull request. Force-pushing to `main` and deleting it are blocked.
+
 ## Signing
 
 Builds from source are signed ad hoc, so there's no key on your Mac that anything could sign as
@@ -286,8 +290,8 @@ Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
 2. Add a section for it at the top of `CHANGELOG.md`, with the date, such as
    `## 0.2.0 - 2026-11-30`. It becomes the release notes, on GitHub and in the app's update window, so
    write it for users.
-3. Push to `main` and wait for CI. If no runner picks a job up, start the workflow again from
-   **Actions** with **Run workflow**.
+3. Merge the changes into `main` through a pull request. If no runner picks a CI job up, start the
+   workflow again from **Actions** with **Run workflow**.
 4. Tag the commit and push the tag:
 
    ```sh
@@ -333,7 +337,8 @@ To set up a repository:
 1. In its **Settings › Environments**, create an environment named `release`. Under
    **Deployment protection rules**, turn on **Required reviewers** and add the maintainers. Under
    **Deployment branches and tags**, choose **Selected branches and tags** and add a rule for the tag
-   pattern `v*`.
+   pattern `v*`. For a solo maintainer, leave **Prevent self-review** off so the person who pushes
+   the tag can approve the release.
 2. Run `scripts/make-release-keys.sh` in Terminal. For each secret it copies, click
    **Add environment secret** in the environment, paste the value, and name it as the script says.
    Paste each into your password manager too: it keeps the only other copy. The script writes the
