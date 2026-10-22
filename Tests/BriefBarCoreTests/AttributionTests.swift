@@ -68,15 +68,17 @@ import Testing
             "AzureDevOpsCore/Auth.swift": "finds az (BRIEFBAR_AZ, SHELL, PATH), which runs with its own permissions",
             "TeamsUI/TeamsSource.swift": "BRIEFBAR_RENDER_SUMMARIES, for --render, which runs only with the caller's",
         ]
+        // Resolved, as the enumerator's paths can be: a checkout under /tmp is under /private/tmp.
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../Sources").standardizedFileURL
+            .appendingPathComponent("../../Sources").standardizedFileURL.resolvingSymlinksInPath()
         let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
         var readers: Set<String> = []
         for case let file as URL in files where file.pathExtension == "swift" {
             let text = try String(contentsOf: file, encoding: .utf8)
-            if text.contains("processInfo.environment") || text.contains("getenv(") {
-                readers.insert(String(file.path.dropFirst(sources.path.count + 1)))
-            }
+            guard text.contains("processInfo.environment") || text.contains("getenv(") else { continue }
+            let path = file.resolvingSymlinksInPath().pathComponents
+            try #require(path.starts(with: sources.pathComponents), "\(file.path) isn't in \(sources.path)")
+            readers.insert(path.dropFirst(sources.pathComponents.count).joined(separator: "/"))
         }
         #expect(!readers.isEmpty)
         #expect(readers.subtracting(allowed.keys).isEmpty, "Read these through Attribution.environment: \(readers.subtracting(allowed.keys).sorted())")
