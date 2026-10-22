@@ -150,7 +150,7 @@ public struct IndexedDBFolder: Sendable {
     public func blobFile(database: Int64, number: Int64) -> URL {
         blobFolder
             .appendingPathComponent(String(database, radix: 16), isDirectory: true)
-            .appendingPathComponent(String(format: "%02x", (number >> 8) & 0xFF), isDirectory: true)
+            .appendingPathComponent(String(format: "%02x", UInt32((number >> 8) & 0xFF)), isDirectory: true)
             .appendingPathComponent(String(number, radix: 16))
     }
 
