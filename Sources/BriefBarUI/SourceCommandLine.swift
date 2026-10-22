@@ -13,6 +13,21 @@ package struct CommandLineOptions: Sendable {
     }
 }
 
+/// The command-line modes and `--render` print or save what they read, so they run only with the permissions of the
+/// app that started BriefBar, such as Terminal. Started as an app (by `open`, say), BriefBar has its own Full Disk
+/// Access, and whoever started it would get what it read, even with `--demo`, whose data its environment names.
+package enum CommandLineAccess {
+    /// Why they can't run, or nil when they can.
+    package static func refusal(_ attribution: Attribution) -> String? {
+        guard attribution == .itself else { return nil }
+        return """
+            BriefBar's command-line modes and --render run only from a shell, such as Terminal's, with its \
+            permissions. Started as an app (by open, say), BriefBar has its own Full Disk Access, so they don't run. \
+            Run \(Bundle.main.executablePath ?? "BriefBar") from Terminal instead.
+            """
+    }
+}
+
 /// A source's command-line modes, which run without the app's UI, mainly to check what it would show.
 package protocol SourceCommandLine {
     static var source: SourceID { get }

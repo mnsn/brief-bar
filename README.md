@@ -451,7 +451,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates
 ```
 
-Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. Teams'
+Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. They run
+only from a shell like that: started as an app, with `open` say, BriefBar has its own Full Disk
+Access, and whoever started it could read its output, so it refuses every mode but `--help`. Teams'
 modes and `--render` never read the unread chats that BriefBar saved: any program can run the app's
 binary, so only the app itself reads them. They show what Notification Center has now, and count as
 unread only what arrived since BriefBar last read it (while BriefBar runs, the last minute or so). So

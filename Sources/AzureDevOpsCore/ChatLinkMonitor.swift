@@ -4,12 +4,13 @@ import NotificationCenterDB
 import Synchronization
 
 /// Where pull requests sent in chats are looked for: Notification Center's database, which needs Full Disk
-/// Access, or the copy that `BRIEFBAR_CHAT_LINKS_DB` names, such as a test fixture.
+/// Access, or the copy that `BRIEFBAR_CHAT_LINKS_DB` names, such as a test fixture, only while BriefBar has the
+/// permissions of the app that started it (`Attribution.environment`).
 public enum ChatLinkDatabase {
     public static let overrideVariable = "BRIEFBAR_CHAT_LINKS_DB"
 
     public static func url(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
+        environment: [String: String] = Attribution.environment,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
         if let path = environment[overrideVariable], !path.isEmpty {

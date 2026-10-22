@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// Locations of the GitHub Copilot app's local state. Everything here is read-only for us.
@@ -11,9 +12,10 @@ public struct CopilotPaths: Sendable, Equatable {
     /// Points BriefBar at another Copilot data directory, such as the demo data.
     public static let directoryVariable = "BRIEFBAR_COPILOT_DIR"
 
-    /// `~/.copilot`, overridable with `BRIEFBAR_COPILOT_DIR` (used by tests and for debugging).
+    /// `~/.copilot`, overridable with `BRIEFBAR_COPILOT_DIR` (used by tests and for debugging) while BriefBar has the
+    /// permissions of the app that started it (`Attribution.environment`).
     public static func `default`(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = Attribution.environment
     ) -> CopilotPaths {
         if let paths = overridden(environment: environment) {
             return paths
@@ -24,7 +26,7 @@ public struct CopilotPaths: Sendable, Equatable {
 
     /// The directory `BRIEFBAR_COPILOT_DIR` names, if it names one: the only data the demo reads.
     public static func overridden(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = Attribution.environment
     ) -> CopilotPaths? {
         guard let override = environment[directoryVariable], !override.isEmpty else { return nil }
         let expanded = (override as NSString).expandingTildeInPath

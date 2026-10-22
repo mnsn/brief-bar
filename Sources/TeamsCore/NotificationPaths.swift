@@ -32,8 +32,10 @@ public struct NotificationPaths: Sendable, Equatable {
         NotificationCenterLocation.systemDatabase(home: home)
     }
 
+    /// Notification Center's database and BriefBar's state, or what the variables name, only while BriefBar has the
+    /// permissions of the app that started it (`Attribution.environment`).
     public static func `default`(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
+        environment: [String: String] = Attribution.environment,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> NotificationPaths {
         let system = systemDatabase(home: home)

@@ -65,6 +65,37 @@ Sparkle, the updater, is a framework of its own, which that check doesn't read. 
 either: its framework imports neither `posix_spawn` nor `NSTask`, and it submits its installer to
 launchd (`SMJobSubmit`), which starts it. The installer replaces the app and opens it again.
 
+### Programs that start BriefBar
+
+It works the other way round too. A program that runs BriefBar's binary from a shell lends it its own
+permissions: run in Terminal, it reads Notification Center with Terminal's Full Disk Access. But a
+program that starts BriefBar through LaunchServices
+(`open -n -g --stdout out.txt BriefBar.app --args --json`), or spawns it with its responsibility
+disclaimed, makes it responsible for itself, and it then has its own Full Disk Access. That program
+chose its arguments, its environment (`open --env`) and argument-domain preferences
+(`--args -key value`), and can read its output. So, when BriefBar is attributed to itself
+(`Attribution` in `Sources/BriefBarCore`):
+
+- No command-line mode runs, and no `--render`, not even with `--demo`, whose data the environment
+  names. `--help` still does; the others say to run them from Terminal instead.
+- It ignores the variables that point a source at other data (`BRIEFBAR_TEAMS_DB`,
+  `BRIEFBAR_TEAMS_STATE_DIR`, `BRIEFBAR_CHAT_LINKS_DB`, `BRIEFBAR_COPILOT_DIR`): such a database
+  could be a copy that only Full Disk Access reads, as a Time Machine backup's is. `BRIEFBAR_AZ`
+  still applies: `az` runs with its own permissions.
+- Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
+  source, or **Pull Requests Sent in Chats**, without you.
+- The app's standard output and error go to `/dev/null`, where frameworks could otherwise write, for
+  instance with `OS_ACTIVITY_DT_MODE` set.
+
+That's how the app always runs once installed, from Finder, a login item or an update, so it changes
+nothing for it. Run from a shell, nothing changes either.
+
+To tell, BriefBar asks macOS who's responsible for it (`responsibility_get_responsible_for_pid`), and
+compares the executable it names with its own: privacy permissions are checked against that
+executable. The process macOS names isn't enough. On macOS 27, a command that the GitHub Copilot app's
+agents run is its own responsible process, yet attributed to the Copilot app, whose permissions it
+gets. Whether macOS names BriefBar, or can't say, it counts as BriefBar's own permissions.
+
 ## Menu bar, widgets and windows
 
 Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' **Pull
@@ -188,12 +219,13 @@ saves them, and only them, to `~/Library/Application Support/BriefBar/Teams/unre
   most 20.
 - Sealed with AES-GCM (CryptoKit). The 256-bit key is a generic-password item in the login keychain,
   which macOS lets only BriefBar read, identified by its signature.
-- Only the app opens it. Any program can run BriefBar's binary: macOS then holds that program
-  responsible, so the binary gets none of BriefBar's Full Disk Access, but the keychain would still
-  give it the key without asking. So the command-line modes and `--render` never use the key. They
-  read Notification Center with the access of whoever runs them, and count as unread only what
-  arrived since the app last read it: a chat that only this file still has, because Notification
-  Center dropped it, doesn't show there.
+- Only the app opens it. Any program can run BriefBar's binary. From a shell, macOS holds the app
+  that shell runs in responsible, so the binary gets none of BriefBar's Full Disk Access, but the
+  keychain would still give it the key without asking. So the command-line modes and `--render` never
+  use the key. They read Notification Center with the access of whoever runs them, and count as
+  unread only what arrived since the app last read it: a chat that only this file still has, because
+  Notification Center dropped it, doesn't show there. Started any other way, they don't run at all
+  (see [Programs that start BriefBar](#programs-that-start-briefbar)).
 - Written atomically, readable only by you (0600), in a folder only you can open (0700) that Time
   Machine skips.
 - A chat leaves the file as soon as it's read or expires, even while the database can't be read,

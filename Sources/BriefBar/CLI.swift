@@ -28,13 +28,15 @@ enum CLI {
         }
         lines += [
             "",
-            "Their output shows your own names, messages and titles, so keep it to yourself.",
+            "Their output shows your own names, messages and titles, so keep it to yourself. They run only",
+            "from a shell, such as Terminal's, with its permissions: started as an app (by open, say),",
+            "BriefBar has its own Full Disk Access, so it refuses them.",
         ]
         return lines.joined(separator: "\n")
     }
 
     /// Returns an exit code for command-line modes, or nil to launch the app.
-    static func run(_ arguments: [String]) -> Int32? {
+    static func run(_ arguments: [String], attribution: Attribution = .current) -> Int32? {
         if arguments.contains("--help") || arguments.contains("-h") {
             print(usage)
             return 0
@@ -43,6 +45,10 @@ enum CLI {
         let ownFlags = commandLines.flatMap { $0.flags }
         let modes = ["--dump", "--json", "--watch"]
         guard arguments.contains(where: { modes.contains($0) || ownFlags.contains($0) }) else { return nil }
+        if let refusal = CommandLineAccess.refusal(attribution) {
+            fputs("\(refusal)\n", stderr)
+            return 1
+        }
         let options = CommandLineOptions(arguments: arguments, demo: arguments.contains("--demo"))
 
         // A source's own modes imply that source.

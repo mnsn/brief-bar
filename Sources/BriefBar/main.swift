@@ -1,13 +1,26 @@
 import AppKit
+import BriefBarCore
+import BriefBarUI
 
 MainActor.assumeIsolated {
     let arguments = CommandLine.arguments
+    // Started as an app (Finder, a login item, `open`), BriefBar has its own permissions, Full Disk Access included,
+    // and whoever started it chose its arguments: `-key value` ones would override its preferences, such as which
+    // sources are on. So none of them reach it.
+    let attribution = Attribution.current
+    if attribution == .itself {
+        UserDefaults.standard.setVolatileDomain([:], forName: UserDefaults.argumentDomain)
+    }
     // `BriefBar --dump | --json | --watch | --help …` work from a terminal without the UI.
-    if let code = CLI.run(Array(arguments.dropFirst())) {
+    if let code = CLI.run(Array(arguments.dropFirst()), attribution: attribution) {
         exit(code)
     }
     let demo = arguments.contains("--demo")
     if let index = arguments.firstIndex(of: "--render") {
+        if let refusal = CommandLineAccess.refusal(attribution) {
+            fputs("\(refusal)\n", stderr)
+            exit(1)
+        }
         let next = index + 1 < arguments.count ? arguments[index + 1] : nil
         exit(Renderer.run(directory: next.flatMap { $0.hasPrefix("--") ? nil : $0 } ?? "render", demo: demo))
     }
@@ -18,6 +31,18 @@ MainActor.assumeIsolated {
         if NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
             .contains(where: { $0.processIdentifier != me }) {
             exit(0)
+        }
+    }
+
+    // And whoever started it may be reading its output (`open --stdout`), where frameworks may write too: nothing
+    // goes there.
+    if attribution == .itself {
+        fflush(nil)
+        let null = open("/dev/null", O_WRONLY)
+        if null >= 0 {
+            dup2(null, STDOUT_FILENO)
+            dup2(null, STDERR_FILENO)
+            close(null)
         }
     }
 

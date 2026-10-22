@@ -43,7 +43,8 @@ list keeps the old build's signature, so run `tccutil reset SystemPolicyAllFiles
 keeps the access, and what `make package` needs.
 
 These read your own data, for the sources that are on in the installed app, or the ones `--source`
-names. Teams' modes read Notification Center with Terminal's Full Disk Access, never the unread chats
+names. They run only from a shell, such as Terminal's: started as an app (`open`), BriefBar refuses
+them. Teams' modes read Notification Center with Terminal's Full Disk Access, never the unread chats
 the app saved, so they count as unread only what arrived since the app last read Notification Center:
 
 ```sh
@@ -111,6 +112,12 @@ keychain, and only the running app reads them back: the command line and `--rend
 key, even run from the installed app, since any program can run its binary. With another database,
 they use its key file.
 
+BriefBar reads these variables, and runs its command-line modes and `--render`, only with the
+permissions of the app that started it, such as Terminal. Started as an app (Finder, a login item,
+`open`), or by a program that disclaimed it, it has its own Full Disk Access, so it ignores the
+variables that point a source at other data, and refuses those modes ([Ground rules](#ground-rules)).
+Run `make demo`, `make demo-check` and the rest from a shell, as the Makefile does.
+
 Diagnostics go to the system log, each source under its own category:
 
 ```sh
@@ -142,6 +149,14 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   in `AzureDevOpsCore`, and `make check-boundaries` fails if any other module uses networking APIs.
 - **Start programs only through `ProcessRunner`**, which keeps them from using BriefBar's privacy
   permissions. `make check-boundaries` fails if any other module starts one.
+- **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
+  output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
+  disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller
+  chooses may decide what it reads with that access, or carry what it read anywhere the caller can
+  read: no command-line mode or `--render` runs (`CommandLineAccess`), `-key value` arguments don't
+  reach its preferences, its standard output and error go to `/dev/null`, and the variables that point
+  it at other data are read only through `Attribution.environment`, which is empty then. A test fails
+  if code reads the environment anywhere else, until it's checked and listed with its reason.
 - **Never change what a source reads.** Open Notification Center's database and the Copilot app's
   database read-only, keep reads short, and never run SQL that writes, including `PRAGMA` settings
   and checkpoints. Never copy them.

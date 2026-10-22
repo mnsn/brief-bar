@@ -13,7 +13,8 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         Azure DevOps:
           --orgs             List your organizations, and the ones where you have pull requests
           --chats            List the pull request links in every app's notifications in Notification
-                             Center (Terminal needs Full Disk Access)
+                             Center: run it from Terminal, which needs Full Disk Access. Started as an
+                             app, BriefBar refuses it
           --sprint           Print your team's current sprint: its stories and bugs, with their tasks
             --team <name>    …of this team instead of the app's choice
             --mine           …only your stories and tasks

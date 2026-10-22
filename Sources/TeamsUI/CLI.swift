@@ -14,11 +14,11 @@ package enum TeamsCommandLine: SourceCommandLine {
           --diagnose         Describe Notification Center's database and Teams' notifications by their
                              structure only, without names, messages or IDs, for an issue report
           --summaries        Summarize each unread chat in a sentence, with Apple's on-device model
-          Run from Terminal, these read Notification Center with Terminal's Full Disk Access. Like Teams'
-          part of --dump, --json, --watch and --render, they never read the unread chats the app saved
-          from it: only what arrived since the app last read it counts as unread. Set BRIEFBAR_TEAMS_DB
-          to read another Notification Center database, such as the demo data, and
-          BRIEFBAR_TEAMS_STATE_DIR for the state that goes with it.
+          Run from Terminal, these read Notification Center with Terminal's Full Disk Access; started as
+          an app, BriefBar doesn't run them. Like Teams' part of --dump, --json, --watch and --render,
+          they never read the unread chats the app saved from it: only what arrived since the app last
+          read it counts as unread. Set BRIEFBAR_TEAMS_DB to read another Notification Center database,
+          such as the demo data, and BRIEFBAR_TEAMS_STATE_DIR for the state that goes with it.
         """
 
     package static func run(_ options: CommandLineOptions) -> Int32? {

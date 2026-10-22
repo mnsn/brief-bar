@@ -23,8 +23,9 @@ project's GitHub releases. Worth reporting:
   anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
   on the Mac (its saved chats, its log, its summaries),
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it, through a
-  program it starts, or by signing itself with a key that BriefBar's builds are signed with (beyond
-  the known trade-off of library validation, below),
+  program it starts, by starting it (with its command-line modes, arguments, environment or output),
+  or by signing itself with a key that BriefBar's builds are signed with (beyond the known trade-off
+  of library validation, below),
 - any way a source could read anything, or check its access, while it's off, or turn on without you,
 - any way it could change Notification Center's data, the Copilot app's data, or anything in Azure
   DevOps,
@@ -70,6 +71,12 @@ it, and the app isn't notarized.
   Sparkle.framework, and run the copy with BriefBar's Full Disk Access. Where the app is installed
   doesn't change that. A Developer ID, or running Sparkle in a process of its own, would let the app
   turn library validation back on.
+- Software running as you can also start BriefBar itself, unchanged, through LaunchServices (`open`)
+  or with its responsibility disclaimed, and BriefBar then has its own Full Disk Access. That software
+  chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar
+  runs none of its command-line modes or `--render`, ignores the variables that point it at other
+  data and the preferences in its arguments, and sends its output to `/dev/null`
+  ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - `scripts/check-app.sh` checks each build for these settings, and CI runs it.
 - Anything that can sign with the certificate's key can sign itself as BriefBar and inherit its Full
   Disk Access. So the release certificate, **BriefBar Release**, is on no Mac: it's made in memory,
