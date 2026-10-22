@@ -73,7 +73,10 @@ Sources/BriefBarCore/          shared, with no UI: file watching (FSEvents, kque
                                timestamps, ProcessRunner (every program BriefBar starts), and the models
                                of the sources you turned on and of where sections show
 Sources/NotificationCenterDB/  Notification Center's database: the records of the apps a source asks for
-Sources/TeamsCore/             Teams' notifications, the unread rules, the encrypted unread chats
+Sources/ChromiumIndexedDB/     Chromium's IndexedDB on LevelDB, read in place: Snappy, LevelDB's tables
+                               and log, IndexedDB's keys, and Blink's and V8's value formats
+Sources/TeamsCore/             Teams' notifications and read markers, the unread rules, the encrypted
+                               unread chats
 Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the client (the only networking),
                                the engines (pull requests, sprint, pipelines), groups, notifications, the
                                brief, and the links people send you in chats
@@ -93,6 +96,8 @@ Sources/BriefBarUpdater/       the updater: Sparkle, in a helper app inside Brie
                                validation off and none of BriefBar's permissions
 Tests/                         Swift Testing suites for the shared code, each source's core and some of
                                its app code, with made-up data
+Tests/Fixtures/                made-up data that other programs wrote, such as an IndexedDB that
+                               Microsoft Edge wrote (Tests/Fixtures/ChromiumIndexedDB/make-fixture.html)
 scripts/                       app bundling, signing and checks, the optional signing certificate,
                                releases (their keys, signing and appcast), the boundary and demo checks,
                                the demo data, the MDM profile and the icon
@@ -110,6 +115,7 @@ other data:
 | Variable | For |
 |---|---|
 | `BRIEFBAR_TEAMS_DB`, `BRIEFBAR_TEAMS_STATE_DIR` | Another Notification Center database, such as `build/demo/teams/db2/db`, and its state. With another database, BriefBar keeps the key of the unread chats in a file next to that state instead of the keychain |
+| `BRIEFBAR_TEAMS_CACHE` | Other data laid out as Teams' own (`EBWebView`, with `<profile>/IndexedDB/https_teams.<domain>_0.indexeddb.leveldb` folders), for Teams' read markers. With another Notification Center database, BriefBar reads Teams' own data only through this |
 | `BRIEFBAR_COPILOT_DIR` | Another Copilot data directory, such as `build/demo/copilot` |
 | `BRIEFBAR_AZ` | Another `az` |
 | `BRIEFBAR_COPILOT_CLI` | Another `copilot`, for Send Work to Copilot |
@@ -187,8 +193,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   database read-only, keep reads short, and never run SQL that writes, including checkpoints and any
   `PRAGMA` setting but one: `SQLiteConnection` sets `temp_store = MEMORY` on every connection, which
   writes nothing to the database and keeps what a query sorts out of temporary files. Never copy them.
-- **Only unread chats touch the disk**, encrypted, and only until they're read. Summaries, read chats
-  and anything else about chats stay in memory.
+  Teams' own LevelDB is read in place too, without taking its lock (`ChromiumIndexedDB`), and only for
+  its read markers.
+- **Only unread chats touch the disk**, encrypted, and only until they're read. Summaries, read chats,
+  Teams' read markers and anything else about chats stay in memory.
 - **Nothing from Notification Center goes to the preferences**, which any program running as you can
   read with `defaults read`: the links people send in chats, and which of the pull requests listed
   only because of them you've seen, stay in memory. `ChatLinkSettingsTests` checks that the

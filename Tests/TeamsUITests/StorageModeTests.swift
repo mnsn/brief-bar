@@ -1,3 +1,4 @@
+import BriefBarUI
 import Foundation
 import NotificationCenterDB
 import TeamsCore
@@ -28,10 +29,10 @@ import Testing
             // The app's storage, with its key in memory instead of the keychain.
             let app = StorageMode(paths: paths, keyStore: MemoryKeyStore(), writes: true)
             try UnreadCache(url: paths.unreadFile, keyStore: try #require(app.keyStore)).save([savedChat()], at: now)
-            #expect(app.loadState(settings: TrackerSettings(), now: now).0.count(.chats) == 1)
+            #expect(app.loadState(settings: TrackerSettings(), followReadsInTeams: false, now: now).0.count(.chats) == 1)
 
             // Notification Center no longer has the chat (there's no database here), so only the app shows it.
-            let (state, snapshot) = app.readOnly.loadState(settings: TrackerSettings(), now: now)
+            let (state, snapshot) = app.readOnly.loadState(settings: TrackerSettings(), followReadsInTeams: false, now: now)
             #expect(snapshot.access == .missing)
             #expect(state.count(.chats) == 0)
             #expect(FileManager.default.fileExists(atPath: paths.unreadFile.path))
@@ -49,8 +50,37 @@ import Testing
             let commandLine = storage.readOnly
             #expect(commandLine.keyStore is FileKeyStore)
             #expect(!commandLine.writes)
-            #expect(commandLine.loadState(settings: TrackerSettings(), now: now).0.count(.chats) == 1)
+            #expect(commandLine.loadState(settings: TrackerSettings(), followReadsInTeams: false, now: now).0.count(.chats) == 1)
         }
+    }
+
+    @Test func readsTeamsOwnDataOnlyWithNotificationCentersOwnDatabase() throws {
+        try withTemporaryDirectory { directory in
+            let system = systemPaths(in: directory)
+            let other = NotificationPaths(database: directory.appendingPathComponent("db2/db"),
+                                          stateDirectory: directory.appendingPathComponent("state", isDirectory: true))
+            let madeUp = TeamsCacheLocation(root: directory.appendingPathComponent("EBWebView"), isTeamsOwn: false)
+
+            let app = StorageMode.current(paths: system, isBundled: true, cacheOverride: nil)
+            #expect(app.cache?.isTeamsOwn == true)
+            #expect(app.readOnly.cache == app.cache)
+            // Demo data and fixtures: only what BRIEFBAR_TEAMS_CACHE names.
+            #expect(StorageMode.current(paths: other, isBundled: true, cacheOverride: nil).cache == nil)
+            #expect(StorageMode.current(paths: other, isBundled: true, cacheOverride: madeUp).cache == madeUp)
+            #expect(StorageMode.current(paths: system, isBundled: true, cacheOverride: madeUp).cache == madeUp)
+            #expect(StorageMode.demo(paths: system, cacheOverride: nil).cache == nil)
+            #expect(StorageMode.demo(paths: system, cacheOverride: madeUp).cache == madeUp)
+        }
+    }
+
+    @MainActor
+    @Test func followsReadsInTeamsUntilTurnedOff() {
+        let defaults = MemoryDefaults()
+        #expect(AppSettings(defaults: defaults).followReadsInTeams)
+        #expect(AppSettings.followsReadsInTeams(in: defaults))
+        AppSettings(defaults: defaults).followReadsInTeams = false
+        #expect(!AppSettings(defaults: defaults).followReadsInTeams)
+        #expect(!AppSettings.followsReadsInTeams(in: defaults))
     }
 
     /// Stands in for Notification Center's own database, in a temporary folder.

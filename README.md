@@ -33,7 +33,7 @@ overview.
 
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
-| **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac | Full Disk Access | None |
+| **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
 | **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 
@@ -173,9 +173,14 @@ Notification Center doesn't record what you've read, so BriefBar decides:
 |---|---|
 | **Unread** | Teams posts a notification for a new message, while BriefBar runs or while it doesn't |
 | **Read** | You open it from BriefBar, or choose **Mark as Read** or **Mark All Read** |
+| | You read it in Teams: BriefBar reads how far you've read each chat from Teams' own data on your Mac (you can turn this off) |
 | | You click or clear its notification in Notification Center |
 | | Teams' dock badge clears, as it does once you've read everything in Teams (you can turn this off) |
 | | Its newest unread message is older than **Keep Unread For** (1 day by default) |
+
+Reading a chat in Teams reads it in BriefBar too, within a second or so, up to the newest message you
+saw there; a message that arrives later is unread again. **Mark as Unread** in Teams doesn't make it
+unread in BriefBar.
 
 Reactions and channel posts aren't unread chats, so they aren't counted. Read chats stay under
 **Recent** for a day.
@@ -383,6 +388,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | Teams | Keep Unread For | 4 hours, 1 day (default), 3 days, until I read it |
 | | Show Message Previews | on/off: off shows only how many messages are new, for screen sharing |
 | | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, and chats worded in [the brief](#the-brief), while previews are shown |
+| | Mark Chats Read When You Read Them in Teams | on by default: reads how far you've read each chat from Teams' own data, read-only, and keeps only that, in memory |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
@@ -414,8 +420,13 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   new version when you install it. GitHub sees your IP address and the versions of BriefBar and of
   [Sparkle](https://sparkle-project.org), which BriefBar's updater uses: a helper app inside BriefBar,
   with none of BriefBar's permissions. They carry nothing about your chats, pull requests or sessions.
-- **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
-  files, and Azure DevOps through GET requests. It never changes any of them.
+- **It only reads**: Notification Center's database through a read-only connection, Teams' own data
+  in place (never copied, and without taking its lock), the Copilot app's files, and Azure DevOps
+  through GET requests. It never changes any of them.
+- **Of Teams' own data**, it keeps only how far you've read each chat (Teams' ID of the newest message
+  you've seen in it), in memory, while **Mark Chats Read When You Read Them in Teams** is on. That data
+  holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
+  nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
   item. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
@@ -453,20 +464,24 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
 Notification Center keeps notifications in a database under
 `~/Library/Group Containers/group.com.apple.usernoted`, which macOS protects. Full Disk Access is the
 only permission that lets an app read it. Teams reads nothing else there but Teams' notifications.
-Azure DevOps' **Pull Requests Sent in Chats**, if you turn it on, reads every app's, and keeps only
-the links to pull requests, in memory.
+It also reads how far you've read each chat from Teams' own data, in Teams' container, which macOS
+protects the same way. Azure DevOps' **Pull Requests Sent in Chats**, if you turn it on, reads every
+app's, and keeps only the links to pull requests, in memory.
 
 ### Will a Teams, Copilot or macOS update break it?
 
-It could: Notification Center's database, Teams' notifications and the Copilot app's files aren't
-documented. BriefBar checks them every time it reads them, and says what changed instead of guessing.
-For Teams, **Copy Diagnostics** describes the database's structure, without your data.
+It could: Notification Center's database, Teams' notifications, Teams' own data and the Copilot app's
+files aren't documented. BriefBar checks them every time it reads them, and says what changed instead
+of guessing. For Teams, **Copy Diagnostics** describes the database's structure and what BriefBar
+could read of Teams' own data, without your data. If Teams changes how it keeps its read markers,
+chats you read in Teams stay unread in BriefBar until another rule reads them.
 
 ### How do Teams and Copilot update without polling?
 
-Notification Center and the Copilot app keep what BriefBar shows in SQLite databases, and each of the
-Copilot app's agents writes a log file. They write every change to disk as it happens, so BriefBar
-watches those files with kqueue and FSEvents, and reads them again only when they change.
+Notification Center and the Copilot app keep what BriefBar shows in SQLite databases, Teams keeps how
+far you've read each chat in a LevelDB database, and each of the Copilot app's agents writes a log
+file. They write every change to disk as it happens, so BriefBar watches those files with kqueue and
+FSEvents, and reads them again only when they change.
 [How it works](docs/how-it-works.md) has the details.
 
 ### Why does Azure DevOps poll instead of getting pushed updates?
@@ -562,7 +577,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 log show --last 1d --predicate 'subsystem == "org.sparkle-project.Sparkle"' --style compact   # updates
 ```
 
-Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access. They run
+Run from Terminal, Teams' modes, `--chats` and `--render` use Terminal's Full Disk Access, for
+Notification Center and Teams' own data alike. They run
 only from a shell like that: started as an app, with `open` say, BriefBar has its own Full Disk
 Access, and whoever started it could read its output, so it refuses every mode but `--help` and
 `--check-updater`, which read nothing of yours. Teams' modes and `--render` never read the unread

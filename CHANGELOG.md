@@ -7,6 +7,13 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Three sources, each off until you turn it on.** Microsoft Teams (unread chats), Azure DevOps (pull
   requests) and GitHub Copilot (app sessions) work as their Pulse apps did. Each first says what it
   reads, where it connects and what it needs. Turning one off deletes what it saved.
+- **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
+  you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
+  just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,
+  only the Full Disk Access it already has. **Mark Chats Read When You Read Them in Teams** turns it
+  off. **Copy Diagnostics** and `--diagnose` say what BriefBar could read of it, by counts only; if a
+  Teams update changes it, the lists say so, and the other rules still apply. Teams' description says
+  so, and its version goes up, so it pauses until you've looked.
 - **Azure DevOps as ADO Pulse has it now:** an **Answered** group for what you've taken care of in
   Azure DevOps, until you've seen it; **Pull Requests Sent in Chats**, off until you turn it on, which
   lists a pull request when someone sends you a link to it, from the notifications every app posts,
