@@ -143,10 +143,24 @@ enum Renderer {
                     .frame(width: 560, height: 640)
                 write(Snapshot.render(view, appearance: appearance), "window-alone-\(suffix)")
             }
-            // One window with every page, open at each.
+            // One window with every page, open at each, the Overview first.
             if !windowSections.isEmpty {
                 let content = WindowContent(id: "render", model: model)
                 content.update(sections: windowSections)
+                if content.pages.first == WindowContent.overview {
+                    content.select(WindowContent.overview, notify: false)
+                    content.overviewList.isShowing = true
+                    let deadline = Date().addingTimeInterval(60)
+                    while model.briefWriter.isEnabled, !model.briefWriter.isDone(with: content.overviewList.brief), Date() < deadline {
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    }
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "window-overview-\(suffix)")
+                }
                 for section in windowSections {
                     content.select(section, notify: false)
                     let view = WindowView(content: content)

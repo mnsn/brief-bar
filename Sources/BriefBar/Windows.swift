@@ -106,17 +106,23 @@ final class WindowHost: NSObject, NSWindowDelegate {
 /// A window's pages, and which one shows.
 @MainActor
 final class WindowContent: ObservableObject {
+    /// The Overview's page, first in a window with several pages.
+    static let overview = WindowPages.overview
+
     let id: String
     @Published private(set) var sections: [SectionID] = []
     @Published private(set) var selected: SectionID?
     unowned let model: AppModel
+    /// What the Overview shows.
+    let overviewList: StateListModel
     private var cancellables: Set<AnyCancellable> = []
     /// Whether its window shows on screen, as its host says.
     var isOnScreen = false {
         didSet { updateVisible() }
     }
-    /// The page the window shows on screen; nil while it's closed, minimized or hidden behind other windows.
-    private var visible: SectionID?
+    /// The sections the window shows on screen, and as what: a page, or the Overview's list by state. Empty while it's
+    /// closed, minimized or hidden behind other windows.
+    private var visible: [SectionID: SectionViewer.Kind] = [:]
 
     /// Each window's page, as you last left it, by the window's ID.
     private static let pagesKey = "windowPages"
@@ -124,13 +130,19 @@ final class WindowContent: ObservableObject {
     init(id: String, model: AppModel) {
         self.id = id
         self.model = model
+        overviewList = StateListModel(model: model)
         let saved = model.services.defaults.dictionary(forKey: Self.pagesKey) as? [String: String]
         selected = saved?[id].map(SectionID.init(rawValue:))
     }
 
+    /// Its pages: the Overview first, when it has several sections, then a page for each.
+    var pages: [SectionID] {
+        WindowPages(sections: sections).pages
+    }
+
     /// The page that shows: the one you chose, or the first.
     var current: SectionID? {
-        selected.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first
+        WindowPages(sections: sections).current(chosen: selected)
     }
 
     /// Such as "GitHub Copilot: Sessions" for a window with one page, for the window list and VoiceOver.
@@ -144,6 +156,7 @@ final class WindowContent: ObservableObject {
 
     func update(sections: [SectionID]) {
         self.sections = sections
+        overviewList.update(sections: sections.count > 1 ? sections : [])
         updateVisible()
         // The sidebar's counts follow the menu bar's.
         cancellables.removeAll()
@@ -156,30 +169,52 @@ final class WindowContent: ObservableObject {
         }
     }
 
-    /// Shows `section`'s page, or for nil, keeps the one that shows, and tells its source, which may refresh;
-    /// `--render` doesn't.
+    /// Shows `section`'s page, or for nil, the Overview, which a window opens on, and tells their sources, which may
+    /// refresh; `--render` doesn't. A window without an Overview keeps the page that shows.
     func select(_ section: SectionID?, notify: Bool = true) {
-        if let section, sections.contains(section) {
-            selected = section
+        if let page = WindowPages(sections: sections).page(for: section) {
+            selected = page
             var saved = model.services.defaults.dictionary(forKey: Self.pagesKey) as? [String: String] ?? [:]
-            saved[id] = section.rawValue
+            saved[id] = page.rawValue
             model.services.defaults.set(saved, forKey: Self.pagesKey)
         }
         if notify, let current {
-            model.source(for: current)?.pageWillShow(current)
+            for section in current == Self.overview ? overviewList.sections : [current] {
+                model.source(for: section)?.pageWillShow(section)
+            }
         }
         updateVisible()
     }
 
-    /// Tells the sources which page shows, after the window opened, closed, was covered or switched pages.
+    /// What needs you on the window's pages, for the Overview's place in the sidebar.
+    var overviewSegment: MenuBarSegment {
+        let states = sections.compactMap { model.source(for: $0)?.segment(for: $0).states }.reduce(StateCounts(), +)
+        return MenuBarSegment(
+            glyph: nil, title: NSAttributedString(), summary: states.needsYou == 0 ? "Nothing needs you" : "Needs you: \(states.needsYou)",
+            count: states.needsYou, needsAttention: states.needsYou > 0, states: states
+        )
+    }
+
+    /// Tells the sources which sections show, after the window opened, closed, was covered or switched pages.
     private func updateVisible() {
-        let section = isOnScreen ? current : nil
-        guard section != visible else { return }
-        let hidden = visible
-        visible = section
-        let viewer = SectionViewer(.window, id: id)
-        if let hidden { model.source(for: hidden)?.sectionVisibilityChanged(hidden, isShowing: false, by: viewer) }
-        if let section { model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: viewer) }
+        var shown: [SectionID: SectionViewer.Kind] = [:]
+        if isOnScreen, let current {
+            if current == Self.overview {
+                for section in overviewList.sections { shown[section] = .stateList }
+            } else {
+                shown[current] = .window
+            }
+        }
+        overviewList.isShowing = isOnScreen && current == Self.overview
+        guard shown != visible else { return }
+        let before = visible
+        visible = shown
+        for (section, kind) in before where shown[section] != kind {
+            model.source(for: section)?.sectionVisibilityChanged(section, isShowing: false, by: SectionViewer(kind, id: id))
+        }
+        for (section, kind) in shown where before[section] != kind {
+            model.source(for: section)?.sectionVisibilityChanged(section, isShowing: true, by: SectionViewer(kind, id: id))
+        }
     }
 }
 
@@ -208,13 +243,16 @@ struct WindowView: View {
     }
 
     private var pageMaxWidth: CGFloat {
+        if content.current == WindowContent.overview { return 760 }
         guard let section = content.current, let source = content.model.source(for: section) else { return .infinity }
         return source.pageMaxWidth(for: section)
     }
 
     @ViewBuilder
     private var page: some View {
-        if let section = content.current, let source = content.model.source(for: section) {
+        if content.current == WindowContent.overview {
+            OverviewPage(list: content.overviewList, model: content.model)
+        } else if let section = content.current, let source = content.model.source(for: section) {
             source.page(for: section)
                 .environment(\.shownSection, section)
                 .id(section)
@@ -242,6 +280,15 @@ struct WindowSidebar: View {
         VStack(alignment: .leading, spacing: 2) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
+                    let first = content.pages.first == WindowContent.overview ? 1 : 0
+                    if first == 1 {
+                        SidebarItem(
+                            info: SectionInfo(id: WindowContent.overview, title: "Overview", symbol: AppSymbols.app, tint: .accentColor),
+                            segment: content.overviewSegment, isSelected: content.current == WindowContent.overview, shortcut: 1
+                        ) {
+                            content.select(WindowContent.overview)
+                        }
+                    }
                     ForEach(Array(content.sections.enumerated()), id: \.element) { index, section in
                         if let source = model.source(for: section), let info = source.info(for: section) {
                             if index == 0 || model.source(for: content.sections[index - 1])?.id != source.id {
@@ -249,12 +296,12 @@ struct WindowSidebar: View {
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                                     .padding(.leading, 8)
-                                    .padding(.top, index == 0 ? 2 : 12)
+                                    .padding(.top, index == 0 && first == 0 ? 2 : 12)
                                     .padding(.bottom, 2)
                             }
                             SidebarItem(
                                 info: info, segment: source.segment(for: section), isSelected: content.current == section,
-                                shortcut: index < 9 ? index + 1 : nil
+                                shortcut: index + first < 9 ? index + first + 1 : nil
                             ) {
                                 content.select(section)
                             }

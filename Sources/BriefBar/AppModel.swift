@@ -370,6 +370,18 @@ final class AppModel: ObservableObject {
         NSApp.activate()
     }
 
+    /// Opens one window, at its Overview if it has one.
+    func openWindow(item id: String) {
+        closePanels()
+        guard let entry = visibleItems(.windows).first(where: { $0.id == id }) else { return }
+        let window = windows[entry.id] ?? WindowHost(id: entry.id, model: self)
+        windows[entry.id] = window
+        window.update(sections: entry.sections)
+        window.show(at: nil)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+    }
+
     /// Whether a BriefBar window is open, for the Dock icon.
     var hasOpenWindow: Bool {
         windows.values.contains { $0.isOpen }

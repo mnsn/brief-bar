@@ -129,7 +129,7 @@ struct LayoutPage: View {
             }
         case .windows:
             LabeledContent(item.sections.count > 1 ? "\(item.sections.count) pages" : "One page") {
-                Button("Open") { model.openWindow(at: item.sections.first) }
+                Button("Open") { model.openWindow(item: item.id) }
             }
         }
     }

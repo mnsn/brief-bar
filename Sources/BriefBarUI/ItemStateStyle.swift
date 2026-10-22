@@ -25,6 +25,16 @@ extension ItemState {
         }
     }
 
+    /// After a count, as in "11 need you · 4 went wrong · 2 running · 3 done or ready".
+    package var countLabel: String {
+        switch self {
+        case .needsYou: return "need you"
+        case .failing: return "went wrong"
+        case .running: return "running"
+        case .done: return "done or ready"
+        }
+    }
+
     /// What it counts, for Settings.
     package var explanation: String {
         switch self {

@@ -71,6 +71,8 @@ struct StateListView: View {
     @ObservedObject var list: StateListModel
     let model: AppModel
     let width: CGFloat
+    /// The gear menu at the bottom, which a window's page leaves to the window's sidebar.
+    var showsFooter = true
 
     @LocalState private var contentHeight: CGFloat = 0
 
@@ -85,29 +87,17 @@ struct StateListView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .panelListHeight(contentHeight, max: Self.maxListHeight)
-            Divider()
-            footer
+            if showsFooter {
+                Divider()
+                footer
+            }
         }
         .panelFrame(width: width)
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(list.problems, id: \.self) { problem in
-                Button {
-                    if let source = problemSource(problem) { model.openSettings(.source(source)) }
-                } label: {
-                    Label(problem, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .symbolRenderingMode(.multicolor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .help("Open its settings")
-            }
+            StateListProblems(list: list, model: model)
             if !list.brief.isEmpty {
                 BriefPanel(lines: list.brief, writer: model.briefWriter)
                     .padding(.bottom, 2)
@@ -131,7 +121,7 @@ struct StateListView: View {
                         .padding(.horizontal, 8)
                     ForEach(group.entries) { entry in
                         HStack(alignment: .top, spacing: 0) {
-                            mark(entry.section)
+                            SourceMark(section: entry.section, model: model)
                             entry.row.view
                                 .environment(\.shownSection, entry.section)
                         }
@@ -139,26 +129,6 @@ struct StateListView: View {
                 }
             }
         }
-    }
-
-    /// Which source a row is from: its section's symbol, in its color.
-    private func mark(_ section: SectionID) -> some View {
-        let info = model.info(for: section)
-        let name = model.source(for: section).map { source in
-            source.sections.count > 1 ? "\(source.name): \(info?.title ?? "")" : source.name
-        } ?? ""
-        return Image(systemName: info?.symbol ?? "circle")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(info?.tint ?? .secondary)
-            .frame(width: 14)
-            .padding(.top, 12)
-            .help(name)
-            .accessibilityLabel(name)
-    }
-
-    /// The source a problem's sentence names.
-    private func problemSource(_ problem: String) -> SourceID? {
-        list.sections.first { model.source(for: $0)?.segment(for: $0).problem == problem }?.source
     }
 
     private var footer: some View {
@@ -181,6 +151,125 @@ struct StateListView: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// A window's first page: everything on its other pages by state, with the brief, as the sources' own pages look.
+struct OverviewPage: View {
+    @ObservedObject var list: StateListModel
+    let model: AppModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PageHeader(title: "Overview", subtitle: subtitle) { EmptyView() }
+            PageScroll(maxWidth: 860) {
+                VStack(alignment: .leading, spacing: 18) {
+                    StateListProblems(list: list, model: model)
+                    if !list.brief.isEmpty {
+                        BriefPanel(lines: list.brief, writer: model.briefWriter)
+                            .padding(.horizontal, -4)
+                    }
+                    if list.groups.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 30, weight: .light))
+                                .foregroundStyle(.green)
+                            Text("Nothing needs you")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                    }
+                    ForEach(list.groups) { group in
+                        section(group)
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtitle: String {
+        let parts = list.groups.map { "\($0.entries.count) \($0.state.countLabel)" }
+        return parts.isEmpty ? "Nothing needs you" : parts.joined(separator: " · ")
+    }
+
+    private func section(_ group: StateListGroup) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: group.state.symbol)
+                    .foregroundStyle(group.state.color)
+                Text(group.state.title)
+                    .foregroundStyle(.primary)
+                Text("\(group.entries.count)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer()
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
+                    if index > 0 {
+                        Divider().padding(.leading, 58).padding(.trailing, 12)
+                    }
+                    HStack(alignment: .top, spacing: 0) {
+                        SourceMark(section: entry.section, model: model)
+                        entry.row.view
+                            .environment(\.shownSection, entry.section)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                }
+            }
+            .padding(.vertical, 4)
+            .background(GlassCard(cornerRadius: 18))
+        }
+    }
+}
+
+/// Which source a row is from, in a list that mixes them: its section's symbol, in its color.
+struct SourceMark: View {
+    let section: SectionID
+    let model: AppModel
+
+    var body: some View {
+        let info = model.info(for: section)
+        let name = model.source(for: section).map { source in
+            source.sections.count > 1 ? "\(source.name): \(info?.title ?? "")" : source.name
+        } ?? ""
+        Image(systemName: info?.symbol ?? "circle")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(info?.tint ?? .secondary)
+            .frame(width: 14)
+            .padding(.top, 12)
+            .help(name)
+            .accessibilityLabel(name)
+    }
+}
+
+/// What keeps a section of a list by state from showing what it should, each opening its source's settings.
+struct StateListProblems: View {
+    @ObservedObject var list: StateListModel
+    let model: AppModel
+
+    var body: some View {
+        ForEach(list.problems, id: \.self) { problem in
+            Button {
+                if let source = list.sections.first(where: { model.source(for: $0)?.segment(for: $0).problem == problem })?.source {
+                    model.openSettings(.source(source))
+                }
+            } label: {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .symbolRenderingMode(.multicolor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .help("Open its settings")
+        }
     }
 }
 
