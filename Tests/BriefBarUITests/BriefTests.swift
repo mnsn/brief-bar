@@ -43,6 +43,25 @@ import Testing
         #expect(Briefing.pick([]).isEmpty)
     }
 
+    @Test func saysTheBriefsFirstLineThenTheNewestOfWhatNeedsYouInTheWidget() {
+        let lines = [
+            line(.copilot, "release", .needsYou, 1),
+            line(.copilot, "plan", .needsYou, 2),
+            line(.teams, "launch-crew", .needsYou, 5),
+            line(.azureDevOps, "checkout", .needsYou, 8),
+            line(.copilot, "node", .failing, 10),
+        ]
+        let widget = Briefing.widgetLines(lines, rows: 2)
+        #expect(widget.first?.id == "release")
+        #expect(widget.needsYou.map(\.id) == ["plan", "launch-crew"])
+        #expect(widget.more == 1)
+
+        let wrongOnly = Briefing.widgetLines([line(.copilot, "node", .failing, 10)], rows: 4)
+        #expect(wrongOnly.first?.id == "node")
+        #expect(wrongOnly.needsYou.isEmpty && wrongOnly.more == 0)
+        #expect(Briefing.widgetLines([], rows: 4).first == nil)
+    }
+
     @Test func keepsItsOwnWordsUntilTheModelHasWritten() {
         let writer = BriefWriter(isEnabled: false)
         var asking = line(.teams, "chat", .needsYou, 1)

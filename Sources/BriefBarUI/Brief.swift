@@ -82,6 +82,16 @@ package enum Briefing {
     }
 }
 
+extension Briefing {
+    /// What the Overview widget says: the brief's first line, then the newest of what needs you, up to `rows`, without
+    /// that line again, and how many more need you.
+    package static func widgetLines(_ lines: [BriefLine], rows: Int) -> (first: BriefLine?, needsYou: [BriefLine], more: Int) {
+        let first = pick(lines).first
+        let needsYou = pick(lines.filter { $0.state == .needsYou }, limit: .max).filter { $0.id != first?.id }
+        return (first, Array(needsYou.prefix(rows)), max(needsYou.count - rows, 0))
+    }
+}
+
 /// Words a brief's lines with Apple Intelligence's on-device model, on this Mac: nothing leaves it, and what it writes
 /// stays in memory, for lines shown in the last few minutes, never on disk or in the log. The model words the lines
 /// BriefBar picked; it doesn't decide what matters.

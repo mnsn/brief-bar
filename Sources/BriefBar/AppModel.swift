@@ -17,12 +17,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var widgetOptions: [String: WidgetOptions]
     /// How each menu-bar item shows its sections, by the item's ID: side by side, unless you chose otherwise.
     @Published private(set) var menuBarItemOptions: [String: MenuBarItemOptions]
+    /// Whether the Overview widget shows, where and how big.
+    @Published private(set) var overviewWidgetOptions: OverviewWidgetOptions
 
     private var items: [String: MenuBarItemController] = [:]
     /// The visible items' IDs, left to right.
     private var itemOrder: [String] = []
     private var placeholder: PlaceholderItem?
     private var widgets: [String: WidgetHost] = [:]
+    private var overviewWidget: OverviewWidgetHost?
     private var windows: [String: WindowHost] = [:]
     private lazy var settingsWindow = SettingsWindowController(model: self)
     private var cancellables: Set<AnyCancellable> = []
@@ -54,6 +57,7 @@ final class AppModel: ObservableObject {
         WidgetMigration.run(defaults)
         widgetOptions = WidgetOptions.load(from: defaults)
         menuBarItemOptions = MenuBarItemOptions.load(from: defaults)
+        overviewWidgetOptions = OverviewWidgetOptions.load(from: defaults)
         layouts = Dictionary(uniqueKeysWithValues: Surface.allCases.map { ($0, SectionLayout.load($0, from: defaults)) })
 
         services.openSettings = { [weak self] destination in self?.openSettings(destination) }
@@ -337,6 +341,30 @@ final class AppModel: ObservableObject {
 
     // MARK: Widgets
 
+    /// What an Overview covers when it's not a window's: every section of the sources that are on whose things can be
+    /// in a state.
+    var overviewSections: [SectionID] {
+        onSources.flatMap { source in source.sections.filter { !$0.states.isEmpty }.map(\.id) }
+    }
+
+    func setOverviewWidget(_ options: OverviewWidgetOptions) {
+        overviewWidgetOptions = options
+        options.save(to: services.defaults)
+        updateOverviewWidget()
+    }
+
+    private func updateOverviewWidget() {
+        let sections = overviewSections
+        guard overviewWidgetOptions.isShown, !sections.isEmpty else {
+            overviewWidget?.close()
+            overviewWidget = nil
+            return
+        }
+        let widget = overviewWidget ?? OverviewWidgetHost(model: self)
+        overviewWidget = widget
+        widget.update(sections: sections, options: overviewWidgetOptions)
+    }
+
     private func updateWidgets() {
         let visible = visibleItems(.widgets)
         let ids = Set(visible.map(\.id))
@@ -349,6 +377,7 @@ final class AppModel: ObservableObject {
             widgets[entry.id] = widget
             widget.update(sections: entry.sections, options: options(forWidget: entry.id))
         }
+        updateOverviewWidget()
     }
 
     // MARK: Windows

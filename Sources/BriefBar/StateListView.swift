@@ -11,6 +11,8 @@ final class StateListModel: ObservableObject {
     @Published private(set) var groups: [StateListGroup] = []
     /// The few things worth reading first, each in a sentence, at the top.
     @Published private(set) var brief: [BriefLine] = []
+    /// Every thing in a state, each in a sentence, which the brief picks from.
+    private(set) var lines: [BriefLine] = []
     /// What keeps a section from showing what it should, as its source says it.
     @Published private(set) var problems: [String] = []
     /// The sections it shows: those whose things can be in a state, so not the sprint.
@@ -23,11 +25,15 @@ final class StateListModel: ObservableObject {
     }
 
     private unowned let model: AppModel
+    /// Asks Apple Intelligence to word the brief: a list's and a window's do, while they're on screen; a widget, which
+    /// is always there, only shows what they had worded.
+    private let wordsBrief: Bool
     private var cancellables: Set<AnyCancellable> = []
     private var needsRefresh = true
 
-    init(model: AppModel) {
+    init(model: AppModel, wordsBrief: Bool = true) {
         self.model = model
+        self.wordsBrief = wordsBrief
     }
 
     func update(sections: [SectionID]) {
@@ -55,8 +61,11 @@ final class StateListModel: ObservableObject {
             (model.source(for: section)?.stateRows(for: section) ?? []).map { StateListEntry(section: section, row: $0) }
         })
         // Worded on screen only: never while the list is closed.
-        brief = Briefing.pick(sections.flatMap { model.source(for: $0)?.briefLines(for: $0) ?? [] })
-        model.briefWriter.write(brief)
+        lines = sections.flatMap { model.source(for: $0)?.briefLines(for: $0) ?? [] }
+        brief = Briefing.pick(lines)
+        if wordsBrief {
+            model.briefWriter.write(brief)
+        }
         var problems: [String] = []
         for section in sections {
             if let problem = model.source(for: section)?.segment(for: section).problem, !problems.contains(problem) {

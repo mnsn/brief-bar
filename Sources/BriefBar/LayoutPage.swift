@@ -37,6 +37,10 @@ struct LayoutPage: View {
             Text(surface.explanation)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if surface == .widgets {
+                overviewWidget
+            }
+
             if items.isEmpty && hidden.isEmpty {
                 Text("Turn on a source to see its sections here.")
                     .foregroundStyle(.secondary)
@@ -85,6 +89,40 @@ struct LayoutPage: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    /// The Overview widget, apart from the layout's widgets, which each show sections.
+    private var overviewWidget: some View {
+        let options = model.overviewWidgetOptions
+        let change = { (body: (inout OverviewWidgetOptions) -> Void) in
+            var changed = options
+            body(&changed)
+            model.setOverviewWidget(changed)
+        }
+        return Form {
+            Section {
+                Toggle(isOn: Binding(get: { options.isShown }, set: { isShown in change { $0.isShown = isShown } })) {
+                    Label {
+                        Text("Overview")
+                        Text("Every source's counts, the brief's first line and what needs you, in one widget. It starts hidden, since it can show your chats.")
+                    } icon: {
+                        Image(systemName: AppSymbols.app)
+                    }
+                }
+                if options.isShown {
+                    Picker("Position", selection: Binding(get: { options.placement }, set: { placement in change { $0.placement = placement } })) {
+                        ForEach(WidgetPlacement.allCases) { Text($0.title).tag($0) }
+                    }
+                    Picker("Size", selection: Binding(get: { options.size }, set: { size in change { $0.size = size } })) {
+                        ForEach(WidgetSize.allCases) { Text($0.title).tag($0) }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .scrollDisabled(true)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// What a picker calls the place that holds a section.

@@ -127,6 +127,20 @@ enum Renderer {
                 for section in widgetSections {
                     widget([section], size: size, name: "widget-\(section.rawValue)-\(size.rawValue)")
                 }
+                // The Overview widget, of every source that's on.
+                if !model.overviewSections.isEmpty {
+                    let content = OverviewWidgetContent(model: model)
+                    content.options = OverviewWidgetOptions(isShown: true, size: size)
+                    content.list.update(sections: model.overviewSections)
+                    content.list.isShowing = true
+                    let view = OverviewWidgetView(content: content, list: content.list, writer: model.briefWriter)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .padding(16)
+                    write(Snapshot.render(view, appearance: appearance), "widget-overview-\(size.rawValue)-\(suffix)")
+                }
                 if shownWidgetSections.count > 1 {
                     widget(shownWidgetSections, size: size, name: "widget-all-\(size.rawValue)")
                 }

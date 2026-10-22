@@ -69,6 +69,46 @@ package struct WidgetOptions: Codable, Equatable, Sendable {
     }
 }
 
+/// The Overview widget: every source's counts, the brief's first line and what needs you. It's not one of the layout's
+/// widgets, which each show sections, and it starts hidden: it could put your chats on the desktop after an update.
+package struct OverviewWidgetOptions: Codable, Equatable, Sendable {
+    package var isShown = false
+    package var placement: WidgetPlacement = .desktop
+    package var size: WidgetSize = .medium
+
+    package init(isShown: Bool = false, placement: WidgetPlacement = .desktop, size: WidgetSize = .medium) {
+        self.isShown = isShown
+        self.placement = placement
+        self.size = size
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isShown, placement, size
+    }
+
+    /// What's missing or unknown keeps its default, so what a later version saves still loads.
+    package init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isShown = (try? container.decodeIfPresent(Bool.self, forKey: .isShown)) ?? false
+        placement = (try? container.decodeIfPresent(WidgetPlacement.self, forKey: .placement)) ?? .desktop
+        size = (try? container.decodeIfPresent(WidgetSize.self, forKey: .size)) ?? .medium
+    }
+
+    package static let defaultsKey = "overviewWidget"
+
+    package static func load(from defaults: some SettingsStorage) -> OverviewWidgetOptions {
+        defaults.data(forKey: defaultsKey).flatMap { try? JSONDecoder().decode(OverviewWidgetOptions.self, from: $0) } ?? OverviewWidgetOptions()
+    }
+
+    package func save(to defaults: some SettingsStorage) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        if let data = try? encoder.encode(self) {
+            defaults.set(data, forKey: Self.defaultsKey)
+        }
+    }
+}
+
 /// A borderless, non-activating panel pinned to the desktop (or floating), styled like a macOS widget.
 /// It's an ordinary window that the app redraws itself, so it updates the instant data changes, with no
 /// WidgetKit timeline budget involved.
