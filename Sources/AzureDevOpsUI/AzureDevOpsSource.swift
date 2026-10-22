@@ -20,7 +20,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
         summary: "Your pull requests: which need you, which are failing and which are ready to complete; and your team's sprint and your pipelines",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. BriefBar keeps which pull requests you've seen, your organizations, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages.",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, with their builds, policies and comment threads, from Azure DevOps. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. BriefBar keeps which pull requests you've seen, your organizations, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory.",
         network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, and a few more while the Sprint or Pipelines section is on screen.",
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar.",
         requirements: [.azureCLI, .notifications]
@@ -47,7 +47,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         section == .azureDevOpsPullRequests ? 900 : .infinity
     }
 
-    private static let chatAccessReason = "For pull requests sent in chats, BriefBar looks for links to pull requests in the notifications that every app posts to Notification Center, and keeps only the links."
+    private static let chatAccessReason = "For pull requests sent in chats, BriefBar looks for links to pull requests in the notifications that every app posts to Notification Center, and keeps only the links, in memory."
 
     private let services: AppServices
     let settings: AppSettings

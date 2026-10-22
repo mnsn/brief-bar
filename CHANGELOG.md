@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.1 - Unreleased
+
+Pull requests sent in chats no longer leave anything where other programs can read it.
+
+- **Pull requests sent in chats stay in memory.** With **Pull Requests Sent in Chats** on, 0.1.0
+  kept the links it found, with who sent which pull request, in which app and chat, and when, in
+  BriefBar's preferences, where any program running as you could read them. BriefBar now keeps them
+  in memory only, as it does which of those pull requests you've seen, and removes the links 0.1.0
+  saved when it starts. After BriefBar restarts, it finds only the links whose notifications
+  Notification Center still has, and a pull request someone sent you that you'd seen, but not voted
+  or commented on, needs you again.
+- **The command line leaves them out.** Azure DevOps' part of `--dump`, `--json` and `--watch` no
+  longer shows pull requests sent in chats; `--chats` still lists the links in Notification Center.
+
 ## 0.1.0 - Unreleased
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.

@@ -70,8 +70,9 @@ struct ChatLinksSetting: View {
     static let explanation = """
         Lists a pull request as needing you when someone sends you a link to it. BriefBar looks for links in the \
         notifications that every app posts to Notification Center, such as Teams, Slack, Outlook and Mail, and keeps \
-        only the links, with who sent them, in which app and when, never the messages. It needs Full Disk Access. \
-        Turning it off forgets the links.
+        only the links, with who sent them, in which app and when, never the messages, and only in memory: after a \
+        restart, it finds the links that Notification Center still has. It needs Full Disk Access. Turning it off \
+        forgets the links.
         """
 
     var body: some View {

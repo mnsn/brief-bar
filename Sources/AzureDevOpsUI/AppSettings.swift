@@ -3,7 +3,9 @@ import BriefBarUI
 import Combine
 import Foundation
 
-/// Azure DevOps' settings, and which pull requests you've seen, in BriefBar's preferences.
+/// Azure DevOps' settings, and which pull requests you've seen, in BriefBar's preferences. Nothing from Notification
+/// Center goes there: the links people sent you in chats, and what you've seen of the pull requests listed only
+/// because of them, stay in memory, since any program running as you can read the preferences.
 @MainActor
 final class AppSettings: ObservableObject {
     /// The installed app's preferences, which the command line reads too.
@@ -66,9 +68,9 @@ final class AppSettings: ObservableObject {
             if !chatLinksEnabled { forgetChatLinks() }
         }
     }
-    /// The links found so far: who sent which pull request, in which app and when. Never the messages. They're
-    /// kept in the preferences only while the feature is on, and only the ones not expired: the preferences hold
-    /// just what's here.
+    /// The links found so far: who sent which pull request, in which app and when. Never the messages. They're kept in
+    /// memory only, and only while the feature is on: after a restart, BriefBar finds again only those whose
+    /// notifications Notification Center still has.
     @Published private(set) var chatLinks: ChatLinkState
     /// The team whose sprint the Sprint section shows; nil until it's chosen, or found.
     @Published var sprintTeam: TeamRef? {
@@ -84,6 +86,9 @@ final class AppSettings: ObservableObject {
     }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
+    /// When you last looked at each pull request that's listed only because someone sent it to you (`PRKey.description`),
+    /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
+    @Published private(set) var seenSentInChats: [String: Date] = [:]
     /// What the other accounts you've signed in with have seen.
     private var otherSeen: [String: SeenState]
 
@@ -98,17 +103,13 @@ final class AppSettings: ObservableObject {
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
-        let chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
-        self.chatLinksEnabled = chatLinksEnabled
+        chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
-        let storedLinks = chatLinksEnabled
-            ? defaults.data(forKey: Key.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
-            : nil
-        var links = storedLinks ?? ChatLinkState()
-        links.prune(now: now)
-        chatLinks = links
+        chatLinks = ChatLinkState()
+        // Where 0.1.0 kept the links, which any program running as you could read: gone, whatever the setting.
+        defaults.removeObject(forKey: Key.chatLinks)
 
         otherSeen = defaults.data(forKey: Key.otherSeen).flatMap { try? JSONDecoder().decode([String: SeenState].self, from: $0) } ?? [:]
         if let data = defaults.data(forKey: Key.seen), let stored = try? JSONDecoder().decode(SeenState.self, from: data) {
@@ -118,9 +119,6 @@ final class AppSettings: ObservableObject {
             // Saved once Azure DevOps is on (`startSeeing`), so its first run is when you turn it on.
             seen = SeenState.firstRun(now: now)
         }
-        // Links that expired, any left from when the feature was on, and any that can't be read go from the
-        // preferences too, not only from here: otherwise turning it off, which forgets what's here, could leave them.
-        if chatLinks != storedLinks { persistChatLinks() }
     }
 
     private var hasSavedSeen = false
@@ -140,8 +138,7 @@ final class AppSettings: ObservableObject {
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]
-        chatLinks = ChatLinkState()
-        defaults.removeObject(forKey: Key.chatLinks)
+        forgetChatLinks()
     }
 
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
@@ -176,29 +173,64 @@ final class AppSettings: ObservableObject {
         )
     }
 
-    func markSeen<S: Sequence>(_ keys: S, at date: Date = Date()) where S.Element == PRKey {
-        markSeen(keys.map { ($0, date) })
+    func markSeen<S: Sequence>(_ keys: S, at date: Date = Date(), sentInChats: Set<PRKey> = []) where S.Element == PRKey {
+        markSeen(keys.map { ($0, date) }, sentInChats: sentInChats)
     }
 
-    /// Each pull request seen up to its own time.
-    func markSeen(_ entries: [(key: PRKey, date: Date)]) {
+    /// Each pull request seen up to its own time. Those in `sentInChats`, listed only because someone sent them to
+    /// you, are remembered in memory only, and leave the preferences if an earlier version saved them there.
+    func markSeen(_ entries: [(key: PRKey, date: Date)], sentInChats: Set<PRKey> = []) {
+        keepSeenInMemory(sentInChats)
         var updated = seen
-        for entry in entries { updated.markSeen([entry.key], at: entry.date) }
+        var inMemory = seenSentInChats
+        for entry in entries {
+            if sentInChats.contains(entry.key) {
+                inMemory[entry.key.description] = max(entry.date, inMemory[entry.key.description] ?? .distantPast)
+            } else {
+                updated.markSeen([entry.key], at: entry.date)
+            }
+        }
+        if inMemory != seenSentInChats { seenSentInChats = inMemory }
         guard updated != seen else { return }
+        seen = updated
+        persistSeen()
+    }
+
+    /// When you last looked at a pull request, as far as BriefBar remembers: in the preferences, or in memory.
+    func seenCutoff(for key: PRKey) -> Date {
+        max(seen.cutoff(for: key), seenSentInChats[key.description] ?? .distantPast)
+    }
+
+    /// Moves what the preferences say you've seen of these pull requests, listed only because someone sent them to
+    /// you, into memory. 0.1.0 kept that in the preferences.
+    func keepSeenInMemory(_ keys: Set<PRKey>) {
+        let saved = keys.compactMap { key in seen.seenAt[key.description].map { (key: key.description, date: $0) } }
+        guard !saved.isEmpty else { return }
+        var inMemory = seenSentInChats
+        var updated = seen
+        for entry in saved {
+            inMemory[entry.key] = max(entry.date, inMemory[entry.key] ?? .distantPast)
+            updated.seenAt[entry.key] = nil
+        }
+        seenSentInChats = inMemory
         seen = updated
         persistSeen()
     }
 
     /// Forgets pull requests that are no longer listed and were last seen over two months ago.
     func pruneSeen(keeping keys: Set<PRKey>, now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-60 * 86_400)
+        let kept = Set(keys.map(\.description))
+        let inMemory = seenSentInChats.filter { kept.contains($0.key) || $0.value > cutoff }
+        if inMemory != seenSentInChats { seenSentInChats = inMemory }
         var updated = seen
-        updated.prune(keeping: keys, olderThan: now.addingTimeInterval(-60 * 86_400))
+        updated.prune(keeping: keys, olderThan: cutoff)
         guard updated != seen else { return }
         seen = updated
         persistSeen()
     }
 
-    /// Keeps newly found links, while the feature is on. Returns whether there were any.
+    /// Keeps newly found links, in memory, while the feature is on. Returns whether there were any.
     @discardableResult
     func addChatLinks(_ found: [ChatLink], now: Date = Date()) -> Bool {
         guard chatLinksEnabled else { return false }
@@ -207,14 +239,13 @@ final class AppSettings: ObservableObject {
         let pruned = updated.prune(now: now)
         guard changed || pruned else { return false }
         chatLinks = updated
-        persistChatLinks()
         return changed
     }
 
-    /// Forgets every link found: here, and in the preferences, whatever is left there.
+    /// Forgets every link found, and what you've seen of the pull requests listed only because of them.
     func forgetChatLinks() {
         if !chatLinks.links.isEmpty { chatLinks = ChatLinkState() }
-        defaults.removeObject(forKey: Key.chatLinks)
+        if !seenSentInChats.isEmpty { seenSentInChats = [:] }
     }
 
     /// Replaces the seen state, for the demo and for pictures.
@@ -228,6 +259,8 @@ final class AppSettings: ObservableObject {
     func useAccount(_ account: String, now: Date = Date()) -> Bool {
         var book = SeenBook(current: seen, others: otherSeen)
         let switched = book.signIn(account, now: now)
+        // What the last account saw of pull requests sent in chats was its own, and is kept in memory only.
+        if switched, !seenSentInChats.isEmpty { seenSentInChats = [:] }
         guard book.current != seen else { return switched }
         otherSeen = book.others
         seen = book.current
@@ -248,15 +281,6 @@ final class AppSettings: ObservableObject {
             organizations.removeAll { $0.caseInsensitiveCompare(name) == .orderedSame }
         } else {
             organizations = OrganizationDiscovery.merged(organizations, preferring: [name])
-        }
-    }
-
-    /// Keeps the links in the preferences, or removes them from there when there are none.
-    private func persistChatLinks() {
-        if chatLinks.links.isEmpty {
-            defaults.removeObject(forKey: Key.chatLinks)
-        } else if let data = try? JSONEncoder().encode(chatLinks) {
-            defaults.set(data, forKey: Key.chatLinks)
         }
     }
 
@@ -282,6 +306,7 @@ enum SettingsKey {
     static let seen = "ado.seenState"
     static let otherSeen = "ado.otherAccountsSeenState"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
+    /// Where 0.1.0 kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"

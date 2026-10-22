@@ -15,13 +15,15 @@ sessions. This is a personal project maintained in spare time, so a reply may ta
 BriefBar can hold Full Disk Access, which macOS grants to the whole app, to read notifications in
 Notification Center's database: Teams', and, only if you turn on Azure DevOps' Pull Requests Sent in
 Chats, every app's, for links to pull requests. It keeps Teams' unread chats on disk, encrypted,
-until they're read, and makes summaries on the Mac. Only its Azure DevOps source uses the network for
+until they're read; keeps the links it finds in other apps' notifications in memory only; and makes
+summaries on the Mac. Nothing else it reads in Notification Center is kept anywhere other programs
+running as you can read it, such as its preferences. Only its Azure DevOps source uses the network for
 what it shows, with the Azure CLI's sign-in. BriefBar's own requests are for its updates, from this
 project's GitHub releases. Worth reporting:
 
 - any way it could send anything about your chats, pull requests, work items, pipelines or sessions
   anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
-  on the Mac (its saved chats, its log, its summaries; 0.1.0 has a known limitation here, below),
+  on the Mac (its saved chats, the links it finds in chats, its preferences, its log, its summaries),
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it, through a
   program it starts, by starting it (with its command-line modes, arguments, environment or output),
   or by signing itself with a key that BriefBar's builds are signed with (beyond the known trade-off
@@ -53,6 +55,13 @@ Only the latest release, and the latest commit on `main`, are supported.
   updater, starts none either: it hands its installer to launchd.
 - **Only one module uses the network**, `AzureDevOpsCore`, and `scripts/check-boundaries.sh` checks
   that too. The other requests are Sparkle's, for this project's releases.
+- **What it reads with Full Disk Access stays with it.** Teams' unread chats are on disk only
+  encrypted, with a key in your login keychain that the command line never uses. The links it finds
+  in other apps' notifications, and which of those pull requests you've seen, stay in memory. Its
+  preferences, which any program running as you can read and change, hold its settings, which of
+  your own pull requests you've seen and which Copilot sessions you've cleared, but nothing from
+  Notification Center. Changing them can turn on a source, or Pull Requests Sent in Chats, but what
+  that finds shows only in BriefBar.
 
 ## How the app is signed
 
@@ -71,11 +80,6 @@ it, and the app isn't notarized.
   Sparkle.framework, and run the copy with BriefBar's Full Disk Access. Where the app is installed
   doesn't change that. A Developer ID, or running Sparkle in a process of its own, would let the app
   turn library validation back on.
-- **A known limitation of 0.1.0, to be fixed in 0.1.1:** with Pull Requests Sent in Chats on,
-  BriefBar keeps the links it finds, with who sent which pull request, in which app and chat, and
-  when, unencrypted in its preferences (`ado.chatLinks`). Software running as you can read them there
-  (`defaults read com.asaf.BriefBar`), and can turn the setting on by changing those preferences
-  (`ado.chatLinksEnabled`).
 - Software running as you can also start BriefBar itself, unchanged, through LaunchServices (`open`)
   or with its responsibility disclaimed, and BriefBar then has its own Full Disk Access. That software
   chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar

@@ -166,7 +166,9 @@ emails from Azure DevOps itself don't count. It reads the notifications that eve
 Notification Center, keeps only the links, with who sent them, in which app and when, never the
 messages, and needs Full Disk Access, like Teams. Right-click the pull request to open the message. A
 link needs you until you open the pull request from BriefBar, vote or comment on it, it closes, or a
-week goes by.
+week goes by. BriefBar keeps the links in memory only, so after it restarts, it finds only those whose
+notifications Notification Center still has (for Teams, about a couple of days' worth), and one you'd
+opened but not voted or commented on needs you again.
 
 **Sprint** shows your team's current sprint at a glance: how much is done, how many days are left and
 where your own work stands, then each story and bug with its tasks, in **In Progress** (when they, or
@@ -311,7 +313,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Summarize with Apple Intelligence | on/off: the ✨ button on each chat, while previews are shown |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
-| | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links. Needs Full Disk Access |
+| | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
@@ -343,15 +345,16 @@ there and in its right-click menu.
   sign-in and GET requests as your pull requests.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
-  and chat, and when, never the messages, and forgets them when you turn it off. Until 0.1.1, it keeps
-  them unencrypted in BriefBar's preferences, where other programs running as you can read them.
+  and chat, and when, never the messages, and only in memory, as it does which of those pull requests
+  you've seen: nothing about them goes to its preferences or to disk, where other programs running
+  as you could read it. It forgets them when you turn it off.
 - **Summaries are made on your Mac**, by Apple's on-device model, never Private Cloud Compute or any
   other model, and are kept in memory only.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which Azure DevOps pull requests you've seen, with each account, your organizations and the
-  links people sent you; which Copilot sessions you've cleared; and its settings. Turning a source
-  off deletes what it saved.
+  read; which of your Azure DevOps pull requests you've seen, with each account, and your
+  organizations; which Copilot sessions you've cleared; and its settings. Turning a source off
+  deletes what it saved.
 - **Programs it runs**, such as the Azure CLI, never get its permissions: macOS would otherwise let
   them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**: a widget puts your chats on the desktop, where anyone who sees your
@@ -367,7 +370,7 @@ Notification Center keeps notifications in a database under
 `~/Library/Group Containers/group.com.apple.usernoted`, which macOS protects. Full Disk Access is the
 only permission that lets an app read it. Teams reads nothing else there but Teams' notifications.
 Azure DevOps' **Pull Requests Sent in Chats**, if you turn it on, reads every app's, and keeps only
-the links to pull requests.
+the links to pull requests, in memory.
 
 ### Will a Teams, Copilot or macOS update break it?
 
@@ -470,7 +473,9 @@ modes and `--render` never read the unread chats that BriefBar saved: any progra
 binary, so only the app itself reads them. They show what Notification Center has now, and count as
 unread only what arrived since BriefBar last read it (while BriefBar runs, the last minute or so). So
 they usually show fewer unread chats than BriefBar, and never one that Notification Center has
-already dropped. Except for `--diagnose`, which is safe to share, their output shows your own chats,
+already dropped. Azure DevOps' part of `--dump`, `--json` and `--watch` leaves out pull requests
+sent in chats, which only the app keeps, in memory: `--chats` lists the links Notification Center
+has. Except for `--diagnose`, which is safe to share, their output shows your own chats,
 names, titles and sessions, so keep it to yourself. `--demo --render` draws made-up data instead.
 
 ## Contributing

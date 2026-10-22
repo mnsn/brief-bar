@@ -55,7 +55,8 @@ make diagnose                     # Teams: the structure only, without names, me
 ```
 
 `BriefBar --chats` lists the pull request links in every app's notifications, as **Pull Requests Sent
-in Chats** finds them, with Terminal's Full Disk Access. `--teams`, `--sprint` (`--team <name>`,
+in Chats** finds them, with Terminal's Full Disk Access. The other modes leave pull requests sent in
+chats out: only the app has them, in memory. `--teams`, `--sprint` (`--team <name>`,
 `--mine`) and `--pipelines` (`--search <text> --project <name>` to find more) print what the Sprint
 and Pipelines sections show. They read the app's settings but never change them.
 
@@ -162,6 +163,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   and checkpoints. Never copy them.
 - **Only unread chats touch the disk**, encrypted, and only until they're read. Summaries, read chats
   and anything else about chats stay in memory.
+- **Nothing from Notification Center goes to the preferences**, which any program running as you can
+  read with `defaults read`: the links people send in chats, and which of the pull requests listed
+  only because of them you've seen, stay in memory. `ChatLinkSettingsTests` checks that the
+  preferences hold none of it.
 - **Summaries stay on the Mac.** Use `SystemLanguageModel.default`, through `OnDeviceModel`, never
   Private Cloud Compute or any other model.
 - **No content in logs.** Log counts, states and errors, never names, messages, titles or IDs.
@@ -170,8 +175,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   and so are the pictures from `--demo --render`; the other modes' output isn't, and neither are the
   pictures `--render` draws from your own data.
 - **Logic goes in the core modules**, free of UI code and covered by tests. A source's app code shows
-  what its core publishes, and keeps some of your data, such as the links people sent you in its
-  preferences, or Teams' saved chats: test what it keeps, and who can read it, in its own tests
+  what its core publishes, and keeps some of your data, such as which pull requests you've seen, in
+  its preferences, or Teams' saved chats: test what it keeps, and who can read it, in its own tests
   (`Tests/AzureDevOpsUITests`, `Tests/TeamsUITests`).
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
   `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves

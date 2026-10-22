@@ -170,7 +170,8 @@ final class PRStore: ObservableObject {
         }
         .store(in: &cancellables)
 
-        settings.$seen.dropFirst()
+        settings.$seen.dropFirst().map { _ in () }
+            .merge(with: settings.$seenSentInChats.dropFirst().map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -368,7 +369,7 @@ final class PRStore: ObservableObject {
         guard openViewers.remove(viewer) != nil, openViewers.isEmpty else { return }
         let shown = answeredInPanel
         answeredInPanel = [:]
-        settings.markSeen(shown.map { (key: $0.key, date: $0.value) })
+        settings.markSeen(shown.map { (key: $0.key, date: $0.value) }, sentInChats: sentInChats(shown.keys))
     }
 
     private func noteAnsweredInPanel() {
@@ -393,15 +394,23 @@ final class PRStore: ObservableObject {
     }
 
     private func markSeen(_ item: PRSnapshot) {
-        settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast))
+        settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 
     /// Marks a group's pull requests seen: Needs You moves on, Done empties. Each is seen up to what the panel
     /// showed, not up to now, so a comment that arrives before the next refresh still counts as new.
     func clear(_ group: PRGroup) {
-        settings.markSeen(items(in: group).map { item in
+        let cleared = items(in: group)
+        settings.markSeen(cleared.map { item in
             (item.key, item.events.map(\.at).max() ?? item.since ?? Date())
-        })
+        }, sentInChats: sentInChats(cleared.map(\.key)))
+    }
+
+    /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
+    /// what you've seen of them stays in memory (`AppSettings.seenSentInChats`).
+    private func sentInChats<S: Sequence>(_ keys: S) -> Set<PRKey> where S.Element == PRKey {
+        let yours = Set(state.records.filter { $0.role != .linked }.map(\.id))
+        return Set(keys).subtracting(yours)
     }
 
     func openPullRequestsPage() {
@@ -466,19 +475,20 @@ final class PRStore: ObservableObject {
                 settings.pruneSeen(keeping: Set(snapshot.records.map(\.id)))
             }
         }
+        // What 0.1.0 saved of pull requests sent in chats moves out of the preferences once they're listed.
+        settings.keepSeenInMemory(Set(snapshot.records.filter { $0.role == .linked }.map(\.id)))
         recompute(announce: true)
     }
 
     private func recompute(announce: Bool = false) {
         let now = Date()
-        let seen = settings.seen
         let options = settings.classifierOptions
         let links = settings.chatLinksEnabled ? settings.chatLinks : ChatLinkState()
         let resolved = state.records.compactMap { record -> PRSnapshot? in
             var record = record
             let found = links.links(for: record.id).filter { link in !record.chatLinks.contains { $0.id == link.id } }
             record.chatLinks += found
-            return PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now, options: options)
+            return PRClassifier.snapshot(for: record, seenCutoff: settings.seenCutoff(for: record.id), now: now, options: options)
         }
         let sorted = PROrdering.sorted(resolved)
         self.now = now

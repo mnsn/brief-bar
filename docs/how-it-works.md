@@ -21,8 +21,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
-  requests each account has seen, and the links to pull requests people sent you; which Copilot
-  sessions you've cleared. Its settings stay.
+  requests each account has seen; which Copilot sessions you've cleared. Its settings stay. The links
+  to pull requests people sent you were in memory only, and are forgotten with it.
 
 ## Permissions that macOS grants once
 
@@ -84,7 +84,11 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   still applies: `az` runs with its own permissions.
 - Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
   source, or **Pull Requests Sent in Chats**, without you. Any program running as you can still
-  change the preferences themselves, though, with `defaults write`, including which sources are on.
+  change the preferences themselves, though, with `defaults write`, including which sources are on,
+  and whether BriefBar looks for pull requests sent in chats. That isn't prevented, but BriefBar
+  keeps nothing it reads in Notification Center where such a program could read it (see
+  [Pull requests sent in chats](#pull-requests-sent-in-chats)), so turning that on only makes
+  BriefBar show those pull requests in its own lists.
 - The app's standard output and error go to `/dev/null`, where frameworks could otherwise write, for
   instance with `OS_ACTIVITY_DT_MODE` set.
 
@@ -500,8 +504,19 @@ from a menu, turning it on opens its Settings page, which says what it reads.
   group chat. In other apps, the title is taken as the sender.
 - Emails from Azure DevOps itself, and BriefBar's and ADO Pulse's own notifications, are skipped.
 - It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
-  open the message). Never the message itself. Links are kept in BriefBar's preferences for two
-  weeks, and removed from there when they expire, or when you turn the setting off, or Azure DevOps.
+  open the message). Never the message itself. Links are kept in memory only, for at most two weeks,
+  and forgotten when you turn the setting off, or Azure DevOps. So is what you've seen of the pull
+  requests listed only because of a link. None of it goes to BriefBar's preferences or to disk, where
+  any program running as you could read it: only what you've seen of your own pull requests is in the
+  preferences. At launch, BriefBar removes the links that 0.1.0 saved there (`ado.chatLinks`). What
+  0.1.0 saved there of which of those pull requests you'd seen leaves them once they're listed
+  again, and otherwise two months after you last saw them, as for any pull request no longer listed.
+- So after BriefBar restarts, it finds again only the links whose notifications Notification Center
+  still has (for Teams, about a couple of days' worth), and a pull request you'd seen, but not voted
+  or commented on since the message, needs you again.
+- The command line never has them: Azure DevOps' part of `--dump`, `--json` and `--watch` leaves out
+  pull requests sent in chats, and `--chats` lists the links that Notification Center has, with the
+  Full Disk Access of whoever runs it.
 
 A pull request that isn't in your lists (you're not its author or a reviewer) is read with a GET by
 its ID, and listed only while the link needs you. A link needs you until you open the pull request
@@ -591,6 +606,8 @@ back to the plain sentence if the model isn't available or fails. BriefBar expli
 
 - Pull requests sent in chats are only as complete as Notification Center: a message you saw in the
   app before it posted a notification, or one older than the notifications it keeps, isn't there.
+  Since BriefBar keeps the links in memory only, that's also true of a link it had found, once
+  BriefBar restarts.
 - Pull requests assigned only to a group or team you're in aren't listed: Azure DevOps's reviewer
   search matches you, not your groups.
 - Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its
