@@ -464,8 +464,8 @@ from a menu, turning it on opens its Settings page, which says what it reads.
   group chat. In other apps, the title is taken as the sender.
 - Emails from Azure DevOps itself, and BriefBar's and ADO Pulse's own notifications, are skipped.
 - It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
-  open the message). Never the message itself. Links are kept for two weeks, and forgotten when you
-  turn the setting off, or Azure DevOps.
+  open the message). Never the message itself. Links are kept in BriefBar's preferences for two
+  weeks, and removed from there when they expire, or when you turn the setting off, or Azure DevOps.
 
 A pull request that isn't in your lists (you're not its author or a reviewer) is read with a GET by
 its ID, and listed only while the link needs you. A link needs you until you open the pull request

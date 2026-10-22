@@ -59,11 +59,16 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(hasDiscovered, forKey: Key.hasDiscovered) }
     }
     /// Looks for pull request links in the notifications every app posts, such as Teams. Off by default:
-    /// it reads Notification Center, which needs Full Disk Access.
+    /// it reads Notification Center, which needs Full Disk Access. Turning it off forgets every link found.
     @Published var chatLinksEnabled: Bool {
-        didSet { defaults.set(chatLinksEnabled, forKey: Key.chatLinksEnabled) }
+        didSet {
+            defaults.set(chatLinksEnabled, forKey: Key.chatLinksEnabled)
+            if !chatLinksEnabled { forgetChatLinks() }
+        }
     }
-    /// The links found so far: who sent which pull request, in which app and when. Never the messages.
+    /// The links found so far: who sent which pull request, in which app and when. Never the messages. They're
+    /// kept in the preferences only while the feature is on, and only the ones not expired: the preferences hold
+    /// just what's here.
     @Published private(set) var chatLinks: ChatLinkState
     /// The team whose sprint the Sprint section shows; nil until it's chosen, or found.
     @Published var sprintTeam: TeamRef? {
@@ -93,12 +98,15 @@ final class AppSettings: ObservableObject {
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
-        chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
+        let chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
+        self.chatLinksEnabled = chatLinksEnabled
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
-        var links = defaults.data(forKey: Key.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
-            ?? ChatLinkState()
+        let storedLinks = chatLinksEnabled
+            ? defaults.data(forKey: Key.chatLinks).flatMap { try? JSONDecoder().decode(ChatLinkState.self, from: $0) }
+            : nil
+        var links = storedLinks ?? ChatLinkState()
         links.prune(now: now)
         chatLinks = links
 
@@ -110,6 +118,9 @@ final class AppSettings: ObservableObject {
             // Saved once Azure DevOps is on (`startSeeing`), so its first run is when you turn it on.
             seen = SeenState.firstRun(now: now)
         }
+        // Links that expired, any left from when the feature was on, and any that can't be read go from the
+        // preferences too, not only from here: otherwise turning it off, which forgets what's here, could leave them.
+        if chatLinks != storedLinks { persistChatLinks() }
     }
 
     private var hasSavedSeen = false
@@ -187,24 +198,22 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Keeps newly found links. Returns whether there were any.
+    /// Keeps newly found links, while the feature is on. Returns whether there were any.
     @discardableResult
     func addChatLinks(_ found: [ChatLink], now: Date = Date()) -> Bool {
+        guard chatLinksEnabled else { return false }
         var updated = chatLinks
         let changed = updated.merge(ChatLinkState.canonical(found, organizations: organizations))
         let pruned = updated.prune(now: now)
         guard changed || pruned else { return false }
         chatLinks = updated
-        if let data = try? JSONEncoder().encode(updated) {
-            defaults.set(data, forKey: Key.chatLinks)
-        }
+        persistChatLinks()
         return changed
     }
 
-    /// Forgets every link found, when the feature is turned off.
+    /// Forgets every link found: here, and in the preferences, whatever is left there.
     func forgetChatLinks() {
-        guard !chatLinks.links.isEmpty else { return }
-        chatLinks = ChatLinkState()
+        if !chatLinks.links.isEmpty { chatLinks = ChatLinkState() }
         defaults.removeObject(forKey: Key.chatLinks)
     }
 
@@ -239,6 +248,15 @@ final class AppSettings: ObservableObject {
             organizations.removeAll { $0.caseInsensitiveCompare(name) == .orderedSame }
         } else {
             organizations = OrganizationDiscovery.merged(organizations, preferring: [name])
+        }
+    }
+
+    /// Keeps the links in the preferences, or removes them from there when there are none.
+    private func persistChatLinks() {
+        if chatLinks.links.isEmpty {
+            defaults.removeObject(forKey: Key.chatLinks)
+        } else if let data = try? JSONEncoder().encode(chatLinks) {
+            defaults.set(data, forKey: Key.chatLinks)
         }
     }
 

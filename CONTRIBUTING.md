@@ -154,9 +154,13 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share,
   and so are the pictures from `--demo --render`; the other modes' output isn't, and neither are the
   pictures `--render` draws from your own data.
-- **Logic goes in the core modules**, free of UI code and covered by tests.
+- **Logic goes in the core modules**, free of UI code and covered by tests. A source's app code shows
+  what its core publishes, and keeps some of your data, such as the links people sent you in its
+  preferences, or Teams' saved chats: test what it keeps, and who can read it, in its own tests
+  (`Tests/AzureDevOpsUITests`, `Tests/TeamsUITests`).
 - **Tests leave nothing behind.** They write only to temporary directories, and keep settings in
-  `MemorySettings`: a UserDefaults suite leaves a file in `~/Library/Preferences`, even once removed.
+  `MemorySettings`, or `MemoryDefaults` where code takes a `UserDefaults`: a UserDefaults suite leaves
+  a file in `~/Library/Preferences`, even once removed.
 - **The formats are undocumented.** When you rely on a new field, handle its absence and add a test
   with a small made-up sample.
 
