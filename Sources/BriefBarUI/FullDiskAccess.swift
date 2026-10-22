@@ -182,7 +182,7 @@ package final class FullDiskAccess: NSObject, ObservableObject, NSWindowDelegate
     /// nothing.
     package func requestListing() {
         guard isBundled, isNeeded, isGranted != true else { return }
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = UserHome.url
         for folder in ["Library/Containers/com.apple.stocks", "Library/Safari"] {
             _ = try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(folder).path)
         }

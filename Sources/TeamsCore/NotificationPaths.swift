@@ -28,7 +28,7 @@ public struct NotificationPaths: Sendable, Equatable {
     public var stateFile: URL { stateDirectory.appendingPathComponent("state.json") }
     public var unreadFile: URL { stateDirectory.appendingPathComponent("unread") }
 
-    public static func systemDatabase(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    public static func systemDatabase(home: URL = UserHome.url) -> URL {
         NotificationCenterLocation.systemDatabase(home: home)
     }
 
@@ -36,7 +36,7 @@ public struct NotificationPaths: Sendable, Equatable {
     /// permissions of the app that started it (`Attribution.environment`).
     public static func `default`(
         environment: [String: String] = Attribution.environment,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = UserHome.url
     ) -> NotificationPaths {
         let system = systemDatabase(home: home)
         let databaseOverride = environment[databaseVariable].flatMap { $0.isEmpty ? nil : expand($0) }

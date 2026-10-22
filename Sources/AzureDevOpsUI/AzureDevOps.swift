@@ -1,5 +1,6 @@
 import AppKit
 import AzureDevOpsCore
+import BriefBarCore
 import BriefBarUI
 
 /// Opening Azure DevOps pages, and signing in to the Azure CLI.
@@ -32,7 +33,7 @@ enum AzureDevOps {
             \(az) login --allow-no-subscriptions --output none && echo && echo "Signed in. You can close this window: BriefBar will refresh within a minute."
             """
         do {
-            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            let directory = UserHome.url.appendingPathComponent("Library/Caches", isDirectory: true)
                 .appendingPathComponent(AppIdentity.bundleIdentifier, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("Sign in to Azure CLI.command")

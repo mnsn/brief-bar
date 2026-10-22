@@ -27,6 +27,9 @@
 - **Programs BriefBar starts are checked by the executable macOS records for them**, the one privacy
   permissions follow, rather than by process ID, which can't tell under some hosts, such as the GitHub
   Copilot app's agents. Its tests can now fail there too if a program would get BriefBar's permissions.
+- **BriefBar finds your files in the home folder the user database names, however it's started**:
+  Notification Center's database, Teams' saved chats, `~/.copilot` and the Azure CLI, not wherever
+  `CFFIXED_USER_HOME` points.
 - **Your sprint and pipelines**, as ADO Pulse fixed them: they start over when you sign in to the Azure
   CLI as someone else, and a refresh stops once nothing shows them. A retried run's stages are read
   again, runs in different organizations no longer mix, and a timeline that keeps failing doesn't hold

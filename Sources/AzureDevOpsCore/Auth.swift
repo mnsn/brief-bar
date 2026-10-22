@@ -212,7 +212,7 @@ public struct AzureCLILocator: Sendable {
         "/usr/local/bin/az",
         "/usr/bin/az",
         "/opt/local/bin/az",
-        NSString(string: "~/.local/bin/az").expandingTildeInPath,
+        UserHome.url.appendingPathComponent(".local/bin/az").path,
     ]
 
     public func locate() async -> URL? {

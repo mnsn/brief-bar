@@ -43,3 +43,25 @@ struct TestError: Error, CustomStringConvertible {
         self.description = description
     }
 }
+
+/// The package's Swift sources that match `pattern`, by path under `Sources/`, such as `BriefBarCore/Attribution.swift`.
+func sourcesMatching(_ pattern: some RegexComponent, filePath: String = #filePath) throws -> Set<String> {
+    // Resolved, as the enumerator's paths can be: a checkout under /tmp is under /private/tmp.
+    let sources = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+        .appendingPathComponent("../../Sources").standardizedFileURL.resolvingSymlinksInPath()
+    guard let files = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil) else {
+        throw TestError("Can't list \(sources.path)")
+    }
+    var matching: Set<String> = []
+    var scanned = 0
+    for case let file as URL in files where file.pathExtension == "swift" {
+        scanned += 1
+        let text = try String(contentsOf: file, encoding: .utf8)
+        guard text.contains(pattern) else { continue }
+        let path = file.resolvingSymlinksInPath().pathComponents
+        guard path.starts(with: sources.pathComponents) else { throw TestError("\(file.path) isn't in \(sources.path)") }
+        matching.insert(path.dropFirst(sources.pathComponents.count).joined(separator: "/"))
+    }
+    guard scanned > 0 else { throw TestError("No sources in \(sources.path)") }
+    return matching
+}

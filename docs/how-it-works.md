@@ -110,7 +110,9 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   you (except, today, for an app with the hardened runtime, as BriefBar is), and `SQLITE_TMPDIR` is
   where SQLite writes what a query sorts. `TMPDIR` stays: Foundation and SQLite use the temporary
   folder macOS gives you, and fall back to `TMPDIR` only if they can't write to it, which a program
-  running as you can't arrange, since macOS protects that folder.
+  running as you can't arrange, since macOS protects that folder. However it's started, BriefBar finds
+  your files (Notification Center's database, Teams' saved chats, `~/.copilot`) in the home folder the
+  user database names (`UserHome`), not FileManager's.
 - Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
   source, or **Pull Requests Sent in Chats**, without you. Any program running as you can still
   change the preferences themselves, though, with `defaults write`, including which sources are on,

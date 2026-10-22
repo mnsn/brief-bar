@@ -1,9 +1,11 @@
+import BriefBarCore
 import Foundation
 
 /// Where Notification Center keeps its database.
 public enum NotificationCenterLocation {
-    /// Notification Center's SQLite database, which macOS protects: reading it needs Full Disk Access.
-    public static func systemDatabase(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    /// Notification Center's SQLite database, which macOS protects: reading it needs Full Disk Access. In your home
+    /// folder as the user database names it, which no variable moves (`UserHome`).
+    public static func systemDatabase(home: URL = UserHome.url) -> URL {
         home.appendingPathComponent("Library/Group Containers/group.com.apple.usernoted/db2/db")
     }
 

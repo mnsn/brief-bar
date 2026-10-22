@@ -166,6 +166,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   macOS keeps your files, such as `HOME`, which chooses the keychain, are put back first thing
   (`LaunchEnvironment`): add any other you find there. Keychain items go in the login keychain by its
   file (`KeychainKeyStore`), never the default keychain, which any program running as you can change.
+  Find files in your home folder through `UserHome`, never FileManager's home folder, its search paths
+  or `~`; a test checks.
 - **Keep library validation on in BriefBar.** It links only Apple's libraries and has no entitlements.
   Code that needs other libraries, or library validation off, belongs in the updater or another helper
   app that holds no permissions, started as a `RunningProgram`. `scripts/check-app.sh` fails

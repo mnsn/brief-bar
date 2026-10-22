@@ -53,4 +53,19 @@ import Testing
         var isDirectory: ObjCBool = false
         #expect(FileManager.default.fileExists(atPath: home, isDirectory: &isDirectory) && isDirectory.boolValue)
     }
+
+    /// What BriefBar reads and writes in your home folder, it finds in `UserHome`: FileManager's home folder and its
+    /// search paths follow `CFFIXED_USER_HOME`, and `~` in a path follows it too.
+    @Test func findsYourFilesOnlyInTheUserDatabasesHomeFolder() throws {
+        let homeFolder = /homeDirectoryForCurrentUser|NSHomeDirectory\(|userDomainMask|"~\//
+        // The check itself: each of these would be caught.
+        for sample in [
+            "FileManager.default.homeDirectoryForCurrentUser", "NSHomeDirectory()", ".urls(for: .cachesDirectory, in: .userDomainMask)",
+            #"NSString(string: "~/.local/bin/az").expandingTildeInPath"#,
+        ] {
+            #expect(sample.contains(homeFolder), "\(sample)")
+        }
+        let found = try sourcesMatching(homeFolder)
+        #expect(found.isEmpty, "Use UserHome.url in: \(found.sorted())")
+    }
 }

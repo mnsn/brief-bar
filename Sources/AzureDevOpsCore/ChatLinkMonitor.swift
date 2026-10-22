@@ -11,7 +11,7 @@ public enum ChatLinkDatabase {
 
     public static func url(
         environment: [String: String] = Attribution.environment,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = UserHome.url
     ) -> URL {
         if let path = environment[overrideVariable], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -20,7 +20,7 @@ public enum ChatLinkDatabase {
     }
 
     /// Whether it's Notification Center's own database, which only Full Disk Access lets BriefBar read.
-    public static func isSystemDatabase(_ url: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
+    public static func isSystemDatabase(_ url: URL, home: URL = UserHome.url) -> Bool {
         NotificationCenterLocation.isSameFile(url, NotificationCenterLocation.systemDatabase(home: home))
     }
 }

@@ -20,8 +20,7 @@ public struct CopilotPaths: Sendable, Equatable {
         if let paths = overridden(environment: environment) {
             return paths
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return CopilotPaths(root: home.appendingPathComponent(".copilot", isDirectory: true))
+        return CopilotPaths(root: UserHome.url.appendingPathComponent(".copilot", isDirectory: true))
     }
 
     /// The directory `BRIEFBAR_COPILOT_DIR` names, if it names one: the only data the demo reads.
