@@ -29,7 +29,7 @@ import Testing
 
     @Test(.timeLimit(.minutes(1)))
     func preparesAWorktreeAndStartsCopilotInIt() async throws {
-        let fixture = try RepositoryFixture()
+        let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let copilot = fixture.folder.appendingPathComponent("bin/copilot")
         try FileManager.default.createDirectory(at: copilot.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -96,7 +96,7 @@ import Testing
     /// A repository you trust gives its worktree the same trust, so Copilot loads its skills and MCP servers.
     @Test(.timeLimit(.minutes(1)))
     func trustsTheWorktreeOfATrustedRepository() async throws {
-        let fixture = try RepositoryFixture()
+        let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let copilotHome = fixture.folder.appendingPathComponent("copilot-home")
         try FileManager.default.createDirectory(at: copilotHome, withIntermediateDirectories: true)
@@ -121,7 +121,7 @@ import Testing
     }
 
     @Test func needsTheCopilotCLIBeforeTouchingTheRepository() async throws {
-        let fixture = try RepositoryFixture()
+        let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let environment = fixture.environment
         let launcher = CopilotLauncher(outputFolder: fixture.folder, environment: { environment }, locate: { _ in nil })

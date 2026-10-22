@@ -34,7 +34,7 @@ import Testing
     /// once removed.
     @Test(.timeLimit(.minutes(1)))
     func makesADetachedWorktreeAtTheLatestBaseBranch() async throws {
-        let fixture = try RepositoryFixture()
+        let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let git = Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: fixture.environment)
         let subfolder = fixture.checkout.appendingPathComponent("docs", isDirectory: true)

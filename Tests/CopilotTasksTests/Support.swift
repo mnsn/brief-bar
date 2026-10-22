@@ -90,21 +90,21 @@ struct RepositoryFixture {
     var checkout: URL { folder.appendingPathComponent("checkout") }
     let environment: [String: String]
 
-    init() throws {
+    init() async throws {
         folder = try makeTemporaryDirectory()
         // A home of its own, so no global git settings apply.
         environment = ["PATH": "/usr/bin:/bin", "HOME": folder.path, "GIT_CONFIG_NOSYSTEM": "1"]
         let seed = folder.appendingPathComponent("seed")
-        try git(["init", "--quiet", "--initial-branch=main", seed.path])
+        try await git(["init", "--quiet", "--initial-branch=main", seed.path])
         try "Storefront\n".write(to: seed.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
-        try git(["-C", seed.path, "add", "README.md"])
-        try git(["-C", seed.path, "-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com", "commit", "--quiet", "-m", "First"])
-        try git(["clone", "--quiet", "--bare", seed.path, origin.path])
-        try git(["clone", "--quiet", origin.path, checkout.path])
+        try await git(["-C", seed.path, "add", "README.md"])
+        try await git(["-C", seed.path, "-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com", "commit", "--quiet", "-m", "First"])
+        try await git(["clone", "--quiet", "--bare", seed.path, origin.path])
+        try await git(["clone", "--quiet", origin.path, checkout.path])
     }
 
-    func git(_ arguments: [String]) throws {
-        let result = try ProcessRunner().runAndWait(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
+    func git(_ arguments: [String]) async throws {
+        let result = try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/git"), arguments: arguments, environment: environment, timeout: 60)
         guard result.status == 0 else { throw TestError("git \(arguments.joined(separator: " ")): \(String(decoding: result.stderr, as: UTF8.self))") }
     }
 
