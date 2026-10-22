@@ -28,6 +28,12 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Settings in a window of their own**, and in each list's gear menu.
 - **Programs it starts can't use its permissions:** the Azure CLI and the login shell that finds it
   run responsible for themselves.
+- **Started by another program with its own permissions, BriefBar takes your keychain and home
+  folder from the user database, not from it.** Such a program chooses BriefBar's environment, and
+  `HOME` chooses the keychain macOS uses: in a keychain that program made, BriefBar would seal the
+  Teams chats it read with a new key there, where they're saved for any program to read. So BriefBar
+  puts back `HOME` from the user database, and drops `CFFIXED_USER_HOME` and `SQLITE_TMPDIR`, before
+  anything reads them.
 - **Releases with in-app updates.** Each release is built from its tagged source by GitHub Actions,
   with an attestation, and signed with the project's own certificate, so updates keep Full Disk
   Access. BriefBar checks for updates only if you allow it, and installs only updates signed with the

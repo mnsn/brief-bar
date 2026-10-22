@@ -158,6 +158,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   reach its preferences, its standard output and error go to `/dev/null`, and the variables that point
   it at other data are read only through `Attribution.environment`, which is empty then. A test fails
   if code reads the environment anywhere else, until it's checked and listed with its reason.
+  Variables that move where macOS keeps your files, such as `HOME`, which chooses the keychain, are
+  put back first thing (`LaunchEnvironment`): add any other you find there.
 - **Never change what a source reads.** Open Notification Center's database and the Copilot app's
   database read-only, keep reads short, and never run SQL that writes, including `PRAGMA` settings
   and checkpoints. Never copy them.

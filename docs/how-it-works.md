@@ -82,6 +82,12 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   `BRIEFBAR_TEAMS_STATE_DIR`, `BRIEFBAR_CHAT_LINKS_DB`, `BRIEFBAR_COPILOT_DIR`): such a database
   could be a copy that only Full Disk Access reads, as a Time Machine backup's is. `BRIEFBAR_AZ`
   still applies: `az` runs with its own permissions.
+- First thing, it puts back `HOME` from the user database, and drops `CFFIXED_USER_HOME` and
+  `SQLITE_TMPDIR` (`LaunchEnvironment`). `HOME` chooses the keychain that macOS's Security framework
+  uses, where the key to Teams' saved chats is: in a keychain that program made, BriefBar would make a
+  new key, and seal with it the chats it read, which it saves where any program running as you can
+  read them. `CFFIXED_USER_HOME` moves FileManager's home folder, and `SQLITE_TMPDIR` is where SQLite
+  writes what a query sorts.
 - Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
   source, or **Pull Requests Sent in Chats**, without you. Any program running as you can still
   change the preferences themselves, though, with `defaults write`, including which sources are on,

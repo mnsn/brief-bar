@@ -5,10 +5,12 @@ import BriefBarUI
 MainActor.assumeIsolated {
     let arguments = CommandLine.arguments
     // Started as an app (Finder, a login item, `open`), BriefBar has its own permissions, Full Disk Access included,
-    // and whoever started it chose its arguments: `-key value` ones would override its preferences, such as which
-    // sources are on. So none of them reach it.
+    // and whoever started it chose its environment and arguments. Some variables would move where macOS keeps and
+    // finds your files, the keychain included: they're put back before anything reads them. And `-key value`
+    // arguments would override its preferences, such as which sources are on, so none of them reach it.
     let attribution = Attribution.current
     if attribution == .itself {
+        LaunchEnvironment.secure()
         UserDefaults.standard.setVolatileDomain([:], forName: UserDefaults.argumentDomain)
     }
     // `BriefBar --dump | --json | --watch | --help …` work from a terminal without the UI.
