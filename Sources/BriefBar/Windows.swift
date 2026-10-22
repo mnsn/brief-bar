@@ -51,13 +51,12 @@ final class WindowHost: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let size = content.sections.count > 1 ? CGSize(width: 980, height: 700) : CGSize(width: 560, height: 700)
+        // A title bar of its own, as Settings has, so the window's buttons don't sit on the sidebar.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.delegate = self
@@ -199,7 +198,6 @@ struct WindowView: View {
                     .frame(width: Self.sidebarWidth)
                     .floatingPanel(cornerRadius: 18)
                     .padding(Self.inset)
-                    .ignoresSafeArea(edges: .top)
             }
             // A page's lines stay readable on a wide window.
             page
@@ -242,10 +240,6 @@ struct WindowSidebar: View {
     var body: some View {
         let model = content.model
         VStack(alignment: .leading, spacing: 2) {
-            // Room for the window's buttons, which sit in the sidebar's corner.
-            Color.clear
-                .frame(height: 30)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(content.sections.enumerated()), id: \.element) { index, section in
@@ -293,6 +287,7 @@ struct WindowSidebar: View {
             .padding(.bottom, 12)
         }
         .padding(.horizontal, 10)
+        .padding(.top, 12)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
