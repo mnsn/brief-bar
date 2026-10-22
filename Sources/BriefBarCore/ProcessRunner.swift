@@ -29,7 +29,6 @@ public protocol ProcessRunning: Sendable {
 /// nothing is started.
 public enum Responsibility {
     private typealias Disclaim = @convention(c) (UnsafeMutablePointer<posix_spawnattr_t?>, Bool) -> Int32
-    private typealias ResponsiblePID = @convention(c) (pid_t) -> pid_t
 
     private static func symbol(_ name: String) -> UnsafeMutableRawPointer? {
         dlsym(UnsafeMutableRawPointer(bitPattern: -2), name) // RTLD_DEFAULT
@@ -44,19 +43,40 @@ public enum Responsibility {
         guard disclaim(&attributes, true) == 0 else { throw ProcessRunnerError.cantDisclaim }
     }
 
-    /// The process macOS holds responsible for `pid`, or nil if it can't tell.
-    public static func responsibleProcess(for pid: pid_t) -> pid_t? {
-        guard let address = symbol("responsibility_get_pid_responsible_for_pid") else { return nil }
-        let responsible = unsafeBitCast(address, to: ResponsiblePID.self)(pid)
-        return responsible > 0 ? responsible : nil
+    /// The process macOS holds responsible for `pid`, and the executable whose privacy permissions that gives it,
+    /// or nil if macOS can't tell.
+    public static func responsible(for pid: pid_t) -> Attribution.Responsible? {
+        Attribution.responsibleProcess(for: pid)
     }
 
-    /// Logs a fault if a program BriefBar started is attributed to another process after all.
+    /// Whether macOS holds a program this process started responsible for itself, so that it has only its own
+    /// privacy permissions. False when it's attributed to what this process is attributed to (BriefBar, or the app
+    /// it runs in, such as Terminal), whose permissions it then has; nil when macOS can't tell.
+    public static func isResponsibleForItself(_ pid: pid_t) -> Bool? {
+        guard let theirs = responsible(for: pid), let ours = responsible(for: getpid()) else { return nil }
+        return isResponsibleForItself(pid, theirs: theirs, ours: ours)
+    }
+
+    /// macOS checks privacy permissions against the executable it records as responsible when a program starts: a
+    /// disclaimed program's own (a script's interpreter), kept when the program goes on to run another, as a shell
+    /// does; any other program gets its parent's. So that's what's compared, with this process's. Process IDs alone
+    /// can't tell where a host, such as the GitHub Copilot app for its agents, makes every program its own
+    /// responsible process, still with the host's executable; with an older macOS that names no executable, they're
+    /// all there is.
+    static func isResponsibleForItself(_ pid: pid_t, theirs: Attribution.Responsible, ours: Attribution.Responsible) -> Bool {
+        if let their = theirs.path, let our = ours.path {
+            return !Attribution.isSameFile(their, our)
+        }
+        return theirs.pid == pid
+    }
+
+    /// Logs a fault if a program BriefBar started is attributed to what BriefBar is attributed to after all.
     static func verify(_ pid: pid_t, executable: String) {
-        guard let responsible = responsibleProcess(for: pid), responsible != pid else { return }
+        guard isResponsibleForItself(pid) == false else { return }
         let name = (executable as NSString).lastPathComponent
+        let holder = responsible(for: pid).map { $0.path.map { ($0 as NSString).lastPathComponent } ?? "process \($0.pid)" }
         Logger(subsystem: "com.asaf.BriefBar", category: "app").fault(
-            "\(name, privacy: .public) is attributed to process \(responsible), and may use its privacy permissions"
+            "\(name, privacy: .public) is attributed to \(holder ?? "another process", privacy: .public), and may use its privacy permissions"
         )
     }
 }
@@ -64,7 +84,8 @@ public enum Responsibility {
 public enum ProcessRunnerError: Error, Sendable, Equatable, CustomStringConvertible {
     /// macOS doesn't offer the call that keeps a program from using BriefBar's permissions.
     case cantDisclaim
-    /// macOS held BriefBar responsible for a program it started after all, so it was ended (`RunningProgram`).
+    /// macOS didn't hold a program BriefBar started responsible for itself after all, so it was ended
+    /// (`RunningProgram`).
     case notResponsibleForItself
 
     public var description: String {
@@ -72,7 +93,7 @@ public enum ProcessRunnerError: Error, Sendable, Equatable, CustomStringConverti
         case .cantDisclaim:
             "BriefBar can't start programs on this version of macOS without giving them its permissions, so it doesn't."
         case .notResponsibleForItself:
-            "macOS attributed a program that BriefBar started to BriefBar, which would let it use BriefBar's permissions, so BriefBar ended it."
+            "macOS didn't hold a program that BriefBar started responsible for itself, so it would have had BriefBar's permissions, or those of the app BriefBar runs in. BriefBar ended it."
         }
     }
 }

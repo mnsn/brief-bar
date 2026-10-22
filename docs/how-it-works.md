@@ -53,20 +53,25 @@ program it started would have it too. That includes:
 Every program BriefBar runs therefore goes through `ProcessRunner` (in `Sources/BriefBarCore`). It
 starts the program with `posix_spawn` and its responsibility disclaimed
 (`responsibility_spawnattrs_setdisclaim`, as Chromium does), so the program is responsible for itself
-and gets only the permissions macOS gave it. The GitHub Copilot app does the same for its agents.
-That call is private to macOS, so it's looked up at run time, and without it nothing starts. After
-starting a program, BriefBar asks macOS who's responsible for it and logs a fault if it's anyone but
-the program itself. The updater, which runs alongside BriefBar (`RunningProgram`), is checked before
-it runs: it starts suspended, and if macOS holds BriefBar responsible for it, BriefBar ends it.
+and gets only the permissions macOS gave it. That call is private to macOS, so it's looked up at run
+time, and without it nothing starts. After starting a program, BriefBar asks macOS about it and logs a
+fault if it has BriefBar's permissions after all. The updater, which runs alongside BriefBar
+(`RunningProgram`), is checked before it runs: it starts suspended, and unless macOS holds it
+responsible for itself, BriefBar ends it.
 
-Started from an app that LaunchServices opened, a plain child reports the app as responsible, and a
-disclaimed one reports itself. Tests (`startsProgramsResponsibleForThemselves`,
-`startsAProgramResponsibleForItself`) check the second, with a control where the test process is
-attributed to another process, as in Terminal or on CI: the same program, started the usual way, is
-attributed to that process. Some shells, such as some agents', start every program responsible for
-itself, and then nothing they start is attributed to its parent, so `scripts/test-updater-isolation.sh`
-also checks both in an app that macOS opens, then BriefBar's updater the same way. The updater gets
-its input, its output and `/dev/null`, and none of the descriptors BriefBar has open
+macOS checks privacy permissions against the executable it records as responsible when a program
+starts: a disclaimed program's own (for a script, its interpreter), which it keeps when the program
+goes on to run another, as a shell does; any other program gets its parent's. So BriefBar compares
+that executable with its own (`Responsibility.isResponsibleForItself`), as it does to tell whose
+permissions it has itself ([below](#programs-that-start-briefbar)): the process macOS names isn't
+enough, as under the GitHub Copilot app's agents. With an older macOS that names no executable,
+BriefBar compares process IDs. Tests (`startsProgramsResponsibleForThemselves`,
+`startsAProgramResponsibleForItself`) check that programs BriefBar starts are responsible for
+themselves, and a control (`aProgramStartedTheUsualWayIsntResponsibleForItself`) that the same
+program started the usual way isn't, so they can fail wherever macOS names the executable: in
+Terminal, on CI and under those agents alike. `scripts/test-updater-isolation.sh` also checks both
+in an app that macOS opens, then BriefBar's updater the same way. The updater gets its input, its
+output and `/dev/null`, and none of the descriptors BriefBar has open
 (`passesTheProgramNoOtherDescriptor`).
 `scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`,
 the C library's other ways to start programs, the script tasks (`NSUserUnixTask` and the others),

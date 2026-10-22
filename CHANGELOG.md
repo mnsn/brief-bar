@@ -7,6 +7,9 @@
   permissions: BriefBar starts it responsible for itself, and ends it if macOS says otherwise. A copy of
   BriefBar with other code in place of Sparkle can no longer run that code with BriefBar's Full Disk
   Access. Updates look and work as before, and keep the access.
+- **Programs BriefBar starts are checked by the executable macOS records for them**, the one privacy
+  permissions follow, rather than by process ID, which can't tell under some hosts, such as the GitHub
+  Copilot app's agents. Its tests can now fail there too if a program would get BriefBar's permissions.
 - **Your sprint and pipelines**, as ADO Pulse fixed them: they start over when you sign in to the Azure
   CLI as someone else, and a refresh stops once nothing shows them. A retried run's stages are read
   again, runs in different organizations no longer mix, and a timeline that keeps failing doesn't hold

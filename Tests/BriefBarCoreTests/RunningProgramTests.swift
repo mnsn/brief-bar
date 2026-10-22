@@ -35,24 +35,26 @@ import Testing
     func startsAProgramResponsibleForItself() async throws {
         let recorder = Recorder()
         let program = try recorder.start("/bin/cat")
-        #expect(Responsibility.responsibleProcess(for: program.pid) == program.pid)
+        #expect(Responsibility.isResponsibleForItself(program.pid) == true)
         program.closeInput()
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == 0)
     }
 
-    /// Whether this test process is attributed to another process, as in Terminal or on CI. Some shells, such as some
-    /// agents', start every program responsible for itself, and then nothing they start is attributed to its parent.
-    static var isAttributedElsewhere: Bool {
-        Responsibility.responsibleProcess(for: getpid()).map { $0 != getpid() } ?? false
+    /// Whether macOS says enough here to show that a program isn't responsible for itself: it names the executable
+    /// whose permissions a process has, or this process is attributed to another. Where it names no executable and
+    /// this process is its own responsible process, as in some agents' shells on an older macOS, every program looks
+    /// responsible for itself.
+    static var canTellProgramsApart: Bool {
+        guard let responsible = Responsibility.responsible(for: getpid()) else { return false }
+        return responsible.path != nil || responsible.pid != getpid()
     }
 
-    /// The control for the test above: started the usual way, the same program is attributed to what this process is
-    /// attributed to. Where this process is responsible for itself, it can't show that, so it's skipped, and
-    /// scripts/test-updater-isolation.sh shows it in an app that macOS opens instead.
-    @Test(.enabled(if: isAttributedElsewhere, "this process is responsible for itself, so its programs are too"))
-    func aProgramStartedTheUsualWayIsAttributedToWhatStartedIt() throws {
-        let host = try #require(Responsibility.responsibleProcess(for: getpid()))
+    /// The control for the test above: started the usual way, the same program has the permissions of what this
+    /// process is attributed to, so the test above could fail. scripts/test-updater-isolation.sh shows the same in
+    /// an app that macOS opens.
+    @Test(.enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
+    func aProgramStartedTheUsualWayIsntResponsibleForItself() throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sleep")
         process.arguments = ["10"]
@@ -61,7 +63,7 @@ import Testing
             process.terminate()
             process.waitUntilExit()
         }
-        #expect(Responsibility.responsibleProcess(for: process.processIdentifier) == host)
+        #expect(Responsibility.isResponsibleForItself(process.processIdentifier) == false)
     }
 
     /// The program gets its input, its output and /dev/null, and nothing else BriefBar has open, such as a database it

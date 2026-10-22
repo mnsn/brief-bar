@@ -6,7 +6,7 @@ import os
 /// and one from its standard output; its standard error goes nowhere. It runs in a process group of its own, with
 /// no other open descriptors. Like every program BriefBar starts, it's responsible for itself (see
 /// `Responsibility`), and here that's checked before any of its code runs: it starts suspended, and a program that
-/// macOS holds BriefBar responsible for, and that could use BriefBar's privacy permissions, is ended instead, and
+/// macOS doesn't hold responsible for itself, and that could use BriefBar's privacy permissions, is ended instead, and
 /// `start` throws. Its input ends when `closeInput()` is called or BriefBar quits, which tells it to quit.
 public final class RunningProgram: @unchecked Sendable {
     public let pid: pid_t
@@ -98,7 +98,7 @@ public final class RunningProgram: @unchecked Sendable {
             close(fromProgram[0])
             throw POSIXError(POSIXErrorCode(rawValue: spawned) ?? .EIO)
         }
-        guard Responsibility.responsibleProcess(for: pid) == pid else {
+        guard Responsibility.isResponsibleForItself(pid) == true else {
             kill(pid, SIGKILL)
             var raw: Int32 = 0
             while waitpid(pid, &raw, 0) == -1 && errno == EINTR {}
@@ -106,7 +106,7 @@ public final class RunningProgram: @unchecked Sendable {
             close(fromProgram[0])
             let name = executable.lastPathComponent
             Logger(subsystem: "com.asaf.BriefBar", category: "app").fault(
-                "\(name, privacy: .public) was attributed to BriefBar, so it was ended before it ran"
+                "\(name, privacy: .public) wasn't responsible for itself, so it was ended before it ran"
             )
             throw ProcessRunnerError.notResponsibleForItself
         }

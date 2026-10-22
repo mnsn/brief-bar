@@ -156,7 +156,7 @@ enum UpdaterCheck {
         }
 
         let me = getpid()
-        print("BriefBar: process \(me), attributed to \(describe(Responsibility.responsibleProcess(for: me), me))")
+        print("BriefBar: process \(me), attributed to \(describe(me, itself: Attribution.current == .itself))")
         let others = loadedLibraries().filter { !$0.hasPrefix("/usr/lib/") && !$0.hasPrefix("/System/") }
         if others.isEmpty {
             print("BriefBar loaded only Apple's libraries, from /usr/lib and /System.")
@@ -184,12 +184,13 @@ enum UpdaterCheck {
             fail("BriefBar didn't start the updater: \(error)")
             return 1
         }
-        let responsible = Responsibility.responsibleProcess(for: helper.pid)
-        print("Updater: process \(helper.pid), \(UpdaterHelper.bundleIdentifier), attributed to \(describe(responsible, helper.pid))")
-        if responsible == helper.pid && helper.pid != me {
+        let itself = Responsibility.isResponsibleForItself(helper.pid) == true
+        let attributed = describe(helper.pid, itself: itself)
+        print("Updater: process \(helper.pid), \(UpdaterHelper.bundleIdentifier), attributed to \(attributed)")
+        if itself && helper.pid != me {
             print("macOS holds the updater responsible for itself, so it can't use BriefBar's privacy permissions.")
         } else {
-            fail("the updater is attributed to process \(responsible.map(String.init) ?? "unknown")")
+            fail("the updater is attributed to \(attributed)")
         }
 
         let deadline = DispatchTime.now() + 30
@@ -216,9 +217,12 @@ enum UpdaterCheck {
         return failed ? 1 : 0
     }
 
-    private static func describe(_ responsible: pid_t?, _ pid: pid_t) -> String {
-        guard let responsible else { return "an unknown process" }
-        return responsible == pid ? "itself" : "process \(responsible)"
+    /// "itself", or the executable whose privacy permissions macOS gives the process, and the process that's
+    /// responsible for it.
+    private static func describe(_ pid: pid_t, itself: Bool) -> String {
+        guard let responsible = Responsibility.responsible(for: pid) else { return "an unknown process" }
+        if itself { return "itself" }
+        return "\(responsible.path ?? "an executable macOS doesn't name"), process \(responsible.pid)"
     }
 
     /// Every library loaded in this process, apart from its executable.

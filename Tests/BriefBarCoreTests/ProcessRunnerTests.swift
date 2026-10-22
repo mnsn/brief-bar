@@ -94,24 +94,54 @@ import Testing
         }
     }
 
-    /// What `osascript` reports about itself: its process ID, then the process macOS holds responsible for it.
-    private static let selfReport = """
-        ObjC.bindFunction("responsibility_get_pid_responsible_for_pid", ["int", ["int"]]);
-        ObjC.bindFunction("getpid", ["int", []]);
-        var pid = $.getpid(); pid + " " + $.responsibility_get_pid_responsible_for_pid(pid)
-        """
+    /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions. The shell
+    /// writes down its process ID, and waits while this test asks macOS about it; it goes on to run `sleep` in the
+    /// same process, which macOS keeps attributed as the shell was.
+    @Test(.timeLimit(.minutes(1)))
+    func startsProgramsResponsibleForThemselves() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("pid")
+        let run = Task {
+            try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec sleep 30", file.path],
+                environment: nil, timeout: 30
+            )
+        }
+        var shell: pid_t?
+        var tries = 0
+        while shell == nil && tries < 500 {
+            shell = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            tries += 1
+            if shell == nil { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        let pid = try #require(shell, "the shell didn't write down its process ID")
+        #expect(Responsibility.isResponsibleForItself(pid) == true)
+        // SIGKILL, which can't be blocked or ignored: a program started here keeps the signals that the thread that
+        // started it blocks or ignores.
+        kill(-pid, SIGKILL)
+        _ = try await run.value
+    }
 
-    /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions.
-    @Test func startsProgramsResponsibleForThemselves() async throws {
-        let result = try await ProcessRunner().run(
-            URL(fileURLWithPath: "/usr/bin/osascript"), arguments: ["-l", "JavaScript", "-e", Self.selfReport],
-            environment: nil, timeout: 30
-        )
-        let numbers = String(decoding: result.stdout, as: UTF8.self)
-            .split(separator: " ")
-            .compactMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        try #require(numbers.count == 2, "osascript printed \(String(decoding: result.stdout + result.stderr, as: UTF8.self))")
-        #expect(numbers[1] == numbers[0])
+    /// What decides it, as macOS reports it in each case: the executable it records, or with an older macOS that
+    /// names none, the process.
+    @Test func tellsWhetherAProgramIsResponsibleForItselfByItsExecutable() {
+        let briefBar = "/Applications/BriefBar.app/Contents/MacOS/BriefBar"
+        let host = "/Applications/GitHub Copilot.app/Contents/MacOS/github"
+        let ours = Attribution.Responsible(pid: 100, path: briefBar)
+        // Started the usual way from BriefBar, opened as an app: attributed to it.
+        #expect(!Responsibility.isResponsibleForItself(200, theirs: .init(pid: 100, path: briefBar), ours: ours))
+        // Disclaimed: its own executable, even after it went on to run another program, as a shell does.
+        #expect(Responsibility.isResponsibleForItself(200, theirs: .init(pid: 200, path: "/bin/sh"), ours: ours))
+        // Under a host that makes every program its own responsible process but keeps its own executable, such as
+        // the GitHub Copilot app's agents: the process IDs alone would say it's responsible for itself.
+        let underHost = Attribution.Responsible(pid: 100, path: host)
+        #expect(!Responsibility.isResponsibleForItself(200, theirs: .init(pid: 200, path: host), ours: underHost))
+        #expect(Responsibility.isResponsibleForItself(200, theirs: .init(pid: 200, path: "/bin/cat"), ours: underHost))
+        // Without executables, the process IDs.
+        #expect(Responsibility.isResponsibleForItself(200, theirs: .init(pid: 200, path: nil), ours: .init(pid: 100, path: nil)))
+        #expect(!Responsibility.isResponsibleForItself(200, theirs: .init(pid: 100, path: nil), ours: .init(pid: 100, path: nil)))
     }
 
     @Test func findsTheCallsThatKeepProgramsFromUsingItsPermissions() throws {
@@ -119,6 +149,6 @@ import Testing
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
         try Responsibility.disclaim(&attributes)
-        #expect(Responsibility.responsibleProcess(for: getpid()) != nil)
+        #expect(Responsibility.responsible(for: getpid()) != nil)
     }
 }
