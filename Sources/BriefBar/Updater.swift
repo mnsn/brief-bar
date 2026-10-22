@@ -225,13 +225,14 @@ enum UpdaterCheck {
         return "\(responsible.path ?? "an executable macOS doesn't name"), process \(responsible.pid)"
     }
 
-    /// Every library loaded in this process, apart from its executable.
+    /// Every library loaded in this process, apart from its executable. That's told by its Mach-O header, `#dsohandle`
+    /// here, never by its place in dyld's list: dyld lists a library that `DYLD_INSERT_LIBRARIES` inserts before it.
     private static func loadedLibraries() -> [String] {
-        let executable = Bundle.main.executableURL?.resolvingSymlinksInPath().path
-        return (0..<_dyld_image_count()).compactMap { index in
-            guard let name = _dyld_get_image_name(index) else { return nil }
-            let path = String(cString: name)
-            return index == 0 || URL(fileURLWithPath: path).resolvingSymlinksInPath().path == executable ? nil : path
+        (0..<_dyld_image_count()).compactMap { index in
+            guard let header = _dyld_get_image_header(index), UnsafeRawPointer(header) != #dsohandle,
+                  let name = _dyld_get_image_name(index)
+            else { return nil }
+            return String(cString: name)
         }
     }
 }

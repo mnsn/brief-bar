@@ -42,7 +42,7 @@
 	     scripts/make-release-keys.sh sets it once. Never change it afterwards: installed apps would
 	     reject every update (see CONTRIBUTING.md). While it's empty, the app doesn't check for updates. -->
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>19s6qDL3B33ijbuxCjoIfedIA6CrcvoFwgKc4vJhSOo=</string>
 	<key>SURequireSignedFeed</key>
 	<true/>
 	<key>SUVerifyUpdateBeforeExtraction</key>

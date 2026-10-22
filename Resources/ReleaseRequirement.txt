@@ -1,0 +1,1 @@
+identifier "com.asaf.BriefBar" and certificate leaf = H"495582655efc2055191fe28919522661677e32bd"

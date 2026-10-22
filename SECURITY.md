@@ -81,7 +81,9 @@ self-signed: it tells macOS that a new version comes from the same place as the 
 it, and the app isn't notarized.
 
 - The app runs with the hardened runtime, so other processes can't inject code into it with `DYLD_`
-  environment variables or a debugger, and use its Full Disk Access that way.
+  environment variables or a debugger, and use its Full Disk Access that way. That takes System
+  Integrity Protection, which is on unless you turn it off: with it off, macOS doesn't stop programs
+  from loading code into BriefBar, or into any other app, and BriefBar can't prevent that.
 - It has no entitlements, so library validation is on: macOS loads into it only libraries that Apple
   signed, and it links only Apple's. macOS recognizes the app by its own executable's signature, so
   with library validation off, software running as you could copy the app anywhere, put its own code
