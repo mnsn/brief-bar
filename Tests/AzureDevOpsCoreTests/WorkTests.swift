@@ -150,26 +150,20 @@ actor HeldTokens: AccessTokenProvider {
     }
 }
 
-/// Waits until the engine is caught in the middle of a refresh.
-func waitUntilHeld(_ tokens: HeldTokens) async throws {
+/// Waits until `condition` holds, for as long as a busy machine could need.
+func waitUntil(_ what: String, timeout: Duration = .seconds(10), _ condition: () async -> Bool) async throws {
     let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: .seconds(10))
+    let deadline = clock.now.advanced(by: timeout)
     while clock.now < deadline {
-        if await tokens.isHolding { return }
+        if await condition() { return }
         try await Task.sleep(for: .milliseconds(10))
     }
-    throw TestError("Timed out waiting for a request to be held")
+    throw TestError("Timed out waiting for \(what)")
 }
 
-/// Waits until the server has had a number of requests, however busy the machine is.
-func waitUntilRequests(_ server: StubServer, reach count: Int) async throws {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: .seconds(10))
-    while clock.now < deadline {
-        if server.requests.count >= count { return }
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    throw TestError("Timed out waiting for \(count) requests")
+/// Waits until the engine is caught in the middle of a refresh.
+func waitUntilHeld(_ tokens: HeldTokens) async throws {
+    try await waitUntil("a request to be held") { await tokens.isHolding }
 }
 
 /// Collects what a running engine publishes.
@@ -727,6 +721,7 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         let engine = engine(server, published: published)
         await engine.start()
         defer { Task { await engine.stop() } }
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
         try await Task.sleep(for: .milliseconds(300))
         #expect(server.requests.isEmpty)
 
@@ -735,6 +730,7 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         await engine.setActive(false)
         let count = server.requests.count
         await engine.refresh()
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
         try await Task.sleep(for: .milliseconds(1_300))
         #expect(server.requests.count == count)
     }
@@ -755,9 +751,11 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         try await waitUntilHeld(tokens)
         await engine.setActive(false)
         await tokens.release()
-        // The request under way finishes, however busy the machine is; then none after it starts.
-        try await waitUntilRequests(server, reach: 1)
-        try await Task.sleep(for: .milliseconds(500))
+        // The request under way finishes, and the refresh stops: any request after it would be counted by then.
+        try await waitUntil("the refresh to stop") {
+            let refreshing = await engine.currentSnapshot().isRefreshing
+            return !refreshing && !server.requests.isEmpty
+        }
         #expect(server.requests.count == 1)
         #expect(await engine.currentSnapshot().refreshedAt == nil)
     }
@@ -896,10 +894,12 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         try await waitUntilHeld(tokens)
         await engine.setActive(false)
         await tokens.release()
-        // The request under way finishes, however busy the machine is; then not the other project's runs, nor any
-        // stages.
-        try await waitUntilRequests(server, reach: 1)
-        try await Task.sleep(for: .milliseconds(500))
+        // The request under way finishes, and the refresh stops: any request after it would be counted by then.
+        try await waitUntil("the refresh to stop") {
+            let refreshing = await engine.currentSnapshot().isRefreshing
+            return !refreshing && !server.requests.isEmpty
+        }
+        // Not the other project's runs, nor any stages.
         #expect(server.requests.count == 1)
         #expect(await engine.currentSnapshot().refreshedAt == nil)
     }
@@ -1028,6 +1028,7 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         }
         await engine.start()
         defer { Task { await engine.stop() } }
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
         try await Task.sleep(for: .milliseconds(300))
         #expect(server.requests.isEmpty)
         await engine.setActive(true)
@@ -1035,6 +1036,7 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         await engine.setActive(false)
         let count = server.requests.count
         await engine.refresh()
+        // Nothing should happen, so there's nothing to wait for: give it time. A slow machine can't fail this.
         try await Task.sleep(for: .milliseconds(1_300))
         #expect(server.requests.count == count)
     }
