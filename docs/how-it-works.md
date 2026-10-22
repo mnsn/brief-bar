@@ -83,7 +83,8 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   could be a copy that only Full Disk Access reads, as a Time Machine backup's is. `BRIEFBAR_AZ`
   still applies: `az` runs with its own permissions.
 - Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
-  source, or **Pull Requests Sent in Chats**, without you.
+  source, or **Pull Requests Sent in Chats**, without you. Any program running as you can still
+  change the preferences themselves, though, with `defaults write`, including which sources are on.
 - The app's standard output and error go to `/dev/null`, where frameworks could otherwise write, for
   instance with `OS_ACTIVITY_DT_MODE` set.
 

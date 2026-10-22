@@ -226,10 +226,12 @@ Gatekeeper step. Updates keep its Full Disk Access. **Check for Updates…**, in
 list's gear menu, checks right away. To remove BriefBar, quit it, move it to the Trash and remove it
 from the Full Disk Access list.
 
-On a Mac that your organization manages, **Open Anyway** may be missing, or a profile may keep you
-from granting Full Disk Access, and security software may flag an app that reads Notification
-Center's database, so check your organization's policy first. Your IT department can grant the access
-for you, as described below.
+On a Mac that your organization manages, check your organization's policy first: security software
+may flag an app that reads Notification Center's database. If **Open Anyway** is missing, [build
+BriefBar from source](#build-from-source) instead: an app you build yourself opens without the
+Gatekeeper step. If a profile keeps you from granting Full Disk Access, your IT department can grant
+it for you, as described below. For a copy you build, that grant applies once it has updated itself
+to a release.
 
 ### Moving from the Pulse apps
 
@@ -272,8 +274,8 @@ fine there, since it covers only that build.
 
 A copy you build updates itself too, to the release builds, unless you turn off
 **Check for Updates Automatically** in Settings and build each new version yourself. Releases are
-signed with the project's certificate, so after that first update, allow Full Disk Access once more
-the same way, and later updates keep it.
+signed with the project's certificate, not ad hoc or with a certificate of yours, so after that first
+update, allow Full Disk Access once more the same way. Later updates keep it.
 
 ### Keeping Full Disk Access across rebuilds
 
@@ -341,7 +343,8 @@ there and in its right-click menu.
   sign-in and GET requests as your pull requests.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
-  and when, never the messages, and forgets them when you turn it off.
+  and chat, and when, never the messages, and forgets them when you turn it off. Until 0.1.1, it keeps
+  them unencrypted in BriefBar's preferences, where other programs running as you can read them.
 - **Summaries are made on your Mac**, by Apple's on-device model, never Private Cloud Compute or any
   other model, and are kept in memory only.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
