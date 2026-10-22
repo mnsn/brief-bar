@@ -181,17 +181,28 @@ package final class TeamsSource: BriefBarSource {
         let showsText = settings.showPreviews
         let summarizes = settings.showPreviews && settings.showSummaries
         return store.state.unread(in: group(section)).map { conversation in
-            BriefLine(
+            // The chat's ✨ summary, once it has one: the brief says it the same way.
+            var summary: String?
+            if summarizes, case .done(let text)? = summarizer.state(for: conversation) {
+                summary = "\(conversation.name): \(text)"
+            }
+            return BriefLine(
                 id: "teams/" + SummaryPrompt.key(for: conversation) + (showsText ? "/text" : ""), source: id, state: .needsYou,
                 date: conversation.unread.last?.deliveredAt ?? conversation.lastActivity,
                 sentence: SummaryPrompt.briefSentence(for: conversation, showsText: showsText),
-                request: summarizes
+                request: summarizes && summary == nil
                     ? BriefRequest(prompt: SummaryPrompt.prompt(for: conversation), instructions: SummaryPrompt.instructions,
                                    lead: "\(conversation.name): ")
                     : nil,
+                written: summary,
                 open: { [weak store] in store?.open(conversation) }
             )
         }
+    }
+
+    /// The chats, and their summaries as they arrive.
+    package var stateRowsChanged: AnyPublisher<Void, Never> {
+        changes.merge(with: summarizer.objectWillChange.map { _ in () }).eraseToAnyPublisher()
     }
 
     /// Unread chats need you, the newest message first.

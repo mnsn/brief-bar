@@ -28,11 +28,14 @@ package struct BriefLine: Identifiable {
     /// For the on-device model, or nil to keep the sentence. Its source decides, by its own settings: a chat's text
     /// goes in only while Teams shows message previews and summaries.
     package var request: BriefRequest?
+    /// What the on-device model already wrote for it, such as the summary Teams' list shows, so that it's said the
+    /// same way, and not asked for again.
+    package var written: String?
     package var open: @MainActor () -> Void
 
     package init(
         id: String, source: SourceID, state: ItemState, date: Date?, sentence: String, request: BriefRequest? = nil,
-        open: @escaping @MainActor () -> Void
+        written: String? = nil, open: @escaping @MainActor () -> Void
     ) {
         self.id = id
         self.source = source
@@ -40,6 +43,7 @@ package struct BriefLine: Identifiable {
         self.date = date
         self.sentence = sentence
         self.request = request
+        self.written = written
         self.open = open
     }
 }
@@ -115,6 +119,7 @@ package final class BriefWriter: ObservableObject {
 
     /// What a line says: what the model wrote, once it has, or BriefBar's own sentence; and whether the model wrote it.
     package func text(for line: BriefLine) -> (text: String, isWritten: Bool) {
+        if let written = line.written { return (written, true) }
         guard let request = line.request, let written = results[request] else { return (line.sentence, false) }
         return (request.lead + written, true)
     }

@@ -71,6 +71,12 @@ import Testing
         #expect(!writer.text(for: asking).isWritten)
         // A line that asks for nothing is done at once.
         #expect(writer.isDone(with: [line(.copilot, "plain", .done, 1)]))
+
+        // What the model already wrote for it, such as a chat's summary, is said as it is, and not asked for again.
+        var summarized = line(.teams, "summarized", .needsYou, 1)
+        summarized.written = "Avery Quinn: The deck is in the shared folder."
+        #expect(writer.text(for: summarized) == ("Avery Quinn: The deck is in the shared folder.", true))
+        #expect(writer.isDone(with: [summarized]))
     }
 
     @Test func cleansWhatTheModelWrites() {
