@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-10-22
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 
