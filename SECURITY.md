@@ -95,9 +95,9 @@ it, and the app isn't notarized.
   chooses its arguments and environment, and can read its output (`open --stdout`). So then BriefBar
   runs none of its command-line modes or `--render`, only `--help` and `--check-updater`, which read
   nothing of yours; it ignores the variables that point it at other data and the preferences in its
-  arguments, puts back `HOME` and drops the variables that would move your keychain, your home folder,
-  your temporary folders or SQLite's files, keeps the key to Teams' saved chats in your login keychain
-  whatever they say, and sends its output to `/dev/null`
+  arguments, puts back `HOME` and `TMPDIR` and drops the variables that would move your keychain, your
+  home folder, your temporary folders or SQLite's files, keeps the key to Teams' saved chats in your
+  login keychain whatever they say, and sends its output to `/dev/null`
   ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - `scripts/check-app.sh` checks each build for these settings, and CI runs it.
   `scripts/test-updater-isolation.sh` shows, on a copy of a build that macOS opens, that the updater

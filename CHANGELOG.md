@@ -30,6 +30,9 @@
 - **BriefBar finds your files in the home folder the user database names, however it's started**:
   Notification Center's database, Teams' saved chats, `~/.copilot` and the Azure CLI, not wherever
   `CFFIXED_USER_HOME` points.
+- **Started by another program with its own permissions, BriefBar puts back `TMPDIR` too**, as the
+  temporary folder macOS gives you. SQLite falls back to `TMPDIR` when it can't write to that folder,
+  and a program running as you can make it unwritable: macOS only stops it being deleted or renamed.
 - **Only the app itself reads Notification Center for pull requests sent in chats**, never `--render`,
   the demo or the tests, and the log keeps how many links it found private.
 - **Your sprint and pipelines**, as ADO Pulse fixed them: they start over when you sign in to the Azure

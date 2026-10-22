@@ -101,16 +101,18 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   `BRIEFBAR_TEAMS_STATE_DIR`, `BRIEFBAR_CHAT_LINKS_DB`, `BRIEFBAR_COPILOT_DIR`): such a database
   could be a copy that only Full Disk Access reads, as a Time Machine backup's is. `BRIEFBAR_AZ`
   still applies: `az` runs with its own permissions.
-- First thing, it puts back `HOME` from the user database, and drops `CFFIXED_USER_HOME`,
-  `DIRHELPER_USER_DIR_SUFFIX` and SQLite's variables, such as `SQLITE_TMPDIR` (`LaunchEnvironment`).
-  `HOME` chooses the keychain that macOS's Security framework uses, where the key to Teams' saved
-  chats is: in a keychain that program made, BriefBar would make a new key, and seal with it the chats
-  it read, which it saves where any program running as you can read them. `CFFIXED_USER_HOME` moves
-  FileManager's home folder, `DIRHELPER_USER_DIR_SUFFIX` the temporary and cache folders macOS gives
-  you (except, today, for an app with the hardened runtime, as BriefBar is), and `SQLITE_TMPDIR` is
-  where SQLite writes what a query sorts. `TMPDIR` stays: Foundation and SQLite use the temporary
-  folder macOS gives you, and fall back to `TMPDIR` only if they can't write to it, which a program
-  running as you can't arrange, since macOS protects that folder. However it's started, BriefBar finds
+- First thing, it puts back `HOME` from the user database and `TMPDIR` as macOS sets it, and drops
+  `CFFIXED_USER_HOME`, `DIRHELPER_USER_DIR_SUFFIX` and SQLite's variables, such as `SQLITE_TMPDIR`
+  (`LaunchEnvironment`). `HOME` chooses the keychain that macOS's Security framework uses, where the
+  key to Teams' saved chats is: in a keychain that program made, BriefBar would make a new key, and
+  seal with it the chats it read, which it saves where any program running as you can read them.
+  `CFFIXED_USER_HOME` moves FileManager's home folder, `DIRHELPER_USER_DIR_SUFFIX` the temporary and
+  cache folders macOS gives you (except, today, for an app with the hardened runtime, as BriefBar is),
+  and `SQLITE_TMPDIR` is where SQLite writes what a query sorts. Foundation and SQLite use the
+  temporary folder macOS gives you (`confstr`), and SQLite falls back to `TMPDIR` if it can't write
+  there. macOS only stops that folder being deleted or renamed: you own it, so a program running as
+  you could make it unwritable, and with `TMPDIR` choose where SQLite's files go. So `TMPDIR` is that
+  folder, or, if macOS doesn't name one, it goes. However it's started, BriefBar finds
   your files (Notification Center's database, Teams' saved chats, `~/.copilot`) in the home folder the
   user database names (`UserHome`), not FileManager's.
 - Its preferences come only from its own domain: `-key value` arguments would otherwise turn on a
