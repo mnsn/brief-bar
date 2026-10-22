@@ -124,8 +124,11 @@ sections each one shows, and the sections you've hidden from it.
 **Menu-bar items** show their sections' counts side by side, each drawn the way its source draws it,
 and their popover has a tab for each, opening at the first that needs you. Every tab is as wide as the
 widest of the item's lists, and as tabs stop fitting, they get smaller, then become symbols with counts,
-then a menu. With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens
-Settings.
+then a menu. A popover opens from an invisible window over the item (`PopoverAnchor`), so it stays on
+the display you clicked: macOS moves an item's own window to whichever menu bar is active, and a click
+on an item can make another display's menu bar active, as the
+[FAQ in the README](../README.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
+With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
 
 **Widgets** (`WidgetHost`) show their sections one above the other: each source draws its section's
 header and rows, and the widget is as wide as its widest section needs. A widget's size gives each

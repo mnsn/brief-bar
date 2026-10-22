@@ -12,6 +12,8 @@ final class MenuBarItemController: NSObject {
     private(set) var sections: [SectionID]
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    /// What the popover opens from, so it stays on the display you clicked.
+    private let anchor = PopoverAnchor()
     private let panel: ItemPanelModel
     private unowned let model: AppModel
     private var cancellables: Set<AnyCancellable> = []
@@ -65,6 +67,7 @@ final class MenuBarItemController: NSObject {
 
     func remove() {
         closePopover()
+        anchor.remove()
         setVisible(nil)
         setCounted([])
         cancellables.removeAll()
@@ -83,7 +86,9 @@ final class MenuBarItemController: NSObject {
         }
         model.closePanels(except: self)
         NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        let anchorView = anchor.view(over: button) ?? button
+        popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        button.highlight(true)
         popover.contentViewController?.view.window?.makeKey()
         updateVisible()
     }
@@ -153,6 +158,12 @@ extension MenuBarItemController: NSPopoverDelegate {
     nonisolated func popoverDidClose(_ notification: Notification) {
         MainActor.assumeIsolated {
             setVisible(nil)
+            // Unless it opened again as it was closing, from the same anchor.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.popover.isShown else { return }
+                self.anchor.remove()
+                self.statusItem.button?.highlight(false)
+            }
         }
     }
 }

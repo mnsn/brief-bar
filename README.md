@@ -430,6 +430,15 @@ maintainer holds the private key, and so does the release workflow, which can us
 maintainer approves the release. Every release is also signed with the same certificate, which is
 what keeps Full Disk Access. [SECURITY.md](SECURITY.md#how-updates-are-verified) has the details.
 
+### Why did clicking BriefBar switch my other display's Space?
+
+That's macOS, and a click on any app's menu-bar item does it. With **Displays have separate Spaces**
+on, each display has a menu bar of its own, and it can still belong to an app you've moved away from:
+switching another display to a different Space doesn't change it. A click anywhere in that menu bar
+first makes that app active. If its windows are in a Space you switched away from, macOS switches back
+to that Space, as it does when you switch to the app with ⌘-Tab. An item that does nothing when clicked
+causes it too, so BriefBar can't prevent it. Its list does stay on the display you clicked.
+
 ### How do I troubleshoot it?
 
 The app binary has command-line modes, and logs to the system log:
