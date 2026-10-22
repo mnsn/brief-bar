@@ -274,3 +274,30 @@ extension DisplayPhase {
         }
     }
 }
+
+extension SessionSnapshot {
+    /// A brief's line in BriefBar's own words: what the session waits for you on, or how it ended.
+    public var briefSentence: String {
+        let name = "“\(displayName)”"
+        let detail = self.detail.map { Self.clip($0) }.flatMap { $0.isEmpty ? nil : $0 }
+        let sentence: String
+        switch reason {
+        case .question: sentence = detail.map { "\(name) asks: \($0)" } ?? "\(name) is waiting for your answer"
+        case .planApproval: sentence = "\(name) has a plan for you to review" + (detail.map { ": \($0)" } ?? "")
+        case .permission: sentence = "\(name) needs your permission" + (detail.map { " to run \($0)" } ?? "")
+        case .working, .starting: sentence = "\(name) is working"
+        case .finished: sentence = "\(name) finished"
+        case .interrupted: sentence = "\(name) was interrupted"
+        case .failed: sentence = "\(name) stopped with an error" + (detail.map { ": \($0)" } ?? "")
+        case .unresponsive: sentence = "\(name) stopped responding"
+        case .idle: sentence = "\(name) is idle"
+        }
+        return sentence.last.map { ".?!…".contains($0) } == true ? sentence : sentence + "."
+    }
+
+    /// One line of at most `limit` characters.
+    static func clip(_ text: String, limit: Int = 140) -> String {
+        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return line.count > limit ? String(line.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…" : line
+    }
+}

@@ -275,6 +275,25 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         #expect(edited.active == 2)
     }
 
+    @Test func saysInTheBriefWhatASessionWaitsForOrHowItEnded() {
+        func sentence(_ reason: StatusReason, _ detail: String? = nil, name: String = "Add dark mode") -> String {
+            var session = item("s", .needsYou, since: nil, name: name, reason: reason)
+            session.detail = detail
+            return session.briefSentence
+        }
+        #expect(sentence(.question, "Should it follow the system?") == "“Add dark mode” asks: Should it follow the system?")
+        #expect(sentence(.question) == "“Add dark mode” is waiting for your answer.")
+        #expect(sentence(.planApproval, "Replace cookies with OAuth.") == "“Add dark mode” has a plan for you to review: Replace cookies with OAuth.")
+        #expect(sentence(.permission, "git push origin main") == "“Add dark mode” needs your permission to run git push origin main.")
+        #expect(sentence(.finished) == "“Add dark mode” finished.")
+        #expect(sentence(.interrupted) == "“Add dark mode” was interrupted.")
+        #expect(sentence(.failed, "Lost the connection.\nTry again.") == "“Add dark mode” stopped with an error: Lost the connection. Try again.")
+        #expect(sentence(.unresponsive, name: "") == "“Untitled session” stopped responding.")
+        let long = sentence(.question, String(repeating: "Is it this? ", count: 30))
+        #expect(long.hasSuffix("…"))
+        #expect(long.count < 180)
+    }
+
     @Test func phasesSortByUrgency() {
         #expect(DisplayPhase.allCases.shuffled().sorted() == [.needsYou, .running, .done, .stopped, .idle])
         let reasons: [StatusReason] = [

@@ -167,6 +167,9 @@ struct LayoutPage: View {
             Text("A Tab for Each Section").tag(false)
             Text("Everything by State").tag(true)
         }
+        if options.listByState, let reason = OnDeviceModel.unavailableReason {
+            note("The brief at the top of the list is in BriefBar's own words. \(reason)")
+        }
     }
 
     /// Where `section` shows: in `item`, or nowhere when that's nil.

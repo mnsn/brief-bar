@@ -195,8 +195,11 @@ package protocol BriefBarSource: AnyObject {
     /// The section's things that are in a state, for a list by state. None by default.
     func stateRows(for section: SectionID) -> [StateRow]
     /// Fires when what `stateRows` returns may have changed, such as a session's new question. By default,
-    /// `segmentsChanged`.
+    /// `segmentsChanged`. It covers `briefLines` too.
     var stateRowsChanged: AnyPublisher<Void, Never> { get }
+    /// The section's things that are in a state, each in a sentence, for a brief across sources, which picks the few
+    /// worth reading first. None by default.
+    func briefLines(for section: SectionID) -> [BriefLine]
     /// What the section's popover shows. It reads `\.panelStyle` to fit a popover or a window's page.
     func panel(for section: SectionID) -> AnyView
     /// How wide its panels are in a popover. An item that shows several sections makes each as wide as the
@@ -252,6 +255,8 @@ extension BriefBarSource {
     }
 
     package func stateRows(for section: SectionID) -> [StateRow] { [] }
+
+    package func briefLines(for section: SectionID) -> [BriefLine] { [] }
 
     package var stateRowsChanged: AnyPublisher<Void, Never> { segmentsChanged }
 

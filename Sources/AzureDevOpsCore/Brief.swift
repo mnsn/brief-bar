@@ -35,7 +35,8 @@ public enum Brief {
         return PROrdering.sorted(Array(picked.prefix(limit))).map { item($0, reader: reader) }
     }
 
-    static func item(_ snapshot: PRSnapshot, reader: String?) -> BriefItem {
+    /// One pull request's line, for a brief that picks its own: BriefBar's across sources.
+    public static func item(_ snapshot: PRSnapshot, reader: String?) -> BriefItem {
         let title = "“\(snapshot.title)”"
         let top = snapshot.pendingEvents.first { kindMatches($0.kind, snapshot.reason) } ?? snapshot.pendingEvents.first
         let actor = top?.actor ?? "Someone"

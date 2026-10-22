@@ -35,4 +35,23 @@ import Testing
         #expect(source.stateRows(for: .azureDevOpsSprint).isEmpty)
         #expect(source.info(for: .azureDevOpsSprint)?.states.isEmpty == true)
     }
+
+    @Test func saysTheSamePullRequestsInTheBriefAndAsksTheModelOnlyWithSummaries() {
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true))
+        source.start()
+        defer { source.stop() }
+
+        let lines = source.briefLines(for: .azureDevOpsPullRequests)
+        var counts = StateCounts()
+        for line in lines { counts[line.state] += 1 }
+        #expect(counts == source.segment(for: .azureDevOpsPullRequests).states)
+        #expect(Set(lines.map(\.id)).count == lines.count)
+        #expect(lines.allSatisfy { $0.source == .azureDevOps && !$0.sentence.isEmpty })
+        // The demo's comments have text for the model to condense, while Summaries is on.
+        #expect(source.settings.summaries)
+        #expect(lines.contains { $0.request != nil })
+
+        source.settings.summaries = false
+        #expect(source.briefLines(for: .azureDevOpsPullRequests).allSatisfy { $0.request == nil })
+    }
 }

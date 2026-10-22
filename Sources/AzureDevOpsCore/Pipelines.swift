@@ -312,6 +312,12 @@ public struct PipelineStatus: Sendable, Equatable, Identifiable {
         }
     }
 
+    /// A brief's line: “shop-web CI” failed in Test.
+    public var briefSentence: String {
+        let headline = headline
+        return "“\(pipeline.name)” \(headline.prefix(1).lowercased() + headline.dropFirst())."
+    }
+
     /// The stage that's running, waiting, or failed first.
     public var currentStage: PipelineStage? {
         stages.first { $0.state == .running } ?? stages.first { $0.state == .waiting } ?? stages.first { $0.state == .failed }

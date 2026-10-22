@@ -31,6 +31,8 @@ final class PRStore: ObservableObject {
     @Published private(set) var refreshedAt: Date?
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
+    /// Your name in Azure DevOps, so a brief's line can say "you" where a comment names you.
+    private(set) var reader: String?
     /// Notifications are on for Azure DevOps but turned off for BriefBar in System Settings.
     @Published private(set) var notificationsBlocked = false
     /// Whether BriefBar can read Notification Center, for pull requests sent in chats; nil while that's off.
@@ -517,6 +519,7 @@ final class PRStore: ObservableObject {
             if let newProblem { Log.app.error("\(newProblem.message, privacy: .public)") }
         }
 
+        reader = state.userName
         let newBrief = Brief.items(from: sorted, reader: state.userName)
         if newBrief != brief { brief = newBrief }
         if settings.summaries {

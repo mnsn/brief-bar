@@ -9,6 +9,8 @@ import SwiftUI
 @MainActor
 final class StateListModel: ObservableObject {
     @Published private(set) var groups: [StateListGroup] = []
+    /// The few things worth reading first, each in a sentence, at the top.
+    @Published private(set) var brief: [BriefLine] = []
     /// What keeps a section from showing what it should, as its source says it.
     @Published private(set) var problems: [String] = []
     /// The sections it shows: those whose things can be in a state, so not the sprint.
@@ -52,6 +54,9 @@ final class StateListModel: ObservableObject {
         groups = StateList.groups(sections.flatMap { section in
             (model.source(for: section)?.stateRows(for: section) ?? []).map { StateListEntry(section: section, row: $0) }
         })
+        // Worded on screen only: never while the list is closed.
+        brief = Briefing.pick(sections.flatMap { model.source(for: $0)?.briefLines(for: $0) ?? [] })
+        model.briefWriter.write(brief)
         var problems: [String] = []
         for section in sections {
             if let problem = model.source(for: section)?.segment(for: section).problem, !problems.contains(problem) {
@@ -102,6 +107,10 @@ struct StateListView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .help("Open its settings")
+            }
+            if !list.brief.isEmpty {
+                BriefPanel(lines: list.brief, writer: model.briefWriter)
+                    .padding(.bottom, 2)
             }
             if list.groups.isEmpty {
                 VStack(spacing: 4) {
@@ -172,6 +181,70 @@ struct StateListView: View {
         .font(.system(size: 12))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// The brief across sources: a few lines, each opening its thing, worded by Apple Intelligence on this Mac when it can,
+/// or else in BriefBar's own words, without ✨.
+struct BriefPanel: View {
+    let lines: [BriefLine]
+    @ObservedObject var writer: BriefWriter
+
+    private static let gradient = LinearGradient(
+        colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.93, green: 0.30, blue: 0.55),
+                 Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 1.0)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+
+    var body: some View {
+        let texts = lines.map { writer.text(for: $0) }
+        let isWritten = texts.contains { $0.isWritten }
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 5) {
+                if isWritten {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Self.gradient)
+                }
+                Text("Brief")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(zip(lines, texts)), id: \.0.id) { line, text in
+                Button {
+                    line.open()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Circle()
+                            .fill(line.state.color)
+                            .frame(width: 6, height: 6)
+                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
+                        Text(text.text)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Click to open it")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isWritten ? AnyShapeStyle(Self.gradient.opacity(0.09)) : AnyShapeStyle(Color.primary.opacity(0.04)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isWritten ? AnyShapeStyle(Self.gradient.opacity(0.35)) : AnyShapeStyle(Color.primary.opacity(0.1)), lineWidth: 1)
+        )
+        .padding(.horizontal, 4)
+        .help(isWritten ? "Written on this Mac by Apple Intelligence" : "In BriefBar's own words")
     }
 }
 

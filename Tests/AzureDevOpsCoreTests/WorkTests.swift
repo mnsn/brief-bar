@@ -536,6 +536,8 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect([run(.failed), run(.queued), run(.running), run(.succeeded), run(.partiallySucceeded), run(.canceled)]
             .map { PipelineStatus(pipeline: pipeline, runs: [$0]).state } == [.failing, .running, .running, nil, nil, nil])
         #expect(PipelineStatus(pipeline: pipeline, runs: []).state == nil)
+        #expect(PipelineStatus(pipeline: pipeline, runs: [run(.failed)], failure: PipelineFailure(stage: "Test", step: "Run", message: nil))
+            .briefSentence == "“\(pipeline.name)” failed in Test.")
         // The demo's: one failed its tests, and one runs while a release waits for approval.
         #expect(PipelineCounts(DemoData.pipelines()).states == StateCounts(failing: 1, running: 2))
         #expect(RunDuration.short(42) == "42s")

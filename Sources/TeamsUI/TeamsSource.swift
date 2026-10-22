@@ -174,6 +174,26 @@ package final class TeamsSource: BriefBarSource {
         changes.eraseToAnyPublisher()
     }
 
+    /// Unread chats, each in a sentence: who wrote and how many, and what only while Show Message Previews is on.
+    /// Apple Intelligence words a chat only while summaries are on too.
+    package func briefLines(for section: SectionID) -> [BriefLine] {
+        guard let store else { return [] }
+        let showsText = settings.showPreviews
+        let summarizes = settings.showPreviews && settings.showSummaries
+        return store.state.unread(in: group(section)).map { conversation in
+            BriefLine(
+                id: "teams/" + SummaryPrompt.key(for: conversation) + (showsText ? "/text" : ""), source: id, state: .needsYou,
+                date: conversation.unread.last?.deliveredAt ?? conversation.lastActivity,
+                sentence: SummaryPrompt.briefSentence(for: conversation, showsText: showsText),
+                request: summarizes
+                    ? BriefRequest(prompt: SummaryPrompt.prompt(for: conversation), instructions: SummaryPrompt.instructions,
+                                   lead: "\(conversation.name): ")
+                    : nil,
+                open: { [weak store] in store?.open(conversation) }
+            )
+        }
+    }
+
     /// Unread chats need you, the newest message first.
     package func stateRows(for section: SectionID) -> [StateRow] {
         guard let store else { return [] }

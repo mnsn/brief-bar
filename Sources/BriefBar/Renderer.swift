@@ -82,6 +82,11 @@ enum Renderer {
                 if panel.listByState {
                     panel.stateList.update(sections: items[index].sections)
                     panel.stateList.isShowing = true
+                    // With BRIEFBAR_RENDER_SUMMARIES=1, the brief as Apple Intelligence words it.
+                    let deadline = Date().addingTimeInterval(60)
+                    while model.briefWriter.isEnabled, !model.briefWriter.isDone(with: panel.stateList.brief), Date() < deadline {
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    }
                 }
                 let view = ItemPanelView(panel: panel)
                     .environmentObject(model.services)

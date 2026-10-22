@@ -292,6 +292,42 @@ package final class AzureDevOpsSource: BriefBarSource {
         rowChanges.eraseToAnyPublisher()
     }
 
+    /// The same pull requests and pipelines, each in a sentence, as Azure DevOps' own brief says them. Apple
+    /// Intelligence condenses a comment only while Summaries is on.
+    package func briefLines(for section: SectionID) -> [BriefLine] {
+        switch section {
+        case .azureDevOpsPullRequests:
+            guard let store, store.problem?.needsSignIn != true else { return [] }
+            let showToReview = settings.showToReview
+            let summarizes = settings.summaries
+            return store.items.compactMap { snapshot in
+                guard let state = snapshot.group.state(showToReview: showToReview) else { return nil }
+                let item = Brief.item(snapshot, reader: store.reader)
+                return BriefLine(
+                    id: "azureDevOps/" + item.id, source: id, state: state, date: snapshot.since, sentence: item.sentence,
+                    request: summarizes ? item.prompt.map { BriefRequest(prompt: $0, instructions: Brief.instructions) } : nil,
+                    open: { [weak store] in store?.open(snapshot) }
+                )
+            }
+        case .azureDevOpsPipelines:
+            guard let pipelines else { return [] }
+            return pipelines.statuses.compactMap { status in
+                status.state.map { state in
+                    BriefLine(
+                        id: "pipelines/\(status.id)/\(status.latest.map { String($0.id) } ?? "")", source: id, state: state,
+                        date: status.latest?.changedAt,
+                        sentence: status.briefSentence,
+                        open: { [weak pipelines] in
+                            if let latest = status.latest { pipelines?.open(latest) } else { pipelines?.open(status.pipeline) }
+                        }
+                    )
+                }
+            }
+        default:
+            return []
+        }
+    }
+
     package func panel(for section: SectionID) -> AnyView {
         switch section {
         case .azureDevOpsSprint: return environment(WorkPanelView(page: .sprint))

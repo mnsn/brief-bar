@@ -9,6 +9,8 @@ import Combine
 final class AppModel: ObservableObject {
     let services: AppServices
     let sources: [any BriefBarSource]
+    /// Words the brief across sources on this Mac, for every list and page that shows it.
+    let briefWriter: BriefWriter
     @Published private(set) var choices: SourceChoices
     @Published private(set) var layouts: [Surface: SectionLayout] = [:]
     /// Each widget's position and size, by the widget's ID.
@@ -41,6 +43,8 @@ final class AppModel: ObservableObject {
             defaults = .standard
         }
         services = AppServices(defaults: defaults, isDemo: demo)
+        // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
+        briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
         sources = SourceCatalog.sources(services: services)
         var choices = SourceChoices.load(from: defaults)
         if demo {

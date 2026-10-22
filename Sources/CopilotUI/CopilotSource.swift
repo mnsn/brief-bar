@@ -103,6 +103,19 @@ package final class CopilotSource: BriefBarSource {
         }
     }
 
+    /// The same sessions, each in a sentence: what it waits for you on, or how it ended. Copilot's are in BriefBar's
+    /// own words, without Apple Intelligence.
+    package func briefLines(for section: SectionID) -> [BriefLine] {
+        store.sessions.compactMap { session in
+            session.phase.state.map { state in
+                BriefLine(
+                    id: "copilot/\(session.id)/\(session.reason.rawValue)", source: id, state: state, date: session.since,
+                    sentence: session.briefSentence, open: { [store] in store.open(session) }
+                )
+            }
+        }
+    }
+
     /// Any session's change, such as a new question, not only the counts.
     package var stateRowsChanged: AnyPublisher<Void, Never> {
         store.$sessions.map { _ in () }.eraseToAnyPublisher()

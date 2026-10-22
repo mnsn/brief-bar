@@ -58,3 +58,30 @@ public enum SummaryPrompt {
         return text
     }
 }
+
+extension SummaryPrompt {
+    /// A brief's line for an unread chat in BriefBar's own words: who wrote and how many messages, and with
+    /// `showsText` (Teams' Show Message Previews on), what the newest one says. Without it, no message text at all.
+    public static func briefSentence(for conversation: ConversationSummary, showsText: Bool) -> String {
+        let count = conversation.unreadCount
+        let messages = count == 1 ? "a message" : "\(count) messages"
+        let newest = conversation.unread.last ?? conversation.latest
+        var sentence: String
+        if conversation.kind == .oneOnOne {
+            sentence = "\(conversation.name) sent you \(messages)"
+        } else {
+            sentence = "\(conversation.name): \(count == 1 ? "a new message" : "\(count) new messages")"
+            if let sender = newest?.sender, !sender.isEmpty {
+                sentence += count == 1 ? " from \(sender)" : ", the newest from \(sender)"
+            }
+        }
+        guard showsText, let text = newest?.text, !text.isEmpty else { return sentence + "." }
+        return sentence + ": “\(clip(text))”"
+    }
+
+    /// One line of at most `limit` characters.
+    static func clip(_ text: String, limit: Int = 120) -> String {
+        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return line.count > limit ? String(line.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…" : line
+    }
+}
