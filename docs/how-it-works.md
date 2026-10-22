@@ -61,11 +61,16 @@ it runs: it starts suspended, and if macOS holds BriefBar responsible for it, Br
 
 Started from an app that LaunchServices opened, a plain child reports the app as responsible, and a
 disclaimed one reports itself. Tests (`startsProgramsResponsibleForThemselves`,
-`startsAProgramResponsibleForItself`) check the second. Run from a terminal, though, programs aren't
-attributed to their parents at all, so `scripts/test-updater-isolation.sh` checks both in an app that
-macOS opens, then BriefBar's updater the same way.
-`scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`
-or the C library's other ways to start programs.
+`startsAProgramResponsibleForItself`) check the second, with a control where the test process is
+attributed to another process, as in Terminal or on CI: the same program, started the usual way, is
+attributed to that process. Some shells, such as some agents', start every program responsible for
+itself, and then nothing they start is attributed to its parent, so `scripts/test-updater-isolation.sh`
+also checks both in an app that macOS opens, then BriefBar's updater the same way. The updater gets
+its input, its output and `/dev/null`, and none of the descriptors BriefBar has open
+(`passesTheProgramNoOtherDescriptor`).
+`scripts/check-boundaries.sh` checks that no module but `BriefBarCore` uses `posix_spawn`, `Process`,
+the C library's other ways to start programs, the script tasks (`NSUserUnixTask` and the others),
+`NSAppleScript` or `OSAScript`.
 
 Sparkle, in the updater, is a framework of its own, which that check doesn't read. It starts no program
 either: its framework imports neither `posix_spawn` nor `NSTask`, and it submits its installer to

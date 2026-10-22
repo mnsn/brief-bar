@@ -43,7 +43,12 @@ enum CLI {
             print(usage)
             return 0
         }
+        // A diagnostic that reads nothing of yours, and starts no source, so it takes no other option either.
         if arguments.contains("--check-updater") {
+            guard arguments == ["--check-updater"] else {
+                fputs("--check-updater takes no other option.\n", stderr)
+                return 2
+            }
             return UpdaterCheck.run()
         }
         let commandLines = SourceCatalog.commandLines

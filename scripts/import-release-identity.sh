@@ -6,13 +6,13 @@
 #   scripts/import-release-identity.sh [folder]   (default: a new temporary folder that only you can read)
 # Delete the keychain when done, which takes it off the search list too: security delete-keychain <path>
 set -euo pipefail
+# Only this script reads the secrets, through printf below: no program it starts inherits them, from the first.
+export -n RELEASE_CERTIFICATE_P12 RELEASE_CERTIFICATE_PASSWORD
 cd "$(dirname "$0")/.."
 source scripts/signing.sh
 
 : "${RELEASE_CERTIFICATE_P12:?The release environment has no RELEASE_CERTIFICATE_P12 secret.}"
 : "${RELEASE_CERTIFICATE_PASSWORD:?The release environment has no RELEASE_CERTIFICATE_PASSWORD secret.}"
-# Only this script reads them, through printf below: the programs it starts don't inherit them.
-export -n RELEASE_CERTIFICATE_P12 RELEASE_CERTIFICATE_PASSWORD
 NAME="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Release}"
 FOLDER="${1:-$(mktemp -d)}"
 KEYCHAIN="$FOLDER/briefbar-release.keychain-db"

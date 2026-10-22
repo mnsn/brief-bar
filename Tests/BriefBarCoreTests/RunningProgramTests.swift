@@ -30,9 +30,7 @@ import Testing
         }
     }
 
-    /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions. (Run from a
-    /// terminal, programs aren't attributed to their parents at all, so scripts/test-updater-isolation.sh checks this
-    /// in an app that macOS opened, with a control.)
+    /// Started from an app, a program is otherwise attributed to it, and may use its privacy permissions.
     @Test(.timeLimit(.minutes(1)))
     func startsAProgramResponsibleForItself() async throws {
         let recorder = Recorder()
@@ -41,6 +39,56 @@ import Testing
         program.closeInput()
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == 0)
+    }
+
+    /// Whether this test process is attributed to another process, as in Terminal or on CI. Some shells, such as some
+    /// agents', start every program responsible for itself, and then nothing they start is attributed to its parent.
+    static var isAttributedElsewhere: Bool {
+        Responsibility.responsibleProcess(for: getpid()).map { $0 != getpid() } ?? false
+    }
+
+    /// The control for the test above: started the usual way, the same program is attributed to what this process is
+    /// attributed to. Where this process is responsible for itself, it can't show that, so it's skipped, and
+    /// scripts/test-updater-isolation.sh shows it in an app that macOS opens instead.
+    @Test(.enabled(if: isAttributedElsewhere, "this process is responsible for itself, so its programs are too"))
+    func aProgramStartedTheUsualWayIsAttributedToWhatStartedIt() throws {
+        let host = try #require(Responsibility.responsibleProcess(for: getpid()))
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["10"]
+        try process.run()
+        defer {
+            process.terminate()
+            process.waitUntilExit()
+        }
+        #expect(Responsibility.responsibleProcess(for: process.processIdentifier) == host)
+    }
+
+    /// The program gets its input, its output and /dev/null, and nothing else BriefBar has open, such as a database it
+    /// opened with Full Disk Access.
+    @Test(.timeLimit(.minutes(1)))
+    func passesTheProgramNoOtherDescriptor() async throws {
+        // Without FD_CLOEXEC, which nothing sets here, a program would inherit it.
+        let opened = open("/dev/null", O_RDONLY)
+        try #require(opened >= 0)
+        let held = fcntl(opened, F_DUPFD, 100)
+        close(opened)
+        try #require(held >= 100)
+        defer { close(held) }
+        #expect(fcntl(held, F_GETFD) & FD_CLOEXEC == 0)
+        let recorder = Recorder()
+        _ = try recorder.start("/bin/ls", ["-1", "/dev/fd"])
+        var open: [Int32] = []
+        for await line in recorder.lines {
+            if let descriptor = Int32(line) {
+                open.append(descriptor)
+            }
+        }
+        // 0 to 2, and the two that ls opens to read /dev/fd. (Started the usual way, it would list whatever this process
+        // has open too.)
+        #expect(open.contains(0) && open.contains(1) && open.contains(2))
+        #expect(!open.contains(held))
+        #expect(open.allSatisfy { $0 <= 4 }, "\(open)")
     }
 
     @Test(.timeLimit(.minutes(1)))

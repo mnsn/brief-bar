@@ -2,8 +2,8 @@
 # Checks the two boundaries that keep what BriefBar reads on your Mac, module by module:
 # - Only the Azure DevOps source's core (AzureDevOpsCore) uses networking APIs. Teams and Copilot make
 #   no network requests, and nothing else in the app does either.
-# - Only BriefBarCore starts programs, through ProcessRunner, which keeps them from using BriefBar's
-#   privacy permissions, Full Disk Access included.
+# - Only BriefBarCore starts programs, through ProcessRunner and RunningProgram, which keep them from using
+#   BriefBar's privacy permissions, Full Disk Access included.
 # The app's binary combines every module, so this reads the debug build's object files, module by
 # module. (A release build's cross-module optimization could inline one module's code into another's.)
 #   scripts/check-boundaries.sh   (after `swift build`)
@@ -14,8 +14,9 @@ NETWORK_MODULE="AzureDevOpsCore"
 # Foundation's URL loading, CFNetwork, sockets and Network.framework (C and Swift).
 NETWORK='URLSession|URLRequest|NSURLConnection|CFNetwork|CFHTTP|CFSocket|^_nw_|s7Network'
 PROCESS_MODULE="BriefBarCore"
-# Starting programs: posix_spawn, Foundation's Process (NSTask), and the C library's other ways.
-PROCESSES='^_(posix_spawnp?|popen|system|execv|execve|execvp|execl|execle|execlp|fork|vfork)$|NSTask'
+# Starting programs: posix_spawn, Foundation's Process (NSTask), the C library's other ways, and the script tasks
+# and AppleScript, which run scripts and programs on BriefBar's behalf.
+PROCESSES='^_(posix_spawnp?|popen|system|execv|execve|execvp|execl|execle|execlp|fork|vfork)$|NSTask|NSUser[A-Za-z]*Task|NSAppleScript|OSAScript'
 
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
