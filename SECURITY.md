@@ -47,7 +47,10 @@ Only the latest release, and the latest commit on `main`, are supported.
 - **Sources are off until you turn them on.** macOS asks for Full Disk Access and notifications only
   once for the whole app, so BriefBar's own consent comes first. A source reads nothing, and checks no
   access, while it's off. An update never turns one on, and a source that starts reading more pauses
-  until you've looked.
+  until you've looked. Any program running as you can still turn a source on, or Pull Requests Sent
+  in Chats, by changing BriefBar's preferences with `defaults write`, but that only makes BriefBar
+  itself show what it reads: it keeps nothing it reads with Full Disk Access where such a program
+  could read it ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
 - **Programs it starts are responsible for themselves.** macOS lets a program use the permissions of
   the app that started it. BriefBar starts every program (the Azure CLI, the login shell that finds
   it, `lsappinfo`) with that responsibility disclaimed, so none of them gets its Full Disk Access.
@@ -60,8 +63,7 @@ Only the latest release, and the latest commit on `main`, are supported.
   in other apps' notifications, and which of those pull requests you've seen, stay in memory. Its
   preferences, which any program running as you can read and change, hold its settings, which of
   your own pull requests you've seen and which Copilot sessions you've cleared, but nothing from
-  Notification Center. Changing them can turn on a source, or Pull Requests Sent in Chats, but what
-  that finds shows only in BriefBar.
+  Notification Center.
 
 ## How the app is signed
 

@@ -108,7 +108,7 @@ final class AppSettings: ObservableObject {
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         chatLinks = ChatLinkState()
-        // Where 0.1.0 kept the links, which any program running as you could read: gone, whatever the setting.
+        // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
 
         otherSeen = defaults.data(forKey: Key.otherSeen).flatMap { try? JSONDecoder().decode([String: SeenState].self, from: $0) } ?? [:]
@@ -178,7 +178,7 @@ final class AppSettings: ObservableObject {
     }
 
     /// Each pull request seen up to its own time. Those in `sentInChats`, listed only because someone sent them to
-    /// you, are remembered in memory only, and leave the preferences if an earlier version saved them there.
+    /// you, are remembered in memory only, and leave the preferences if an earlier build saved them there.
     func markSeen(_ entries: [(key: PRKey, date: Date)], sentInChats: Set<PRKey> = []) {
         keepSeenInMemory(sentInChats)
         var updated = seen
@@ -202,7 +202,7 @@ final class AppSettings: ObservableObject {
     }
 
     /// Moves what the preferences say you've seen of these pull requests, listed only because someone sent them to
-    /// you, into memory. 0.1.0 kept that in the preferences.
+    /// you, into memory. Earlier builds kept that in the preferences.
     func keepSeenInMemory(_ keys: Set<PRKey>) {
         let saved = keys.compactMap { key in seen.seenAt[key.description].map { (key: key.description, date: $0) } }
         guard !saved.isEmpty else { return }
@@ -306,7 +306,7 @@ enum SettingsKey {
     static let seen = "ado.seenState"
     static let otherSeen = "ado.otherAccountsSeenState"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
-    /// Where 0.1.0 kept the links sent in chats. Nothing writes it now: the app removes it at launch.
+    /// Where earlier builds kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"

@@ -71,7 +71,7 @@ import Testing
         #expect(again.seenCutoff(for: sentInChat) < now)
     }
 
-    @Test func removesTheLinksAnEarlierVersionSavedWhateverTheSetting() throws {
+    @Test func removesTheLinksAnEarlierBuildSavedWhateverTheSetting() throws {
         for enabled in [true, false] {
             let defaults = preferences(enabled: enabled)
             defaults.set(try JSONEncoder().encode(ChatLinkState(links: [link(7, sentAt: now)])), forKey: SettingsKey.chatLinks)
@@ -82,7 +82,7 @@ import Testing
         }
     }
 
-    @Test func movesWhatAnEarlierVersionSawOfThemIntoMemory() throws {
+    @Test func movesWhatAnEarlierBuildSawOfThemIntoMemory() throws {
         let defaults = preferences(enabled: true)
         var earlier = SeenState.firstRun(now: now)
         earlier.markSeen([sentInChat, yours], at: now)

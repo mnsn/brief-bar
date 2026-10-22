@@ -475,7 +475,7 @@ final class PRStore: ObservableObject {
                 settings.pruneSeen(keeping: Set(snapshot.records.map(\.id)))
             }
         }
-        // What 0.1.0 saved of pull requests sent in chats moves out of the preferences once they're listed.
+        // What earlier builds saved of pull requests sent in chats moves out of the preferences once they're listed.
         settings.keepSeenInMemory(Set(snapshot.records.filter { $0.role == .linked }.map(\.id)))
         recompute(announce: true)
     }

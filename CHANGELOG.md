@@ -1,19 +1,5 @@
 # Changelog
 
-## 0.1.1 - Unreleased
-
-Pull requests sent in chats no longer leave anything where other programs can read it.
-
-- **Pull requests sent in chats stay in memory.** With **Pull Requests Sent in Chats** on, 0.1.0
-  kept the links it found, with who sent which pull request, in which app and chat, and when, in
-  BriefBar's preferences, where any program running as you could read them. BriefBar now keeps them
-  in memory only, as it does which of those pull requests you've seen, and removes the links 0.1.0
-  saved when it starts. After BriefBar restarts, it finds only the links whose notifications
-  Notification Center still has, and a pull request someone sent you that you'd seen, but not voted
-  or commented on, needs you again.
-- **The command line leaves them out.** Azure DevOps' part of `--dump`, `--json` and `--watch` no
-  longer shows pull requests sent in chats; `--chats` still lists the links in Notification Center.
-
 ## 0.1.0 - Unreleased
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
@@ -24,7 +10,8 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 - **Azure DevOps as ADO Pulse has it now:** an **Answered** group for what you've taken care of in
   Azure DevOps, until you've seen it; **Pull Requests Sent in Chats**, off until you turn it on, which
   lists a pull request when someone sends you a link to it, from the notifications every app posts,
-  keeping only the links; and what you've seen, kept for each Azure CLI account.
+  keeping only the links, in memory, as it does which of those pull requests you've seen; and what
+  you've seen of your own pull requests, kept for each Azure CLI account.
 - **Your sprint and pipelines**, from ADO Pulse's window: your team's current sprint as a task board,
   with **Just Mine**, and the pipelines you pin, stage by stage. Each is a section of its own, a page
   in BriefBar's window to start with, and reads Azure DevOps only while something shows it.

@@ -22,7 +22,7 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
   requests each account has seen; which Copilot sessions you've cleared. Its settings stay. The links
-  to pull requests people sent you were in memory only, and are forgotten with it.
+  to pull requests people sent you are kept in memory only, and forgotten with it.
 
 ## Permissions that macOS grants once
 
@@ -508,9 +508,10 @@ from a menu, turning it on opens its Settings page, which says what it reads.
   and forgotten when you turn the setting off, or Azure DevOps. So is what you've seen of the pull
   requests listed only because of a link. None of it goes to BriefBar's preferences or to disk, where
   any program running as you could read it: only what you've seen of your own pull requests is in the
-  preferences. At launch, BriefBar removes the links that 0.1.0 saved there (`ado.chatLinks`). What
-  0.1.0 saved there of which of those pull requests you'd seen leaves them once they're listed
-  again, and otherwise two months after you last saw them, as for any pull request no longer listed.
+  preferences. Builds from before the first release did keep the links there (`ado.chatLinks`), so at
+  launch BriefBar removes them. What those builds saved of which of those pull requests you'd seen
+  leaves the preferences once they're listed again, and otherwise two months after you last saw
+  them, as for any pull request no longer listed.
 - So after BriefBar restarts, it finds again only the links whose notifications Notification Center
   still has (for Teams, about a couple of days' worth), and a pull request you'd seen, but not voted
   or commented on since the message, needs you again.
