@@ -85,8 +85,7 @@ it, and the app isn't notarized.
 - It has no entitlements, so library validation is on: macOS loads into it only libraries that Apple
   signed, and it links only Apple's. macOS recognizes the app by its own executable's signature, so
   with library validation off, software running as you could copy the app anywhere, put its own code
-  in one of the copy's frameworks, and run that code with BriefBar's Full Disk Access. 0.1.0 had it
-  off to load Sparkle, the updater, and had that hole.
+  in one of the copy's frameworks, and run that code with BriefBar's Full Disk Access.
 - Sparkle is in an app of its own inside BriefBar, `Contents/Helpers/BriefBar Updater.app`, the only
   part with library validation off (`com.apple.security.cs.disable-library-validation`, its only
   entitlement). With it on, macOS loads only libraries signed by Apple or by the app's own team, and a

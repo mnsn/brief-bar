@@ -1032,8 +1032,8 @@ the app's own team. A self-signed certificate has no team, so macOS would refuse
 with the same certificate ("mapping process and mapped file (non-platform) have different Team IDs").
 And macOS recognizes an app by its own executable's signature, so an app with library validation off
 loads whatever its frameworks hold: anything running as you could copy the app anywhere, put its own
-code in the copy's framework, and run that code with the app's permissions. 0.1.0 had library
-validation off for Sparkle, and so had that hole.
+code in the copy's framework, and run that code with the app's permissions. An app that loaded Sparkle
+itself would need library validation off, and have that hole.
 
 So library validation stays on in BriefBar: it has no entitlements, and links only Apple's libraries,
 by their full paths, with no run path and no `Frameworks` folder. Sparkle is in an app of its own
@@ -1047,9 +1047,9 @@ the toolchain's or the build's folder would be a place to put a look-alike libra
 certificate, which has a team, would let Sparkle load with library validation on.
 
 `scripts/test-updater-isolation.sh` shows it on a copy of a build that macOS opens: BriefBar loads only
-Apple's libraries, and an ad-hoc library put in place of Sparkle, in the updater and where 0.1.0 had
-it, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS holds responsible for
-itself. `BriefBar --check-updater` reports the same about any copy.
+Apple's libraries, and an ad-hoc library put in place of Sparkle, in the updater and in BriefBar's own
+`Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS holds
+responsible for itself. `BriefBar --check-updater` reports the same about any copy.
 
 ## Updating the app
 
