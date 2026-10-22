@@ -34,7 +34,7 @@ overview.
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 
 Only the Azure DevOps source talks to the network for what you see, and only to Azure DevOps. BriefBar's
@@ -243,6 +243,25 @@ covered, a menu-bar item or its list. Click anything to open it in Azure DevOps.
   </picture>
 </p>
 
+**Send Work to Copilot**, off by default, hands a sprint's work item to the
+[Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) on your Mac, the way you'd ask
+Copilot yourself, with your sign-in, tools, MCP servers and instructions. Point at a task and click ✈︎ to
+see the prompt, which you can change, and choose the model, how hard it thinks and the repository the
+change goes in, then **Send**. Or right-click a task to send it right away, with your model or with the
+one for easy work. BriefBar fetches the repository, makes a new worktree of it at the latest base
+branch, in `copilot-worktrees` next to it, and starts Copilot there, on its own: in autopilot, with
+every tool allowed and no questions. Nothing opens. The task shows Copilot working, then **PR** once it
+has opened a pull request, published and linked to the work item, which you'll find under Pull Requests
+as your own; a notification says when it's done, or why it stopped. The badge's menu opens the pull
+request, goes on with the session in Terminal, shows the worktree, stops Copilot or removes the
+worktree, and the ✈︎ menu at the top of the Sprint page lists every task you sent. Copilot keeps going
+if BriefBar quits.
+
+The standard prompt asks Copilot to read the work item with your Azure DevOps tools, branch the way the
+repository does, build and test what it changed, then push and open the pull request. A work item's
+text is written by whoever wrote it, and goes to an agent that may run any command: send only work you'd
+hand to Copilot yourself.
+
 ### GitHub Copilot
 
 | Group | Status | When |
@@ -371,6 +390,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
+| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 
@@ -394,6 +414,14 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   with none of BriefBar's permissions. They carry nothing about your chats, pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, the Copilot app's
   files, and Azure DevOps through GET requests. It never changes any of them.
+- **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
+  item. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
+  choose, with git, and Copilot's log of that session, and nothing of Copilot's while the feature is
+  off. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
+  ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
+  sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
   sign-in and GET requests as your pull requests.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
@@ -407,10 +435,10 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
   read; which of your Azure DevOps pull requests you've seen, with each account, and your
-  organizations; which Copilot sessions you've cleared; and its settings. Turning a source off
-  deletes what it saved.
-- **Programs it runs**, such as the Azure CLI, never get its permissions: macOS would otherwise let
-  them use BriefBar's Full Disk Access.
+  organizations; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  sessions you've cleared; and its settings. Turning a source off deletes what it saved.
+- **Programs it runs**, such as the Azure CLI and the Copilot CLI, never get its permissions: macOS
+  would otherwise let them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the
   desktop, where anyone who sees your screen, or your screen share, can read them. With **Show
   Message Previews** off, the widgets and lists show only how many messages are new.
@@ -462,6 +490,16 @@ The first time, it looks through your teams for one with a sprint going on today
 one, it picks the team with the most work assigned to you, and keeps it. Choose another team from the
 Sprint page's team menu. Azure DevOps keeps calling a team's last sprint "current" after it's over,
 when the team stops planning sprints: BriefBar shows no sprint then.
+
+### Why does Send Work to Copilot use the Copilot CLI?
+
+It's the agent the GitHub Copilot app runs, on your Mac, with your sign-in, tools, MCP servers,
+skills and instructions, and it can work on its own while nothing is open. The app's own link for a
+new session asks you to confirm in the app, can't choose the model, and takes only repositories on
+GitHub. Copilot in Azure DevOps works in the cloud, without your tools and MCP servers. To go on with a
+task, choose **Continue in Terminal** in its menu: that resumes the same session, in its worktree.
+Copilot loads a repository's own skills, MCP servers and hooks only from a folder you trust: when you
+trust a repository's folder in Copilot, its worktrees get the same trust.
 
 ### Why do some Copilot sessions show less detail?
 

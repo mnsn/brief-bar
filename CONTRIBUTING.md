@@ -16,9 +16,10 @@ make demo    # run the app with made-up data for every source (Ctrl-C to quit)
 `make demo` writes made-up Teams notifications in Notification Center's layout to `build/demo/teams`
 and a made-up Copilot data directory to `build/demo/copilot`, and starts the app with `--demo`, which
 turns every source on in preferences kept in memory. Azure DevOps makes up its own pull requests,
-links sent in chats, sprint and pipelines, and never runs `az`, reaches Azure DevOps or reads
-Notification Center. Use it to work on the UI and to take screenshots without
-showing your own chats, pull requests or sessions. `make demo ARGS=--window` also opens the window.
+links sent in chats, sprint, pipelines and tasks sent to Copilot, and never runs `az`, `git` or
+`copilot`, reaches Azure DevOps or reads Notification Center. Use it to work on the UI and to take
+screenshots without showing your own chats, pull requests or sessions. `make demo ARGS=--window` also
+opens the window.
 
 Other targets:
 
@@ -77,6 +78,9 @@ Sources/AzureDevOpsCore/       Azure DevOps: sign-in with the Azure CLI, the cli
                                the engines (pull requests, sprint, pipelines), groups, notifications, the
                                brief, and the links people send you in chats
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
+Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
+                               the Copilot CLI, the git worktree, starting a run and following it from
+                               its session log
 Sources/BriefBarUI/            shared app code: the source protocol, menu-bar drawing, desktop widgets,
                                the windows' look, the notifier, Full Disk Access, the on-device model,
                                Launch at Login
@@ -108,6 +112,7 @@ other data:
 | `BRIEFBAR_TEAMS_DB`, `BRIEFBAR_TEAMS_STATE_DIR` | Another Notification Center database, such as `build/demo/teams/db2/db`, and its state. With another database, BriefBar keeps the key of the unread chats in a file next to that state instead of the keychain |
 | `BRIEFBAR_COPILOT_DIR` | Another Copilot data directory, such as `build/demo/copilot` |
 | `BRIEFBAR_AZ` | Another `az` |
+| `BRIEFBAR_COPILOT_CLI` | Another `copilot`, for Send Work to Copilot |
 | `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
 | `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model |
 
@@ -152,8 +157,12 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   Teams and Copilot make no network requests, and neither does anything else but the updater,
   Sparkle, which fetches only this project's releases, and only if you allow it. Networking code goes
   in `AzureDevOpsCore`, and `make check-boundaries` fails if any other module uses networking APIs.
-- **Start programs only through `ProcessRunner`**, which keeps them from using BriefBar's privacy
-  permissions. `make check-boundaries` fails if any other module starts one.
+- **Start programs only through `ProcessRunner`**, or `RunningProgram` and `DetachedProgram` for those
+  that keep running, all in `BriefBarCore`, which keep them from using BriefBar's privacy permissions.
+  `make check-boundaries` fails if any other module starts one.
+- **Nothing acts for you unless you ask.** BriefBar starts Copilot, which changes code, pushes and opens
+  pull requests as you, only when you send a work item with **Send Work to Copilot** on: never by
+  itself, on a schedule, after an update or in the demo.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller

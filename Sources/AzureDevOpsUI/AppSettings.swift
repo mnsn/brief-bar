@@ -1,6 +1,7 @@
 import AzureDevOpsCore
 import BriefBarUI
 import Combine
+import CopilotTasks
 import Foundation
 
 /// Azure DevOps' settings, and which pull requests you've seen, in BriefBar's preferences. Nothing from Notification
@@ -84,6 +85,35 @@ final class AppSettings: ObservableObject {
     @Published var pinnedPipelines: [PipelineRef] {
         didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
     }
+    /// Send Work to Copilot: a button on the sprint's work items that hands one to the Copilot CLI on this Mac. Off by
+    /// default: Copilot then changes code, pushes a branch and opens a pull request, as you.
+    @Published var copilotEnabled: Bool {
+        didSet { defaults.set(copilotEnabled, forKey: Key.copilotEnabled) }
+    }
+    /// What a task is sent with, unless you choose otherwise.
+    @Published var copilotOptions: CopilotRunOptions {
+        didSet { Self.store(copilotOptions, in: defaults, forKey: Key.copilotOptions) }
+    }
+    /// What an easy task is sent with.
+    @Published var copilotQuickOptions: CopilotRunOptions {
+        didSet { Self.store(copilotQuickOptions, in: defaults, forKey: Key.copilotQuickOptions) }
+    }
+    /// The prompt, with placeholders (`PromptTemplate`); nil for the standard one, which then follows updates.
+    @Published var copilotPrompt: String? {
+        didSet { defaults.set(copilotPrompt, forKey: Key.copilotPrompt) }
+    }
+    /// The repository each project's work went in last (`WorkItemReference.projectKey`), as a folder's path.
+    @Published var copilotRepositories: [String: String] {
+        didSet { defaults.set(copilotRepositories, forKey: Key.copilotRepositories) }
+    }
+    /// Where worktrees go; next to each repository when nil.
+    @Published var copilotWorktreesFolder: String? {
+        didSet { defaults.set(copilotWorktreesFolder, forKey: Key.copilotWorktreesFolder) }
+    }
+    /// The tasks sent to Copilot: which work item, where and with which model, not titles or what Copilot wrote.
+    @Published var copilotRuns: [CopilotRun] {
+        didSet { Self.store(copilotRuns, in: defaults, forKey: Key.copilotRuns) }
+    }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
     /// When you last looked at each pull request that's listed only because someone sent it to you (`PRKey.description`),
@@ -107,6 +137,14 @@ final class AppSettings: ObservableObject {
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
+        copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
+        copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
+        copilotQuickOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotQuickOptions) ?? CopilotModel.quick
+        copilotPrompt = defaults.string(forKey: Key.copilotPrompt)
+        copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
+        copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
+        // Any program running as you can write the preferences: a run whose ID isn't a session's is left out.
+        copilotRuns = (Self.load([CopilotRun].self, from: defaults, forKey: Key.copilotRuns) ?? []).filter(\.isValid)
         chatLinks = ChatLinkState()
         // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
@@ -139,6 +177,19 @@ final class AppSettings: ObservableObject {
         seen = SeenState.firstRun()
         otherSeen = [:]
         forgetChatLinks()
+    }
+
+    /// The prompt tasks are sent with.
+    var copilotPromptTemplate: String {
+        copilotPrompt ?? PromptTemplate.standard
+    }
+
+    /// Forgets the tasks sent to Copilot, and the repositories their work went in, when Azure DevOps is turned off.
+    /// What Copilot printed for them is deleted with them (`CopilotTasksStore.deleteOutput`). Copilot's worktrees,
+    /// branches and sessions stay: they're your work.
+    func forgetCopilotRuns() {
+        copilotRuns = []
+        copilotRepositories = [:]
     }
 
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
@@ -311,6 +362,13 @@ enum SettingsKey {
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"
     static let pinnedPipelines = "ado.pinnedPipelines"
+    static let copilotEnabled = "ado.copilot.enabled"
+    static let copilotOptions = "ado.copilot.options"
+    static let copilotQuickOptions = "ado.copilot.quickOptions"
+    static let copilotPrompt = "ado.copilot.prompt"
+    static let copilotRepositories = "ado.copilot.repositories"
+    static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
+    static let copilotRuns = "ado.copilot.runs"
 }
 
 extension BriefBarUI.WidgetSize {

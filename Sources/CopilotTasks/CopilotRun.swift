@@ -1,0 +1,217 @@
+import BriefBarCore
+import CopilotCore
+import Darwin
+import Foundation
+
+/// How a task sent to Copilot stands.
+public enum RunPhase: String, Sendable, Codable, Equatable {
+    /// Getting its worktree ready, before Copilot starts.
+    case preparing
+    case working
+    /// Copilot called it done.
+    case finished
+    /// It couldn't start, or Copilot reported an error.
+    case failed
+    /// It ended before Copilot called it done: you stopped it, or it was ended.
+    case stopped
+
+    public var isActive: Bool { self == .preparing || self == .working }
+}
+
+/// A task BriefBar sent to Copilot, as it keeps it across launches in its preferences: which work item, where, and with
+/// which model. Not the work item's title, nor anything Copilot wrote. Any program running as you can change the
+/// preferences, so the files BriefBar reads for a run aren't kept there: they follow from its session's ID, which is
+/// checked to be one (`CopilotRun.isValid`).
+public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
+    /// The ID of Copilot's session, a UUID that BriefBar chooses.
+    public var id: String
+    public var workItem: WorkItemReference
+    public var options: CopilotRunOptions
+    /// The repository's main checkout.
+    public var repository: URL
+    public var worktree: URL
+    public var startedAt: Date
+    public var process: DetachedProgram.Handle
+    /// How it ended, once BriefBar saw it end, so that it says so only once.
+    public var ended: RunPhase?
+    /// The pull request it opened, once found.
+    public var pullRequest: URL?
+
+    public init(
+        id: String, workItem: WorkItemReference, options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date,
+        process: DetachedProgram.Handle, ended: RunPhase? = nil, pullRequest: URL? = nil
+    ) {
+        self.id = id
+        self.workItem = workItem
+        self.options = options
+        self.repository = repository
+        self.worktree = worktree
+        self.startedAt = startedAt
+        self.process = process
+        self.ended = ended
+        self.pullRequest = pullRequest
+    }
+
+    /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder.
+    public var isValid: Bool {
+        UUID(uuidString: id)?.uuidString.lowercased() == id
+    }
+
+    /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).
+    public func events(in copilotHome: URL) -> URL {
+        copilotHome.appendingPathComponent("session-state", isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("events.jsonl")
+    }
+
+    /// What Copilot printed, in BriefBar's folder for that.
+    public func output(in folder: URL) -> URL {
+        folder.appendingPathComponent("\(id).log")
+    }
+}
+
+/// What a run is doing, or how it ended.
+public struct RunStatus: Sendable, Equatable {
+    public var phase: RunPhase
+    public var since: Date?
+    /// What it's doing while it works; what it said when it finished; why it failed.
+    public var detail: String?
+
+    public init(phase: RunPhase, since: Date? = nil, detail: String? = nil) {
+        self.phase = phase
+        self.since = since
+        self.detail = detail
+    }
+
+    /// From whether Copilot's process still runs, then, once it's gone, from Copilot's log of the session. While it
+    /// runs, it's working whatever the log says: in autopilot, Copilot goes on after a turn that looks like its last,
+    /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
+    /// - Parameters:
+    ///   - log: nil until Copilot has written one.
+    ///   - exitStatus: how its process ended, when BriefBar saw it end.
+    ///   - stoppedByYou: you stopped it.
+    ///   - output: what it printed, which says why when it couldn't start.
+    public static func derive(
+        log: SessionLogState?, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
+    ) -> RunStatus {
+        if isRunning {
+            return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
+        }
+        switch log?.phase {
+        case .finished?:
+            return RunStatus(phase: .finished, since: log?.phaseSince, detail: log?.summary)
+        case .failed?:
+            return RunStatus(phase: .failed, since: log?.phaseSince, detail: log?.errorMessage ?? lastLine(output))
+        case .interrupted?:
+            return RunStatus(phase: .stopped, since: log?.phaseSince)
+        case .running?, .unknown?, nil:
+            if stoppedByYou {
+                return RunStatus(phase: .stopped, since: log?.lastEventAt)
+            }
+            guard let log, log.phase == .running else {
+                let reason = lastLine(output) ?? exitStatus.map { "Copilot exited with status \($0) before it started working." }
+                return RunStatus(phase: .failed, since: log?.lastEventAt, detail: reason ?? "Copilot ended before it started working.")
+            }
+            if exitStatus == 0 {
+                // It ended cleanly without calling the task done.
+                return RunStatus(phase: .finished, since: log.lastEventAt, detail: log.summary)
+            }
+            if let exitStatus {
+                return RunStatus(phase: .failed, since: log.lastEventAt, detail: lastLine(output) ?? "Copilot exited with status \(exitStatus).")
+            }
+            return RunStatus(phase: .stopped, since: log.lastEventAt)
+        }
+    }
+
+    static func lastLine(_ text: String?) -> String? {
+        text?.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
+            .map { String($0.prefix(300)) }
+    }
+}
+
+/// Reads a run's files without following a symbolic link: they're in folders any program running as you can write to,
+/// and BriefBar may have Full Disk Access, which such a link would hand to whoever made it.
+public enum LocalFile {
+    /// The end of a regular file, up to `maxBytes`; nil for a link, a folder, or a file that isn't there.
+    public static func tail(of url: URL, maxBytes: Int) -> Data? {
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        let size = UInt64(max(info.st_size, 0))
+        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        guard (try? handle.seek(toOffset: start)) != nil else { return nil }
+        return try? handle.read(upToCount: Int(size - start)) ?? Data()
+    }
+
+    /// Whether the path is a symbolic link.
+    public static func isLink(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && info.st_mode & S_IFMT == S_IFLNK
+    }
+}
+
+/// What Copilot said at the end of a run, from its session log.
+public enum RunTranscript {
+    /// The summary it called the task done with, and its last message to you.
+    public static func lastWords(events: URL, maxBytes: Int = 4 << 20) -> (summary: String?, message: String?) {
+        guard let data = LocalFile.tail(of: events, maxBytes: maxBytes) else { return (nil, nil) }
+        var summary: String?
+        var message: String?
+        for line in data.split(separator: UInt8(ascii: "\n")).reversed() {
+            if summary == nil, line.starts(with: Self.taskComplete) {
+                summary = text(line, key: "summary")
+            } else if message == nil, line.starts(with: Self.assistantMessage) {
+                message = text(line, key: "content", mainAgentOnly: true)
+            }
+            if summary != nil && message != nil { break }
+        }
+        return (summary, message)
+    }
+
+    private static let taskComplete = Data(#"{"type":"session.task_complete""#.utf8)
+    private static let assistantMessage = Data(#"{"type":"assistant.message""#.utf8)
+
+    private static func text(_ line: Data, key: String, mainAgentOnly: Bool = false) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              let data = object["data"] as? [String: Any]
+        else { return nil }
+        if mainAgentOnly, data["parentToolCallId"] is String || object["agentId"] is String { return nil }
+        let value = (data[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+
+    /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's.
+    public static func pullRequest(in text: String) -> URL? {
+        let pattern = #"https://(?:dev\.azure\.com|[A-Za-z0-9-]+\.visualstudio\.com)(?:/[^\s/()<>\[\]"'`]+){1,3}/_git/[^\s/()<>\[\]"'`]+/pullrequest/\d+|https://github\.com/[^\s/()<>\[\]"'`]+/[^\s/()<>\[\]"'`]+/pull/\d+"#
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = expression.matches(in: text, range: range).last, let found = Range(match.range, in: text) else {
+            return nil
+        }
+        return URL(string: String(text[found]))
+    }
+}
+
+/// Follows runs' session logs off the main thread, reading only what's new each time.
+public actor RunMonitor {
+    private var readers: [String: EventLogReader] = [:]
+
+    public init() {}
+
+    /// What a session log says now; nil until Copilot has written one, and for a symbolic link, which isn't followed.
+    public func log(id: String, events: URL) -> SessionLogState? {
+        guard !LocalFile.isLink(events) else { return nil }
+        let reader = readers[id] ?? EventLogReader(url: events)
+        readers[id] = reader
+        reader.update()
+        return reader.isLoaded ? reader.state : nil
+    }
+
+    public func forget(_ id: String) {
+        readers[id] = nil
+    }
+}

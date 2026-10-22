@@ -209,12 +209,14 @@ private struct WorkWidgetMore: View {
     }
 }
 
-/// One of your tasks in the widget: its state, title and hours left, and the story it's for.
+/// One of your tasks in the widget: its state, title and hours left, and the story it's for; and how its send to
+/// Copilot stands, if you sent it.
 private struct WidgetWorkRow: View {
     let item: WorkItem
     let parent: WorkItem?
     let action: () -> Void
 
+    @EnvironmentObject private var copilot: CopilotTasksStore
     @LocalState private var isHovered = false
 
     var body: some View {
@@ -230,6 +232,13 @@ private struct WidgetWorkRow: View {
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 4)
+                        if copilot.isOn, let entry = copilot.latest(for: item) {
+                            let phase = entry.status.phase
+                            Image(systemName: phase == .finished && entry.pullRequest != nil ? "arrow.triangle.pull" : phase.symbol)
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(phase.color)
+                                .help("Copilot: \(entry.sentence(now: Date()))")
+                        }
                         if let remaining = item.remainingText {
                             Text(remaining)
                                 .font(.system(size: 11).monospacedDigit())
@@ -255,6 +264,10 @@ private struct WidgetWorkRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help("\(item.type) \(item.id): \(item.title)\nClick to open in Azure DevOps")
+        .contextMenu {
+            Button("Open in Azure DevOps", action: action)
+            CopilotSendMenuItems(item: item)
+        }
     }
 }
 

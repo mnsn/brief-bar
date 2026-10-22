@@ -44,6 +44,12 @@ let package = Package(
             dependencies: ["BriefBarCore"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        // Sending a work item to the Copilot CLI, only when you choose to: its prompt, a git worktree, the run, and
+        // how it went, from its session log.
+        .target(
+            name: "CopilotTasks",
+            dependencies: ["BriefBarCore", "CopilotCore"]
+        ),
         // Shared by every source's app code: the source protocol, menu-bar drawing, widgets,
         // notifications, Full Disk Access and the gear menu's own items.
         .target(
@@ -57,7 +63,7 @@ let package = Package(
         ),
         .target(
             name: "AzureDevOpsUI",
-            dependencies: ["BriefBarCore", "BriefBarUI", "NotificationCenterDB", "AzureDevOpsCore"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "NotificationCenterDB", "AzureDevOpsCore", "CopilotTasks"]
         ),
         .target(
             name: "CopilotUI",
@@ -98,12 +104,16 @@ let package = Package(
             dependencies: ["CopilotCore", "BriefBarCore"]
         ),
         .testTarget(
+            name: "CopilotTasksTests",
+            dependencies: ["CopilotTasks", "CopilotCore", "BriefBarCore"]
+        ),
+        .testTarget(
             name: "TeamsUITests",
             dependencies: ["TeamsUI", "TeamsCore", "NotificationCenterDB", "BriefBarUI"]
         ),
         .testTarget(
             name: "AzureDevOpsUITests",
-            dependencies: ["AzureDevOpsUI", "AzureDevOpsCore", "BriefBarUI"]
+            dependencies: ["AzureDevOpsUI", "AzureDevOpsCore", "BriefBarUI", "BriefBarCore", "CopilotTasks"]
         ),
     ]
 )

@@ -55,6 +55,10 @@ struct AzureDevOpsSettings: View {
         Menu("Organizations") {
             OrganizationsMenuContent()
         }
+
+        SettingsDivider()
+
+        CopilotSetting()
     }
 }
 

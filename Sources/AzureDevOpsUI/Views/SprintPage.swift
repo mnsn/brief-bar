@@ -68,6 +68,8 @@ struct SprintPage: View {
             .help("Choose the team whose sprint to show")
         }
 
+        CopilotRunsMenu()
+
         Button {
             sprint.openBoard()
         } label: {
@@ -429,6 +431,7 @@ private struct StoryCard: View {
                         .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 6)
+                    CopilotTaskControl(item: parent, isHovered: isHovered)
                     Chip(text: parent.state, color: parent.stateColor)
                 }
                 Button { open(parent) } label: {
@@ -443,6 +446,10 @@ private struct StoryCard: View {
                 }
                 .buttonStyle(.plain)
                 .help("\(parent.type) \(parent.id): \(parent.title)\nClick to open in Azure DevOps")
+                .contextMenu {
+                    Button("Open in Azure DevOps") { open(parent) }
+                    CopilotSendMenuItems(item: parent)
+                }
                 HStack(spacing: 6) {
                     Avatar(name: parent.assignedTo?.name, size: 18, isMe: parent.isAssigned(to: me))
                     Text(parent.assignedTo?.name ?? "Unassigned")
@@ -463,55 +470,78 @@ private struct StoryCard: View {
     }
 }
 
-/// A task in its story's card: where it stands, what it is, the hours left and who has it.
+/// A task in its story's card: where it stands, what it is, the hours left and who has it; and, with Send Work to
+/// Copilot on, a button that sends it to Copilot, or how its send stands.
 private struct TaskLine: View {
     let task: WorkItem
     let isMine: Bool
     let open: () -> Void
 
+    @EnvironmentObject private var copilot: CopilotTasksStore
     @LocalState private var isHovered = false
 
     var body: some View {
-        Button(action: open) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: task.stateSymbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(task.stateColor)
-                    .frame(width: 16)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                if task.type.lowercased() != "task" {
-                    Image(systemName: task.typeSymbol)
-                        .font(.system(size: 10))
-                        .foregroundStyle(task.typeColor)
-                        .help(task.type)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Button(action: open) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: task.stateSymbol)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(task.stateColor)
+                        .frame(width: 16)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    if task.type.lowercased() != "task" {
+                        Image(systemName: task.typeSymbol)
+                            .font(.system(size: 10))
+                            .foregroundStyle(task.typeColor)
+                            .help(task.type)
+                    }
+                    Text(task.title)
+                        .font(.system(size: 12.5, weight: task.category.column == .inProgress ? .medium : .regular))
+                        .foregroundStyle(task.isDone ? .secondary : .primary)
+                        .strikethrough(task.isDone, color: .secondary.opacity(0.6))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let remaining = task.remainingText {
+                        Text(remaining)
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text(task.title)
-                    .font(.system(size: 12.5, weight: task.category.column == .inProgress ? .medium : .regular))
-                    .foregroundStyle(task.isDone ? .secondary : .primary)
-                    .strikethrough(task.isDone, color: .secondary.opacity(0.6))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let remaining = task.remainingText {
-                    Text(remaining)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Avatar(name: task.assignedTo?.name, size: 18, isMe: isMine)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(task.type) \(task.id): \(task.title)\n\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\nClick to open in Azure DevOps")
+            .accessibilityLabel("\(task.title), \(task.state), \(task.assignedTo?.name ?? "unassigned")")
+            let entry = copilot.isOn ? copilot.latest(for: task) : nil
+            if let entry {
+                CopilotRunBadge(entry: entry)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(isHovered ? 0.07 : 0))
-            )
-            .contentShape(Rectangle())
+            // The send button takes the avatar's place while you point at the row, so nothing moves.
+            let showsSend = copilot.isOn && entry == nil && isHovered
+            ZStack {
+                Avatar(name: task.assignedTo?.name, size: 18, isMe: isMine)
+                    .opacity(showsSend ? 0 : 1)
+                    .onTapGesture(perform: open)
+                if showsSend {
+                    CopilotSendButton(item: task)
+                }
+            }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(isHovered ? 0.07 : 0))
+        )
+        .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .help("\(task.type) \(task.id): \(task.title)\n\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\nClick to open in Azure DevOps")
-        .accessibilityLabel("\(task.title), \(task.state), \(task.assignedTo?.name ?? "unassigned")")
+        .contextMenu {
+            Button("Open in Azure DevOps", action: open)
+            CopilotSendMenuItems(item: task)
+        }
     }
 }
 

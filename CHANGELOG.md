@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Send Work to Copilot**, off by default: a ✈︎ button on the sprint's work items sends one to the
+  Copilot CLI on your Mac, with your sign-in, tools, MCP servers and instructions. Check the prompt,
+  which you can change, and choose the model, its reasoning effort and the repository, or right-click
+  to send right away with your model (Claude Opus 5.5, Max by default) or the one for easy work
+  (Claude Sonnet 5.5, Medium). Copilot works on its own in a new worktree at the latest base branch,
+  then pushes a branch and opens a published pull request linked to the work item, which shows under
+  Pull Requests. The task shows how it's going, a notification says how it went, and its menu opens the
+  pull request, continues the session in Terminal, stops Copilot or removes the worktree. Azure
+  DevOps' description says so, and its version goes up, so it pauses until you've looked.
 - **One count by meaning.** A menu-bar item that shows several sections can add their counts up by
   what they mean, the same for every source: ✋ what needs you (unread chats, pull requests that need
   you, Copilot's questions, plans and permission prompts), ✕ what's wrong, ✓ what's done or ready,

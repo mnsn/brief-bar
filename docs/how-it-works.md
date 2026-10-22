@@ -47,6 +47,8 @@ program it started would have it too. That includes:
 
 - the Azure CLI, a Python program in a folder you can write to (`/opt/homebrew/bin`),
 - your login shell, which BriefBar asks where `az` is, and which runs your shell's startup files,
+- the Copilot CLI and git, when you send a work item to Copilot
+  ([below](#send-work-to-copilot)): an agent that runs whatever commands it decides on,
 - its updater, which loads Sparkle without library validation
   ([below](#the-hardened-runtime-and-library-validation)).
 
@@ -57,7 +59,8 @@ and gets only the permissions macOS gave it. That call is private to macOS, so i
 time, and without it nothing starts. After starting a program, BriefBar asks macOS about it and logs a
 fault if it has BriefBar's permissions after all. The updater, which runs alongside BriefBar
 (`RunningProgram`), is checked before it runs: it starts suspended, and unless macOS holds it
-responsible for itself, BriefBar ends it.
+responsible for itself, BriefBar ends it. So is the Copilot CLI (`DetachedProgram`), which runs in a
+session of its own and goes on after BriefBar quits.
 
 macOS checks privacy permissions against the executable it records as responsible when a program
 starts: a disclaimed program's own (for a script, its interpreter), which it keeps when the program
@@ -732,6 +735,59 @@ within an organization.
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines
 section each pinned pipeline's latest run.
+
+### Send work to Copilot
+
+With **Send Work to Copilot** on, a sprint's work items get a ✈︎ button and menu items that send one to
+the Copilot CLI (`Sources/CopilotTasks`). Nothing happens until you send one, and BriefBar's own
+requests to Azure DevOps stay GETs: the programs it starts for you do the rest.
+
+**Sending.** The composer fills the prompt in from Settings (`PromptTemplate`: `{id}`, `{type}`,
+`{title}`, `{url}`, `{organization}`, `{project}` and `{baseBranch}`) and remembers the repository
+each project's work went in, by organization and project. Then BriefBar:
+
+1. asks your login shell for its environment, as VS Code does (`$SHELL -i -l -c 'env -0'`), so
+   Copilot, git and the commands Copilot runs find what a Terminal window finds. Started as an app,
+   BriefBar's own environment came from whoever started it, so the shell starts without its `COPILOT_`
+   variables, such as `COPILOT_HOME`; your shell's startup files still set them;
+2. finds `copilot`: `BRIEFBAR_COPILOT_CLI`, from the command line only; your `PATH`; the usual places;
+   then the newest one the GitHub Copilot app keeps in `~/Library/Caches/github-copilot-sdk/cli`;
+3. finds the repository's root and base branch (where `origin/HEAD` points, or `origin/main` or
+   `origin/master`), fetches that branch, and adds a worktree detached at it, in
+   `copilot-worktrees/<repository>/wi-<id>` next to the repository (or in the folder you chose), so
+   your own checkout is never touched;
+4. starts `copilot -p <prompt> --model <model> --reasoning-effort <effort> --autopilot
+   --allow-all-tools --no-ask-user --session-id <id> --name <work item> -C <worktree> --silent`, with
+   a session ID it chose, in a session of its own (`DetachedProgram`), responsible for itself, so it
+   has none of BriefBar's permissions and goes on if BriefBar quits. Its output goes to
+   `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read.
+
+Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
+its `config.json`). A worktree of a repository you trust gets the same trust (`--trust-folder`), and no
+more: a worktree of one you don't trust loads only your own configuration.
+
+**Following it.** Copilot logs the session to `~/.copilot/session-state/<id>/events.jsonl` (under
+`COPILOT_HOME`, if your shell sets it), as for the app's sessions, and BriefBar reads it the same way
+([below](#how-a-status-is-decided)), every three seconds while a task runs, and not at all otherwise or
+while **Send Work to Copilot** is off. Whether the process still runs is checked first, by its ID and
+start time, so one that gets its ID after a restart isn't mistaken for it. While it runs, the task is
+working, whatever its log says for now: in autopilot, Copilot goes on after a turn that looks like its
+last, and after an error. Once it's gone, and BriefBar has heard how it ended if it started it, its log
+and output are complete, and say how it went: done if Copilot called it done or exited cleanly, failed
+if Copilot reported an error or exited badly, and stopped otherwise. The pull request is then the last
+link to one in Copilot's summary, its last message, or what it printed, and a notification says how it
+went; clicking it opens the pull request, or the work item.
+
+**What's kept.** Which work items you sent, with which model, in which repository and worktree, and the
+pull request's link go to the preferences (`ado.copilot.runs`), without the work items' titles; and so
+do your choices and the repository of each project. Any program running as you can change the
+preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
+there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
+are read without following a symbolic link. What Copilot printed when it ended stays in a file only you
+can read. Turning Azure DevOps off forgets the tasks and the repositories, and deletes what Copilot
+printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
+worktree with git, and asks again before deleting changes that aren't committed. Copilot's branches,
+pull requests and sessions are yours, and stay.
 
 ### Notifications
 

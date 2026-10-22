@@ -25,13 +25,15 @@ project's GitHub releases. Worth reporting:
 - any way it could send anything about your chats, pull requests, work items, pipelines or sessions
   anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
   on the Mac (its saved chats, the links it finds in chats, its preferences, its log, its summaries),
+  other than the work items you send to Copilot yourself, with Send Work to Copilot,
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it or into a copy
   of it, through a program it starts, its updater included, by starting it (with its command-line
   modes, arguments, environment or output), or by signing itself with a key that BriefBar's builds
   are signed with,
 - any way a source could read anything, or check its access, while it's off, or turn on without you,
 - any way it could change Notification Center's data, the Copilot app's data, or anything in Azure
-  DevOps,
+  DevOps, or start Copilot, which changes your code and opens pull requests, without you sending it a
+  work item,
 - any way to make it install an update that the release workflow here didn't sign, and
 - problems with how the build scripts and workflows here create, sign, check or publish the app.
 
@@ -51,13 +53,15 @@ Only the latest release, and the latest commit on `main`, are supported.
   until you've looked. Any program running as you can still turn a source on, or Pull Requests Sent
   in Chats, by changing BriefBar's preferences with `defaults write`, but that only makes BriefBar
   itself show what it reads: it keeps nothing it reads with Full Disk Access where such a program
-  could read it ([How it works](docs/how-it-works.md#programs-that-start-briefbar)).
+  could read it ([How it works](docs/how-it-works.md#programs-that-start-briefbar)). Turning on Send
+  Work to Copilot that way only adds its buttons: nothing is sent until you send it, and the tasks it
+  keeps there can't point it at other files ([How it works](docs/how-it-works.md#send-work-to-copilot)).
 - **Programs it starts are responsible for themselves.** macOS lets a program use the permissions of
   the app that started it. BriefBar starts every program (its updater, the Azure CLI, the login shell
-  that finds it, `lsappinfo`) with that responsibility disclaimed, so none of them gets its Full Disk
-  Access, and the updater runs only once macOS confirms it. `scripts/check-boundaries.sh` checks that
-  nothing else in the app starts programs. Sparkle, in the updater, starts none either: it hands its
-  installer to launchd.
+  that finds it, `lsappinfo`, and the Copilot CLI and git, for Send Work to Copilot) with that
+  responsibility disclaimed, so none of them gets its Full Disk Access, and the updater and Copilot run
+  only once macOS confirms it. `scripts/check-boundaries.sh` checks that nothing else in the app starts
+  programs. Sparkle, in the updater, starts none either: it hands its installer to launchd.
 - **Only one module uses the network**, `AzureDevOpsCore`, and `scripts/check-boundaries.sh` checks
   that too. The other requests are Sparkle's, for this project's releases.
 - **What it reads with Full Disk Access stays with it.** Teams' unread chats are on disk only
@@ -66,8 +70,8 @@ Only the latest release, and the latest commit on `main`, are supported.
   default keychain and the search list, which any program running as you can change. The links it
   finds in other apps' notifications, and which of those pull requests you've seen, stay in memory.
   Its preferences, which any program running as you can read and change, hold its settings, which of
-  your own pull requests you've seen and which Copilot sessions you've cleared, but nothing from
-  Notification Center.
+  your own pull requests you've seen, which Copilot sessions you've cleared and which work items you
+  sent to Copilot, but nothing from Notification Center.
 
 ## How the app is signed
 

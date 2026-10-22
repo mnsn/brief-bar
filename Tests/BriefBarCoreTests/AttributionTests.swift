@@ -67,7 +67,9 @@ import Testing
             "BriefBarCore/LaunchEnvironment.swift": "puts back HOME, and drops what moves where macOS keeps your files, before anything reads them",
             "BriefBarCore/ProcessRunner.swift": "hands the environment to programs, which run with their own permissions",
             "BriefBarCore/RunningProgram.swift": "hands the environment to the updater, which runs with its own permissions",
+            "BriefBarCore/DetachedProgram.swift": "hands the environment to programs that outlive BriefBar, which run with their own permissions",
             "AzureDevOpsCore/Auth.swift": "finds az (BRIEFBAR_AZ, SHELL, PATH), which runs with its own permissions",
+            "CopilotTasks/CopilotCLI.swift": "asks your login shell (SHELL) for the environment that Copilot and git run with, with their own permissions, without the COPILOT_ variables of whoever started BriefBar as an app",
             "TeamsUI/TeamsSource.swift": "BRIEFBAR_RENDER_SUMMARIES, for --render, which runs only with the caller's",
         ]
         let reads = /processInfo\.environment|ProcessInfo\(\)\.environment|\bgetenv\(|\benviron\b|_NSGetEnviron/

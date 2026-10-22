@@ -2,6 +2,7 @@ import AppKit
 import AzureDevOpsCore
 import BriefBarCore
 import Combine
+import CopilotTasks
 
 /// Main-thread view model for the Sprint section, in windows, widgets and popovers: your team's current sprint.
 /// It reads Azure DevOps only while one of them is on screen.
@@ -131,6 +132,13 @@ final class SprintStore: ObservableObject {
 
     func open(_ item: WorkItem) {
         AzureDevOps.open(item.webURL)
+    }
+
+    /// A work item's title, if it's in the sprint shown.
+    func title(of reference: WorkItemReference) -> String? {
+        guard let board else { return nil }
+        let items = board.rows.flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+        return items.first { $0.copilotTask.reference.matches(reference) }?.title
     }
 
     func openBoard() {
