@@ -8,8 +8,10 @@ import TeamsUI
 /// starts only while it's on.
 @MainActor
 enum SourceCatalog {
-    static func sources(services: AppServices) -> [any BriefBarSource] {
-        [TeamsSource(services: services), AzureDevOpsSource(services: services), CopilotSource(services: services)]
+    /// - Parameter chats: how Azure DevOps reads Notification Center for pull requests sent in chats: only the app
+    ///   itself passes it, never `--render` or the demo.
+    static func sources(services: AppServices, chats: ChatReading = .inert) -> [any BriefBarSource] {
+        [TeamsSource(services: services), AzureDevOpsSource(services: services, chats: chats), CopilotSource(services: services)]
     }
 
     /// Each source's command-line modes.

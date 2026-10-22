@@ -651,6 +651,11 @@ from a menu, turning it on opens its Settings page, which says what it reads.
 - The command line never has them: Azure DevOps' part of `--dump`, `--json` and `--watch` leaves out
   pull requests sent in chats, and `--chats` lists the links that Notification Center has, with the
   Full Disk Access of whoever runs it.
+- Only the app itself is given Notification Center for them (`ChatReading` in `AzureDevOpsUI`). What
+  the pull requests' store reads it through is inert unless the app passes it, so `--render`, the
+  demo and the tests read nothing there, and ask for no Full Disk Access for it, even with the
+  setting on. The log says when BriefBar starts and stops looking, and how many links it found only
+  as private data.
 
 A pull request that isn't in your lists (you're not its author or a reviewer) is read with a GET by
 its ID, and listed only while the link needs you. A link needs you until you open the pull request

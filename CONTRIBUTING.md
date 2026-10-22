@@ -180,7 +180,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Nothing from Notification Center goes to the preferences**, which any program running as you can
   read with `defaults read`: the links people send in chats, and which of the pull requests listed
   only because of them you've seen, stay in memory. `ChatLinkSettingsTests` checks that the
-  preferences hold none of it.
+  preferences hold none of it. Only the app itself is given Notification Center for them
+  (`ChatReading.notificationCenter()`); everything else gets the inert default, so tests, the demo and
+  `--render` never read it. `ChatReadingTests` checks that, with a stand-in.
 - **Summaries stay on the Mac.** Use `SystemLanguageModel.default`, through `OnDeviceModel`, never
   Private Cloud Compute or any other model. A brief across sources says a chat's text only while Teams
   shows message previews, and asks the model only as each source's settings allow.

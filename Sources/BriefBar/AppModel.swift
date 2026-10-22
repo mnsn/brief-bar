@@ -48,7 +48,8 @@ final class AppModel: ObservableObject {
         services = AppServices(defaults: defaults, isDemo: demo)
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
-        sources = SourceCatalog.sources(services: services)
+        // Only the app itself reads Notification Center for pull requests sent in chats.
+        sources = SourceCatalog.sources(services: services, chats: demo || rendering ? .inert : .notificationCenter())
         var choices = SourceChoices.load(from: defaults)
         if demo {
             for source in sources { choices.turnOn(source.id, version: source.description.version) }

@@ -47,6 +47,8 @@ final class PRStore: ObservableObject {
     let settings: AppSettings
     let summarizer: Summarizer
     let mode: Mode
+    /// How pull requests sent in chats are read: only the app's own store is given Notification Center.
+    let chats: ChatReading
     private let notifier: Notifier?
     private let tokens = AzureCLITokenProvider()
     /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
@@ -72,11 +74,15 @@ final class PRStore: ObservableObject {
     private var isOnline = true
     private var cancellables: Set<AnyCancellable> = []
 
-    init(settings: AppSettings, summarizer: Summarizer = Summarizer(), notifier: Notifier? = nil, mode: Mode = .live) {
+    init(
+        settings: AppSettings, summarizer: Summarizer = Summarizer(), notifier: Notifier? = nil, mode: Mode = .live,
+        chats: ChatReading = .inert
+    ) {
         self.settings = settings
         self.summarizer = summarizer
         self.notifier = notifier
         self.mode = mode
+        self.chats = chats
         client = ADOClient(tokens: tokens)
         summarizer.isEnabled = settings.summaries
         notifier?.$isBlocked
@@ -215,23 +221,26 @@ final class PRStore: ObservableObject {
 
     // MARK: Pull requests sent in chats
 
-    /// Reads Notification Center only while the feature is on; turning it off forgets what was found.
-    private func updateChatMonitor() {
+    /// Reads Notification Center only while the feature is on, and only through `chats`; turning it off forgets what
+    /// was found.
+    func updateChatMonitor() {
         guard mode == .live else { return }
         if settings.chatLinksEnabled {
             guard chatMonitor == nil else { return }
             // Delivered on the main thread, where turning the feature off stops it: nothing it read before arrives after.
             var current: ChatLinkMonitor?
-            let monitor = ChatLinkMonitor(deliverOn: .main) { [weak self] snapshot in
+            let monitor = chats.monitor { [weak self] snapshot in
                 MainActor.assumeIsolated {
                     guard let self, let current, self.chatMonitor === current, self.settings.chatLinksEnabled else { return }
                     self.receiveChats(snapshot)
                 }
             }
-            current = monitor
-            chatMonitor = monitor
-            monitor.start()
-            Log.app.info("Looking for pull requests sent in chats")
+            if let monitor {
+                current = monitor
+                chatMonitor = monitor
+                monitor.start()
+                Log.app.info("Looking for pull requests sent in chats")
+            }
         } else {
             if let chatMonitor {
                 chatMonitor.stop()
@@ -258,7 +267,7 @@ final class PRStore: ObservableObject {
         }
         if snapshot.access == .granted {
             if settings.addChatLinks(snapshot.links) {
-                Log.app.info("Pull request links in chats: \(self.settings.chatLinks.links.count)")
+                Log.app.info("Pull request links in chats: \(self.settings.chatLinks.links.count, privacy: .private)")
             }
         } else if setUpChatAccessWhenNeeded {
             showChatAccessSetup?()

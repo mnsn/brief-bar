@@ -27,11 +27,19 @@ import Testing
         return defaults
     }
 
-    /// Everything the preferences hold, as text: what any program running as you could read there.
+    /// Everything the preferences hold, as text: what any program running as you could read there. JSON, as the seen
+    /// state is saved, escapes `/` as `\/`, so that's undone: "contoso/7" is found as it would be read.
     private func readable(_ defaults: MemoryDefaults) -> String {
         defaults.dictionaryRepresentation().map { key, value in
             "\(key)=" + ((value as? Data).map { String(decoding: $0, as: UTF8.self) } ?? "\(value)")
-        }.sorted().joined(separator: "\n")
+        }.sorted().joined(separator: "\n").replacingOccurrences(of: "\\/", with: "/")
+    }
+
+    /// The check below would see a pull request saved the way the seen state saves one.
+    @Test func wouldSeeAPullRequestSavedAsJSON() throws {
+        let defaults = MemoryDefaults()
+        defaults.set(try JSONEncoder().encode([sentInChat.description: now]), forKey: "leak")
+        #expect(readable(defaults).contains("contoso/7"))
     }
 
     private func savedSeen(in defaults: MemoryDefaults) throws -> SeenState {

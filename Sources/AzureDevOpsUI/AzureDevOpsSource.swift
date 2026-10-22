@@ -54,6 +54,9 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     private let services: AppServices
     let settings: AppSettings
+    /// Notification Center, for pull requests sent in chats: only the app passes it, so `--render`, the demo and tests
+    /// read nothing there.
+    let chats: ChatReading
     /// Made when Azure DevOps starts, so its notifications count from then.
     private var store: PRStore?
     /// Made with it, sharing its client: they read only while their sections are on screen.
@@ -64,8 +67,9 @@ package final class AzureDevOpsSource: BriefBarSource {
     private let rowChanges = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
 
-    package init(services: AppServices) {
+    package init(services: AppServices, chats: ChatReading = .inert) {
         self.services = services
+        self.chats = chats
         settings = AppSettings(defaults: services.defaults)
     }
 
@@ -87,7 +91,7 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     /// The pull requests' store, and the Sprint and Pipelines sections' stores, sharing its client.
     private func makeStores(notifier: Notifier?) -> PRStore {
-        let store = PRStore(settings: settings, notifier: notifier, mode: services.isDemo ? .demo : .live)
+        let store = PRStore(settings: settings, notifier: notifier, mode: services.isDemo ? .demo : .live, chats: chats)
         self.store = store
         sprint = SprintStore(settings: settings, mode: store.mode, client: store.client)
         pipelines = PipelinesStore(settings: settings, mode: store.mode, client: store.client)
@@ -112,13 +116,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         }
         // Pull requests sent in chats read Notification Center: the access is needed only while that's on, and
         // only for its own database (not a copy that BRIEFBAR_CHAT_LINKS_DB names). The demo never reads it.
-        if !services.isDemo {
-            let database = ChatLinkDatabase.url()
-            if ChatLinkDatabase.isSystemDatabase(database) {
-                settings.$chatLinksEnabled.removeDuplicates()
-                    .sink { [weak self] enabled in MainActor.assumeIsolated { self?.chatLinksChanged(enabled, database: database) } }
-                    .store(in: &cancellables)
-            }
+        if !services.isDemo, let database = chats.database, ChatLinkDatabase.isSystemDatabase(database) {
+            settings.$chatLinksEnabled.removeDuplicates()
+                .sink { [weak self] enabled in MainActor.assumeIsolated { self?.chatLinksChanged(enabled, database: database) } }
+                .store(in: &cancellables)
         }
         // The access window saw it granted: read now rather than at the next check.
         access.$isGranted
