@@ -37,19 +37,30 @@ import Testing
 
     @Test func readsReferencesDatesMapsSetsAndOthers() throws {
         var body: [UInt8] = [0xFF, 21, 0xFE] + [UInt8](repeating: 0, count: 12) + [0xFF, 15]
-        body += Array("o".utf8) + [0x22, 1] + Array("a".utf8) + Array("o{".utf8) + [0] // a: {}
-        body += [0x22, 1] + Array("b".utf8) + Array("^".utf8) + [1] // b: the same object, by reference
-        body += [0x22, 1] + Array("d".utf8) + Array("D".utf8) + littleEndian(1_792_317_600_000.0.bitPattern, 8)
-        body += [0x22, 1] + Array("m".utf8) + Array(";".utf8) + [0x22, 1] + Array("k".utf8) + Array("I".utf8) + [2]
-            + Array(":".utf8) + [2]
-        body += [0x22, 1] + Array("s".utf8) + Array("'".utf8) + [0x22, 1] + Array("a".utf8) + Array(",".utf8) + [1]
-        body += [0x22, 1] + Array("r".utf8) + Array("R".utf8) + [0x22, 2] + Array("a+".utf8) + [3]
-        body += [0x22, 1] + Array("z".utf8) + Array("Z".utf8) + [3] + [0x05] // -5n
-        body += [0x22, 1] + Array("u".utf8) + Array("S".utf8) + [3] + Array("é!".utf8)
-        body += [0x22, 1] + Array("v".utf8) + Array("B".utf8) + [4, 1, 2, 3, 4] + Array("V".utf8) + Array("B".utf8)
-            + [1, 2, 0]
-        body += [0x22, 1] + Array("e".utf8) + Array("r".utf8) + Array("T".utf8) + Array("m".utf8) + [0x22, 2]
-            + Array("no".utf8) + Array(".".utf8)
+        body += Array("o".utf8) + [0x22, 1]
+        body += Array("a".utf8) + Array("o{".utf8) + [0] // a: {}
+        body += [0x22, 1] + Array("b".utf8)
+        body += Array("^".utf8) + [1] // b: the same object, by reference
+        body += [0x22, 1] + Array("d".utf8) + Array("D".utf8)
+        body += littleEndian(1_792_317_600_000.0.bitPattern, 8)
+        body += [0x22, 1] + Array("m".utf8) + Array(";".utf8)
+        body += [0x22, 1] + Array("k".utf8) + Array("I".utf8)
+        body += [2] + Array(":".utf8) + [2]
+        body += [0x22, 1] + Array("s".utf8) + Array("'".utf8)
+        body += [0x22, 1] + Array("a".utf8)
+        body += Array(",".utf8) + [1]
+        body += [0x22, 1] + Array("r".utf8) + Array("R".utf8)
+        body += [0x22, 2] + Array("a+".utf8) + [3]
+        body += [0x22, 1] + Array("z".utf8)
+        body += Array("Z".utf8) + [3, 0x05] // -5n
+        body += [0x22, 1] + Array("u".utf8) + Array("S".utf8)
+        body += [3] + Array("é!".utf8)
+        body += [0x22, 1] + Array("v".utf8) + Array("B".utf8)
+        body += [4, 1, 2, 3, 4] + Array("V".utf8)
+        body += Array("B".utf8) + [1, 2, 0]
+        body += [0x22, 1] + Array("e".utf8) + Array("r".utf8)
+        body += Array("T".utf8) + Array("m".utf8) + [0x22, 2]
+        body += Array("no".utf8) + Array(".".utf8)
         body += Array("{".utf8) + [10]
         let value = try decode(body)
         #expect(value["b"] == .object([:]))
@@ -77,8 +88,9 @@ import Testing
         // Blink 18: its own version, then V8's, without a trailer offset.
         #expect(try decode([0xFF, 18, 0xFF, 15] + Array("F".utf8)) == .bool(false))
         // A trailer after the value.
-        let trailed = [0xFF, 21, 0xFE] + littleEndian(0, 4) + [0, 0, 0, 18] + [0, 0, 0, 3] + [0xFF, 16] + Array("T".utf8)
-            + [9, 9, 9]
+        var trailed: [UInt8] = [0xFF, 21, 0xFE] + littleEndian(0, 4)
+        trailed += [0, 0, 0, 18, 0, 0, 0, 3, 0xFF, 16]
+        trailed += Array("T".utf8) + [9, 9, 9]
         #expect(try decode(trailed) == .bool(true))
     }
 
@@ -93,8 +105,10 @@ import Testing
         #expect(throws: FormatError.truncated) { try decode(header + Array("o".utf8) + [0x22, 9] + Array("short".utf8)) }
         #expect(throws: FormatError.corrupt("property count")) { try decode(header + Array("o{".utf8) + [3]) }
         #expect(throws: FormatError.corrupt("object reference")) { try decode(header + Array("^".utf8) + [0]) }
-        #expect(throws: FormatError.unsupported("nesting")) {
-            try decode(header + [UInt8](repeating: UInt8(ascii: "o"), count: 300) + Array(repeating: Array("{".utf8) + [0], count: 300).joined())
+        var nested = header + [UInt8](repeating: UInt8(ascii: "o"), count: 300)
+        for _ in 0..<300 {
+            nested += [UInt8(ascii: "{"), 0]
         }
+        #expect(throws: FormatError.unsupported("nesting")) { try decode(nested) }
     }
 }

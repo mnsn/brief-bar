@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## Unreleased
+
+- **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
+  you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
+  just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,
+  only the Full Disk Access it already has. **Mark Chats Read When You Read Them in Teams** turns it
+  off. **Copy Diagnostics** and `--diagnose` say what BriefBar could read of it, by counts only; if a
+  Teams update changes it, the lists say so, and the other rules still apply. Teams' description says
+  so, and its version goes up, so it pauses until you've looked.
+- **Open the window from every list.** **Overview** at the top opens the window's Overview, with how
+  many things need you. The list's title, such as **Pull Requests ›**, opens its page.
+
+## 0.1.0 - 2026-10-22
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
 
@@ -51,9 +63,7 @@ The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.
   Previews** is on, and chats go to Apple Intelligence only while **Summarize with Apple Intelligence**
   is on too.
 - **A window** that opens on an **Overview** of everything by state, with the brief, then has a page
-  for each section, and a sidebar with their counts. Every list opens it: **Overview** at the top, with
-  how many things need you, at the Overview, and the list's title, such as **Pull Requests ›**, at its
-  page. BriefBar shows a Dock icon only while it's open.
+  for each section, and a sidebar with their counts. BriefBar shows a Dock icon only while it's open.
 - **Widgets for every source**, each with its own position and size, and an **Overview** widget: every
   source's counts, the brief's first line and what needs you. Teams' and the Overview start hidden.
 - **Settings in a window of their own**, and in each list's gear menu.

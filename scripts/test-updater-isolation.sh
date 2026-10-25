@@ -11,9 +11,8 @@
 # 3. A library of our own, signed ad hoc, takes Sparkle's place in the updater, and in BriefBar's own Frameworks,
 #    where an app that loaded Sparkle itself would have it, and DYLD_INSERT_LIBRARIES names it. It notes each process
 #    that runs it: only the updater, responsible for itself, and never BriefBar. With System Integrity Protection off,
-#    as on GitHub's runners, macOS lets the updater, which has the hardened runtime, load the library that variable
-#    names instead of its own Sparkle, so `--check-updater` reports a Sparkle that isn't the updater's own. That's
-#    accepted only where `csrutil status` says it's off; where the library ran is checked on every Mac.
+#    as on GitHub's runners, macOS lets DYLD_INSERT_LIBRARIES load code into any app, BriefBar included, so there the
+#    library is only in Sparkle's places. The script prints `csrutil status`, which decides.
 #   scripts/test-updater-isolation.sh [app]   (default: build/BriefBar.app)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -126,30 +125,11 @@ echo "Control: in an app macOS opened (process $ME), a program started the usual
 # 2. A copy of BriefBar, opened the same way.
 COPY="$WORK/BriefBar.app"
 ditto "$APP" "$COPY"
-# Whether the updater's Sparkle, as `--check-updater` reports it, is the library DYLD_INSERT_LIBRARIES names, and that's
-# its only failure, with System Integrity Protection off.
-loaded_inserted_library() {
-    local report="$1" failures loaded
-    [[ -n "$INSERTED" && "$SIP" == *"Integrity Protection status: disabled"* ]] || return 1
-    failures="$(printf '%s\n' "$report" | grep FAILED || true)"
-    [[ "$failures" == "FAILED: that copy of Sparkle isn't the updater's own" ]] || return 1
-    loaded="$(printf '%s\n' "$report" | sed -n 's/^The updater loaded Sparkle .* from \(.*\)\.$/\1/p')"
-    [[ -n "$loaded" && -e "$loaded" ]] || return 1
-    loaded="$(cd "$(dirname "$loaded")" && pwd -P)/$(basename "$loaded")"
-    [[ "$loaded" == "$(cd "$(dirname "$INSERTED")" && pwd -P)" ||
-        "$loaded" == "$(cd "$(dirname "$INSERTED")" && pwd -P)/$(basename "$INSERTED")" ]]
-}
-INSERTED=""
 check_updater() {
     local report
     report="$(open_app "$@" "$COPY" --args --check-updater)"
     printf '%s\n' "$report" | sed 's/^/  /'
-    if [[ "$report" == *FAILED* ]]; then
-        loaded_inserted_library "$report" || fail "BriefBar --check-updater failed."
-        echo "  System Integrity Protection is off here, so macOS let the updater, which has the hardened runtime, load"
-        echo "  the library DYLD_INSERT_LIBRARIES names instead of its own Sparkle. With it on, macOS ignores that"
-        echo "  variable for the updater, and this fails. Where the library ran is checked below either way."
-    fi
+    [[ "$report" != *FAILED* ]] || fail "BriefBar --check-updater failed."
     BRIEFBAR_PID="$(printf '%s\n' "$report" | sed -n 's/^BriefBar: process \([0-9]*\), attributed to itself$/\1/p')"
     UPDATER_PID="$(printf '%s\n' "$report" | sed -n 's/^Updater: process \([0-9]*\), .*, attributed to itself$/\1/p')"
     [[ -n "$BRIEFBAR_PID" ]] || fail "BriefBar, opened by macOS, isn't attributed to itself."
@@ -193,9 +173,15 @@ codesign --force --sign - "$WORK/Sparkle" 2>/dev/null
 cp "$WORK/Sparkle" "$COPY/Contents/Helpers/BriefBar Updater.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 mkdir -p "$COPY/Contents/Frameworks/Sparkle.framework/Versions/B"
 cp "$WORK/Sparkle" "$COPY/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
-echo "The copy, with an ad-hoc library in place of Sparkle, and DYLD_INSERT_LIBRARIES naming it:"
-INSERTED="$WORK/Sparkle"
-check_updater --env "DYLD_INSERT_LIBRARIES=$INSERTED"
+if [[ "$SIP" == *"Integrity Protection status: disabled"* ]]; then
+    echo "System Integrity Protection is off here, and then macOS lets DYLD_INSERT_LIBRARIES load code into any app,"
+    echo "BriefBar included, so the part of this check that names the library in that variable needs it on."
+    echo "The copy, with an ad-hoc library in place of Sparkle:"
+    check_updater
+else
+    echo "The copy, with an ad-hoc library in place of Sparkle, and DYLD_INSERT_LIBRARIES naming it:"
+    check_updater --env "DYLD_INSERT_LIBRARIES=$WORK/Sparkle"
+fi
 [[ -s "$WORK/notes" ]] || fail "the library never ran, so this test shows nothing: did the updater load it?"
 while read -r pid responsible name; do
     echo "  The library ran in process $pid ($name), attributed to $([[ "$responsible" == "$pid" ]] && echo itself || echo "$responsible")."
