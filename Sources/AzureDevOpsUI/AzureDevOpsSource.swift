@@ -9,7 +9,7 @@ import SwiftUI
 
 /// Your Azure DevOps pull requests, by what they need: you, a fix, completing, or someone else; and, while you
 /// show them, your team's sprint and the pipelines you follow. It reads Azure DevOps with the Azure CLI's sign-in,
-/// the only source that uses the network, and posts notifications.
+/// one of the two sources that use the network (with GitHub), and posts notifications.
 @MainActor
 package final class AzureDevOpsSource: BriefBarSource {
     /// 2: the Sprint and Pipelines sections. 3: Send Work to Copilot. 4: the pipelines after your merges, the pull
