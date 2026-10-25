@@ -234,18 +234,11 @@ struct WindowView: View {
                     .floatingPanel(cornerRadius: 18)
                     .padding(Self.inset)
             }
-            // A page's lines stay readable on a wide window.
+            // The page takes the rest of the window's width, so a wide one, such as full screen, gets longer lines.
             page
-                .frame(maxWidth: pageMaxWidth, maxHeight: .infinity, alignment: .top)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(WindowBackdrop().ignoresSafeArea())
-    }
-
-    private var pageMaxWidth: CGFloat {
-        if content.current == WindowContent.overview { return 760 }
-        guard let section = content.current, let source = content.model.source(for: section) else { return .infinity }
-        return source.pageMaxWidth(for: section)
     }
 
     @ViewBuilder

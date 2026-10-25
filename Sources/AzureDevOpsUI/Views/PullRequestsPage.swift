@@ -23,7 +23,7 @@ struct PullRequestsPage: View {
                 }
                 .glassButtonStyle()
             }
-            PageScroll(maxWidth: 860) {
+            PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
                     notices
                     if store.showsBrief {

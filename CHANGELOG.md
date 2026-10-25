@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-10-25
+
+- **Pages use the whole window.** In a wide window, such as full screen, a page no longer stays in a
+  column in the middle with empty sides: its rows, the Overview's included, run the width of the window,
+  and the Sprint puts its cards in as many columns as fit.
+
 ## 0.2.0 - 2026-10-25
 
 A GitHub source for your pull requests on github.com, Copilot on your Azure DevOps pull requests, the
