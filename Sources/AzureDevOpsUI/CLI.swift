@@ -20,7 +20,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             --mine           …only your stories and tasks
           --teams            List your teams, and which have a sprint going on today
           --pipelines        Print the pipelines pinned in the app: their latest runs and stages
-            --search <text> --project <name>   Find pipelines to pin in a project instead
+            --search <text> --project <name>   Find pipelines to pin by name or number instead
               --status       …and show how the first five are doing
           --org <name>       Read this organization instead of the app's choice (repeatable)
           It signs in with the Azure CLI (az login) and only reads: every request is a GET. Set

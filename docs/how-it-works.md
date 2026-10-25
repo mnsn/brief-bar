@@ -789,6 +789,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
 | `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
+| `{project}/_apis/build/definitions?definitionIds=…` | when you search for a number in **Add Pipeline**, alongside the name search | the pipeline with that number, first |
 | `_apis/projects` | when you open **Add Pipeline** | the projects to search in |
 
 **Which sprint.** The first time, BriefBar looks through your teams (up to 25) for one with a sprint

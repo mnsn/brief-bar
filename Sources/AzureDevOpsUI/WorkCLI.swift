@@ -234,12 +234,11 @@ enum WorkCLI {
         }
     }
 
-    /// `--pipelines --search <text> --project <name>`: the pipelines you could pin.
+    /// `--pipelines --search <text> --project <name>`: the pipelines you could pin, by name or number.
     static func searchPipelines(_ options: AzureDevOpsCommandLine.Options) -> Int32 {
         let text = options.search ?? ""
         if options.demo {
-            let all = DemoData.pipelines().map(\.pipeline) + DemoData.morePipelines
-            for pipeline in all where text.isEmpty || pipeline.name.localizedCaseInsensitiveContains(text) {
+            for pipeline in PipelineSearch.pipelines(DemoData.pipelines().map(\.pipeline) + DemoData.morePipelines, containing: text) {
                 print("\(pipeline.definitionId)  \(pipeline.name)  (\(pipeline.folder.replacingOccurrences(of: "\\", with: " › ")))")
             }
             return 0
@@ -266,7 +265,8 @@ enum WorkCLI {
             snapshot.statuses.forEach { printPipeline($0, now: now) }
             return snapshot.problem == nil ? 0 : 1
         case .success(let found):
-            print("\(found.count) pipelines in \(project) named like “\(text)” (the first 50)")
+            let like = PipelineSearch.number(in: text) == nil ? "named like" : "numbered or named like"
+            print("\(found.count) pipelines in \(project) \(like) “\(text)” (the first 50)")
             for pipeline in found {
                 print("\(pipeline.definitionId)  \(pipeline.name)  (\(pipeline.folder.replacingOccurrences(of: "\\", with: " › ")))")
             }

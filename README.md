@@ -236,8 +236,8 @@ its title opens this page, and **Open Task Board** the sprint's task board in Az
 
 **Pipelines** shows the pipelines you pin, from any of your projects: how each one's latest run is
 going stage by stage, where it failed, and how its recent runs went. **Add Pipeline** searches a
-project's pipelines by name, and a pinned pipeline's menu shows only one branch's runs, moves it, or
-unpins it.
+project's pipelines by name or number, and a pinned pipeline's menu shows only one branch's runs,
+moves it, or unpins it.
 
 Both start in BriefBar's window only, and read Azure DevOps only while something shows them on screen:
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
