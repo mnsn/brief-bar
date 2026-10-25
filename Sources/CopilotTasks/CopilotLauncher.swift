@@ -132,7 +132,7 @@ public struct CopilotLauncher: Sendable {
         let arguments = CopilotCommand.arguments(
             prompt: PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch), options: request.options,
             sessionId: id, name: request.continuing == nil ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
-            trustFolder: CopilotCLI.isTrusted(repository.root, trusted: trusted)
+            trustFolder: CopilotCLI.isTrusted(repository.root, trusted: trusted), denied: request.subject.deniedTools
         )
         var run: CopilotRun
         switch request.subject {

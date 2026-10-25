@@ -5,15 +5,21 @@ public enum CopilotCommand {
     /// A run that works on its own: the prompt, in autopilot until Copilot calls the task done, with every tool allowed
     /// and no questions, since nobody is there to answer them. Its session gets the ID BriefBar chose, to follow it by.
     /// - Parameter trustFolder: loads the worktree's own skills, MCP servers and hooks, for a repository you trust.
-    /// - Parameter name: the new session's name; nil to go on with an existing session, under its own.
+    /// - Parameters:
+    ///   - name: the new session's name; nil to go on with an existing session, under its own.
+    ///   - denied: tools the CLI refuses, though every other tool is allowed.
     public static func arguments(
-        prompt: String, options: CopilotRunOptions, sessionId: String, name: String?, directory: URL, trustFolder: Bool
+        prompt: String, options: CopilotRunOptions, sessionId: String, name: String?, directory: URL, trustFolder: Bool,
+        denied: [String] = []
     ) -> [String] {
         var arguments = ["-p", prompt, "--model", options.model]
         if let effort = options.effort {
             arguments += ["--reasoning-effort", effort]
         }
         arguments += ["--autopilot", "--allow-all-tools", "--no-ask-user"]
+        for tool in denied {
+            arguments += ["--deny-tool", tool]
+        }
         if trustFolder {
             arguments.append("--trust-folder")
         }

@@ -75,6 +75,8 @@ import Testing
         var arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
         #expect(arguments.contains("--name"))
         #expect(arguments.contains("Fix Comments: !4071 Fix the checkout total"))
+        // It can't push or commit, whatever the prompt says.
+        #expect(arguments.joined(separator: " ").contains("--deny-tool shell(git commit) --deny-tool shell(git push)"))
 
         // Push & Reply goes on with the same session, in the same worktree, under the session's own name.
         let ship = try await launch(launcher, CopilotLauncher.Request(
@@ -88,6 +90,7 @@ import Testing
         #expect(arguments.first(where: { $0 == "Push and reply" }) != nil)
         #expect(arguments.contains(id))
         #expect(!arguments.contains("--name"))
+        #expect(!arguments.contains("--deny-tool"))
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071-2").path))
     }
 
@@ -105,6 +108,13 @@ import Testing
             repository: fixture.checkout, worktreesFolder: nil, continuing: gone
         )
         await #expect(throws: LaunchError.self) { try await launcher.launch(request) { _ in } }
+    }
+
+    @Test func onlyPushAndReplyMayPushAndAReviewWritesNothing() {
+        #expect(PullRequestAction.review.deniedTools == ["write", "shell(git commit)", "shell(git push)"])
+        #expect(PullRequestAction.allCases.filter { !$0.deniedTools.contains("shell(git push)") } == [.pushAndReply])
+        #expect(PullRequestAction.resolveConflicts.deniedTools == ["shell(git push)"])
+        #expect(TaskSubject.workItem(sampleItem).deniedTools.isEmpty)
     }
 
     @Test func takesOnlyBranchNamesGitWouldntReadAsSomethingElse() {

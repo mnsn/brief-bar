@@ -295,7 +295,9 @@ With it on, **your pull requests' menus send them to Copilot too** (right-click 
 | **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the same session: commits, pushes the branch (never with force), replies on the threads it addressed and resolves them |
 | **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
 
-Each works in a worktree detached at the pull request's latest commit (`copilot-worktrees/<repository>/pr-<id>`),
+The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push,
+and a review can't change files or commit. Each works in a worktree detached at the pull request's latest
+commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
 and its menu has the task's own menu. Comments are written by whoever wrote them, and go to an agent that

@@ -137,6 +137,18 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
         }
     }
 
+    /// The tools the Copilot CLI refuses on this task, whatever the prompt says (`--deny-tool`, which wins over
+    /// `--allow-all-tools`): a review writes nothing, and only Push & Reply pushes. Merging a target branch in needs a
+    /// commit, so resolving conflicts may commit, but not push.
+    public var deniedTools: [String] {
+        switch self {
+        case .review: return ["write", "shell(git commit)", "shell(git push)"]
+        case .fixComments, .fixBuild: return ["shell(git commit)", "shell(git push)"]
+        case .resolveConflicts: return ["shell(git push)"]
+        case .pushAndReply: return []
+        }
+    }
+
     /// Whether it changes code that a later Push & Reply ships.
     public var changesCode: Bool {
         switch self {
@@ -150,6 +162,12 @@ public enum PullRequestAction: String, Sendable, Codable, CaseIterable {
 public enum TaskSubject: Sendable, Equatable {
     case workItem(TaskWorkItem)
     case pullRequest(TaskPullRequest, PullRequestAction)
+
+    /// What the Copilot CLI refuses on it: a work item's task pushes and opens a pull request, so nothing.
+    var deniedTools: [String] {
+        if case .pullRequest(_, let action) = self { return action.deniedTools }
+        return []
+    }
 
     /// The worktree's folder name: `wi-<id>` or `pr-<id>`.
     var worktreeName: String {

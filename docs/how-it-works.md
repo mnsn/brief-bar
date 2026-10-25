@@ -907,7 +907,10 @@ errors, read again from its timeline (one GET a build, when you ask); for a revi
 there, and when you last voted or commented. The prompts say what Copilot may do: fixing comments, a
 build or conflicts changes files but never commits, pushes or replies; a review changes and posts
 nothing; only **Push & Reply** commits, pushes the pull request's branch without force
-(`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. Its worktree,
+(`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to that
+whatever it reads, since its denials win over `--allow-all-tools`: a review gets
+`--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
+build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
 takes the branch from a checkout that has it. The clone is the one you chose for that repository last
 (by organization, project and repository), or the one named like it. A later task goes on with the

@@ -19,8 +19,9 @@
   Build** (where it failed, and its errors), **Resolve Conflicts**, and, on one you review,
   **Pre-review**, which drafts your review and posts nothing. None of them pushes or replies; once one
   is done, **Push & Reply** goes on in the same session and worktree, commits, pushes the branch and
-  answers the threads it addressed. Each works in a worktree at the pull request's latest commit, and
-  its row shows how it's going.
+  answers the threads it addressed. The Copilot CLI refuses what each shouldn't do, whatever a comment
+  asks: only Push & Reply may push, and a review can't change files or commit. Each works in a worktree
+  at the pull request's latest commit, and its row shows how it's going.
 - **Watch a pull request by its link.** **Watch a Pull Request…**, in Azure DevOps' settings, follows a
   pull request you're not on, such as one your team was asked to review: it's listed under **To
   Review**, as **Watching**, with what's new on it, until it closes or you stop watching it. Azure
