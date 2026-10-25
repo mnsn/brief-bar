@@ -20,9 +20,12 @@ public enum Diagnostics {
         lines.append("Database: \(paths.isSystemDatabase ? "Notification Center's" : "overridden by \(NotificationPaths.databaseVariable)"), access \(access.rawValue)")
         let badge = await dockBadge()
         lines.append("Teams' dock badge, from lsappinfo: \(badge)")
+        var messages: [ChatMessage] = []
         if access == .granted {
             do {
-                lines += describe(try NotificationDatabase.load(at: paths.database, bundleIdentifiers: TeamsBundle.identifiers))
+                let contents = try NotificationDatabase.load(at: paths.database, bundleIdentifiers: TeamsBundle.identifiers)
+                lines += describe(contents)
+                messages = contents.records.compactMap { TeamsNotificationParser.parse($0).item.message }
             } catch NotificationDatabaseError.layoutChanged(let missing, let layout) {
                 lines.append("Layout changed, missing: \(missing.joined(separator: ", "))")
                 lines.append("Tables:")
@@ -33,12 +36,30 @@ public enum Diagnostics {
         }
         if !followsReadsInTeams {
             lines.append("Teams' read markers: not read (Mark Chats Read When You Read Them in Teams is off)")
+        } else if let cache, cache.isTeamsOwn, access != .granted {
+            // Opening Teams' container without Full Disk Access would have macOS ask for access to other apps' data.
+            lines.append("Teams' read markers: not read without Full Disk Access")
         } else if let cache {
-            lines += describe(ReadMarkerEngine.loadOnce(location: cache), location: cache)
+            let snapshot = ReadMarkerEngine.loadOnce(location: cache)
+            lines += describe(snapshot, location: cache)
+            if snapshot.access == .granted, !messages.isEmpty {
+                lines.append(compare(messages, with: snapshot.markers))
+            }
         } else {
             lines.append("Teams' read markers: not read (another Notification Center database, and no \(TeamsCacheLocation.variable))")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Whether Teams' read markers name the chats Notification Center has, and cover their newest messages: the IDs of
+    /// both, by counts only.
+    static func compare(_ messages: [ChatMessage], with markers: [String: ReadMarker]) -> String {
+        let newest = Dictionary(grouping: messages, by: \.conversationID)
+            .compactMapValues { $0.max(by: UnreadTracker.chronological) }
+        let marked = newest.filter { markers[$0.key] != nil }
+        let read = marked.filter { markers[$0.key]?.covers($0.value) == true }
+        return "  Chats in Notification Center: \(newest.count), with a read marker: \(marked.count), "
+            + "read in Teams up to their newest notification: \(read.count)"
     }
 
     /// What BriefBar reads of Teams' own data, by counts and formats only.

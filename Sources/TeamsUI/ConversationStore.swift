@@ -64,7 +64,7 @@ struct StorageMode {
         if let notifications = snapshot.notifications {
             tracker.apply(notifications, now: now)
         }
-        if followReadsInTeams, let cache {
+        if ConversationStore.readsMarkers(following: followReadsInTeams, cache: cache, access: snapshot.access), let cache {
             tracker.setReadMarkers(ReadMarkerEngine.loadOnce(location: cache).markers)
         }
         return (tracker.state(now: now, settings: settings), snapshot)
@@ -154,7 +154,7 @@ final class ConversationStore: ObservableObject {
         settings.$followReadsInTeams
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] follow in MainActor.assumeIsolated { self?.followReadsInTeams(follow) } }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateReadMarkers() } }
             .store(in: &cancellables)
 
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -230,9 +230,9 @@ final class ConversationStore: ObservableObject {
                 recordRun()
             }
         }
-        // Full Disk Access covers Teams' own data too: read it now rather than at the next check.
-        if !hadAccess, snapshot.access == .granted {
-            markerEngine?.refresh()
+        // Full Disk Access covers Teams' own data too: read it from now on, or stop.
+        if hadAccess != (snapshot.access == .granted) {
+            updateReadMarkers()
         }
         hasLoaded = true
         recompute()
@@ -249,9 +249,19 @@ final class ConversationStore: ObservableObject {
         recompute()
     }
 
-    /// Starts or stops reading Teams' read markers. Stopping reads nothing back as unread.
-    private func followReadsInTeams(_ follow: Bool) {
-        if follow, markerEngine == nil, let cache = storage.cache {
+    /// Whether to read Teams' read markers: while the setting is on, and for Teams' own data, only while BriefBar can read
+    /// Notification Center, which takes the same Full Disk Access. Without it, opening Teams' container would have macOS
+    /// ask to let BriefBar access data from other apps.
+    nonisolated static func readsMarkers(following: Bool, cache: TeamsCacheLocation?, access: AccessStatus?) -> Bool {
+        guard following, let cache else { return false }
+        return !cache.isTeamsOwn || access == .granted
+    }
+
+    /// Starts or stops reading Teams' read markers. Stopping reads nothing back as unread; turning the setting off also
+    /// forgets them.
+    private func updateReadMarkers() {
+        let reads = Self.readsMarkers(following: settings.followReadsInTeams, cache: storage.cache, access: access)
+        if reads, markerEngine == nil, let cache = storage.cache {
             let engine = ReadMarkerEngine(location: cache) { [weak self] snapshot in
                 DispatchQueue.main.async { [weak self] in
                     MainActor.assumeIsolated {
@@ -262,9 +272,11 @@ final class ConversationStore: ObservableObject {
             }
             markerEngine = engine
             engine.start()
-        } else if !follow, let engine = markerEngine {
+        } else if !reads, let engine = markerEngine {
             engine.stop()
             markerEngine = nil
+        }
+        if !settings.followReadsInTeams, readMarkers != nil {
             readMarkers = nil
             tracker.setReadMarkers([:])
             updateProblem()

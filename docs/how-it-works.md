@@ -16,8 +16,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 - When a source starts reading more, its description's version goes up. A source you turned on for an
   earlier version then pauses, until you've seen what it reads now and kept it on.
 - While a source is off, BriefBar doesn't read its data or check its access: no Notification Center,
-  saved chats or keychain item for Teams, no `az` or Notification Center for Azure DevOps, and no
-  `~/.copilot` for Copilot.
+  Teams' own data, saved chats or keychain item for Teams, no `az` or Notification Center for Azure
+  DevOps, and no `~/.copilot` for Copilot.
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
@@ -29,7 +29,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 macOS gives some permissions to the whole app, and asks for them only once. That's why BriefBar's own
 consent comes first.
 
-- **Full Disk Access**, for reading Notification Center's database. macOS has no prompt for it: a
+- **Full Disk Access**, for reading Notification Center's database, and Teams' own data in its
+  container. macOS has no prompt for it: a
   window (`FullDiskAccess` in `Sources/BriefBarUI`) walks you through System Settings. Teams
   registers when it starts and unregisters when it stops; Azure DevOps registers only while
   **Pull Requests Sent in Chats** is on. While none is registered, nothing checks the access or
@@ -101,9 +102,9 @@ chose its arguments, its environment (`open --env`) and argument-domain preferen
   no other option: it's meant to check the updater of a BriefBar started this way. The others say to
   run them from Terminal instead.
 - It ignores the variables that point a source at other data (`BRIEFBAR_TEAMS_DB`,
-  `BRIEFBAR_TEAMS_STATE_DIR`, `BRIEFBAR_CHAT_LINKS_DB`, `BRIEFBAR_COPILOT_DIR`): such a database
-  could be a copy that only Full Disk Access reads, as a Time Machine backup's is. `BRIEFBAR_AZ`
-  still applies: `az` runs with its own permissions.
+  `BRIEFBAR_TEAMS_STATE_DIR`, `BRIEFBAR_TEAMS_CACHE`, `BRIEFBAR_CHAT_LINKS_DB`, `BRIEFBAR_COPILOT_DIR`):
+  such a database could be a copy that only Full Disk Access reads, as a Time Machine backup's is.
+  `BRIEFBAR_AZ` still applies: `az` runs with its own permissions.
 - First thing, it puts back `HOME` from the user database and `TMPDIR` as macOS sets it, and drops
   `CFFIXED_USER_HOME`, `DIRHELPER_USER_DIR_SUFFIX` and SQLite's variables, such as `SQLITE_TMPDIR`
   (`LaunchEnvironment`). `HOME` chooses the keychain that macOS's Security framework uses, where the key
@@ -345,8 +346,15 @@ The [table in the README](../README.md#microsoft-teams) lists the rules. In more
   ever has, and at least as many arrived as left, it made room, and those chats stay unread. BriefBar
    keeps them, although Notification Center no longer has them. Otherwise their chat is read up
   to them.
-- **Expiry.** Unread messages older than **Keep Unread For** count as read, since BriefBar can't
-  see which chat you read in Teams.
+- **Expiry.** Unread messages older than **Keep Unread For** count as read, for the chats BriefBar
+  doesn't see you read.
+- **Teams' read markers**, while **Mark Chats Read When You Read Them in Teams** is on, as it is by
+  default. Teams keeps how far you've read each chat in its own data on the Mac (see
+  [Teams' read markers](#teams-read-markers)): the ID of the newest message you've seen. Every
+  message up to it in that chat is read, by message ID, and a message whose notification has none, by
+  when it was delivered. That holds for messages whose notifications arrive later, and for saved chats
+  loaded later. A marker that moves back, as **Mark as Unread** in Teams doesn't even do, or a chat
+  Teams drops, makes nothing unread again.
 - **Teams' dock badge**, while **Mark All Read When Teams' Badge Clears** is on, as it is by default.
   Reading a chat in Teams leaves its notifications alone, but the badge gets smaller as you read, and
   disappears once nothing in Teams is unread. `lsappinfo info -long -only StatusLabel -app
@@ -362,6 +370,58 @@ The [table in the README](../README.md#microsoft-teams) lists the rules. In more
   couldn't read the database never counts as seen.
 
 Counts are chats with unread messages, like Teams' own badge.
+
+### Teams' read markers
+
+Teams' window is a web app in Microsoft Edge's WebView2, which keeps the site's IndexedDB databases in
+Teams' container. One of them keeps how far you've read each chat:
+
+| | |
+|---|---|
+| Folder | `~/Library/Containers/com.microsoft.teams2/Data/Library/Application Support/Microsoft/MSTeams/EBWebView/<profile>/IndexedDB/https_teams.microsoft.com_0.indexeddb.leveldb`: `WV2Profile_tfw` for work and school accounts, and any other profile and Teams site (`https_teams.<domain>_<port>`) too. macOS protects it: reading it needs Full Disk Access |
+| Database | `Teams:conversation-manager:react-web-client:<tenant>:<user>:<locale>`, object store `conversations`: a record per conversation, keyed by its ID (`19:…`), the one Teams' notifications have |
+| Read marker | the record's `properties.consumptionhorizon`: `<message ID>;<when it was read, in ms>;<client message ID>`. The message ID is the one notifications carry (`messageId`), when the message arrived, in milliseconds since 1970. `0;0;0`, or nothing, for a chat never read |
+
+Reading a chat in Teams (Teams 26276 on macOS 27) rewrites its record at once, with the marker at the
+newest message.
+
+Chromium keeps IndexedDB in LevelDB, and values in Blink's and V8's serialization formats. macOS reads
+none of them, so `ChromiumIndexedDB` (in `Sources/ChromiumIndexedDB`) does, read-only, and only as
+far as it needs:
+
+- **LevelDB**: tables (`.ldb`) of blocks that Snappy may compress, and the write-ahead log (`.log`),
+  each checked against its CRC-32C checksums. Of a key's writes, the one with the highest sequence
+  number wins, so the folder reads as it was when the read ended, without LevelDB's lock: LevelDB
+  never changes a table once written, and only appends to its log. A table that compaction removes
+  while it's read starts the read over. Nothing is written, and nothing copied.
+- **IndexedDB's keys** each start with a database, object store and index (`KeyPrefix`), and Chromium
+  sorts keys by that first. So BriefBar reads the databases' and object stores' names first, then
+  only the `conversations` stores' records, and skips every table block whose index entries say it
+  holds neither, without reading it: on the Mac this was built on, Teams' 117 MB come down to a few
+  dozen 4 KiB blocks. Each index entry is its block's last key, as Chromium's comparator leaves it;
+  if one weren't, every block would be read.
+- **Values**: the record's version, then Blink's envelope (version 21, with the offset of a trailer)
+  around V8's format (version 16). Blink compresses large values with Snappy, and keeps one larger
+  than 64 KiB in a file in the `.indexeddb.blob` folder next to the database. Plain objects, arrays,
+  strings, numbers, dates, maps and sets are read; host objects, shared memory and WebAssembly
+  aren't, and a record that holds one counts as unreadable.
+
+Of each conversation, BriefBar keeps its ID and marker, in memory. The rest of its record, such as
+its last message, is read only to get past it.
+
+The log is watched as Notification Center's is: kqueue on the `.log`, which LevelDB keeps open, and
+FSEvents on the folder, for the log being replaced as LevelDB moves its writes into tables. A write
+is read 0.5 s later, from where the last read stopped: only the bytes appended since, and only write
+batches that are all there. A record in a blob file is read again when its blob entry arrives, which
+Chromium writes after it, often in a later batch. The folder is read again from scratch when its log
+is replaced or its databases change, and every 10 minutes, which also finds Teams' folder once you
+sign in.
+
+Teams' own data is read only while BriefBar can read Notification Center's database, which takes the
+same Full Disk Access: opening Teams' container without it would have macOS ask to let BriefBar access
+data from other apps, and an answer there would let it read Teams' data without Full Disk Access. With
+another Notification Center database, such as the demo's, BriefBar reads only what
+`BRIEFBAR_TEAMS_CACHE` names, laid out as `EBWebView` is.
 
 ### What's saved
 
@@ -396,8 +456,9 @@ saves them, and only them, to `~/Library/Application Support/BriefBar/Teams/unre
   seen, so the next launch counts everything since as unread.
 
 Next to it, `state.json` holds when BriefBar first read Teams' notifications, when it last did and
-whether it ever had access. Nothing else about Teams touches the disk. Turning Teams off deletes both
-files and the key, without reading them, and the folder if that leaves it empty.
+whether it ever had access. Nothing else about Teams touches the disk: Teams' read markers stay in
+memory. Turning Teams off deletes both files and the key, without reading them, and the folder if
+that leaves it empty.
 
 ### Updates are pushed, not polled
 
@@ -409,15 +470,17 @@ replaced, so the kqueue watch can move to the new file. `db` itself is deliberat
 watching: closing an extra file descriptor on a SQLite database drops the process's SQLite locks.
 
 Notification Center writes for every app, so most writes change nothing for Teams; BriefBar
-publishes only when Teams' notifications changed. Four timers exist, and none drives updates:
+publishes only when Teams' notifications changed. Five timers exist, and none drives updates:
 
 - a 15 s tick that refreshes relative times and expires old unread messages,
 - a 60 s safety rescan that catches anything missed, for example after the Mac wakes from sleep,
 - while BriefBar can't read the database, a check for access: every 2 s while the Full Disk
-  Access window is open, every 30 s otherwise, and
+  Access window is open, every 30 s otherwise,
 - while **Mark All Read When Teams' Badge Clears** is on, as it is by default, a 5 s check of Teams'
   dock badge, which runs `lsappinfo` only while Teams runs (see
-  [Deciding what's unread](#deciding-whats-unread)).
+  [Deciding what's unread](#deciding-whats-unread)), and
+- while **Mark Chats Read When You Read Them in Teams** is on, as it is by default, a 10-minute read of
+  Teams' read markers from scratch (see [Teams' read markers](#teams-read-markers)).
 
 ### Opening a chat
 
@@ -474,7 +537,7 @@ The brief asks it the same of the chats it shows, while a list by state or the O
 
 ### When the formats change
 
-Both formats are undocumented, so every read is checked:
+All three formats are undocumented, so every read is checked:
 
 - **The database's layout.** `PRAGMA table_info` lists its tables and columns first. Without
   `app(app_id, identifier)` or `record(app_id, data)`, BriefBar reports which are missing and shows
@@ -487,18 +550,31 @@ Both formats are undocumented, so every read is checked:
   messages (a reply box, or a chat's ID): that's more likely a renamed chat type, so they count.
 - **Archives** are decoded with secure coding and plist classes only, so an unexpected class makes a
   record unreadable instead of being instantiated.
+- **Teams' read markers.** Files, log records and values that can't be read are counted, values by
+  why. If Teams' folder has no `conversations` store, or none of its conversations has a marker
+  BriefBar understands, the lists say Teams' read markers have changed; if more than a quarter can't
+  be read, or a file can't, they say some couldn't be read. A table counts only after it has stayed
+  unchanged and unreadable for at least 5 s: LevelDB writes a table where it'll stay, so one being
+  written reads as broken until it's done. Each read rechecks those table paths, so finishing or
+  removing one clears its warning even if the current log hasn't changed. Neither keeps the lists
+  from showing: chats you read in Teams then stay
+  unread until another rule reads them. Lengths, nesting, blocks' keys and sparse arrays are checked
+  against what's there and capped, so a value can't make BriefBar read past it, or hold much more
+  than it.
 
 `--diagnose` and **Copy Diagnostics** describe all of this by structure only: table and field names,
 counts, and the shapes of values, such as `<oneOnOne ID>`, `<13-digit>` or
 `json {actionType: view, messageId: <13-digit>, userContextId: <guid>}`. They also show Teams' dock
-badge as BriefBar reads it.
+badge as BriefBar reads it, and of Teams' read markers, the folders, counts of conversations and
+markers, and the formats of their values.
 
 ### Why not Microsoft Graph or a server?
 
 Graph would need your organization to consent to an app, lets an app poll a user's chats only once
 a day, and delivers changes as they happen only to a public webhook, so a server. Organizations
 that use Teams also rarely allow chat content, or summaries of it, to leave their Macs. Notification
-Center already has everything a glance needs, on the Mac.
+Center already has everything a glance needs, on the Mac, and Teams' own data there says how far
+you've read each chat.
 
 ## Azure DevOps
 

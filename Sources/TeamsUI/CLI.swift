@@ -184,7 +184,9 @@ package enum TeamsCommandLine: SourceCommandLine {
         let printer = WatchPrinter(storage: storage, settings: trackerSettings)
         let engine = NotificationEngine(paths: storage.paths) { snapshot in queue.async { printer.receive(snapshot) } }
         var markers: ReadMarkerEngine?
-        if followsReadsInTeams, let cache = storage.cache {
+        let access = DatabaseAccess.check(storage.paths.database)
+        if ConversationStore.readsMarkers(following: followsReadsInTeams, cache: storage.cache, access: access),
+           let cache = storage.cache {
             markers = ReadMarkerEngine(location: cache) { snapshot in queue.async { printer.receive(snapshot) } }
         }
         // Unread messages also expire with time alone.

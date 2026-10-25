@@ -132,6 +132,28 @@ import Testing
         }
     }
 
+    @Test func survivesHandlesThatWouldOverflow() throws {
+        try withTemporaryDirectory { directory in
+            let url = directory.appendingPathComponent("000005.ldb")
+            // Int.max / 2 for both the index block's offset and size.
+            let huge: [UInt8] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F]
+            var footer: [UInt8] = [0, 0] + huge + huge
+            footer += [UInt8](repeating: 0, count: 40 - footer.count)
+            try write([UInt8](repeating: 0, count: 100) + footer + littleEndian(LevelDBTable.magic, 8), to: url)
+            #expect(throws: FormatError.corrupt("block handle")) { try LevelDBTable.read(url) }
+        }
+    }
+
+    @Test func refusesKeysThatAddUpToFarMoreThanTheBlock() {
+        // One long key, then many that share all of it: each a full copy.
+        var block = varint(0) + varint(100_000) + varint(0) + [UInt8](repeating: 1, count: 100_000)
+        for _ in 0..<10_000 {
+            block += varint(100_000) + varint(1) + varint(0) + [2]
+        }
+        block += littleEndian(0, 4) + littleEndian(1, 4)
+        #expect(throws: FormatError.corrupt("block keys")) { try LevelDBTable.blockEntries(block) }
+    }
+
     @Test func refusesWhatIsntATable() throws {
         try withTemporaryDirectory { directory in
             let url = directory.appendingPathComponent("000005.ldb")

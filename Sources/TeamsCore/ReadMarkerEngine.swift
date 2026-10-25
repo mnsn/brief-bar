@@ -32,6 +32,40 @@ public struct ReadMarkerSnapshot: Sendable, Equatable {
     }
 }
 
+/// A table must stay unchanged and unreadable for the full confirmation interval, not just for two scans.
+struct UnreadableTableTracker: Sendable {
+    private struct Observation: Sendable {
+        var file: FileInfo
+        var since: ContinuousClock.Instant
+    }
+
+    private let confirmation: Duration
+    private var observations: [String: Observation] = [:]
+
+    init(confirmation: TimeInterval) {
+        self.confirmation = .seconds(confirmation)
+    }
+
+    var count: Int { observations.count }
+
+    var filesChanged: Bool {
+        observations.contains { FileInfo(path: $0.key) != $0.value.file }
+    }
+
+    mutating func update(_ files: [String: FileInfo], at now: ContinuousClock.Instant) -> Int {
+        var current: [String: Observation] = [:]
+        for (path, file) in files {
+            if let previous = observations[path], previous.file == file {
+                current[path] = previous
+            } else {
+                current[path] = Observation(file: file, since: now)
+            }
+        }
+        observations = current
+        return observations.values.filter { $0.since.duration(to: now) >= confirmation }.count
+    }
+}
+
 /// Watches Teams' IndexedDB folders and publishes each chat's read marker whenever one changes.
 ///
 /// LevelDB keeps its log open and appends every write to it, so, as with Notification Center's database, a kqueue watch
@@ -50,9 +84,13 @@ public final class ReadMarkerEngine: @unchecked Sendable {
     private let onChange: ChangeHandler
     private let reloadDelay: TimeInterval
     private let safetyInterval: TimeInterval
+    private let confirmationDelay: TimeInterval
 
     private var folders: [URL: TeamsCacheFolder] = [:]
     private var unreadableFolders = 0
+    private var suspectTables: UnreadableTableTracker
+    private var unreadableTables = 0
+    private var confirmationScheduled = false
     private var streams: [URL: FileEventStream] = [:]
     private var logWatchers: [URL: FileWriteWatcher] = [:]
     private var snapshot = ReadMarkerSnapshot()
@@ -65,12 +103,15 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         location: TeamsCacheLocation,
         reloadDelay: TimeInterval = 0.5,
         safetyInterval: TimeInterval = 600,
+        confirmationDelay: TimeInterval = 5,
         onChange: @escaping ChangeHandler
     ) {
         self.location = location
         queue = DispatchQueue(label: "BriefBar.Teams.ReadMarkerEngine", qos: .utility)
         self.reloadDelay = reloadDelay
         self.safetyInterval = safetyInterval
+        self.confirmationDelay = confirmationDelay
+        suspectTables = UnreadableTableTracker(confirmation: confirmationDelay)
         self.onChange = onChange
     }
 
@@ -98,6 +139,8 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             safetyTimer?.cancel()
             safetyTimer = nil
             folders = [:]
+            suspectTables = UnreadableTableTracker(confirmation: confirmationDelay)
+            unreadableTables = 0
             watch()
         }
     }
@@ -111,11 +154,12 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         }
     }
 
-    /// One read, without watching (command line and tests).
+    /// One read, without watching (command line and tests). Tables that can't be read count as such at once.
     public static func loadOnce(location: TeamsCacheLocation) -> ReadMarkerSnapshot {
         let engine = ReadMarkerEngine(location: location) { _ in }
         engine.rescan()
-        return engine.snapshot
+        engine.unreadableTables = engine.suspectTables.count
+        return engine.makeSnapshot(access: engine.snapshot.access, readAt: engine.snapshot.readAt ?? Date())
     }
 
     // MARK: - Queue-confined
@@ -137,14 +181,40 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             }
         }
         folders = current
+        confirmUnreadableTables()
         if isActive {
             watch()
         }
         snapshot = makeSnapshot(access: access, readAt: started)
     }
 
+    /// Counts tables unchanged and unreadable for the full interval; checks the others again later.
+    private func confirmUnreadableTables() {
+        var current: [String: FileInfo] = [:]
+        for folder in folders.values {
+            for (name, info) in folder.unreadableTables {
+                current[folder.folder.url.appendingPathComponent(name).path] = info
+            }
+        }
+        unreadableTables = suspectTables.update(current, at: .now)
+        guard isActive, current.count > unreadableTables, !confirmationScheduled else { return }
+        confirmationScheduled = true
+        queue.asyncAfter(deadline: .now() + confirmationDelay) { [weak self] in
+            guard let self else { return }
+            self.confirmationScheduled = false
+            guard self.isActive else { return }
+            self.rescan()
+            self.publish()
+        }
+    }
+
     /// Reads on in each folder's log; reads a folder again from scratch when that's needed.
     private func readLogs() {
+        // Compaction can finish or remove a suspect table without replacing the current log.
+        if suspectTables.filesChanged {
+            rescan()
+            return
+        }
         let started = Date()
         var rescans = false
         for url in folders.keys {
@@ -167,7 +237,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             report.add(folder.report)
         }
         report.folders += unreadableFolders
-        report.unreadableFiles += unreadableFolders
+        report.unreadableFiles = unreadableTables + unreadableFolders
         return ReadMarkerSnapshot(access: access, markers: markers, report: report, readAt: readAt)
     }
 

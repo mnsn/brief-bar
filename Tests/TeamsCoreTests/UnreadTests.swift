@@ -415,3 +415,90 @@ private struct Store {
         }
     }
 }
+
+/// Teams' own read markers: how far you've read each chat in Teams.
+@Suite struct ReadMarkerRuleTests {
+    private let settings = TrackerSettings(keepUnreadFor: 86_400)
+
+    private func marker(_ date: Date) -> ReadMarker {
+        ReadMarker(messageID: Int64(messageID(date))!, readAt: date.addingTimeInterval(5))
+    }
+
+    private func unreadTexts(_ tracker: UnreadTracker, now: Date) -> [String] {
+        ChatGroup.allCases.flatMap { tracker.state(now: now, settings: settings).unread(in: $0) }.flatMap(\.unread).map(\.text)
+    }
+
+    @Test func readsAChatUpToTheNewestMessageReadInTeams() {
+        var store = Store()
+        store.message(Chat.avery, "Avery Quinn", "Lunch?", at: t(10))
+        store.message(Chat.avery, "Avery Quinn", "Noon works", at: t(20))
+        store.message(Chat.avery, "Avery Quinn", "See you there", at: t(30))
+        store.message(Chat.launchCrew, "Launch crew", "Shipping at 5", at: t(25))
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(0), launchedAt: t(40)))
+        tracker.apply(store.notifications, now: t(40))
+        #expect(unreadTexts(tracker, now: t(41)).count == 4)
+
+        // Read in Teams up to "Noon works": notifications arrive a little after Teams' message IDs say.
+        tracker.setReadMarkers([Chat.avery: marker(t(20))])
+        #expect(Set(unreadTexts(tracker, now: t(41))) == ["See you there", "Shipping at 5"])
+
+        tracker.setReadMarkers([Chat.avery: marker(t(30)), Chat.launchCrew: marker(t(25))])
+        let state = tracker.state(now: t(42), settings: settings)
+        #expect(state.count(.chats) == 0 && state.count(.groups) == 0)
+        #expect(state.recent(in: .chats).map(\.name) == ["Avery Quinn"])
+    }
+
+    @Test func readsMessagesWhoseNotificationsComeLater() {
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(0), launchedAt: t(1)))
+        tracker.setReadMarkers([Chat.sam: marker(t(50))])
+        var store = Store()
+        store.message(Chat.sam, "Sam Rivera", "Already read in Teams", at: t(50))
+        store.message(Chat.sam, "Sam Rivera", "New", at: t(60))
+        tracker.apply(store.notifications, now: t(61))
+        #expect(unreadTexts(tracker, now: t(61)) == ["New"])
+    }
+
+    @Test func withoutAMessageIDGoesByWhenItWasDelivered() {
+        var store = Store()
+        store.message(Chat.avery, "Avery Quinn", "Before", at: t(10), messageID: "")
+        store.message(Chat.avery, "Avery Quinn", "After", at: t(30), messageID: "")
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(0), launchedAt: t(40)))
+        tracker.apply(store.notifications.map { notification in
+            var notification = notification
+            if case .message(var message) = notification.item {
+                message.messageID = nil
+                notification.item = .message(message)
+            }
+            return notification
+        }, now: t(40))
+        tracker.setReadMarkers([Chat.avery: marker(t(20))])
+        #expect(unreadTexts(tracker, now: t(41)) == ["After"])
+    }
+
+    @Test func savedChatsReadInTeamsMeanwhileStayRead() {
+        let message = ChatMessage(conversationID: Chat.avery, kind: .oneOnOne, messageID: messageID(t(-50)), notificationKey: "n1",
+                                  deliveredAt: t(-50), chatName: "Avery Quinn", sender: "Avery Quinn", text: "Saved")
+        let saved = [CachedConversation(id: Chat.avery, kind: .oneOnOne, name: "Avery Quinn", messages: [message])]
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(-100), launchedAt: t(0)))
+        tracker.setReadMarkers([Chat.avery: marker(t(-50))])
+        tracker.restore(saved)
+        #expect(unreadTexts(tracker, now: t(1)).isEmpty)
+
+        var launched = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(-100), cached: saved, launchedAt: t(0)))
+        #expect(unreadTexts(launched, now: t(1)) == ["Saved"])
+        launched.setReadMarkers([Chat.avery: marker(t(-50))])
+        #expect(unreadTexts(launched, now: t(1)).isEmpty)
+    }
+
+    @Test func nothingBecomesUnreadAgain() {
+        var store = Store()
+        store.message(Chat.avery, "Avery Quinn", "Lunch?", at: t(10))
+        var tracker = UnreadTracker(launch: LaunchContext(isFirstLaunch: false, lastRunAt: t(0), launchedAt: t(20)))
+        tracker.apply(store.notifications, now: t(20))
+        tracker.setReadMarkers([Chat.avery: marker(t(10))])
+        tracker.setReadMarkers([Chat.avery: marker(t(5))])
+        tracker.setReadMarkers([:])
+        tracker.apply(store.notifications, now: t(21))
+        #expect(unreadTexts(tracker, now: t(21)).isEmpty)
+    }
+}

@@ -15,24 +15,25 @@ import Testing
 
     @Test(.timeLimit(.minutes(1)))
     func endsAProgramThatRunsTooLong() async throws {
-        let start = Date()
-        let result = try await ProcessRunner().run(URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], environment: nil, timeout: 0.5)
+        let (result, elapsed) = try await measured {
+            try await ProcessRunner().run(URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"], environment: nil, timeout: 0.5)
+        }
         #expect(result.status != 0)
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(elapsed < .seconds(10))
     }
 
     @Test(.timeLimit(.minutes(1)))
     func endsAProgramThatIgnoresBeingAskedToStop() async throws {
         // Both sleeps ignore SIGTERM, so only SIGKILL, a second later, ends them. The program becomes one of them
         // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would.
-        let start = Date()
-        let result = try await ProcessRunner().run(
-            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "trap '' TERM; sleep 30 & echo $!; exec sleep 30"],
-            environment: nil, timeout: 0.5
-        )
-        let elapsed = Date().timeIntervalSince(start)
+        let (result, elapsed) = try await measured {
+            try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "trap '' TERM; sleep 30 & echo $!; exec sleep 30"],
+                environment: nil, timeout: 0.5
+            )
+        }
         #expect(result.status == SIGKILL)
-        #expect(elapsed > 1.2 && elapsed < 5)
+        #expect(elapsed > .milliseconds(1_200) && elapsed < .seconds(5))
         // The sleep is ended too.
         let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         #expect(try await ends(child))
@@ -41,12 +42,13 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func doesntWaitForWhatTheProgramLeftRunning() async throws {
         // The shell exits at once, but the sleep it started in the background keeps its output open.
-        let start = Date()
-        let result = try await ProcessRunner().run(
-            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $!"], environment: nil, timeout: 20
-        )
+        let (result, elapsed) = try await measured {
+            try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $!"], environment: nil, timeout: 20
+            )
+        }
         #expect(result.status == 0)
-        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(elapsed < .seconds(3))
         // And what it left running is ended.
         let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         #expect(try await ends(child))
@@ -64,18 +66,19 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func noticesEveryExitRightAway() async throws {
         // Many at once: an exit can be reported a moment before its status can be collected, and isn't reported again.
-        let start = Date()
-        try await withThrowingTaskGroup(of: Int32.self) { group in
-            for _ in 0..<200 {
-                group.addTask {
-                    try await ProcessRunner().run(URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exit 0"], environment: nil, timeout: 20).status
+        let (_, elapsed) = try await measured {
+            try await withThrowingTaskGroup(of: Int32.self) { group in
+                for _ in 0..<200 {
+                    group.addTask {
+                        try await ProcessRunner().run(URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exit 0"], environment: nil, timeout: 20).status
+                    }
+                }
+                for try await status in group {
+                    #expect(status == 0)
                 }
             }
-            for try await status in group {
-                #expect(status == 0)
-            }
         }
-        #expect(Date().timeIntervalSince(start) < 15)
+        #expect(elapsed < .seconds(15))
     }
 
     @Test func collectsLargeOutput() async throws {
@@ -91,6 +94,28 @@ import Testing
     @Test func reportsAProgramThatCantRun() async {
         await #expect(throws: (any Error).self) {
             try await ProcessRunner().run(URL(fileURLWithPath: "/nonexistent/az"), arguments: [], environment: nil, timeout: 5)
+        }
+    }
+
+    /// Measure process deadlines without counting delays in resuming the test on the shared cooperative pool.
+    private func measured<Value: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async rethrows -> (Value, Duration) {
+        try await withTaskExecutorPreference(ProcessTestExecutor()) {
+            let start = ContinuousClock.now
+            let value = try await operation()
+            return (value, start.duration(to: .now))
+        }
+    }
+
+    private final class ProcessTestExecutor: TaskExecutor {
+        private let queue = DispatchQueue(label: "BriefBarTests.ProcessTiming")
+
+        func enqueue(_ job: consuming ExecutorJob) {
+            let job = UnownedJob(job)
+            queue.async {
+                job.runSynchronously(on: self.asUnownedTaskExecutor())
+            }
         }
     }
 

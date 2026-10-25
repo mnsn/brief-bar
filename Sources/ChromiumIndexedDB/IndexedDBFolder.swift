@@ -1,3 +1,4 @@
+import BriefBarCore
 import Foundation
 
 /// A Chromium IndexedDB backing store on LevelDB: an origin's `<origin>.indexeddb.leveldb` folder, with
@@ -138,7 +139,10 @@ public struct IndexedDBFolder: Sendable {
             guard let objects = externalObjects, objects.indices.contains(index),
                   let number = objects[index].blobNumber
             else { throw FormatError.corrupt("blob reference") }
-            let (bytes, _) = try LevelDBFolder.contents(of: blobFile(database: key.store.database, number: number))
+            let file = blobFile(database: key.store.database, number: number)
+            guard let size = FileInfo(path: file.path)?.size else { throw FormatError.corrupt("blob file") }
+            guard size <= UInt64(Self.maxBlobFileSize) else { throw FormatError.unsupported("blob file size") }
+            let (bytes, _) = try LevelDBFolder.contents(of: file)
             guard case .value(let value, let format) = try SerializedValue.decode(bytes) else {
                 throw FormatError.corrupt("blob file")
             }
@@ -146,11 +150,24 @@ public struct IndexedDBFolder: Sendable {
         }
     }
 
+    /// Far more than any record BriefBar reads.
+    static let maxBlobFileSize = 64 << 20
+
+    /// Whether a record's raw value is in a blob file, rather than in the database. Chromium writes the record's blob
+    /// entry, which says which file, after the record itself.
+    public static func isInBlobFile(_ raw: [UInt8]) -> Bool {
+        var reader = ByteReader(raw)
+        guard (try? reader.varint()) != nil, reader.remaining >= 3 else { return false }
+        let start = reader.offset
+        return raw[start] == SerializedValue.versionTag && raw[start + 1] == SerializedValue.needsProcessing
+            && raw[start + 2] == SerializedValue.replacedWithBlob
+    }
+
     /// Where Chromium keeps a blob: in a folder per database, and one per 256 blobs, each named in hexadecimal.
     public func blobFile(database: Int64, number: Int64) -> URL {
         blobFolder
             .appendingPathComponent(String(database, radix: 16), isDirectory: true)
-            .appendingPathComponent(String(format: "%02x", (number >> 8) & 0xFF), isDirectory: true)
+            .appendingPathComponent(String(format: "%02x", UInt32((number >> 8) & 0xFF)), isDirectory: true)
             .appendingPathComponent(String(number, radix: 16))
     }
 

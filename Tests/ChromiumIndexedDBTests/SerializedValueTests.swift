@@ -98,7 +98,7 @@ import Testing
         #expect(try SerializedValue.decode([0xFF, 0x11, 0x01] + varint(70_814) + [0]) == .inBlobFile(size: 70_814, index: 0))
     }
 
-    @Test func refusesWhatItDoesntRead() {
+    @Test func refusesWhatItDoesntRead() throws {
         let header: [UInt8] = [0xFF, 21, 0xFE] + [UInt8](repeating: 0, count: 12) + [0xFF, 16]
         #expect(throws: FormatError.unsupported("V8 tag 92")) { try decode(header + Array("\\".utf8)) }
         #expect(throws: FormatError.unsupported("V8 version")) { try decode([0xFF, 21, 0xFE] + [UInt8](repeating: 0, count: 12) + [0xFF, 12, 0x54]) }
@@ -110,5 +110,14 @@ import Testing
             nested += [UInt8(ascii: "{"), 0]
         }
         #expect(throws: FormatError.unsupported("nesting")) { try decode(nested) }
+        // Sparse arrays' lengths aren't bounded by their bytes: a value has a budget for them.
+        var sparse = Array("a".utf8) + varint(40_000)
+        sparse += Array("@".utf8) + varint(0) + varint(40_000)
+        var twoSparse = header + Array("o".utf8) + [0x22, 1]
+        twoSparse += Array("a".utf8) + sparse + [0x22, 1]
+        twoSparse += Array("b".utf8) + sparse
+        twoSparse += Array("{".utf8) + [2]
+        #expect(throws: FormatError.unsupported("sparse array length")) { try decode(twoSparse) }
+        #expect(try decode(header + sparse) == .array([JSValue](repeating: .undefined, count: 40_000)))
     }
 }

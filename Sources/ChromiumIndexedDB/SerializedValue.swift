@@ -125,8 +125,10 @@ struct V8Deserializer {
     private var objects: [UInt32: JSValue] = [:]
     private var nextID: UInt32 = 0
     private var depth = 0
+    /// Elements of sparse arrays so far: their length isn't bounded by the bytes that hold them, so a value has a budget.
+    private var sparseElements = 0
     static let maxDepth = 64
-    static let maxSparseLength = 1 << 20
+    static let maxSparseElements = 1 << 16
 
     init(reader: ByteReader) {
         self.reader = reader
@@ -312,7 +314,8 @@ struct V8Deserializer {
     private mutating func sparseArray() throws -> JSValue {
         let id = newID()
         let length = Int(try reader.varint32())
-        guard length <= Self.maxSparseLength else { throw FormatError.unsupported("sparse array length") }
+        sparseElements += length
+        guard sparseElements <= Self.maxSparseElements else { throw FormatError.unsupported("sparse array length") }
         var elements = [JSValue](repeating: .undefined, count: length)
         for (name, value) in try properties(until: "@") {
             if let index = Int(name), elements.indices.contains(index) {
