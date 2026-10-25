@@ -17,11 +17,12 @@ private final class ChangeCounter: Sendable {
     func wait(forMoreThan previous: Int, timeout: Duration = .seconds(5)) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
-        while clock.now < deadline {
-            if count > previous { return }
+        // The count comes first, past the deadline too: on a busy runner, other tests can hold the only thread this
+        // task runs on for longer than that, while the change arrives on the watcher's own queue.
+        while count <= previous {
+            guard clock.now < deadline else { throw TestError("No change reported within \(timeout)") }
             try await Task.sleep(for: .milliseconds(10))
         }
-        throw TestError("No change reported within \(timeout)")
     }
 }
 
