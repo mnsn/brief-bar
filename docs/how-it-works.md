@@ -616,6 +616,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
+| `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
@@ -646,7 +647,12 @@ The [groups table in the README](../README.md#azure-devops) lists them. In more 
 
 - **Build**: approved is passed, rejected is failed, running is running. A queued build whose
   context says `isExpired` has expired and has to run again; a queued build without a build ID
-  hasn't run at all (for example, because it's queued by hand).
+  hasn't run at all (for example, because it's queued by hand). A failed build's errors aren't part
+  of its policy, so BriefBar reads the run's timeline, once, and finds where it failed as it does for
+  a pinned pipeline: the earliest failed task (or job, or stage), with its stage and its first
+  error. The list, the notification and the brief then say so: "shop-web CI · Run unit tests: 2
+  tests failed in DeliveryEstimateTests." Until then, or when the timeline can't be read, they name
+  the build.
 - **Status** (posted by another service): rejected is failed; queued means waiting for it.
 - **Minimum number of reviewers**, **Required reviewers** and **Proof Of Presence** are about
   approvals.
@@ -909,8 +915,8 @@ or any other model.
   search matches you, not your groups.
 - Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its
   token.
-- A failed build's errors aren't part of a pull request's policies, so the panel names the build
-  without saying why it failed.
+- A failed build says where it failed only when its run's timeline can be read, and then only its
+  first error: the rest is in its log, which BriefBar doesn't read.
 - The Sprint section shows one team's current sprint at a time, from your teams in the organizations
   BriefBar watches.
 - Pipelines are build pipelines, YAML or classic; classic release pipelines aren't shown.

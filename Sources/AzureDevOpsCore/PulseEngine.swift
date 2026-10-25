@@ -83,10 +83,10 @@ public struct PulseSnapshot: Sendable, Equatable {
     }
 }
 
-/// Polls Azure DevOps: the pull request lists every refresh (three requests per organization), and the
-/// details of the pull requests the `RefreshPlanner` picks (two requests each). Azure DevOps can't push
-/// changes to a personal app, and pull requests and builds take minutes to hours, so a refresh a minute
-/// is plenty. Every request is a GET.
+/// Polls Azure DevOps: the pull request lists every refresh (three requests per organization), the details of the
+/// pull requests the `RefreshPlanner` picks (two requests each), and, once, the timeline of each failed build of your
+/// pull requests, for where it failed. Azure DevOps can't push changes to a personal app, and pull requests and builds
+/// take minutes to hours, so a refresh a minute is plenty. Every request is a GET.
 public actor PulseEngine {
     public typealias ChangeHandler = @Sendable (PulseSnapshot) -> Void
 
@@ -160,6 +160,18 @@ public actor PulseEngine {
         var completed: [PullRequest]
     }
 
+    /// A failed build of one of your pull requests, whose timeline says where it failed. A build that's retried keeps
+    /// its ID and fails again later, so when it completed is part of it.
+    private struct FailedBuild: Hashable, Sendable {
+        var organization: String
+        var projectId: String
+        var buildId: Int
+        var completedAt: Date?
+    }
+
+    /// The most failed builds whose timelines are read in one refresh: each is read once.
+    static let buildTimelinesPerRefresh = 4
+
     private let client: ADOClient
     private var configuration: Configuration
     private let onChange: ChangeHandler
@@ -186,6 +198,12 @@ public actor PulseEngine {
     /// Your pull requests that left the active list without completing: abandoned, or completed just now. Each
     /// is looked up by its ID, a few per refresh, until that works or it's too old to show as done.
     private var vanished: [PRKey: Vanished] = [:]
+    /// Where your pull requests' failed builds failed, from their timelines; and which have been read, including the
+    /// ones whose timelines had nothing to say or couldn't be read for good.
+    private var buildFailures: [FailedBuild: PipelineFailure] = [:]
+    private var buildsRead: Set<FailedBuild> = []
+    /// Failed builds whose timelines couldn't be read: when last tried, and how many tries in a row failed.
+    private var buildAttempts: [FailedBuild: (last: Date, failures: Int)] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -418,7 +436,10 @@ public actor PulseEngine {
         let keys = RefreshPlanner.plan(
             candidates, cache: entries, now: startedAt, options: configuration.planner, limit: configuration.planner.budget
         )
-        let throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        var throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        if throttled == nil {
+            throttled = await readBuildFailures(at: startedAt, interval: configuration.interval)
+        }
 
         refreshedAt = now()
         if let throttled {
@@ -478,6 +499,7 @@ public actor PulseEngine {
         entries = [:]
         vanished = [:]
         linked = [:]
+        forgetBuildFailures()
         problem = .noOrganizations
         hasLoaded = true
     }
@@ -493,6 +515,13 @@ public actor PulseEngine {
         vanished = [:]
         linkedFailures = [:]
         linked = [:]
+        forgetBuildFailures()
+    }
+
+    private func forgetBuildFailures() {
+        buildFailures = [:]
+        buildsRead = []
+        buildAttempts = [:]
     }
 
     /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down.
@@ -546,6 +575,73 @@ public actor PulseEngine {
         if pr.isDraft { return true }
         guard let inactiveAfter = configuration.inactiveAfter, let last = details.lastActivity else { return false }
         return date.timeIntervalSince(max(last, pr.createdAt)) > inactiveAfter
+    }
+
+    /// The failed builds of your pull requests, as their policies report them now.
+    private func failedBuilds() -> Set<FailedBuild> {
+        var builds: Set<FailedBuild> = []
+        for (key, item) in active where item.role == .author {
+            for check in details[key]?.checks ?? [] {
+                guard let buildId = check.failedBuildId else { continue }
+                builds.insert(FailedBuild(
+                    organization: key.organization, projectId: item.pullRequest.projectId, buildId: buildId, completedAt: check.completedAt
+                ))
+            }
+        }
+        return builds
+    }
+
+    /// Reads where your pull requests' failed builds failed, from their timelines, a few per refresh: each once, the
+    /// ones never tried first. A timeline that can't be read is tried again later, less and less often; one that
+    /// isn't there or that you may not read, never. Returns the error if Azure DevOps asked to slow down.
+    private func readBuildFailures(at date: Date, interval: TimeInterval) async -> ADOError? {
+        let wanted = failedBuilds()
+        buildFailures = buildFailures.filter { wanted.contains($0.key) }
+        buildsRead = buildsRead.intersection(wanted)
+        buildAttempts = buildAttempts.filter { wanted.contains($0.key) }
+        let due = wanted
+            .filter { build in
+                guard !buildsRead.contains(build) else { return false }
+                guard let tried = buildAttempts[build], tried.failures > 1 else { return true }
+                return date.timeIntervalSince(tried.last) >= min(interval * pow(2, Double(tried.failures - 2)), 1_800)
+            }
+            .sorted {
+                (buildAttempts[$0]?.last ?? .distantPast, $0.organization, $0.buildId)
+                    < (buildAttempts[$1]?.last ?? .distantPast, $1.organization, $1.buildId)
+            }
+            .prefix(Self.buildTimelinesPerRefresh)
+        for build in due {
+            do {
+                let timeline = try await client.get(
+                    ADOEndpoint.timeline(organization: build.organization, projectId: build.projectId, buildId: build.buildId),
+                    as: ADOTimeline.self
+                )
+                buildFailures[build] = PipelineFailure.first(in: timeline)
+                buildsRead.insert(build)
+                buildAttempts[build] = nil
+            } catch ADOError.notFound, ADOError.forbidden {
+                // No timeline, or one you may not read: the list says which build failed, as before.
+                buildsRead.insert(build)
+                buildAttempts[build] = nil
+            } catch ADOError.throttled(let seconds) {
+                return .throttled(retryAfter: seconds)
+            } catch {
+                buildAttempts[build] = (date, (buildAttempts[build]?.failures ?? 0) + 1)
+            }
+        }
+        return nil
+    }
+
+    /// The details with where each failed build failed, once that's been read.
+    private func withFailures(_ details: PRDetails?, of pr: PullRequest) -> PRDetails? {
+        guard var details, !buildFailures.isEmpty else { return details }
+        for index in details.checks.indices {
+            guard let buildId = details.checks[index].failedBuildId else { continue }
+            details.checks[index].failure = buildFailures[FailedBuild(
+                organization: pr.key.organization, projectId: pr.projectId, buildId: buildId, completedAt: details.checks[index].completedAt
+            )]
+        }
+        return details
     }
 
     private static func lists(
@@ -629,7 +725,10 @@ public actor PulseEngine {
 
     private func snapshot() -> PulseSnapshot {
         var records = active.map { key, item in
-            PRRecord(pullRequest: item.pullRequest, role: item.role, details: details[key], me: identities[key.organization] ?? "")
+            PRRecord(
+                pullRequest: item.pullRequest, role: item.role, details: withFailures(details[key], of: item.pullRequest),
+                me: identities[key.organization] ?? ""
+            )
         }
         records += done.map { key, pr in
             PRRecord(pullRequest: pr, role: .author, me: identities[key.organization] ?? "")

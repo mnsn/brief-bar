@@ -339,6 +339,33 @@ import BriefBarCore
         #expect(try state(passing([optional])).0 == .ready)
     }
 
+    @Test func aFailedBuildSaysWhereItFailedOnceThatsKnown() throws {
+        let pr = makePR(reviewers: [Reviewer(person: People.sam, vote: .approved)])
+        let failure = PipelineFailure(stage: "Test", step: "Run unit tests", message: "2 tests failed in CheckoutTests.")
+        let failed = Check(name: "web-ci", kind: .build, state: .failed, completedAt: t(-hour), buildId: 41, failure: failure)
+        let snapshot = try #require(classify(pr, details: makeDetails(for: pr, checks: [failed], lastActivity: t(-hour))))
+        #expect(snapshot.headline == "Build failed")
+        #expect(snapshot.detail == "web-ci · Run unit tests: 2 tests failed in CheckoutTests.")
+        #expect(snapshot.failure == failure)
+
+        // Without an error, the step; another failed build or check is named as before.
+        let quiet = Check(name: "web-ci", kind: .build, state: .failed, buildId: 41, failure: PipelineFailure(stage: nil, step: "Build", message: nil))
+        let both = try #require(classify(pr, details: makeDetails(for: pr, checks: [
+            quiet, Check(name: "api-ci", kind: .build, state: .failed), Check(name: "scan", kind: .status, state: .failed),
+        ], lastActivity: t(-hour))))
+        #expect(both.detail == "web-ci · Build failed, api-ci, scan")
+        #expect(both.failure?.step == "Build")
+
+        // A failing check that isn't a build says nothing about where.
+        let check = try #require(classify(pr, details: makeDetails(for: pr, checks: [
+            Check(name: "scan", kind: .status, state: .failed),
+        ], lastActivity: t(-hour))))
+        #expect(check.failure == nil)
+
+        let brief = Brief.item(snapshot, reader: nil)
+        #expect(brief.sentence == "“Fix the checkout total” failed at Run unit tests.")
+    }
+
     @Test func readyToComplete() throws {
         let pr = makePR(reviewers: [Reviewer(person: People.sam, vote: .approved), Reviewer(person: People.priya, vote: .approvedWithSuggestions)])
         let mergeStrategy = Check(name: "Require a merge strategy", kind: .completion, state: .pending)

@@ -202,7 +202,7 @@ Apple Intelligence sums up the newest of each.
 |---|---|
 | **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on) |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
-| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired |
+| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error |
 | **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
 | **Waiting** | Your pull requests waiting for reviewers, a build or a requirement, and reviews you're waiting on the author for |
@@ -496,10 +496,13 @@ pipelines add a few requests a minute, and only while something shows them.
 Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
 requests where you were added yourself, including by a policy, are shown.
 
-### Why does a failed build show no error details?
+### Why does a failed build show only its first error?
 
-Azure DevOps doesn't include a build's errors with a pull request's policies, so the list shows which
-build failed. Click the pull request to see it.
+Azure DevOps doesn't include a build's errors with a pull request's policies, so BriefBar reads the
+build's timeline once, as it does for a pinned pipeline, and shows where it failed and the first
+error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." The
+rest is in the build's log: click the pull request to see it. Until the timeline has been read, or
+when it can't be, the list names the build that failed.
 
 ### How does it pick my team's sprint?
 

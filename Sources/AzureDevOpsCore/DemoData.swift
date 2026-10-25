@@ -95,6 +95,9 @@ public enum DemoData {
         let build = { (name: String, state: Check.State, completed: Date?) in
             Check(name: name, kind: .build, state: state, completedAt: completed)
         }
+        let failedBuild = { (name: String, completed: Date, failure: PipelineFailure) in
+            Check(name: name, kind: .build, state: .failed, completedAt: completed, buildId: 204_417, failure: failure)
+        }
         let minimumReviewers = { (state: Check.State, minimum: Int) in
             Check(name: "Minimum number of reviewers", kind: .reviewers, state: state, minimumApprovers: minimum)
         }
@@ -163,11 +166,16 @@ public enum DemoData {
                     messageID: String(Int64(ago(9).timeIntervalSince1970 * 1_000))
                 )]
             ),
-            // Failing: a build failed (the build service's comment about it doesn't need you).
+            // Failing: a build failed, in its unit tests (the build service's comment about it doesn't need you).
             record(
                 pr(4088, "Show delivery estimates on the product page", repo: "shop-web", created: ago(50 * hour),
                    reviewers: [reviewer(maria, .approved)], branch: "delivery-estimates"),
-                checks: [build("shop-web CI", .failed, ago(65)), minimumReviewers(.passed, 1)],
+                checks: [
+                    failedBuild("shop-web CI", ago(65), PipelineFailure(
+                        stage: "Test", step: "Run unit tests", message: "2 tests failed in DeliveryEstimateTests."
+                    )),
+                    minimumReviewers(.passed, 1),
+                ],
                 threads: [ReviewThread(id: 41, status: "closed", comments: [
                     comment(1, buildService, "2 tests failed in DeliveryEstimateTests.", ago(64)),
                 ])],

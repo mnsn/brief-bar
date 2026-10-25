@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A failed build says where it failed.** A pull request of yours that's failing because of a build
+  now says where, and the first error there, such as "shop-web CI · Run unit tests: 2 tests failed in
+  DeliveryEstimateTests.", in its list, its notification and the brief. BriefBar reads the build's
+  timeline once, with a GET, as it does for a pinned pipeline, and again only if the build is retried
+  and fails again.
 - **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
   you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
   just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,

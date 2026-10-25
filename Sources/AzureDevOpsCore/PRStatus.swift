@@ -137,6 +137,8 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var hasDetails: Bool
     /// Where it was sent to you: while that needs you, and until you've seen that you answered it.
     public var chatSource: ChatSource? = nil
+    /// Where its build failed, and the first error there, when it's failing because of a build whose timeline says.
+    public var failure: PipelineFailure? = nil
 
     public var id: String { key.description }
 
@@ -280,6 +282,9 @@ public enum PRClassifier {
             switch record.role {
             case .author:
                 classifyAuthor(pr, details, approvals: approvals, lastActivity: lastActivity, set: set)
+                if snapshot.reason == .buildFailed {
+                    snapshot.failure = details?.checks.first { $0.failedBuildId != nil && $0.isBlocking && $0.failure != nil }?.failure
+                }
             case .reviewer, .linked:
                 classifyReviewer(pr, me: me, approvals: approvals, set: set)
             }
@@ -591,8 +596,10 @@ public enum PRClassifier {
         let expired = blocking.filter { $0.kind == .build && $0.state == .expired }
         let conflicts = pr.hasConflicts ? " · merge conflicts" : ""
         if !failedBuilds.isEmpty {
+            // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
+            let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
             set(.failing, .buildFailed, failedBuilds.count > 1 ? "\(failedBuilds.count) builds failed" : "Build failed",
-                names(failedBuilds + failedChecks) + conflicts, latestCompletion(failedBuilds))
+                (builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts, latestCompletion(failedBuilds))
             return
         }
         if !failedChecks.isEmpty {
