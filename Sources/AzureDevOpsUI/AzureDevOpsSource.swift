@@ -46,11 +46,6 @@ package final class AzureDevOpsSource: BriefBarSource {
     ]
     package var panelWidth: CGFloat { MenuPanelView.width }
 
-    package func pageMaxWidth(for section: SectionID) -> CGFloat {
-        // The Sprint page's cards fill as many columns as fit; the others keep their lines to a readable width.
-        section == .azureDevOpsPullRequests ? 900 : .infinity
-    }
-
     private static let chatAccessReason = "For pull requests sent in chats, BriefBar looks for links to pull requests in the notifications that every app posts to Notification Center, and keeps only the links, in memory."
 
     private let services: AppServices

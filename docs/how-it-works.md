@@ -199,11 +199,12 @@ their settings and positions (`WidgetMigration`).
 
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
 each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
-([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`); a
-source can draw a page of its own instead. A window opens at the page of the list or widget you opened
-it from, or at its Overview when no page is asked for, and remembers the page you left it at. BriefBar is a menu-bar app
-(`LSUIElement`): while a window is open, it shows a Dock icon and the usual menus, and it goes back once
-they're all closed.
+([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`), the
+whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
+Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
+of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
+the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window is open, it shows a
+Dock icon and the usual menus, and it goes back once they're all closed.
 
 ## Everything by meaning
 

@@ -40,7 +40,7 @@ struct PipelinesPage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                PageScroll(maxWidth: 960) {
+                PageScroll {
                     VStack(alignment: .leading, spacing: 12) {
                         if let problem = pipelines.problem {
                             ProblemView(problem: problem) { store.signIn() }

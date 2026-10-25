@@ -178,7 +178,7 @@ struct OverviewPage: View {
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(title: "Overview", subtitle: subtitle) { EmptyView() }
-            PageScroll(maxWidth: 860) {
+            PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
                     StateListProblems(list: list, model: model)
                     if !list.brief.isEmpty {

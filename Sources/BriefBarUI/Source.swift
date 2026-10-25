@@ -205,8 +205,6 @@ package protocol BriefBarSource: AnyObject {
     /// How wide its panels are in a popover. An item that shows several sections makes each as wide as the
     /// widest.
     var panelWidth: CGFloat { get }
-    /// How wide the section's page can get in a wide window, to keep its lines readable. By default, 760 points.
-    func pageMaxWidth(for section: SectionID) -> CGFloat
     /// The section's popover is about to open.
     func panelWillShow(_ section: SectionID)
 
@@ -263,8 +261,6 @@ extension BriefBarSource {
     package func pageWillShow(_ section: SectionID) {
         panelWillShow(section)
     }
-
-    package func pageMaxWidth(for section: SectionID) -> CGFloat { 760 }
 
     package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {}
 

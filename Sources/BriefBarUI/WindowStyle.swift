@@ -211,25 +211,22 @@ package struct PageHeader<Trailing: View>: View {
     }
 }
 
-/// A page's body: scrolls, and keeps lines to a readable width on a wide window.
+/// A page's body: scrolls, and fills the window's width, so a wide window, such as full screen, gets longer lines.
 package struct PageScroll<Content: View>: View {
-    var maxWidth: CGFloat = 1_100
     @ViewBuilder var content: () -> Content
 
-    package init(maxWidth: CGFloat = 1_100, @ViewBuilder content: @escaping () -> Content) {
-        self.maxWidth = maxWidth
+    package init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
     }
 
     package var body: some View {
         ScrollView {
             content()
-                .frame(maxWidth: maxWidth, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.leading, 18)
                 .padding(.trailing, 24)
                 .padding(.top, 4)
                 .padding(.bottom, 28)
-                .frame(maxWidth: .infinity, alignment: .top)
         }
         .scrollBounceBehavior(.basedOnSize)
     }
