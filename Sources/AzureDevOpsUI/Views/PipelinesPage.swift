@@ -3,8 +3,8 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// The Pipelines section's page, in a window or a popover: the pipelines you pinned, with their latest run's
-/// stages and their recent runs.
+/// The Pipelines section's page, in a window or a popover: the pipelines that ran after your merges, and the pipelines
+/// you pinned, with their latest run's stages and their recent runs.
 struct PipelinesPage: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @EnvironmentObject private var store: PRStore
@@ -25,7 +25,7 @@ struct PipelinesPage: View {
                 .glassButtonStyle()
                 .help("Pin pipelines to follow here and in widgets")
             }
-            if pipelines.statuses.isEmpty && pipelines.problem == nil {
+            if pipelines.statuses.isEmpty && pipelines.problem == nil && store.merges.isEmpty {
                 if pipelines.hasLoaded || pipelines.settings.pinnedPipelines.isEmpty {
                     EmptyPage(symbol: "point.3.connected.trianglepath.dotted", title: "Follow your pipelines",
                               message: "Pin the pipelines you care about to see their latest runs, and each run's stages, here and in widgets.") {
@@ -44,6 +44,16 @@ struct PipelinesPage: View {
                     VStack(alignment: .leading, spacing: 12) {
                         if let problem = pipelines.problem {
                             ProblemView(problem: problem) { store.signIn() }
+                        }
+                        if !store.merges.isEmpty {
+                            PipelinesTitle(symbol: "arrow.triangle.merge", title: "After Your Merges", count: store.merges.count)
+                            ForEach(store.merges) { merge in
+                                MergeCard(merge: merge, now: store.now)
+                            }
+                            if !pipelines.statuses.isEmpty {
+                                PipelinesTitle(symbol: "pin.fill", title: "Pinned", count: pipelines.statuses.count)
+                                    .padding(.top, 6)
+                            }
                         }
                         ForEach(pipelines.statuses) { status in
                             PipelineCard(status: status, now: store.now)
@@ -68,12 +78,172 @@ struct PipelinesPage: View {
 
     private var subtitle: String {
         let statuses = pipelines.statuses
-        guard !statuses.isEmpty else { return "Pipelines you pin, at a glance" }
+        let merges = store.merges.count
+        guard !statuses.isEmpty || merges > 0 else { return "Pipelines you pin, at a glance" }
         let counts = pipelines.counts
-        var parts = ["\(statuses.count) pinned"]
+        var parts: [String] = []
+        if merges > 0 { parts.append(merges == 1 ? "1 merge" : "\(merges) merges") }
+        if !statuses.isEmpty { parts.append("\(statuses.count) pinned") }
         if counts.failed > 0 { parts.append("\(counts.failed) failed") }
         if counts.running > 0 { parts.append("\(counts.running) running") }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// A group's title on the page, with how many are in it.
+private struct PipelinesTitle: View {
+    let symbol: String
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+            Text("\(count)")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The pipelines that ran after you merged a pull request: the pull request, then each pipeline's latest run, with
+/// where it failed or what it waits for.
+private struct MergeCard: View {
+    let merge: MergePipelines
+    let now: Date
+
+    @EnvironmentObject private var pipelines: PipelinesStore
+    @LocalState private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle().fill(color.gradient)
+                    Image(systemName: "arrow.triangle.merge")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(merge.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                    Text(meta)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if merge.isFollowing {
+                    ProgressView().controlSize(.small)
+                        .help("BriefBar is still looking for runs after this merge")
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { AzureDevOps.open(merge.url) }
+            .help("Click to open the pull request in Azure DevOps")
+            VStack(spacing: 6) {
+                ForEach(merge.pipelines) { status in
+                    MergeRunRow(status: status, now: now)
+                }
+            }
+        }
+        .padding(14)
+        .background(GlassCard(cornerRadius: 20, isHovered: isHovered))
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open Pull Request") { AzureDevOps.open(merge.url) }
+            ForEach(merge.pipelines) { status in
+                if let run = status.latest {
+                    Button("Open \(status.pipeline.name) \(run.number)") { pipelines.open(run) }
+                }
+            }
+        }
+    }
+
+    /// "Merged into main · 25m ago · 2 of 3 passed"
+    private var meta: String {
+        var parts = ["Merged into \(merge.targetBranch)"]
+        let elapsed = Elapsed.short(since: merge.mergedAt, now: now)
+        parts.append(elapsed == "now" ? "just now" : "\(elapsed) ago")
+        if let summary = merge.summary {
+            switch summary.outcome {
+            case .failed: parts.append("\(summary.pipeline ?? "A pipeline") failed")
+            case .waiting: parts.append("waiting for approval")
+            case .running: parts.append(summary.running == 1 ? "1 running" : "\(summary.running) running")
+            case .passed: parts.append(summary.total == 1 ? "passed" : "all \(summary.total) passed")
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var color: Color {
+        switch merge.summary?.outcome {
+        case .failed?: return .red
+        case .waiting?: return .orange
+        case .running?: return .blue
+        case .passed?: return .green
+        case nil: return Color(nsColor: .systemGray)
+        }
+    }
+}
+
+/// One pipeline that ran after a merge: its latest run's result, what it's doing or how it ended, and where it failed.
+private struct MergeRunRow: View {
+    let status: PipelineStatus
+    let now: Date
+
+    @EnvironmentObject private var pipelines: PipelinesStore
+    @LocalState private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 9) {
+                RunStatusBadge(status: status.latest?.status, size: 20)
+                Text(status.pipeline.name)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .lineLimit(1)
+                Text(status.headline)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(status.headlineColor)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let run = status.latest {
+                    HStack(spacing: 10) {
+                        MetaItem(symbol: "number", text: run.number)
+                        if let duration = run.duration(now: now) {
+                            MetaItem(symbol: "timer", text: RunDuration.short(duration))
+                        }
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                }
+            }
+            if let failure = status.failure, status.latest?.status == .failed {
+                FailureNote(failure: failure)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.06) : .clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture {
+            if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
+        }
+        .help("Click to open the run in Azure DevOps")
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -346,7 +516,7 @@ private struct FailureNote: View {
     }
 }
 
-/// Finds pipelines in a project by name or number, to pin them.
+/// Finds pipelines in a project by name or number, or by a link to one or to one of its runs, to pin them.
 private struct AddPipelineSheet: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @EnvironmentObject private var store: PRStore
@@ -368,7 +538,7 @@ private struct AddPipelineSheet: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add Pipelines")
                         .font(.system(size: 20, weight: .bold))
-                    Text("Pin the pipelines to follow in the window and the widget.")
+                    Text("Pin the pipelines to follow in the window and the widget. Search by name or number, or paste a link to a pipeline or a run.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -381,7 +551,7 @@ private struct AddPipelineSheet: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search pipelines by name or number", text: $text)
+                    TextField("Search by name or number, or paste a link", text: $text)
                         .textFieldStyle(.plain)
                         .onSubmit { search(after: 0) }
                     if isSearching {
@@ -434,12 +604,12 @@ private struct AddPipelineSheet: View {
             Label(error, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if project == nil {
+        } else if project == nil && link == nil {
             Text("Choose a project to search in.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if results.isEmpty && !isSearching {
-            Text(noResults)
+            Text(link != nil ? "No pipeline at that link." : noResults)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -471,23 +641,40 @@ private struct AddPipelineSheet: View {
         if project == nil { project = others.first }
     }
 
-    /// Searches once typing stops for a moment.
+    /// A link to a pipeline or a run, pasted in place of a name.
+    private var link: PipelineLink? { PipelineLink(text) }
+
+    /// Searches once typing stops for a moment: the project for a name, or the pipeline a link is to.
     private func search(after delay: Double) {
         pending?.cancel()
-        guard let project else { return }
+        let link = self.link
+        guard link != nil || project != nil else { return }
         let text = self.text
+        let project = self.project
         pending = Task {
             if delay > 0 {
                 try? await Task.sleep(for: .seconds(delay))
                 if Task.isCancelled { return }
             }
             isSearching = true
-            let result = await pipelines.search(text, in: project)
+            let result: Result<[PipelineRef], ADOError>
+            if let link {
+                result = await pipelines.pipeline(for: link).map { [$0] }
+            } else if let project {
+                result = await pipelines.search(text, in: project)
+            } else {
+                isSearching = false
+                return
+            }
             if Task.isCancelled { return }
             isSearching = false
             switch result {
             case .success(let found):
                 results = found
+                error = nil
+            case .failure(.notFound) where link != nil, .failure(.forbidden) where link != nil:
+                // Says there's no pipeline there, in the list.
+                results = []
                 error = nil
             case .failure(let failure):
                 results = []

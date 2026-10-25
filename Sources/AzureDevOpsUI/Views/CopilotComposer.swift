@@ -4,15 +4,25 @@ import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
-/// The window that sends a work item to Copilot: the prompt, which you can change, the model, and the repository the
-/// change goes in. A window of its own, since popovers and widgets can't hold a sheet.
+/// The window that sends a work item, or a pull request's comments, build or conflicts, to Copilot: the prompt, which
+/// you can change, the model, and the repository the change goes in, or the session it goes on with. A window of its own,
+/// since popovers and widgets can't hold a sheet.
 @MainActor
 final class CopilotComposer: NSObject, NSWindowDelegate {
     static let shared = CopilotComposer()
     private var window: NSWindow?
 
     func show(item: TaskWorkItem, options: CopilotRunOptions, store: CopilotTasksStore) {
-        let view = CopilotComposerView(item: item, options: options, template: store.settings.copilotPromptTemplate) { [weak self] in
+        show(subject: .workItem(item), prompt: nil, options: options, continuing: nil, store: store)
+    }
+
+    /// - Parameters:
+    ///   - prompt: a pull request's, written for it; nil for a work item's, from the template in Settings.
+    ///   - continuing: an earlier run whose session it goes on with, unless you choose a new one.
+    func show(subject: TaskSubject, prompt: String?, options: CopilotRunOptions, continuing: CopilotRun?, store: CopilotTasksStore) {
+        let view = CopilotComposerView(
+            subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt, continuing: continuing
+        ) { [weak self] in
             self?.window?.close()
         }
         .environmentObject(store)
@@ -40,7 +50,9 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
 }
 
 struct CopilotComposerView: View {
-    let item: TaskWorkItem
+    let subject: TaskSubject
+    /// The run it can go on with.
+    let continuing: CopilotRun?
     let close: () -> Void
 
     @EnvironmentObject private var store: CopilotTasksStore
@@ -55,25 +67,73 @@ struct CopilotComposerView: View {
     @LocalState private var repositoryProblem: String?
     @LocalState private var isChecking = false
     @LocalState private var hasAppeared = false
+    /// Goes on with the earlier run's session, in its worktree.
+    @LocalState private var continueSession: Bool
 
-    /// - Parameter template: the prompt, with placeholders, from Settings.
-    init(item: TaskWorkItem, options: CopilotRunOptions, template: String, close: @escaping () -> Void) {
-        self.item = item
+    /// - Parameters:
+    ///   - template: the prompt, with placeholders, from Settings, for a work item.
+    ///   - prompt: a pull request's prompt, written for it.
+    init(
+        subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, continuing: CopilotRun? = nil,
+        close: @escaping () -> Void
+    ) {
+        self.subject = subject
+        self.continuing = continuing
         self.close = close
-        let filledIn = PromptTemplate.render(template, item: item)
+        let filledIn: String
+        switch subject {
+        case .workItem(let item): filledIn = prompt ?? PromptTemplate.render(template, item: item)
+        case .pullRequest: filledIn = prompt ?? ""
+        }
         _prompt = LocalState(wrappedValue: filledIn)
         _filledIn = LocalState(wrappedValue: filledIn)
         _model = LocalState(wrappedValue: options.model)
         _effort = LocalState(wrappedValue: options.effort)
+        _continueSession = LocalState(wrappedValue: continuing != nil)
     }
+
+    init(item: TaskWorkItem, options: CopilotRunOptions, template: String, close: @escaping () -> Void) {
+        self.init(subject: .workItem(item), options: options, template: template, close: close)
+    }
+
+    private var workItem: TaskWorkItem? {
+        if case .workItem(let item) = subject { return item }
+        return nil
+    }
+
+    private var pullRequest: (TaskPullRequest, PullRequestAction)? {
+        if case .pullRequest(let pullRequest, let action) = subject { return (pullRequest, action) }
+        return nil
+    }
+
+    /// Push & Reply ships what an earlier run changed: only in its session, and its worktree.
+    private var mustContinue: Bool { pullRequest?.1 == .pushAndReply }
+
+    private var isContinuing: Bool { continuing != nil && (continueSession || mustContinue) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    Text("Repository").foregroundStyle(.secondary)
-                    repositoryRow
+                if let continuing {
+                    GridRow {
+                        Text("Session").foregroundStyle(.secondary)
+                        Picker("Session", selection: $continueSession) {
+                            Text("Go On with Its Last Session").tag(true)
+                            Text("Start a New One").tag(false)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                        .disabled(mustContinue)
+                        .help("Its last session goes on in its worktree, \(UserPath.abbreviate(continuing.worktree.path)), with what it changed")
+                    }
+                }
+                if !isContinuing {
+                    GridRow {
+                        Text("Repository").foregroundStyle(.secondary)
+                        repositoryRow
+                    }
                 }
                 GridRow {
                     Text("Model").foregroundStyle(.secondary)
@@ -93,23 +153,34 @@ struct CopilotComposerView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Send to Copilot")
+            Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
                 .font(.system(size: 20, weight: .bold))
             HStack(spacing: 6) {
-                Text(verbatim: "\(item.type) \(item.id)")
+                Text(verbatim: workItem.map { "\($0.type) \($0.id)" } ?? pullRequest.map { "!\($0.0.id)" } ?? "")
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
-                Text(item.title)
+                Text(workItem?.title ?? pullRequest?.0.title ?? "")
                     .font(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            if let entry = store.entries.first(where: { $0.workItem.matches(item.reference) }), entry.status.phase.isActive {
-                Label("Copilot is already working on this work item.", systemImage: "exclamationmark.triangle")
+            if isBusy {
+                Label("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").", systemImage: "exclamationmark.triangle")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.orange)
             }
         }
+    }
+
+    /// Copilot works on it already.
+    private var isBusy: Bool {
+        if let workItem {
+            return store.entries.first { $0.workItem?.matches(workItem.reference) == true }?.status.phase.isActive == true
+        }
+        if let (pullRequest, _) = self.pullRequest {
+            return store.latest(forPullRequest: PRKey(pullRequest.organization, pullRequest.id))?.status.phase.isActive == true
+        }
+        return false
     }
 
     private var repositoryRow: some View {
@@ -149,7 +220,7 @@ struct CopilotComposerView: View {
                 Button("Reset") { prompt = filledIn }
                     .buttonStyle(.borderless)
                     .disabled(prompt == filledIn)
-                    .help("Go back to the prompt in Settings")
+                    .help(workItem != nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
             }
             TextEditor(text: $prompt)
                 .font(.system(size: 12.5))
@@ -162,9 +233,7 @@ struct CopilotComposerView: View {
 
     private var footer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            Text(store.canSend
-                ? "Copilot works on its own on this Mac, in a new worktree, with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
-                : "The demo doesn't send anything.")
+            Text(store.canSend ? footnote : "The demo doesn't send anything.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -177,16 +246,36 @@ struct CopilotComposerView: View {
         }
     }
 
+    /// What Copilot does, on its own, as you.
+    private var footnote: String {
+        let place = isContinuing ? "in the same session and worktree as before" : "in a new worktree"
+        switch pullRequest?.1 {
+        case nil:
+            return "Copilot works on its own on this Mac, in a new worktree, with your tools, MCP servers and instructions. It pushes a branch and opens a pull request, as you."
+        case .pushAndReply?:
+            return "Copilot works on its own on this Mac, \(place), with your tools, MCP servers and instructions. It commits, pushes the pull request's branch, and replies on its threads, as you."
+        case .review?:
+            return "Copilot works on its own on this Mac, \(place), at the pull request's latest commit, with your tools, MCP servers and instructions. It changes nothing, and posts nothing."
+        case .some:
+            return "Copilot works on its own on this Mac, \(place), at the pull request's latest commit, with your tools, MCP servers and instructions. It doesn't push or reply: check its changes, then choose Push & Reply."
+        }
+    }
+
     private var canSend: Bool {
-        store.canSend && repository != nil && !isChecking && !model.trimmingCharacters(in: .whitespaces).isEmpty
+        store.canSend && (repository != nil || isContinuing) && !isChecking && !model.trimmingCharacters(in: .whitespaces).isEmpty
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func setUp() {
         guard !hasAppeared else { return }
         hasAppeared = true
-        if let remembered = store.repository(for: item) ?? store.knownRepositories.first {
-            check(remembered)
+        let remembered: URL?
+        switch subject {
+        case .workItem(let item): remembered = store.repository(for: item)
+        case .pullRequest(let pullRequest, _): remembered = continuing?.repository ?? store.repository(for: pullRequest.reference)
+        }
+        if let folder = remembered ?? store.knownRepositories.first {
+            check(folder)
         }
     }
 
@@ -198,7 +287,7 @@ struct CopilotComposerView: View {
             do {
                 let found = try await store.git().repository(at: folder)
                 repository = found
-                if prompt == filledIn {
+                if prompt == filledIn, let item = workItem {
                     filledIn = PromptTemplate.render(settings.copilotPromptTemplate, item: item, baseBranch: found.baseBranch)
                     prompt = filledIn
                 }
@@ -216,16 +305,18 @@ struct CopilotComposerView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
-        panel.message = "Choose the repository that work item \(item.id)'s change goes in."
+        panel.message = workItem.map { "Choose the repository that work item \($0.id)'s change goes in." }
+            ?? pullRequest.map { "Choose your clone of \($0.0.repository), the repository of pull request \($0.0.id)." } ?? ""
         if let current = repository?.root { panel.directoryURL = current.deletingLastPathComponent() }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         check(url)
     }
 
     private func send() {
-        guard canSend, let repository else { return }
-        store.send(item, prompt: prompt, options: CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort),
-                   repository: repository.root)
+        let continuing = isContinuing ? self.continuing : nil
+        guard canSend, let folder = continuing?.repository ?? repository?.root else { return }
+        store.send(subject, prompt: prompt, options: CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort),
+                   repository: folder, continuing: continuing)
         close()
     }
 }

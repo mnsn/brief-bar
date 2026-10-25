@@ -36,6 +36,7 @@ struct AzureDevOpsSettings: View {
         Toggle("Summaries by Apple Intelligence", isOn: $settings.summaries)
             .disabled(!store.summarizer.isAvailable)
         Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
+        Toggle("Follow Pipelines After You Merge", isOn: $settings.followMerges)
         ChatLinksSetting()
 
         SettingsDivider()
@@ -55,6 +56,7 @@ struct AzureDevOpsSettings: View {
         Menu("Organizations") {
             OrganizationsMenuContent()
         }
+        WatchedPullRequestsSetting()
 
         SettingsDivider()
 
@@ -95,6 +97,60 @@ struct ChatLinksSetting: View {
         if settings.chatLinksEnabled && store.chatAccess == .denied {
             Button("Allow Full Disk Access…") { store.showChatAccessSetup?() }
         }
+    }
+}
+
+/// Pull requests you watch by their links: a way to add one, and, for each you watch, to stop.
+struct WatchedPullRequestsSetting: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        if settings.watchedPullRequests.isEmpty {
+            Button("Watch a Pull Request…") { WatchPrompt.ask(store: store) }
+                .disabled(store.mode == .demo)
+        } else {
+            Menu("Watched Pull Requests") {
+                ForEach(settings.watchedPullRequests, id: \.self) { link in
+                    Button("Stop Watching \(title(link))") { settings.unwatch([link.key]) }
+                }
+                Divider()
+                Button("Watch a Pull Request…") { WatchPrompt.ask(store: store) }
+                    .disabled(store.mode == .demo)
+            }
+        }
+    }
+
+    /// Its title once it's been read, else its number and repository.
+    private func title(_ link: PullRequestLink) -> String {
+        store.items.first { $0.key == link.key }.map { "“\($0.title)”" } ?? "!\(link.number) in \(link.repository)"
+    }
+}
+
+/// Asks for a pull request's link, to watch it.
+@MainActor
+enum WatchPrompt {
+    static func ask(store: PRStore) {
+        let alert = NSAlert()
+        alert.messageText = "Watch a Pull Request"
+        alert.informativeText = "Paste its link. BriefBar lists it as if you reviewed it, with what's new on it, until it "
+            + "closes or you stop watching it: right-click it in the list."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = "https://dev.azure.com/contoso/Shop/_git/shop-web/pullrequest/4071"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Watch")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let link = PullRequestLink.find(in: field.stringValue).first else {
+            let error = NSAlert()
+            error.messageText = "That isn't a link to a pull request"
+            error.informativeText = "Copy it from the pull request's page in Azure DevOps: it ends in /pullrequest/ and its number."
+            error.runModal()
+            return
+        }
+        store.watch(link)
     }
 }
 

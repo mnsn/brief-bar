@@ -264,6 +264,11 @@ import BriefBarCore
         server.on("/_apis/policy/evaluations", query: ["artifactId": "vstfs:///CodeReview/CodeReviewId/p1/1"], json: Fixture.list([
             Fixture.evaluation("Build", status: "rejected", settings: ["displayName": "web-ci"], context: ["buildId": 4, "isExpired": false]),
         ]))
+        server.on("/p1/_apis/build/builds/4/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("s", "Stage", "Test", result: "failed"),
+            WorkFixture.record("t", "Task", "Run unit tests", parent: "s", result: "failed",
+                               issues: [["type": "error", "message": "2 tests failed in CheckoutTests."]]),
+        ]))
         server.on("/pullRequests/2/threads", json: Fixture.list([
             Fixture.thread(7, comments: [Fixture.comment(1, People.sam, "Hi @<\(People.me.id)>", at: now.addingTimeInterval(-minute))],
                            published: now.addingTimeInterval(-minute)),
@@ -282,13 +287,84 @@ import BriefBarCore
 
         let items = classify(snapshot, now: now)
         #expect(items[1]?.group == .failing)
+        #expect(items[1]?.detail == "web-ci · Run unit tests: 2 tests failed in CheckoutTests.")
         #expect(items[2]?.reason == .mentioned)
         #expect(items[2]?.detail == "Hi @Robin Diaz")
         #expect(items[3]?.group == .done)
 
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
-        // connectionData, three lists, and two requests for each of the two active pull requests.
-        #expect(server.requests.count == 8)
+        // connectionData, three lists, two requests for each of the two active pull requests, and the failed build's
+        // timeline.
+        #expect(server.requests.count == 9)
+    }
+
+    @Test func readsWhereEachFailedBuildFailedOnce() async throws {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [
+            Fixture.pullRequest(1, created: now.addingTimeInterval(-day)),
+            Fixture.pullRequest(2, created: now.addingTimeInterval(-day)),
+        ])
+        func failedBuild(_ id: Int, completed: Date) -> [String: Any] {
+            Fixture.evaluation("Build", status: "rejected", settings: ["displayName": "web-ci"], context: ["buildId": id], completed: completed)
+        }
+        server.on("/_apis/policy/evaluations", query: ["artifactId": "vstfs:///CodeReview/CodeReviewId/p1/1"],
+                  json: Fixture.list([failedBuild(4, completed: now.addingTimeInterval(-hour))]))
+        server.on("/_apis/policy/evaluations", query: ["artifactId": "vstfs:///CodeReview/CodeReviewId/p1/2"],
+                  json: Fixture.list([failedBuild(5, completed: now.addingTimeInterval(-hour))]))
+        server.on("/builds/4/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("t", "Task", "Compile", result: "failed", issues: [["type": "error", "message": "CS0103"]]),
+        ]))
+        // Build 5's timeline isn't there.
+        let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(
+            organizations: [Fixture.org], planner: RefreshPlanner.Options(busyInterval: 0, activeInterval: 0, quietInterval: 0)
+        )) { _ in }
+        func timelineRequests(_ build: Int) -> Int {
+            server.requests.filter { $0.url?.path.hasSuffix("/builds/\(build)/timeline") == true }.count
+        }
+
+        await engine.refreshNow()
+        var items = classify(await engine.currentSnapshot(), now: now)
+        #expect(items[1]?.detail == "web-ci · Compile: CS0103")
+        #expect(items[2]?.detail == "web-ci")
+        #expect(items[2]?.failure == nil)
+
+        // Neither is read again while the builds stay as they were, though the details are.
+        await engine.refreshNow()
+        #expect(timelineRequests(4) == 1)
+        #expect(timelineRequests(5) == 1)
+        #expect(classify(await engine.currentSnapshot(), now: now)[1]?.failure?.step == "Compile")
+
+        // Retried, build 4 fails again later, somewhere else: its timeline is read again.
+        server.on("/_apis/policy/evaluations", query: ["artifactId": "vstfs:///CodeReview/CodeReviewId/p1/1"],
+                  json: Fixture.list([failedBuild(4, completed: now)]))
+        server.on("/builds/4/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("t", "Task", "Run unit tests", result: "failed"),
+        ]))
+        await engine.refreshNow()
+        #expect(timelineRequests(4) == 2)
+        items = classify(await engine.currentSnapshot(), now: now)
+        #expect(items[1]?.detail == "web-ci · Run unit tests failed")
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    @Test func aTimelineThatCantBeReadIsTriedAgainLater() async throws {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, created: now.addingTimeInterval(-day))])
+        server.on("/_apis/policy/evaluations", json: Fixture.list([
+            Fixture.evaluation("Build", status: "rejected", settings: ["displayName": "web-ci"], context: ["buildId": 4]),
+        ]))
+        server.on("/builds/4/timeline") { _ in .status(500) }
+        let engine = PulseEngine(client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org])) { _ in }
+        await engine.refreshNow()
+        #expect(classify(await engine.currentSnapshot(), now: now)[1]?.detail == "web-ci")
+
+        server.on("/builds/4/timeline", json: WorkFixture.timeline([
+            WorkFixture.record("t", "Task", "Compile", result: "failed"),
+        ]))
+        await engine.refreshNow()
+        #expect(classify(await engine.currentSnapshot(), now: now)[1]?.detail == "web-ci · Compile failed")
     }
 
     @Test func policiesYouCantReadAreUnknownNotNone() async throws {

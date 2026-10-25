@@ -95,7 +95,7 @@ struct PullRequestsPage: View {
                     if index > 0 {
                         Divider().padding(.leading, 44).padding(.trailing, 12)
                     }
-                    PRRowView(item: item, now: store.now, openSource: source(item)) { store.open(item) }
+                    PRRowView(item: item, now: store.now, openSource: source(item), stopWatching: watching(item)) { store.open(item) }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                 }
@@ -130,7 +130,7 @@ struct PullRequestsPage: View {
                 if showIdle {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item)) { store.open(item) }
+                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item), stopWatching: watching(item)) { store.open(item) }
                                 .padding(.horizontal, 6)
                         }
                     }
@@ -143,5 +143,9 @@ struct PullRequestsPage: View {
 
     private func source(_ item: PRSnapshot) -> (() -> Void)? {
         item.chatSource == nil ? nil : { store.openSource(item) }
+    }
+
+    private func watching(_ item: PRSnapshot) -> (() -> Void)? {
+        item.isWatched ? { store.stopWatching(item) } : nil
     }
 }

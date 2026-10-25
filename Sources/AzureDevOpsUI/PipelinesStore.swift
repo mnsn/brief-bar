@@ -198,6 +198,24 @@ final class PipelinesStore: ObservableObject {
         }
     }
 
+    /// The pipeline a link is to: a pipeline's link, or one of its runs'.
+    func pipeline(for link: PipelineLink) async -> Result<PipelineRef, ADOError> {
+        if mode == .demo {
+            let all = DemoData.pipelines().map(\.pipeline) + DemoData.morePipelines
+            guard case .pipeline(let id) = link.target, let found = all.first(where: { $0.definitionId == id }) else {
+                return .failure(.notFound)
+            }
+            return .success(found)
+        }
+        do {
+            return .success(try await PipelineSearch.pipeline(for: link, client: client))
+        } catch let error as ADOError {
+            return .failure(error)
+        } catch {
+            return .failure(.network(error.localizedDescription))
+        }
+    }
+
     func open(_ run: PipelineRun) {
         AzureDevOps.open(run.webURL)
     }

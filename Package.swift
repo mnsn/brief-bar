@@ -80,7 +80,7 @@ let package = Package(
         // Apple's, so it keeps library validation on, and starts the updater for in-app updates.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI", "CopilotTasks"]
         ),
         // The updater: Sparkle, in a helper app inside BriefBar.app, with library validation off and none of
         // BriefBar's privacy permissions (see Sources/BriefBarUpdater/UpdaterController.swift).
@@ -106,9 +106,10 @@ let package = Package(
             name: "ChromiumIndexedDBTests",
             dependencies: ["ChromiumIndexedDB", "BriefBarCore"]
         ),
+        // With the app code too, for `--mcp`'s reader, which reads through its stub Azure DevOps.
         .testTarget(
             name: "AzureDevOpsCoreTests",
-            dependencies: ["AzureDevOpsCore", "NotificationCenterDB", "BriefBarCore"]
+            dependencies: ["AzureDevOpsCore", "NotificationCenterDB", "BriefBarCore", "AzureDevOpsUI", "BriefBarUI"]
         ),
         .testTarget(
             name: "CopilotCoreTests",
@@ -125,6 +126,10 @@ let package = Package(
         .testTarget(
             name: "AzureDevOpsUITests",
             dependencies: ["AzureDevOpsUI", "AzureDevOpsCore", "BriefBarUI", "BriefBarCore", "CopilotTasks"]
+        ),
+        .testTarget(
+            name: "CopilotUITests",
+            dependencies: ["CopilotUI", "CopilotCore", "BriefBarUI"]
         ),
     ]
 )

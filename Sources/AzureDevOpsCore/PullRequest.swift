@@ -121,6 +121,8 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
     public var autoComplete: Bool
     public var sourceCommit: String?
     public var targetCommit: String?
+    /// The commit that merged it, once it's completed: its target branch's pipelines run on it.
+    public var mergeCommit: String?
 
     public var id: PRKey { key }
 
@@ -128,7 +130,8 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
         key: PRKey, title: String, status: Status = .active, author: Person, createdAt: Date, closedAt: Date? = nil,
         projectId: String, projectName: String, repositoryId: String, repositoryName: String,
         sourceBranch: String = "feature", targetBranch: String = "main", isDraft: Bool = false, mergeStatus: String? = "succeeded",
-        reviewers: [Reviewer] = [], autoComplete: Bool = false, sourceCommit: String? = nil, targetCommit: String? = nil
+        reviewers: [Reviewer] = [], autoComplete: Bool = false, sourceCommit: String? = nil, targetCommit: String? = nil,
+        mergeCommit: String? = nil
     ) {
         self.key = key
         self.title = title
@@ -148,6 +151,7 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
         self.autoComplete = autoComplete
         self.sourceCommit = sourceCommit
         self.targetCommit = targetCommit
+        self.mergeCommit = mergeCommit
     }
 
     public init(organization: String, _ dto: ADOPullRequest) {
@@ -178,7 +182,8 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
             },
             autoComplete: dto.autoCompleteSetBy != nil,
             sourceCommit: dto.lastMergeSourceCommit?.commitId,
-            targetCommit: dto.lastMergeTargetCommit?.commitId
+            targetCommit: dto.lastMergeTargetCommit?.commitId,
+            mergeCommit: dto.lastMergeCommit?.commitId
         )
     }
 
