@@ -405,15 +405,50 @@ public actor PipelinesEngine {
     }
 }
 
-/// Finds pipelines to pin: a project's pipelines by name, and the projects to look in. Only when you search.
+/// Finds pipelines to pin: a project's pipelines by name or number, and the projects to look in. Only when you search.
 public enum PipelineSearch {
+    /// A project's pipelines whose names contain `text`. When it's a number, such as `1234` or `#1234`, the pipeline
+    /// with that ID (`definitionId=1234` in its address) comes first, found at the same time.
     public static func pipelines(
         containing text: String, organization: String, projectId: String, client: ADOClient
     ) async throws -> [PipelineRef] {
-        let list = try await client.get(
-            ADOEndpoint.buildDefinitions(organization: organization, projectId: projectId, containing: text), as: ADOList<ADOBuildDefinition>.self
+        async let named = definitions(
+            ADOEndpoint.buildDefinitions(organization: organization, projectId: projectId, containing: text), organization: organization, client: client
         )
-        return list.value.compactMap { PipelineRef(organization: organization, $0) }
+        var numbered: [PipelineRef] = []
+        if let id = number(in: text) {
+            numbered = try await definitions(
+                ADOEndpoint.buildDefinitions(organization: organization, projectId: projectId, ids: [id]), organization: organization, client: client
+            )
+        }
+        return merge(numbered: numbered, named: try await named)
+    }
+
+    /// Pipelines at hand, such as the demo's, searched as Azure DevOps would.
+    public static func pipelines(_ all: [PipelineRef], containing text: String) -> [PipelineRef] {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let id = number(in: text)
+        return merge(
+            numbered: all.filter { $0.definitionId == id },
+            named: all.filter { trimmed.isEmpty || $0.name.localizedCaseInsensitiveContains(trimmed) }
+        )
+    }
+
+    /// The pipeline ID a search is, such as `1234` or `#1234`; nil for a name. Azure DevOps's are positive 32-bit numbers.
+    public static func number(in text: String) -> Int? {
+        var digits = Substring(text.trimmingCharacters(in: .whitespaces))
+        if digits.first == "#" { digits = digits.dropFirst() }
+        guard digits.allSatisfy({ $0.isASCII && $0.isNumber }), let id = Int32(digits), id > 0 else { return nil }
+        return Int(id)
+    }
+
+    /// The pipeline with the number first, then the ones named like it, each once.
+    private static func merge(numbered: [PipelineRef], named: [PipelineRef]) -> [PipelineRef] {
+        numbered + named.filter { pipeline in !numbered.contains { $0.id == pipeline.id } }
+    }
+
+    private static func definitions(_ url: URL, organization: String, client: ADOClient) async throws -> [PipelineRef] {
+        try await client.get(url, as: ADOList<ADOBuildDefinition>.self).value.compactMap { PipelineRef(organization: organization, $0) }
     }
 
     /// An organization's projects, by name.

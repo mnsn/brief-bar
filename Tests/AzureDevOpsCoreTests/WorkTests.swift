@@ -540,6 +540,30 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         #expect(RunDuration.short(7_200) == "2h")
     }
 
+    @Test func readsAPipelineNumberFromASearch() {
+        #expect(PipelineSearch.number(in: "1234") == 1234)
+        #expect(PipelineSearch.number(in: " #42 ") == 42)
+        // Names, signs, other scripts' digits, and IDs Azure DevOps can't have.
+        for text in ["", "#", "web", "12a", "1 2", "##3", "+12", "-3", "0", "٤٢", "99999999999"] {
+            #expect(PipelineSearch.number(in: text) == nil, "“\(text)”")
+        }
+    }
+
+    @Test func searchesPipelinesAtHandByNameOrNumber() {
+        func ref(_ id: Int, _ name: String) -> PipelineRef {
+            PipelineRef(organization: Fixture.org, projectId: "p1", projectName: "Shop", definitionId: id, name: name)
+        }
+        let all = [ref(7, "web CI"), ref(31, "release 2031"), ref(2031, "nightly")]
+        #expect(PipelineSearch.pipelines(all, containing: " ").map(\.definitionId) == [7, 31, 2031])
+        #expect(PipelineSearch.pipelines(all, containing: "WEB").map(\.definitionId) == [7])
+        // The pipeline with the number first, then the ones named like it.
+        #expect(PipelineSearch.pipelines(all, containing: "2031").map(\.definitionId) == [2031, 31])
+        #expect(PipelineSearch.pipelines(all, containing: "#7").map(\.definitionId) == [7])
+        #expect(PipelineSearch.pipelines(all, containing: "8").isEmpty)
+        // Once, even when its name has its number.
+        #expect(PipelineSearch.pipelines([ref(5, "deploy 5")], containing: "5").map(\.definitionId) == [5])
+    }
+
     @Test func buildsWorkEndpointURLs() {
         let team = TeamRef(organization: "contoso", projectId: "p1", projectName: "My Shop", id: "t1", name: "Shop Team")
         #expect(ADOEndpoint.myTeams(organization: "contoso").absoluteString
@@ -556,6 +580,8 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
             == "https://dev.azure.com/contoso/p1/_apis/build/definitions?name=%2Aweb%2A&queryOrder=definitionNameAscending&$top=50&api-version=7.1")
         #expect(ADOEndpoint.buildDefinitions(organization: "contoso", projectId: "p1", containing: "").absoluteString
             == "https://dev.azure.com/contoso/p1/_apis/build/definitions?queryOrder=definitionNameAscending&$top=50&api-version=7.1")
+        #expect(ADOEndpoint.buildDefinitions(organization: "contoso", projectId: "p1", ids: [31]).absoluteString
+            == "https://dev.azure.com/contoso/p1/_apis/build/definitions?definitionIds=31&api-version=7.1")
         #expect(ADOEndpoint.builds(organization: "contoso", projectId: "p1", definitionIds: [9, 4], branch: "main").absoluteString
             == "https://dev.azure.com/contoso/p1/_apis/build/builds?definitions=4%2C9&maxBuildsPerDefinition=10"
             + "&queryOrder=queueTimeDescending&branchName=refs%2Fheads%2Fmain&api-version=7.1")
@@ -1049,6 +1075,29 @@ private let sprint = Sprint(id: "i1", name: "Sprint 7", path: "Shop\\Sprint 7",
         let found = try await PipelineSearch.pipelines(containing: "web", organization: Fixture.org, projectId: "p1", client: server.client())
         #expect(found.map(\.name) == ["web CI"])
         #expect(found.first?.folder == "Shop")
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+        // A name isn't a number: nothing more to look up.
+        #expect(server.requests.count == 1)
+    }
+
+    @Test func findsAPipelineByNumberFirst() async throws {
+        let server = StubServer()
+        let web31 = ["id": 31, "name": "web 31", "path": "\\", "project": ["id": "p1", "name": "Shop"]] as [String: Any]
+        server.on("/p1/_apis/build/definitions", query: ["definitionIds": "31"], json: Fixture.list([web31]))
+        server.on("/p1/_apis/build/definitions", query: ["name": "*31*"], json: Fixture.list([
+            ["id": 5, "name": "release 2031", "path": "\\Shop", "project": ["id": "p1", "name": "Shop"]], web31,
+        ]))
+        let found = try await PipelineSearch.pipelines(containing: "31", organization: Fixture.org, projectId: "p1", client: server.client())
+        #expect(found.map(\.definitionId) == [31, 5])
+        #expect(server.requests.count == 2)
+
+        // A number no pipeline has still finds the ones named like it.
+        server.on("/p1/_apis/build/definitions", query: ["definitionIds": "9"], json: Fixture.list([]))
+        server.on("/p1/_apis/build/definitions", query: ["name": "*9*"], json: Fixture.list([
+            ["id": 12, "name": "v9 deploy", "path": "\\", "project": ["id": "p1", "name": "Shop"]],
+        ]))
+        let named = try await PipelineSearch.pipelines(containing: "9", organization: Fixture.org, projectId: "p1", client: server.client())
+        #expect(named.map(\.name) == ["v9 deploy"])
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 }

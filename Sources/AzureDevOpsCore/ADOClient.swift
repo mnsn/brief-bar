@@ -278,6 +278,12 @@ public enum ADOEndpoint {
         return url("https://dev.azure.com", [organization, projectId, "_apis", "build", "definitions"], query)
     }
 
+    /// A project's pipelines with these IDs. Ones it doesn't have are left out.
+    public static func buildDefinitions(organization: String, projectId: String, ids: [Int]) -> URL {
+        url("https://dev.azure.com", [organization, projectId, "_apis", "build", "definitions"],
+            [("definitionIds", ids.map(String.init).joined(separator: ",")), ("api-version", apiVersion)])
+    }
+
     /// The latest runs of each of a project's pipelines, newest first, in one request.
     public static func builds(
         organization: String, projectId: String, definitionIds: [Int], branch: String? = nil, perDefinition: Int = 10

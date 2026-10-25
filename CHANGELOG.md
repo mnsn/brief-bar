@@ -11,6 +11,10 @@
   so, and its version goes up, so it pauses until you've looked.
 - **Open the window from every list.** **Overview** at the top opens the window's Overview, with how
   many things need you. The list's title, such as **Pull Requests ›**, opens its page.
+- **Find a pipeline by its number.** **Add Pipeline**'s search finds pipelines by number as well as by
+  name, in the same field: type `1234` or `#1234`, the number in the pipeline's address in Azure DevOps
+  (`definitionId=1234`), and that pipeline comes first, then the ones named like it. Each result shows
+  its number.
 
 ## 0.1.0 - 2026-10-22
 

@@ -182,12 +182,10 @@ final class PipelinesStore: ObservableObject {
         return projects
     }
 
-    /// A project's pipelines whose names contain `text`.
+    /// A project's pipelines whose names contain `text`, after the one with that number when `text` is a number.
     func search(_ text: String, in project: ProjectRef) async -> Result<[PipelineRef], ADOError> {
         if mode == .demo {
-            let all = DemoData.pipelines().map(\.pipeline) + DemoData.morePipelines
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            return .success(all.filter { trimmed.isEmpty || $0.name.localizedCaseInsensitiveContains(trimmed) })
+            return .success(PipelineSearch.pipelines(DemoData.pipelines().map(\.pipeline) + DemoData.morePipelines, containing: text))
         }
         do {
             return .success(try await PipelineSearch.pipelines(

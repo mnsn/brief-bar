@@ -346,7 +346,7 @@ private struct FailureNote: View {
     }
 }
 
-/// Finds pipelines in a project by name, to pin them.
+/// Finds pipelines in a project by name or number, to pin them.
 private struct AddPipelineSheet: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @EnvironmentObject private var store: PRStore
@@ -381,7 +381,7 @@ private struct AddPipelineSheet: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search pipelines by name", text: $text)
+                    TextField("Search pipelines by name or number", text: $text)
                         .textFieldStyle(.plain)
                         .onSubmit { search(after: 0) }
                     if isSearching {
@@ -439,7 +439,7 @@ private struct AddPipelineSheet: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if results.isEmpty && !isSearching {
-            Text(text.isEmpty ? "No pipelines in this project." : "No pipelines named like “\(text)”.")
+            Text(noResults)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -454,6 +454,11 @@ private struct AddPipelineSheet: View {
             }
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.03)))
         }
+    }
+
+    private var noResults: String {
+        if text.isEmpty { return "No pipelines in this project." }
+        return PipelineSearch.number(in: text) == nil ? "No pipelines named like “\(text)”." : "No pipelines numbered or named like “\(text)”."
     }
 
     private func loadProjects() async {
@@ -509,12 +514,10 @@ private struct ResultRow: View {
                 Text(pipeline.name)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                if !pipeline.folder.isEmpty {
-                    Text(pipeline.folder.replacingOccurrences(of: "\\", with: " › "))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(details)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 8)
             Button(action: toggle) {
@@ -529,5 +532,11 @@ private struct ResultRow: View {
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(isHovered ? 0.05 : 0)))
         .onHover { isHovered = $0 }
+    }
+
+    /// Its number, which finds it too, and its folder.
+    private var details: String {
+        let number = "#\(pipeline.definitionId)"
+        return pipeline.folder.isEmpty ? number : "\(number) · \(pipeline.folder.replacingOccurrences(of: "\\", with: " › "))"
     }
 }
