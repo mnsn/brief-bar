@@ -217,6 +217,12 @@ complete, and, after you merge one, a pipeline that fails or waits for an approv
 passing. Clicking one opens the comment, or the run, it's about. The first time, BriefBar finds the
 organizations where you have pull requests; **Organizations** in its settings changes them.
 
+**Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
+was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
+**Watching**, with replies and mentions needing you there as on any review, until it closes or you stop
+watching it (right-click it, or **Watched Pull Requests** in its settings). Once you vote on it, you're
+its reviewer.
+
 **Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the pipelines
 that run on its merge commit, and the ones those start, such as a deployment, for as long as Done keeps
 it. Its row says how they're going ("Merged into main · 2 pipelines running"), moves to **Failing** if
@@ -407,6 +413,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
+| | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
@@ -460,8 +467,8 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which of your Azure DevOps pull requests you've seen, with each account, and your
-  organizations; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  read; which of your Azure DevOps pull requests you've seen, with each account, your organizations,
+  and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; and its settings. Turning a source off deletes what it saved.
 - **Programs it runs**, such as the Azure CLI and the Copilot CLI, never get its permissions: macOS
   would otherwise let them use BriefBar's Full Disk Access.
@@ -508,7 +515,8 @@ request, its pipelines add a few more, while they run.
 ### Why isn't a pull request assigned to my team shown?
 
 Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
-requests where you were added yourself, including by a policy, are shown.
+requests where you were added yourself, including by a policy, are shown. To follow one of your team's
+anyway, watch it: **Watch a Pull Request…** in Azure DevOps' settings takes its link.
 
 ### Why does a failed build show only its first error?
 

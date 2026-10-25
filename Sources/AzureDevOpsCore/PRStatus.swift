@@ -104,12 +104,14 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
     public var chatLinks: [ChatLink]
     /// Once it's merged, the pipelines that ran on it.
     public var merge: MergePipelines?
+    /// You watch it: you chose to follow it, by its link.
+    public var isWatched: Bool
 
     public var id: PRKey { pullRequest.key }
 
     public init(
         pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = [],
-        merge: MergePipelines? = nil
+        merge: MergePipelines? = nil, isWatched: Bool = false
     ) {
         self.pullRequest = pullRequest
         self.role = role
@@ -117,6 +119,16 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
         self.me = me.lowercased()
         self.chatLinks = chatLinks
         self.merge = merge
+        self.isWatched = isWatched
+    }
+
+    /// As a pull request you watch: one you're not on is listed as if you reviewed it, rather than only while a
+    /// message about it needs you.
+    public func watched() -> PRRecord {
+        var record = self
+        record.isWatched = true
+        if record.role == .linked { record.role = .reviewer }
+        return record
     }
 }
 
@@ -151,6 +163,8 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var failure: PipelineFailure? = nil
     /// Once it's merged, how the pipelines that ran on it stand.
     public var merge: MergeSummary? = nil
+    /// You watch it, by its link.
+    public var isWatched = false
 
     public var id: String { key.description }
 
@@ -221,6 +235,7 @@ public enum PRClassifier {
             since: lastActivity, url: pr.webURL, events: [], approvals: approvals.map(\.person.name),
             checkState: details.flatMap { checkState($0.checks) }, hasDetails: details != nil
         )
+        snapshot.isWatched = record.isWatched
         func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: String? = nil, since: Date? = nil) {
             snapshot.group = group
             snapshot.reason = reason
@@ -321,7 +336,7 @@ public enum PRClassifier {
                     snapshot.failure = details?.checks.first { $0.failedBuildId != nil && $0.isBlocking && $0.failure != nil }?.failure
                 }
             case .reviewer, .linked:
-                classifyReviewer(pr, me: me, approvals: approvals, set: set)
+                classifyReviewer(pr, me: me, approvals: approvals, watched: record.isWatched, set: set)
             }
         }
         // What you answered stays in view until you've seen it, unless there's something else to do.
@@ -703,7 +718,7 @@ public enum PRClassifier {
     }
 
     private static func classifyReviewer(
-        _ pr: PullRequest, me: String, approvals: [Reviewer], set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, String?, Date?) -> Void
     ) {
         let mine = pr.reviewer(me)
         switch mine?.vote ?? .none {
@@ -715,7 +730,8 @@ public enum PRClassifier {
         case .rejected:
             set(.waiting, .waitingForAuthor, "You rejected it", "By \(pr.author.name)", nil)
         case .none:
-            set(.toReview, .reviewPending, mine?.isRequired == true ? "Required review" : "Optional review", "By \(pr.author.name)", nil)
+            let headline = mine?.isRequired == true ? "Required review" : mine == nil && watched ? "Watching" : "Optional review"
+            set(.toReview, .reviewPending, headline, "By \(pr.author.name)", nil)
         }
     }
 

@@ -621,7 +621,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
@@ -719,6 +719,17 @@ this in Teams"), unless it's failing, ready to complete or to review. It isn't c
 bar, announced, or in the brief. Once no popover or window page shows the pull requests anymore,
 each pull request one of them showed in Answered is marked seen up to when you answered it, not up to
 the time it closed, so anything that came later still counts as new. Widgets don't count as seeing it.
+
+### Watching a pull request
+
+**Watch a Pull Request…** takes a pull request's link, and keeps it, as a link, in the preferences
+(`ado.watchedPullRequests`): it's your choice, like your organizations. BriefBar reads it by its ID with
+the pull requests sent in chats, and its details as it does every pull request's. One you're not on is
+listed as a review, under **To Review** as **Watching** (`PRRecord.watched()`), with its replies and
+mentions; one you are on is listed as it is. What you've seen of it is kept in the preferences, as for
+your own. Once it's completed or abandoned, or can't be found or read anymore, BriefBar stops watching
+it (`PulseSnapshot.closedLinks`); a failure that may pass doesn't count. The command line lists the ones
+the app watches too.
 
 ### Pipelines after your merges
 

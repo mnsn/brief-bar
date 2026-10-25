@@ -161,7 +161,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         )
     }
 
-    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory.
+    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
             PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now, options: options)
@@ -195,8 +195,15 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
                 return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(error.description)")
             }
         }
-        let configuration = PulseEngine.Configuration(organizations: organizations, keepDoneFor: classifierOptions().keepDoneFor)
-        let snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration) }
+        let configuration = PulseEngine.Configuration(
+            organizations: organizations, keepDoneFor: classifierOptions().keepDoneFor,
+            followMerges: appDefaults?.object(forKey: SettingsKey.followMerges) as? Bool ?? true
+        )
+        // The pull requests you watch, as the app keeps them.
+        let watched = Set((appDefaults?.data(forKey: SettingsKey.watchedPullRequests)
+            .flatMap { try? JSONDecoder().decode([PullRequestLink].self, from: $0) } ?? []).map(\.key))
+        var snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration, linked: watched) }
+        snapshot.records = snapshot.records.map { watched.contains($0.id) ? $0.watched() : $0 }
         return Loaded(
             organizations: organizations,
             items: resolve(snapshot, seen: seenBook().state(for: snapshot.account), options: classifierOptions()),

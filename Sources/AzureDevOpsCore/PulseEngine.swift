@@ -65,11 +65,13 @@ public struct PulseSnapshot: Sendable, Equatable {
     public var refreshedAt: Date?
     public var isRefreshing: Bool
     public var hasLoaded: Bool
+    /// Pull requests asked for by their links that turned out to be closed, gone, or not yours to read.
+    public var closedLinks: Set<PRKey>
 
     public init(
         records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
         firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false
+        hasLoaded: Bool = false, closedLinks: Set<PRKey> = []
     ) {
         self.records = records
         self.organizations = organizations
@@ -80,6 +82,7 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.refreshedAt = refreshedAt
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
+        self.closedLinks = closedLinks
     }
 }
 
@@ -237,6 +240,8 @@ public actor PulseEngine {
     private var linkedFailures: [PRKey: Date] = [:]
     /// Linked pull requests as last read, and when: kept between refreshes, which read only a few each.
     private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
+    /// Linked pull requests read as closed, or gone or forbidden.
+    private var closedLinks: Set<PRKey> = []
     private var active: [PRKey: Listed] = [:]
     private var done: [PRKey: PullRequest] = [:]
     private var details: [PRKey: PRDetails] = [:]
@@ -324,6 +329,7 @@ public actor PulseEngine {
         let added = !keys.subtracting(linkedKeys).isEmpty
         linkedKeys = keys
         linkedFailures = linkedFailures.filter { keys.contains($0.key) }
+        closedLinks = closedLinks.intersection(keys)
         // The ones listed only because someone sent them go with their links, now rather than on the next refresh.
         let gone = Set(linked.keys).subtracting(keys)
         linked = linked.filter { keys.contains($0.key) }
@@ -528,15 +534,23 @@ public actor PulseEngine {
                 linkedFailures[key] = pr.status == .active ? nil : date
                 guard pr.status == .active, linkedKeys.contains(key) else {
                     linked[key] = nil
+                    if linkedKeys.contains(key) { closedLinks.insert(key) }
                     continue
                 }
+                closedLinks.remove(key)
                 let role: PRRole = pr.author.id == me ? .author : pr.reviewer(me) != nil ? .reviewer : .linked
                 linked[key] = (Listed(pullRequest: pr, role: role), date)
             } catch {
                 linkedFailures[key] = date
                 // Gone, or no access: nothing to list. Otherwise it stays as last read.
-                if case .notFound = error as? ADOError { linked[key] = nil }
-                if case .forbidden = error as? ADOError { linked[key] = nil }
+                if case .notFound = error as? ADOError {
+                    linked[key] = nil
+                    closedLinks.insert(key)
+                }
+                if case .forbidden = error as? ADOError {
+                    linked[key] = nil
+                    closedLinks.insert(key)
+                }
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
@@ -550,6 +564,7 @@ public actor PulseEngine {
         entries = [:]
         vanished = [:]
         linked = [:]
+        closedLinks = []
         forgetRuns()
         problem = .noOrganizations
         hasLoaded = true
@@ -566,6 +581,7 @@ public actor PulseEngine {
         vanished = [:]
         linkedFailures = [:]
         linked = [:]
+        closedLinks = []
         forgetRuns()
     }
 
@@ -919,7 +935,7 @@ public actor PulseEngine {
         records.sort { $0.id < $1.id }
         return PulseSnapshot(
             records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
-            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
+            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks
         )
     }
 
