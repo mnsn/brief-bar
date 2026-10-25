@@ -128,6 +128,13 @@ import Testing
         #expect(demoSource().statusView() == nil)
     }
 
+    /// Agents (`--mcp`) get tools from Azure DevOps and Copilot, never from GitHub.
+    @Test func givesAgentsNothing() {
+        for demo in [true, false] {
+            #expect(GitHubCommandLine.mcp(CommandLineOptions(arguments: [], demo: demo)) == nil)
+        }
+    }
+
     /// Turning GitHub off keeps its settings: it saves nothing else.
     @Test func turningOffKeepsTheRefreshSetting() {
         let defaults = MemoryDefaults()

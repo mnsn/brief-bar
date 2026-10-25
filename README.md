@@ -19,7 +19,8 @@ DevOps cover later sources too, but only the ones you turn on. Several sources c
 item, a desktop widget or a window, and you can hide what you don't need. An item they share can add
 their counts up by what they mean, ✋ needs you, ✕ something's wrong, ✓ done or ready, and list
 everything together by state under a brief of what matters; the window and a widget give you the same
-overview.
+overview. And if you let them, agents, such as the Copilot CLI, can ask it what needs you, and work
+from what it knows ([Agents](#agents)).
 
 <p align="center">
   <picture>
@@ -212,19 +213,33 @@ Apple Intelligence sums up the newest of each.
 |---|---|
 | **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on) |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
-| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired |
+| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
 | **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
 | **Waiting** | Your pull requests waiting for reviewers, a build or a requirement, and reviews you're waiting on the author for |
-| **Done** | Completed or abandoned in the last day |
+| **Done** | Completed or abandoned in the last day, and while the pipelines that run after it merged are still going or wait for an approval |
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
 
 **Needs You** works like an inbox: opening a pull request from BriefBar, or **Mark as Seen**, moves it
 on until something new happens. The first time, only the last three days count as new, and each
 account you sign in to the Azure CLI with has its own. Notifications announce new replies, mentions,
-comments, review requests, votes, new commits, failed builds, and pull requests that become ready or
-complete. Clicking one opens the comment it's about. The first time, BriefBar finds the
+comments, review requests, votes, new commits, failed builds, pull requests that become ready or
+complete, and, after you merge one, a pipeline that fails or waits for an approval, or all of them
+passing. Clicking one opens the comment, or the run, it's about. The first time, BriefBar finds the
 organizations where you have pull requests; **Organizations** in its settings changes them.
+
+**Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
+was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
+**Watching**, with replies and mentions needing you there as on any review, until it closes or you stop
+watching it (right-click it, or **Watched Pull Requests** in its settings). Once you vote on it, you're
+its reviewer.
+
+**Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the pipelines
+that run on its merge commit, and the ones those start, such as a deployment, for as long as Done keeps
+it. Its row says how they're going ("Merged into main · 2 pipelines running"), moves to **Failing** if
+one fails, saying where, and to **Waiting for approval** while a stage waits for one; the Pipelines page
+lists them under **After Your Merges**. **Follow Pipelines After You Merge**, in its settings, turns it
+off.
 
 **Pull Requests Sent in Chats**, off by default, lists a pull request as needing you when someone
 sends you a link to it, in Teams, Slack, an email or any other app, as "Dana sent this in Teams",
@@ -244,14 +259,16 @@ are in a card of their own, and your avatar has a blue ring. **Just Mine** shows
 team menu shows another team's sprint. Its widget and menu-bar item list your own work; in the list,
 its title opens this page, and **Open Task Board** the sprint's task board in Azure DevOps.
 
-**Pipelines** shows the pipelines you pin, from any of your projects: how each one's latest run is
-going stage by stage, where it failed, and how its recent runs went. **Add Pipeline** searches a
-project's pipelines by name or number, and a pinned pipeline's menu shows only one branch's runs,
-moves it, or unpins it.
+**Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
+your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
+runs went. **Add Pipeline** searches a project's pipelines by name or number, or takes a link to a
+pipeline or to one of its runs, which pins the pipeline showing that run's branch; a pinned pipeline's
+menu shows only one branch's runs, moves it, or unpins it.
 
 Both start in BriefBar's window only, and read Azure DevOps only while something shows them on screen:
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
-covered, a menu-bar item or its list. Click anything to open it in Azure DevOps.
+covered, a menu-bar item or its list. The pipelines after your merges are the exception: they're read
+with your pull requests, so that you hear when one fails. Click anything to open it in Azure DevOps.
 
 <p align="center">
   <picture>
@@ -278,6 +295,24 @@ The standard prompt asks Copilot to read the work item with your Azure DevOps to
 repository does, build and test what it changed, then push and open the pull request. A work item's
 text is written by whoever wrote it, and goes to an agent that may run any command: send only work you'd
 hand to Copilot yourself.
+
+With it on, **your pull requests' menus send them to Copilot too** (right-click one):
+
+| Action | On | What Copilot does |
+|---|---|---|
+| **Fix Comments with Copilot…** | your pull request with unresolved comments | addresses each one that waits on you, quoted word for word, with its file and line, then builds and tests; it doesn't commit, push or reply |
+| **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
+| **Resolve Conflicts with Copilot…** | your pull request with merge conflicts | merges the target branch in and resolves the conflicts; it doesn't push |
+| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the same session: commits, pushes the branch (never with force), replies on the threads it addressed and resolves them |
+| **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
+
+The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: only Push & Reply may push,
+and a review can't change files or commit. Each works in a worktree detached at the pull request's latest
+commit (`copilot-worktrees/<repository>/pr-<id>`),
+in the clone of its repository you choose the first time, and a later one goes on with the last one's
+session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
+and its menu has the task's own menu. Comments are written by whoever wrote them, and go to an agent that
+may run any command: send only what you'd hand to Copilot yourself.
 
 ### GitHub Copilot
 
@@ -311,6 +346,38 @@ changed first.
 A pull request that's both yours and asks for your review shows once, as yours. Click one to open it on
 GitHub. If an organization uses SAML single sign-on and the GitHub CLI isn't authorized for it, the
 list says to authorize it, and shows the rest.
+
+## Agents
+
+Agents can ask BriefBar too, once you let them. `BriefBar --mcp` is a
+[Model Context Protocol](https://modelcontextprotocol.io) server, so the Copilot CLI, or any agent that
+speaks the protocol, can answer "what needs me?" or fix a pull request's comments with what BriefBar
+knows. It's off until you turn it on in **Settings › Agents**, which says what agents get first.
+Turning agents on adds BriefBar to the Copilot CLI's MCP servers (`copilot mcp add briefbar`), which
+the GitHub Copilot app's sessions use too, and turning them off removes it. For any other agent, the
+page shows the command to add.
+
+| Tool | What the agent gets |
+|---|---|
+| `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
+| `pull_requests` | Your pull requests by group, each with why it's there and its link |
+| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word |
+| `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
+| `pipelines` | Your pinned pipelines, and the ones after your merges |
+| `sprint` | Your team's sprint, or only your part of it |
+| `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
+| `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
+| `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
+| `pin_pipeline`, `unpin_pipeline` | Pins a pipeline by its link, or a run's, or unpins one |
+
+It serves only the sources that are on in BriefBar, reads as the app does, with your Azure CLI sign-in
+and only GET requests, and changes nothing in Azure DevOps: only BriefBar's own lists of the pull
+requests you watch and the pipelines you pin, which a running BriefBar picks up at once. It leaves
+Teams and GitHub out. What it answers goes to the agent's model, which may run in the cloud, so let
+only agents you'd show your pull requests to use it. Titles and comments come word for word from
+whoever wrote them, and an agent may act on what they say: keep its permissions to what you'd allow
+anyway. If an update gives agents more, they wait until you've seen what they get now, as a source
+does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
 ## Install
 
@@ -420,17 +487,21 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Mark Chats Read When You Read Them in Teams | on by default: reads how far you've read each chat from Teams' own data, read-only, and keeps only that, in memory |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
+| | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
+| | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
+| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
+
+**Settings › Agents** lets agents use BriefBar, off by default (see [Agents](#agents)).
 
 In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
 not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
@@ -460,7 +531,7 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
-  item. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
   choose, with git, and Copilot's log of that session, and nothing of Copilot's while the feature is
   off. In its preferences, it keeps which work items you sent, where, with which model, and the link to
@@ -468,7 +539,9 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
-  sign-in and GET requests as your pull requests.
+  sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
+  are read with your pull requests, while Done keeps it, unless you turn **Follow Pipelines After You
+  Merge** off.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
@@ -479,9 +552,15 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which of your Azure DevOps pull requests you've seen, with each account, and your
-  organizations; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  read; which of your Azure DevOps pull requests you've seen, with each account, your organizations,
+  and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; and its settings. Turning a source off deletes what it saved.
+- **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
+  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, and Copilot tasks and
+  sessions, never Teams or GitHub. That goes to the agent's model, which may run in the cloud. Their
+  only changes are to the pull requests BriefBar watches and the pipelines it pins. Turning them on
+  adds BriefBar to the Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`: BriefBar never
+  reads the CLI's configuration, where other servers' settings are.
 - **Programs it runs**, such as the Azure CLI, the GitHub CLI and the Copilot CLI, never get its
   permissions: macOS would otherwise let them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the
@@ -521,18 +600,23 @@ FSEvents, and reads them again only when they change.
 Azure DevOps can only push changes through service hooks, which need a project administrator and a
 server on the internet. So BriefBar asks every minute: about 10 to 25 small requests a minute, and
 right away when you open the list, when your Mac wakes, and when it's back online. Your sprint and
-pipelines add a few requests a minute, and only while something shows them.
+pipelines add a few requests a minute, and only while something shows them. After you merge a pull
+request, its pipelines add a few more, while they run.
 
 ### Why isn't a pull request assigned to my team shown?
 
 Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
-requests where you were added yourself, including by a policy, are shown. GitHub's source does the
-same on purpose: it lists review requests made to you by name, not to a team you're in.
+requests where you were added yourself, including by a policy, are shown. To follow one of your team's
+anyway, watch it: **Watch a Pull Request…** in Azure DevOps' settings takes its link. GitHub's source
+lists only the review requests made to you by name too, and can't watch a team's.
 
-### Why does a failed build show no error details?
+### Why does a failed build show only its first error?
 
-Azure DevOps doesn't include a build's errors with a pull request's policies, so the list shows which
-build failed. Click the pull request to see it.
+Azure DevOps doesn't include a build's errors with a pull request's policies, so BriefBar reads the
+build's timeline once, as it does for a pinned pipeline, and shows where it failed and the first
+error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." The
+rest is in the build's log: click the pull request to see it. Until the timeline has been read, or
+when it can't be, the list names the build that failed.
 
 ### How does it pick my team's sprint?
 

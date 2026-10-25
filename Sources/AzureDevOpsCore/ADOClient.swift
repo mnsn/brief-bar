@@ -303,12 +303,47 @@ public enum ADOEndpoint {
             [("api-version", apiVersion)])
     }
 
+    /// A repository branch's runs queued since a time, oldest first: among them, those that build a merge.
+    public static func branchBuilds(
+        organization: String, projectId: String, repositoryId: String, branch: String, queuedSince: Date, top: Int = 50
+    ) -> URL {
+        url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds"], [
+            ("repositoryId", repositoryId), ("repositoryType", "TfsGit"),
+            ("branchName", branch.hasPrefix("refs/") ? branch : "refs/heads/\(branch)"),
+            ("minTime", queuedSince.formatted(.iso8601)), ("queryOrder", "queueTimeAscending"), ("$top", String(top)),
+            ("api-version", apiVersion),
+        ])
+    }
+
+    /// The project's runs that other runs started since a time (pipeline-completion and resource triggers), oldest first.
+    public static func triggeredBuilds(organization: String, projectId: String, queuedSince: Date, top: Int = 50) -> URL {
+        url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds"], [
+            ("reasonFilter", "buildCompletion,resourceTrigger"), ("minTime", queuedSince.formatted(.iso8601)),
+            ("queryOrder", "queueTimeAscending"), ("$top", String(top)), ("api-version", apiVersion),
+        ])
+    }
+
+    /// One pipeline, by its ID: a project's name works in place of its ID.
+    public static func buildDefinition(organization: String, project: String, id: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_apis", "build", "definitions", String(id)], [("api-version", apiVersion)])
+    }
+
+    /// One run, by its ID.
+    public static func build(organization: String, project: String, id: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_apis", "build", "builds", String(id)], [("api-version", apiVersion)])
+    }
+
     /// The organization's projects, to search for pipelines in.
     public static func projects(organization: String) -> URL {
         url("https://dev.azure.com", [organization, "_apis", "projects"], [("$top", "1000"), ("api-version", apiVersion)])
     }
 
     // MARK: Web pages
+
+    /// A run's page.
+    public static func buildPage(organization: String, project: String, buildId: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_build", "results"], [("buildId", String(buildId))])
+    }
 
     public static func pullRequestPage(organization: String, project: String, repository: String, id: Int, threadId: Int? = nil) -> URL {
         url("https://dev.azure.com", [organization, project, "_git", repository, "pullrequest", String(id)],

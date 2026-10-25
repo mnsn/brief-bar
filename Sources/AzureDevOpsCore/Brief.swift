@@ -66,9 +66,17 @@ public enum Brief {
         case .changesRequested: sentence = "\(actor) is waiting for changes on \(title)."
         case .rejected: sentence = snapshot.group == .needsYou ? "\(actor) rejected \(title)." : "\(title) was rejected."
         case .buildFailed, .checkFailed:
-            sentence = "\(title) failed" + (snapshot.detail.map { ": \($0)." } ?? ".")
+            if let failure = snapshot.failure {
+                sentence = "\(title) failed at \(failure.step)."
+            } else {
+                sentence = "\(title) failed" + (snapshot.detail.map { ": \($0)." } ?? ".")
+            }
         case .conflicts: sentence = "\(title) has merge conflicts."
         case .buildExpired: sentence = "\(title) needs its build queued again."
+        case .failedAfterMerge:
+            sentence = "\(snapshot.merge?.pipeline.map { "“\($0)”" } ?? "A pipeline") failed after \(title) merged."
+        case .waitingForApproval:
+            sentence = "\(snapshot.merge?.pipeline.map { "“\($0)”" } ?? "A pipeline") waits for approval after \(title) merged."
         case .readyToComplete: sentence = "\(title) is approved and ready to complete."
         case .autoComplete: sentence = "\(title) is approved and will complete automatically."
         default: sentence = "\(title): \(snapshot.headline)."

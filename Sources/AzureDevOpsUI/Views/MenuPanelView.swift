@@ -127,7 +127,7 @@ struct MenuPanelView: View {
                 DisclosureGroup(isExpanded: $showIdle) {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item)) { store.open(item) }
+                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item), stopWatching: watching(item)) { store.open(item) }
                         }
                     }
                 } label: {
@@ -171,6 +171,10 @@ struct MenuPanelView: View {
         item.chatSource == nil ? nil : { store.openSource(item) }
     }
 
+    private func watching(_ item: PRSnapshot) -> (() -> Void)? {
+        item.isWatched ? { store.stopWatching(item) } : nil
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
             Button {
@@ -205,7 +209,10 @@ struct PullRequestRow: View {
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        PRRowView(item: item, now: store.now, openSource: item.chatSource == nil ? nil : { store.openSource(item) }) {
+        PRRowView(
+            item: item, now: store.now, openSource: item.chatSource == nil ? nil : { store.openSource(item) },
+            stopWatching: item.isWatched ? { store.stopWatching(item) } : nil
+        ) {
             store.open(item)
         }
     }

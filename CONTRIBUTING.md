@@ -86,10 +86,10 @@ Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, the client (
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
                                the Copilot CLI, the git worktree, starting a run and following it from
-                               its session log
+                               its session log; and BriefBar among the CLI's MCP servers
 Sources/BriefBarUI/            shared app code: the source protocol, menu-bar drawing, desktop widgets,
                                the windows' look, the notifier, Full Disk Access, the on-device model,
-                               Launch at Login
+                               Launch at Login, and the agents' server (--mcp)
 Sources/TeamsUI/               each source's app code: its lists, settings, widget and command-line
 Sources/AzureDevOpsUI/         modes, and its BriefBarSource
 Sources/CopilotUI/
@@ -158,8 +158,11 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 
 ## Ground rules
 
-- **Every source is off until you turn it on.** Nothing turns one on by itself: not an update, not a
-  new source, not a migration. While a source is off, don't read its data or check its access.
+- **Every source is off until you turn it on, and so is anything else not everyone would want.** Nothing
+  turns one on by itself: not an update, not a new source, not a migration. While a source is off, don't
+  read its data or check its access. A feature that does more than show what a source reads, such as
+  letting agents use BriefBar, starts off too, says what it does first, and does nothing, adds nothing
+  and registers nothing until you turn it on.
 - **Say what a source reads.** When a source starts reading something new, update its
   `SourceDescription` and raise its `version`, so whoever turned it on sees the change before it reads
   more.
@@ -172,9 +175,19 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Start programs only through `ProcessRunner`**, or `RunningProgram` and `DetachedProgram` for those
   that keep running, all in `BriefBarCore`, which keep them from using BriefBar's privacy permissions.
   `make check-boundaries` fails if any other module starts one.
-- **Nothing acts for you unless you ask.** BriefBar starts Copilot, which changes code, pushes and opens
-  pull requests as you, only when you send a work item with **Send Work to Copilot** on: never by
-  itself, on a schedule, after an update or in the demo.
+- **Nothing acts for you unless you ask.** BriefBar starts Copilot, which changes code, pushes, opens
+  pull requests and replies on them as you, only when you send a work item, or one of a pull request's
+  actions, with **Send Work to Copilot** on: never by itself, on a schedule, after an update or in the
+  demo.
+- **Agents get what the command line prints, and only once you let them.** `--mcp` is a command-line
+  mode, under the same rules, and answers only while `AgentAccess` holds your consent. When agents get
+  something new, a tool or another source's data, raise `AgentAccess.version`, so they wait until
+  you've seen it. It serves only the sources that are on (`--source` narrows them, never adds one),
+  gives no Teams data, and never writes to a source. A tool that changes something changes only
+  BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
+  running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
+  configuration changes only through its own commands (`CopilotMCPRegistration`), when you turn agents
+  on or off.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller

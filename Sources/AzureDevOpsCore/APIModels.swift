@@ -136,6 +136,8 @@ public struct ADOPullRequest: Decodable, Sendable {
     public var repository: ADORepositoryRef
     public var lastMergeSourceCommit: ADOCommitRef?
     public var lastMergeTargetCommit: ADOCommitRef?
+    /// The commit that merged it into its target branch, once it's completed.
+    public var lastMergeCommit: ADOCommitRef?
     public var autoCompleteSetBy: ADOIdentity?
 }
 

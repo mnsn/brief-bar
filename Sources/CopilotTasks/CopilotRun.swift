@@ -18,14 +18,18 @@ public enum RunPhase: String, Sendable, Codable, Equatable {
     public var isActive: Bool { self == .preparing || self == .working }
 }
 
-/// A task BriefBar sent to Copilot, as it keeps it across launches in its preferences: which work item, where, and with
-/// which model. Not the work item's title, nor anything Copilot wrote. Any program running as you can change the
-/// preferences, so the files BriefBar reads for a run aren't kept there: they follow from its session's ID, which is
+/// A task BriefBar sent to Copilot, as it keeps it across launches in its preferences: which work item or pull request,
+/// what for, where, and with which model. Not titles, nor anything Copilot wrote. Any program running as you can change
+/// the preferences, so the files BriefBar reads for a run aren't kept there: they follow from its session's ID, which is
 /// checked to be one (`CopilotRun.isValid`).
 public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// The ID of Copilot's session, a UUID that BriefBar chooses.
     public var id: String
-    public var workItem: WorkItemReference
+    /// The work item it's for, or nil for a pull request's.
+    public var workItem: WorkItemReference?
+    /// The pull request it works on, and what for; nil for a work item's.
+    public var onPullRequest: PullRequestReference?
+    public var action: PullRequestAction?
     public var options: CopilotRunOptions
     /// The repository's main checkout.
     public var repository: URL
@@ -38,11 +42,14 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     public var pullRequest: URL?
 
     public init(
-        id: String, workItem: WorkItemReference, options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date,
-        process: DetachedProgram.Handle, ended: RunPhase? = nil, pullRequest: URL? = nil
+        id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
+        options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
+        ended: RunPhase? = nil, pullRequest: URL? = nil
     ) {
         self.id = id
         self.workItem = workItem
+        self.onPullRequest = onPullRequest
+        self.action = action
         self.options = options
         self.repository = repository
         self.worktree = worktree
@@ -52,9 +59,17 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.pullRequest = pullRequest
     }
 
-    /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder.
+    /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
+    /// work item or a pull request.
     public var isValid: Bool {
-        UUID(uuidString: id)?.uuidString.lowercased() == id
+        UUID(uuidString: id)?.uuidString.lowercased() == id && (workItem != nil || onPullRequest != nil)
+    }
+
+    /// "work item 4217" or "pull request 4071", for messages.
+    public var subjectName: String {
+        if let workItem { return "work item \(workItem.id)" }
+        if let onPullRequest { return "pull request \(onPullRequest.id)" }
+        return "this task"
     }
 
     /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).

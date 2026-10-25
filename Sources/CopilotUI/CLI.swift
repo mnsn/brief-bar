@@ -15,7 +15,7 @@ package enum CopilotCommandLine: SourceCommandLine {
         """
 
     /// Your `~/.copilot`, or for the demo, only what `BRIEFBAR_COPILOT_DIR` names.
-    private static func paths(_ options: CommandLineOptions) -> CopilotPaths? {
+    static func paths(_ options: CommandLineOptions) -> CopilotPaths? {
         if options.demo {
             guard let paths = CopilotPaths.overridden() else {
                 fputs("There's no made-up Copilot data: run make demo-data, or set \(CopilotPaths.directoryVariable).\n", stderr)

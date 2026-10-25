@@ -32,10 +32,14 @@ public enum PRReason: String, Sendable, Codable {
     case mentioned, sentInChat, replied, commented, reviewRequested, newCommits, changesRequested, rejected
     case answered
     case buildFailed, checkFailed, conflicts, buildExpired
+    /// A pipeline that ran after it merged failed.
+    case failedAfterMerge
     case readyToComplete, autoComplete
     case reviewPending
     case waitingForReviewers, checksRunning, requirementsPending, waitingForAuthor
     case completed, abandoned
+    /// It merged, and a pipeline that runs after it waits for an approval.
+    case waitingForApproval
     case draft, inactive, youApproved, declined
 }
 
@@ -98,15 +102,33 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
     public var me: String
     /// Links to it that people sent you.
     public var chatLinks: [ChatLink]
+    /// Once it's merged, the pipelines that ran on it.
+    public var merge: MergePipelines?
+    /// You watch it: you chose to follow it, by its link.
+    public var isWatched: Bool
 
     public var id: PRKey { pullRequest.key }
 
-    public init(pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = []) {
+    public init(
+        pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = [],
+        merge: MergePipelines? = nil, isWatched: Bool = false
+    ) {
         self.pullRequest = pullRequest
         self.role = role
         self.details = details
         self.me = me.lowercased()
         self.chatLinks = chatLinks
+        self.merge = merge
+        self.isWatched = isWatched
+    }
+
+    /// As a pull request you watch: one you're not on is listed as if you reviewed it, rather than only while a
+    /// message about it needs you.
+    public func watched() -> PRRecord {
+        var record = self
+        record.isWatched = true
+        if record.role == .linked { record.role = .reviewer }
+        return record
     }
 }
 
@@ -137,6 +159,12 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var hasDetails: Bool
     /// Where it was sent to you: while that needs you, and until you've seen that you answered it.
     public var chatSource: ChatSource? = nil
+    /// Where its build failed, and the first error there, when it's failing because of a build whose timeline says.
+    public var failure: PipelineFailure? = nil
+    /// Once it's merged, how the pipelines that ran on it stand.
+    public var merge: MergeSummary? = nil
+    /// You watch it, by its link.
+    public var isWatched = false
 
     public var id: String { key.description }
 
@@ -207,6 +235,7 @@ public enum PRClassifier {
             since: lastActivity, url: pr.webURL, events: [], approvals: approvals.map(\.person.name),
             checkState: details.flatMap { checkState($0.checks) }, hasDetails: details != nil
         )
+        snapshot.isWatched = record.isWatched
         func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: String? = nil, since: Date? = nil) {
             snapshot.group = group
             snapshot.reason = reason
@@ -220,10 +249,33 @@ public enum PRClassifier {
             // Done is for your own pull requests.
             guard record.role == .author else { return nil }
             let closed = pr.closedAt ?? lastActivity
-            guard now.timeIntervalSince(closed) <= options.keepDoneFor, closed > seenCutoff else { return nil }
+            guard now.timeIntervalSince(closed) <= options.keepDoneFor else { return nil }
             let completed = pr.status == .completed
-            set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned",
-                completed ? "Merged into \(pr.targetBranch)" : nil, since: closed)
+            let merge = completed ? record.merge?.summary : nil
+            snapshot.merge = merge
+            // What its pipelines do after it merged shows, whether or not you've seen it since.
+            if let merge, merge.outcome != .passed {
+                switch merge.outcome {
+                case .failed:
+                    set(.failing, .failedAfterMerge, "Failed after merge",
+                        [merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                    snapshot.failure = merge.failure
+                case .waiting:
+                    set(.done, .waitingForApproval, "Waiting for approval",
+                        [merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                default:
+                    let running = merge.running == 1 ? "1 pipeline running" : "\(merge.running) pipelines running"
+                    set(.done, .completed, "Completed", "Merged into \(pr.targetBranch) · \(running)", since: closed)
+                }
+                if merge.outcome != .running, let url = merge.runURL { snapshot.url = url }
+                return snapshot
+            }
+            guard closed > seenCutoff else { return nil }
+            var detail = completed ? "Merged into \(pr.targetBranch)" : nil
+            if let merge {
+                detail = (detail ?? "") + (merge.total == 1 ? " · its pipeline passed" : " · \(merge.total) pipelines passed")
+            }
+            set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned", detail, since: closed)
             return snapshot
         case .other:
             return nil
@@ -280,8 +332,11 @@ public enum PRClassifier {
             switch record.role {
             case .author:
                 classifyAuthor(pr, details, approvals: approvals, lastActivity: lastActivity, set: set)
+                if snapshot.reason == .buildFailed {
+                    snapshot.failure = details?.checks.first { $0.failedBuildId != nil && $0.isBlocking && $0.failure != nil }?.failure
+                }
             case .reviewer, .linked:
-                classifyReviewer(pr, me: me, approvals: approvals, set: set)
+                classifyReviewer(pr, me: me, approvals: approvals, watched: record.isWatched, set: set)
             }
         }
         // What you answered stays in view until you've seen it, unless there's something else to do.
@@ -591,8 +646,10 @@ public enum PRClassifier {
         let expired = blocking.filter { $0.kind == .build && $0.state == .expired }
         let conflicts = pr.hasConflicts ? " · merge conflicts" : ""
         if !failedBuilds.isEmpty {
+            // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
+            let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
             set(.failing, .buildFailed, failedBuilds.count > 1 ? "\(failedBuilds.count) builds failed" : "Build failed",
-                names(failedBuilds + failedChecks) + conflicts, latestCompletion(failedBuilds))
+                (builds + failedChecks.map(\.name)).joined(separator: ", ") + conflicts, latestCompletion(failedBuilds))
             return
         }
         if !failedChecks.isEmpty {
@@ -661,7 +718,7 @@ public enum PRClassifier {
     }
 
     private static func classifyReviewer(
-        _ pr: PullRequest, me: String, approvals: [Reviewer], set: (PRGroup, PRReason, String, String?, Date?) -> Void
+        _ pr: PullRequest, me: String, approvals: [Reviewer], watched: Bool, set: (PRGroup, PRReason, String, String?, Date?) -> Void
     ) {
         let mine = pr.reviewer(me)
         switch mine?.vote ?? .none {
@@ -673,7 +730,8 @@ public enum PRClassifier {
         case .rejected:
             set(.waiting, .waitingForAuthor, "You rejected it", "By \(pr.author.name)", nil)
         case .none:
-            set(.toReview, .reviewPending, mine?.isRequired == true ? "Required review" : "Optional review", "By \(pr.author.name)", nil)
+            let headline = mine?.isRequired == true ? "Required review" : mine == nil && watched ? "Watching" : "Optional review"
+            set(.toReview, .reviewPending, headline, "By \(pr.author.name)", nil)
         }
     }
 

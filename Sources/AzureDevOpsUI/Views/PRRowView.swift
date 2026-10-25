@@ -11,6 +11,8 @@ struct PRRowView: View {
     var compact = false
     /// Opens the message it was sent in (right-click); nil when it wasn't.
     var openSource: (() -> Void)? = nil
+    /// Stops watching it (right-click); nil when you don't watch it.
+    var stopWatching: (() -> Void)? = nil
     var action: () -> Void
 
     @LocalState private var isHovered = false
@@ -44,10 +46,13 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(item.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(item.rowColor)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(item.subtitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(item.rowColor)
+                                .lineLimit(1)
+                            PullRequestCopilotStatus(key: item.key)
+                        }
                         if let detail = item.detail {
                             Text(detail)
                                 .font(.system(size: 11))
@@ -74,6 +79,11 @@ struct PRRowView: View {
             if let source = item.chatSource, let openSource {
                 Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
             }
+            PullRequestCopilotMenuItems(item: item)
+            if item.isWatched, let stopWatching {
+                Divider()
+                Button("Stop Watching", action: stopWatching)
+            }
         }
         .help(helpText)
         .accessibilityElement(children: .ignore)
@@ -94,6 +104,9 @@ struct PRRowView: View {
         lines.append("Click to open in Azure DevOps")
         if let source = item.chatSource {
             lines.append(source.messageURL == nil ? "Right-click to show \(source.appName)" : "Right-click to open the message in \(source.appName)")
+        }
+        if item.isWatched {
+            lines.append("You watch it: right-click to stop")
         }
         return lines.joined(separator: "\n")
     }

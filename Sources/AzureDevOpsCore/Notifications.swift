@@ -54,6 +54,9 @@ public enum NotificationPlanner {
                 if event.kind == .sentInChat { continue }
                 notes.append(note(for: event, in: snapshot))
             }
+            if let note = mergeNote(snapshot, before: old?.merge, notBefore: notBefore) {
+                notes.append(note)
+            }
 
             guard changedGroup, snapshot.role == .author, snapshot.hasDetails || snapshot.group == .done else { continue }
             let at = max(snapshot.since ?? notBefore, notBefore)
@@ -61,7 +64,7 @@ public enum NotificationPlanner {
             // after a push, is news again; a pull request moving back from Needs You in the same state isn't.
             let occurrence = snapshot.since.map { String(Int($0.timeIntervalSince1970)) } ?? ""
             switch snapshot.group {
-            case .failing where snapshot.reason != .buildExpired:
+            case .failing where snapshot.reason != .buildExpired && snapshot.reason != .failedAfterMerge:
                 notes.append(PulseNotification(
                     id: "\(snapshot.id):failing:\(snapshot.reason.rawValue):\(occurrence)",
                     title: snapshot.headline, subtitle: snapshot.title, body: snapshot.detail ?? snapshot.repository,
@@ -90,6 +93,36 @@ public enum NotificationPlanner {
             id: "more:" + notes.dropFirst(shown.count).map(\.id).joined(separator: ","),
             title: "BriefBar", body: "\(rest) more pull request updates", url: nil, at: shown.last?.at ?? earliest
         )]
+    }
+
+    /// What the pipelines after a merge did since the last list: one failed, one waits for an approval, or they all
+    /// passed once they'd been running. Each failed or waiting run is announced once, and what happened before
+    /// `notBefore` isn't.
+    static func mergeNote(_ snapshot: PRSnapshot, before old: MergeSummary?, notBefore: Date) -> PulseNotification? {
+        guard snapshot.role == .author, let merge = snapshot.merge, let at = merge.since, at >= notBefore else { return nil }
+        let pipeline = merge.pipeline.map { "“\($0)”" } ?? "A pipeline"
+        switch merge.outcome {
+        case .failed where !(old?.outcome == .failed && old?.runId == merge.runId):
+            return PulseNotification(
+                id: "\(snapshot.id):merge:failed:\(merge.runId ?? 0)", title: "Failed after merge", subtitle: snapshot.title,
+                body: merge.failure.map { "\(pipeline): \($0.summary)" } ?? "\(pipeline) failed.", url: snapshot.url, key: snapshot.key, at: at
+            )
+        case .waiting where !(old?.outcome == .waiting && old?.runId == merge.runId && old?.stage == merge.stage):
+            return PulseNotification(
+                id: "\(snapshot.id):merge:waiting:\(merge.runId ?? 0):\(merge.stage ?? "")", title: "Waiting for approval",
+                subtitle: snapshot.title, body: "\(pipeline) waits for approval" + (merge.stage.map { " to \($0)." } ?? "."),
+                url: snapshot.url, key: snapshot.key, at: at
+            )
+        case .passed where old?.outcome == .running || old?.outcome == .waiting:
+            return PulseNotification(
+                id: "\(snapshot.id):merge:passed", title: merge.total == 1 ? "Pipeline passed" : "Pipelines passed",
+                subtitle: snapshot.title,
+                body: merge.total == 1 ? "Its pipeline passed after it merged." : "All \(merge.total) pipelines passed after it merged.",
+                url: snapshot.url, key: snapshot.key, at: at
+            )
+        default:
+            return nil
+        }
     }
 
     static func note(for event: PREvent, in snapshot: PRSnapshot) -> PulseNotification {

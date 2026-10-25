@@ -50,6 +50,15 @@ final class AppSettings: ObservableObject {
     @Published var showToReview: Bool {
         didSet { defaults.set(showToReview, forKey: Key.showToReview) }
     }
+    /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
+    @Published var followMerges: Bool {
+        didSet { defaults.set(followMerges, forKey: Key.followMerges) }
+    }
+    /// Pull requests you watch by their links, though you're not on them: listed as if you reviewed them, until
+    /// they close or you stop watching them.
+    @Published var watchedPullRequests: [PullRequestLink] {
+        didSet { Self.store(watchedPullRequests, in: defaults, forKey: Key.watchedPullRequests) }
+    }
     /// The organizations to watch.
     @Published var organizations: [String] {
         didSet { defaults.set(organizations, forKey: Key.organizations) }
@@ -130,6 +139,8 @@ final class AppSettings: ObservableObject {
         notifications = defaults.object(forKey: Key.notifications) as? Bool ?? true
         summaries = defaults.object(forKey: Key.summaries) as? Bool ?? true
         showToReview = defaults.bool(forKey: Key.showToReview)
+        followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
+        watchedPullRequests = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
@@ -213,7 +224,8 @@ final class AppSettings: ObservableObject {
             organizations: organizations,
             interval: TimeInterval(refreshSeconds),
             keepDoneFor: TimeInterval(keepDoneHours) * 3_600,
-            inactiveAfter: idleDays > 0 ? TimeInterval(idleDays) * 86_400 : nil
+            inactiveAfter: idleDays > 0 ? TimeInterval(idleDays) * 86_400 : nil,
+            followMerges: followMerges
         )
     }
 
@@ -322,6 +334,33 @@ final class AppSettings: ObservableObject {
         return switched
     }
 
+    var watchedKeys: Set<PRKey> { Set(watchedPullRequests.map(\.key)) }
+
+    /// Reads again what an agent can change through `--mcp`: the pull requests you watch, and the pipelines you pin.
+    func reloadAgentChanges() {
+        let watched = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
+        if watched != watchedPullRequests { watchedPullRequests = watched }
+        let pinned = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
+        if pinned != pinnedPipelines { pinnedPipelines = pinned }
+    }
+
+    func isWatching(_ key: PRKey) -> Bool {
+        watchedPullRequests.contains { $0.key == key }
+    }
+
+    /// Watches a pull request by its link. Returns false if it was watched already.
+    @discardableResult
+    func watch(_ link: PullRequestLink) -> Bool {
+        guard !isWatching(link.key) else { return false }
+        watchedPullRequests.append(link)
+        return true
+    }
+
+    func unwatch(_ keys: Set<PRKey>) {
+        guard watchedPullRequests.contains(where: { keys.contains($0.key) }) else { return }
+        watchedPullRequests.removeAll { keys.contains($0.key) }
+    }
+
     /// Organization names are case-insensitive in Azure DevOps.
     func isWatching(_ name: String) -> Bool {
         organizations.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
@@ -351,6 +390,8 @@ enum SettingsKey {
     static let notifications = "ado.notifications"
     static let summaries = "ado.summaries"
     static let showToReview = "ado.showToReviewInMenuBar"
+    static let followMerges = "ado.followMerges"
+    static let watchedPullRequests = "ado.watchedPullRequests"
     static let organizations = "ado.organizations"
     static let knownOrganizations = "ado.knownOrganizations"
     static let hasDiscovered = "ado.hasDiscoveredOrganizations"

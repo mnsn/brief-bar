@@ -251,6 +251,11 @@ public struct PipelineFailure: Sendable, Codable, Equatable {
         self.message = message
     }
 
+    /// The step and its first error: "Run unit tests: 2 tests failed in CheckoutTests.", or "Run unit tests failed".
+    public var summary: String {
+        message.map { "\(step): \($0)" } ?? "\(step) failed"
+    }
+
     /// The earliest failed task, or job or stage when no task failed.
     public static func first(in timeline: ADOTimeline) -> PipelineFailure? {
         let records = timeline.records.elements
