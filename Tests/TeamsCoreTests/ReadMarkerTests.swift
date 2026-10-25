@@ -81,6 +81,8 @@ final class MarkerCollector: Sendable {
             }
             try await Task.sleep(for: .milliseconds(20))
         }
+        // On a busy machine a test can run again only after its deadline, though what it waits for came in time.
+        if let latest, predicate(latest) { return latest }
         throw TestError("Timed out waiting for \(what)")
     }
 }
