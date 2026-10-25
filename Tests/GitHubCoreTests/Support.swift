@@ -28,7 +28,7 @@ enum Fixture {
         updated: Date = t(0), reviewDecision: String? = nil, mergeable: String = "MERGEABLE", rollup: String? = nil,
         reviews: [(state: String, author: String?)] = []
     ) -> [String: Any] {
-        var object: [String: Any] = [
+        let object: [String: Any] = [
             "id": "PR_\(repository)_\(number)",
             "number": number,
             "title": title ?? "Pull request \(number)",
