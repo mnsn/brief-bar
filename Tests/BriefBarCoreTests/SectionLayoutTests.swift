@@ -103,6 +103,38 @@ import Testing
         #expect(layout.visibleItems(showing: [chats, groups, pullRequests]).map(\.sections) == [[chats, pullRequests], [groups]])
     }
 
+    @Test func movesASectionWhereYouDropIt() {
+        var layout = SectionLayout()
+        layout.place([chats, groups, pullRequests, sessions])
+        layout.move(sessions, to: .with(pullRequests))
+        #expect(layout.items.map(\.sections) == [[chats], [groups], [pullRequests, sessions]])
+        layout.move(pullRequests, to: .alone)
+        #expect(layout.items.map(\.sections) == [[chats], [groups], [sessions], [pullRequests]])
+        layout.move(groups, to: .hidden)
+        #expect(layout.isHidden(groups))
+        #expect(layout.visibleItems(showing: [chats, groups, pullRequests, sessions]).map(\.sections) == [[chats], [sessions], [pullRequests]])
+        // Dropped in another item, a hidden section shows there.
+        layout.move(groups, to: .with(chats))
+        #expect(!layout.isHidden(groups))
+        #expect(layout.items.map(\.sections) == [[chats, groups], [sessions], [pullRequests]])
+    }
+
+    @Test func droppingASectionInItsOwnItemKeepsItsPlace() {
+        var layout = SectionLayout()
+        layout.place([chats, groups, pullRequests])
+        layout.move(groups, to: .with(chats))
+        let before = layout
+        layout.move(chats, to: .with(groups))
+        #expect(layout == before)
+        layout.move(chats, to: .with(chats))
+        #expect(layout == before)
+
+        // Hidden, it shows again where it was, rather than after the others.
+        layout.move(chats, to: .hidden)
+        layout.move(chats, to: .with(groups))
+        #expect(layout == before)
+    }
+
     @Test func turningASourceOnShowsItIfAllOfItWasHidden() {
         var layout = SectionLayout()
         layout.place([chats, groups, pullRequests])

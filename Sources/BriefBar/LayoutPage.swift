@@ -1,21 +1,22 @@
+import AppKit
 import BriefBarCore
 import BriefBarUI
+import Combine
 import SwiftUI
 
-/// Settings › Menu Bar, Widgets and Windows: which sections show there, and which share an item.
+/// Settings › Menu Bar, Widgets and Windows: a card for each item, with a chip for each section it shows. Drag a chip
+/// onto another card to put them together, onto New Item to give it one of its own, or onto Hidden; or right-click it.
 struct LayoutPage: View {
     @ObservedObject var model: AppModel
     let surface: Surface
 
-    /// Where a section shows.
-    private enum Placement: Hashable {
-        /// In an item of its own.
-        case own
-        /// With the other sections of the item it's in.
-        case current
-        /// In another item, by ID.
-        case with(String)
-        /// Nowhere.
+    /// Where a chip you're dragging would go.
+    @LocalState private var target: DropTarget?
+
+    private enum DropTarget: Hashable {
+        /// The item with this ID.
+        case item(String)
+        case newItem
         case hidden
     }
 
@@ -55,26 +56,41 @@ struct LayoutPage: View {
                 Form {
                     ForEach(items) { item in
                         Section {
-                            ForEach(item.sections, id: \.self) { section in
-                                picker(for: section, in: item, items: items)
+                            dropZone(.item(item.id), to: item.sections.first.map { .with($0) }) {
+                                chips(item.sections, in: item, items: items)
                             }
                             itemOptions(item)
                         } header: {
-                            if let header = header(for: item) {
-                                Text(header)
+                            if surface == .menuBar {
+                                MenuBarPreview(model: model, sections: item.sections, options: model.options(forMenuBarItem: item.id))
                             }
                         }
                     }
-                    if !hidden.isEmpty {
-                        Section {
-                            ForEach(hidden, id: \.self) { section in
-                                picker(for: section, in: nil, items: items)
+                    Section {
+                        dropZone(.newItem, to: .alone) {
+                            Label {
+                                Text("New \(surface.itemNoun)")
+                                Text("Drop a \(surface.sectionNoun) here to give it one of its own")
+                            } icon: {
+                                Image(systemName: "plus.rectangle.on.rectangle")
                             }
-                        } header: {
-                            Text("Hidden")
-                        } footer: {
-                            note(surface.hiddenNote)
+                            .foregroundStyle(.secondary)
                         }
+                    }
+                    Section {
+                        dropZone(.hidden, to: .hidden) {
+                            if hidden.isEmpty {
+                                Text("Drop a \(surface.sectionNoun) here to hide it")
+                                    .foregroundStyle(.secondary)
+                                    .frame(minHeight: 26)
+                            } else {
+                                chips(hidden, in: nil, items: items)
+                            }
+                        }
+                    } header: {
+                        Text("Hidden")
+                    } footer: {
+                        note(surface.hiddenNote)
                     }
                 }
                 .formStyle(.grouped)
@@ -125,15 +141,99 @@ struct LayoutPage: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// What a picker calls the place that holds a section.
-    private func header(for item: SectionLayout.Item) -> String? {
-        switch surface {
-        case .menuBar:
-            return item.sections.count > 1 ? "Together in one item" : nil
-        case .widgets, .windows:
-            return item.sections.count > 1 ? "Together in one \(surface.itemNoun.lowercased())" : nil
+    // MARK: Chips
+
+    /// A chip for each of `sections`, in rows: those of `item`, or the hidden ones for nil.
+    private func chips(_ sections: [SectionID], in item: SectionLayout.Item?, items: [SectionLayout.Item]) -> some View {
+        FlowLayout(spacing: 6) {
+            ForEach(sections, id: \.self) { section in
+                chip(section, in: item, items: items)
+            }
         }
     }
+
+    private func chip(_ section: SectionID, in item: SectionLayout.Item?, items: [SectionLayout.Item]) -> some View {
+        let info = model.info(for: section)
+        let label = SectionChip(title: shortName(of: section), symbol: info?.symbol ?? AppSymbols.app, tint: info?.tint ?? .gray)
+        return label
+            .draggable(section.rawValue) { label }
+            .pointerStyle(.grabIdle)
+            .contextMenu { moves(for: section, in: item, items: items) }
+            .help("\(name(of: section))\nDrag it onto another \(surface.itemNoun.lowercased()), or right-click it")
+            .accessibilityLabel(name(of: section))
+            .accessibilityHint("Its menu moves it to another \(surface.itemNoun.lowercased()), or hides it")
+    }
+
+    /// What a chip's menu offers, as dragging it would: another item, one of its own, or hiding it.
+    @ViewBuilder
+    private func moves(for section: SectionID, in item: SectionLayout.Item?, items: [SectionLayout.Item]) -> some View {
+        let others = items.filter { $0.id != item?.id }
+        ForEach(others) { other in
+            if let first = other.sections.first {
+                Button("\(item == nil ? "Show in" : "Move to") \(surface.itemNoun) with \(together(other.sections))") {
+                    move(section, to: .with(first))
+                }
+            }
+        }
+        if !others.isEmpty {
+            Divider()
+        }
+        if let item {
+            Button("Give It Its Own \(surface.itemNoun)") { move(section, to: .alone) }
+                .disabled(item.sections.count == 1)
+            Divider()
+            Button("Hide") { move(section, to: .hidden) }
+        } else {
+            Button("Show in Its Own \(surface.itemNoun)") { move(section, to: .alone) }
+        }
+    }
+
+    /// Where chips can be dropped, highlighted while one is over it. Nil drops nothing.
+    private func dropZone<Content: View>(
+        _ zone: DropTarget, to destination: SectionDestination?, @ViewBuilder content: () -> Content
+    ) -> some View {
+        let isTargeted = target == zone
+        return content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isTargeted ? Color.accentColor.opacity(0.14) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(isTargeted ? Color.accentColor : .clear, lineWidth: 2)
+            )
+            .padding(-5)
+            .contentShape(Rectangle())
+            .dropDestination(for: String.self) { payload, _ in
+                drop(payload, to: destination)
+            } isTargeted: { isOver in
+                if isOver {
+                    target = zone
+                } else if target == zone {
+                    target = nil
+                }
+            }
+    }
+
+    private func drop(_ payload: [String], to destination: SectionDestination?) -> Bool {
+        target = nil
+        guard let destination, let raw = payload.first else { return false }
+        let section = SectionID(rawValue: raw)
+        // Only a section that can show here: not text dragged in from another app.
+        guard model.sections(surface).contains(section) else { return false }
+        move(section, to: destination)
+        return true
+    }
+
+    private func move(_ section: SectionID, to destination: SectionDestination) {
+        withAnimation {
+            model.move(section, to: destination, on: surface)
+        }
+    }
+
+    // MARK: An item's options
 
     /// How a menu-bar item shows several sections; a widget's position and size; a window's button to open it.
     @ViewBuilder
@@ -185,6 +285,7 @@ struct LayoutPage: View {
             Text("Side by Side").tag(false)
             Text("By Meaning").tag(true)
         }
+        .pickerStyle(.segmented)
         if options.byState {
             ForEach(MenuBarItemOptions.order, id: \.self) { state in
                 Toggle(isOn: Binding(
@@ -205,44 +306,9 @@ struct LayoutPage: View {
             Text("A Tab for Each Section").tag(false)
             Text("Everything by State").tag(true)
         }
+        .pickerStyle(.segmented)
         if options.listByState, let reason = OnDeviceModel.unavailableReason {
             note("The brief at the top of the list is in BriefBar's own words. \(reason)")
-        }
-    }
-
-    /// Where `section` shows: in `item`, or nowhere when that's nil.
-    private func picker(for section: SectionID, in item: SectionLayout.Item?, items: [SectionLayout.Item]) -> some View {
-        Picker(name(of: section), selection: placement(of: section, in: item, items: items)) {
-            if let item, item.sections.count > 1 {
-                Text("With \(together(item.sections.filter { $0 != section }))").tag(Placement.current)
-            }
-            Text("On Its Own").tag(Placement.own)
-            ForEach(items.filter { $0.id != item?.id }) { other in
-                Text("With \(together(other.sections))").tag(Placement.with(other.id))
-            }
-            Divider()
-            Text("Hidden").tag(Placement.hidden)
-        }
-    }
-
-    private func placement(of section: SectionID, in item: SectionLayout.Item?, items: [SectionLayout.Item]) -> Binding<Placement> {
-        let current: Placement = item.map { $0.sections.count > 1 ? .current : .own } ?? .hidden
-        return Binding {
-            current
-        } set: { placement in
-            guard placement != current else { return }
-            switch placement {
-            case .current:
-                break
-            case .own:
-                model.separate(section, on: surface)
-            case .with(let id):
-                if let other = items.first(where: { $0.id == id })?.sections.first {
-                    model.combine(section, with: other, on: surface)
-                }
-            case .hidden:
-                model.hide(section, on: surface)
-            }
         }
     }
 
@@ -254,13 +320,15 @@ struct LayoutPage: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    // MARK: Names
+
     private func name(of section: SectionID) -> String {
         guard let source = model.source(for: section) else { return section.rawValue }
         let title = source.info(for: section)?.title ?? section.rawValue
         return source.sections.count > 1 ? "\(source.name): \(title)" : source.name
     }
 
-    /// Such as "Group Chats", or a source's name when it has one section: short enough for a menu.
+    /// Such as "Group Chats", or a source's name when it has one section: short enough for a chip or a menu.
     private func shortName(of section: SectionID) -> String {
         guard let source = model.source(for: section) else { return section.rawValue }
         return source.sections.count > 1 ? (source.info(for: section)?.title ?? source.name) : source.name
@@ -273,6 +341,105 @@ struct LayoutPage: View {
             return ListFormatter.localizedString(byJoining: names)
         }
         return "\(first) and \(names.count - 1) others"
+    }
+}
+
+/// A section you can drag: its symbol on its color, as in a window's sidebar, and its name.
+private struct SectionChip: View {
+    let title: String
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(LinearGradient(colors: [tint.opacity(0.85), tint], startPoint: .top, endPoint: .bottom))
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 20, height: 20)
+            Text(title)
+                .lineLimit(1)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// A menu-bar item as it shows in the menu bar, and kept up to date as its sections' counts change.
+private struct MenuBarPreview: View {
+    @ObservedObject var model: AppModel
+    let sections: [SectionID]
+    let options: MenuBarItemOptions
+
+    @Environment(\.colorScheme) private var colorScheme
+    /// Goes up when the sections' counts may have changed, to draw them again.
+    @LocalState private var updates = 0
+
+    var body: some View {
+        let _ = updates
+        let content = model.menuBarContent(sections: sections, options: options)
+        let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        Group {
+            if let image = MenuBarDrawing.image(of: content, appearance: appearance) {
+                Image(nsImage: image)
+            }
+        }
+        .padding(.horizontal, 5)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+        .help(content.summary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("In the menu bar")
+        .accessibilityValue(content.summary)
+        // Subscribed once for these sections, not on every update: some sources send what they have as soon as
+        // they're subscribed to, which would draw it again, and subscribe again, without end.
+        .task(id: sections) { @MainActor in
+            let changes = Publishers.MergeMany(model.sourceParts(of: sections).map { $0.source.segmentsChanged })
+            for await _ in changes.values {
+                updates += 1
+            }
+        }
+    }
+}
+
+/// Its subviews in rows, left to right, starting another row when the next one doesn't fit.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(width: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [CGRect] {
+        var frames: [CGRect] = []
+        var origin = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x > 0, origin.x + size.width > width {
+                origin = CGPoint(x: 0, y: origin.y + rowHeight + spacing)
+                rowHeight = 0
+            }
+            frames.append(CGRect(origin: origin, size: size))
+            origin.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return frames
     }
 }
 
@@ -302,6 +469,11 @@ extension Surface {
         }
     }
 
+    /// What it calls a section, in a sentence.
+    var sectionNoun: String {
+        self == .windows ? "page" : "section"
+    }
+
     var subtitle: String {
         switch self {
         case .menuBar: return "Which sections show, and which share a menu-bar item"
@@ -313,11 +485,11 @@ extension Surface {
     var explanation: String {
         switch self {
         case .menuBar:
-            return "Each section starts with a menu-bar item of its own. Put sections together in one item to show their counts side by side or added up by what they mean, with a tab for each in its list or everything in one list by state, and hide the ones you don't need. To move items in the menu bar, hold ⌘ and drag them."
+            return "Each card is a menu-bar item. Drag a section onto another card to put them in one item, with their counts side by side or added up by what they mean, and a tab for each in its list or everything in one list by state. Drag it onto New Item to give it one of its own, or onto Hidden if you don't need it. To move items in the menu bar, hold ⌘ and drag them."
         case .widgets:
-            return "A widget shows its sections one above the other, behind your windows or floating above them. Each section starts with a widget of its own; Teams' start hidden. Drag a widget by its header, and right-click it for its settings."
+            return "Each card is a widget, which shows its sections one above the other, behind your windows or floating above them. Drag a section onto another card to put them in one widget, onto New Widget to give it one of its own, or onto Hidden; Teams' start hidden. Drag a widget by its header, and right-click it for its settings."
         case .windows:
-            return "A window has a page for each of its sections, with a sidebar to switch between them. Every page starts in one window; give a page a window of its own to keep it beside the others. Open a window from any list's gear menu, or from a widget."
+            return "Each card is a window, with a page for each of its sections and a sidebar to switch between them. Every page starts in one window; drag a page onto New Window to keep it beside the others, or onto Hidden. Open a window from any list's gear menu, or from a widget."
         }
     }
 

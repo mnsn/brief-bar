@@ -100,11 +100,12 @@ shows them in three places, each arranged in Settings:
   **Open in Window** too. BriefBar shows a Dock icon while a window is open.
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
-item, widget or window, then give each its own again. Items that share sections show their counts side
-by side, with a tab for each in the list. The list opens at the tab you looked at last, even after
-BriefBar restarts, and the first time at the one that needs you. You can also hide a section you don't
-need, such as Group Chats, from any of them: its source stays on, and shows wherever you didn't hide
-it. To move menu-bar items, hold ⌘ and drag them.
+item, widget or window, then give each its own again: in Settings, each item is a card with a chip for
+each of its sections, and you drag a chip onto another card. Items that share sections show their
+counts side by side, with a tab for each in the list. The list opens at the tab you looked at last,
+even after BriefBar restarts, and the first time at the one that needs you. You can also hide a section
+you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever you
+didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 
 A menu-bar item that shows several sections can instead add its counts up by what they mean, the same
 for every source: set its **Counts** to **By Meaning** in Settings › Menu Bar. With everything in one
@@ -503,12 +504,15 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 
 **Settings › Agents** lets agents use BriefBar, off by default (see [Agents](#agents)).
 
-In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
-not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
-that shows several sections has **Counts**, **Side by Side** or **By Meaning** with the states it
-shows, and **List**, **A Tab for Each Section** or **Everything by State**. Each widget has its own
-**Position** (on the desktop or floating above windows) and **Size** (compact, medium or large), there
-and in its right-click menu, and Settings › Widgets turns on the **Overview** widget.
+In **Settings › Menu Bar**, **Widgets** and **Windows**, each item is a card with a chip for each
+section it shows, and a menu-bar item's card shows it as it looks in the menu bar. Drag a chip onto
+another card to put them together, onto **New Item** (or **New Widget**, **New Window**) to give it one
+of its own, or onto **Hidden**; right-click a chip for the same moves. **Put All in One** and **Give
+Each Its Own** change them all at once. A menu-bar item that shows several sections has **Counts**,
+**Side by Side** or **By Meaning** with the states it shows, and **List**, **A Tab for Each Section** or
+**Everything by State**. Each widget has its own **Position** (on the desktop or floating above
+windows) and **Size** (compact, medium or large), there and in its right-click menu, and Settings ›
+Widgets turns on the **Overview** widget.
 
 ## Privacy
 

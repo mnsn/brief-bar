@@ -28,6 +28,16 @@ public enum Surface: String, CaseIterable, Codable, Sendable {
     public static let firstItemID = "main"
 }
 
+/// Where you can drop a section in Settings: in an item with others, in an item of its own, or nowhere.
+public enum SectionDestination: Hashable, Sendable {
+    /// In the item that has this other section.
+    case with(SectionID)
+    /// In an item of its own.
+    case alone
+    /// Nowhere.
+    case hidden
+}
+
 /// The items of a surface (menu-bar items, widgets or windows), in order, the sections each one shows, and the
 /// sections you've hidden from it.
 ///
@@ -159,6 +169,24 @@ public struct SectionLayout: Codable, Equatable, Sendable {
         guard items[index].sections.count > 1 else { return }
         items[index].sections.removeAll { $0 == section }
         items.insert(Item(id: uniqueID(section.rawValue), sections: [section]), at: index + 1)
+    }
+
+    /// Puts `section` where you dropped it in Settings. Dropped in the item it's already in, it stays in its place
+    /// there, and shows if it was hidden.
+    public mutating func move(_ section: SectionID, to destination: SectionDestination) {
+        switch destination {
+        case .with(let other):
+            place([other])
+            if item(containing: other)?.sections.contains(section) == true {
+                show(section)
+            } else {
+                combine(section, with: other)
+            }
+        case .alone:
+            separate(section)
+        case .hidden:
+            hide(section)
+        }
     }
 
     /// Puts every section in one item: `sections` first, in their order, then the others already placed, so a

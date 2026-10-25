@@ -160,8 +160,11 @@ sections each one shows, and the sections you've hidden from it.
 
 - Each section starts in a menu-bar item and a widget of its own, and every section starts in one
   window. Teams' widgets start hidden, so an update doesn't put your chats on the desktop.
-- In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), you put a section in
-  another item or hide it. **Put All in One** puts every section in one item: those that show, in
+- In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), each item is a card with a
+  chip for each section it shows; a menu-bar item's card shows it as `MenuBarDrawing` draws it. You
+  drag a chip onto another card, onto **New Item** or onto **Hidden**, or pick the same move from its
+  right-click menu (`SectionLayout.move`): dropped in the item it's already in, a section stays in its
+  place. **Put All in One** puts every section in one item: those that show, in
   order, then those of the sources that are off, so a source you turn on later joins it. **Give Each
   Its Own** undoes it.
 - A hidden section keeps its place, for when you show it again, and its source keeps running: it
