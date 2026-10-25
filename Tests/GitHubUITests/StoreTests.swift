@@ -127,12 +127,16 @@ import Testing
 
     @Test func aPopoverOpeningReadsAgainOnlyAfterAWhile() async {
         let store = liveStore(FakeCLI.missing)
+        let started = Date()
         store.start()
         defer { store.stop() }
         await eventually { store.hasLoaded }
 
         store.refreshIfStale()
-        #expect(!store.isRefreshing)
+        // A busy machine can take longer than the gap to get here, and then reading again is right.
+        if Date().timeIntervalSince(started) < GitHubStore.minimumGap {
+            #expect(!store.isRefreshing)
+        }
         store.refresh()
         #expect(store.isRefreshing)
         await eventually { !store.isRefreshing }
