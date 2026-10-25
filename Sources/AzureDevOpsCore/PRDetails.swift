@@ -99,14 +99,23 @@ public struct Check: Sendable, Codable, Equatable {
     /// How many approvals a minimum-reviewers policy wants.
     public var minimumApprovers: Int?
     public var completedAt: Date?
+    /// The run a build policy queued, in the pull request's project.
+    public var buildId: Int?
+    /// Where that build failed, and the first error there, once its timeline has been read.
+    public var failure: PipelineFailure?
 
-    public init(name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil) {
+    public init(
+        name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil,
+        buildId: Int? = nil, failure: PipelineFailure? = nil
+    ) {
         self.name = name
         self.kind = kind
         self.state = state
         self.isBlocking = isBlocking
         self.minimumApprovers = minimumApprovers
         self.completedAt = completedAt
+        self.buildId = buildId
+        self.failure = failure
     }
 
     /// Nil for a disabled policy.
@@ -167,6 +176,12 @@ public struct Check: Sendable, Codable, Equatable {
         isBlocking = configuration.isBlocking ?? true
         minimumApprovers = settings?.minimumApproverCount
         completedAt = evaluation.completedDate
+        buildId = kind == .build ? context?.buildId : nil
+    }
+
+    /// A build that failed, and whose run is known: its timeline says where.
+    var failedBuildId: Int? {
+        kind == .build && state == .failed ? buildId : nil
     }
 
     private static func nonEmpty(_ text: String?) -> String? {

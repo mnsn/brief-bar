@@ -39,11 +39,17 @@ let package = Package(
             name: "ChromiumIndexedDB",
             dependencies: ["BriefBarCore"]
         ),
-        // Azure DevOps pull requests, read with the Azure CLI's sign-in. The only module that may use
-        // the network (scripts/check-boundaries.sh).
+        // Azure DevOps pull requests, read with the Azure CLI's sign-in. One of the two modules that may use
+        // the network, with GitHubCore (scripts/check-boundaries.sh).
         .target(
             name: "AzureDevOpsCore",
             dependencies: ["BriefBarCore", "NotificationCenterDB"]
+        ),
+        // GitHub pull requests, read with the GitHub CLI's sign-in: one fixed, read-only query to GitHub's API.
+        // The other module that may use the network (scripts/check-boundaries.sh).
+        .target(
+            name: "GitHubCore",
+            dependencies: ["BriefBarCore"]
         ),
         // GitHub Copilot app sessions, from the app's database and each agent's event log in ~/.copilot.
         .target(
@@ -76,11 +82,15 @@ let package = Package(
             name: "CopilotUI",
             dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
         ),
+        .target(
+            name: "GitHubUI",
+            dependencies: ["BriefBarCore", "BriefBarUI", "GitHubCore"]
+        ),
         // The app: its sources, the menu-bar items, Settings and the command line. It loads no library but
         // Apple's, so it keeps library validation on, and starts the updater for in-app updates.
         .executableTarget(
             name: "BriefBar",
-            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "TeamsUI", "AzureDevOpsUI", "CopilotUI", "GitHubUI", "CopilotTasks"]
         ),
         // The updater: Sparkle, in a helper app inside BriefBar.app, with library validation off and none of
         // BriefBar's privacy permissions (see Sources/BriefBarUpdater/UpdaterController.swift).
@@ -106,9 +116,10 @@ let package = Package(
             name: "ChromiumIndexedDBTests",
             dependencies: ["ChromiumIndexedDB", "BriefBarCore"]
         ),
+        // With the app code too, for `--mcp`'s reader, which reads through its stub Azure DevOps.
         .testTarget(
             name: "AzureDevOpsCoreTests",
-            dependencies: ["AzureDevOpsCore", "NotificationCenterDB", "BriefBarCore"]
+            dependencies: ["AzureDevOpsCore", "NotificationCenterDB", "BriefBarCore", "AzureDevOpsUI", "BriefBarUI"]
         ),
         .testTarget(
             name: "CopilotCoreTests",
@@ -125,6 +136,18 @@ let package = Package(
         .testTarget(
             name: "AzureDevOpsUITests",
             dependencies: ["AzureDevOpsUI", "AzureDevOpsCore", "BriefBarUI", "BriefBarCore", "CopilotTasks"]
+        ),
+        .testTarget(
+            name: "CopilotUITests",
+            dependencies: ["CopilotUI", "CopilotCore", "BriefBarUI"]
+        ),
+        .testTarget(
+            name: "GitHubCoreTests",
+            dependencies: ["GitHubCore", "BriefBarCore"]
+        ),
+        .testTarget(
+            name: "GitHubUITests",
+            dependencies: ["GitHubUI", "GitHubCore", "BriefBarUI", "BriefBarCore"]
         ),
     ]
 )

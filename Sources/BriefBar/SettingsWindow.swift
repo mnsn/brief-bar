@@ -3,7 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// BriefBar's Settings window: General, where sections show, then a page for each source.
+/// BriefBar's Settings window: General, where sections show, a page for each source, then agents.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private unowned let model: AppModel
@@ -64,6 +64,10 @@ struct SettingsView: View {
                         }
                     }
                 }
+                Section {
+                    AgentsSidebarRow(agents: model.agents)
+                        .tag(SettingsDestination.agents)
+                }
             }
             .listStyle(.sidebar)
             .frame(width: 200)
@@ -92,6 +96,8 @@ struct SettingsView: View {
         case .layout(let surface):
             LayoutPage(model: model, surface: surface)
                 .id(surface)
+        case .agents:
+            AgentsPage(agents: model.agents)
         }
     }
 }
@@ -140,7 +146,7 @@ struct GeneralPage: View {
                 }
             }
 
-            Text("Every source is off until you turn it on. Each one first says what it reads, where it connects and what it needs, and turning it on is your consent: macOS asks for some permissions only once for all of BriefBar, and BriefBar never turns a source on by itself.")
+            Text("Every source is off until you turn it on, and so are agents. Each one first says what it reads, where it connects and what it needs, and turning it on is your consent: macOS asks for some permissions only once for all of BriefBar, and BriefBar never turns a source on by itself.")
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
@@ -151,6 +157,9 @@ struct GeneralPage: View {
                     }
                     .padding(.vertical, 10)
                 }
+                Divider()
+                AgentsSummaryRow(agents: model.agents) { go(.agents) }
+                    .padding(.vertical, 10)
             }
             .padding(.horizontal, 12)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
@@ -328,15 +337,33 @@ struct SourcePage: View {
     }
 }
 
-/// What a source reads, where it connects and what it needs.
+/// What a source reads, where it connects and what it needs; or what agents get.
 struct DescriptionBox: View {
-    let description: SourceDescription
+    struct Entry {
+        var title: String
+        var symbol: String
+        var text: String
+    }
+
+    let entries: [Entry]
+
+    init(entries: [Entry]) {
+        self.entries = entries
+    }
+
+    init(description: SourceDescription) {
+        self.init(entries: [
+            Entry(title: "What BriefBar reads", symbol: "doc.text.magnifyingglass", text: description.reads),
+            Entry(title: "Network", symbol: "network", text: description.network),
+            Entry(title: "What it needs", symbol: "lock.shield", text: description.needs),
+        ])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            entry("What BriefBar reads", description.reads, symbol: "doc.text.magnifyingglass")
-            entry("Network", description.network, symbol: "network")
-            entry("What it needs", description.needs, symbol: "lock.shield")
+            ForEach(entries.indices, id: \.self) { index in
+                entry(entries[index].title, entries[index].text, symbol: entries[index].symbol)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

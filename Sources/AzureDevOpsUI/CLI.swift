@@ -140,8 +140,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         options.organizations.isEmpty ? appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? [] : options.organizations
     }
 
-    private static func classifierOptions() -> ClassifierOptions {
-        let defaults = appDefaults
+    static func classifierOptions(_ defaults: UserDefaults? = appDefaults) -> ClassifierOptions {
         let idleDays = defaults?.object(forKey: SettingsKey.idleDays) as? Int ?? 14
         let keepDoneHours = defaults?.object(forKey: SettingsKey.keepDoneHours) as? Int ?? 24
         return ClassifierOptions(
@@ -151,17 +150,17 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     /// What the app's accounts have seen.
-    private static func seenBook() -> SeenBook {
+    static func seenBook(_ defaults: UserDefaults? = appDefaults) -> SeenBook {
         let decoder = JSONDecoder()
         return SeenBook(
-            current: appDefaults?.data(forKey: SettingsKey.seen).flatMap { try? decoder.decode(SeenState.self, from: $0) }
+            current: defaults?.data(forKey: SettingsKey.seen).flatMap { try? decoder.decode(SeenState.self, from: $0) }
                 ?? SeenState.firstRun(),
-            others: appDefaults?.data(forKey: SettingsKey.otherSeen).flatMap { try? decoder.decode([String: SeenState].self, from: $0) }
+            others: defaults?.data(forKey: SettingsKey.otherSeen).flatMap { try? decoder.decode([String: SeenState].self, from: $0) }
                 ?? [:]
         )
     }
 
-    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory.
+    /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
             PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now, options: options)
@@ -195,8 +194,15 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
                 return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(error.description)")
             }
         }
-        let configuration = PulseEngine.Configuration(organizations: organizations, keepDoneFor: classifierOptions().keepDoneFor)
-        let snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration) }
+        let configuration = PulseEngine.Configuration(
+            organizations: organizations, keepDoneFor: classifierOptions().keepDoneFor,
+            followMerges: appDefaults?.object(forKey: SettingsKey.followMerges) as? Bool ?? true
+        )
+        // The pull requests you watch, as the app keeps them.
+        let watched = Set((appDefaults?.data(forKey: SettingsKey.watchedPullRequests)
+            .flatMap { try? JSONDecoder().decode([PullRequestLink].self, from: $0) } ?? []).map(\.key))
+        var snapshot = wait { await PulseEngine.loadOnce(client: client, configuration: configuration, linked: watched) }
+        snapshot.records = snapshot.records.map { watched.contains($0.id) ? $0.watched() : $0 }
         return Loaded(
             organizations: organizations,
             items: resolve(snapshot, seen: seenBook().state(for: snapshot.account), options: classifierOptions()),

@@ -65,11 +65,13 @@ public struct PulseSnapshot: Sendable, Equatable {
     public var refreshedAt: Date?
     public var isRefreshing: Bool
     public var hasLoaded: Bool
+    /// Pull requests asked for by their links that turned out to be closed, gone, or not yours to read.
+    public var closedLinks: Set<PRKey>
 
     public init(
         records: [PRRecord] = [], organizations: [String] = [], account: String? = nil, userName: String? = nil,
         firstLoaded: [String: Date] = [:], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false
+        hasLoaded: Bool = false, closedLinks: Set<PRKey> = []
     ) {
         self.records = records
         self.organizations = organizations
@@ -80,13 +82,14 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.refreshedAt = refreshedAt
         self.isRefreshing = isRefreshing
         self.hasLoaded = hasLoaded
+        self.closedLinks = closedLinks
     }
 }
 
-/// Polls Azure DevOps: the pull request lists every refresh (three requests per organization), and the
-/// details of the pull requests the `RefreshPlanner` picks (two requests each). Azure DevOps can't push
-/// changes to a personal app, and pull requests and builds take minutes to hours, so a refresh a minute
-/// is plenty. Every request is a GET.
+/// Polls Azure DevOps: the pull request lists every refresh (three requests per organization), the details of the
+/// pull requests the `RefreshPlanner` picks (two requests each), and, once, the timeline of each failed build of your
+/// pull requests, for where it failed. Azure DevOps can't push changes to a personal app, and pull requests and builds
+/// take minutes to hours, so a refresh a minute is plenty. Every request is a GET.
 public actor PulseEngine {
     public typealias ChangeHandler = @Sendable (PulseSnapshot) -> Void
 
@@ -100,11 +103,13 @@ public actor PulseEngine {
         public var planner: RefreshPlanner.Options
         /// Pull requests whose details are fetched at the same time.
         public var concurrency: Int
+        /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
+        public var followMerges: Bool
 
         public init(
             organizations: [String], interval: TimeInterval = 60, keepDoneFor: TimeInterval = 86_400,
             inactiveAfter: TimeInterval? = 14 * 86_400, planner: RefreshPlanner.Options = RefreshPlanner.Options(),
-            concurrency: Int = 4
+            concurrency: Int = 4, followMerges: Bool = true
         ) {
             self.organizations = organizations
             self.interval = interval
@@ -112,6 +117,7 @@ public actor PulseEngine {
             self.inactiveAfter = inactiveAfter
             self.planner = planner
             self.concurrency = concurrency
+            self.followMerges = followMerges
         }
     }
 
@@ -160,6 +166,61 @@ public actor PulseEngine {
         var completed: [PullRequest]
     }
 
+    /// A failed build of one of your pull requests, whose timeline says where it failed. A build that's retried keeps
+    /// its ID and fails again later, so when it completed is part of it.
+    private struct FailedBuild: Hashable, Sendable {
+        var organization: String
+        var projectId: String
+        var buildId: Int
+        var completedAt: Date?
+    }
+
+    /// The most failed builds whose timelines are read in one refresh: each is read once.
+    static let buildTimelinesPerRefresh = 4
+    /// The most merges whose runs are looked for in one refresh, the newest first.
+    static let mergesPerRefresh = 5
+    /// The most timelines of runs after merges read in one refresh: a run's while it runs, and once when it finishes.
+    static let mergeTimelinesPerRefresh = 4
+
+    /// What's known of the pipelines after one of your merges.
+    private struct MergeFollow: Sendable {
+        struct Found: Sendable {
+            var pipeline: PipelineRef
+            var run: PipelineRun
+        }
+
+        struct Timeline: Sendable {
+            var stages: [PipelineStage]
+            var failure: PipelineFailure?
+            /// The run's status when it was read: a finished run's is read once more.
+            var readFor: PipelineRun.Status
+            var readAt: Date
+        }
+
+        /// The runs found so far, by ID.
+        var runs: [Int: Found] = [:]
+        var timelines: [Int: Timeline] = [:]
+        /// When the runs were last looked for, and how many lookups in a row failed.
+        var lastLookup: Date?
+        var failures = 0
+
+        /// Each pipeline's runs, newest first, the pipelines in the order their first runs were queued.
+        var byPipeline: [(pipeline: PipelineRef, runs: [PipelineRun])] {
+            let grouped = Dictionary(grouping: runs.values, by: \.pipeline.id)
+            return grouped.values
+                .map { found in
+                    (pipeline: found[0].pipeline,
+                     runs: found.map(\.run).sorted { ($0.queuedAt ?? .distantPast, $0.id) > ($1.queuedAt ?? .distantPast, $1.id) })
+                }
+                .sorted { lhs, rhs in
+                    (lhs.runs.compactMap(\.queuedAt).min() ?? .distantFuture, lhs.pipeline.definitionId)
+                        < (rhs.runs.compactMap(\.queuedAt).min() ?? .distantFuture, rhs.pipeline.definitionId)
+                }
+        }
+
+        var latestRuns: [PipelineRun] { byPipeline.compactMap(\.runs.first) }
+    }
+
     private let client: ADOClient
     private var configuration: Configuration
     private let onChange: ChangeHandler
@@ -179,6 +240,8 @@ public actor PulseEngine {
     private var linkedFailures: [PRKey: Date] = [:]
     /// Linked pull requests as last read, and when: kept between refreshes, which read only a few each.
     private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
+    /// Linked pull requests read as closed, or gone or forbidden.
+    private var closedLinks: Set<PRKey> = []
     private var active: [PRKey: Listed] = [:]
     private var done: [PRKey: PullRequest] = [:]
     private var details: [PRKey: PRDetails] = [:]
@@ -186,6 +249,14 @@ public actor PulseEngine {
     /// Your pull requests that left the active list without completing: abandoned, or completed just now. Each
     /// is looked up by its ID, a few per refresh, until that works or it's too old to show as done.
     private var vanished: [PRKey: Vanished] = [:]
+    /// Where your pull requests' failed builds failed, from their timelines; and which have been read, including the
+    /// ones whose timelines had nothing to say or couldn't be read for good.
+    private var buildFailures: [FailedBuild: PipelineFailure] = [:]
+    private var buildsRead: Set<FailedBuild> = []
+    /// Failed builds whose timelines couldn't be read: when last tried, and how many tries in a row failed.
+    private var buildAttempts: [FailedBuild: (last: Date, failures: Int)] = [:]
+    /// The pipelines after your merges, by pull request, while Done keeps it.
+    private var merges: [PRKey: MergeFollow] = [:]
     private var problem: PulseProblem?
     private var refreshedAt: Date?
     private var hasLoaded = false
@@ -258,6 +329,7 @@ public actor PulseEngine {
         let added = !keys.subtracting(linkedKeys).isEmpty
         linkedKeys = keys
         linkedFailures = linkedFailures.filter { keys.contains($0.key) }
+        closedLinks = closedLinks.intersection(keys)
         // The ones listed only because someone sent them go with their links, now rather than on the next refresh.
         let gone = Set(linked.keys).subtracting(keys)
         linked = linked.filter { keys.contains($0.key) }
@@ -418,7 +490,13 @@ public actor PulseEngine {
         let keys = RefreshPlanner.plan(
             candidates, cache: entries, now: startedAt, options: configuration.planner, limit: configuration.planner.budget
         )
-        let throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        var throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        if throttled == nil {
+            throttled = await readBuildFailures(at: startedAt, interval: configuration.interval)
+        }
+        if throttled == nil {
+            throttled = await followMerges(at: startedAt, configuration: configuration)
+        }
 
         refreshedAt = now()
         if let throttled {
@@ -456,15 +534,23 @@ public actor PulseEngine {
                 linkedFailures[key] = pr.status == .active ? nil : date
                 guard pr.status == .active, linkedKeys.contains(key) else {
                     linked[key] = nil
+                    if linkedKeys.contains(key) { closedLinks.insert(key) }
                     continue
                 }
+                closedLinks.remove(key)
                 let role: PRRole = pr.author.id == me ? .author : pr.reviewer(me) != nil ? .reviewer : .linked
                 linked[key] = (Listed(pullRequest: pr, role: role), date)
             } catch {
                 linkedFailures[key] = date
                 // Gone, or no access: nothing to list. Otherwise it stays as last read.
-                if case .notFound = error as? ADOError { linked[key] = nil }
-                if case .forbidden = error as? ADOError { linked[key] = nil }
+                if case .notFound = error as? ADOError {
+                    linked[key] = nil
+                    closedLinks.insert(key)
+                }
+                if case .forbidden = error as? ADOError {
+                    linked[key] = nil
+                    closedLinks.insert(key)
+                }
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
@@ -478,6 +564,8 @@ public actor PulseEngine {
         entries = [:]
         vanished = [:]
         linked = [:]
+        closedLinks = []
+        forgetRuns()
         problem = .noOrganizations
         hasLoaded = true
     }
@@ -493,6 +581,16 @@ public actor PulseEngine {
         vanished = [:]
         linkedFailures = [:]
         linked = [:]
+        closedLinks = []
+        forgetRuns()
+    }
+
+    /// Forgets the failed builds and the merges' runs read so far.
+    private func forgetRuns() {
+        buildFailures = [:]
+        buildsRead = []
+        buildAttempts = [:]
+        merges = [:]
     }
 
     /// Fetches details a few pull requests at a time. Returns the error if Azure DevOps asked to slow down.
@@ -546,6 +644,203 @@ public actor PulseEngine {
         if pr.isDraft { return true }
         guard let inactiveAfter = configuration.inactiveAfter, let last = details.lastActivity else { return false }
         return date.timeIntervalSince(max(last, pr.createdAt)) > inactiveAfter
+    }
+
+    /// The failed builds of your pull requests, as their policies report them now.
+    private func failedBuilds() -> Set<FailedBuild> {
+        var builds: Set<FailedBuild> = []
+        for (key, item) in active where item.role == .author {
+            for check in details[key]?.checks ?? [] {
+                guard let buildId = check.failedBuildId else { continue }
+                builds.insert(FailedBuild(
+                    organization: key.organization, projectId: item.pullRequest.projectId, buildId: buildId, completedAt: check.completedAt
+                ))
+            }
+        }
+        return builds
+    }
+
+    /// Reads where your pull requests' failed builds failed, from their timelines, a few per refresh: each once, the
+    /// ones never tried first. A timeline that can't be read is tried again later, less and less often; one that
+    /// isn't there or that you may not read, never. Returns the error if Azure DevOps asked to slow down.
+    private func readBuildFailures(at date: Date, interval: TimeInterval) async -> ADOError? {
+        let wanted = failedBuilds()
+        buildFailures = buildFailures.filter { wanted.contains($0.key) }
+        buildsRead = buildsRead.intersection(wanted)
+        buildAttempts = buildAttempts.filter { wanted.contains($0.key) }
+        let due = wanted
+            .filter { build in
+                guard !buildsRead.contains(build) else { return false }
+                guard let tried = buildAttempts[build], tried.failures > 1 else { return true }
+                return date.timeIntervalSince(tried.last) >= min(interval * pow(2, Double(tried.failures - 2)), 1_800)
+            }
+            .sorted {
+                (buildAttempts[$0]?.last ?? .distantPast, $0.organization, $0.buildId)
+                    < (buildAttempts[$1]?.last ?? .distantPast, $1.organization, $1.buildId)
+            }
+            .prefix(Self.buildTimelinesPerRefresh)
+        for build in due {
+            do {
+                let timeline = try await client.get(
+                    ADOEndpoint.timeline(organization: build.organization, projectId: build.projectId, buildId: build.buildId),
+                    as: ADOTimeline.self
+                )
+                buildFailures[build] = PipelineFailure.first(in: timeline)
+                buildsRead.insert(build)
+                buildAttempts[build] = nil
+            } catch ADOError.notFound, ADOError.forbidden {
+                // No timeline, or one you may not read: the list says which build failed, as before.
+                buildsRead.insert(build)
+                buildAttempts[build] = nil
+            } catch ADOError.throttled(let seconds) {
+                return .throttled(retryAfter: seconds)
+            } catch {
+                buildAttempts[build] = (date, (buildAttempts[build]?.failures ?? 0) + 1)
+            }
+        }
+        return nil
+    }
+
+    /// Looks for the runs after your merges, and reads their timelines: each merge for half an hour after it merged,
+    /// while a run hasn't finished, and for a little while after the last one did; the newest merges first, a few a
+    /// refresh. A lookup that fails is tried again on the next refresh, then less and less often. Returns the error if
+    /// Azure DevOps asked to slow down.
+    private func followMerges(at date: Date, configuration: Configuration) async -> ADOError? {
+        guard configuration.followMerges else {
+            merges = [:]
+            return nil
+        }
+        let merged = done.values.filter { $0.status == .completed && $0.mergeCommit != nil && $0.closedAt != nil }
+        let keys = Set(merged.map(\.key))
+        merges = merges.filter { keys.contains($0.key) }
+        let interval = configuration.interval
+        let due = merged
+            .filter { pr in
+                let follow = merges[pr.key] ?? MergeFollow()
+                guard let mergedAt = pr.closedAt,
+                      MergeChain.isFollowing(mergedAt: mergedAt, runs: follow.latestRuns, at: date)
+                else { return false }
+                guard let last = follow.lastLookup, follow.failures > 1 else { return true }
+                return date.timeIntervalSince(last) >= min(interval * pow(2, Double(follow.failures - 2)), 1_800)
+            }
+            .sorted { ($0.closedAt ?? .distantPast, $0.key) > ($1.closedAt ?? .distantPast, $1.key) }
+            .prefix(Self.mergesPerRefresh)
+        for pr in due {
+            guard let commit = pr.mergeCommit, let mergedAt = pr.closedAt else { continue }
+            var follow = merges[pr.key] ?? MergeFollow()
+            let since = mergedAt.addingTimeInterval(-MergeChain.clockSlack)
+            let organization = pr.key.organization
+            do {
+                let onBranch = try await client.get(ADOEndpoint.branchBuilds(
+                    organization: organization, projectId: pr.projectId, repositoryId: pr.repositoryId, branch: pr.targetBranch,
+                    queuedSince: since
+                ), as: ADOList<ADOBuild>.self).value
+                var chain = MergeChain.runs(onBranch: onBranch, triggered: [], mergeCommit: commit)
+                // The runs they started are looked for only once there's a run to start them.
+                if !chain.isEmpty {
+                    let triggered = try await client.get(
+                        ADOEndpoint.triggeredBuilds(organization: organization, projectId: pr.projectId, queuedSince: since),
+                        as: ADOList<ADOBuild>.self
+                    ).value
+                    chain = MergeChain.runs(onBranch: onBranch, triggered: triggered, mergeCommit: commit)
+                }
+                for build in chain {
+                    let projectId = build.project?.id ?? pr.projectId
+                    let projectName = build.project?.name ?? pr.projectName
+                    let pipeline = PipelineRef(
+                        organization: organization, projectId: projectId, projectName: projectName, definitionId: build.definition.id,
+                        name: PlainText.singleLine(build.definition.name ?? "Pipeline \(build.definition.id)"),
+                        folder: PipelineRef.folder(build.definition.path)
+                    )
+                    follow.runs[build.id] = MergeFollow.Found(
+                        pipeline: pipeline, run: PipelineRun(organization: organization, projectName: projectName, build)
+                    )
+                }
+                follow.lastLookup = date
+                follow.failures = 0
+            } catch ADOError.throttled(let seconds) {
+                merges[pr.key] = follow
+                return .throttled(retryAfter: seconds)
+            } catch {
+                follow.lastLookup = date
+                follow.failures += 1
+            }
+            merges[pr.key] = follow
+        }
+        return await readMergeTimelines(at: date)
+    }
+
+    /// Reads the timelines of the latest runs after your merges: a run's every refresh while it runs, for its stages
+    /// and whether one waits for an approval, and once more when it finishes, for where it failed. The ones never
+    /// read first, then the ones read longest ago.
+    private func readMergeTimelines(at date: Date) async -> ADOError? {
+        var due: [(key: PRKey, found: MergeFollow.Found, lastRead: Date?)] = []
+        for (key, follow) in merges {
+            for (pipeline, runs) in follow.byPipeline {
+                guard let run = runs.first, run.status != .queued else { continue }
+                let read = follow.timelines[run.id]
+                // Read once for how it finished; a retried run, running again under the same ID, is read again.
+                if let read, run.status.isFinished, read.readFor == run.status { continue }
+                due.append((key, MergeFollow.Found(pipeline: pipeline, run: run), read?.readAt))
+            }
+        }
+        let picked = due
+            .sorted { ($0.lastRead ?? .distantPast, $0.found.run.id) < ($1.lastRead ?? .distantPast, $1.found.run.id) }
+            .prefix(Self.mergeTimelinesPerRefresh)
+        for item in picked {
+            let run = item.found.run
+            let pipeline = item.found.pipeline
+            do {
+                let timeline = try await client.get(
+                    ADOEndpoint.timeline(organization: pipeline.organization, projectId: pipeline.projectId, buildId: run.id),
+                    as: ADOTimeline.self
+                )
+                merges[item.key]?.timelines[run.id] = MergeFollow.Timeline(
+                    stages: PipelineStage.stages(from: timeline, runFinished: run.status.isFinished),
+                    failure: run.status == .failed ? PipelineFailure.first(in: timeline) : nil,
+                    readFor: run.status, readAt: date
+                )
+            } catch ADOError.notFound, ADOError.forbidden {
+                // No timeline yet, or one you may not read: a finished run's isn't asked for again.
+                if run.status.isFinished {
+                    merges[item.key]?.timelines[run.id] = MergeFollow.Timeline(stages: [], failure: nil, readFor: run.status, readAt: date)
+                }
+            } catch ADOError.throttled(let seconds) {
+                return .throttled(retryAfter: seconds)
+            } catch {
+                // Tried again on the next refresh.
+            }
+        }
+        return nil
+    }
+
+    /// The pipelines after one of your merges, as known now; nil before any run was found.
+    private func mergePipelines(for pr: PullRequest) -> MergePipelines? {
+        guard let follow = merges[pr.key], !follow.runs.isEmpty, let mergedAt = pr.closedAt else { return nil }
+        let statuses = follow.byPipeline.map { pipeline, runs in
+            let timeline = runs.first.flatMap { follow.timelines[$0.id] }
+            return PipelineStatus(
+                pipeline: pipeline, runs: runs, stages: timeline?.stages ?? [],
+                failure: runs.first?.status == .failed ? timeline?.failure : nil
+            )
+        }
+        return MergePipelines(
+            pullRequest: pr.key, title: pr.title.isEmpty ? "Pull request \(pr.key.number)" : pr.title, targetBranch: pr.targetBranch,
+            mergedAt: mergedAt, url: pr.webURL, pipelines: statuses,
+            isFollowing: MergeChain.isFollowing(mergedAt: mergedAt, runs: follow.latestRuns, at: now())
+        )
+    }
+
+    /// The details with where each failed build failed, once that's been read.
+    private func withFailures(_ details: PRDetails?, of pr: PullRequest) -> PRDetails? {
+        guard var details, !buildFailures.isEmpty else { return details }
+        for index in details.checks.indices {
+            guard let buildId = details.checks[index].failedBuildId else { continue }
+            details.checks[index].failure = buildFailures[FailedBuild(
+                organization: pr.key.organization, projectId: pr.projectId, buildId: buildId, completedAt: details.checks[index].completedAt
+            )]
+        }
+        return details
     }
 
     private static func lists(
@@ -629,15 +924,18 @@ public actor PulseEngine {
 
     private func snapshot() -> PulseSnapshot {
         var records = active.map { key, item in
-            PRRecord(pullRequest: item.pullRequest, role: item.role, details: details[key], me: identities[key.organization] ?? "")
+            PRRecord(
+                pullRequest: item.pullRequest, role: item.role, details: withFailures(details[key], of: item.pullRequest),
+                me: identities[key.organization] ?? ""
+            )
         }
         records += done.map { key, pr in
-            PRRecord(pullRequest: pr, role: .author, me: identities[key.organization] ?? "")
+            PRRecord(pullRequest: pr, role: .author, me: identities[key.organization] ?? "", merge: mergePipelines(for: pr))
         }
         records.sort { $0.id < $1.id }
         return PulseSnapshot(
             records: records, organizations: configuration.organizations, account: account, userName: userName, firstLoaded: firstLoaded,
-            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
+            problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded, closedLinks: closedLinks
         )
     }
 

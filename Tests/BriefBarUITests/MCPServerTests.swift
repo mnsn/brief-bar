@@ -1,0 +1,231 @@
+import BriefBarUI
+import Foundation
+import Synchronization
+import Testing
+
+/// What a server wrote, line by line.
+private final class Output: Sendable {
+    private let lines = Mutex<[Data]>([])
+
+    func add(_ data: Data) {
+        lines.withLock { $0.append(data) }
+    }
+
+    /// Each message, decoded.
+    var messages: [JSONValue] {
+        lines.withLock { $0 }.map { line in
+            #expect(line.last == 0x0A)
+            #expect(line.dropLast().contains(0x0A) == false)
+            return (try? JSONDecoder().decode(JSONValue.self, from: line)) ?? .null
+        }
+    }
+
+    func reply(to id: Int) -> JSONValue? {
+        messages.first { $0["id"] == .int(id) }
+    }
+}
+
+@Suite struct MCPServerTests {
+    private let identity = MCPServer.Identity(name: "briefbar", title: "BriefBar", version: "1.0", instructions: "Start with needs_me.")
+
+    private func server(_ tools: [MCPTool], output: Output) -> MCPServer {
+        MCPServer(identity: identity, tools: tools) { output.add($0) }
+    }
+
+    private func line(_ text: String) -> Data { Data(text.utf8) }
+
+    private func request(_ id: Int, _ method: String, _ params: String = "{}") -> Data {
+        line(#"{"jsonrpc":"2.0","id":\#(id),"method":"\#(method)","params":\#(params)}"#)
+    }
+
+    private var echo: MCPTool {
+        MCPTool(name: "echo", title: "Echo", description: "Says what it's given",
+                inputSchema: MCPSchema.object(["text": MCPSchema.string("What to say")], required: ["text"])) { arguments in
+            guard let text = arguments["text"]?.string else { throw MCPToolError("Say something.") }
+            return text
+        }
+    }
+
+    // MARK: JSON
+
+    @Test func decodesEveryKindOfValue() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: line(#"{"a":1,"b":1.5,"c":true,"d":"x","e":null,"f":[1,"2"]}"#))
+        #expect(value["a"] == .int(1))
+        #expect(value["b"] == .double(1.5))
+        #expect(value["c"] == .bool(true))
+        #expect(value["d"] == .string("x"))
+        #expect(value["e"] == .null)
+        #expect(value["f"] == .array([.int(1), .string("2")]))
+        #expect(value["missing"] == nil)
+    }
+
+    @Test func readsNumbersAndBooleansAgentsWriteAsStrings() {
+        #expect(JSONValue.string(" 4088 ").int == 4088)
+        #expect(JSONValue.double(12).int == 12)
+        #expect(JSONValue.double(1.5).int == nil)
+        #expect(JSONValue.string("!4088").int == nil)
+        #expect(JSONValue.string("TRUE").bool == true)
+        #expect(JSONValue.string("no").bool == nil)
+    }
+
+    @Test func splitsLinesHoweverTheyArrive() {
+        var splitter = LineSplitter()
+        #expect(splitter.append(line("{\"a\"")).isEmpty)
+        #expect(splitter.append(line(":1}\r\n{\"b\":2}\n{\"c\"")) == [line("{\"a\":1}"), line("{\"b\":2}")])
+        #expect(splitter.finish() == line("{\"c\""))
+        #expect(splitter.finish() == nil)
+    }
+
+    // MARK: Messages
+
+    @Test func answersInTheVersionTheClientAsksForWhenItKnowsIt() async throws {
+        let output = Output()
+        let server = server([echo], output: output)
+        await server.receive(request(1, "initialize", #"{"protocolVersion":"2025-03-26","capabilities":{}}"#))
+        await server.receive(request(2, "initialize", #"{"protocolVersion":"1999-01-01"}"#))
+        let first = try #require(output.reply(to: 1)?["result"])
+        #expect(first["protocolVersion"] == .string("2025-03-26"))
+        #expect(first["serverInfo"]?["name"] == .string("briefbar"))
+        #expect(first["instructions"] == .string("Start with needs_me."))
+        #expect(first["capabilities"]?["tools"] != nil)
+        #expect(output.reply(to: 2)?["result"]?["protocolVersion"] == .string(MCPServer.protocolVersions[0]))
+    }
+
+    @Test func listsItsToolsInOrderWithTheirSchemas() async throws {
+        let output = Output()
+        let other = MCPTool(name: "watch", title: "Watch", description: "Changes a setting", readOnly: false) { _ in "" }
+        let server = server([echo, other], output: output)
+        await server.receive(request(1, "tools/list"))
+        guard case .array(let tools)? = output.reply(to: 1)?["result"]?["tools"] else {
+            Issue.record("No tools")
+            return
+        }
+        #expect(tools.map { $0["name"] } == [.string("echo"), .string("watch")])
+        #expect(tools[0]["inputSchema"]?["required"] == .array([.string("text")]))
+        #expect(tools[0]["annotations"]?["readOnlyHint"] == .bool(true))
+        #expect(tools[1]["annotations"]?["readOnlyHint"] == .bool(false))
+        #expect(tools[1]["annotations"]?["destructiveHint"] == .bool(false))
+    }
+
+    @Test func callsATool() async throws {
+        let output = Output()
+        let server = server([echo], output: output)
+        await server.receive(request(1, "tools/call", #"{"name":"echo","arguments":{"text":"Hi\nthere"}}"#))
+        await server.receive(request(2, "tools/call", #"{"name":"echo","arguments":{}}"#))
+        await server.finish()
+        let answer = try #require(output.reply(to: 1)?["result"])
+        #expect(answer["content"] == .array([.object(["type": .string("text"), "text": .string("Hi\nthere")])]))
+        #expect(answer["isError"] == nil)
+        // What a tool throws is its answer, for the agent to read.
+        let failure = try #require(output.reply(to: 2)?["result"])
+        #expect(failure["isError"] == .bool(true))
+        #expect(failure["content"] == .array([.object(["type": .string("text"), "text": .string("Say something.")])]))
+    }
+
+    @Test func refusesWhatItDoesntKnow() async {
+        let output = Output()
+        let server = server([echo], output: output)
+        await server.receive(request(1, "tools/call", #"{"name":"nope"}"#))
+        await server.receive(request(2, "tools/call", #"{}"#))
+        await server.receive(request(3, "resources/list"))
+        await server.receive(line(#"{"id":4,"method":"ping"}"#))
+        await server.receive(line("not json"))
+        await server.receive(line("[]"))
+        #expect(output.reply(to: 1)?["error"]?["code"] == .int(-32602))
+        #expect(output.reply(to: 2)?["error"]?["code"] == .int(-32602))
+        #expect(output.reply(to: 3)?["error"]?["code"] == .int(-32601))
+        #expect(output.reply(to: 4)?["error"]?["code"] == .int(-32600))
+        let rest = output.messages.filter { $0["id"] == .null }
+        #expect(rest.map { $0["error"]?["code"] } == [.int(-32700), .int(-32600)])
+    }
+
+    @Test func answersNoNotificationOrResponse() async {
+        let output = Output()
+        let server = server([echo], output: output)
+        await server.receive(line(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#))
+        await server.receive(line(#"{"jsonrpc":"2.0","id":9,"result":{}}"#))
+        await server.receive(line("  \n"))
+        await server.receive(request(1, "ping"))
+        #expect(output.messages == [.object(["jsonrpc": .string("2.0"), "id": .int(1), "result": .object([:])])])
+    }
+
+    @Test func answersABatchAtOnce() async throws {
+        let output = Output()
+        let server = server([echo], output: output)
+        await server.receive(line(#"""
+            [{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/initialized"},
+             {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"text":"a"}}}]
+            """#.replacingOccurrences(of: "\n", with: "")))
+        await server.finish()
+        guard case .array(let replies)? = output.messages.first, output.messages.count == 1 else {
+            Issue.record("Expected one batch, got \(output.messages)")
+            return
+        }
+        #expect(replies.map { $0["id"] } == [.int(1), .int(2)])
+    }
+
+    @Test func aCancelledCallGetsNoAnswer() async {
+        let output = Output()
+        let slow = MCPTool(name: "slow", title: "Slow", description: "Takes its time") { _ in
+            try await Task.sleep(for: .seconds(30))
+            return "done"
+        }
+        let server = server([slow, echo], output: output)
+        await server.receive(request(1, "tools/call", #"{"name":"slow"}"#))
+        await server.receive(request(2, "tools/call", #"{"name":"echo","arguments":{"text":"b"}}"#))
+        await server.receive(line(#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}"#))
+        await server.finish()
+        #expect(output.reply(to: 1) == nil)
+        #expect(output.reply(to: 2) != nil)
+    }
+
+    // MARK: Sources
+
+    @Test func aSourceThatsOffSaysSo() async throws {
+        let isOn = Mutex(true)
+        let source = MCPSource(name: "Azure DevOps", tools: [echo]) { "Two need you." }
+            .available(while: { isOn.withLock { $0 } }, refusal: "Azure DevOps is off in BriefBar.")
+        #expect(try await source.tools[0].run(.object(["text": .string("x")])) == "x")
+        #expect(try await source.needsYou() == "Two need you.")
+        isOn.withLock { $0 = false }
+        await #expect(throws: MCPToolError("Azure DevOps is off in BriefBar.")) {
+            try await source.tools[0].run(.object(["text": .string("x")]))
+        }
+        await #expect(throws: MCPToolError("Azure DevOps is off in BriefBar.")) { try await source.needsYou() }
+    }
+
+    @Test func everyToolWaitsForAgentsToBeOn() async throws {
+        let refusal = Mutex<String?>("Agents are off in BriefBar.")
+        let sources = [MCPSource(name: "Azure DevOps", tools: [echo]) { "Two need you." }]
+        let tools = MCPSource.tools(sources) { refusal.withLock { $0 } }
+        #expect(tools.map(\.name) == ["needs_me", "echo"])
+        for tool in tools {
+            await #expect(throws: MCPToolError("Agents are off in BriefBar.")) { try await tool.run(.object(["text": .string("x")])) }
+        }
+        refusal.withLock { $0 = nil }
+        #expect(try await tools[1].run(.object(["text": .string("x")])) == "x")
+        #expect(try await tools[0].run(.object([:])).contains("Two need you."))
+    }
+
+    @Test func needsMeHasEverySourceInOrder() async throws {
+        let sources = [
+            MCPSource(name: "Azure DevOps", tools: []) { "- !1 needs you" },
+            MCPSource(name: "GitHub Copilot", tools: []) { nil },
+            MCPSource(name: "Broken", tools: []) { throw MCPToolError("Sign in with az login.") },
+        ]
+        let text = try await MCPSource.needsYouTool(sources).run(.object([:]))
+        #expect(text == """
+            ## Azure DevOps
+
+            - !1 needs you
+
+            ## GitHub Copilot
+
+            Nothing needs you.
+
+            ## Broken
+
+            Sign in with az login.
+            """)
+    }
+}

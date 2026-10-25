@@ -9,6 +9,8 @@ import Combine
 final class AppModel: ObservableObject {
     let services: AppServices
     let sources: [any BriefBarSource]
+    /// Whether agents may use BriefBar, and BriefBar among the Copilot CLI's MCP servers.
+    let agents: AgentsModel
     /// Words the brief across sources on this Mac, for every list and page that shows it.
     let briefWriter: BriefWriter
     @Published private(set) var choices: SourceChoices
@@ -48,6 +50,8 @@ final class AppModel: ObservableObject {
             defaults = .standard
         }
         services = AppServices(defaults: defaults, isDemo: demo)
+        // Only the app itself asks the Copilot CLI.
+        agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
         // Only the app itself reads Notification Center for pull requests sent in chats.

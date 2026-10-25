@@ -34,7 +34,7 @@ jobs:
         run: make test
         timeout-minutes: 10
 
-      # Only AzureDevOpsCore uses the network, and only BriefBarCore starts programs.
+      # Only AzureDevOpsCore and GitHubCore use the network, and only BriefBarCore starts programs.
       - name: Check the boundaries
         run: make check-boundaries
 

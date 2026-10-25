@@ -3,6 +3,7 @@ import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import Combine
+import CopilotTasks
 import NotificationCenterDB
 
 /// Main-thread view model: turns engine snapshots into the sorted, grouped pull request list, and decides
@@ -31,6 +32,8 @@ final class PRStore: ObservableObject {
     @Published private(set) var refreshedAt: Date?
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
+    /// The pipelines after your merges, the newest merge first.
+    @Published private(set) var merges: [MergePipelines] = []
     /// Your name in Azure DevOps, so a brief's line can say "you" where a comment names you.
     private(set) var reader: String?
     /// Notifications are on for Azure DevOps but turned off for BriefBar in System Settings.
@@ -164,9 +167,10 @@ final class PRStore: ObservableObject {
             settings.$organizations.map { _ in () }.eraseToAnyPublisher(),
             settings.$refreshSeconds.map { _ in () }.eraseToAnyPublisher(),
             settings.$keepDoneHours.map { _ in () }.eraseToAnyPublisher(),
-            settings.$idleDays.map { _ in () }.eraseToAnyPublisher()
+            settings.$idleDays.map { _ in () }.eraseToAnyPublisher(),
+            settings.$followMerges.map { _ in () }.eraseToAnyPublisher()
         )
-        .dropFirst(4)
+        .dropFirst(5)
         .receive(on: DispatchQueue.main)
         .sink { [weak self] in
             MainActor.assumeIsolated {
@@ -177,6 +181,16 @@ final class PRStore: ObservableObject {
             }
         }
         .store(in: &cancellables)
+
+        settings.$watchedPullRequests.dropFirst().removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.updateLinkedPullRequests()
+                    self?.recompute()
+                }
+            }
+            .store(in: &cancellables)
 
         settings.$seen.dropFirst().map { _ in () }
             .merge(with: settings.$seenSentInChats.dropFirst().map { _ in () })
@@ -275,9 +289,20 @@ final class PRStore: ObservableObject {
         setUpChatAccessWhenNeeded = false
     }
 
+    /// The pull requests to read by their links: those sent in chats, and those you watch.
     private func updateLinkedPullRequests() {
-        let keys = settings.chatLinksEnabled ? settings.chatLinks.keys : []
+        let keys = (settings.chatLinksEnabled ? settings.chatLinks.keys : []).union(settings.watchedKeys)
         if let engine { Task { await engine.setLinkedPullRequests(keys) } }
+    }
+
+    /// Watches a pull request by its link, and reads it right away.
+    func watch(_ link: PullRequestLink) {
+        guard settings.watch(link) else { return }
+        Log.app.info("Watching a pull request: \(self.settings.watchedPullRequests.count, privacy: .public) now")
+    }
+
+    func stopWatching(_ item: PRSnapshot) {
+        settings.unwatch([item.key])
     }
 
     /// Opens the steps for Full Disk Access if Notification Center turns out not to be readable: when you turn
@@ -420,7 +445,7 @@ final class PRStore: ObservableObject {
     /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
     /// what you've seen of them stays in memory (`AppSettings.seenSentInChats`).
     private func sentInChats<S: Sequence>(_ keys: S) -> Set<PRKey> where S.Element == PRKey {
-        let yours = Set(state.records.filter { $0.role != .linked }.map(\.id))
+        let yours = Set(state.records.filter { $0.role != .linked }.map(\.id)).union(settings.watchedKeys)
         return Set(keys).subtracting(yours)
     }
 
@@ -476,6 +501,8 @@ final class PRStore: ObservableObject {
             Log.app.info("Signed in to the Azure CLI as another account")
         }
         state = snapshot
+        let newMerges = snapshot.records.compactMap(\.merge).sorted { ($0.mergedAt, $0.pullRequest) > ($1.mergedAt, $1.pullRequest) }
+        if newMerges != merges { merges = newMerges }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }
         if isRefreshing != snapshot.isRefreshing { isRefreshing = snapshot.isRefreshing }
         if snapshot.hasLoaded && !hasLoaded { hasLoaded = true }
@@ -487,7 +514,10 @@ final class PRStore: ObservableObject {
             }
         }
         // What earlier builds saved of pull requests sent in chats moves out of the preferences once they're listed.
-        settings.keepSeenInMemory(Set(snapshot.records.filter { $0.role == .linked }.map(\.id)))
+        // What you've seen of the ones you watch stays there, like your own.
+        settings.keepSeenInMemory(Set(snapshot.records.filter { $0.role == .linked }.map(\.id)).subtracting(settings.watchedKeys))
+        // Watched pull requests that closed, or that you can't read anymore, aren't watched anymore.
+        if mode == .live { settings.unwatch(snapshot.closedLinks) }
         recompute(announce: true)
     }
 
@@ -495,8 +525,9 @@ final class PRStore: ObservableObject {
         let now = Date()
         let options = settings.classifierOptions
         let links = settings.chatLinksEnabled ? settings.chatLinks : ChatLinkState()
+        let watched = settings.watchedKeys
         let resolved = state.records.compactMap { record -> PRSnapshot? in
-            var record = record
+            var record = watched.contains(record.id) ? record.watched() : record
             let found = links.links(for: record.id).filter { link in !record.chatLinks.contains { $0.id == link.id } }
             record.chatLinks += found
             return PRClassifier.snapshot(for: record, seenCutoff: settings.seenCutoff(for: record.id), now: now, options: options)
@@ -583,5 +614,37 @@ final class PRStore: ObservableObject {
 
     func briefRequest(_ item: BriefItem) -> Summarizer.Request? {
         item.prompt.map { Summarizer.Request(prompt: $0, instructions: Brief.instructions) }
+    }
+
+    // MARK: Copilot
+
+    /// A pull request as the engine read it, for Copilot's prompts.
+    func record(for key: PRKey) -> PRRecord? {
+        guard let record = state.records.first(where: { $0.id == key }) else { return nil }
+        return settings.watchedKeys.contains(key) ? record.watched() : record
+    }
+
+    /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
+    /// code has finished, in its session.
+    func copilotActions(for item: PRSnapshot, continuable: CopilotRun?) -> [PullRequestAction] {
+        guard let record = record(for: item.key) else { return [] }
+        let canShip = continuable.map { $0.action?.changesCode == true && $0.ended == .finished } ?? false
+        return PullRequestTasks.actions(for: record, canShip: canShip)
+    }
+
+    /// Writes the prompt for what Copilot should do with a pull request, then opens the composer with it: for a failed
+    /// build, once each failed build's errors have been read.
+    func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
+        guard let record = record(for: item.key) else { return }
+        let pr = record.pullRequest
+        let task = TaskPullRequest(
+            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch
+        )
+        let client = mode == .live ? client : nil
+        Task {
+            let prompt = await PullRequestTasks.prompt(action, for: record, client: client)
+            copilot.compose(task, action: action, prompt: prompt)
+        }
     }
 }

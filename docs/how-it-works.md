@@ -1,8 +1,8 @@
 # How BriefBar works
 
-BriefBar is one app with three sources: Microsoft Teams, Azure DevOps and GitHub Copilot. This explains
-how it decides what a source may do, then how each source reads what it shows. The sources come from
-Teams Pulse, ADO Pulse and Copilot Pulse, and work as those apps did.
+BriefBar is one app with four sources: Microsoft Teams, Azure DevOps, GitHub Copilot and GitHub. This
+explains how it decides what a source may do, then how each source reads what it shows. The first
+three come from Teams Pulse, ADO Pulse and Copilot Pulse, and work as those apps did.
 
 ## Sources, and turning them on
 
@@ -17,11 +17,12 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   earlier version then pauses, until you've seen what it reads now and kept it on.
 - While a source is off, BriefBar doesn't read its data or check its access: no Notification Center,
   Teams' own data, saved chats or keychain item for Teams, no `az` or Notification Center for Azure
-  DevOps, and no `~/.copilot` for Copilot.
+  DevOps, no `~/.copilot` for Copilot, and no `gh` or GitHub for GitHub.
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
-  requests each account has seen; which Copilot sessions you've cleared. Its settings stay. The links
+  requests each account has seen; which Copilot sessions you've cleared. GitHub saves nothing but its
+  settings. Its settings stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
 
 ## Permissions that macOS grants once
@@ -47,7 +48,9 @@ Microsoft Teams' helper processes report Teams as theirs. So, once BriefBar has 
 program it started would have it too. That includes:
 
 - the Azure CLI, a Python program in a folder you can write to (`/opt/homebrew/bin`),
-- your login shell, which BriefBar asks where `az` is, and which runs your shell's startup files,
+- the GitHub CLI, for its sign-in's token ([below](#github)),
+- your login shell, which BriefBar asks where `az` and `gh` are, and which runs your shell's startup
+  files,
 - the Copilot CLI and git, when you send a work item to Copilot
   ([below](#send-work-to-copilot)): an agent that runs whatever commands it decides on,
 - its updater, which loads Sparkle without library validation
@@ -148,8 +151,9 @@ list don't move it: `HOME` chooses them, and any program running as you can also
 ## Menu bar, widgets and windows
 
 Each source has one or more sections: Teams' **Chats** and **Group Chats**, Azure DevOps' **Pull
-Requests**, and Copilot's **Sessions**. Each says where it can show (`SectionInfo`): every section in
-the menu bar and in windows, and these four in widgets too. BriefBar shows them on three surfaces,
+Requests**, Copilot's **Sessions** and GitHub's **Pull Requests**. Each says where it can show
+(`SectionInfo`): every section in the menu bar and in windows, and these five in widgets too. BriefBar
+shows them on three surfaces,
 each with a layout of its own (`SectionLayout` in `Sources/BriefBarCore`, saved as `menuBarLayout`,
 `widgetLayout` and `windowLayout`): its items, in order (menu-bar items, widgets or windows), the
 sections each one shows, and the sections you've hidden from it.
@@ -213,17 +217,17 @@ Dock icon and the usual menus, and it goes back once they're all closed.
 Every section counts its things in four states that mean the same for every source (`ItemState` and
 `StateCounts` in `Sources/BriefBarCore`), mapped next to each source's own groups:
 
-| State | Teams (`UnreadState.states`) | Azure DevOps (`PRGroup.state`, `PipelineStatus.state`) | Copilot (`DisplayPhase.state`) |
-|---|---|---|---|
-| ✋ Needs you | Unread chats, 1:1 and group | Needs You; To Review only while **Show To Review in the Menu Bar** is on | Questions, plans and permission prompts |
-| ✕ Something's wrong | | Failing; failed pipelines | Stopped: interrupted, failed or not responding |
-| ⚡ Running | | Pipelines running or queued | Running |
-| ✓ Done or ready | | Ready to Complete | Done |
+| State | Teams (`UnreadState.states`) | Azure DevOps (`PRGroup.state`, `PipelineStatus.state`) | Copilot (`DisplayPhase.state`) | GitHub (`GitHubPRGroup.state`) |
+|---|---|---|---|---|
+| ✋ Needs you | Unread chats, 1:1 and group | Needs You; To Review only while **Show To Review in the Menu Bar** is on | Questions, plans and permission prompts | To Review, Changes Requested |
+| ✕ Something's wrong | | Failing; failed pipelines | Stopped: interrupted, failed or not responding | Failing |
+| ⚡ Running | | Pipelines running or queued | Running | |
+| ✓ Done or ready | | Ready to Complete | Done | Ready to Merge |
 
 What the menu bar doesn't count, such as an answered, waiting or idle pull request, an idle session or
 the sprint's work, is in no state. Each section reports its counts in `MenuBarSegment.states`, as it
-draws them: Azure DevOps reports none while it needs a sign-in. `--json` prints them by section, and
-`make demo-check` checks them, each section's and their sum.
+draws them: Azure DevOps and GitHub report none while they need a sign-in. `--json` prints them by
+section, and `make demo-check` checks them, each section's and their sum.
 
 ### An item by meaning
 
@@ -265,6 +269,8 @@ says which, if any, Apple Intelligence may reword, by its own settings:
   model only while **Summaries** is on. A failed pipeline gets a sentence of its own.
 - Copilot says what a session waits for or how it ended (`SessionSnapshot.briefSentence`), without
   the model.
+- GitHub says who asked for a review, who asked for changes, or what failed or was approved
+  (`GitHubPRSnapshot.briefSentence`), without the model.
 
 `BriefWriter` asks Apple Intelligence's on-device model (`SystemLanguageModel.default`, never Private
 Cloud Compute) for one line at a time, only for lines a list or the window shows, never in the
@@ -617,8 +623,12 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
+| `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
+| `{project}/_apis/build/builds?repositoryId=…&branchName=…&minTime=…` | after you merge a pull request (below): every refresh for half an hour, while one of its runs hasn't finished, and for a quarter of an hour after the last one did; five merges a refresh, the newest first | its target branch's runs, among them those on its merge commit |
+| `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
+| `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
@@ -647,7 +657,12 @@ The [groups table in the README](../README.md#azure-devops) lists them. In more 
 
 - **Build**: approved is passed, rejected is failed, running is running. A queued build whose
   context says `isExpired` has expired and has to run again; a queued build without a build ID
-  hasn't run at all (for example, because it's queued by hand).
+  hasn't run at all (for example, because it's queued by hand). A failed build's errors aren't part
+  of its policy, so BriefBar reads the run's timeline, once, and finds where it failed as it does for
+  a pinned pipeline: the earliest failed task (or job, or stage), with its stage and its first
+  error. The list, the notification and the brief then say so: "shop-web CI · Run unit tests: 2
+  tests failed in DeliveryEstimateTests." Until then, or when the timeline can't be read, they name
+  the build.
 - **Status** (posted by another service): rejected is failed; queued means waiting for it.
 - **Minimum number of reviewers**, **Required reviewers** and **Proof Of Presence** are about
   approvals.
@@ -711,6 +726,44 @@ this in Teams"), unless it's failing, ready to complete or to review. It isn't c
 bar, announced, or in the brief. Once no popover or window page shows the pull requests anymore,
 each pull request one of them showed in Answered is marked seen up to when you answered it, not up to
 the time it closed, so anything that came later still counts as new. Widgets don't count as seeing it.
+
+### Watching a pull request
+
+**Watch a Pull Request…** takes a pull request's link, and keeps it, as a link, in the preferences
+(`ado.watchedPullRequests`): it's your choice, like your organizations. BriefBar reads it by its ID with
+the pull requests sent in chats, and its details as it does every pull request's. One you're not on is
+listed as a review, under **To Review** as **Watching** (`PRRecord.watched()`), with its replies and
+mentions; one you are on is listed as it is. What you've seen of it is kept in the preferences, as for
+your own. Once it's completed or abandoned, or can't be found or read anymore, BriefBar stops watching
+it (`PulseSnapshot.closedLinks`); a failure that may pass doesn't count. The command line lists the ones
+the app watches too.
+
+### Pipelines after your merges
+
+When a pull request of yours completes, Azure DevOps reports the commit that merged it
+(`lastMergeCommit`). For as long as Done keeps the pull request (**Keep Done For**), BriefBar follows
+the runs of the pipelines that build it: its target branch's runs on that commit, except scheduled
+ones, which only happened to pick it up; the runs those started through a pipeline-completion or
+resource trigger, such as a deployment; and so on. It looks for them every refresh for half an hour
+after the merge, since a batched CI can wait before it starts, while one of them hasn't finished, and
+for a quarter of an hour after the last one did, in case it starts another; then it stops. Each
+pipeline's latest run counts: a run retried, or queued again, replaces the one before. While a run
+runs, its timeline is read every refresh, for its stages and whether one waits for an approval or a
+check, and once more when it finishes, for where it failed (`MergeChain`, `MergeSummary`).
+
+Together they decide what the pull request's row says:
+
+- **Failing**, as **Failed after merge**, when a pipeline's latest run failed, with where and its first
+  error; the row and its notification open the run.
+- **Waiting for approval**, in Done, while a stage of one waits for an approval or a check.
+- In Done, how many are still running, and then that they passed.
+
+While they run or wait, the pull request stays in Done even once you've opened it; once they've all
+passed, it leaves Done as before, when you've seen it. A notification says when one fails, when one
+starts waiting for an approval, and when they've all passed after running; what happened before
+BriefBar started isn't announced. The Pipelines page lists them under **After Your Merges**, above the
+pipelines you pin. **Follow Pipelines After You Merge** turns it off, and BriefBar then forgets the
+runs it found.
 
 ### Pull requests sent in chats
 
@@ -791,6 +844,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
 | `{project}/_apis/build/definitions?definitionIds=…` | when you search for a number in **Add Pipeline**, alongside the name search | the pipeline with that number, first |
+| `{project}/_apis/build/definitions/{id}`, `{project}/_apis/build/builds/{id}` | when you paste a link to a pipeline, or to a run, in **Add Pipeline** | the pipeline it's to, and a run's branch |
 | `_apis/projects` | when you open **Add Pipeline** | the projects to search in |
 
 **Which sprint.** The first time, BriefBar looks through your teams (up to 25) for one with a sprint
@@ -852,6 +906,25 @@ each project's work went in, by organization and project. Then BriefBar:
    has none of BriefBar's permissions and goes on if BriefBar quits. Its output goes to
    `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read.
 
+**Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
+(`PullRequestAction`). BriefBar writes the prompt from what it read of the pull request
+(`PullRequestPrompt`): the unresolved comment threads, those that wait on you first, word for word,
+each with its file, line and thread; for a failed build, each run's link, where it failed and its
+errors, read again from its timeline (one GET a build, when you ask); for a review, the threads already
+there, and when you last voted or commented. The prompts say what Copilot may do: fixing comments, a
+build or conflicts changes files but never commits, pushes or replies; a review changes and posts
+nothing; only **Push & Reply** commits, pushes the pull request's branch without force
+(`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. The Copilot CLI holds it to that
+whatever it reads, since its denials win over `--allow-all-tools`: a review gets
+`--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
+build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
+`copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
+takes the branch from a checkout that has it. The clone is the one you chose for that repository last
+(by organization, project and repository), or the one named like it. A later task goes on with the
+last one's session, if its worktree is still there: `--session-id` is that session's, without
+`--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
+offered once a task that changed files is done.
+
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). A worktree of a repository you trust gets the same trust (`--trust-folder`), and no
 more: a worktree of one you don't trust loads only your own configuration.
@@ -868,8 +941,9 @@ if Copilot reported an error or exited badly, and stopped otherwise. The pull re
 link to one in Copilot's summary, its last message, or what it printed, and a notification says how it
 went; clicking it opens the pull request, or the work item.
 
-**What's kept.** Which work items you sent, with which model, in which repository and worktree, and the
-pull request's link go to the preferences (`ado.copilot.runs`), without the work items' titles; and so
+**What's kept.** Which work items and pull requests you sent, what for, with which model, in which
+repository and worktree, and the pull request's link go to the preferences (`ado.copilot.runs`),
+without their titles; and so
 do your choices and the repository of each project. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
@@ -883,7 +957,7 @@ pull requests and sessions are yours, and stay.
 
 After each refresh, BriefBar compares the new list with the previous one (`NotificationPlanner`)
 and announces events it hasn't seen before, as well as your pull requests that start failing,
-become ready or complete. Events from before BriefBar started aren't announced: they're in the
+become ready or complete, and what the pipelines after your merges do. Events from before BriefBar started aren't announced: they're in the
 panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
 Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
 about, and marks the pull request seen.
@@ -910,8 +984,10 @@ or any other model.
   search matches you, not your groups.
 - Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its
   token.
-- A failed build's errors aren't part of a pull request's policies, so the panel names the build
-  without saying why it failed.
+- A failed build says where it failed only when its run's timeline can be read, and then only its
+  first error: the rest is in its log, which BriefBar doesn't read.
+- The pipelines after a merge are found in its repository's project: a run that a trigger starts in
+  another project isn't.
 - The Sprint section shows one team's current sprint at a time, from your teams in the organizations
   BriefBar watches.
 - Pipelines are build pipelines, YAML or classic; classic release pipelines aren't shown.
@@ -994,6 +1070,149 @@ log format, and the `ghapp://` link. An app update could change them.
   running flag, projects or branches.
 - If the database can't be read at all, sessions are listed from their log folders, and the
   problem is shown in the panel and the widget.
+
+## GitHub
+
+The GitHub source (`Sources/GitHubCore`, `Sources/GitHubUI`) lists your pull requests on github.com.
+It's off until you turn it on, like every source, and until then never runs `gh` or connects to
+GitHub.
+
+### Signing in
+
+BriefBar uses the GitHub CLI's sign-in, never a personal access token of its own:
+
+```sh
+gh auth token --hostname github.com
+```
+
+`gh` prints the token it keeps in the keychain (`GitHubCLITokenProvider`). BriefBar keeps it in memory
+only, for half an hour, then asks again, in case you signed in as someone else, and asks again right
+away if GitHub rejects it. Concurrent requests share one run of `gh`, which is limited to 30 seconds,
+with prompts, update checks and colors turned off (`GH_PROMPT_DISABLED`, `GH_NO_UPDATE_NOTIFIER`,
+`NO_COLOR`). It tells a signed-out CLI from other failures by what `gh` prints. **Sign In…** opens
+Terminal to run `gh auth login --hostname github.com --web`.
+
+As with `az`, BriefBar looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual
+places, then asks your login shell (`command -v gh`), and both are responsible for themselves (see
+[Programs BriefBar runs](#programs-briefbar-runs)). Set `BRIEFBAR_GH` to the path of `gh` to use
+another one. Only github.com is read, not GitHub Enterprise Server.
+
+### Where the data comes from
+
+Each refresh is one request: a POST of the same GraphQL query (`PullRequestQuery`) to
+`https://api.github.com/graphql`. GitHub's GraphQL API takes reads and writes alike as POSTs, so the
+query is fixed text with only its search strings and a count as variables, and a test checks that it
+has no mutation. It asks for two searches, 50 pull requests each:
+
+| Search | Provides |
+|---|---|
+| `is:pr is:open archived:false user-review-requested:@me` | pull requests that ask for your review by name, not a team's |
+| `is:pr is:open archived:false author:@me` | your own |
+
+With each pull request come its repository, author, whether it's a draft, whether it can merge
+(`mergeable`), the review decision, the latest review from each reviewer, and the state of its latest
+commit's checks (`statusCheckRollup`). The client sends no cookies and keeps no cache
+(`GitHubClient.makeSession`).
+
+It refreshes every 2 minutes by default (**Refresh Every** in its settings), when a list opens if the
+last read is more than 10 seconds old, and every minute while you need to sign in or are offline, so a
+fix shows soon. When GitHub asks it to slow down, it sends nothing until the time GitHub gave:
+`Retry-After` for its secondary limits, the hourly limit's reset (`x-ratelimit-reset`), or a minute
+when GitHub only says so in words. At the default, that's 30 requests an hour, a small part of GitHub's
+hourly limit for the GraphQL API.
+
+When GitHub answers with errors alongside what it could read, such as an organization that uses SAML
+single sign-on the GitHub CLI isn't authorized for, the list shows what it read with a note saying
+why the rest is missing.
+
+### How a pull request's group is decided
+
+`GitHubClassifier` puts each pull request in one group, the first that applies:
+
+- **To Review**: someone asked you, by name, to review it.
+- For your own: **Waiting** if it's a draft; **Failing** if its checks fail or it has merge
+  conflicts; **Changes Requested** if the review decision says so (or, without one, a reviewer's latest
+  review does); **Waiting** while its checks run; **Ready to Merge** if it's approved; and **Waiting**
+  for reviews otherwise.
+
+A pull request that's both yours and asks for your review is listed once, as yours. To Review and
+Changes Requested count as needing you, Failing as something wrong and Ready to Merge as done or
+ready; Waiting isn't counted.
+
+### Limits
+
+- Review requests to a team you're in aren't listed, only those to you by name, as with Azure DevOps.
+- Only the 50 most recently changed of each search are read; when there are more to review, the list
+  has **More on GitHub**.
+- Pull requests in organizations that use SAML single sign-on need the GitHub CLI authorized for them.
+- There are no notifications, and nothing is saved: the list is read again each time, and kept in
+  memory only.
+
+## Agents
+
+`BriefBar --mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An agent, such as
+the Copilot CLI, starts it and talks to it on its standard input and output: one JSON-RPC 2.0 message a
+line, in the protocol's versions from 2024-11-05 to 2025-11-25 (`MCPServer` in `Sources/BriefBarUI`).
+It offers tools, and none of the protocol's other features. Only its messages go to standard output:
+the file descriptor moves aside first, so anything else printed goes to standard error.
+
+### Off until you turn it on
+
+Like a source, agents are off until you turn them on, in **Settings › Agents**, which says what they
+get, where it goes and what they can change. Turning them on saves your consent with the version of
+what agents get (`AgentAccess` in `Sources/BriefBarCore`); when an update gives them more, that
+version goes up, and they wait until you've seen what they get now, as a paused source does. Until
+then, the server starts, so the agent can say what's wrong, but every tool answers that agents are
+off, or paused, instead of reading anything. It checks with each call, so turning agents off stops a
+server that's already running, in an agent session that's still open. The demo answers with its
+made-up data either way.
+
+Turning agents on also adds BriefBar to the Copilot CLI's MCP servers, as `briefbar`, and turning them
+off removes it (`CopilotMCPRegistration` in `Sources/CopilotTasks`). The GitHub Copilot app's sessions
+use the same servers. BriefBar runs the CLI's own `copilot mcp get`, `add` and `remove`, with your
+login shell's environment, so it finds the CLI and its `COPILOT_HOME` as Terminal does, and never
+reads or writes the CLI's configuration itself: other servers' settings are there, tokens included.
+Turning agents on replaces a server that runs another copy of BriefBar, such as one you built, with
+this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
+removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. The page
+shows the command for any other agent.
+
+### What it answers
+
+It's a command-line mode like `--json`, with the same rules:
+
+- It runs with the permissions of whoever started it: the Copilot CLI's in Terminal, or the GitHub
+  Copilot app's for its agents (see [Programs that start BriefBar](#programs-that-start-briefbar)).
+  Started as an app, it refuses.
+- It serves the sources that are on in the app, and checks with each call: turn one off, and its tools
+  say so instead of answering. `--source` narrows them, and never adds one that's off. Each source gives
+  its own tools (`SourceCommandLine.mcp`), and `needs_me` asks all of them at once. Teams gives none:
+  its chats come from what only Full Disk Access reads, and what a tool answers goes to the agent's
+  model, which may run in the cloud. GitHub gives none either: its pull requests aren't offered to agents.
+- Azure DevOps reads as the app does, with its organizations, its settings and what you've seen in it,
+  so the groups match the menu bar's, and like the other modes it leaves out pull requests sent in
+  chats. One `PulseEngine` serves the whole session (`AzureDevOpsReader`): a tool reads again only
+  when what it has is a minute old, as the app does at its most often, so calls one after another share
+  a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
+  next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs
+  them. Each read runs on its own, so a call the agent cancels doesn't cut short what the next one gets.
+- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them.
+
+`pull_request_prompt` gives the prompts of a pull request's Copilot actions (see
+[Send work to Copilot](#send-work-to-copilot)), told to work in the agent's checkout rather than a
+worktree: fetch the branch and check it out, or ask where to work if that isn't a clone of the
+repository or has changes of its own. Push & Reply, for one of yours, first checks that HEAD contains
+the pull request's branch and that everything it would push was made for it, stops and asks if not,
+and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
+CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
+
+The tools that change something change only BriefBar's own lists, as its menus do:
+`watch_pull_request` and `stop_watching_pull_request` the pull requests you watch, and `pin_pipeline`
+and `unpin_pipeline` the pinned pipelines. A pull request is read right after it's watched, and if
+it's closed or you can't read it, it isn't watched after all. They write the app's preferences, then
+post a distributed notification that says only that something changed (`AgentChanges`), since any
+program can see it go by, so a running BriefBar reads those two lists again at once, and again when
+Azure DevOps starts. The demo keeps them in memory.
 
 ## Desktop widgets
 
@@ -1166,8 +1385,9 @@ when BriefBar does.
   `--demo` or `--render`.
 - **What it fetches**: `appcast.xml` from
   `https://github.com/mnsn/brief-bar/releases/latest/download/`, and the zip that it names. These are
-  BriefBar's only network requests apart from the Azure DevOps source's. They send no cookies, and
-  the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays off.
+  BriefBar's only network requests apart from the Azure DevOps and GitHub sources'. They send no
+  cookies, and the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays
+  off.
 - **What it accepts**: only an appcast and a zip signed with the project's EdDSA key, and it checks the
   zip before unpacking it. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
 - **Gently**: right after launch, Sparkle shows a new version itself. A later, scheduled check doesn't
@@ -1184,9 +1404,9 @@ when BriefBar does.
   expected states, each section's and all of them added up. It runs the same checks the Pulse apps ran
   on their demos.
 - `scripts/check-boundaries.sh` reads each module's object files and fails unless only
-  `AzureDevOpsCore` uses networking APIs, and only `BriefBarCore` starts programs. It also fails if
-  those two stop using them, since the check could no longer tell. It reads BriefBar's own modules,
-  the updater's included, not Sparkle, whose requests are only for updates.
+  `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
+  also fails if those stop using them, since the check could no longer tell. It reads BriefBar's own
+  modules, the updater's included, not Sparkle, whose requests are only for updates.
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar
   has no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the
   updater has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in

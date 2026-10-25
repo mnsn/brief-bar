@@ -165,6 +165,8 @@ package enum SettingsDestination: Hashable, Sendable {
     case source(SourceID)
     /// Which sections the menu bar, the widgets or the windows show, and which share an item.
     case layout(Surface)
+    /// Whether agents may use BriefBar (`--mcp`).
+    case agents
 }
 
 /// One source, as the app sees it. It's created at launch whether it's on or not, and does nothing,

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Checks the two boundaries that keep what BriefBar reads on your Mac, module by module:
-# - Only the Azure DevOps source's core (AzureDevOpsCore) uses networking APIs. Teams and Copilot make
-#   no network requests, and nothing else in the app does either.
+# - Only the Azure DevOps and GitHub sources' cores (AzureDevOpsCore and GitHubCore) use networking APIs.
+#   Teams and Copilot make no network requests, and nothing else in the app does either.
 # - Only BriefBarCore starts programs, through ProcessRunner and RunningProgram, which keep them from using
 #   BriefBar's privacy permissions, Full Disk Access included.
 # The app's binary combines every module, so this reads the debug build's object files, module by
@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NETWORK_MODULE="AzureDevOpsCore"
+NETWORK_MODULES="AzureDevOpsCore GitHubCore"
 # Foundation's URL loading, CFNetwork, sockets and Network.framework (C and Swift).
 NETWORK='URLSession|URLRequest|NSURLConnection|CFNetwork|CFHTTP|CFSocket|^_nw_|s7Network'
 PROCESS_MODULE="BriefBarCore"
@@ -47,7 +47,7 @@ uses() {
 FAILED=false
 MODULES="$(cut -f 1 "$LIST" | sort -u)"
 for module in $MODULES; do
-    for check in "network:$NETWORK_MODULE:networking APIs" "processes:$PROCESS_MODULE:ways to start programs"; do
+    for check in "network:$NETWORK_MODULES:networking APIs" "processes:$PROCESS_MODULE:ways to start programs"; do
         kind="${check%%:*}"
         rest="${check#*:}"
         allowed="${rest%%:*}"
@@ -55,17 +55,17 @@ for module in $MODULES; do
         pattern="$NETWORK"
         [[ "$kind" == processes ]] && pattern="$PROCESSES"
         found="$(uses "$module" "$pattern")"
-        if [[ "$module" == "$allowed" ]]; then
+        if [[ " $allowed " == *" $module "* ]]; then
             if [[ -z "$found" ]]; then
                 echo "check-boundaries: $module uses no $what, so this check can't tell them apart anymore." >&2
                 FAILED=true
             fi
         elif [[ -n "$found" ]]; then
-            echo "check-boundaries: $module uses $what, which only $allowed may:" >&2
+            echo "check-boundaries: $module uses $what, which only ${allowed// / and } may:" >&2
             printf '  %s\n' $found >&2
             FAILED=true
         fi
     done
 done
 $FAILED && exit 1
-echo "check-boundaries passed: only $NETWORK_MODULE uses networking APIs, and only $PROCESS_MODULE starts programs ($(echo $MODULES | wc -w | tr -d ' ') modules)"
+echo "check-boundaries passed: only ${NETWORK_MODULES// / and } use networking APIs, and only $PROCESS_MODULE starts programs ($(echo $MODULES | wc -w | tr -d ' ') modules)"
