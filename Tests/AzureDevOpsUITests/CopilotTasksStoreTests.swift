@@ -178,7 +178,9 @@ import Testing
         let store = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         #expect(store.isOn)
         #expect(!store.canSend)
-        #expect(store.entries.map(\.status.phase) == [.working, .finished])
+        #expect(store.entries.map(\.status.phase) == [.working, .working, .finished])
+        // One of them fixes the demo's failing pull request.
+        #expect(store.latest(forPullRequest: PRKey(DemoData.organization, 4088))?.action == .fixBuild)
         store.send(item.copilotTask, prompt: "Fix it", options: CopilotModel.standard, repository: URL(fileURLWithPath: "/tmp"))
         #expect(store.pending.isEmpty)
         #expect(settings.copilotRepositories.isEmpty)

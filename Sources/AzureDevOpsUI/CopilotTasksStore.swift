@@ -5,20 +5,30 @@ import BriefBarUI
 import Combine
 import CopilotTasks
 
-/// A task sent to Copilot, as its work item's row shows it: getting ready, working, or how it ended.
+/// A task sent to Copilot, as its work item's or pull request's row shows it: getting ready, working, or how it ended.
 struct CopilotTaskEntry: Identifiable, Equatable {
     /// The ID of Copilot's session.
     var id: String
-    var workItem: WorkItemReference
+    /// The work item it's for, or nil for a pull request's.
+    var workItem: WorkItemReference?
+    /// The pull request it works on, and what for; nil for a work item's.
+    var onPullRequest: PullRequestReference? = nil
+    var action: PullRequestAction? = nil
     var options: CopilotRunOptions
     var startedAt: Date
     var status: RunStatus
+    /// The pull request it opened, or the one it works on.
     var pullRequest: URL?
     /// Nil while its worktree is getting ready, and when it couldn't start.
     var run: CopilotRun?
 
-    var workItemURL: URL {
-        ADOEndpoint.workItemPage(organization: workItem.organization, project: workItem.project, id: workItem.id)
+    var workItemURL: URL? {
+        workItem.map { ADOEndpoint.workItemPage(organization: $0.organization, project: $0.project, id: $0.id) }
+    }
+
+    /// Whether it works on this pull request.
+    func isOn(_ key: PRKey) -> Bool {
+        onPullRequest?.matches(organization: key.organization, id: key.number) == true
     }
 }
 
@@ -42,6 +52,8 @@ final class CopilotTasksStore: ObservableObject {
     let mode: PRStore.Mode
     /// A work item's title, when the sprint shows it, for notifications.
     var title: (WorkItemReference) -> String? = { _ in nil }
+    /// A pull request's title, when the list shows it, for notifications.
+    var pullRequestTitle: (PullRequestReference) -> String? = { _ in nil }
 
     private let notifier: Notifier?
     private let monitor = RunMonitor()
@@ -79,12 +91,18 @@ final class CopilotTasksStore: ObservableObject {
     /// Every send, newest first.
     var entries: [CopilotTaskEntry] {
         let runs = settings.copilotRuns.filter(\.isValid).map { run in
-            CopilotTaskEntry(
-                id: run.id, workItem: run.workItem, options: run.options, startedAt: run.startedAt,
-                status: statuses[run.id] ?? RunStatus(phase: run.ended ?? .working), pullRequest: run.pullRequest, run: run
-            )
+            entry(for: run, status: statuses[run.id] ?? RunStatus(phase: run.ended ?? .working))
         }
-        return (pending + runs + demoEntries).sorted { $0.startedAt > $1.startedAt }
+        // A run being continued shows once, as the run.
+        let waiting = pending.filter { entry in !runs.contains { $0.id == entry.id } }
+        return (waiting + runs + demoEntries).sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private func entry(for run: CopilotRun, status: RunStatus) -> CopilotTaskEntry {
+        CopilotTaskEntry(
+            id: run.id, workItem: run.workItem, onPullRequest: run.onPullRequest, action: run.action, options: run.options,
+            startedAt: run.startedAt, status: status, pullRequest: run.pullRequest, run: run
+        )
     }
 
     /// Made-up sends of the demo sprint's tasks: one that opened a pull request, and one still working.
@@ -105,13 +123,41 @@ final class CopilotTasksStore: ObservableObject {
                 options: CopilotModel.quick, startedAt: now.addingTimeInterval(-6 * 60),
                 status: RunStatus(phase: .working, detail: "Run the cart tests")
             ),
+            // Fixing the demo's failing pull request.
+            CopilotTaskEntry(
+                id: "demo-fix-build", workItem: nil,
+                onPullRequest: PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web",
+                                                    id: 4088, sourceBranch: "delivery-estimates"),
+                action: .fixBuild, options: CopilotModel.standard, startedAt: now.addingTimeInterval(-9 * 60),
+                status: RunStatus(phase: .working, detail: "Run DeliveryEstimateTests"),
+                pullRequest: URL(string: "https://dev.azure.com/\(DemoData.organization)/Storefront/_git/shop-web/pullrequest/4088")
+            ),
         ]
     }
 
     /// The latest send of a work item, for its row.
     func latest(for item: WorkItem) -> CopilotTaskEntry? {
         let reference = item.copilotTask.reference
-        return entries.first { $0.workItem.matches(reference) }
+        return entries.first { $0.workItem?.matches(reference) == true }
+    }
+
+    /// The latest task on a pull request, for its row.
+    func latest(forPullRequest key: PRKey) -> CopilotTaskEntry? {
+        entries.first { $0.isOn(key) }
+    }
+
+    /// The run a new task on a pull request goes on with: its latest one, ended, whose worktree is still there.
+    func continuable(forPullRequest key: PRKey) -> CopilotRun? {
+        guard let entry = latest(forPullRequest: key), !entry.status.phase.isActive, let run = entry.run,
+              FileManager.default.fileExists(atPath: run.worktree.path)
+        else { return nil }
+        return run
+    }
+
+    /// The repository a pull request's repository is on this Mac: the one its tasks went in last.
+    func repository(for pullRequest: PullRequestReference) -> URL? {
+        if let path = settings.copilotRepositories[pullRequest.repositoryKey] { return URL(fileURLWithPath: path, isDirectory: true) }
+        return knownRepositories.first { $0.lastPathComponent.caseInsensitiveCompare(pullRequest.repository) == .orderedSame }
     }
 
     var activeCount: Int { entries.filter { $0.status.phase.isActive }.count }
@@ -191,16 +237,48 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     func send(_ item: TaskWorkItem, prompt: String, options: CopilotRunOptions, repository: URL) {
+        send(.workItem(item), prompt: prompt, options: options, repository: repository)
+    }
+
+    /// Opens the composer for a pull request, with its prompt for what to do, going on with its last task's session by
+    /// default.
+    func compose(_ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String) {
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        CopilotComposer.shared.show(
+            subject: .pullRequest(pullRequest, action), prompt: prompt, options: settings.copilotOptions,
+            continuing: continuable(forPullRequest: key), store: self
+        )
+    }
+
+    /// Starts Copilot on a work item or a pull request; or goes on with an earlier run's session, in its worktree.
+    func send(_ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil) {
         guard canSend, isOn else { return }
-        settings.copilotRepositories[item.reference.projectKey] = repository.path
-        let id = UUID().uuidString.lowercased()
+        switch subject {
+        case .workItem(let item): settings.copilotRepositories[item.reference.projectKey] = repository.path
+        case .pullRequest(let pullRequest, _): settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.path
+        }
+        let id = continuing?.id ?? UUID().uuidString.lowercased()
         let now = Date()
-        pending.append(CopilotTaskEntry(
-            id: id, workItem: item.reference, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now)
-        ))
+        var entry = CopilotTaskEntry(id: id, workItem: nil, options: options, startedAt: now, status: RunStatus(phase: .preparing, since: now))
+        switch subject {
+        case .workItem(let item):
+            entry.workItem = item.reference
+        case .pullRequest(let pullRequest, let action):
+            entry.onPullRequest = pullRequest.reference
+            entry.action = action
+            entry.pullRequest = pullRequest.url
+        }
+        pending.removeAll { $0.id == id }
+        pending.append(entry)
+        if continuing != nil {
+            statuses[id] = entry.status
+            stoppedByYou.remove(id)
+            exitStatuses[id] = nil
+            goneSince[id] = nil
+        }
         let request = CopilotLauncher.Request(
-            workItem: item, prompt: prompt, options: options, repository: repository,
-            worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            subject: subject, prompt: prompt, options: options, repository: repository,
+            worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing
         )
         Task { [self] in
             // Asked again for each send, so a tool you've just installed is found.
@@ -212,15 +290,24 @@ final class CopilotTasksStore: ObservableObject {
                 }
                 startedHere.insert(id)
                 pending.removeAll { $0.id == id }
-                settings.copilotRuns.append(run)
-                Log.app.info("Sent a work item to Copilot")
+                statuses[id] = nil
+                if let index = settings.copilotRuns.firstIndex(where: { $0.id == id }) {
+                    settings.copilotRuns[index] = run
+                } else {
+                    settings.copilotRuns.append(run)
+                }
+                Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
                 refresh()
             } catch {
-                Log.app.error("Couldn't send a work item to Copilot: \(Self.kind(of: error), privacy: .public)")
+                Log.app.error("Couldn't send a task to Copilot: \(Self.kind(of: error), privacy: .public)")
                 let status = RunStatus(phase: .failed, since: Date(), detail: String(describing: error))
                 if let index = pending.firstIndex(where: { $0.id == id }) {
                     pending[index].status = status
                     notify(pending[index], status: status)
+                }
+                if continuing != nil {
+                    // The earlier run stays as it ended; this send's failure is in its place until it's cleared.
+                    statuses[id] = status
                 }
             }
         }
@@ -316,10 +403,7 @@ final class CopilotTasksStore: ObservableObject {
             if !result.status.phase.isActive, run.ended == nil {
                 run.ended = result.status.phase
                 Log.app.info("A task sent to Copilot ended: \(result.status.phase.rawValue, privacy: .public)")
-                notify(CopilotTaskEntry(
-                    id: run.id, workItem: run.workItem, options: run.options, startedAt: run.startedAt, status: result.status,
-                    pullRequest: run.pullRequest, run: run
-                ), status: result.status)
+                notify(entry(for: run, status: result.status), status: result.status)
             }
             if run != settings.copilotRuns[index] { settings.copilotRuns[index] = run }
         }
@@ -342,12 +426,31 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
+    /// "4217: Show the order total in the cart", "!4071 Fix the checkout total".
+    func subject(of entry: CopilotTaskEntry) -> String {
+        if let workItem = entry.workItem {
+            return title(workItem).map { "\(workItem.id): \($0)" } ?? "Work item \(workItem.id)"
+        }
+        if let pullRequest = entry.onPullRequest {
+            return "!\(pullRequest.id)" + (pullRequestTitle(pullRequest).map { " \($0)" } ?? "")
+        }
+        return "A task"
+    }
+
     private func notify(_ entry: CopilotTaskEntry, status: RunStatus) {
         guard settings.notifications, let notifier, !stoppedByYou.contains(entry.id) else { return }
-        let subject = title(entry.workItem).map { "\(entry.workItem.id): \($0)" } ?? "Work item \(entry.workItem.id)"
+        let subject = subject(of: entry)
         let heading: String
         let body: String
         switch status.phase {
+        case .finished where entry.action != nil:
+            switch entry.action {
+            case .review?: heading = "Copilot's review is ready"
+            case .pushAndReply?: heading = "Copilot pushed and replied"
+            default: heading = "Copilot's changes are ready"
+            }
+            body = Self.firstLine(status.detail)
+                ?? (entry.action?.changesCode == true ? "Check them in its worktree, then Push & Reply." : "It didn't say what it did.")
         case .finished:
             heading = entry.pullRequest != nil ? "Copilot opened a pull request" : "Copilot finished"
             body = Self.firstLine(status.detail) ?? (entry.pullRequest != nil ? "It's ready for review." : "It didn't say what it did.")
@@ -362,7 +465,7 @@ final class CopilotTasksStore: ObservableObject {
         }
         notifier.post([BriefBarNotification(
             id: "copilot.\(entry.id)", source: .azureDevOps, title: heading, subtitle: subject, body: body, thread: "copilot",
-            userInfo: ["url": (entry.pullRequest ?? entry.workItemURL).absoluteString]
+            userInfo: (entry.pullRequest ?? entry.workItemURL).map { ["url": $0.absoluteString] } ?? [:]
         )])
     }
 
@@ -409,7 +512,7 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     func openWorkItem(_ entry: CopilotTaskEntry) {
-        AzureDevOps.open(entry.workItemURL)
+        if let url = entry.workItemURL { AzureDevOps.open(url) }
     }
 
     func showWorktree(_ entry: CopilotTaskEntry) {
@@ -431,12 +534,12 @@ final class CopilotTasksStore: ObservableObject {
                 NSAlert(error: LaunchError.copilotNotFound).runModal()
                 return
             }
-            let script = CopilotCommand.resumeScript(copilot: copilot, sessionId: run.id, directory: run.worktree, workItem: run.workItem.id)
+            let script = CopilotCommand.resumeScript(copilot: copilot, sessionId: run.id, directory: run.worktree, subject: run.subjectName)
             do {
                 let directory = UserHome.url.appendingPathComponent("Library/Caches", isDirectory: true)
                     .appendingPathComponent(AppIdentity.bundleIdentifier, isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let file = directory.appendingPathComponent("Copilot \(run.workItem.id).command")
+                let file = directory.appendingPathComponent("Copilot \(run.workItem.map { String($0.id) } ?? run.onPullRequest.map { "PR \($0.id)" } ?? "task").command")
                 try script.write(to: file, atomically: true, encoding: .utf8)
                 try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
                 NSWorkspace.shared.open(file)
@@ -450,7 +553,7 @@ final class CopilotTasksStore: ObservableObject {
     func removeWorktree(_ entry: CopilotTaskEntry) {
         guard let run = entry.run, !entry.status.phase.isActive else { return }
         let alert = NSAlert()
-        alert.messageText = "Remove the worktree for work item \(run.workItem.id)?"
+        alert.messageText = "Remove the worktree for \(run.subjectName)?"
         alert.informativeText = "BriefBar deletes \(run.worktree.path). Its branch, its pull request and Copilot's session stay."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")

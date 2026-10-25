@@ -340,6 +340,11 @@ public enum ADOEndpoint {
 
     // MARK: Web pages
 
+    /// A run's page.
+    public static func buildPage(organization: String, project: String, buildId: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_build", "results"], [("buildId", String(buildId))])
+    }
+
     public static func pullRequestPage(organization: String, project: String, repository: String, id: Int, threadId: Int? = nil) -> URL {
         url("https://dev.azure.com", [organization, project, "_git", repository, "pullrequest", String(id)],
             threadId.map { [("discussionId", String($0))] } ?? [])

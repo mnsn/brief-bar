@@ -166,9 +166,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Start programs only through `ProcessRunner`**, or `RunningProgram` and `DetachedProgram` for those
   that keep running, all in `BriefBarCore`, which keep them from using BriefBar's privacy permissions.
   `make check-boundaries` fails if any other module starts one.
-- **Nothing acts for you unless you ask.** BriefBar starts Copilot, which changes code, pushes and opens
-  pull requests as you, only when you send a work item with **Send Work to Copilot** on: never by
-  itself, on a schedule, after an update or in the demo.
+- **Nothing acts for you unless you ask.** BriefBar starts Copilot, which changes code, pushes, opens
+  pull requests and replies on them as you, only when you send a work item, or one of a pull request's
+  actions, with **Send Work to Copilot** on: never by itself, on a schedule, after an update or in the
+  demo.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller

@@ -285,6 +285,22 @@ repository does, build and test what it changed, then push and open the pull req
 text is written by whoever wrote it, and goes to an agent that may run any command: send only work you'd
 hand to Copilot yourself.
 
+With it on, **your pull requests' menus send them to Copilot too** (right-click one):
+
+| Action | On | What Copilot does |
+|---|---|---|
+| **Fix Comments with Copilot…** | your pull request with unresolved comments | addresses each one that waits on you, quoted word for word, with its file and line, then builds and tests; it doesn't commit, push or reply |
+| **Fix the Build with Copilot…** | your pull request whose build failed | reproduces the failure, from where it failed and the run's errors, and fixes it, or says it's infrastructure or flaky; it doesn't push, or touch pipelines |
+| **Resolve Conflicts with Copilot…** | your pull request with merge conflicts | merges the target branch in and resolves the conflicts; it doesn't push |
+| **Push & Reply with Copilot…** | your pull request, once one of those is done | goes on in the same session: commits, pushes the branch (never with force), replies on the threads it addressed and resolves them |
+| **Pre-review with Copilot…** | a pull request you review | reads the change and drafts your review, with each comment's file, line and how much it matters; it changes and posts nothing |
+
+Each works in a worktree detached at the pull request's latest commit (`copilot-worktrees/<repository>/pr-<id>`),
+in the clone of its repository you choose the first time, and a later one goes on with the last one's
+session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
+and its menu has the task's own menu. Comments are written by whoever wrote them, and go to an agent that
+may run any command: send only what you'd hand to Copilot yourself.
+
 ### GitHub Copilot
 
 | Group | Status | When |
@@ -416,7 +432,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
-| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
+| | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 
@@ -446,7 +462,7 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
   nothing else of it.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
-  item. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
+  item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
   choose, with git, and Copilot's log of that session, and nothing of Copilot's while the feature is
   off. In its preferences, it keeps which work items you sent, where, with which model, and the link to

@@ -3,6 +3,7 @@ import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import Combine
+import CopilotTasks
 import NotificationCenterDB
 
 /// Main-thread view model: turns engine snapshots into the sorted, grouped pull request list, and decides
@@ -613,5 +614,80 @@ final class PRStore: ObservableObject {
 
     func briefRequest(_ item: BriefItem) -> Summarizer.Request? {
         item.prompt.map { Summarizer.Request(prompt: $0, instructions: Brief.instructions) }
+    }
+
+    // MARK: Copilot
+
+    /// A pull request as the engine read it, for Copilot's prompts.
+    func record(for key: PRKey) -> PRRecord? {
+        guard let record = state.records.first(where: { $0.id == key }) else { return nil }
+        return settings.watchedKeys.contains(key) ? record.watched() : record
+    }
+
+    /// What Copilot can do with a pull request now. On yours: fix its unresolved comments, its failed build or its
+    /// conflicts, and push and reply with what a finished task changed, in its session. On one you review: review it.
+    func copilotActions(for item: PRSnapshot, continuable: CopilotRun?) -> [PullRequestAction] {
+        guard let record = record(for: item.key), record.pullRequest.status == .active else { return [] }
+        switch record.role {
+        case .author:
+            var actions: [PullRequestAction] = []
+            if !PullRequestPrompt.waitingThreads(record).isEmpty { actions.append(.fixComments) }
+            if record.details?.checks.contains(where: { $0.kind == .build && $0.state == .failed && $0.isBlocking }) == true {
+                actions.append(.fixBuild)
+            }
+            if record.pullRequest.hasConflicts { actions.append(.resolveConflicts) }
+            if let continuable, continuable.action?.changesCode == true, continuable.ended == .finished {
+                actions.append(.pushAndReply)
+            }
+            return actions
+        case .reviewer, .linked:
+            return [.review]
+        }
+    }
+
+    /// Writes the prompt for what Copilot should do with a pull request, then opens the composer with it: for a failed
+    /// build, once each failed build's errors have been read.
+    func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
+        guard let record = record(for: item.key) else { return }
+        let pr = record.pullRequest
+        let task = TaskPullRequest(
+            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch
+        )
+        Task {
+            let prompt: String
+            switch action {
+            case .fixComments: prompt = PullRequestPrompt.fixComments(record)
+            case .fixBuild: prompt = PullRequestPrompt.fixBuild(record, failures: await failedBuilds(of: record))
+            case .resolveConflicts: prompt = PullRequestPrompt.resolveConflicts(record)
+            case .review: prompt = PullRequestPrompt.review(record)
+            case .pushAndReply: prompt = PullRequestPrompt.pushAndReply(record)
+            }
+            copilot.compose(task, action: action, prompt: prompt)
+        }
+    }
+
+    /// Where each failed build of a pull request failed, and its errors, from the runs' timelines: one GET each.
+    private func failedBuilds(of record: PRRecord) async -> [FailedBuildReport] {
+        let pr = record.pullRequest
+        var reports: [FailedBuildReport] = []
+        for check in record.details?.checks ?? [] where check.kind == .build && check.state == .failed && check.isBlocking {
+            guard let buildId = check.buildId else { continue }
+            var failure = check.failure
+            var errors = failure?.message.map { [$0] } ?? []
+            if mode == .live, let timeline = try? await client.get(
+                ADOEndpoint.timeline(organization: pr.key.organization, projectId: pr.projectId, buildId: buildId), as: ADOTimeline.self
+            ) {
+                failure = failure ?? PipelineFailure.first(in: timeline)
+                let all = PipelineFailure.errors(in: timeline)
+                if !all.isEmpty { errors = all }
+            }
+            reports.append(FailedBuildReport(
+                name: check.name, buildId: buildId,
+                url: ADOEndpoint.buildPage(organization: pr.key.organization, project: pr.projectName, buildId: buildId),
+                failure: failure, errors: errors
+            ))
+        }
+        return reports
     }
 }

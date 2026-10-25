@@ -899,6 +899,22 @@ each project's work went in, by organization and project. Then BriefBar:
    has none of BriefBar's permissions and goes on if BriefBar quits. Its output goes to
    `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read.
 
+**Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
+(`PullRequestAction`). BriefBar writes the prompt from what it read of the pull request
+(`PullRequestPrompt`): the unresolved comment threads, those that wait on you first, word for word,
+each with its file, line and thread; for a failed build, each run's link, where it failed and its
+errors, read again from its timeline (one GET a build, when you ask); for a review, the threads already
+there, and when you last voted or commented. The prompts say what Copilot may do: fixing comments, a
+build or conflicts changes files but never commits, pushes or replies; a review changes and posts
+nothing; only **Push & Reply** commits, pushes the pull request's branch without force
+(`git push origin HEAD:refs/heads/<branch>`) and replies on its threads. Its worktree,
+`copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
+takes the branch from a checkout that has it. The clone is the one you chose for that repository last
+(by organization, project and repository), or the one named like it. A later task goes on with the
+last one's session, if its worktree is still there: `--session-id` is that session's, without
+`--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
+offered once a task that changed files is done.
+
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). A worktree of a repository you trust gets the same trust (`--trust-folder`), and no
 more: a worktree of one you don't trust loads only your own configuration.
@@ -915,8 +931,9 @@ if Copilot reported an error or exited badly, and stopped otherwise. The pull re
 link to one in Copilot's summary, its last message, or what it printed, and a notification says how it
 went; clicking it opens the pull request, or the work item.
 
-**What's kept.** Which work items you sent, with which model, in which repository and worktree, and the
-pull request's link go to the preferences (`ado.copilot.runs`), without the work items' titles; and so
+**What's kept.** Which work items and pull requests you sent, what for, with which model, in which
+repository and worktree, and the pull request's link go to the preferences (`ado.copilot.runs`),
+without their titles; and so
 do your choices and the repository of each project. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those

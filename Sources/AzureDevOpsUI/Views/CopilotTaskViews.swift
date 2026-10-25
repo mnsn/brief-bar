@@ -42,6 +42,12 @@ extension CopilotTaskEntry {
         switch status.phase {
         case .preparing: return "Getting its worktree ready"
         case .working: return "Working for \(Elapsed.short(since: since, now: now))" + (status.detail.map { ": \($0)" } ?? "")
+        case .finished where action != nil:
+            switch action {
+            case .review?: return "Wrote its review"
+            case .pushAndReply?: return "Pushed and replied"
+            default: return "Changes ready to check, then Push & Reply"
+            }
         case .finished: return pullRequest != nil ? "Opened a pull request" : "Finished, without a pull request"
         case .failed: return "Failed" + (CopilotTasksStore.firstLine(status.detail).map { ": \($0)" } ?? "")
         case .stopped: return "Stopped before it finished"
@@ -103,9 +109,9 @@ struct CopilotRunBadge: View {
             CopilotRunMenuItems(entry: entry)
         } label: {
             HStack(spacing: 3) {
-                Image(systemName: phase == .finished && entry.pullRequest != nil ? "arrow.triangle.pull" : phase.symbol)
+                Image(systemName: entry.opensPullRequest ? "arrow.triangle.pull" : phase.symbol)
                 if !compact {
-                    Text(phase == .finished && entry.pullRequest != nil ? "PR" : phase.title)
+                    Text(entry.opensPullRequest ? "PR" : phase.title)
                 }
             }
             .font(.system(size: 10.5, weight: .semibold))
@@ -132,11 +138,13 @@ struct CopilotRunMenuItems: View {
 
     var body: some View {
         let phase = entry.status.phase
-        Text("\(entry.sentence(now: Date())) · \(entry.options.title)")
+        Text("\(entry.action.map { "\($0.title): " } ?? "")\(entry.sentence(now: Date())) · \(entry.options.title)")
         if entry.pullRequest != nil {
             Button("Open Pull Request") { copilot.openPullRequest(entry) }
         }
-        Button("Open Work Item") { copilot.openWorkItem(entry) }
+        if entry.workItem != nil {
+            Button("Open Work Item") { copilot.openWorkItem(entry) }
+        }
         if entry.run != nil {
             Divider()
             Button("Continue in Terminal") { copilot.continueInTerminal(entry) }
@@ -215,8 +223,67 @@ struct CopilotRunsMenu: View {
     }
 
     private func title(_ entry: CopilotTaskEntry) -> String {
-        let name = copilot.title(entry.workItem).map { "\(entry.workItem.id): \($0)" } ?? "Work item \(entry.workItem.id)"
-        return "\(name) · \(entry.status.phase == .finished && entry.pullRequest != nil ? "Pull Request" : entry.status.phase.title)"
+        "\(copilot.subject(of: entry)) · \(entry.opensPullRequest ? "Pull Request" : entry.action.map { "\($0.title), \(entry.status.phase.title.lowercased())" } ?? entry.status.phase.title)"
+    }
+}
+
+extension CopilotTaskEntry {
+    /// A work item's task that opened its pull request.
+    var opensPullRequest: Bool { status.phase == .finished && pullRequest != nil && action == nil }
+}
+
+/// A pull request's Copilot tasks, in its context menu: what Copilot can do with it now, and its last task.
+struct PullRequestCopilotMenuItems: View {
+    let item: PRSnapshot
+
+    @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        if copilot.isOn {
+            let last = copilot.latest(forPullRequest: item.key)
+            let actions = store.copilotActions(for: item, continuable: copilot.continuable(forPullRequest: item.key))
+            if !actions.isEmpty || last != nil {
+                Divider()
+            }
+            ForEach(actions, id: \.self) { action in
+                Button(action == .pushAndReply ? "Push & Reply with Copilot…" : "\(action.title) with Copilot…") {
+                    store.composeCopilot(action, for: item, copilot: copilot)
+                }
+                .disabled(last?.status.phase.isActive == true)
+            }
+            if let last {
+                Menu("Copilot's Last Task") {
+                    CopilotRunMenuItems(entry: last)
+                }
+            }
+        }
+    }
+}
+
+/// On a pull request's row: how Copilot's last task on it stands, while it works, and until you clear it.
+struct PullRequestCopilotStatus: View {
+    let key: PRKey
+
+    @EnvironmentObject private var copilot: CopilotTasksStore
+
+    var body: some View {
+        if copilot.isOn, let entry = copilot.latest(forPullRequest: key) {
+            let phase = entry.status.phase
+            HStack(spacing: 3) {
+                Image(systemName: "paperplane.fill")
+                Text(entry.action?.title ?? "Copilot")
+                Image(systemName: phase.symbol)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(phase.color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(phase.color.opacity(0.14)))
+            .fixedSize()
+            .help("Copilot, with \(entry.options.title): \(entry.sentence(now: Date())). Right-click for its menu.")
+            .accessibilityLabel("Copilot: \(entry.sentence(now: Date()))")
+        }
     }
 }
 
@@ -231,8 +298,10 @@ struct CopilotSetting: View {
     static let explanation = """
         Adds a button to the sprint's work items that sends one to the Copilot CLI on this Mac, with a prompt you can \
         change and the model you choose. Copilot works on its own, in a new worktree of the repository you pick, with \
-        your sign-in, tools, MCP servers and instructions, then pushes a branch and opens a pull request, as you. \
-        BriefBar starts it only when you send something, and follows it from Copilot's own log of the session.
+        your sign-in, tools, MCP servers and instructions, then pushes a branch and opens a pull request, as you. Your \
+        pull requests' menus send their comments, failed builds and conflicts the same way, to be fixed without \
+        pushing, then pushed and answered with Push & Reply; and the menus of those you review, to be read and reviewed \
+        for you. BriefBar starts it only when you send something, and follows it from Copilot's own log of the session.
         """
 
     var body: some View {

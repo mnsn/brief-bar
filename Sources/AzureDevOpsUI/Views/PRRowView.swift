@@ -46,10 +46,13 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(item.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(item.rowColor)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(item.subtitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(item.rowColor)
+                                .lineLimit(1)
+                            PullRequestCopilotStatus(key: item.key)
+                        }
                         if let detail = item.detail {
                             Text(detail)
                                 .font(.system(size: 11))
@@ -76,6 +79,7 @@ struct PRRowView: View {
             if let source = item.chatSource, let openSource {
                 Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
             }
+            PullRequestCopilotMenuItems(item: item)
             if item.isWatched, let stopWatching {
                 Divider()
                 Button("Stop Watching", action: stopWatching)

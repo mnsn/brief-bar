@@ -70,11 +70,33 @@ public struct Git: Sendable {
         _ = try await run(["-C", repository.root.path, "fetch", "--quiet", "--no-tags", "origin", repository.baseBranch], timeout: 300)
     }
 
+    /// Brings `origin/<branch>` up to date, such as a pull request's.
+    public func fetch(_ repository: GitRepository, branch: String) async throws {
+        guard Self.isBranchName(branch) else { throw GitError.failed("“\(branch)” isn't a branch name git takes.") }
+        _ = try await run(
+            ["-C", repository.root.path, "fetch", "--quiet", "--no-tags", "origin",
+             "+refs/heads/\(branch):refs/remotes/origin/\(branch)"],
+            timeout: 300
+        )
+    }
+
     /// A new worktree at `path`, detached at `origin/<base branch>`: Copilot makes the branch, named the repository's way.
     public func addWorktree(of repository: GitRepository, at path: URL) async throws {
         _ = try await run(
             ["-C", repository.root.path, "worktree", "add", "--detach", path.path, "origin/\(repository.baseBranch)"], timeout: 900
         )
+    }
+
+    /// A new worktree at `path`, detached at `origin/<branch>`: a pull request's work is pushed back to its branch from
+    /// there, without taking the branch from a checkout that has it.
+    public func addWorktree(of repository: GitRepository, at path: URL, branch: String) async throws {
+        guard Self.isBranchName(branch) else { throw GitError.failed("“\(branch)” isn't a branch name git takes.") }
+        _ = try await run(["-C", repository.root.path, "worktree", "add", "--detach", path.path, "origin/\(branch)"], timeout: 900)
+    }
+
+    /// A branch's name as a pull request reports it: nothing git would read as an option or a range.
+    static func isBranchName(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix("-") && !name.contains("..") && !name.contains(where: { $0.isWhitespace || $0 == ":" })
     }
 
     /// Removes a worktree. Without `force`, git keeps one with changes that aren't committed.
@@ -109,11 +131,16 @@ public enum WorktreeLocation {
 
     /// `<folder>/<repository>/wi-<id>`, or `wi-<id>-2` and on when that's taken.
     public static func path(in folder: URL, repository: String, workItem: Int, exists: (URL) -> Bool) -> URL {
+        path(in: folder, repository: repository, name: "wi-\(workItem)", exists: exists)
+    }
+
+    /// `<folder>/<repository>/<name>`, or `<name>-2` and on when that's taken.
+    public static func path(in folder: URL, repository: String, name: String, exists: (URL) -> Bool) -> URL {
         let parent = folder.appendingPathComponent(repository, isDirectory: true)
-        var candidate = parent.appendingPathComponent("wi-\(workItem)", isDirectory: true)
+        var candidate = parent.appendingPathComponent(name, isDirectory: true)
         var number = 2
         while exists(candidate) {
-            candidate = parent.appendingPathComponent("wi-\(workItem)-\(number)", isDirectory: true)
+            candidate = parent.appendingPathComponent("\(name)-\(number)", isDirectory: true)
             number += 1
         }
         return candidate

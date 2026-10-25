@@ -14,6 +14,13 @@
   all passed. The Pipelines page lists them under **After Your Merges**. They're read with your pull
   requests, with GETs, only while they run; **Follow Pipelines After You Merge** turns it off. Azure
   DevOps' description says so, and its version goes up, so it pauses until you've looked.
+- **Copilot on your pull requests.** With **Send Work to Copilot** on, a pull request's menu sends it
+  to the Copilot CLI too: **Fix Comments** (the threads that wait on you, word for word), **Fix the
+  Build** (where it failed, and its errors), **Resolve Conflicts**, and, on one you review,
+  **Pre-review**, which drafts your review and posts nothing. None of them pushes or replies; once one
+  is done, **Push & Reply** goes on in the same session and worktree, commits, pushes the branch and
+  answers the threads it addressed. Each works in a worktree at the pull request's latest commit, and
+  its row shows how it's going.
 - **Watch a pull request by its link.** **Watch a Pull Request…**, in Azure DevOps' settings, follows a
   pull request you're not on, such as one your team was asked to review: it's listed under **To
   Review**, as **Watching**, with what's new on it, until it closes or you stop watching it. Azure
