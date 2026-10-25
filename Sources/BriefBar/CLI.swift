@@ -16,12 +16,13 @@ enum CLI {
             "  --watch            Print changes as they happen (Ctrl-C to stop)",
             "  --mcp              Serve agents, such as the Copilot CLI, over the Model Context Protocol on",
             "                     standard input and output: what needs you, your pull requests, pipelines,",
-            "                     sprint and Copilot sessions, from Azure DevOps and Copilot, never Teams. It",
-            "                     answers only once you let agents use BriefBar, in its Settings, under Agents",
+            "                     sprint and Copilot sessions, from Azure DevOps and Copilot, never Teams or",
+            "                     GitHub. It answers only once you let agents use BriefBar, in its Settings,",
+            "                     under Agents",
             "  --render <dir>     Draw the menu bar with each list open, the widgets, the window and Settings",
             "                     into PNGs (light and dark)",
             "  --window           Run the app, and open its window",
-            "  --source <name>    Only this source: teams, ado or copilot (repeatable). Without it, the modes",
+            "  --source <name>    Only this source: teams, ado, copilot or github (repeatable). Without it, the modes",
             "                     cover the sources that are on in the app.",
             "  --demo             Use made-up data for every source, with any of the above or the app",
             "  --check-updater    Start the updater as the app does, and show that macOS doesn't let it use",
@@ -90,7 +91,7 @@ enum CLI {
             return isOnInTheApp(commandLine)
         }
         guard !selected.isEmpty else {
-            fputs("Nothing is on in BriefBar. Choose a source with --source teams, ado or copilot.\n", stderr)
+            fputs("Nothing is on in BriefBar. Choose a source with --source teams, ado, copilot or github.\n", stderr)
             return 1
         }
 
@@ -133,7 +134,7 @@ enum CLI {
 
     struct UnknownSource: Error, CustomStringConvertible {
         var name: String
-        var description: String { "Unknown source \"\(name)\": use teams, ado or copilot." }
+        var description: String { "Unknown source \"\(name)\": use teams, ado, copilot or github." }
     }
 
     /// The sources that `--source` names.
@@ -148,6 +149,7 @@ enum CLI {
                 case "teams": names.append(.teams)
                 case "ado", "azuredevops", "azure-devops", "devops": names.append(.azureDevOps)
                 case "copilot": names.append(.copilot)
+                case "github", "gh": names.append(.github)
                 default: throw UnknownSource(name: name)
                 }
                 index += 1
@@ -185,7 +187,7 @@ enum CLI {
             sources.append(source)
         }
         guard !sources.isEmpty else {
-            fputs("Agents can use Azure DevOps and GitHub Copilot, never Teams.\n", stderr)
+            fputs("Agents can use Azure DevOps and Copilot, never Teams or GitHub.\n", stderr)
             return 2
         }
         let demo = options.demo
@@ -210,6 +212,7 @@ enum CLI {
         case .teams: return "Microsoft Teams"
         case .azureDevOps: return "Azure DevOps"
         case .copilot: return "GitHub Copilot"
+        case .github: return "GitHub"
         }
     }
 }

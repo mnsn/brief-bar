@@ -20,24 +20,24 @@ within() {
 JSON="$("$BIN" --demo --json)"
 
 # Each source's counts, by group.
-EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1},"teams":{"chats":2,"groups":2}}'
+EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":3,"needsYou":3,"running":2,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
 COUNTS="$(jq -cS 'with_entries(.value |= .counts)' <<<"$JSON")"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 
 # Each section's counts by state, the same for every source: unread chats, pull requests and Copilot sessions
 # that need you; failing pull requests and stopped sessions; running sessions; pull requests ready to complete
-# and finished sessions. To Review doesn't need you here: the demo doesn't show it in the menu bar.
-EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":2},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
+# or merge and finished sessions. GitHub's pull requests to review and with changes requested both need you. To Review doesn't need you here: the demo doesn't show it in the menu bar.
+EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":2},"github.pullRequests":{"done":1,"failing":2,"needsYou":3,"running":0},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
 STATES="$(jq -cS '[.[].states] | add' <<<"$JSON")"
 [[ "$STATES" == "$EXPECTED_STATES" ]] || fail "expected the counts by state $EXPECTED_STATES, got $STATES"
 
 # And added up, as one menu-bar item that shows every section by meaning would count them.
-EXPECTED_TOTALS='{"done":3,"failing":3,"needsYou":11,"running":2}'
+EXPECTED_TOTALS='{"done":4,"failing":5,"needsYou":14,"running":2}'
 TOTALS="$(jq -cS '[.[].states[] | to_entries[]] | group_by(.key) | map({(.[0].key): (map(.value) | add)}) | add' <<<"$JSON")"
 [[ "$TOTALS" == "$EXPECTED_TOTALS" ]] || fail "expected the sum by state $EXPECTED_TOTALS, got $TOTALS"
 
 # Each source alone, too.
-for source in teams:teams ado:azureDevOps copilot:copilot; do
+for source in teams:teams ado:azureDevOps copilot:copilot github:github; do
     [[ "$("$BIN" --demo --source "${source%%:*}" --json | jq -cS 'keys')" == "[\"${source##*:}\"]" ]] ||
         fail "--source ${source%%:*} doesn't print only that source"
 done
@@ -57,7 +57,12 @@ done
 "$BIN" --demo --pipelines | grep '^shop-web CI .*Failed in Test' >/dev/null ||
     fail "--demo --pipelines doesn't show the made-up failed run"
 
-# Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams has no tools.
+# GitHub's: the demo never runs gh or connects to GitHub.
+"$BIN" --demo --source github --dump | grep '^Signed in to the GitHub CLI as robin$' >/dev/null ||
+    fail "--demo --source github --dump doesn't show the made-up account"
+
+# Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams and GitHub
+# have no tools.
 MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -75,11 +80,16 @@ grep '^- !4088 “Show delivery estimates on the product page”' <<<"$NEEDS_ME"
     fail "--demo --mcp's needs_me doesn't have the failing pull request"
 grep '^- “Add dark mode to settings” (shop-web, dark-mode): Waiting for your answer' <<<"$NEEDS_ME" >/dev/null ||
     fail "--demo --mcp's needs_me doesn't have the Copilot session waiting for an answer"
+if grep 'Add dark mode to the checkout page' <<<"$NEEDS_ME" >/dev/null; then
+    fail "--demo --mcp's needs_me has GitHub's pull requests"
+fi
 jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tests failed in DeliveryEstimateTests' >/dev/null ||
     fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
-if within 60 "$BIN" --demo --source teams --mcp </dev/null >/dev/null 2>&1; then
-    fail "--demo --source teams --mcp serves Teams"
-fi
+for source in teams github; do
+    if within 60 "$BIN" --demo --source "$source" --mcp </dev/null >/dev/null 2>&1; then
+        fail "--demo --source $source --mcp serves $source"
+    fi
+done
 # Requests from a file too, not only from a pipe as agents send them.
 REQUESTS="$(mktemp)"
 trap 'rm -f "$REQUESTS"' EXIT

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **GitHub, a new source, off until you turn it on.** It lists your pull requests on github.com: those
+  that ask for your review by name, and your own that need changes, are failing (checks or merge
+  conflicts), are approved, or are waiting. It signs in with the GitHub CLI (`gh auth login`), never a
+  personal access token, keeps the token in memory only, and sends one read-only GraphQL query each
+  refresh, every 2 minutes by default. It saves nothing but its settings, and like every source, does
+  nothing at all until you turn it on. It has a menu-bar item, a widget and a page in the window, and
+  counts by meaning with the others.
 - **Agents can ask BriefBar, if you let them.** `BriefBar --mcp` is a Model Context Protocol server,
   off until you turn it on in **Settings › Agents**, which says what agents get first. Turning it on
   adds BriefBar to the Copilot CLI's MCP servers, which the GitHub Copilot app's sessions use too, and
@@ -9,8 +16,8 @@
   its comment threads word for word, your pipelines, sprint, Copilot tasks and sessions; get the
   prompt that fixes a pull request's comments, build or conflicts, or reviews it, to follow where it
   works; and watch pull requests and pin pipelines. It serves the sources that are on, reads as the app
-  does, changes nothing in Azure DevOps, and leaves Teams out. What it answers goes to the agent's
-  model.
+  does, changes nothing in Azure DevOps, and leaves Teams and GitHub out. What it answers goes to the
+  agent's model.
 - **A failed build says where it failed.** A pull request of yours that's failing because of a build
   now says where, and the first error there, such as "shop-web CI · Run unit tests: 2 tests failed in
   DeliveryEstimateTests.", in its list, its notification and the brief. BriefBar reads the build's

@@ -5,6 +5,7 @@ public enum SourceID: String, CaseIterable, Codable, Sendable, Identifiable {
     case teams
     case azureDevOps
     case copilot
+    case github
 
     public var id: String { rawValue }
 }
@@ -16,6 +17,8 @@ public enum Requirement: String, Codable, Sendable {
     case fullDiskAccess
     /// The Azure CLI, signed in with `az login`.
     case azureCLI
+    /// The GitHub CLI, signed in with `gh auth login`.
+    case githubCLI
     /// Permission to show notifications.
     case notifications
 }
@@ -41,6 +44,7 @@ public struct SectionID: RawRepresentable, Hashable, Codable, Sendable, CustomSt
     public static let azureDevOpsSprint = SectionID(rawValue: "azureDevOps.sprint")
     public static let azureDevOpsPipelines = SectionID(rawValue: "azureDevOps.pipelines")
     public static let copilotSessions = SectionID(rawValue: "copilot.sessions")
+    public static let githubPullRequests = SectionID(rawValue: "github.pullRequests")
 }
 
 /// That you turned a source on, having seen what it reads.
