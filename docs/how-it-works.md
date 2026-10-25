@@ -617,6 +617,9 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/policy/evaluations?artifactId=vstfs:///CodeReview/CodeReviewId/{project}/{id}` | per pull request | builds, status checks, reviewer and other policies |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/threads` | per pull request | comment threads, and activity: pushes, votes, reviewer changes |
 | `{project}/_apis/build/builds/{id}/timeline` | once for each failed build of your pull requests, and again if it's retried and fails again: four a refresh; one that can't be read is tried again on the next refresh, then less and less often | where the build failed, and the first error there |
+| `{project}/_apis/build/builds?repositoryId=…&branchName=…&minTime=…` | after you merge a pull request (below): every refresh for half an hour, while one of its runs hasn't finished, and for a quarter of an hour after the last one did; five merges a refresh, the newest first | its target branch's runs, among them those on its merge commit |
+| `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
+| `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
@@ -716,6 +719,33 @@ this in Teams"), unless it's failing, ready to complete or to review. It isn't c
 bar, announced, or in the brief. Once no popover or window page shows the pull requests anymore,
 each pull request one of them showed in Answered is marked seen up to when you answered it, not up to
 the time it closed, so anything that came later still counts as new. Widgets don't count as seeing it.
+
+### Pipelines after your merges
+
+When a pull request of yours completes, Azure DevOps reports the commit that merged it
+(`lastMergeCommit`). For as long as Done keeps the pull request (**Keep Done For**), BriefBar follows
+the runs of the pipelines that build it: its target branch's runs on that commit, except scheduled
+ones, which only happened to pick it up; the runs those started through a pipeline-completion or
+resource trigger, such as a deployment; and so on. It looks for them every refresh for half an hour
+after the merge, since a batched CI can wait before it starts, while one of them hasn't finished, and
+for a quarter of an hour after the last one did, in case it starts another; then it stops. Each
+pipeline's latest run counts: a run retried, or queued again, replaces the one before. While a run
+runs, its timeline is read every refresh, for its stages and whether one waits for an approval or a
+check, and once more when it finishes, for where it failed (`MergeChain`, `MergeSummary`).
+
+Together they decide what the pull request's row says:
+
+- **Failing**, as **Failed after merge**, when a pipeline's latest run failed, with where and its first
+  error; the row and its notification open the run.
+- **Waiting for approval**, in Done, while a stage of one waits for an approval or a check.
+- In Done, how many are still running, and then that they passed.
+
+While they run or wait, the pull request stays in Done even once you've opened it; once they've all
+passed, it leaves Done as before, when you've seen it. A notification says when one fails, when one
+starts waiting for an approval, and when they've all passed after running; what happened before
+BriefBar started isn't announced. The Pipelines page lists them under **After Your Merges**, above the
+pipelines you pin. **Follow Pipelines After You Merge** turns it off, and BriefBar then forgets the
+runs it found.
 
 ### Pull requests sent in chats
 
@@ -888,7 +918,7 @@ pull requests and sessions are yours, and stay.
 
 After each refresh, BriefBar compares the new list with the previous one (`NotificationPlanner`)
 and announces events it hasn't seen before, as well as your pull requests that start failing,
-become ready or complete. Events from before BriefBar started aren't announced: they're in the
+become ready or complete, and what the pipelines after your merges do. Events from before BriefBar started aren't announced: they're in the
 panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
 Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
 about, and marks the pull request seen.
@@ -917,6 +947,8 @@ or any other model.
   token.
 - A failed build says where it failed only when its run's timeline can be read, and then only its
   first error: the rest is in its log, which BriefBar doesn't read.
+- The pipelines after a merge are found in its repository's project: a run that a trigger starts in
+  another project isn't.
 - The Sprint section shows one team's current sprint at a time, from your teams in the organizations
   BriefBar watches.
 - Pipelines are build pipelines, YAML or classic; classic release pipelines aren't shown.

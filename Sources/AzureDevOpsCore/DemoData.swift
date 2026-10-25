@@ -102,6 +102,40 @@ public enum DemoData {
             Check(name: "Minimum number of reviewers", kind: .reviewers, state: state, minimumApprovers: minimum)
         }
         let mergeStrategy = Check(name: "Require a merge strategy", kind: .completion, state: .pending)
+        /// The pipelines after a merge: its CI passed, then started a deployment that waits for approval to production.
+        func merged(_ record: PRRecord) -> PRRecord {
+            var record = record
+            let pr = record.pullRequest
+            func pipeline(_ id: Int, _ name: String) -> PipelineRef {
+                PipelineRef(organization: organization, projectId: pr.projectId, projectName: pr.projectName, definitionId: id,
+                            name: name, folder: "Storefront\\CI")
+            }
+            let ci = PipelineRun(
+                id: 82_105, organization: organization, projectName: pr.projectName, number: "20261025.5", status: .succeeded,
+                trigger: .push, branch: pr.targetBranch, requestedFor: me.name, queuedAt: ago(39.5), startedAt: ago(39), finishedAt: ago(31)
+            )
+            let deploy = PipelineRun(
+                id: 82_109, organization: organization, projectName: pr.projectName, number: "20261025.2", status: .running,
+                trigger: .pipeline, branch: pr.targetBranch, requestedFor: me.name, queuedAt: ago(30.5), startedAt: ago(30)
+            )
+            func stage(_ id: Int, _ name: String, _ state: PipelineStage.State, _ startedAgo: Double? = nil, _ minutes: Double? = nil) -> PipelineStage {
+                let started = startedAgo.map(ago)
+                return PipelineStage(id: "merge-stage-\(id)", name: name, state: state, startedAt: started,
+                                     finishedAt: started.flatMap { start in minutes.map { start.addingTimeInterval($0 * 60) } })
+            }
+            record.merge = MergePipelines(
+                pullRequest: pr.key, title: pr.title, targetBranch: pr.targetBranch, mergedAt: pr.closedAt ?? ago(40), url: pr.webURL,
+                pipelines: [
+                    PipelineStatus(pipeline: pipeline(31, "shop-web CI"), runs: [ci],
+                                   stages: [stage(1, "Build", .succeeded, 39, 2.4), stage(2, "Test", .succeeded, 36.5, 5.4)]),
+                    PipelineStatus(pipeline: pipeline(36, "shop-web Deploy"), runs: [deploy],
+                                   stages: [stage(3, "Deploy to staging", .succeeded, 30, 7.2), stage(4, "Smoke tests", .succeeded, 22.6, 3.1),
+                                            stage(5, "Production", .waiting)]),
+                ],
+                isFollowing: true
+            )
+            return record
+        }
 
         return [
             // Needs you: a reply to your comment.
@@ -229,8 +263,8 @@ public enum DemoData {
                 ])],
                 activity: [vote(102, me, .waitingForAuthor, ago(day))]
             ),
-            // Done: completed two hours ago.
-            record(pr(4085, "Update the README badges", repo: "shop-web", created: ago(day), status: .completed, closed: ago(2 * hour))),
+            // Done: merged 40 minutes ago; its CI passed, and the deployment it started waits for approval to production.
+            merged(record(pr(4085, "Update the README badges", repo: "shop-web", created: ago(day), status: .completed, closed: ago(40)))),
             // Idle: a draft.
             record(
                 pr(4105, "Prototype one-click checkout", repo: "shop-web", created: ago(3 * hour), branch: "one-click", draft: true),

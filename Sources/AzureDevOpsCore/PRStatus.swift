@@ -32,10 +32,14 @@ public enum PRReason: String, Sendable, Codable {
     case mentioned, sentInChat, replied, commented, reviewRequested, newCommits, changesRequested, rejected
     case answered
     case buildFailed, checkFailed, conflicts, buildExpired
+    /// A pipeline that ran after it merged failed.
+    case failedAfterMerge
     case readyToComplete, autoComplete
     case reviewPending
     case waitingForReviewers, checksRunning, requirementsPending, waitingForAuthor
     case completed, abandoned
+    /// It merged, and a pipeline that runs after it waits for an approval.
+    case waitingForApproval
     case draft, inactive, youApproved, declined
 }
 
@@ -98,15 +102,21 @@ public struct PRRecord: Sendable, Equatable, Identifiable {
     public var me: String
     /// Links to it that people sent you.
     public var chatLinks: [ChatLink]
+    /// Once it's merged, the pipelines that ran on it.
+    public var merge: MergePipelines?
 
     public var id: PRKey { pullRequest.key }
 
-    public init(pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = []) {
+    public init(
+        pullRequest: PullRequest, role: PRRole, details: PRDetails? = nil, me: String, chatLinks: [ChatLink] = [],
+        merge: MergePipelines? = nil
+    ) {
         self.pullRequest = pullRequest
         self.role = role
         self.details = details
         self.me = me.lowercased()
         self.chatLinks = chatLinks
+        self.merge = merge
     }
 }
 
@@ -139,6 +149,8 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var chatSource: ChatSource? = nil
     /// Where its build failed, and the first error there, when it's failing because of a build whose timeline says.
     public var failure: PipelineFailure? = nil
+    /// Once it's merged, how the pipelines that ran on it stand.
+    public var merge: MergeSummary? = nil
 
     public var id: String { key.description }
 
@@ -222,10 +234,33 @@ public enum PRClassifier {
             // Done is for your own pull requests.
             guard record.role == .author else { return nil }
             let closed = pr.closedAt ?? lastActivity
-            guard now.timeIntervalSince(closed) <= options.keepDoneFor, closed > seenCutoff else { return nil }
+            guard now.timeIntervalSince(closed) <= options.keepDoneFor else { return nil }
             let completed = pr.status == .completed
-            set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned",
-                completed ? "Merged into \(pr.targetBranch)" : nil, since: closed)
+            let merge = completed ? record.merge?.summary : nil
+            snapshot.merge = merge
+            // What its pipelines do after it merged shows, whether or not you've seen it since.
+            if let merge, merge.outcome != .passed {
+                switch merge.outcome {
+                case .failed:
+                    set(.failing, .failedAfterMerge, "Failed after merge",
+                        [merge.pipeline, merge.failure?.summary].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                    snapshot.failure = merge.failure
+                case .waiting:
+                    set(.done, .waitingForApproval, "Waiting for approval",
+                        [merge.pipeline, merge.stage].compactMap { $0 }.joined(separator: " · "), since: merge.since ?? closed)
+                default:
+                    let running = merge.running == 1 ? "1 pipeline running" : "\(merge.running) pipelines running"
+                    set(.done, .completed, "Completed", "Merged into \(pr.targetBranch) · \(running)", since: closed)
+                }
+                if merge.outcome != .running, let url = merge.runURL { snapshot.url = url }
+                return snapshot
+            }
+            guard closed > seenCutoff else { return nil }
+            var detail = completed ? "Merged into \(pr.targetBranch)" : nil
+            if let merge {
+                detail = (detail ?? "") + (merge.total == 1 ? " · its pipeline passed" : " · \(merge.total) pipelines passed")
+            }
+            set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned", detail, since: closed)
             return snapshot
         case .other:
             return nil

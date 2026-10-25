@@ -199,6 +199,10 @@ public struct ADOBuild: Decodable, Sendable {
     public var definition: Definition
     public var project: ADOProjectRef?
     public var requestedFor: ADOIdentity?
+    /// The commit it built.
+    public var sourceVersion: String?
+    /// The run whose completion started it, for a pipeline-completion or resource trigger.
+    public var triggeredByBuild: BuildRef?
 
     public struct Definition: Decodable, Sendable {
         public var id: Int
@@ -206,8 +210,13 @@ public struct ADOBuild: Decodable, Sendable {
         public var path: String?
     }
 
+    public struct BuildRef: Decodable, Sendable {
+        public var id: Int
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, buildNumber, status, result, reason, sourceBranch, queueTime, startTime, finishTime, definition, project, requestedFor
+        case sourceVersion, triggeredByBuild
     }
 
     public init(from decoder: Decoder) throws {
@@ -224,6 +233,8 @@ public struct ADOBuild: Decodable, Sendable {
         finishTime = container.lenient(Date.self, forKey: .finishTime)
         project = container.lenient(ADOProjectRef.self, forKey: .project)
         requestedFor = container.lenient(ADOIdentity.self, forKey: .requestedFor)
+        sourceVersion = container.lenient(String.self, forKey: .sourceVersion)
+        triggeredByBuild = container.lenient(BuildRef.self, forKey: .triggeredByBuild)
     }
 }
 

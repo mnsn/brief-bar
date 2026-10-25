@@ -73,6 +73,7 @@ extension PRReason {
         case .checkFailed: return "xmark.octagon.fill"
         case .conflicts: return "arrow.triangle.branch"
         case .buildExpired: return "clock.badge.exclamationmark.fill"
+        case .failedAfterMerge: return "arrow.triangle.merge"
         case .readyToComplete: return "checkmark.circle.fill"
         case .autoComplete: return "checkmark.seal.fill"
         case .waitingForReviewers: return "person.2.circle.fill"
@@ -80,6 +81,7 @@ extension PRReason {
         case .requirementsPending: return "checklist"
         case .waitingForAuthor: return "clock.circle.fill"
         case .completed: return "arrow.triangle.merge"
+        case .waitingForApproval: return "hand.raised.circle.fill"
         case .abandoned: return "xmark.bin.fill"
         case .draft: return "pencil.circle.fill"
         case .inactive: return "moon.zzz.fill"
@@ -91,7 +93,7 @@ extension PRReason {
     /// Glyphs without a filled, circled version: rows draw them on a filled circle, like the others.
     var needsBadge: Bool {
         switch self {
-        case .conflicts, .requirementsPending, .completed: return true
+        case .conflicts, .requirementsPending, .completed, .failedAfterMerge: return true
         default: return false
         }
     }

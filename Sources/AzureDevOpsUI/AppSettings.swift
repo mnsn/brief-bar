@@ -50,6 +50,10 @@ final class AppSettings: ObservableObject {
     @Published var showToReview: Bool {
         didSet { defaults.set(showToReview, forKey: Key.showToReview) }
     }
+    /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
+    @Published var followMerges: Bool {
+        didSet { defaults.set(followMerges, forKey: Key.followMerges) }
+    }
     /// The organizations to watch.
     @Published var organizations: [String] {
         didSet { defaults.set(organizations, forKey: Key.organizations) }
@@ -130,6 +134,7 @@ final class AppSettings: ObservableObject {
         notifications = defaults.object(forKey: Key.notifications) as? Bool ?? true
         summaries = defaults.object(forKey: Key.summaries) as? Bool ?? true
         showToReview = defaults.bool(forKey: Key.showToReview)
+        followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
         hasDiscovered = defaults.bool(forKey: Key.hasDiscovered)
@@ -213,7 +218,8 @@ final class AppSettings: ObservableObject {
             organizations: organizations,
             interval: TimeInterval(refreshSeconds),
             keepDoneFor: TimeInterval(keepDoneHours) * 3_600,
-            inactiveAfter: idleDays > 0 ? TimeInterval(idleDays) * 86_400 : nil
+            inactiveAfter: idleDays > 0 ? TimeInterval(idleDays) * 86_400 : nil,
+            followMerges: followMerges
         )
     }
 
@@ -351,6 +357,7 @@ enum SettingsKey {
     static let notifications = "ado.notifications"
     static let summaries = "ado.summaries"
     static let showToReview = "ado.showToReviewInMenuBar"
+    static let followMerges = "ado.followMerges"
     static let organizations = "ado.organizations"
     static let knownOrganizations = "ado.knownOrganizations"
     static let hasDiscovered = "ado.hasDiscoveredOrganizations"

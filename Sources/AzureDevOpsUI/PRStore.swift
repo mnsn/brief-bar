@@ -31,6 +31,8 @@ final class PRStore: ObservableObject {
     @Published private(set) var refreshedAt: Date?
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
+    /// The pipelines after your merges, the newest merge first.
+    @Published private(set) var merges: [MergePipelines] = []
     /// Your name in Azure DevOps, so a brief's line can say "you" where a comment names you.
     private(set) var reader: String?
     /// Notifications are on for Azure DevOps but turned off for BriefBar in System Settings.
@@ -164,9 +166,10 @@ final class PRStore: ObservableObject {
             settings.$organizations.map { _ in () }.eraseToAnyPublisher(),
             settings.$refreshSeconds.map { _ in () }.eraseToAnyPublisher(),
             settings.$keepDoneHours.map { _ in () }.eraseToAnyPublisher(),
-            settings.$idleDays.map { _ in () }.eraseToAnyPublisher()
+            settings.$idleDays.map { _ in () }.eraseToAnyPublisher(),
+            settings.$followMerges.map { _ in () }.eraseToAnyPublisher()
         )
-        .dropFirst(4)
+        .dropFirst(5)
         .receive(on: DispatchQueue.main)
         .sink { [weak self] in
             MainActor.assumeIsolated {
@@ -476,6 +479,8 @@ final class PRStore: ObservableObject {
             Log.app.info("Signed in to the Azure CLI as another account")
         }
         state = snapshot
+        let newMerges = snapshot.records.compactMap(\.merge).sorted { ($0.mergedAt, $0.pullRequest) > ($1.mergedAt, $1.pullRequest) }
+        if newMerges != merges { merges = newMerges }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }
         if isRefreshing != snapshot.isRefreshing { isRefreshing = snapshot.isRefreshing }
         if snapshot.hasLoaded && !hasLoaded { hasLoaded = true }

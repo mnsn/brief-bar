@@ -202,19 +202,27 @@ Apple Intelligence sums up the newest of each.
 |---|---|
 | **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on) |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
-| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error |
+| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
 | **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
 | **Waiting** | Your pull requests waiting for reviewers, a build or a requirement, and reviews you're waiting on the author for |
-| **Done** | Completed or abandoned in the last day |
+| **Done** | Completed or abandoned in the last day, and while the pipelines that run after it merged are still going or wait for an approval |
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
 
 **Needs You** works like an inbox: opening a pull request from BriefBar, or **Mark as Seen**, moves it
 on until something new happens. The first time, only the last three days count as new, and each
 account you sign in to the Azure CLI with has its own. Notifications announce new replies, mentions,
-comments, review requests, votes, new commits, failed builds, and pull requests that become ready or
-complete. Clicking one opens the comment it's about. The first time, BriefBar finds the
+comments, review requests, votes, new commits, failed builds, pull requests that become ready or
+complete, and, after you merge one, a pipeline that fails or waits for an approval, or all of them
+passing. Clicking one opens the comment, or the run, it's about. The first time, BriefBar finds the
 organizations where you have pull requests; **Organizations** in its settings changes them.
+
+**Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the pipelines
+that run on its merge commit, and the ones those start, such as a deployment, for as long as Done keeps
+it. Its row says how they're going ("Merged into main · 2 pipelines running"), moves to **Failing** if
+one fails, saying where, and to **Waiting for approval** while a stage waits for one; the Pipelines page
+lists them under **After Your Merges**. **Follow Pipelines After You Merge**, in its settings, turns it
+off.
 
 **Pull Requests Sent in Chats**, off by default, lists a pull request as needing you when someone
 sends you a link to it, in Teams, Slack, an email or any other app, as "Dana sent this in Teams",
@@ -234,14 +242,15 @@ are in a card of their own, and your avatar has a blue ring. **Just Mine** shows
 team menu shows another team's sprint. Its widget and menu-bar item list your own work; in the list,
 its title opens this page, and **Open Task Board** the sprint's task board in Azure DevOps.
 
-**Pipelines** shows the pipelines you pin, from any of your projects: how each one's latest run is
-going stage by stage, where it failed, and how its recent runs went. **Add Pipeline** searches a
-project's pipelines by name or number, and a pinned pipeline's menu shows only one branch's runs,
-moves it, or unpins it.
+**Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
+your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
+runs went. **Add Pipeline** searches a project's pipelines by name or number, and a pinned pipeline's
+menu shows only one branch's runs, moves it, or unpins it.
 
 Both start in BriefBar's window only, and read Azure DevOps only while something shows them on screen:
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
-covered, a menu-bar item or its list. Click anything to open it in Azure DevOps.
+covered, a menu-bar item or its list. The pipelines after your merges are the exception: they're read
+with your pull requests, so that you hear when one fails. Click anything to open it in Azure DevOps.
 
 <p align="center">
   <picture>
@@ -391,6 +400,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Mark Chats Read When You Read Them in Teams | on by default: reads how far you've read each chat from Teams' own data, read-only, and keeps only that, in memory |
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
+| | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
@@ -436,7 +446,9 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
-  sign-in and GET requests as your pull requests.
+  sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
+  are read with your pull requests, while Done keeps it, unless you turn **Follow Pipelines After You
+  Merge** off.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
@@ -489,7 +501,8 @@ FSEvents, and reads them again only when they change.
 Azure DevOps can only push changes through service hooks, which need a project administrator and a
 server on the internet. So BriefBar asks every minute: about 10 to 25 small requests a minute, and
 right away when you open the list, when your Mac wakes, and when it's back online. Your sprint and
-pipelines add a few requests a minute, and only while something shows them.
+pipelines add a few requests a minute, and only while something shows them. After you merge a pull
+request, its pipelines add a few more, while they run.
 
 ### Why isn't a pull request assigned to my team shown?
 

@@ -36,6 +36,7 @@ struct AzureDevOpsSettings: View {
         Toggle("Summaries by Apple Intelligence", isOn: $settings.summaries)
             .disabled(!store.summarizer.isAvailable)
         Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
+        Toggle("Follow Pipelines After You Merge", isOn: $settings.followMerges)
         ChatLinksSetting()
 
         SettingsDivider()
