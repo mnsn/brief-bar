@@ -186,6 +186,12 @@ package struct MCPSource: Sendable {
         }
     }
 
+    /// One source's part of `needs_me`, by its place among them.
+    private struct Part: Sendable {
+        var index: Int
+        var text: String
+    }
+
     /// Every tool agents get from the sources: `needs_me`, then each source's own, each refused whenever `refusal` gives
     /// an answer instead, such as while agents are off in BriefBar.
     package static func tools(_ sources: [MCPSource], refusal: @escaping @Sendable () -> String? = { nil }) -> [MCPTool] {
@@ -203,18 +209,20 @@ package struct MCPSource: Sendable {
                 GitHub Copilot sessions waiting for them. Start here when the user asks what to do next or what's going on.
                 """
         ) { _ in
-            let parts = await withTaskGroup(of: (Int, String).self) { group in
-                for (index, source) in sources.enumerated() {
+            let checks = sources.map(\.needsYou)
+            let parts = await withTaskGroup(of: Part.self) { group in
+                for index in checks.indices {
+                    let check = checks[index]
                     group.addTask {
                         do {
-                            return (index, try await source.needsYou() ?? "Nothing needs you.")
+                            return Part(index: index, text: try await check() ?? "Nothing needs you.")
                         } catch {
-                            return (index, String(describing: error))
+                            return Part(index: index, text: String(describing: error))
                         }
                     }
                 }
                 var parts: [Int: String] = [:]
-                for await (index, text) in group { parts[index] = text }
+                for await part in group { parts[part.index] = part.text }
                 return parts
             }
             return sources.indices.map { "## \(sources[$0].name)\n\n\(parts[$0] ?? "")" }.joined(separator: "\n\n")
@@ -462,18 +470,26 @@ package enum MCPStandardIO {
                 }
             }
         }
+        // Read on a thread of its own, which waits for input however it comes: from a pipe, as agents send it, or a file.
         let lines = AsyncStream<Data> { continuation in
-            let splitter = LockedSplitter()
-            FileHandle.standardInput.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty else {
-                    handle.readabilityHandler = nil
-                    if let last = splitter.finish() { continuation.yield(last) }
-                    continuation.finish()
-                    return
+            let reader = Thread {
+                var splitter = LineSplitter()
+                var buffer = [UInt8](repeating: 0, count: 65_536)
+                while true {
+                    let count = read(STDIN_FILENO, &buffer, buffer.count)
+                    if count > 0 {
+                        for line in splitter.append(Data(buffer[0..<count])) { continuation.yield(line) }
+                    } else if count < 0, errno == EINTR {
+                        continue
+                    } else {
+                        break
+                    }
                 }
-                for line in splitter.append(data) { continuation.yield(line) }
+                if let last = splitter.finish() { continuation.yield(last) }
+                continuation.finish()
             }
+            reader.name = "BriefBar.mcp.input"
+            reader.start()
         }
         Task {
             for await line in lines {
@@ -484,18 +500,5 @@ package enum MCPStandardIO {
             writer.async { exit(0) }
         }
         dispatchMain()
-    }
-
-    private final class LockedSplitter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var splitter = LineSplitter()
-
-        func append(_ data: Data) -> [Data] {
-            lock.withLock { splitter.append(data) }
-        }
-
-        func finish() -> Data? {
-            lock.withLock { splitter.finish() }
-        }
     }
 }

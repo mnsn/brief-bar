@@ -12,6 +12,11 @@ fail() {
     exit 1
 }
 
+# Runs a command for at most this many seconds, so a server that waits forever fails the check instead of hanging it.
+within() {
+    perl -e 'alarm shift; exec @ARGV or die "$!\n"' "$@"
+}
+
 JSON="$("$BIN" --demo --json)"
 
 # Each source's counts, by group.
@@ -59,7 +64,7 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
     '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"needs_me","arguments":{}}}' \
     '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' |
-    "$BIN" --demo --mcp)"
+    within 60 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
 EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions"]'
@@ -72,8 +77,14 @@ grep '^- “Add dark mode to settings” (shop-web, dark-mode): Waiting for your
     fail "--demo --mcp's needs_me doesn't have the Copilot session waiting for an answer"
 jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tests failed in DeliveryEstimateTests' >/dev/null ||
     fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
-if "$BIN" --demo --source teams --mcp </dev/null >/dev/null 2>&1; then
+if within 60 "$BIN" --demo --source teams --mcp </dev/null >/dev/null 2>&1; then
     fail "--demo --source teams --mcp serves Teams"
 fi
+# Requests from a file too, not only from a pipe as agents send them.
+REQUESTS="$(mktemp)"
+trap 'rm -f "$REQUESTS"' EXIT
+printf '%s\n' '{"jsonrpc":"2.0","id":7,"method":"ping"}' >"$REQUESTS"
+[[ "$(within 60 "$BIN" --demo --mcp <"$REQUESTS" | jq -r .id)" == 7 ]] ||
+    fail "--demo --mcp doesn't answer requests from a file"
 
 echo "demo-check passed: $COUNTS; by state, $TOTALS"
