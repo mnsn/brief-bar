@@ -14,6 +14,8 @@
   all passed. The Pipelines page lists them under **After Your Merges**. They're read with your pull
   requests, with GETs, only while they run; **Follow Pipelines After You Merge** turns it off. Azure
   DevOps' description says so, and its version goes up, so it pauses until you've looked.
+- **Pin a pipeline by its link.** **Add Pipeline** takes a link to a pipeline, or to one of its runs,
+  as well as a name or number: a run's link pins its pipeline, showing that run's branch.
 - **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
   you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
   just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,

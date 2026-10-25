@@ -323,6 +323,16 @@ public enum ADOEndpoint {
         ])
     }
 
+    /// One pipeline, by its ID: a project's name works in place of its ID.
+    public static func buildDefinition(organization: String, project: String, id: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_apis", "build", "definitions", String(id)], [("api-version", apiVersion)])
+    }
+
+    /// One run, by its ID.
+    public static func build(organization: String, project: String, id: Int) -> URL {
+        url("https://dev.azure.com", [organization, project, "_apis", "build", "builds", String(id)], [("api-version", apiVersion)])
+    }
+
     /// The organization's projects, to search for pipelines in.
     public static func projects(organization: String) -> URL {
         url("https://dev.azure.com", [organization, "_apis", "projects"], [("$top", "1000"), ("api-version", apiVersion)])

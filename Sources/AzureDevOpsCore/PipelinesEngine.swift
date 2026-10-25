@@ -451,6 +451,31 @@ public enum PipelineSearch {
         try await client.get(url, as: ADOList<ADOBuildDefinition>.self).value.compactMap { PipelineRef(organization: organization, $0) }
     }
 
+    /// The pipeline a link is to: the pipeline's own, or one of its runs', showing then that run's branch, unless it's a
+    /// pull request's.
+    public static func pipeline(for link: PipelineLink, client: ADOClient) async throws -> PipelineRef {
+        switch link.target {
+        case .pipeline(let id):
+            let definition = try await client.get(
+                ADOEndpoint.buildDefinition(organization: link.organization, project: link.project, id: id), as: ADOBuildDefinition.self
+            )
+            guard let pipeline = PipelineRef(organization: link.organization, definition) else { throw ADOError.notFound }
+            return pipeline
+        case .run(let id):
+            let build = try await client.get(ADOEndpoint.build(organization: link.organization, project: link.project, id: id), as: ADOBuild.self)
+            guard let project = build.project else { throw ADOError.notFound }
+            var pipeline = PipelineRef(
+                organization: link.organization, projectId: project.id, projectName: project.name, definitionId: build.definition.id,
+                name: PlainText.singleLine(build.definition.name ?? "Pipeline \(build.definition.id)"),
+                folder: PipelineRef.folder(build.definition.path)
+            )
+            if let branch = build.sourceBranch, branch.hasPrefix("refs/heads/") {
+                pipeline.branch = PipelineRun.branch(branch)
+            }
+            return pipeline
+        }
+    }
+
     /// An organization's projects, by name.
     public static func projects(organization: String, client: ADOClient) async throws -> [ProjectRef] {
         let list = try await client.get(ADOEndpoint.projects(organization: organization), as: ADOList<ADOProjectRef>.self)

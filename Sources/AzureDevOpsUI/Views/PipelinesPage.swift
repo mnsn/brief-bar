@@ -516,7 +516,7 @@ private struct FailureNote: View {
     }
 }
 
-/// Finds pipelines in a project by name or number, to pin them.
+/// Finds pipelines in a project by name or number, or by a link to one or to one of its runs, to pin them.
 private struct AddPipelineSheet: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @EnvironmentObject private var store: PRStore
@@ -538,7 +538,7 @@ private struct AddPipelineSheet: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add Pipelines")
                         .font(.system(size: 20, weight: .bold))
-                    Text("Pin the pipelines to follow in the window and the widget.")
+                    Text("Pin the pipelines to follow in the window and the widget. Search by name or number, or paste a link to a pipeline or a run.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -551,7 +551,7 @@ private struct AddPipelineSheet: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search pipelines by name or number", text: $text)
+                    TextField("Search by name or number, or paste a link", text: $text)
                         .textFieldStyle(.plain)
                         .onSubmit { search(after: 0) }
                     if isSearching {
@@ -604,12 +604,12 @@ private struct AddPipelineSheet: View {
             Label(error, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if project == nil {
+        } else if project == nil && link == nil {
             Text("Choose a project to search in.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if results.isEmpty && !isSearching {
-            Text(noResults)
+            Text(link != nil ? "No pipeline at that link." : noResults)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -641,23 +641,40 @@ private struct AddPipelineSheet: View {
         if project == nil { project = others.first }
     }
 
-    /// Searches once typing stops for a moment.
+    /// A link to a pipeline or a run, pasted in place of a name.
+    private var link: PipelineLink? { PipelineLink(text) }
+
+    /// Searches once typing stops for a moment: the project for a name, or the pipeline a link is to.
     private func search(after delay: Double) {
         pending?.cancel()
-        guard let project else { return }
+        let link = self.link
+        guard link != nil || project != nil else { return }
         let text = self.text
+        let project = self.project
         pending = Task {
             if delay > 0 {
                 try? await Task.sleep(for: .seconds(delay))
                 if Task.isCancelled { return }
             }
             isSearching = true
-            let result = await pipelines.search(text, in: project)
+            let result: Result<[PipelineRef], ADOError>
+            if let link {
+                result = await pipelines.pipeline(for: link).map { [$0] }
+            } else if let project {
+                result = await pipelines.search(text, in: project)
+            } else {
+                isSearching = false
+                return
+            }
             if Task.isCancelled { return }
             isSearching = false
             switch result {
             case .success(let found):
                 results = found
+                error = nil
+            case .failure(.notFound) where link != nil, .failure(.forbidden) where link != nil:
+                // Says there's no pipeline there, in the list.
+                results = []
                 error = nil
             case .failure(let failure):
                 results = []
