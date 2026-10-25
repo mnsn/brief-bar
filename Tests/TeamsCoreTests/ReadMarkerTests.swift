@@ -66,6 +66,10 @@ final class MarkerCollector: Sendable {
         snapshots.withLock { $0.last }
     }
 
+    var first: ReadMarkerSnapshot? {
+        snapshots.withLock { $0.first }
+    }
+
     @discardableResult
     func wait(_ what: String, timeout: Duration = .seconds(10), until predicate: (ReadMarkerSnapshot) -> Bool) async throws
         -> ReadMarkerSnapshot {
@@ -259,6 +263,45 @@ final class MarkerCollector: Sendable {
         #expect(read.report.unreadable.isEmpty)
     }
 
+    @Test func confirmsTablesOnlyAfterTheyStayUnchangedForTheFullInterval() throws {
+        try withTemporaryDirectory { directory in
+            let table = directory.appendingPathComponent("000010.ldb")
+            try Data(repeating: 7, count: 100).write(to: table)
+            let file = try #require(FileInfo(path: table.path))
+            let start = ContinuousClock.now
+            var tracker = UnreadableTableTracker(confirmation: 5)
+            #expect(tracker.update([table.path: file], at: start) == 0)
+            #expect(tracker.update([table.path: file], at: start.advanced(by: .milliseconds(4_999))) == 0)
+            #expect(tracker.update([table.path: file], at: start.advanced(by: .seconds(5))) == 1)
+            #expect(!tracker.filesChanged)
+
+            try Data(repeating: 7, count: 200).write(to: table)
+            let changed = try #require(FileInfo(path: table.path))
+            #expect(tracker.filesChanged)
+            #expect(tracker.update([table.path: changed], at: start.advanced(by: .seconds(6))) == 0)
+            #expect(tracker.update([table.path: changed], at: start.advanced(by: .milliseconds(10_999))) == 0)
+            #expect(tracker.update([table.path: changed], at: start.advanced(by: .seconds(11))) == 1)
+        }
+    }
+
+    @Test func forgetsATableThatWasOnlyBeingWritten() throws {
+        try withTemporaryDirectory { directory in
+            let table = directory.appendingPathComponent("000010.ldb")
+            try Data(repeating: 7, count: 100).write(to: table)
+            let file = try #require(FileInfo(path: table.path))
+            let start = ContinuousClock.now
+            var tracker = UnreadableTableTracker(confirmation: 5)
+            #expect(tracker.update([table.path: file], at: start) == 0)
+            try FileManager.default.removeItem(at: table)
+            #expect(tracker.filesChanged)
+            #expect(tracker.update([:], at: start.advanced(by: .seconds(4))) == 0)
+            #expect(tracker.count == 0)
+            #expect(tracker.update([table.path: file], at: start.advanced(by: .seconds(5))) == 0)
+            #expect(tracker.update([table.path: file], at: start.advanced(by: .milliseconds(9_999))) == 0)
+            #expect(tracker.update([table.path: file], at: start.advanced(by: .seconds(10))) == 1)
+        }
+    }
+
     @Test func countsATableAsUnreadableOnlyWhenItStaysSo() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -269,14 +312,15 @@ final class MarkerCollector: Sendable {
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.3) { collector.add($0) }
         engine.start()
         defer { engine.stop() }
-        let first = try await collector.wait("the first read") { $0.markers[Chat.avery] != nil }
+        try await collector.wait("the first read") { $0.markers[Chat.avery] != nil }
+        let first = try #require(collector.first)
         #expect(first.report.unreadableFiles == 0 && first.problem == nil)
         let later = try await collector.wait("a second look") { $0.report.unreadableFiles == 1 }
         #expect(later.problem == .readMarkersPartlyUnreadable)
         #expect(later.markers == first.markers)
     }
 
-    @Test func forgetsATableThatWasOnlyBeingWritten() async throws {
+    @Test func clearsTheWarningWhenATableIsRemoved() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let (location, log) = try TeamsData.copy(to: directory)
@@ -286,11 +330,11 @@ final class MarkerCollector: Sendable {
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.5) { collector.add($0) }
         engine.start()
         defer { engine.stop() }
-        try await collector.wait("the first read") { $0.markers[Chat.avery] != nil }
+        let unreadable = try await collector.wait("the confirmed warning") { $0.report.unreadableFiles == 1 }
         try FileManager.default.removeItem(at: table)
-        try await Task.sleep(for: .milliseconds(1_200))
-        #expect(collector.latest?.report.unreadableFiles == 0)
-        #expect(collector.latest?.problem == nil)
+        let readable = try await collector.wait("the removed table") { $0.report.unreadableFiles == 0 }
+        #expect(readable.problem == nil)
+        #expect(readable.markers == unreadable.markers)
     }
 
     @Test func readsTeamsOwnDataOnlyWithFullDiskAccess() async throws {

@@ -32,6 +32,40 @@ public struct ReadMarkerSnapshot: Sendable, Equatable {
     }
 }
 
+/// A table must stay unchanged and unreadable for the full confirmation interval, not just for two scans.
+struct UnreadableTableTracker: Sendable {
+    private struct Observation: Sendable {
+        var file: FileInfo
+        var since: ContinuousClock.Instant
+    }
+
+    private let confirmation: Duration
+    private var observations: [String: Observation] = [:]
+
+    init(confirmation: TimeInterval) {
+        self.confirmation = .seconds(confirmation)
+    }
+
+    var count: Int { observations.count }
+
+    var filesChanged: Bool {
+        observations.contains { FileInfo(path: $0.key) != $0.value.file }
+    }
+
+    mutating func update(_ files: [String: FileInfo], at now: ContinuousClock.Instant) -> Int {
+        var current: [String: Observation] = [:]
+        for (path, file) in files {
+            if let previous = observations[path], previous.file == file {
+                current[path] = previous
+            } else {
+                current[path] = Observation(file: file, since: now)
+            }
+        }
+        observations = current
+        return observations.values.filter { $0.since.duration(to: now) >= confirmation }.count
+    }
+}
+
 /// Watches Teams' IndexedDB folders and publishes each chat's read marker whenever one changes.
 ///
 /// LevelDB keeps its log open and appends every write to it, so, as with Notification Center's database, a kqueue watch
@@ -54,9 +88,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
 
     private var folders: [URL: TeamsCacheFolder] = [:]
     private var unreadableFolders = 0
-    /// Tables that couldn't be read at the last scan, by path, as they were then. LevelDB writes a table where it'll
-    /// stay, so one being written reads as broken: only one still the same, and still unreadable, a while later counts.
-    private var suspectTables: [String: FileInfo] = [:]
+    private var suspectTables: UnreadableTableTracker
     private var unreadableTables = 0
     private var confirmationScheduled = false
     private var streams: [URL: FileEventStream] = [:]
@@ -79,6 +111,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         self.reloadDelay = reloadDelay
         self.safetyInterval = safetyInterval
         self.confirmationDelay = confirmationDelay
+        suspectTables = UnreadableTableTracker(confirmation: confirmationDelay)
         self.onChange = onChange
     }
 
@@ -106,6 +139,8 @@ public final class ReadMarkerEngine: @unchecked Sendable {
             safetyTimer?.cancel()
             safetyTimer = nil
             folders = [:]
+            suspectTables = UnreadableTableTracker(confirmation: confirmationDelay)
+            unreadableTables = 0
             watch()
         }
     }
@@ -153,8 +188,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
         snapshot = makeSnapshot(access: access, readAt: started)
     }
 
-    /// Counts the tables that couldn't be read at this scan and the one before, unchanged; for the others, scans again
-    /// a little later, by when LevelDB has finished writing a table it was.
+    /// Counts tables unchanged and unreadable for the full interval; checks the others again later.
     private func confirmUnreadableTables() {
         var current: [String: FileInfo] = [:]
         for folder in folders.values {
@@ -162,8 +196,7 @@ public final class ReadMarkerEngine: @unchecked Sendable {
                 current[folder.folder.url.appendingPathComponent(name).path] = info
             }
         }
-        unreadableTables = current.filter { suspectTables[$0.key] == $0.value }.count
-        suspectTables = current
+        unreadableTables = suspectTables.update(current, at: .now)
         guard isActive, current.count > unreadableTables, !confirmationScheduled else { return }
         confirmationScheduled = true
         queue.asyncAfter(deadline: .now() + confirmationDelay) { [weak self] in
@@ -177,6 +210,11 @@ public final class ReadMarkerEngine: @unchecked Sendable {
 
     /// Reads on in each folder's log; reads a folder again from scratch when that's needed.
     private func readLogs() {
+        // Compaction can finish or remove a suspect table without replacing the current log.
+        if suspectTables.filesChanged {
+            rescan()
+            return
+        }
         let started = Date()
         var rescans = false
         for url in folders.keys {

@@ -553,9 +553,11 @@ All three formats are undocumented, so every read is checked:
 - **Teams' read markers.** Files, log records and values that can't be read are counted, values by
   why. If Teams' folder has no `conversations` store, or none of its conversations has a marker
   BriefBar understands, the lists say Teams' read markers have changed; if more than a quarter can't
-  be read, or a file can't, they say some couldn't be read. A table counts only if it still can't be
-  read, unchanged, 5 s later: LevelDB writes a table where it'll stay, so one being written reads as
-  broken until it's done. Neither keeps the lists from showing: chats you read in Teams then stay
+  be read, or a file can't, they say some couldn't be read. A table counts only after it has stayed
+  unchanged and unreadable for at least 5 s: LevelDB writes a table where it'll stay, so one being
+  written reads as broken until it's done. Each read rechecks those table paths, so finishing or
+  removing one clears its warning even if the current log hasn't changed. Neither keeps the lists
+  from showing: chats you read in Teams then stay
   unread until another rule reads them. Lengths, nesting, blocks' keys and sparse arrays are checked
   against what's there and capped, so a value can't make BriefBar read past it, or hold much more
   than it.
@@ -1111,7 +1113,9 @@ a copy you built updates itself to a release.
 
 BriefBar and its updater run with the hardened runtime, so other processes can't use BriefBar's Full
 Disk Access by injecting code into them: macOS ignores `DYLD_` environment variables for them, such as
-`DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach.
+`DYLD_INSERT_LIBRARIES`, and doesn't let debuggers attach. That takes System Integrity Protection,
+which is on unless you turn it off: with it off, macOS doesn't stop programs from loading code into
+BriefBar, or into any other app, and BriefBar can't prevent that.
 
 The hardened runtime also turns on library validation, which loads only libraries signed by Apple or by
 the app's own team. A self-signed certificate has no team, so macOS would refuse Sparkle, even signed
@@ -1134,11 +1138,12 @@ certificate, which has a team, would let Sparkle load with library validation on
 
 `scripts/test-updater-isolation.sh` shows it on a copy of a build that macOS opens: BriefBar loads only
 Apple's libraries, and an ad-hoc library put in place of Sparkle, in the updater and in BriefBar's own
-`Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS holds
-responsible for itself. `BriefBar --check-updater` reports the same about any copy. With System Integrity
-Protection off, as on GitHub's runners, macOS lets the updater load the library `DYLD_INSERT_LIBRARIES`
-names instead of its own Sparkle, and `--check-updater` reports that: the test accepts it only where
-`csrutil status` says so, and checks where the library ran either way.
+`Contents/Frameworks`, and named by `DYLD_INSERT_LIBRARIES`, runs only in the updater, which macOS
+holds responsible for itself. `BriefBar --check-updater` reports the same about any copy, listing every
+library loaded into BriefBar but its executable, which it tells by its Mach-O header: dyld lists a
+library that `DYLD_INSERT_LIBRARIES` inserts before the executable. With System Integrity Protection
+off, as on GitHub's runners, that variable loads code into any app, so there the test leaves it out,
+and puts the library only in Sparkle's places; it prints `csrutil status`, and says which it did.
 
 ## Updating the app
 
