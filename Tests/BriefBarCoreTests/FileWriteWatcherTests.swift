@@ -21,6 +21,8 @@ private final class ChangeCounter: Sendable {
             if count > previous { return }
             try await Task.sleep(for: .milliseconds(10))
         }
+        // On a busy machine a test can run again only after its deadline, though what it waits for came in time.
+        if count > previous { return }
         throw TestError("No change reported within \(timeout)")
     }
 }
