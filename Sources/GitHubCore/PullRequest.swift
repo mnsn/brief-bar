@@ -331,16 +331,17 @@ public enum GitHubProblem: Sendable, Equatable {
     }
 
     public static func from(_ error: Error, now: Date = Date()) -> GitHubProblem {
-        let error = (error as? GitHubAuthError).map(GitHubError.auth) ?? error
-        guard let error = error as? GitHubError else { return .unreachable(error.localizedDescription) }
-        switch error {
+        var unwrapped: any Error = error
+        if let authError = error as? GitHubAuthError { unwrapped = GitHubError.auth(authError) }
+        guard let gitHubError = unwrapped as? GitHubError else { return .unreachable(unwrapped.localizedDescription) }
+        switch gitHubError {
         case .auth(.cliNotFound): return .cliNotFound
         case .auth(.signedOut(let message)): return .signedOut(message)
         case .auth(.failed(let message)): return .authFailed(message)
-        case .unauthorized: return .signedOut(error.description)
+        case .unauthorized: return .signedOut(gitHubError.description)
         case .offline: return .offline
         case .throttled(let seconds): return .throttled(until: now.addingTimeInterval(seconds))
-        default: return .unreachable(error.description)
+        default: return .unreachable(gitHubError.description)
         }
     }
 }

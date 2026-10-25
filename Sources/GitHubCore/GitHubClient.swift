@@ -199,14 +199,14 @@ public struct GitHubClient: Sendable {
     }
 
     private static func describe(_ error: Error) -> String {
-        guard let error = error as? DecodingError else { return String(describing: error) }
-        switch error {
+        guard let decodingError = error as? DecodingError else { return String(describing: error) }
+        switch decodingError {
         case .keyNotFound(let key, let context):
             return "missing \((context.codingPath + [key]).map(\.stringValue).joined(separator: "."))"
         case .typeMismatch(_, let context), .valueNotFound(_, let context), .dataCorrupted(let context):
             return context.codingPath.map(\.stringValue).joined(separator: ".") + ": " + context.debugDescription
         @unknown default:
-            return String(describing: error)
+            return String(describing: decodingError)
         }
     }
 }
