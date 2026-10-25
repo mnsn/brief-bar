@@ -27,10 +27,17 @@ let package = Package(
             dependencies: ["BriefBarCore"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
-        // Unread Microsoft Teams chats, from the notifications Teams sends to Notification Center.
+        // Unread Microsoft Teams chats, from the notifications Teams sends to Notification Center, and how far you've
+        // read each chat in Teams itself, from its own data.
         .target(
             name: "TeamsCore",
-            dependencies: ["BriefBarCore", "NotificationCenterDB"]
+            dependencies: ["BriefBarCore", "NotificationCenterDB", "ChromiumIndexedDB"]
+        ),
+        // Chromium's IndexedDB on LevelDB, read-only and in place: Teams' web app keeps its chats' read markers there.
+        // Reading Teams' copy needs Full Disk Access.
+        .target(
+            name: "ChromiumIndexedDB",
+            dependencies: ["BriefBarCore"]
         ),
         // Azure DevOps pull requests, read with the Azure CLI's sign-in. The only module that may use
         // the network (scripts/check-boundaries.sh).
@@ -93,7 +100,11 @@ let package = Package(
         ),
         .testTarget(
             name: "TeamsCoreTests",
-            dependencies: ["TeamsCore", "NotificationCenterDB", "BriefBarCore"]
+            dependencies: ["TeamsCore", "NotificationCenterDB", "BriefBarCore", "ChromiumIndexedDB"]
+        ),
+        .testTarget(
+            name: "ChromiumIndexedDBTests",
+            dependencies: ["ChromiumIndexedDB", "BriefBarCore"]
         ),
         .testTarget(
             name: "AzureDevOpsCoreTests",

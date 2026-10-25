@@ -36,13 +36,17 @@ struct MenuPanelView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: group.symbol)
-                .foregroundStyle(group.color)
-            Text(group.title)
-                .font(.headline)
-            if !unread.isEmpty {
-                CountBadge(count: unread.count, color: group.color)
-                    .help(group.unreadDescription(unread.count))
+            PageLink(group.section, name: group.title) {
+                HStack(spacing: 8) {
+                    Image(systemName: group.symbol)
+                        .foregroundStyle(group.color)
+                    Text(group.title)
+                        .font(.headline)
+                    if !unread.isEmpty {
+                        CountBadge(count: unread.count, color: group.color)
+                            .help(group.unreadDescription(unread.count))
+                    }
+                }
             }
             Spacer()
             if !unread.isEmpty {
@@ -167,7 +171,7 @@ struct ProblemView: View {
                 if problem == .noAccess {
                     Button("Set Up Full Disk Access…") { fullDiskAccess.show() }
                 } else {
-                    Button("Copy Diagnostics") { Diagnose.copyReport(paths: store.paths) }
+                    Button("Copy Diagnostics") { Diagnose.copyReport(store) }
                         .help("Copies a description of the database's structure, without names, messages or IDs")
                 }
             }

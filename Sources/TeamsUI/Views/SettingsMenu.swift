@@ -24,7 +24,7 @@ struct SourceMenuContent: View {
         if store.access != .granted {
             Button("Set Up Full Disk Access…") { fullDiskAccess.show() }
         }
-        Button("Copy Diagnostics") { Diagnose.copyReport(paths: store.paths) }
+        Button("Copy Diagnostics") { Diagnose.copyReport(store) }
         Button("Open Microsoft Teams") { TeamsApp.activate() }
     }
 }
@@ -45,6 +45,7 @@ struct TeamsSettings: View {
         if settings.showSummaries, let reason = Summarizer.unavailableReason {
             Text(reason)
         }
+        Toggle("Mark Chats Read When You Read Them in Teams", isOn: $settings.followReadsInTeams)
         Toggle("Mark All Read When Teams' Badge Clears", isOn: $settings.clearWithDockBadge)
     }
 }
@@ -52,10 +53,11 @@ struct TeamsSettings: View {
 enum Diagnose {
     /// Copies the structure-only report (no names, messages or IDs) for an issue.
     @MainActor
-    static func copyReport(paths: NotificationPaths) {
+    static func copyReport(_ store: ConversationStore) {
         let version = AppIdentity.version
+        let (paths, cache, follows) = (store.paths, store.storage.cache, store.followsReadsInTeams)
         Task(priority: .userInitiated) { @MainActor in
-            let report = await Diagnostics.report(paths: paths, appVersion: version)
+            let report = await Diagnostics.report(paths: paths, cache: cache, followsReadsInTeams: follows, appVersion: version)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(report, forType: .string)
         }

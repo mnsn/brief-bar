@@ -6,7 +6,12 @@ import NotificationCenterDB
 /// structure: table and field names, counts, and the shapes of values. Never names, message text
 /// or IDs, so it's safe to paste into an issue.
 public enum Diagnostics {
-    public static func report(paths: NotificationPaths, appVersion: String) async -> String {
+    /// - Parameters:
+    ///   - cache: Teams' own data, where it keeps how far you've read each chat; nil when only made-up data may be read.
+    ///   - followsReadsInTeams: whether **Mark Chats Read When You Read Them in Teams** is on.
+    public static func report(
+        paths: NotificationPaths, cache: TeamsCacheLocation?, followsReadsInTeams: Bool, appVersion: String
+    ) async -> String {
         var lines = [
             "BriefBar \(appVersion) diagnostics (structure only: no names, messages or IDs)",
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
@@ -15,17 +20,50 @@ public enum Diagnostics {
         lines.append("Database: \(paths.isSystemDatabase ? "Notification Center's" : "overridden by \(NotificationPaths.databaseVariable)"), access \(access.rawValue)")
         let badge = await dockBadge()
         lines.append("Teams' dock badge, from lsappinfo: \(badge)")
-        guard access == .granted else { return lines.joined(separator: "\n") }
-        do {
-            lines += describe(try NotificationDatabase.load(at: paths.database, bundleIdentifiers: TeamsBundle.identifiers))
-        } catch NotificationDatabaseError.layoutChanged(let missing, let layout) {
-            lines.append("Layout changed, missing: \(missing.joined(separator: ", "))")
-            lines.append("Tables:")
-            lines += layout.lines.map { "  \($0)" }
-        } catch {
-            lines.append("Read failed: \(error)")
+        if access == .granted {
+            do {
+                lines += describe(try NotificationDatabase.load(at: paths.database, bundleIdentifiers: TeamsBundle.identifiers))
+            } catch NotificationDatabaseError.layoutChanged(let missing, let layout) {
+                lines.append("Layout changed, missing: \(missing.joined(separator: ", "))")
+                lines.append("Tables:")
+                lines += layout.lines.map { "  \($0)" }
+            } catch {
+                lines.append("Read failed: \(error)")
+            }
+        }
+        if !followsReadsInTeams {
+            lines.append("Teams' read markers: not read (Mark Chats Read When You Read Them in Teams is off)")
+        } else if let cache {
+            lines += describe(ReadMarkerEngine.loadOnce(location: cache), location: cache)
+        } else {
+            lines.append("Teams' read markers: not read (another Notification Center database, and no \(TeamsCacheLocation.variable))")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// What BriefBar reads of Teams' own data, by counts and formats only.
+    static func describe(_ snapshot: ReadMarkerSnapshot, location: TeamsCacheLocation) -> [String] {
+        var lines = ["Teams' read markers: "
+            + (location.isTeamsOwn ? "Teams' own data" : "overridden by \(TeamsCacheLocation.variable)")
+            + ", access \(snapshot.access.rawValue)"]
+        guard snapshot.access == .granted else { return lines }
+        let report = snapshot.report
+        let folders = location.folders().map {
+            $0.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent + "/" + $0.lastPathComponent
+        }
+        lines.append("  Folders: " + (folders.isEmpty ? "none" : folders.joined(separator: ", ")))
+        lines.append("  Conversation stores: \(report.stores), conversations: \(report.conversations), "
+            + "chats with a read marker: \(report.withMarker)")
+        for (format, count) in report.formats.sorted(by: { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }) {
+            lines.append("  \(count) x \(format)")
+        }
+        for (reason, count) in report.unreadable.sorted(by: { $0.key < $1.key }) {
+            lines.append("  unreadable, \(reason): \(count)")
+        }
+        lines.append("  Unreadable files: \(report.unreadableFiles), corrupt log records: \(report.corruptLogRecords), "
+            + "table blocks read: \(report.blocksRead), skipped: \(report.blocksSkipped)")
+        lines.append("  Verdict: " + (report.problem?.title ?? "OK"))
+        return lines
     }
 
     static func describe(_ contents: DatabaseContents) -> [String] {

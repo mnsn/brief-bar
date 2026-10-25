@@ -11,22 +11,24 @@ package enum TeamsCommandLine: SourceCommandLine {
     package static let flags = ["--diagnose", "--summaries"]
     package static let usage = """
         Microsoft Teams:
-          --diagnose         Describe Notification Center's database and Teams' notifications by their
-                             structure only, without names, messages or IDs, for an issue report
+          --diagnose         Describe Notification Center's database, Teams' notifications and Teams' read
+                             markers by their structure only, without names, messages or IDs, for an issue
+                             report
           --summaries        Summarize each unread chat in a sentence, with Apple's on-device model
-          Run from Terminal, these read Notification Center with Terminal's Full Disk Access; started as
-          an app, BriefBar doesn't run them. Like Teams' part of --dump, --json, --watch and --render,
-          they never read the unread chats the app saved from it: only what arrived since the app last
-          read it counts as unread. Set BRIEFBAR_TEAMS_DB to read another Notification Center database,
-          such as the demo data, and BRIEFBAR_TEAMS_STATE_DIR for the state that goes with it.
+          Run from Terminal, these read Notification Center, and Teams' own data for how far you've read each
+          chat, with Terminal's Full Disk Access; started as an app, BriefBar doesn't run them. Like Teams'
+          part of --dump, --json, --watch and --render, they never read the unread chats the app saved from
+          it: only what arrived since the app last read it counts as unread. Set BRIEFBAR_TEAMS_DB to read
+          another Notification Center database, such as the demo data, BRIEFBAR_TEAMS_STATE_DIR for the state
+          that goes with it, and BRIEFBAR_TEAMS_CACHE for other data laid out as Teams' (EBWebView).
         """
 
     package static func run(_ options: CommandLineOptions) -> Int32? {
         if options.arguments.contains("--diagnose") {
             guard let storage = storage(options) else { return 1 }
-            let paths = storage.paths
+            let (paths, cache, follows) = (storage.paths, storage.cache, followsReadsInTeams)
             let version = AppIdentity.version
-            print(wait { await Diagnostics.report(paths: paths, appVersion: version) })
+            print(wait { await Diagnostics.report(paths: paths, cache: cache, followsReadsInTeams: follows, appVersion: version) })
             return 0
         }
         if options.arguments.contains("--summaries") {
@@ -38,12 +40,12 @@ package enum TeamsCommandLine: SourceCommandLine {
 
     package static func dump(_ options: CommandLineOptions) -> Int32 {
         guard let storage = storage(options) else { return 1 }
-        return printTable(storage.loadState(settings: trackerSettings))
+        return printTable(storage.loadState(settings: trackerSettings, followReadsInTeams: followsReadsInTeams))
     }
 
     package static func json(_ options: CommandLineOptions) -> [String: Any]? {
         guard let storage = storage(options) else { return nil }
-        let (state, snapshot) = storage.loadState(settings: trackerSettings)
+        let (state, snapshot) = storage.loadState(settings: trackerSettings, followReadsInTeams: followsReadsInTeams)
         let groups = ChatGroup.allCases
         return jsonObject(Output(
             access: snapshot.access.rawValue,
@@ -69,6 +71,11 @@ package enum TeamsCommandLine: SourceCommandLine {
     /// The installed app's Keep Unread For, so the output matches its lists.
     static var trackerSettings: TrackerSettings {
         TrackerSettings(keepUnreadFor: AppSettings.KeepUnread.saved(in: AppIdentity.installedAppDefaults ?? .standard).interval)
+    }
+
+    /// The installed app's **Mark Chats Read When You Read Them in Teams**.
+    static var followsReadsInTeams: Bool {
+        AppSettings.followsReadsInTeams(in: AppIdentity.installedAppDefaults ?? .standard)
     }
 
     private struct ChatOutput: Encodable {
@@ -137,7 +144,7 @@ package enum TeamsCommandLine: SourceCommandLine {
 
     /// Summarizes the unread chats one after the other, on this Mac, and prints how long each took.
     private static func printSummaries(_ storage: StorageMode) -> Never {
-        let (state, snapshot) = storage.loadState(settings: trackerSettings)
+        let (state, snapshot) = storage.loadState(settings: trackerSettings, followReadsInTeams: followsReadsInTeams)
         if let problem = snapshot.problem {
             print("! \(problem.title). \(problem.message)")
         }
@@ -176,15 +183,20 @@ package enum TeamsCommandLine: SourceCommandLine {
         let queue = DispatchQueue(label: "BriefBar.Teams.watch")
         let printer = WatchPrinter(storage: storage, settings: trackerSettings)
         let engine = NotificationEngine(paths: storage.paths) { snapshot in queue.async { printer.receive(snapshot) } }
+        var markers: ReadMarkerEngine?
+        if followsReadsInTeams, let cache = storage.cache {
+            markers = ReadMarkerEngine(location: cache) { snapshot in queue.async { printer.receive(snapshot) } }
+        }
         // Unread messages also expire with time alone.
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(1))
         timer.setEventHandler { printer.report() }
         timer.resume()
         engine.start()
+        markers?.start()
         setvbuf(stdout, nil, _IOLBF, 0)
-        print("Watching \(storage.paths.database.path). Ctrl-C stops.")
-        watching = [engine, timer, printer]
+        print("Watching \(storage.paths.database.path)\(markers == nil ? "" : ", and Teams' read markers"). Ctrl-C stops.")
+        watching = [engine, timer, printer] + (markers.map { [$0] } ?? [])
         return true
     }
 }
@@ -194,6 +206,7 @@ private final class WatchPrinter: @unchecked Sendable {
     private var tracker: UnreadTracker
     private let settings: TrackerSettings
     private var problem: PulseProblem?
+    private var markerProblem: PulseProblem?
     private var previous: [String: ConversationSummary] = [:]
     private var counts: [ChatGroup: Int] = [:]
     private let formatter: DateFormatter = {
@@ -219,6 +232,15 @@ private final class WatchPrinter: @unchecked Sendable {
         if let notifications = snapshot.notifications {
             tracker.apply(notifications, now: Date())
         }
+        report()
+    }
+
+    func receive(_ snapshot: ReadMarkerSnapshot) {
+        if let problem = snapshot.problem, snapshot.problem != markerProblem {
+            line("! \(problem.title). \(problem.message)")
+        }
+        markerProblem = snapshot.problem
+        tracker.setReadMarkers(snapshot.markers)
         report()
     }
 

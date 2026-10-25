@@ -28,6 +28,8 @@ final class AppModel: ObservableObject {
     private var overviewWidget: OverviewWidgetHost?
     private var windows: [String: WindowHost] = [:]
     private lazy var settingsWindow = SettingsWindowController(model: self)
+    /// The Overview at the top of every list.
+    private(set) lazy var overviewLink = OverviewLink(model: self)
     private var cancellables: Set<AnyCancellable> = []
 
     private static let launchedKey = "hasLaunched"
@@ -65,6 +67,7 @@ final class AppModel: ObservableObject {
         services.showPanel = { [weak self] section in self?.showPanel(section) ?? false }
         services.closePanels = { [weak self] in self?.closePanels() }
         services.openWindow = { [weak self] section in self?.openWindow(at: section) }
+        services.hasPage = { [weak self] section in self?.hasPage(section) ?? false }
         services.notifier.onOpen = { [weak self] source, info in
             guard let self, let source, self.state(of: source) == .on else { return }
             self.source(source)?.openNotification(info)
@@ -103,6 +106,12 @@ final class AppModel: ObservableObject {
 
     func info(for section: SectionID) -> SectionInfo? {
         source(for: section)?.info(for: section)
+    }
+
+    /// The sections' counts by state, added up: what a window's sidebar and the Overview at the top of every list
+    /// count for its Overview.
+    func states(of sections: [SectionID]) -> StateCounts {
+        sections.compactMap { source(for: $0)?.segment(for: $0).states }.reduce(StateCounts(), +)
     }
 
     var onSources: [any BriefBarSource] {
@@ -412,6 +421,20 @@ final class AppModel: ObservableObject {
         NSApp.activate()
     }
 
+    /// Opens the window that has the Overview, at the Overview; with none, the first window.
+    func openOverview() {
+        if let window = overviewLink.window {
+            openWindow(item: window.id)
+        } else {
+            openWindow(at: nil)
+        }
+    }
+
+    /// Whether a window has a page for `section`: not once you've hidden it from windows.
+    func hasPage(_ section: SectionID) -> Bool {
+        visibleItems(.windows).contains { $0.sections.contains(section) }
+    }
+
     /// Whether a BriefBar window is open, for the Dock icon.
     var hasOpenWindow: Bool {
         windows.values.contains { $0.isOpen }
@@ -435,6 +458,7 @@ final class AppModel: ObservableObject {
                 windows[id] = nil
             }
         }
+        overviewLink.update()
     }
 
     // MARK: Lifecycle

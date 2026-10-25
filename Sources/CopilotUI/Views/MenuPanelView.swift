@@ -35,10 +35,14 @@ struct MenuPanelView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "waveform.path.ecg")
-                .foregroundStyle(.tint)
-            Text("Copilot")
-                .font(.headline)
+            PageLink(.copilotSessions, name: "Sessions") {
+                HStack {
+                    Image(systemName: "waveform.path.ecg")
+                        .foregroundStyle(.tint)
+                    Text("Sessions")
+                        .font(.headline)
+                }
+            }
             Spacer()
             CountChips(counts: store.counts)
         }

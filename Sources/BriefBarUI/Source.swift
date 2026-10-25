@@ -367,6 +367,9 @@ package final class AppServices: ObservableObject {
     package var closePanels: () -> Void = {}
     /// Opens the window that shows a section's page, at that page, or the first window for nil.
     package var openWindow: (SectionID?) -> Void = { _ in }
+    /// Whether a window has a page for the section, which `openWindow` would open: not once you've hidden it from
+    /// windows.
+    package var hasPage: (SectionID) -> Bool = { _ in false }
 
     package init(defaults: UserDefaults, isDemo: Bool) {
         self.defaults = defaults

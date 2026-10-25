@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
+  you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
+  just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,
+  only the Full Disk Access it already has. **Mark Chats Read When You Read Them in Teams** turns it
+  off. **Copy Diagnostics** and `--diagnose` say what BriefBar could read of it, by counts only; if a
+  Teams update changes it, the lists say so, and the other rules still apply. Teams' description says
+  so, and its version goes up, so it pauses until you've looked.
+- **Open the window from every list.** **Overview** at the top opens the window's Overview, with how
+  many things need you. The list's title, such as **Pull Requests ›**, opens its page.
+
 ## 0.1.0 - 2026-10-22
 
 The first version: Teams Pulse, ADO Pulse and Copilot Pulse in one menu-bar app.

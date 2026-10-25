@@ -184,6 +184,12 @@ on an item can make another display's menu bar active, as the
 [FAQ in the README](../README.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
 With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
 
+Every popover starts with **Overview**, which opens the window at its Overview
+([below](#the-overview)), and each list's title, such as **Pull Requests ›**, opens the window at that
+list's page (`PageLink`). A title is a button only in a menu-bar item's list (`titleOpensPage`), not
+on the page itself or in a widget, and only while a window has that page (`AppServices.hasPage`). The
+tabs only switch lists, so a click meant for a tab never opens a window.
+
 **Widgets** (`WidgetHost`) show their sections one above the other: each source draws its section's
 header and rows, and the widget is as wide as its widest section needs. A widget's size gives each
 section 2, 4 or 8 rows, or 2, 3 or 5 when it shares the widget. Each widget keeps its own position and
@@ -270,8 +276,13 @@ wait for the model.
 
 A window with several pages starts with an Overview (`WindowPages`): the brief, then its pages'
 sections by state, in cards like the other pages'. It's ⌘1, with a count of what needs you in the
-sidebar, and the window opens on it when no page is asked for: from a menu-bar list's gear menu, from
-`--window`, or from Settings › Windows.
+sidebar, and the window opens on it when no page is asked for: from **Overview** at the top of every
+menu-bar list, from `--window`, or from Settings › Windows.
+
+**Overview** at the top of a list (`OverviewLink`) opens the first window with several pages
+(`WindowPages.overviewWindow`) at its Overview, and counts what needs you on that window's pages as its
+sidebar does. Lists leave it out while no window has an Overview, as when each window shows one
+section.
 
 The Overview widget (`OverviewWidgetHost`) sums up every section of the sources that are on: how many
 things are in each state, the brief's first line, then the newest of what needs you, each opening its
@@ -734,7 +745,8 @@ within an organization.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines
-section each pinned pipeline's latest run.
+section each pinned pipeline's latest run. In a list, each one's title opens its page, and the
+sprint's footer its task board in Azure DevOps.
 
 ### Send work to Copilot
 

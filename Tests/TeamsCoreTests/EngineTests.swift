@@ -51,7 +51,7 @@ import BriefBarCore
         try db.add(Record.reaction(Chat.avery, title: "👍 Avery Quinn reacted to your message", at: t(2)), delivered: t(2))
         try db.add(Record.channelPost(title: "Sam Rivera posted a new message", body: "Q3 numbers", at: t(3)), delivered: t(3))
 
-        let report = await Diagnostics.report(paths: paths, appVersion: "0.1.0")
+        let report = await Diagnostics.report(paths: paths, cache: nil, followsReadsInTeams: true, appVersion: "0.1.0")
         #expect(report.contains("Teams notifications: 4 (chat messages 2, chat activity 1, channel posts 1, other kinds 0, unrecognized 0)"))
         #expect(report.contains("Chats with messages: oneOnOne 1, group 1, meeting 0"))
         #expect(report.contains("default_id: "))
@@ -77,7 +77,7 @@ import BriefBarCore
     @Test func saysWhenItHasNoAccess() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let report = await Diagnostics.report(paths: paths(in: directory), appVersion: "0.1.0")
+        let report = await Diagnostics.report(paths: paths(in: directory), cache: nil, followsReadsInTeams: false, appVersion: "0.1.0")
         #expect(report.contains("access missing"))
         #expect(report.contains("Teams' dock badge, from lsappinfo: "))
     }
