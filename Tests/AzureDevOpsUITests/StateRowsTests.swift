@@ -64,25 +64,19 @@ import Testing
         let count = Count()
         let subscription = source.stateRowsChanged.sink { count.value += 1 }
         defer { subscription.cancel() }
-        // What starting sends first, through the main queue, until a turn of it brings nothing more.
-        for _ in 0..<20 {
-            let sent = count.value
-            await mainQueueTurn()
-            if count.value == sent { break }
+        // What starting sends first, however long a busy machine takes to send it: until nothing more comes for a moment.
+        var seen = -1
+        for _ in 0..<50 where seen != count.value {
+            seen = count.value
+            try? await Task.sleep(for: .milliseconds(200))
         }
         count.value = 0
 
         source.settings.summaries = false
-        await mainQueueTurn()
-        // At least once: the demo's own comment, six seconds after it starts, asks lists to look again too, and a
-        // busy runner can take that long.
-        #expect(count.value >= 1)
-    }
-
-    /// Lets the main queue run what's on it, and what that puts on it in turn: the source tells lists through it.
-    private func mainQueueTurn() async {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async { continuation.resume() }
+        for _ in 0..<100 where count.value == 0 {
+            try? await Task.sleep(for: .milliseconds(10))
         }
+        // At least once: on a busy machine, the demo's own new comment, a few seconds after it starts, can come too.
+        #expect(count.value >= 1)
     }
 }

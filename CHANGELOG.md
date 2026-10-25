@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Pages use the whole window.** In a wide window, such as full screen, a page no longer stays in a
+  column in the middle with empty sides: its rows, the Overview's included, run the width of the window,
+  and the Sprint puts its cards in as many columns as fit.
+
+## 0.2.0 - 2026-10-25
+
+A GitHub source for your pull requests on github.com, Copilot on your Azure DevOps pull requests, the
+pipelines after your merges, Teams chats read where you read them, and, if you let them, agents that
+can ask BriefBar what needs you. After the update, Teams and Azure DevOps wait until you've looked at
+what they read now, in BriefBar's Settings.
+
 - **GitHub, a new source, off until you turn it on.** It lists your pull requests on github.com: those
   that ask for your review by name, and your own that need changes, are failing (checks or merge
   conflicts), are approved, or are waiting. It signs in with the GitHub CLI (`gh auth login`), never a
@@ -9,6 +20,33 @@
   refresh, every 2 minutes by default. It saves nothing but its settings, and like every source, does
   nothing at all until you turn it on. It has a menu-bar item, a widget and a page in the window, and
   counts by meaning with the others.
+- **Copilot on your pull requests.** With **Send Work to Copilot** on, a pull request's menu sends it
+  to the Copilot CLI too: **Fix Comments** (the threads that wait on you, word for word), **Fix the
+  Build** (where it failed, and its errors), **Resolve Conflicts**, and, on one you review,
+  **Pre-review**, which drafts your review and posts nothing. None of them pushes or replies; once one
+  is done, **Push & Reply** goes on in the same session and worktree, commits, pushes the branch and
+  answers the threads it addressed. The Copilot CLI refuses what each shouldn't do, whatever a comment
+  asks: only Push & Reply may push, and a review can't change files or commit. Each works in a worktree
+  at the pull request's latest commit, and its row shows how it's going.
+- **Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the
+  pipelines that run on its merge commit, and the ones those start, such as a deployment, while Done
+  keeps it. Its row says how they're going, moves to **Failing** if one fails, saying where, and
+  shows **Waiting for approval** while a stage waits for one; a notification says so, and when they've
+  all passed. The Pipelines page lists them under **After Your Merges**. They're read with your pull
+  requests, with GETs, only while they run; **Follow Pipelines After You Merge** turns it off. Azure
+  DevOps' description says so, and its version goes up, so it pauses until you've looked.
+- **A failed build says where it failed.** A pull request of yours that's failing because of a build
+  now says where, and the first error there, such as "shop-web CI · Run unit tests: 2 tests failed in
+  DeliveryEstimateTests.", in its list, its notification and the brief. BriefBar reads the build's
+  timeline once, with a GET, as it does for a pinned pipeline, and again only if the build is retried
+  and fails again.
+- **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
+  you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
+  just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,
+  only the Full Disk Access it already has. **Mark Chats Read When You Read Them in Teams** turns it
+  off. **Copy Diagnostics** and `--diagnose` say what BriefBar could read of it, by counts only; if a
+  Teams update changes it, the lists say so, and the other rules still apply. Teams' description says
+  so, and its version goes up, so it pauses until you've looked.
 - **Agents can ask BriefBar, if you let them.** `BriefBar --mcp` is a Model Context Protocol server,
   off until you turn it on in **Settings › Agents**, which says what agents get first. Turning it on
   adds BriefBar to the Copilot CLI's MCP servers, which the GitHub Copilot app's sessions use too, and
@@ -18,48 +56,18 @@
   works; and watch pull requests and pin pipelines. It serves the sources that are on, reads as the app
   does, changes nothing in Azure DevOps, and leaves Teams and GitHub out. What it answers goes to the
   agent's model.
-- **A failed build says where it failed.** A pull request of yours that's failing because of a build
-  now says where, and the first error there, such as "shop-web CI · Run unit tests: 2 tests failed in
-  DeliveryEstimateTests.", in its list, its notification and the brief. BriefBar reads the build's
-  timeline once, with a GET, as it does for a pinned pipeline, and again only if the build is retried
-  and fails again.
-- **Pipelines after your merges.** When a pull request of yours completes, BriefBar follows the
-  pipelines that run on its merge commit, and the ones those start, such as a deployment, while Done
-  keeps it. Its row says how they're going, moves to **Failing** if one fails, saying where, and
-  shows **Waiting for approval** while a stage waits for one; a notification says so, and when they've
-  all passed. The Pipelines page lists them under **After Your Merges**. They're read with your pull
-  requests, with GETs, only while they run; **Follow Pipelines After You Merge** turns it off. Azure
-  DevOps' description says so, and its version goes up, so it pauses until you've looked.
-- **Copilot on your pull requests.** With **Send Work to Copilot** on, a pull request's menu sends it
-  to the Copilot CLI too: **Fix Comments** (the threads that wait on you, word for word), **Fix the
-  Build** (where it failed, and its errors), **Resolve Conflicts**, and, on one you review,
-  **Pre-review**, which drafts your review and posts nothing. None of them pushes or replies; once one
-  is done, **Push & Reply** goes on in the same session and worktree, commits, pushes the branch and
-  answers the threads it addressed. The Copilot CLI refuses what each shouldn't do, whatever a comment
-  asks: only Push & Reply may push, and a review can't change files or commit. Each works in a worktree
-  at the pull request's latest commit, and its row shows how it's going.
 - **Watch a pull request by its link.** **Watch a Pull Request…**, in Azure DevOps' settings, follows a
   pull request you're not on, such as one your team was asked to review: it's listed under **To
   Review**, as **Watching**, with what's new on it, until it closes or you stop watching it. Azure
   DevOps' description says it keeps the ones you watch.
-- **Pin a pipeline by its link.** **Add Pipeline** takes a link to a pipeline, or to one of its runs,
-  as well as a name or number: a run's link pins its pipeline, showing that run's branch.
-- **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
-  you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
-  just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,
-  only the Full Disk Access it already has. **Mark Chats Read When You Read Them in Teams** turns it
-  off. **Copy Diagnostics** and `--diagnose` say what BriefBar could read of it, by counts only; if a
-  Teams update changes it, the lists say so, and the other rules still apply. Teams' description says
-  so, and its version goes up, so it pauses until you've looked.
-- **Open the window from every list.** **Overview** at the top opens the window's Overview, with how
-  many things need you. The list's title, such as **Pull Requests ›**, opens its page.
 - **Find a pipeline by its number.** **Add Pipeline**'s search finds pipelines by number as well as by
   name, in the same field: type `1234` or `#1234`, the number in the pipeline's address in Azure DevOps
   (`definitionId=1234`), and that pipeline comes first, then the ones named like it. Each result shows
   its number.
-- **Pages use the whole window.** In a wide window, such as full screen, a page no longer stays in a
-  column in the middle with empty sides: its rows, the Overview's included, run the width of the window,
-  and the Sprint puts its cards in as many columns as fit.
+- **Pin a pipeline by its link.** **Add Pipeline** takes a link to a pipeline, or to one of its runs,
+  as well as a name or number: a run's link pins its pipeline, showing that run's branch.
+- **Open the window from every list.** **Overview** at the top opens the window's Overview, with how
+  many things need you. The list's title, such as **Pull Requests ›**, opens its page.
 
 ## 0.1.0 - 2026-10-22
 

@@ -278,6 +278,8 @@ final class SnapshotCollector: Sendable {
             }
             try await Task.sleep(for: .milliseconds(20))
         }
+        // On a busy machine a test can run again only after its deadline, though what it waits for came in time.
+        if let latest = snapshots.withLock({ $0.last }), predicate(latest) { return latest }
         throw TestError("Timed out waiting for \(what); \(count) snapshots")
     }
 }

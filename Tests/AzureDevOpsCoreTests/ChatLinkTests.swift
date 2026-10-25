@@ -236,6 +236,8 @@ private func waitFor(_ what: String, timeout: Duration = .seconds(10), until con
         if condition() { return }
         try await Task.sleep(for: .milliseconds(20))
     }
+    // On a busy machine a test can run again only after its deadline, though what it waits for came in time.
+    if condition() { return }
     throw TestError("Timed out waiting for \(what)")
 }
 
