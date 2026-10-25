@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **GitHub, a new source, off until you turn it on.** It lists your pull requests on github.com: those
+  that ask for your review by name, and your own that need changes, are failing (checks or merge
+  conflicts), are approved, or are waiting. It signs in with the GitHub CLI (`gh auth login`), never a
+  personal access token, keeps the token in memory only, and sends one read-only GraphQL query each
+  refresh, every 2 minutes by default. It saves nothing but its settings, and like every source, does
+  nothing at all until you turn it on. It has a menu-bar item, a widget and a page in the window, and
+  counts by meaning with the others.
 - **Chats you read in Teams are read in BriefBar too**, within a second or so, up to the newest message
   you saw there. Teams keeps how far you've read each chat in its own data on your Mac; BriefBar reads
   just that, read-only and in place, keeps it in memory only, and needs no sign-in or network for it,

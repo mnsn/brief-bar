@@ -6,7 +6,7 @@ TESTING_PLUGINS := $(abspath $(dir $(shell xcrun --find swift))../lib/swift/host
 
 # Made-up data for every source: Teams notifications in Notification Center's layout
 # (scripts/make-teams-demo-data.swift) and a Copilot data directory (scripts/make-copilot-demo-data.swift).
-# Azure DevOps makes up its own (--demo).
+# Azure DevOps and GitHub make up their own (--demo).
 DEMO_DIR := $(abspath build/demo)
 DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DIR="$(DEMO_DIR)/teams/state" \
 	BRIEFBAR_COPILOT_DIR="$(DEMO_DIR)/copilot"
@@ -26,7 +26,7 @@ build:
 test:
 	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
-# Only the Azure DevOps source may use the network, and only BriefBarCore starts programs.
+# Only the Azure DevOps and GitHub sources may use the network, and only BriefBarCore starts programs.
 check-boundaries: build
 	./scripts/check-boundaries.sh
 

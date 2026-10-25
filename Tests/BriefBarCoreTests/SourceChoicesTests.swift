@@ -14,6 +14,21 @@ import Testing
         }
     }
 
+    /// GitHub, like every source, stays off until you turn it on, whatever else is on.
+    @Test func gitHubIsOffUntilTurnedOn() {
+        var choices = SourceChoices.load(from: freshDefaults())
+        #expect(SourceID.allCases.contains(.github))
+        for source in SourceID.allCases where source != .github {
+            choices.turnOn(source, version: 1, at: t(0))
+        }
+        #expect(choices.state(of: .github, version: 1) == .off)
+        choices.turnOn(.github, version: 1, at: t(60))
+        #expect(choices.state(of: .github, version: 1) == .on)
+        choices.turnOff(.github)
+        #expect(choices.state(of: .github, version: 1) == .off)
+        #expect(choices.state(of: .copilot, version: 1) == .on)
+    }
+
     @Test func aSourceIsOnOnlyAfterItsTurnedOn() {
         var choices = SourceChoices()
         choices.turnOn(.copilot, version: 1, at: t(0))

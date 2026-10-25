@@ -18,12 +18,13 @@ Chats, every app's, for links to pull requests. It keeps Teams' unread chats on 
 until they're read; keeps the links it finds in other apps' notifications in memory only; and makes
 summaries on the Mac. Nothing else it reads in Notification Center is kept anywhere other programs
 running as you can read it, such as its preferences or a temporary file: what its queries sort stays
-in memory. Only its Azure DevOps source uses the network for
-what it shows, with the Azure CLI's sign-in. BriefBar's own requests are for its updates, from this
+in memory. Only its Azure DevOps and GitHub sources use the network for what they show, with the
+Azure CLI's and the GitHub CLI's sign-ins. BriefBar's own requests are for its updates, from this
 project's GitHub releases. Worth reporting:
 
 - any way it could send anything about your chats, pull requests, work items, pipelines or sessions
-  anywhere but Azure DevOps (and anything but GET requests there), or expose it to other users or apps
+  anywhere but Azure DevOps (and anything but GET requests there) and GitHub (and anything but its one
+  read-only GraphQL query there), or expose it to other users or apps
   on the Mac (its saved chats, the links it finds in chats, its preferences, its log, its summaries),
   other than the work items you send to Copilot yourself, with Send Work to Copilot,
 - any way another app could use BriefBar's Full Disk Access: by injecting code into it or into a copy
@@ -57,13 +58,16 @@ Only the latest release, and the latest commit on `main`, are supported.
   Work to Copilot that way only adds its buttons: nothing is sent until you send it, and the tasks it
   keeps there can't point it at other files ([How it works](docs/how-it-works.md#send-work-to-copilot)).
 - **Programs it starts are responsible for themselves.** macOS lets a program use the permissions of
-  the app that started it. BriefBar starts every program (its updater, the Azure CLI, the login shell
-  that finds it, `lsappinfo`, and the Copilot CLI and git, for Send Work to Copilot) with that
-  responsibility disclaimed, so none of them gets its Full Disk Access, and the updater and Copilot run
-  only once macOS confirms it. `scripts/check-boundaries.sh` checks that nothing else in the app starts
-  programs. Sparkle, in the updater, starts none either: it hands its installer to launchd.
-- **Only one module uses the network**, `AzureDevOpsCore`, and `scripts/check-boundaries.sh` checks
-  that too. The other requests are Sparkle's, for this project's releases.
+  the app that started it. BriefBar starts every program (its updater, the Azure CLI, the GitHub CLI,
+  the login shell that finds them, `lsappinfo`, and the Copilot CLI and git, for Send Work to
+  Copilot) with that responsibility disclaimed, so none of them gets its Full Disk Access, and the
+  updater and Copilot run only once macOS confirms it. `scripts/check-boundaries.sh` checks that
+  nothing else in the app starts programs. Sparkle, in the updater, starts none either: it hands its
+  installer to launchd.
+- **Only two modules use the network**, `AzureDevOpsCore` and `GitHubCore`, and
+  `scripts/check-boundaries.sh` checks that too. The other requests are Sparkle's, for this project's
+  releases. GitHub's GraphQL API takes reads and writes alike as POST requests, so `GitHubCore` sends
+  only one fixed query, which a test checks has no mutation, and keeps the GitHub CLI's token in memory.
 - **What it reads with Full Disk Access stays with it.** Teams' unread chats are on disk only
   encrypted, with a key in your login keychain that the command line never uses. BriefBar names that
   keychain by its file, in your home folder as the user database names it, rather than using the

@@ -7,7 +7,9 @@ A macOS menu-bar app that shows what needs you, from the apps you choose:
 
 - your unread **Microsoft Teams** chats,
 - your **Azure DevOps** pull requests, your team's sprint and the pipelines you follow,
-- what your **GitHub Copilot** app sessions are doing.
+- what your **GitHub Copilot** app sessions are doing,
+- your **GitHub** pull requests: reviews requested from you, and yours that need changes, are failing
+  or are approved.
 
 Every source is off until you turn it on, and each one first says what it reads.
 
@@ -36,8 +38,10 @@ overview.
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
 | **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
+| **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
-Only the Azure DevOps source talks to the network for what you see, and only to Azure DevOps. BriefBar's
+Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
+service. BriefBar's
 own requests are for its updates, from this project's GitHub releases, and only if you allow them. No
 telemetry.
 
@@ -61,6 +65,12 @@ consent.
   **Pull Requests Sent in Chats**, off until you turn it on in its settings, also needs Full Disk
   Access, the same window as Teams'.
 - **Copilot** needs nothing.
+- **GitHub** signs in with the GitHub CLI: `brew install gh`, then `gh auth login`, or click
+  **Sign In…**, which opens Terminal to run it. BriefBar asks `gh` for its token and keeps it in memory
+  only; it never asks for a personal access token. It lists only pull requests that ask for your review
+  by name, not those asked of a team you're in. If your organization uses SAML single sign-on,
+  authorize the GitHub CLI for it, and the list says so when it can't see an organization's pull
+  requests.
 
 Because macOS asks only once, BriefBar never turns a source on by itself. A source that an update adds
 starts off. If an update makes a source read more than what you agreed to, it pauses until you've
@@ -73,13 +83,13 @@ can remove it.
 ## Menu bar, widgets and windows
 
 Each source has sections: **Chats** and **Group Chats** for Teams, **Pull Requests**, **Sprint** and
-**Pipelines** for Azure DevOps, and **Sessions** for Copilot. BriefBar shows them in three places, each
-arranged in Settings:
+**Pipelines** for Azure DevOps, **Sessions** for Copilot, and **Pull Requests** for GitHub. BriefBar
+shows them in three places, each arranged in Settings:
 
 - **The menu bar** (Settings › Menu Bar): each section starts with an item of its own, but Sprint and
   Pipelines start hidden there. Click one for its list.
-- **Desktop widgets** (Settings › Widgets): Azure DevOps' pull requests and Copilot each start with a
-  widget, behind your windows or floating above them, in three sizes. Teams' widgets, Sprint and
+- **Desktop widgets** (Settings › Widgets): Azure DevOps' pull requests, Copilot and GitHub each start
+  with a widget, behind your windows or floating above them, in three sizes. Teams' widgets, Sprint and
   Pipelines start hidden, and so does the **Overview** widget: every source's counts, the brief's
   first line and what needs you. Drag a widget by its header, and right-click it for its settings.
 - **Windows** (Settings › Windows): one BriefBar window, which opens on an **Overview** of everything
@@ -99,12 +109,12 @@ A menu-bar item that shows several sections can instead add its counts up by wha
 for every source: set its **Counts** to **By Meaning** in Settings › Menu Bar. With everything in one
 item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
 
-| | Teams | Azure DevOps | Copilot |
-|---|---|---|---|
-| ✋ Needs you | Unread chats, 1:1 and group | Needs You, and To Review while it shows in the menu bar | Questions, plans and permission prompts |
-| ✕ Something's wrong | | Failing pull requests, failed pipelines | Sessions that stopped |
-| ✓ Done or ready | | Ready to complete | Finished sessions |
-| ⚡ Running | | Running pipelines | Running sessions |
+| | Teams | Azure DevOps | Copilot | GitHub |
+|---|---|---|---|---|
+| ✋ Needs you | Unread chats, 1:1 and group | Needs You, and To Review while it shows in the menu bar | Questions, plans and permission prompts | To Review, and Changes Requested |
+| ✕ Something's wrong | | Failing pull requests, failed pipelines | Sessions that stopped | Failing checks or merge conflicts |
+| ✓ Done or ready | | Ready to complete | Finished sessions | Approved, ready to merge |
+| ⚡ Running | | Running pipelines | Running sessions | |
 
 ⚡ is off until you turn it on there. A source that can't show what it should, such as Teams without
 Full Disk Access or Azure DevOps without a sign-in, adds a small ⚠, and the item's tooltip says
@@ -283,6 +293,25 @@ hand to Copilot yourself.
 **Clear** on its group, or **Keep Finished Sessions For** passes. Click a session to open it in the
 Copilot app.
 
+### GitHub
+
+The item shows a symbol and count for each group you can act on: orange 👁 to review, orange ✋ changes
+requested, red ✕ failing, and green ✓ ready to merge. It lists open pull requests on github.com that
+ask for your review by name, and your own open pull requests, up to 50 of each, the most recently
+changed first.
+
+| Group | When |
+|---|---|
+| **To Review** | Someone asked you, by name, to review it |
+| **Changes Requested** | Yours, and a reviewer asked for changes |
+| **Failing** | Yours, and its checks fail or it has merge conflicts |
+| **Ready to Merge** | Yours, and approved, with its checks passing or none |
+| **Waiting** | Yours, and a draft, waiting for its checks to finish, or waiting for reviews |
+
+A pull request that's both yours and asks for your review shows once, as yours. Click one to open it on
+GitHub. If an organization uses SAML single sign-on and the GitHub CLI isn't authorized for it, the
+list says to authorize it, and shows the rest.
+
 ## Install
 
 BriefBar needs macOS 15 or later, on Apple silicon or Intel.
@@ -401,6 +430,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
+| GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
 
 In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
 not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
@@ -412,17 +442,19 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
 ## Privacy
 
 - **Teams and Copilot never use the network.** Only the Azure DevOps source connects, to Azure DevOps,
-  with your Azure CLI sign-in, and every request it makes is a GET. No sign-in of BriefBar's own, and
-  no telemetry. `scripts/check-boundaries.sh` checks that no other part of BriefBar's code uses
-  networking APIs.
+  with your Azure CLI sign-in, and every request it makes is a GET; and the GitHub source, to
+  `api.github.com`, with your GitHub CLI sign-in, sending one fixed, read-only GraphQL query each
+  refresh. The GitHub CLI's token stays in memory, and BriefBar never asks for a personal access
+  token. No sign-in of BriefBar's own, and no telemetry. `scripts/check-boundaries.sh` checks that no
+  other part of BriefBar's code uses networking APIs.
 - **Updates, only if you allow them.** BriefBar's own requests are for its updates, from this
   project's releases on GitHub: a small file that describes the latest release, once a day, and the
   new version when you install it. GitHub sees your IP address and the versions of BriefBar and of
   [Sparkle](https://sparkle-project.org), which BriefBar's updater uses: a helper app inside BriefBar,
   with none of BriefBar's permissions. They carry nothing about your chats, pull requests or sessions.
 - **It only reads**: Notification Center's database through a read-only connection, Teams' own data
-  in place (never copied, and without taking its lock), the Copilot app's files, and Azure DevOps
-  through GET requests. It never changes any of them.
+  in place (never copied, and without taking its lock), the Copilot app's files, Azure DevOps
+  through GET requests, and GitHub through a query that only reads. It never changes any of them.
 - **Of Teams' own data**, it keeps only how far you've read each chat (Teams' ID of the newest message
   you've seen in it), in memory, while **Mark Chats Read When You Read Them in Teams** is on. That data
   holds your chats' messages too: BriefBar reads only the part about your conversations, and keeps
@@ -450,8 +482,8 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   read; which of your Azure DevOps pull requests you've seen, with each account, and your
   organizations; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; and its settings. Turning a source off deletes what it saved.
-- **Programs it runs**, such as the Azure CLI and the Copilot CLI, never get its permissions: macOS
-  would otherwise let them use BriefBar's Full Disk Access.
+- **Programs it runs**, such as the Azure CLI, the GitHub CLI and the Copilot CLI, never get its
+  permissions: macOS would otherwise let them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the
   desktop, where anyone who sees your screen, or your screen share, can read them. With **Show
   Message Previews** off, the widgets and lists show only how many messages are new.
@@ -494,7 +526,8 @@ pipelines add a few requests a minute, and only while something shows them.
 ### Why isn't a pull request assigned to my team shown?
 
 Azure DevOps' search for "pull requests I review" only matches you, not the groups you're in. Pull
-requests where you were added yourself, including by a policy, are shown.
+requests where you were added yourself, including by a policy, are shown. GitHub's source does the
+same on purpose: it lists review requests made to you by name, not to a team you're in.
 
 ### Why does a failed build show no error details?
 
