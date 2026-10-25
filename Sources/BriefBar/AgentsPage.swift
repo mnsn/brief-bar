@@ -6,7 +6,9 @@ import SwiftUI
 
 /// Whether agents may use BriefBar (`BriefBar --mcp`), and BriefBar among the Copilot CLI's MCP servers. Agents are off
 /// until you turn them on, like a source: turning them on adds BriefBar to the Copilot CLI, and turning them off
-/// removes it. The demo and `--render` never run the CLI, and show what it would say.
+/// removes it. Other agents' apps, such as VS Code, get BriefBar only when you install it in them, with their own install
+/// links, and keep it until you remove it there. The demo and `--render` never run the CLI or open another app, and show
+/// what the CLI would say.
 @MainActor
 final class AgentsModel: ObservableObject {
     /// BriefBar among the Copilot CLI's servers, as the CLI last said.
@@ -37,8 +39,52 @@ final class AgentsModel: ObservableObject {
         state = AgentAccess.state(in: defaults)
     }
 
-    /// What an agent runs, to show and copy.
+    /// What an agent runs, to copy.
     var command: String { "\(Self.quoted(executable)) --mcp" }
+
+    /// The agents' apps that BriefBar can be installed in: those on this Mac, or all of them in the demo and `--render`.
+    var apps: [AgentApp] {
+        guard isLive else { return AgentApp.allCases }
+        return AgentApp.allCases.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier) != nil }
+    }
+
+    /// Installs BriefBar in an agent's app: in GitHub Copilot through the Copilot CLI, whose MCP servers its sessions
+    /// use, and in the others with their own install link, which asks you first. The demo opens no other app.
+    func install(in app: AgentApp) {
+        if app == .gitHubCopilot {
+            addToCopilotCLI()
+            return
+        }
+        guard isLive, let link = app.installLink(server: CopilotMCPRegistration.name, command: executable, arguments: ["--mcp"]),
+              let application = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
+        else { return }
+        Log.app.info("Asked \(app.rawValue, privacy: .public) to install BriefBar")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([link], withApplicationAt: application, configuration: configuration)
+    }
+
+    /// The Copilot CLI has this BriefBar, turned on there or not.
+    var isInCopilotCLI: Bool {
+        if case .known(.added) = registration { return true }
+        return false
+    }
+
+    /// BriefBar can add itself to the Copilot CLI: not while it asks, nor once it's there, without the CLI, or where
+    /// another server has its name.
+    var canAddToCopilotCLI: Bool {
+        switch registration {
+        case .unknown:
+            return true
+        case .working:
+            return false
+        case .known(let status):
+            switch status {
+            case .absent, .addedElsewhere, .failed: return true
+            case .added, .noCLI, .taken: return false
+            }
+        }
+    }
 
     /// With your consent to what agents get now. The first time, BriefBar adds itself to the Copilot CLI too; Keep Them
     /// On, after an update, leaves the CLI as it was.
@@ -187,7 +233,7 @@ struct AgentsPage: View {
                     CopilotCLIRow(agents: agents)
                         .padding(.vertical, 10)
                     Divider()
-                    OtherAgentsRow(command: agents.command)
+                    OtherAgentsRow(agents: agents)
                         .padding(.vertical, 10)
                 }
                 .padding(.horizontal, 12)
@@ -272,7 +318,7 @@ private struct CopilotCLIRow: View {
                 Text("Not added: its agents can't use BriefBar.")
                     .foregroundStyle(.secondary)
             case .taken:
-                Text("It has a server named \(CopilotMCPRegistration.name) that isn't BriefBar, which BriefBar leaves. Add BriefBar under another name, with the command below.")
+                Text("It has a server named \(CopilotMCPRegistration.name) that isn't BriefBar, which BriefBar leaves. Copy BriefBar's command below to add it under another name.")
                     .foregroundStyle(.secondary)
             case .noCLI:
                 Text("It isn't installed. Install it with brew install copilot-cli, or add BriefBar to another agent.")
@@ -303,11 +349,12 @@ private struct CopilotCLIRow: View {
     }
 }
 
-/// The command any other agent runs.
+/// Installs BriefBar in the agents' apps on this Mac, or copies the command any other agent runs.
 private struct OtherAgentsRow: View {
-    let command: String
+    @ObservedObject var agents: AgentsModel
 
     var body: some View {
+        let apps = agents.apps
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Image(systemName: "puzzlepiece.extension")
                 .foregroundStyle(.secondary)
@@ -315,20 +362,40 @@ private struct OtherAgentsRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Other agents")
                     .font(.headline)
-                Text("Add BriefBar as a local MCP server, over standard input and output, that runs:")
+                Text(apps.isEmpty
+                     ? "Copy the command that starts BriefBar, and add it to another agent's MCP servers."
+                     : "Install BriefBar in another agent on this Mac, or copy the command that starts it.")
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(command)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Button("Copy") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(command, forType: .string)
+            if apps.isEmpty {
+                Button("Copy Command", action: copyCommand)
+            } else {
+                Menu("Install") {
+                    ForEach(apps) { app in
+                        if app == .gitHubCopilot {
+                            // Checked once the Copilot CLI has BriefBar: the Copilot CLI row removes it.
+                            Toggle(app.name, isOn: Binding(
+                                get: { agents.isInCopilotCLI },
+                                set: { if $0 { agents.install(in: app) } }
+                            ))
+                            .disabled(!agents.canAddToCopilotCLI)
+                        } else {
+                            Button(app.name) { agents.install(in: app) }
+                        }
+                    }
+                    Divider()
+                    Button("Copy Command", action: copyCommand)
+                }
+                .fixedSize()
             }
         }
+    }
+
+    private func copyCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(agents.command, forType: .string)
     }
 }
 

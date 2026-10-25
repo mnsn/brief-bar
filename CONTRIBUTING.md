@@ -187,7 +187,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
   running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
   configuration changes only through its own commands (`CopilotMCPRegistration`), when you turn agents
-  on or off.
+  on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
+  links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller

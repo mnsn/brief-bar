@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Install BriefBar in another agent with a click.** In **Settings › Agents**, **Install** replaces
+  copying a command: it adds BriefBar to Visual Studio Code or Cursor, whichever are on your Mac, with
+  each app's own install link, so the app shows what it would add and asks you first, and keeps it in
+  its own settings, which BriefBar never reads or writes. **GitHub Copilot**, in the same menu, adds
+  BriefBar to the Copilot CLI, whose servers the GitHub Copilot app's sessions use, and is checked
+  once it's there. **Copy Command** still copies the command, for any other agent.
+
 ## 0.3.0 - 2026-10-26
 
 - **Arrange the menu bar, widgets and windows by dragging.** In Settings › Menu Bar, Widgets and

@@ -355,8 +355,11 @@ Agents can ask BriefBar too, once you let them. `BriefBar --mcp` is a
 speaks the protocol, can answer "what needs me?" or fix a pull request's comments with what BriefBar
 knows. It's off until you turn it on in **Settings › Agents**, which says what agents get first.
 Turning agents on adds BriefBar to the Copilot CLI's MCP servers (`copilot mcp add briefbar`), which
-the GitHub Copilot app's sessions use too, and turning them off removes it. For any other agent, the
-page shows the command to add.
+the GitHub Copilot app's sessions use too, and turning them off removes it. **Install**, on the same
+page, adds BriefBar to Visual Studio Code or Cursor, whichever are on your Mac, with each app's own
+install link: the app shows what it would add and asks you first. Its **GitHub Copilot** adds BriefBar
+to the Copilot CLI, as turning agents on does, and is checked once it's there. For any other agent,
+**Copy Command** copies the command to add.
 
 | Tool | What the agent gets |
 |---|---|
@@ -565,7 +568,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   sessions, never Teams or GitHub. That goes to the agent's model, which may run in the cloud. Their
   only changes are to the pull requests BriefBar watches and the pipelines it pins. Turning them on
   adds BriefBar to the Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`: BriefBar never
-  reads the CLI's configuration, where other servers' settings are.
+  reads the CLI's configuration, where other servers' settings are. **Install** asks VS Code or Cursor
+  to add it, with their own install links, and never reads or writes their settings either.
 - **Programs it runs**, such as the Azure CLI, the GitHub CLI and the Copilot CLI, never get its
   permissions: macOS would otherwise let them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the
