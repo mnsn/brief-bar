@@ -70,6 +70,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// What a list by state shows changed: any pull request or pipeline, not only the counts.
     private let rowChanges = PassthroughSubject<Void, Never>()
     private var cancellables: Set<AnyCancellable> = []
+    /// Hears about the pull requests and pipelines an agent watches or pins through `--mcp`.
+    private var agentChanges: AnyObject?
 
     package init(services: AppServices, chats: ChatReading = .inert) {
         self.services = services
@@ -157,6 +159,12 @@ package final class AzureDevOpsSource: BriefBarSource {
             .sink { [weak self] in MainActor.assumeIsolated { self?.rowChanges.send() } }
             .store(in: &cancellables)
 
+        // What agents changed while it was stopped too: the lists were read when the app started.
+        if !services.isDemo {
+            settings.reloadAgentChanges()
+            agentChanges = AgentChanges.observe { [weak self] in self?.settings.reloadAgentChanges() }
+        }
+
         store.start()
         sprint?.start()
         pipelines?.start()
@@ -177,6 +185,7 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func stop() {
         cancellables.removeAll()
+        agentChanges = nil
         store?.stop()
         sprint?.stop()
         pipelines?.stop()

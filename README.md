@@ -17,7 +17,8 @@ DevOps cover later sources too, but only the ones you turn on. Several sources c
 item, a desktop widget or a window, and you can hide what you don't need. An item they share can add
 their counts up by what they mean, ✋ needs you, ✕ something's wrong, ✓ done or ready, and list
 everything together by state under a brief of what matters; the window and a widget give you the same
-overview.
+overview. And if you let them, agents, such as the Copilot CLI, can ask it what needs you, and work
+from what it knows ([Agents](#agents)).
 
 <p align="center">
   <picture>
@@ -317,6 +318,38 @@ may run any command: send only what you'd hand to Copilot yourself.
 **Clear** on its group, or **Keep Finished Sessions For** passes. Click a session to open it in the
 Copilot app.
 
+## Agents
+
+Agents can ask BriefBar too, once you let them. `BriefBar --mcp` is a
+[Model Context Protocol](https://modelcontextprotocol.io) server, so the Copilot CLI, or any agent that
+speaks the protocol, can answer "what needs me?" or fix a pull request's comments with what BriefBar
+knows. It's off until you turn it on in **Settings › Agents**, which says what agents get first.
+Turning agents on adds BriefBar to the Copilot CLI's MCP servers (`copilot mcp add briefbar`), which
+the GitHub Copilot app's sessions use too, and turning them off removes it. For any other agent, the
+page shows the command to add.
+
+| Tool | What the agent gets |
+|---|---|
+| `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
+| `pull_requests` | Your pull requests by group, each with why it's there and its link |
+| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word |
+| `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
+| `pipelines` | Your pinned pipelines, and the ones after your merges |
+| `sprint` | Your team's sprint, or only your part of it |
+| `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
+| `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
+| `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
+| `pin_pipeline`, `unpin_pipeline` | Pins a pipeline by its link, or a run's, or unpins one |
+
+It serves only the sources that are on in BriefBar, reads as the app does, with your Azure CLI sign-in
+and only GET requests, and changes nothing in Azure DevOps: only BriefBar's own lists of the pull
+requests you watch and the pipelines you pin, which a running BriefBar picks up at once. It leaves
+Teams out. What it answers goes to the agent's model, which may run in the cloud, so let only agents
+you'd show your pull requests to use it. Titles and comments come word for word from whoever wrote
+them, and an agent may act on what they say: keep its permissions to what you'd allow anyway. If an
+update gives agents more, they wait until you've seen what they get now, as a source does.
+`BriefBar --mcp --demo` answers with made-up data, whatever your settings.
+
 ## Install
 
 BriefBar needs macOS 15 or later, on Apple silicon or Intel.
@@ -438,6 +471,8 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Show Context Usage | off by default: how full each session's context window is |
 
+**Settings › Agents** lets agents use BriefBar, off by default (see [Agents](#agents)).
+
 In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
 not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
 that shows several sections has **Counts**, **Side by Side** or **By Meaning** with the states it
@@ -488,6 +523,12 @@ and in its right-click menu, and Settings › Widgets turns on the **Overview** 
   read; which of your Azure DevOps pull requests you've seen, with each account, your organizations,
   and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; and its settings. Turning a source off deletes what it saved.
+- **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
+  are on: your pull requests and their comments, pipelines, sprint, and Copilot tasks and sessions,
+  never Teams. That goes to the agent's model, which may run in the cloud. Their only changes are to
+  the pull requests BriefBar watches and the pipelines it pins. Turning them on adds BriefBar to the
+  Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`: BriefBar never reads the CLI's
+  configuration, where other servers' settings are.
 - **Programs it runs**, such as the Azure CLI and the Copilot CLI, never get its permissions: macOS
   would otherwise let them use BriefBar's Full Disk Access.
 - **Teams' widgets start hidden**, and so does the Overview widget: a widget puts your chats on the

@@ -23,12 +23,29 @@ public struct FailedBuildReport: Sendable, Equatable {
 
 /// The prompts that ask Copilot to work on a pull request: what it is, what to do, and what BriefBar already knows,
 /// such as the comments that wait on you, word for word, or where its build failed. Copilot works in a worktree
-/// detached at the pull request's latest commit, on its own: each prompt says what it may change, and only Push & Reply
-/// pushes or writes on the pull request.
+/// detached at the pull request's latest commit, on its own, or for an agent that asks through `--mcp`, wherever that
+/// agent is: each prompt says what it may change, and only Push & Reply pushes or writes on the pull request.
 public enum PullRequestPrompt {
     /// The most comment threads, and errors per build, a prompt quotes.
     static let threadLimit = 30
     static let errorLimit = 10
+
+    /// Where Copilot works on the pull request.
+    public enum Workplace: Sendable {
+        /// The worktree BriefBar makes for the task, detached at the pull request's latest commit.
+        case worktree
+        /// Wherever the agent that asked for the prompt through `--mcp` works, which may be another branch, with
+        /// changes of its own, or not this repository at all.
+        case agent
+
+        /// Where the work is, in a sentence's middle.
+        var here: String {
+            switch self {
+            case .worktree: return "this worktree"
+            case .agent: return "your checkout"
+            }
+        }
+    }
 
     /// The threads on your pull request that wait on you: someone else spoke last in them, and they're unresolved. Without
     /// any, every unresolved thread.
@@ -38,10 +55,10 @@ public enum PullRequestPrompt {
         return waiting.isEmpty ? open : waiting
     }
 
-    public static func fixComments(_ record: PRRecord) -> String {
+    public static func fixComments(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let threads = waitingThreads(record)
         return """
-            \(header(record))
+            \(header(record, workplace: workplace))
 
             Address these review comments:
 
@@ -53,7 +70,7 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func fixBuild(_ record: PRRecord, failures: [FailedBuildReport]) -> String {
+    public static func fixBuild(_ record: PRRecord, failures: [FailedBuildReport], workplace: Workplace = .worktree) -> String {
         let builds = failures.enumerated().map { index, report in
             var lines = ["\(index + 1). \(report.name): \(report.url.absoluteString)"]
             if let failure = report.failure {
@@ -65,7 +82,7 @@ public enum PullRequestPrompt {
             return lines.joined(separator: "\n")
         }
         return """
-            \(header(record))
+            \(header(record, workplace: workplace))
 
             \(builds.isEmpty ? "Its build failed, but BriefBar couldn't tell which run." : "Its build failed:\n\n" + builds.joined(separator: "\n\n"))
 
@@ -77,18 +94,18 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func resolveConflicts(_ record: PRRecord) -> String {
+    public static func resolveConflicts(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let target = record.pullRequest.targetBranch
         return """
-            \(header(record))
+            \(header(record, workplace: workplace))
 
-            It has merge conflicts with \(target). Fetch origin/\(target), merge it into this worktree, and resolve the \
+            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
             conflicts, keeping what each side meant. Build, and run the tests that cover what conflicted. Don't push: \
             end with what conflicted and how you resolved it.
             """
     }
 
-    public static func review(_ record: PRRecord) -> String {
+    public static func review(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
         let reviewedAt = lastReview(record)
@@ -96,7 +113,7 @@ public enum PullRequestPrompt {
             "\nYou reviewed it before, last on \($0.formatted(date: .abbreviated, time: .omitted)): focus on what changed since.\n"
         } ?? ""
         return """
-            \(header(record))
+            \(header(record, workplace: workplace))
 
             Review it for me. Fetch origin/\(pr.targetBranch), then read what it changes, \
             git diff origin/\(pr.targetBranch)...HEAD, and the code around the changes.
@@ -111,18 +128,40 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func pushAndReply(_ record: PRRecord) -> String {
+    public static func pushAndReply(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
+        let source = pr.sourceBranch
         let threads = waitingThreads(record)
+        var steps: [String] = []
+        let ifRejected: String
+        switch workplace {
+        case .worktree:
+            // BriefBar's own worktree, where a task that changed code for it finished.
+            ifRejected = "If that's rejected, rebase on origin/\(source) first, and stop and tell me if that conflicts."
+        case .agent:
+            // Wherever the agent is, which may be another branch, or hold other work: it checks first, and never rebases.
+            steps.append("""
+                First make sure it's safe: this must be a clone of \(pr.repositoryName), HEAD must contain origin/\(source) once \
+                you've fetched it (git merge-base --is-ancestor origin/\(source) HEAD), and everything you'd commit and push, \
+                in git status and git log origin/\(source)..HEAD, must have been made for this pull request. If any of that \
+                isn't so, stop and ask me before you commit or push anything.
+                """)
+            ifRejected = "If that's rejected, stop and tell me: don't rebase, merge or force."
+        }
+        steps += [
+            "Make sure it builds and the tests you ran pass, then commit your changes with a clear message.",
+            "Push them to \(source), without force: git push origin HEAD:refs/heads/\(source). \(ifRejected)",
+            """
+            On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
+            you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
+            """,
+        ]
+        let numbered = steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         return """
-            Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in this worktree:
+            Ship what you changed for pull request !\(pr.key.number) “\(pr.title)”, in \(workplace.here):
             \(pr.webURL.absoluteString)
 
-            1. Make sure it builds and the tests you ran pass, then commit your changes with a clear message.
-            2. Push them to \(pr.sourceBranch), without force: git push origin HEAD:refs/heads/\(pr.sourceBranch). If \
-            that's rejected, rebase on origin/\(pr.sourceBranch) first, and stop and tell me if that conflicts.
-            3. On the pull request, with your Azure DevOps tools, reply to each comment thread you addressed, saying what \
-            you changed, and resolve it. For a thread you didn't change, reply why, and leave it active.
+            \(numbered)
 
             Don't complete, approve or abandon the pull request, and don't change pipelines. End with the commit you \
             pushed and the threads you replied to.
@@ -136,19 +175,32 @@ public enum PullRequestPrompt {
     // MARK: Parts
 
     /// What the pull request is, and where Copilot works on it.
-    static func header(_ record: PRRecord) -> String {
+    static func header(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
         let pr = record.pullRequest
+        let place: String
+        switch workplace {
+        case .worktree:
+            place = """
+                You're in a git worktree of this repository, detached at origin/\(pr.sourceBranch), the pull request's latest \
+                commit.
+                """
+        case .agent:
+            place = """
+                Work on its branch in a clone of \(pr.repositoryName): fetch origin/\(pr.sourceBranch), the pull request's \
+                latest commit, and check it out. If you're not in a clone of \(pr.repositoryName), or it has changes of its \
+                own, ask me where to work before you change anything.
+                """
+        }
         return """
             Pull request !\(pr.key.number) “\(pr.title)” in \(pr.repositoryName), from \(pr.sourceBranch) into \(pr.targetBranch):
             \(pr.webURL.absoluteString)
 
-            You're in a git worktree of this repository, detached at origin/\(pr.sourceBranch), the pull request's latest \
-            commit.
+            \(place)
             """
     }
 
     /// The threads, numbered: where each is, and its comments, each person's on a line of its own.
-    static func list(_ threads: [ReviewThread], record: PRRecord, full: Bool = true) -> String {
+    public static func list(_ threads: [ReviewThread], record: PRRecord, full: Bool = true) -> String {
         threads.prefix(threadLimit).enumerated().map { index, thread in
             var place = "General comment"
             if let path = thread.filePath {

@@ -204,6 +204,7 @@ enum Renderer {
             let pages: [(String, SettingsDestination)] = [("general", .general)]
                 + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
+                + [("agents", .agents)]
             for (name, destination) in pages {
                 page(destination, name: name)
             }
@@ -218,6 +219,11 @@ enum Renderer {
             }
             model.useForRendering(saved)
             model.useForRendering(savedOptions)
+            if model.agents.state == .off {
+                model.agents.useForRendering(on: true)
+                page(.agents, name: "agents-on")
+                model.agents.useForRendering(on: false)
+            }
         }
         written.forEach { print($0) }
         return written.isEmpty ? 1 : 0

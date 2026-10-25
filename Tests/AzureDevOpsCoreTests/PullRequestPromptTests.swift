@@ -85,9 +85,24 @@ import BriefBarCore
         #expect(ship.contains("Don't complete, approve or abandon the pull request"))
         // The latest comment of each thread, for reference.
         #expect(ship.contains("1. src/Checkout/Total.cs, line 42 (thread 7)\n   Sam Rivera: Could we round half to even?"))
+        #expect(ship.contains("1. Make sure it builds"))
+        #expect(ship.contains("If that's rejected, rebase on origin/fix-total first"))
         let conflicts = PullRequestPrompt.resolveConflicts(record())
         #expect(conflicts.contains("Fetch origin/main, merge it into this worktree"))
         #expect(conflicts.contains("Don't push"))
+    }
+
+    /// An agent may be on another branch, or have other work in its checkout: it checks before it ships, and never rebases.
+    @Test func anAgentChecksWhereItIsBeforeItPushes() {
+        let ship = PullRequestPrompt.pushAndReply(record(), workplace: .agent)
+        #expect(ship.contains("in your checkout:"))
+        #expect(ship.contains("1. First make sure it's safe: this must be a clone of shop-web"))
+        #expect(ship.contains("git merge-base --is-ancestor origin/fix-total HEAD"))
+        #expect(ship.contains("stop and ask me before you commit or push anything"))
+        #expect(ship.contains("2. Make sure it builds"))
+        #expect(ship.contains("If that's rejected, stop and tell me: don't rebase, merge or force."))
+        #expect(!ship.contains("rebase on origin"))
+        #expect(!ship.contains("worktree"))
     }
 
     @Test func listsEveryErrorInARunsTimelineOnce() throws {

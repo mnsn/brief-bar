@@ -140,8 +140,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         options.organizations.isEmpty ? appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? [] : options.organizations
     }
 
-    private static func classifierOptions() -> ClassifierOptions {
-        let defaults = appDefaults
+    static func classifierOptions(_ defaults: UserDefaults? = appDefaults) -> ClassifierOptions {
         let idleDays = defaults?.object(forKey: SettingsKey.idleDays) as? Int ?? 14
         let keepDoneHours = defaults?.object(forKey: SettingsKey.keepDoneHours) as? Int ?? 24
         return ClassifierOptions(
@@ -151,12 +150,12 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     /// What the app's accounts have seen.
-    private static func seenBook() -> SeenBook {
+    static func seenBook(_ defaults: UserDefaults? = appDefaults) -> SeenBook {
         let decoder = JSONDecoder()
         return SeenBook(
-            current: appDefaults?.data(forKey: SettingsKey.seen).flatMap { try? decoder.decode(SeenState.self, from: $0) }
+            current: defaults?.data(forKey: SettingsKey.seen).flatMap { try? decoder.decode(SeenState.self, from: $0) }
                 ?? SeenState.firstRun(),
-            others: appDefaults?.data(forKey: SettingsKey.otherSeen).flatMap { try? decoder.decode([String: SeenState].self, from: $0) }
+            others: defaults?.data(forKey: SettingsKey.otherSeen).flatMap { try? decoder.decode([String: SeenState].self, from: $0) }
                 ?? [:]
         )
     }

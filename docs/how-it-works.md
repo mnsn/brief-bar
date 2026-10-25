@@ -1064,6 +1064,72 @@ log format, and the `ghapp://` link. An app update could change them.
 - If the database can't be read at all, sessions are listed from their log folders, and the
   problem is shown in the panel and the widget.
 
+## Agents
+
+`BriefBar --mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An agent, such as
+the Copilot CLI, starts it and talks to it on its standard input and output: one JSON-RPC 2.0 message a
+line, in the protocol's versions from 2024-11-05 to 2025-11-25 (`MCPServer` in `Sources/BriefBarUI`).
+It offers tools, and none of the protocol's other features. Only its messages go to standard output:
+the file descriptor moves aside first, so anything else printed goes to standard error.
+
+### Off until you turn it on
+
+Like a source, agents are off until you turn them on, in **Settings › Agents**, which says what they
+get, where it goes and what they can change. Turning them on saves your consent with the version of
+what agents get (`AgentAccess` in `Sources/BriefBarCore`); when an update gives them more, that
+version goes up, and they wait until you've seen what they get now, as a paused source does. Until
+then, the server starts, so the agent can say what's wrong, but every tool answers that agents are
+off, or paused, instead of reading anything. It checks with each call, so turning agents off stops a
+server that's already running, in an agent session that's still open. The demo answers with its
+made-up data either way.
+
+Turning agents on also adds BriefBar to the Copilot CLI's MCP servers, as `briefbar`, and turning them
+off removes it (`CopilotMCPRegistration` in `Sources/CopilotTasks`). The GitHub Copilot app's sessions
+use the same servers. BriefBar runs the CLI's own `copilot mcp get`, `add` and `remove`, with your
+login shell's environment, so it finds the CLI and its `COPILOT_HOME` as Terminal does, and never
+reads or writes the CLI's configuration itself: other servers' settings are there, tokens included.
+Turning agents on replaces a server that runs another copy of BriefBar, such as one you built, with
+this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
+removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. The page
+shows the command for any other agent.
+
+### What it answers
+
+It's a command-line mode like `--json`, with the same rules:
+
+- It runs with the permissions of whoever started it: the Copilot CLI's in Terminal, or the GitHub
+  Copilot app's for its agents (see [Programs that start BriefBar](#programs-that-start-briefbar)).
+  Started as an app, it refuses.
+- It serves the sources that are on in the app, and checks with each call: turn one off, and its tools
+  say so instead of answering. `--source` narrows them, and never adds one that's off. Each source gives
+  its own tools (`SourceCommandLine.mcp`), and `needs_me` asks all of them at once. Teams gives none:
+  its chats come from what only Full Disk Access reads, and what a tool answers goes to the agent's
+  model, which may run in the cloud.
+- Azure DevOps reads as the app does, with its organizations, its settings and what you've seen in it,
+  so the groups match the menu bar's, and like the other modes it leaves out pull requests sent in
+  chats. One `PulseEngine` serves the whole session (`AzureDevOpsReader`): a tool reads again only
+  when what it has is a minute old, as the app does at its most often, so calls one after another share
+  a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
+  next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs
+  them. Each read runs on its own, so a call the agent cancels doesn't cut short what the next one gets.
+- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them.
+
+`pull_request_prompt` gives the prompts of a pull request's Copilot actions (see
+[Send work to Copilot](#send-work-to-copilot)), told to work in the agent's checkout rather than a
+worktree: fetch the branch and check it out, or ask where to work if that isn't a clone of the
+repository or has changes of its own. Push & Reply, for one of yours, first checks that HEAD contains
+the pull request's branch and that everything it would push was made for it, stops and asks if not,
+and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
+CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
+
+The tools that change something change only BriefBar's own lists, as its menus do:
+`watch_pull_request` and `stop_watching_pull_request` the pull requests you watch, and `pin_pipeline`
+and `unpin_pipeline` the pinned pipelines. A pull request is read right after it's watched, and if
+it's closed or you can't read it, it isn't watched after all. They write the app's preferences, then
+post a distributed notification that says only that something changed (`AgentChanges`), since any
+program can see it go by, so a running BriefBar reads those two lists again at once, and again when
+Azure DevOps starts. The demo keeps them in memory.
+
 ## Desktop widgets
 
 Each widget is a window of BriefBar's own (`DesktopWidgetController` in `Sources/BriefBarUI`). A new

@@ -71,6 +71,12 @@ enum WorkCLI {
     }
 
     static func printBoard(_ board: SprintBoard, whole: SprintBoard, now: Date) {
+        boardLines(board, whole: whole, now: now).forEach { print($0) }
+    }
+
+    /// The board as `--sprint` prints it, and the `sprint` tool of `--mcp` gives agents.
+    static func boardLines(_ board: SprintBoard, whole: SprintBoard, now: Date) -> [String] {
+        var lines: [String] = []
         let sprint = board.sprint
         var header = "\(sprint.name) · \(board.team.name) (\(board.team.projectName))"
         if let start = sprint.start, let finish = sprint.finish {
@@ -79,10 +85,10 @@ enum WorkCLI {
         if let left = sprint.daysLeft(now: now), let day = sprint.day(now: now), let length = sprint.length {
             header += " · \(left == 1 ? "last day" : "\(left) days left") (day \(day) of \(length))"
         }
-        print(header)
+        lines.append(header)
         let mine = whole.myWork
         let hours = board.remainingWork
-        print("Tasks: \(board.count(in: .done)) done, \(board.count(in: .inProgress)) in progress, \(board.count(in: .toDo)) to do"
+        lines.append("Tasks: \(board.count(in: .done)) done, \(board.count(in: .inProgress)) in progress, \(board.count(in: .toDo)) to do"
             + (hours > 0 ? " · \(Hours.text(hours)) left" : "")
             + " · yours: \(mine.filter { $0.category.column == .inProgress }.count) in progress, "
             + "\(mine.filter { $0.category.column == .toDo }.count) to do, \(whole.myDoneCount) done")
@@ -95,19 +101,21 @@ enum WorkCLI {
             ("DONE", stories.filter { $0.progress == .done }),
         ]
         for (title, rows) in sections where !rows.isEmpty {
-            print("\n\(title)")
+            lines.append("")
+            lines.append(title)
             for row in rows {
                 if let parent = row.parent {
                     let progress = row.tasks.isEmpty ? "no tasks" : "\(row.doneCount)/\(row.tasks.count) done"
-                    print("  \(symbol(parent)) \(parent.id) \(parent.type): \(parent.title)  [\(parent.state) · \(parent.assignedTo?.name ?? "Unassigned")]  \(progress)")
+                    lines.append("  \(symbol(parent)) \(parent.id) \(parent.type): \(parent.title)  [\(parent.state) · \(parent.assignedTo?.name ?? "Unassigned")]  \(progress)")
                 }
                 for task in row.tasksInWorkOrder {
                     let mark = task.isAssigned(to: board.me) ? " (you)" : ""
                     let hours = task.remainingText.map { "  \($0)" } ?? ""
-                    print("      \(symbol(task)) \(task.id) \(task.title)  [\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\(mark)]\(hours)")
+                    lines.append("      \(symbol(task)) \(task.id) \(task.title)  [\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\(mark)]\(hours)")
                 }
             }
         }
+        return lines
     }
 
     private static func symbol(_ item: WorkItem) -> String {
@@ -185,6 +193,12 @@ enum WorkCLI {
     }
 
     static func printPipeline(_ status: PipelineStatus, now: Date) {
+        pipelineLines(status, now: now).forEach { print($0) }
+    }
+
+    /// A pipeline as `--pipelines` prints it, and the `pipelines` tool of `--mcp` gives agents.
+    static func pipelineLines(_ status: PipelineStatus, now: Date) -> [String] {
+        var lines: [String] = []
         let folder = status.pipeline.folder.isEmpty ? "" : " (\(status.pipeline.folder.replacingOccurrences(of: "\\", with: " › ")))"
         var line = "\(status.pipeline.name)\(folder)  \(status.headline)"
         if let run = status.latest {
@@ -196,19 +210,20 @@ enum WorkCLI {
             line += " · " + parts.joined(separator: " · ")
         }
         if let branch = status.pipeline.branch { line += "  [runs of \(branch) only]" }
-        print(line)
+        lines.append(line)
         if !status.stages.isEmpty {
-            print("  stages: " + status.stages.map { stage in
+            lines.append("  stages: " + status.stages.map { stage in
                 let duration = stage.startedAt.map { RunDuration.short((stage.finishedAt ?? now).timeIntervalSince($0)) }
                 return "\(symbol(stage.state)) \(stage.name)" + (duration.map { " \($0)" } ?? "")
             }.joined(separator: " → "))
         }
         if let failure = status.failure, status.latest?.status == .failed {
-            print("  failed: \([failure.stage, failure.step].compactMap { $0 }.joined(separator: " › "))" + (failure.message.map { ": \($0)" } ?? ""))
+            lines.append("  failed: \([failure.stage, failure.step].compactMap { $0 }.joined(separator: " › "))" + (failure.message.map { ": \($0)" } ?? ""))
         }
         if !status.runs.isEmpty {
-            print("  runs (oldest to newest): " + status.runs.prefix(12).reversed().map { symbol($0.status) }.joined())
+            lines.append("  runs (oldest to newest): " + status.runs.prefix(12).reversed().map { symbol($0.status) }.joined())
         }
+        return lines
     }
 
     private static func symbol(_ state: PipelineStage.State) -> String {

@@ -52,4 +52,28 @@ done
 "$BIN" --demo --pipelines | grep '^shop-web CI .*Failed in Test' >/dev/null ||
     fail "--demo --pipelines doesn't show the made-up failed run"
 
+# Agents: --mcp speaks the Model Context Protocol, one JSON-RPC message a line, with the made-up data. Teams has no tools.
+MCP="$(printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"needs_me","arguments":{}}}' \
+    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' |
+    "$BIN" --demo --mcp)"
+[[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
+    fail "--demo --mcp doesn't answer initialize"
+EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions"]'
+TOOLS="$(jq -sc 'map(select(.id == 2))[0].result.tools | map(.name)' <<<"$MCP")"
+[[ "$TOOLS" == "$EXPECTED_TOOLS" ]] || fail "--demo --mcp lists the tools $TOOLS"
+NEEDS_ME="$(jq -sr 'map(select(.id == 3))[0].result.content[0].text' <<<"$MCP")"
+grep '^- !4088 “Show delivery estimates on the product page”' <<<"$NEEDS_ME" >/dev/null ||
+    fail "--demo --mcp's needs_me doesn't have the failing pull request"
+grep '^- “Add dark mode to settings” (shop-web, dark-mode): Waiting for your answer' <<<"$NEEDS_ME" >/dev/null ||
+    fail "--demo --mcp's needs_me doesn't have the Copilot session waiting for an answer"
+jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tests failed in DeliveryEstimateTests' >/dev/null ||
+    fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
+if "$BIN" --demo --source teams --mcp </dev/null >/dev/null 2>&1; then
+    fail "--demo --source teams --mcp serves Teams"
+fi
+
 echo "demo-check passed: $COUNTS; by state, $TOTALS"

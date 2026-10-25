@@ -32,6 +32,37 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     }
 }
 
+extension CopilotTaskEntry {
+    /// Made-up sends of the demo sprint's tasks, one that opened a pull request and one still working, and a fix of the
+    /// demo's failing pull request.
+    static func demo(now: Date) -> [CopilotTaskEntry] {
+        let team = DemoData.team
+        return [
+            CopilotTaskEntry(
+                id: "demo-finished", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5112),
+                options: CopilotModel.standard, startedAt: now.addingTimeInterval(-41 * 60),
+                status: RunStatus(phase: .finished, since: now.addingTimeInterval(-12 * 60),
+                                  detail: "Coupon totals now round half up, with tests for every currency. Opened pull request 31."),
+                pullRequest: URL(string: "https://dev.azure.com/\(team.organization)/\(team.projectName)/_git/storefront/pullrequest/31")
+            ),
+            CopilotTaskEntry(
+                id: "demo-working", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5103),
+                options: CopilotModel.quick, startedAt: now.addingTimeInterval(-6 * 60),
+                status: RunStatus(phase: .working, detail: "Run the cart tests")
+            ),
+            // Fixing the demo's failing pull request.
+            CopilotTaskEntry(
+                id: "demo-fix-build", workItem: nil,
+                onPullRequest: PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web",
+                                                    id: 4088, sourceBranch: "delivery-estimates"),
+                action: .fixBuild, options: CopilotModel.standard, startedAt: now.addingTimeInterval(-9 * 60),
+                status: RunStatus(phase: .working, detail: "Run DeliveryEstimateTests"),
+                pullRequest: URL(string: "https://dev.azure.com/\(DemoData.organization)/Storefront/_git/shop-web/pullrequest/4088")
+            ),
+        ]
+    }
+}
+
 extension WorkItem {
     /// What a task sent to Copilot needs to know about it.
     var copilotTask: TaskWorkItem {
@@ -105,34 +136,8 @@ final class CopilotTasksStore: ObservableObject {
         )
     }
 
-    /// Made-up sends of the demo sprint's tasks: one that opened a pull request, and one still working.
     private var demoEntries: [CopilotTaskEntry] {
-        guard mode == .demo else { return [] }
-        let team = DemoData.team
-        let now = Date()
-        return [
-            CopilotTaskEntry(
-                id: "demo-finished", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5112),
-                options: CopilotModel.standard, startedAt: now.addingTimeInterval(-41 * 60),
-                status: RunStatus(phase: .finished, since: now.addingTimeInterval(-12 * 60),
-                                  detail: "Coupon totals now round half up, with tests for every currency. Opened pull request 31."),
-                pullRequest: URL(string: "https://dev.azure.com/\(team.organization)/\(team.projectName)/_git/storefront/pullrequest/31")
-            ),
-            CopilotTaskEntry(
-                id: "demo-working", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5103),
-                options: CopilotModel.quick, startedAt: now.addingTimeInterval(-6 * 60),
-                status: RunStatus(phase: .working, detail: "Run the cart tests")
-            ),
-            // Fixing the demo's failing pull request.
-            CopilotTaskEntry(
-                id: "demo-fix-build", workItem: nil,
-                onPullRequest: PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web",
-                                                    id: 4088, sourceBranch: "delivery-estimates"),
-                action: .fixBuild, options: CopilotModel.standard, startedAt: now.addingTimeInterval(-9 * 60),
-                status: RunStatus(phase: .working, detail: "Run DeliveryEstimateTests"),
-                pullRequest: URL(string: "https://dev.azure.com/\(DemoData.organization)/Storefront/_git/shop-web/pullrequest/4088")
-            ),
-        ]
+        mode == .demo ? CopilotTaskEntry.demo(now: Date()) : []
     }
 
     /// The latest send of a work item, for its row.

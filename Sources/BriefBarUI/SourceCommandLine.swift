@@ -48,11 +48,14 @@ package protocol SourceCommandLine {
     static func watch(_ options: CommandLineOptions) -> Bool
     /// Its own modes, such as `--diagnose`. Nil when the arguments have none of them.
     static func run(_ options: CommandLineOptions) -> Int32?
+    /// `--mcp`: what it gives agents, its tools and its part of `needs_me`; nil for none.
+    static func mcp(_ options: CommandLineOptions) -> MCPSource?
 }
 
 extension SourceCommandLine {
     package static var flags: [String] { [] }
     package static func run(_ options: CommandLineOptions) -> Int32? { nil }
+    package static func mcp(_ options: CommandLineOptions) -> MCPSource? { nil }
 
     /// Encodes a value the way every source's `--json` does, as a JSON object.
     package static func jsonObject(_ value: some Encodable) -> [String: Any]? {

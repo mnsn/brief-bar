@@ -336,6 +336,14 @@ final class AppSettings: ObservableObject {
 
     var watchedKeys: Set<PRKey> { Set(watchedPullRequests.map(\.key)) }
 
+    /// Reads again what an agent can change through `--mcp`: the pull requests you watch, and the pipelines you pin.
+    func reloadAgentChanges() {
+        let watched = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
+        if watched != watchedPullRequests { watchedPullRequests = watched }
+        let pinned = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
+        if pinned != pinnedPipelines { pinnedPipelines = pinned }
+    }
+
     func isWatching(_ key: PRKey) -> Bool {
         watchedPullRequests.contains { $0.key == key }
     }
