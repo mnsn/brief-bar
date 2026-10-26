@@ -2,6 +2,9 @@
 
 ## 0.6.0 - 2026-10-26
 
+- **Copilot tasks start in repositories you trust.** Sending a pull request or work item to Copilot
+  no longer fails as soon as it starts when Copilot trusts the repository's folder. The Copilot CLI
+  refuses the extra trust option BriefBar added, and already trusts the task's worktree itself.
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
   clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any

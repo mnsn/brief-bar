@@ -7,16 +7,22 @@ import Testing
 
 /// A whole send, with a real repository and a made-up `copilot` that writes a session log as the real one does.
 @Suite struct CopilotLauncherTests {
-    /// Records its arguments, writes a short session log, and prints the pull request it "opened".
+    /// Records its arguments, writes a short session log, and prints the pull request it "opened". Like the real CLI,
+    /// it refuses `--trust-folder` with `--session-id`.
     static let fakeCopilot = """
         #!/bin/sh
         printf '%s\\n' "$@" > "$FAKE_COPILOT_ARGUMENTS"
         while [ $# -gt 0 ]; do
           case "$1" in
             --session-id) id="$2"; shift 2 ;;
+            --trust-folder) trust=1; shift ;;
             *) shift ;;
           esac
         done
+        if [ -n "$trust" ] && [ -n "$id" ]; then
+          echo "error: the argument '--trust-folder' cannot be used with '--session-id <id>'" >&2
+          exit 2
+        fi
         log="$COPILOT_HOME/session-state/$id/events.jsonl"
         mkdir -p "$(dirname "$log")"
         cat > "$log" <<'EOF'
@@ -71,8 +77,6 @@ import Testing
         #expect(arguments.prefix(6) == ["-p", "Fix 4217 from main", "--model", "claude-sonnet-5.5", "--reasoning-effort", "medium"])
         #expect(arguments.contains("--session-id") && arguments.contains(id))
         #expect(arguments.suffix(3) == ["-C", worktree.path, "--silent"])
-        // Its own repository isn't in a folder that Copilot's config trusts.
-        #expect(!arguments.contains("--trust-folder"))
 
         let log = await RunMonitor().log(id: run.id, events: events)
         let status = RunStatus.derive(log: log, isRunning: DetachedProgram.isRunning(run.process), exitStatus: 0, stoppedByYou: false, output: nil)
@@ -93,9 +97,10 @@ import Testing
         }
     }
 
-    /// A repository you trust gives its worktree the same trust, so Copilot loads its skills and MCP servers.
+    /// Copilot carries a trusted repository's trust to its worktrees itself, and refuses `--trust-folder` with
+    /// `--session-id`, so a worktree of a repository you trust starts like any other.
     @Test(.timeLimit(.minutes(1)))
-    func trustsTheWorktreeOfATrustedRepository() async throws {
+    func startsAWorktreeOfATrustedRepositoryWithItsSessionID() async throws {
         let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let copilotHome = fixture.folder.appendingPathComponent("copilot-home")
@@ -113,11 +118,12 @@ import Testing
         let launcher = CopilotLauncher(outputFolder: fixture.folder.appendingPathComponent("output"), environment: { launchEnvironment }, locate: { _ in copilot })
         let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
         let request = CopilotLauncher.Request(workItem: sampleItem, prompt: "Fix it", options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil)
-        _ = try await launcher.launch(request) { exitSink.yield($0) }
+        let run = try await launcher.launch(request) { exitSink.yield($0) }
         var iterator = exits.makeAsyncIterator()
-        _ = await iterator.next()
+        #expect(await iterator.next() == 0)
         let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
-        #expect(arguments.contains("--trust-folder"))
+        #expect(arguments.contains("--session-id") && arguments.contains(run.id))
+        #expect(!arguments.contains("--trust-folder"))
     }
 
     @Test func needsTheCopilotCLIBeforeTouchingTheRepository() async throws {

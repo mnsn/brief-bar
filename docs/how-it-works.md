@@ -1020,8 +1020,9 @@ last one's session, if its worktree is still there: `--session-id` is that sessi
 offered once a task that changed files is done.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
-its `config.json`). A worktree of a repository you trust gets the same trust (`--trust-folder`), and no
-more: a worktree of one you don't trust loads only your own configuration.
+its `config.json`). It carries a repository's trust to that repository's worktrees, so a task's
+worktree loads them when you trust the repository, and only your own configuration when you don't.
+BriefBar adds no trust of its own: the CLI refuses `--trust-folder` with `--session-id`.
 
 **Following it.** Copilot logs the session to `~/.copilot/session-state/<id>/events.jsonl` (under
 `COPILOT_HOME`, if your shell sets it), as for the app's sessions, and BriefBar reads it the same way
