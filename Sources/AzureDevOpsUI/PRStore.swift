@@ -639,7 +639,8 @@ final class PRStore: ObservableObject {
         let pr = record.pullRequest
         let task = TaskPullRequest(
             organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
-            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch,
+            projectId: pr.projectId, repositoryId: pr.repositoryId
         )
         let client = mode == .live ? client : nil
         Task {

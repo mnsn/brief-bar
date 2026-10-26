@@ -129,9 +129,17 @@ struct CopilotComposerView: View {
                         .help("Its last session goes on in its worktree, \(UserPath.abbreviate(continuing.worktree.path)), with what it changed")
                     }
                 }
-                if !isContinuing {
+                if let (pullRequest, _) = pullRequest {
                     GridRow {
                         Text("Repository").foregroundStyle(.secondary)
+                        Text("\(pullRequest.organization) / \(pullRequest.project) / \(pullRequest.repository)")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                if !isContinuing {
+                    GridRow {
+                        Text(pullRequest == nil ? "Repository" : "Local Clone").foregroundStyle(.secondary)
                         repositoryRow
                     }
                 }
@@ -190,11 +198,12 @@ struct CopilotComposerView: View {
                     Button(url.lastPathComponent) { check(url) }
                 }
                 if !store.knownRepositories.isEmpty { Divider() }
-                Button("Choose Folder…", action: chooseFolder)
+                Button(pullRequest == nil ? "Choose Folder…" : "Choose Local Clone…", action: chooseFolder)
             } label: {
-                Label(repository?.name ?? "Choose a Repository", systemImage: "folder")
+                Label(repository?.name ?? (pullRequest == nil ? "Choose a Repository" : "Choose Local Clone…"), systemImage: "folder")
             }
             .fixedSize()
+            .disabled(isChecking || !store.canSend || !store.isOn)
             if isChecking {
                 ProgressView().controlSize(.small)
             } else if let repositoryProblem {
@@ -203,11 +212,16 @@ struct CopilotComposerView: View {
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             } else if let repository {
-                Text("\(UserPath.abbreviate(repository.root.path)), from origin/\(repository.baseBranch)")
+                Text("\(UserPath.abbreviate(repository.root.path)), from origin/\(pullRequest?.0.sourceBranch ?? repository.baseBranch)")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            } else if pullRequest != nil {
+                Text("Choose its folder on this Mac once. BriefBar will remember it.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -262,30 +276,48 @@ struct CopilotComposerView: View {
     }
 
     private var canSend: Bool {
-        store.canSend && (repository != nil || isContinuing) && !isChecking && !model.trimmingCharacters(in: .whitespaces).isEmpty
+        store.canSend && store.isOn && !isBusy && (repository != nil || isContinuing) && (!mustContinue || isContinuing)
+            && !isChecking && !model.trimmingCharacters(in: .whitespaces).isEmpty
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func setUp() {
-        guard !hasAppeared else { return }
+        guard !hasAppeared, store.canSend, store.isOn else { return }
         hasAppeared = true
-        let remembered: URL?
         switch subject {
-        case .workItem(let item): remembered = store.repository(for: item)
-        case .pullRequest(let pullRequest, _): remembered = continuing?.repository ?? store.repository(for: pullRequest.reference)
-        }
-        if let folder = remembered ?? store.knownRepositories.first {
-            check(folder)
+        case .workItem(let item):
+            if let folder = store.repository(for: item) ?? store.knownRepositories.first { check(folder) }
+        case .pullRequest(let pullRequest, _):
+            if let continuing {
+                check(continuing.repository)
+            } else {
+                isChecking = true
+                Task {
+                    do {
+                        repository = try await store.repository(for: pullRequest, using: store.git())
+                    } catch {
+                        repositoryProblem = String(describing: error)
+                    }
+                    isChecking = false
+                }
+            }
         }
     }
 
     /// Checks that a folder is in a git repository, and fills the base branch into a prompt you haven't changed.
     private func check(_ folder: URL) {
+        guard store.canSend, store.isOn, !isChecking else { return }
         isChecking = true
         repositoryProblem = nil
         Task {
             do {
-                let found = try await store.git().repository(at: folder)
+                let git = await store.git()
+                let found: GitRepository
+                if let (pullRequest, _) = pullRequest {
+                    found = try await store.checkRepository(at: folder, for: pullRequest, using: git)
+                } else {
+                    found = try await git.repository(at: folder)
+                }
                 repository = found
                 if prompt == filledIn, let item = workItem {
                     filledIn = PromptTemplate.render(settings.copilotPromptTemplate, item: item, baseBranch: found.baseBranch)
@@ -306,7 +338,9 @@ struct CopilotComposerView: View {
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         panel.message = workItem.map { "Choose the repository that work item \($0.id)'s change goes in." }
-            ?? pullRequest.map { "Choose your clone of \($0.0.repository), the repository of pull request \($0.0.id)." } ?? ""
+            ?? pullRequest.map {
+                "Choose your local clone of \($0.0.organization)/\($0.0.project)/\($0.0.repository). BriefBar will remember it for this repository's pull requests."
+            } ?? ""
         if let current = repository?.root { panel.directoryURL = current.deletingLastPathComponent() }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         check(url)

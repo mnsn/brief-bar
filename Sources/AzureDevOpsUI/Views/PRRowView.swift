@@ -9,6 +9,7 @@ struct PRRowView: View {
     let item: PRSnapshot
     let now: Date
     var compact = false
+    var showsActions = false
     /// Opens the message it was sent in (right-click); nil when it wasn't.
     var openSource: (() -> Void)? = nil
     /// Stops watching it (right-click); nil when you don't watch it.
@@ -21,75 +22,100 @@ struct PRRowView: View {
     static let compactHeight: CGFloat = 42
 
     var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 9) {
-                RowIcon(item: item, size: compact ? 15 : 17)
-                    .frame(width: 20, height: 20)
-                    .accessibilityHidden(true)
+        HStack(alignment: .top, spacing: 0) {
+            Button(action: action) {
+                content
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, compact ? 5 : 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(helpText)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(item.title), \(item.headline)")
+            .accessibilityValue([item.repository, item.detail].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityHint("Opens the pull request in Azure DevOps")
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.title)
-                            .font(.system(size: 13, weight: item.group == .idle ? .regular : .semibold))
-                            .foregroundStyle(item.group == .idle ? .secondary : .primary)
+            if showsActions {
+                Menu {
+                    menuItems
+                } label: {
+                    Label("Actions", systemImage: "ellipsis.circle")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Actions for this pull request")
+                .accessibilityLabel("Actions for \(item.title)")
+                .padding(.trailing, 8)
+                .padding(.top, compact ? 5 : 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu { menuItems }
+    }
+
+    private var content: some View {
+        HStack(alignment: .top, spacing: 9) {
+            RowIcon(item: item, size: compact ? 15 : 17)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: item.group == .idle ? .regular : .semibold))
+                        .foregroundStyle(item.group == .idle ? .secondary : .primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    Text(Elapsed.short(since: item.since, now: now))
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+                if compact {
+                    Text(compactLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    HStack(spacing: 6) {
+                        Text(item.subtitle)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(item.rowColor)
                             .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 4)
-                        Text(Elapsed.short(since: item.since, now: now))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
                     }
-                    if compact {
-                        Text(compactLine)
+                    if let detail = item.detail {
+                        Text(detail)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        HStack(spacing: 6) {
-                            Text(item.subtitle)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(item.rowColor)
-                                .lineLimit(1)
-                            PullRequestCopilotStatus(key: item.key)
-                        }
-                        if let detail = item.detail {
-                            Text(detail)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(item.group == .needsYou ? 3 : 2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                            .lineLimit(item.group == .needsYou ? 3 : 2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, compact ? 5 : 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            Button("Open in Azure DevOps", action: action)
-            if let source = item.chatSource, let openSource {
-                Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
-            }
-            PullRequestCopilotMenuItems(item: item)
-            if item.isWatched, let stopWatching {
-                Divider()
-                Button("Stop Watching", action: stopWatching)
-            }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        Button("Open in Azure DevOps", action: action)
+        if let source = item.chatSource, let openSource {
+            Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }
-        .help(helpText)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(item.title), \(item.headline)")
-        .accessibilityValue([item.repository, item.detail].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint("Opens the pull request in Azure DevOps")
+        PullRequestCopilotMenuItems(item: item)
+        if item.isWatched, let stopWatching {
+            Divider()
+            Button("Stop Watching", action: stopWatching)
+        }
     }
 
     private var compactLine: String {
@@ -103,10 +129,11 @@ struct PRRowView: View {
         if !item.approvals.isEmpty && item.group != .ready { lines.append("Approved by " + item.approvals.joined(separator: ", ")) }
         lines.append("Click to open in Azure DevOps")
         if let source = item.chatSource {
-            lines.append(source.messageURL == nil ? "Right-click to show \(source.appName)" : "Right-click to open the message in \(source.appName)")
+            let menu = showsActions ? "Use Actions" : "Right-click"
+            lines.append(source.messageURL == nil ? "\(menu) to show \(source.appName)" : "\(menu) to open the message in \(source.appName)")
         }
         if item.isWatched {
-            lines.append("You watch it: right-click to stop")
+            lines.append(showsActions ? "You watch it: use Actions to stop" : "You watch it: right-click to stop")
         }
         return lines.joined(separator: "\n")
     }

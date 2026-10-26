@@ -159,10 +159,29 @@ final class CopilotTasksStore: ObservableObject {
         return run
     }
 
-    /// The repository a pull request's repository is on this Mac: the one its tasks went in last.
-    func repository(for pullRequest: PullRequestReference) -> URL? {
-        if let path = settings.copilotRepositories[pullRequest.repositoryKey] { return URL(fileURLWithPath: path, isDirectory: true) }
-        return knownRepositories.first { $0.lastPathComponent.caseInsensitiveCompare(pullRequest.repository) == .orderedSame }
+    /// The clone chosen for this repository, or a known clone whose origin matches it.
+    func repository(for pullRequest: TaskPullRequest, using git: Git) async throws -> GitRepository? {
+        guard canSend, isOn else { return nil }
+        if let path = settings.copilotRepositories[pullRequest.reference.repositoryKey] {
+            return try await checkRepository(at: URL(fileURLWithPath: path, isDirectory: true), for: pullRequest, using: git)
+        }
+        for folder in knownRepositories {
+            do {
+                return try await checkRepository(at: folder, for: pullRequest, using: git)
+            } catch {
+                Log.app.debug("Skipping a known local clone: \(Self.kind(of: error), privacy: .public)")
+            }
+        }
+        return nil
+    }
+
+    /// Remember a verified local clone immediately, even if the composer is later cancelled.
+    func checkRepository(at folder: URL, for pullRequest: TaskPullRequest, using git: Git) async throws -> GitRepository {
+        let repository = try await git.repository(at: folder, for: pullRequest)
+        if canSend, isOn {
+            settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.root.path
+        }
+        return repository
     }
 
     var activeCount: Int { entries.filter { $0.status.phase.isActive }.count }
@@ -320,10 +339,12 @@ final class CopilotTasksStore: ObservableObject {
 
     /// What went wrong, without paths or names, for the log.
     private static func kind(of error: Error) -> String {
+        if let error = error as? GitError { return kind(of: LaunchError.git(error)) }
         switch error as? LaunchError {
         case .copilotNotFound?: return "the Copilot CLI isn't installed"
         case .git(.notARepository)?: return "not a git repository"
         case .git(.noOrigin)?: return "no origin remote"
+        case .git(.wrongRepository)?: return "wrong local clone"
         case .git(.failed)?: return "git failed"
         case .couldntStart?: return "Copilot couldn't start"
         case nil: return "unexpected error"
