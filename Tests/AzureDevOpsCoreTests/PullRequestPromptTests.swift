@@ -165,8 +165,8 @@ import BriefBarCore
         #expect(handOff.key == pr.key)
         #expect(handOff.account == "tenant/robin")
         #expect(handOff.waiting == [
-            CommentHandOff.Waiting(thread: 1, entry: "1. General comment (thread 1)", first: t(-2 * hour), last: t(-2 * hour)),
-            CommentHandOff.Waiting(thread: 2, entry: "2. General comment (thread 2)", first: t(-hour), last: t(-hour)),
+            CommentHandOff.Waiting(thread: 1, entry: "1. General comment (thread 1)", comments: [1], first: t(-2 * hour), last: t(-2 * hour)),
+            CommentHandOff.Waiting(thread: 2, entry: "2. General comment (thread 2)", comments: [1], first: t(-hour), last: t(-hour)),
         ])
         for prompt in [PullRequestPrompt.fixComments(record(threads)), PullRequestPrompt.pushAndReply(record(threads))] {
             #expect(handOff.handedOff(in: prompt) == t(-hour))
@@ -194,6 +194,31 @@ import BriefBarCore
         #expect(after.hasNews)
         // Taking them off up to when you sent it would have taken those too.
         #expect(classify(later, through: t(0))?.group == .waiting)
+        // Looking at the pull request as it is when the task starts, they don't hold back what the prompt hands off.
+        #expect(capture(written).handedOff(in: PullRequestPrompt.fixComments(record(written)), now: record(later)) == through)
+    }
+
+    /// A thread resolved when the prompt is written isn't in it: reopened before the task starts, its comment still needs
+    /// you, though it's older than what the prompt hands off.
+    @Test func aThreadReopenedWhileYouCheckThePromptStillNeedsYou() throws {
+        var threads = [
+            ReviewThread(id: 1, status: "fixed", comments: [comment(1, People.sam, "Cap it?", at: t(-2 * hour))]),
+            waiting(2, People.priya, at: t(-hour)),
+        ]
+        let handOff = capture(threads)
+        #expect(handOff.waiting.map(\.thread) == [2])
+        let prompt = PullRequestPrompt.fixComments(record(threads))
+        #expect(!prompt.contains("(thread 1)"))
+        #expect(handOff.handedOff(in: prompt, now: record(threads)) == t(-hour))
+
+        // Sam reopens his thread while you check the prompt. Priya's cutoff alone would take his comment off too.
+        threads[0].status = "active"
+        #expect(try #require(classify(threads, through: t(-hour))).pendingEvents.isEmpty)
+        let through = try #require(handOff.handedOff(in: prompt, now: record(threads)))
+        #expect(through < t(-2 * hour))
+        let after = try #require(classify(threads, through: through))
+        #expect(after.group == .needsYou)
+        #expect(after.pendingEvents.map(\.id).sorted() == ["c1.1", "c2.1"])
     }
 
     @Test func aThreadDeletedFromThePromptStillNeedsYou() throws {

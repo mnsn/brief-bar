@@ -237,19 +237,23 @@ public enum PullRequestPrompt {
 /// hands to Copilot, as it was when it was written: the comments that waited on you then, by thread, for the account
 /// signed in then. Sending it takes those in the entries still in the prompt off that account's Needs You. A comment that
 /// came after it was written isn't among them, and neither is one in a thread whose entry isn't in the prompt you send,
-/// beyond the most it lists or deleted from it: those still need you.
+/// beyond the most it lists or deleted from it, nor one that waits on you when the task starts but didn't when the prompt
+/// was written, such as in a thread reopened since: those still need you.
 public struct CommentHandOff: Sendable, Equatable {
-    /// An unresolved thread, with the first and the last of its comments that waited on you.
+    /// An unresolved thread, with its comments that waited on you.
     public struct Waiting: Sendable, Equatable {
         public var thread: Int
         /// The line its entry in the prompt starts with; nil when the prompt doesn't list it.
         public var entry: String?
+        /// Those comments, by ID.
+        public var comments: [Int]
         public var first: Date
         public var last: Date
 
-        public init(thread: Int, entry: String?, first: Date, last: Date) {
+        public init(thread: Int, entry: String?, comments: [Int], first: Date, last: Date) {
             self.thread = thread
             self.entry = entry
+            self.comments = comments
             self.first = first
             self.last = last
         }
@@ -261,11 +265,17 @@ public struct CommentHandOff: Sendable, Equatable {
     /// The Azure CLI account whose seen state the prompt was written with (`SeenState.account`), once known: the
     /// comments leave its Needs You, whoever is signed in once the task starts.
     public var account: String?
+    /// Your identity ID in the pull request's organization, with that account (`PRRecord.me`).
+    public var me: String
+    /// What came up to then didn't wait on you anymore when the prompt was written (`SeenState.dismissedCutoff`).
+    public var dismissedCutoff: Date
 
-    public init(key: PRKey, waiting: [Waiting], account: String?) {
+    public init(key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date) {
         self.key = key
         self.waiting = waiting
         self.account = account
+        self.me = me
+        self.dismissedCutoff = dismissedCutoff
     }
 
     /// As the prompt sees `record`, with `account` signed in.
@@ -276,22 +286,33 @@ public struct CommentHandOff: Sendable, Equatable {
         let entries = Dictionary(listed.enumerated().map { ($1.id, PullRequestPrompt.entry($0, $1)) }, uniquingKeysWith: { first, _ in first })
         let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
         self.init(key: record.id, waiting: threads.compactMap { thread in
-            let times = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff).map(\.publishedAt)
+            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff)
+            let times = comments.map(\.publishedAt)
             guard let first = times.min(), let last = times.max() else { return nil }
-            return Waiting(thread: thread.id, entry: entries[thread.id], first: first, last: last)
-        }, account: account)
+            return Waiting(thread: thread.id, entry: entries[thread.id], comments: comments.map(\.id), first: first, last: last)
+        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff)
     }
 
     /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
-    /// threads whose entries are still in it, but before the first in one whose entry isn't, since a pull request has one
-    /// cutoff. A thread's entry is still there while its own line is: a comment in another entry that names it doesn't
-    /// count. Nil when none of them is still there.
-    public func handedOff(in prompt: String) -> Date? {
+    /// threads whose entries are still in it, but before the first that still needs you, since a pull request has one
+    /// cutoff. That's one in a thread whose entry isn't in the prompt, and, with the pull request as BriefBar last read
+    /// it when the task starts (`now`), one that waits on you then that the prompt doesn't have, such as in a thread
+    /// reopened since it was written. A thread's entry is still there while its own line is: a comment in another entry
+    /// that names it doesn't count. Nil when none of them is still there.
+    public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
         let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
-        let kept = Set(waiting.filter { $0.entry.map(lines.contains) ?? false }.map(\.thread))
-        guard let last = waiting.filter({ kept.contains($0.thread) }).map(\.last).max() else { return nil }
-        guard let left = waiting.filter({ !kept.contains($0.thread) }).map(\.first).min() else { return last }
-        return min(last, left.addingTimeInterval(-0.001))
+        let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
+        guard let last = kept.map(\.last).max() else { return nil }
+        var stays = waiting.filter { !kept.contains($0) }.map(\.first)
+        if let now {
+            let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
+            for thread in now.details?.threads ?? [] where !thread.isResolved {
+                stays += PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff)
+                    .filter { !handed.contains("\(thread.id).\($0.id)") }.map(\.publishedAt)
+            }
+        }
+        guard let first = stays.min() else { return last }
+        return min(last, first.addingTimeInterval(-0.001))
     }
 }
 

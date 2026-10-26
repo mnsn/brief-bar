@@ -453,10 +453,12 @@ final class PRStore: ObservableObject {
 
     /// A task that takes care of a pull request's comments started in Copilot, with the prompt you sent: what waited on
     /// you in the threads it quotes leaves Needs You, as it was when the prompt was written. A comment that came after,
-    /// while you checked the prompt, say, or one in a thread the prompt doesn't quote, still needs you. It leaves the
-    /// Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI since.
+    /// while you checked the prompt, say, one in a thread the prompt doesn't quote, or one that waits on you as the list
+    /// last read the pull request but the prompt doesn't have, such as in a thread reopened meanwhile, still needs you. It
+    /// leaves the Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI
+    /// since.
     func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
-        guard let through = handOff.handedOff(in: prompt) else { return }
+        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key)) else { return }
         settings.dismiss([(handOff.key, through)], for: handOff.account)
     }
 

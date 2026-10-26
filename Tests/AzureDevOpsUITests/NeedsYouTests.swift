@@ -46,6 +46,16 @@ import Testing
             details.lastActivity = max(details.lastActivity ?? .distantPast, comment.publishedAt)
             snapshot.records[index].details = details
         }
+
+        /// Sets one of the pull request's threads' status, such as "fixed" or "active", for the next refresh.
+        mutating func setStatus(_ status: String, of thread: Int, in number: Int) {
+            guard let index = snapshot.records.firstIndex(where: { $0.id.number == number }),
+                  var details = snapshot.records[index].details,
+                  let existing = details.threads.firstIndex(where: { $0.id == thread })
+            else { return }
+            details.threads[existing].status = status
+            snapshot.records[index].details = details
+        }
     }
 
     private func loadDemo() async -> Demo {
@@ -165,6 +175,36 @@ import Testing
         let after = try #require(demo.item(4102))
         #expect(after.group == .needsYou)
         #expect(after.pendingEvents.map(\.id) == ["c64.1"])
+    }
+
+    /// A thread resolved when the prompt is written isn't in it: reopened before the task starts, its comment still needs
+    /// you, though it's older than what the prompt hands off. BriefBar looks at the pull request again when the task starts.
+    @Test func aThreadReopenedWhileYouCheckThePromptStillNeedsYou() async throws {
+        var demo = await loadDemo()
+        let store = demo.store
+        let key = PRKey(DemoData.organization, 4102)
+        let sam = try #require(demo.snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 11 }?.comments.last?.author)
+        // Sam's earlier question, in a thread he'd resolved.
+        let asked = demo.now.addingTimeInterval(-2 * 3_600)
+        demo.add(ReviewComment(id: 1, author: sam, text: "Should the client time out too?", publishedAt: asked), to: 4102, thread: 65)
+        demo.setStatus("fixed", of: 65, in: 4102)
+        demo.refresh()
+        #expect(demo.item(4102)?.pendingEvents.map(\.id) == ["c11.2"])
+        let record = try #require(store.record(for: key))
+        let handOff = try #require(store.commentHandOff(.fixComments, for: record))
+        let prompt = await PullRequestTasks.prompt(.fixComments, for: record, client: nil)
+        #expect(!prompt.contains("(thread 65)"))
+
+        // He reopens it while you check the prompt, then you send it.
+        demo.setStatus("active", of: 65, in: 4102)
+        demo.refresh()
+        #expect(demo.item(4102)?.pendingEvents.map(\.id).sorted() == ["c11.2", "c65.1"])
+        store.sentToCopilot(handOff, prompt: prompt)
+        demo.refresh()
+        let after = try #require(demo.item(4102))
+        #expect(after.group == .needsYou)
+        #expect(after.pendingEvents.map(\.id).contains("c65.1"))
+        #expect(demo.settings.dismissedCutoff(for: key) < asked)
     }
 
     // MARK: Accounts

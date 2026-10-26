@@ -370,9 +370,9 @@ commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
 and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, the comments its
-prompt quotes are off **Needs You**; one that comes while you check the prompt, or in a thread you take
-out of it, still needs you. Comments are written by whoever wrote them, and go to an agent that
-may run any command: send only what you'd hand to Copilot yourself.
+prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out
+of it, or in one reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go
+to an agent that may run any command: send only what you'd hand to Copilot yourself.
 
 ### GitHub Copilot
 
