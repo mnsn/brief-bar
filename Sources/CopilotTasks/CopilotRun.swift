@@ -201,7 +201,7 @@ public enum RunTranscript {
 
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's.
     public static func pullRequest(in text: String) -> URL? {
-        let pattern = #"https://(?:dev\.azure\.com|[A-Za-z0-9-]+\.visualstudio\.com)(?:/[^\s/()<>\[\]"'`]+){1,3}/_git/[^\s/()<>\[\]"'`]+/pullrequest/\d+|https://github\.com/[^\s/()<>\[\]"'`]+/[^\s/()<>\[\]"'`]+/pull/\d+"#
+        let pattern = #"(?:^|(?<=[\s(<\[]))(?:https://(?:dev\.azure\.com|[A-Za-z0-9-]+\.visualstudio\.com)(?:/[^\s/()<>\[\]"'`]+){1,3}/_git/[^\s/()<>\[\]"'`]+/pullrequest/\d+|https://github\.com/[^\s/()<>\[\]"'`]+/[^\s/()<>\[\]"'`]+/pull/\d+)(?=$|[\s),;!?>\]"'`]|[.](?=$|\s))"#
         guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = expression.matches(in: text, range: range).last, let found = Range(match.range, in: text) else {

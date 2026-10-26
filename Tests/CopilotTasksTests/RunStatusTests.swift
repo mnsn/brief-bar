@@ -78,6 +78,8 @@ import Testing
         #expect(RunTranscript.pullRequest(in: "See https://contoso.visualstudio.com/DefaultCollection/Storefront/_git/web/pullRequest/9, thanks")?
             .absoluteString == "https://contoso.visualstudio.com/DefaultCollection/Storefront/_git/web/pullRequest/9")
         #expect(RunTranscript.pullRequest(in: "https://github.com/contoso/web/pull/5.")?.absoluteString == "https://github.com/contoso/web/pull/5")
+        #expect(RunTranscript.pullRequest(in: "https://evil.example/?next=https://github.com/contoso/web/pull/5") == nil)
+        #expect(RunTranscript.pullRequest(in: "https://github.com/contoso/web/pull/5.evil.example") == nil)
         #expect(RunTranscript.pullRequest(in: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217") == nil)
         #expect(RunTranscript.pullRequest(in: "No link here") == nil)
     }
