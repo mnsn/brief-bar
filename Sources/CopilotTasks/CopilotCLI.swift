@@ -117,24 +117,4 @@ public enum CopilotCLI {
         }
         return userHome.appendingPathComponent(".copilot", isDirectory: true)
     }
-
-    /// The folders you've trusted Copilot with (`trustedFolders` in its config.json), whose skills, MCP servers and hooks
-    /// it loads. Its config allows comments.
-    public static func trustedFolders(config: Data) -> [String] {
-        let text = String(decoding: config, as: UTF8.self)
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
-            .joined(separator: "\n")
-        guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return [] }
-        return (object["trustedFolders"] as? [Any] ?? []).compactMap { $0 as? String }
-    }
-
-    /// Whether a folder is one of them, or inside one.
-    public static func isTrusted(_ folder: URL, trusted: [String], home: URL = UserHome.url) -> Bool {
-        let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
-        return trusted.contains { entry in
-            let root = URL(fileURLWithPath: UserPath.expand(entry, home: home)).standardizedFileURL.resolvingSymlinksInPath().path
-            return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-        }
-    }
 }

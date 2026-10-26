@@ -124,7 +124,9 @@ public struct RunStatus: Sendable, Equatable {
                 return RunStatus(phase: .stopped, since: log?.lastEventAt)
             }
             guard let log, log.phase == .running else {
-                let reason = lastLine(output) ?? exitStatus.map { "Copilot exited with status \($0) before it started working." }
+                // The CLI follows an option it refuses with its usage and a hint to try --help: the error says why.
+                let reason = lastLine(output, where: isError) ?? lastLine(output)
+                    ?? exitStatus.map { "Copilot exited with status \($0) before it started working." }
                 return RunStatus(phase: .failed, since: log?.lastEventAt, detail: reason ?? "Copilot ended before it started working.")
             }
             if exitStatus == 0 {
@@ -138,11 +140,16 @@ public struct RunStatus: Sendable, Equatable {
         }
     }
 
-    static func lastLine(_ text: String?) -> String? {
+    static func lastLine(_ text: String?, where matches: (String) -> Bool = { _ in true }) -> String? {
         text?.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .last { !$0.isEmpty }
+            .last { !$0.isEmpty && matches($0) }
             .map { String($0.prefix(300)) }
+    }
+
+    /// "Error: …" or "error: …", as the CLI says what went wrong.
+    static func isError(_ line: String) -> Bool {
+        line.lowercased().hasPrefix("error:")
     }
 }
 
