@@ -1,4 +1,5 @@
 import AzureDevOpsCore
+import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
@@ -16,6 +17,8 @@ import Testing
     private struct Demo {
         let store: PRStore
         let settings: AppSettings
+        /// The preferences, where what you've seen is saved, with each account.
+        let defaults: MemoryDefaults
         /// When the demo's pull requests are made up as of.
         let now: Date
         /// What the next refresh reads.
@@ -46,12 +49,13 @@ import Testing
     }
 
     private func loadDemo() async -> Demo {
-        let settings = AppSettings(defaults: MemoryDefaults())
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
         let store = PRStore(settings: settings, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()
-        let demo = Demo(store: store, settings: settings, now: now, snapshot: DemoData.snapshot(now: now))
+        let demo = Demo(store: store, settings: settings, defaults: defaults, now: now, snapshot: DemoData.snapshot(now: now))
         #expect(store.record(for: PRKey(DemoData.organization, 4102)) == demo.snapshot.records.first { $0.id.number == 4102 })
         return demo
     }
@@ -153,11 +157,96 @@ import Testing
         let prompt = await PullRequestTasks.prompt(.fixComments, for: record, client: nil)
         #expect(prompt.contains("(thread 64)"))
 
-        // You keep the feature flag for yourself: only the older reply goes to Copilot.
-        store.sentToCopilot(handOff, prompt: prompt.replacingOccurrences(of: "(thread 64)", with: ""))
+        // You keep the feature flag for yourself, and delete its entry: only the older reply goes to Copilot.
+        let entry = "2. General comment (thread 64)\n   Sam Rivera: Does this need a feature flag?"
+        #expect(prompt.contains(entry))
+        store.sentToCopilot(handOff, prompt: prompt.replacingOccurrences(of: entry, with: ""))
         demo.refresh()
         let after = try #require(demo.item(4102))
         #expect(after.group == .needsYou)
         #expect(after.pendingEvents.map(\.id) == ["c64.1"])
+    }
+
+    // MARK: Accounts
+
+    /// Robin's prompt for 4102, written as the composer opens, with Robin signed in to the Azure CLI.
+    private func composeAsRobin(_ demo: Demo) async throws -> (handOff: CommentHandOff, prompt: String, record: PRRecord, replied: Date) {
+        #expect(!demo.settings.useAccount("tenant/robin", now: demo.now))
+        let record = try #require(demo.store.record(for: PRKey(DemoData.organization, 4102)))
+        let replied = try #require(demo.item(4102)?.since)
+        let handOff = try #require(demo.store.commentHandOff(.fixComments, for: record))
+        #expect(handOff.account == "tenant/robin")
+        return (handOff, await PullRequestTasks.prompt(.fixComments, for: record, client: nil), record, replied)
+    }
+
+    /// Sam's Needs You is as it was when Sam signed in, and Robin's took the reply off, as BriefBar keeps it for when Robin
+    /// signs in again, now and after BriefBar starts again.
+    private func expectEachKeepsTheirOwn(_ demo: Demo, sams: (seen: Date, dismissed: Date), replied: Date) {
+        let key = PRKey(DemoData.organization, 4102)
+        #expect(demo.settings.account == "tenant/sam")
+        #expect(demo.settings.seenCutoff(for: key) == sams.seen)
+        #expect(demo.settings.dismissedCutoff(for: key) == sams.dismissed)
+        let restarted = AppSettings(defaults: demo.defaults)
+        #expect(restarted.account == "tenant/sam")
+        #expect(restarted.useAccount("tenant/robin", now: demo.now))
+        #expect(restarted.dismissedCutoff(for: key) == replied)
+        #expect(demo.settings.useAccount("tenant/robin", now: demo.now))
+        #expect(demo.settings.dismissedCutoff(for: key) == replied)
+    }
+
+    /// Someone else signs in to the Azure CLI while the composer is open: sending the prompt takes Robin's comments off
+    /// Robin's Needs You, not the new account's.
+    @Test func switchingAccountsWhileComposingKeepsEachOnesNeedsYou() async throws {
+        let demo = await loadDemo()
+        let robin = try await composeAsRobin(demo)
+
+        #expect(demo.settings.useAccount("tenant/sam", now: demo.now))
+        let key = PRKey(DemoData.organization, 4102)
+        let sams = (seen: demo.settings.seenCutoff(for: key), dismissed: demo.settings.dismissedCutoff(for: key))
+        demo.store.sentToCopilot(robin.handOff, prompt: robin.prompt)
+        expectEachKeepsTheirOwn(demo, sams: sams, replied: robin.replied)
+    }
+
+    /// Someone else signs in while Copilot is still starting, after you sent the prompt: the same, through the task's
+    /// own start, as the app wires it to the list.
+    @Test func switchingAccountsWhileTheTaskStartsKeepsEachOnesNeedsYou() async throws {
+        let demo = await loadDemo()
+        let robin = try await composeAsRobin(demo)
+        let settings = demo.settings
+        settings.copilotEnabled = true
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        defer { copilot.stop() }
+        copilot.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        copilot.handedOff = { [weak store = demo.store] handOff, prompt in store?.sentToCopilot(handOff, prompt: prompt) }
+        // Starting it waits until the test lets it go on, and starts nothing.
+        let (go, letItGo) = AsyncStream<Void>.makeStream()
+        copilot.launchForTests = { request, id, now in
+            for await _ in go { break }
+            guard case .pullRequest(let pullRequest, let action) = request.subject else { throw CancellationError() }
+            return CopilotRun(
+                id: id, workItem: nil, onPullRequest: pullRequest.reference, action: action, options: request.options,
+                repository: request.repository, worktree: URL(fileURLWithPath: "/tmp/copilot-worktrees/payments-api/pr-4102"),
+                startedAt: now, process: DetachedProgram.Handle(pid: getpid(), startedAt: nil)
+            )
+        }
+        let pr = robin.record.pullRequest
+        let task = TaskPullRequest(
+            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch,
+            projectId: pr.projectId, repositoryId: pr.repositoryId
+        )
+        copilot.send(.pullRequest(task, .fixComments), prompt: robin.prompt, options: CopilotModel.standard,
+                     repository: URL(fileURLWithPath: "/tmp/payments-api"), handOff: robin.handOff)
+
+        #expect(settings.useAccount("tenant/sam", now: demo.now))
+        let key = PRKey(DemoData.organization, 4102)
+        let sams = (seen: settings.seenCutoff(for: key), dismissed: settings.dismissedCutoff(for: key))
+        #expect(settings.copilotRuns.isEmpty)
+        letItGo.yield()
+        for _ in 0..<500 where settings.copilotRuns.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(settings.copilotRuns.map(\.action) == [.fixComments])
+        expectEachKeepsTheirOwn(demo, sams: sams, replied: robin.replied)
     }
 }

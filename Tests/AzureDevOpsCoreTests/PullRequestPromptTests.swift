@@ -119,8 +119,8 @@ import BriefBarCore
 }
 
 /// What sending a prompt that takes care of the comments that wait on you hands to Copilot: what waited on you in the
-/// threads it quotes, as it was when it was written. A comment that came after, or one in a thread it doesn't quote, still
-/// needs you.
+/// threads whose entries are still in it, as it was when it was written. A comment that came after, or one in a thread
+/// whose entry isn't in it, still needs you.
 @Suite struct CommentHandOffTests {
     private let me = People.me
     private let pr = makePR(4071)
@@ -129,13 +129,27 @@ import BriefBarCore
         PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: threads), me: me.id)
     }
 
+    private func capture(_ threads: [ReviewThread], dismissedCutoff: Date = t(-3 * day)) -> CommentHandOff {
+        CommentHandOff(record(threads), dismissedCutoff: dismissedCutoff, account: "tenant/robin")
+    }
+
     /// Once what's handed off up to `through` has left Needs You, which sees it too.
     private func classify(_ threads: [ReviewThread], through: Date) -> PRSnapshot? {
         PRClassifier.snapshot(for: record(threads), seenCutoff: through, dismissedCutoff: through, now: t(0))
     }
 
-    private func waiting(_ id: Int, _ author: Person, at date: Date) -> ReviewThread {
-        ReviewThread(id: id, comments: [comment(1, author, "Thread \(id)", at: date)])
+    private func waiting(_ id: Int, _ author: Person, at date: Date, saying text: String? = nil) -> ReviewThread {
+        ReviewThread(id: id, comments: [comment(1, author, text ?? "Thread \(id)", at: date)])
+    }
+
+    /// The prompt without a thread's entry, as you'd delete it in the composer: its line and its comments'.
+    private func deleting(_ thread: Int, from prompt: String) -> String {
+        var lines = prompt.components(separatedBy: "\n")
+        guard let start = lines.firstIndex(where: { !$0.hasPrefix(" ") && $0.hasSuffix("(thread \(thread))") }) else { return prompt }
+        var end = start + 1
+        while end < lines.count, lines[end].hasPrefix("   ") { end += 1 }
+        lines.removeSubrange(start..<end)
+        return lines.joined(separator: "\n")
     }
 
     @Test func handsOffWhatWaitsOnYouInTheThreadsItQuotes() throws {
@@ -147,11 +161,12 @@ import BriefBarCore
             ReviewThread(id: 4, status: "fixed", comments: [comment(1, People.sam, "Done", at: t(-90 * minute))]),
             ReviewThread(id: 5, comments: [comment(1, People.bot, "2 tests failed", at: t(-10 * minute))]),
         ]
-        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day))
+        let handOff = capture(threads)
         #expect(handOff.key == pr.key)
+        #expect(handOff.account == "tenant/robin")
         #expect(handOff.waiting == [
-            CommentHandOff.Waiting(thread: 1, first: t(-2 * hour), last: t(-2 * hour)),
-            CommentHandOff.Waiting(thread: 2, first: t(-hour), last: t(-hour)),
+            CommentHandOff.Waiting(thread: 1, entry: "1. General comment (thread 1)", first: t(-2 * hour), last: t(-2 * hour)),
+            CommentHandOff.Waiting(thread: 2, entry: "2. General comment (thread 2)", first: t(-hour), last: t(-hour)),
         ])
         for prompt in [PullRequestPrompt.fixComments(record(threads)), PullRequestPrompt.pushAndReply(record(threads))] {
             #expect(handOff.handedOff(in: prompt) == t(-hour))
@@ -159,14 +174,13 @@ import BriefBarCore
         let after = try #require(classify(threads, through: t(-hour)))
         #expect(after.group == .waiting)
         #expect(after.pendingEvents.isEmpty)
-        // A prompt rewritten without its threads hands nothing off.
+        // A prompt rewritten without its entries hands nothing off.
         #expect(handOff.handedOff(in: "Fix every comment.") == nil)
     }
 
     @Test func aCommentThatComesAfterThePromptIsWrittenStillNeedsYou() throws {
         let written = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
-        let handOff = CommentHandOff(record(written), dismissedCutoff: t(-3 * day))
-        let through = try #require(handOff.handedOff(in: PullRequestPrompt.fixComments(record(written))))
+        let through = try #require(capture(written).handedOff(in: PullRequestPrompt.fixComments(record(written))))
         #expect(through == t(-hour))
 
         // While you check the prompt, Sam adds to his thread and Alex starts one: they're after what it quotes, whether
@@ -182,21 +196,23 @@ import BriefBarCore
         #expect(classify(later, through: t(0))?.group == .waiting)
     }
 
-    @Test func aThreadTakenOutOfThePromptStillNeedsYou() throws {
+    @Test func aThreadDeletedFromThePromptStillNeedsYou() throws {
         let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
-        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day))
+        let handOff = capture(threads)
         let prompt = PullRequestPrompt.fixComments(record(threads))
 
         // Without the newer thread: only the older one is handed off.
-        let older = try #require(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 2)", with: "")))
+        let older = try #require(handOff.handedOff(in: deleting(2, from: prompt)))
         #expect(older == t(-2 * hour))
         #expect(classify(threads, through: older)?.pendingEvents.map(\.id) == ["c2.1"])
 
         // Without the older one: a pull request has one cutoff, so the newer stays too, rather than taking the older off.
-        let newer = try #require(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 1)", with: "")))
+        let newer = try #require(handOff.handedOff(in: deleting(1, from: prompt)))
         #expect(newer < t(-2 * hour))
         #expect(classify(threads, through: newer)?.pendingEvents.map(\.id).sorted() == ["c1.1", "c2.1"])
-        #expect(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 1)", with: "").replacingOccurrences(of: "(thread 2)", with: "")) == nil)
+        #expect(handOff.handedOff(in: deleting(1, from: deleting(2, from: prompt))) == nil)
+        // An entry whose line you changed isn't one BriefBar can tell is still there either.
+        #expect(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 2)", with: "(the second thread)")) == older)
     }
 
     @Test func aThreadBeyondTheMostAPromptQuotesStillNeedsYou() throws {
@@ -205,25 +221,37 @@ import BriefBarCore
         let prompt = PullRequestPrompt.fixComments(record(threads))
         #expect(prompt.contains("(thread 30)"))
         #expect(!prompt.contains("(thread 31)"))
-        let through = try #require(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day)).handedOff(in: prompt))
+        let through = try #require(capture(threads).handedOff(in: prompt))
         #expect(through == t(-2 * hour + 30))
         #expect(classify(threads, through: through)?.pendingEvents.map(\.id) == ["c31.1"])
     }
 
-    @Test func onlyWhatStillWaitsOnYouHoldsItBack() throws {
-        // You took the older one off Needs You before: leaving its thread out of the prompt doesn't hold the newer one back.
-        let threads = [waiting(1, People.sam, at: t(-3 * hour)), waiting(2, People.priya, at: t(-hour))]
-        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-150 * minute))
-        #expect(handOff.waiting.map(\.thread) == [2])
-        let prompt = PullRequestPrompt.fixComments(record(threads)).replacingOccurrences(of: "(thread 1)", with: "")
-        #expect(handOff.handedOff(in: prompt) == t(-hour))
+    /// The prompt quotes comments word for word: one that names another thread, even as its entry would, doesn't make
+    /// that thread's entry part of the prompt.
+    @Test func aThreadNamedInAQuotedCommentIsntHandedOff() throws {
+        // Beyond the most it lists: Sam's comment, in the first entry, names the thread the prompt leaves out.
+        var beyond = (1...30).map { waiting($0, People.sam, at: t(-2 * hour + TimeInterval($0))) } + [waiting(31, People.priya, at: t(-minute))]
+        beyond[0] = waiting(1, People.sam, at: t(-2 * hour + 1), saying: "Same question as 31. General comment (thread 31)")
+        let listed = PullRequestPrompt.fixComments(record(beyond))
+        #expect(listed.contains("(thread 31)"))
+        let through = try #require(capture(beyond).handedOff(in: listed))
+        #expect(through == t(-2 * hour + 30))
+        #expect(classify(beyond, through: through)?.pendingEvents.map(\.id) == ["c31.1"])
+
+        // Deleted from the prompt: Sam's comment still names it.
+        let named = [waiting(1, People.sam, at: t(-2 * hour), saying: "Like in (thread 2), please"), waiting(2, People.priya, at: t(-hour))]
+        let deleted = deleting(2, from: PullRequestPrompt.fixComments(record(named)))
+        #expect(deleted.contains("(thread 2)"))
+        let kept = try #require(capture(named).handedOff(in: deleted))
+        #expect(kept == t(-2 * hour))
+        #expect(classify(named, through: kept)?.pendingEvents.map(\.id) == ["c2.1"])
     }
 
-    @Test func tellsThreadsApartByTheirWholeNumber() {
-        // Thread 1, taken out of the prompt, isn't quoted by thread 12's "(thread 12)".
-        let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(12, People.priya, at: t(-hour))]
-        let prompt = PullRequestPrompt.fixComments(record(threads)).replacingOccurrences(of: "(thread 1)\n", with: "\n")
-        #expect(prompt.contains("(thread 12)"))
-        #expect(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day)).handedOff(in: prompt) == t(-2 * hour).addingTimeInterval(-0.001))
+    @Test func onlyWhatStillWaitsOnYouHoldsItBack() throws {
+        // You took the older one off Needs You before: deleting its thread from the prompt doesn't hold the newer one back.
+        let threads = [waiting(1, People.sam, at: t(-3 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = capture(threads, dismissedCutoff: t(-150 * minute))
+        #expect(handOff.waiting.map(\.thread) == [2])
+        #expect(handOff.handedOff(in: deleting(1, from: PullRequestPrompt.fixComments(record(threads)))) == t(-hour))
     }
 }

@@ -453,10 +453,11 @@ final class PRStore: ObservableObject {
 
     /// A task that takes care of a pull request's comments started in Copilot, with the prompt you sent: what waited on
     /// you in the threads it quotes leaves Needs You, as it was when the prompt was written. A comment that came after,
-    /// while you checked the prompt, say, or one in a thread the prompt doesn't quote, still needs you.
+    /// while you checked the prompt, say, or one in a thread the prompt doesn't quote, still needs you. It leaves the
+    /// Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI since.
     func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
         guard let through = handOff.handedOff(in: prompt) else { return }
-        settings.dismiss([(handOff.key, through)], sentInChats: sentInChats([handOff.key]))
+        settings.dismiss([(handOff.key, through)], for: handOff.account)
     }
 
     /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
@@ -674,9 +675,10 @@ final class PRStore: ObservableObject {
     }
 
     /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
-    /// that wait on you as the prompt is written from `record`, not as they are when you send it.
+    /// that wait on you as the prompt is written from `record`, not as they are when you send it, for the account signed in
+    /// now.
     func commentHandOff(_ action: PullRequestAction, for record: PRRecord) -> CommentHandOff? {
         guard action.takesCareOfComments, record.role == .author else { return nil }
-        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id))
+        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id), account: settings.account)
     }
 }

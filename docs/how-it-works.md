@@ -814,11 +814,15 @@ It stops waiting on you when:
   window), or a task that takes care of its comments, **Fix Comments** or **Push & Reply**, starts in
   Copilot. Each pull request has a second cutoff for this (`SeenState.dismissedAt`), which sees it too:
   for **Remove from Needs You**, the newest thing the list showed; for Copilot, the last comment that
-  waited on you in the threads its prompt quotes, as they were when BriefBar wrote it, opening the composer
-  (`CommentHandOff`). A comment that came after, while you checked the prompt, say, isn't handed off,
-  and neither is one in a thread the prompt doesn't quote: beyond the 30 it quotes at most, or one you
-  took out of it before you sent it. Since there's one cutoff, it then stops before the first comment
-  that waits on you in such a thread. What comes after needs you again, as new;
+  waited on you in the threads whose entries are still in the prompt you send, as they were when
+  BriefBar wrote it, opening the composer (`CommentHandOff`). An entry is still there while its own line
+  is, such as `1. src/Cart.cs, line 12 (thread 11)`: the prompt quotes comments word for word, each on
+  an indented line, so one that names another thread doesn't count. A comment that came after, while you
+  checked the prompt, say, isn't handed off, and neither is one in a thread whose entry isn't there:
+  beyond the 30 it lists at most, or deleted before you sent it. Since there's one cutoff, it then stops
+  before the first comment that waits on you in such a thread. They leave the Needs You of the account
+  signed in to the Azure CLI when the prompt was written, even if another has signed in since: that
+  account's seen state keeps it for when it signs in again. What comes after needs you again, as new;
 - the pull request has had no activity for as long as **Idle After No Activity For** says (two weeks
   by default): it's idle, as it would be otherwise. Something new still needs you.
 

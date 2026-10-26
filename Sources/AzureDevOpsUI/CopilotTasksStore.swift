@@ -88,6 +88,8 @@ final class CopilotTasksStore: ObservableObject {
     /// A task that takes care of a pull request's comments started, with what its prompt handed off and the prompt you sent:
     /// for the list, to take those comments off Needs You.
     var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
+    /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
+    var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
 
     private let notifier: Notifier?
     private let monitor = RunMonitor()
@@ -313,12 +315,17 @@ final class CopilotTasksStore: ObservableObject {
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing
         )
         Task { [self] in
-            // Asked again for each send, so a tool you've just installed is found.
-            let environment = await environment(fresh: true)
-            let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
             do {
-                let run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
-                    MainActor.assumeIsolated { self?.exited(id, status: status) }
+                let run: CopilotRun
+                if let launchForTests {
+                    run = try await launchForTests(request, id, now)
+                } else {
+                    // Asked again for each send, so a tool you've just installed is found.
+                    let environment = await environment(fresh: true)
+                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
+                    run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
+                        MainActor.assumeIsolated { self?.exited(id, status: status) }
+                    }
                 }
                 startedHere.insert(id)
                 pending.removeAll { $0.id == id }

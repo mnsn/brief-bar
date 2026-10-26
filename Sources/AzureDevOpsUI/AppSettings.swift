@@ -283,6 +283,26 @@ final class AppSettings: ObservableObject {
         max(seen.cutoff(for: key), seenSentInChats[key.description] ?? .distantPast)
     }
 
+    /// The Azure CLI account whose seen state is in use, once known: what you see and take off Needs You now is its own.
+    var account: String? { seen.account }
+
+    /// Takes your own pull requests off Needs You, as `dismiss` does, for `account`: the one signed in now, or another
+    /// you've signed in with, whose state keeps it for when it signs in again. One account's comments never leave
+    /// another's Needs You, and nothing changes for an account BriefBar doesn't remember, or can't tell from this one.
+    func dismiss(_ entries: [(key: PRKey, date: Date)], for account: String?) {
+        guard account != seen.account else {
+            dismiss(entries)
+            return
+        }
+        guard let account, var other = otherSeen[account] else { return }
+        for entry in entries {
+            other.dismiss([entry.key], at: entry.date)
+        }
+        guard other != otherSeen[account] else { return }
+        otherSeen[account] = other
+        persistOtherSeen()
+    }
+
     /// Up to when the comments that wait on you in a pull request don't need you anymore: when you last removed it from
     /// Needs You, or sent them to Copilot.
     func dismissedCutoff(for key: PRKey) -> Date {
@@ -363,9 +383,7 @@ final class AppSettings: ObservableObject {
         otherSeen = book.others
         seen = book.current
         persistSeen()
-        if let data = try? JSONEncoder().encode(otherSeen) {
-            defaults.set(data, forKey: Key.otherSeen)
-        }
+        persistOtherSeen()
         return switched
     }
 
@@ -413,6 +431,12 @@ final class AppSettings: ObservableObject {
         if let data = try? JSONEncoder().encode(seen) {
             defaults.set(data, forKey: Key.seen)
             hasSavedSeen = true
+        }
+    }
+
+    private func persistOtherSeen() {
+        if let data = try? JSONEncoder().encode(otherSeen) {
+            defaults.set(data, forKey: Key.otherSeen)
         }
     }
 }
