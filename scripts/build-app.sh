@@ -1,11 +1,10 @@
 #!/bin/bash
-# Builds "BriefBar.app" into ./build, for this Mac's architecture, with its updater inside it
+# Builds "BriefBar.app" into ./build, for Apple silicon only, with its updater inside it
 # (Contents/Helpers/BriefBar Updater.app, which holds Sparkle), signed ad hoc: macOS ties Full Disk Access to
 # that exact build, so each new one needs the access again (see the note at the end). If you made the optional
 # "BriefBar Signing" certificate (scripts/make-signing-identity.sh), it's signed with exactly that certificate
 # instead, by its SHA-1 (scripts/signing.sh), and keeps the access across rebuilds; never with one whose key some
 # app may use without asking, or that can be exported. Every check that fails stops the build.
-#   --universal   builds for both Apple silicon and Intel instead.
 #   --install     also copies it to ~/Applications and (re)launches it.
 #   --ad-hoc      signs it ad hoc even when the certificate exists.
 # BRIEFBAR_SIGNING_IDENTITY names another certificate. BRIEFBAR_SIGNING_KEYCHAIN is a keychain of its own that
@@ -23,12 +22,10 @@ IDENTITY="${BRIEFBAR_SIGNING_IDENTITY:-BriefBar Signing}"
 KEYCHAIN="${BRIEFBAR_SIGNING_KEYCHAIN:-}"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Resources/Info.plist)"
 
-UNIVERSAL=false
 INSTALL=false
 AD_HOC=false
 for arg in "$@"; do
     case "$arg" in
-        --universal) UNIVERSAL=true ;;
         --install) INSTALL=true ;;
         --ad-hoc) AD_HOC=true ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
@@ -57,10 +54,7 @@ if ! $AD_HOC && [[ -z "$KEYCHAIN" ]] && ! require_safe_key "$HASH" "$IDENTITY"; 
     exit 1
 fi
 
-BUILD_FLAGS=(-c release)
-if $UNIVERSAL; then
-    BUILD_FLAGS+=(--arch arm64 --arch x86_64)
-fi
+BUILD_FLAGS=(-c release --arch arm64)
 swift build "${BUILD_FLAGS[@]}" --product "$EXECUTABLE"
 swift build "${BUILD_FLAGS[@]}" --product "$UPDATER_EXECUTABLE"
 BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"

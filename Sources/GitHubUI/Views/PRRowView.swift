@@ -11,17 +11,15 @@ struct PRRowView: View {
     var action: () -> Void
 
     @LocalState private var isHovered = false
-
-    /// Fixed height of a compact row, so the widget can size itself to a whole number of rows.
-    static let compactHeight: CGFloat = 42
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.reason.symbol)
                     .font(.system(size: compact ? 15 : 17))
                     .foregroundStyle(item.group.color)
-                    .frame(width: 20, height: 20)
+                    .frame(width: options.rowIconWidth, height: 20)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -38,16 +36,19 @@ struct PRRowView: View {
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
-                            .font(.system(size: 11))
+                            .font(.system(size: options.rowDetailSize))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(item.group.color)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(subtitle)
+                                .font(.system(size: options.rowReasonSize, weight: .medium))
+                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
+                                .lineLimit(1)
+                            LinkCapsules(linkRef)
+                        }
                         Text(item.pullRequest.reference)
-                            .font(.system(size: 11))
+                            .font(.system(size: options.rowDetailSize))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -65,15 +66,24 @@ struct PRRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open on GitHub", action: action)
+            LinkMenuItems(linkRef)
+        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) { LinkMenuItems(linkRef) }
     }
 
     private var subtitle: String {
         item.detail.map { "\(item.headline) · \($0)" } ?? item.headline
+    }
+
+    private var linkRef: ItemRef {
+        .gitHubPullRequest(repository: item.pullRequest.repository, number: item.pullRequest.number)
     }
 
     private var helpText: String {
@@ -84,22 +94,27 @@ struct PRRowView: View {
 /// Small "icon count" chips for the non-empty groups.
 struct CountChips: View {
     let counts: GitHubGroupCounts
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(GitHubPRGroup.allCases, id: \.self) { group in
-                if counts[group] > 0 {
-                    HStack(spacing: 3) {
-                        Image(systemName: group.symbol)
-                            .foregroundStyle(group.color)
-                        Text("\(counts[group])")
-                            .monospacedDigit()
+        if options.clearerStates {
+            AttentionSummary(states: counts.states)
+        } else {
+            HStack(spacing: 8) {
+                ForEach(GitHubPRGroup.allCases, id: \.self) { group in
+                    if counts[group] > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: group.symbol)
+                                .foregroundStyle(group.color)
+                            Text("\(counts[group])")
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .help("\(counts[group]) \(group.countLabel)")
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .help("\(counts[group]) \(group.countLabel)")
                 }
             }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }

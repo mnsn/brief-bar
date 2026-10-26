@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+- **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
+  The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
+  Existing Intel installs aren't offered incompatible updates.
+  
+## 0.6.0 - 2026-10-26
+- **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
+  compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
+  clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any
+  combination; leaving them off keeps the existing presentation. None turns on a source, changes its
+  permissions or enables an agent.
+- **A compact menu bar without losing your arrangement.** Its single icon counts items that need you
+  or are failing, with a warning for failures or missing access. Its list can show all activity or a
+  particular source. It combines only sections already visible, and turning it off restores your
+  saved arrangement.
+- **Clearer lists when you want them.** Ready-to-merge pull requests can be shown separately from
+  finished sessions, important rows can use larger text and aligned titles, and the brief can move
+  below the first group with two highlights and an option to expand it. Optional row menus and
+  widget **View All** buttons make actions easier to find while keeping each source's existing
+  open/read behavior.
+- **Copilot tasks start again in repositories you trust.** With Copilot CLI 1.0.100 or later, a pull
+  request or work item sent from a trusted repository failed at once: the CLI refuses the option
+  BriefBar added to trust its worktree. BriefBar no longer adds it, and Copilot still trusts the
+  worktree of a repository you trust. When Copilot can't start, the notification now gives the CLI's
+  error rather than a hint to try `--help`.
+
+## 0.5.0 - 2026-10-26
+
+- **See what goes together: Show Links.** Turn on **Show Links** in **Settings › General**, off by
+  default, and rows show small capsules for what goes with them: a pull request's work items and the
+  Copilot sessions working on it, a work item's pull requests (a teammate's too) and their sessions,
+  and a session's pull request and work item. The sessions' capsule says how the one that needs you
+  most stands, in its color. Links come from Azure DevOps, from the tasks you send to Copilot and what
+  the Copilot app records, and from a session on a pull request's branch; right-click a row to link
+  more, with suggestions, or to unlink. What you link or unlink stays in BriefBar: Azure DevOps, GitHub
+  and Copilot never see it. Azure DevOps, Copilot and GitHub say what they read for it, so each asks
+  you to look again before reading more.
+
 ## 0.4.0 - 2026-10-26
 
 - **Copilot tasks on pull requests start again.** Sending a PR to Copilot, such as **Pre-review with

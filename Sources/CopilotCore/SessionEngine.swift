@@ -55,6 +55,8 @@ public final class SessionEngine: @unchecked Sendable {
     private var safetyTimer: DispatchSourceTimer?
     private var metadataReloadScheduled = false
     private var isActive = false
+    /// Reads where each session's work goes too, for Show Links.
+    private var readsLinks = false
 
     public init(
         paths: CopilotPaths = .default(),
@@ -93,6 +95,18 @@ public final class SessionEngine: @unchecked Sendable {
         }
     }
 
+    /// Whether to read where each session's work goes too (`SessionLinks`), for Show Links: read again at once when it
+    /// changes, and forgotten when it's off.
+    public func setReadsLinks(_ reads: Bool) {
+        queue.async { [self] in
+            guard reads != readsLinks else { return }
+            readsLinks = reads
+            guard isActive else { return }
+            reloadMetadata()
+            publish()
+        }
+    }
+
     /// Re-reads metadata and all logs, then publishes if anything changed.
     public func refresh() {
         queue.async { [self] in
@@ -102,9 +116,11 @@ public final class SessionEngine: @unchecked Sendable {
     }
 
     /// One-shot synchronous load (CLI and tests).
-    public static func loadOnce(paths: CopilotPaths = .default()) -> EngineSnapshot {
+    /// - Parameter links: read where each session's work goes too, for Show Links.
+    public static func loadOnce(paths: CopilotPaths = .default(), links: Bool = false) -> EngineSnapshot {
         let engine = SessionEngine(paths: paths) { _ in }
         return engine.queue.sync {
+            engine.readsLinks = links
             engine.reloadMetadata()
             return engine.currentSnapshot()
         }
@@ -207,7 +223,7 @@ public final class SessionEngine: @unchecked Sendable {
 
     private func reloadMetadata() {
         do {
-            let snapshot = try AppDatabase.load(at: paths.database)
+            let snapshot = try AppDatabase.load(at: paths.database, links: readsLinks)
             metas = snapshot.sessions
             view = snapshot.view
             metadataFromDatabase = true

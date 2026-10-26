@@ -60,6 +60,7 @@ extension ChatMessage {
 /// A colored circle with the person's initials, or a group symbol. Drawn locally: no pictures are fetched.
 struct AvatarView: View {
     let conversation: ConversationSummary
+    @Environment(\.interfaceOptions) private var options
 
     private static let palette: [NSColor] = [
         .systemBlue, .systemPurple, .systemPink, .systemOrange, .systemTeal, .systemGreen, .systemIndigo, .systemBrown,
@@ -67,20 +68,20 @@ struct AvatarView: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(Color(nsColor: Self.color(for: conversation.id)).gradient)
+            Circle().fill((options.quietAppearance ? Color.primary.opacity(0.08) : Color(nsColor: Self.color(for: conversation.id))).gradient)
             switch conversation.kind {
             case .oneOnOne:
                 Text(Self.initials(conversation.name))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             case .meeting:
                 Image(systemName: "calendar")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             case .group, .channel:
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             }
         }
         .accessibilityHidden(true)
@@ -106,14 +107,15 @@ struct AvatarView: View {
 struct CountBadge: View {
     let count: Int
     let color: Color
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
             .font(.system(size: 11, weight: .semibold).monospacedDigit())
-            .foregroundStyle(.white)
+            .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(Capsule().fill(color))
+            .background(Capsule().fill(options.quietAppearance ? Color.primary.opacity(0.08) : color))
             .fixedSize()
     }
 }

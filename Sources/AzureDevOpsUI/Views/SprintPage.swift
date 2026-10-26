@@ -431,6 +431,7 @@ private struct StoryCard: View {
                         .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 6)
+                    WorkItemLinks(item: parent)
                     CopilotTaskControl(item: parent, isHovered: isHovered)
                     Chip(text: parent.state, color: parent.stateColor)
                 }
@@ -449,6 +450,11 @@ private struct StoryCard: View {
                 .contextMenu {
                     Button("Open in Azure DevOps") { open(parent) }
                     CopilotSendMenuItems(item: parent)
+                    LinkMenuItems(parent.linkRef)
+                }
+                .rowActions(for: parent.title, openTitle: "Open in Azure DevOps", open: { open(parent) }) {
+                    CopilotSendMenuItems(item: parent)
+                    LinkMenuItems(parent.linkRef)
                 }
                 HStack(spacing: 6) {
                     Avatar(name: parent.assignedTo?.name, size: 18, isMe: parent.isAssigned(to: me))
@@ -514,6 +520,8 @@ private struct TaskLine: View {
             .help("\(task.type) \(task.id): \(task.title)\n\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\nClick to open in Azure DevOps")
             .accessibilityLabel("\(task.title), \(task.state), \(task.assignedTo?.name ?? "unassigned")")
             let entry = copilot.isOn ? copilot.latest(for: task) : nil
+            WorkItemLinks(item: task)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             if let entry {
                 CopilotRunBadge(entry: entry)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -541,6 +549,11 @@ private struct TaskLine: View {
         .contextMenu {
             Button("Open in Azure DevOps", action: open)
             CopilotSendMenuItems(item: task)
+            LinkMenuItems(task.linkRef)
+        }
+        .rowActions(for: task.title, openTitle: "Open in Azure DevOps", open: open) {
+            CopilotSendMenuItems(item: task)
+            LinkMenuItems(task.linkRef)
         }
     }
 }

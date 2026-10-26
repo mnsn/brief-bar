@@ -17,9 +17,7 @@ struct PRRowView: View {
     var action: () -> Void
 
     @LocalState private var isHovered = false
-
-    /// Fixed height of a compact row, so the widget can size itself to a whole number of rows.
-    static let compactHeight: CGFloat = 42
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -36,7 +34,7 @@ struct PRRowView: View {
             .accessibilityValue([item.repository, item.detail].compactMap { $0 }.joined(separator: ", "))
             .accessibilityHint("Opens the pull request in Azure DevOps")
 
-            if showsActions {
+            if showsActions, !options.visibleActions {
                 Menu {
                     menuItems
                 } label: {
@@ -58,12 +56,13 @@ struct PRRowView: View {
         )
         .onHover { isHovered = $0 }
         .contextMenu { menuItems }
+        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
     }
 
     private var content: some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
             RowIcon(item: item, size: compact ? 15 : 17)
-                .frame(width: 20, height: 20)
+                .frame(width: options.rowIconWidth, height: 20)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -81,20 +80,21 @@ struct PRRowView: View {
                 }
                 if compact {
                     Text(compactLine)
-                        .font(.system(size: 11))
+                        .font(.system(size: options.rowDetailSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
                     HStack(spacing: 6) {
                         Text(item.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(item.rowColor)
+                            .font(.system(size: options.rowReasonSize, weight: .medium))
+                            .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowColor)
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
+                        PullRequestLinks(key: item.key)
                     }
                     if let detail = item.detail {
                         Text(detail)
-                            .font(.system(size: 11))
+                            .font(.system(size: options.rowDetailSize))
                             .foregroundStyle(.secondary)
                             .lineLimit(item.group == .needsYou ? 3 : 2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -108,10 +108,16 @@ struct PRRowView: View {
     @ViewBuilder
     private var menuItems: some View {
         Button("Open in Azure DevOps", action: action)
+        additionalMenuItems
+    }
+
+    @ViewBuilder
+    private var additionalMenuItems: some View {
         if let source = item.chatSource, let openSource {
             Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }
         PullRequestCopilotMenuItems(item: item)
+        LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
             Divider()
             Button("Stop Watching", action: stopWatching)
@@ -166,22 +172,28 @@ struct RowIcon: View {
 struct CountChips: View {
     let counts: GroupCounts
     var groups: [PRGroup] = [.needsYou, .failing, .ready, .toReview, .waiting]
+    var showToReview = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(groups, id: \.self) { group in
-                if counts[group] > 0 {
-                    HStack(spacing: 3) {
-                        Image(systemName: group.symbol)
-                            .foregroundStyle(group.color)
-                        Text("\(counts[group])")
-                            .monospacedDigit()
+        if options.clearerStates {
+            AttentionSummary(states: counts.states(showToReview: showToReview))
+        } else {
+            HStack(spacing: 8) {
+                ForEach(groups, id: \.self) { group in
+                    if counts[group] > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: group.symbol)
+                                .foregroundStyle(group.color)
+                            Text("\(counts[group])")
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .help("\(counts[group]) \(group.countLabel)")
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .help("\(counts[group]) \(group.countLabel)")
                 }
             }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }

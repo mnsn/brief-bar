@@ -52,6 +52,8 @@ struct SettingsView: View {
             List(selection: $navigation.destination) {
                 Label("General", systemImage: "gearshape")
                     .tag(SettingsDestination.general)
+                Label("Appearance", systemImage: "paintbrush")
+                    .tag(SettingsDestination.appearance)
                 ForEach(Surface.allCases, id: \.self) { surface in
                     Label(surface.title, systemImage: surface.symbol)
                         .tag(SettingsDestination.layout(surface))
@@ -81,6 +83,7 @@ struct SettingsView: View {
             }
         }
         .frame(width: 740, height: 560)
+        .interfaceOptions(from: model.services)
     }
 
     @ViewBuilder
@@ -88,6 +91,8 @@ struct SettingsView: View {
         switch navigation.destination ?? .general {
         case .general:
             GeneralPage(model: model) { navigation.destination = $0 }
+        case .appearance:
+            AppearancePage(services: model.services)
         case .source(let id):
             if let source = model.source(id) {
                 SourcePage(model: model, source: source)
@@ -163,6 +168,8 @@ struct GeneralPage: View {
             }
             .padding(.horizontal, 12)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+
+            LinksSetting(links: model.services.links)
 
             if loginItem.isAvailable {
                 VStack(alignment: .leading, spacing: 6) {

@@ -230,10 +230,11 @@ public enum DemoData {
                          Check(name: "Comment requirements", kind: .requirement, state: .passed), mergeStrategy],
                 activity: [vote(61, priya, .approved, ago(3 * hour)), vote(62, chen, .approved, ago(50))]
             ),
-            // Ready, completing automatically.
+            // Ready, completing automatically. The Copilot demo's "Add dark mode to settings" works on its branch, so Show
+            // Links links them.
             record(
                 pr(4093, "Add dark mode to the account page", repo: "shop-web", created: ago(2 * day),
-                   reviewers: [reviewer(maria, .approvedWithSuggestions)], branch: "account-dark-mode", autoComplete: true),
+                   reviewers: [reviewer(maria, .approvedWithSuggestions)], branch: "dark-mode", autoComplete: true),
                 checks: [build("shop-web CI", .passed, ago(2 * hour)), minimumReviewers(.passed, 1)],
                 activity: [vote(71, maria, .approvedWithSuggestions, ago(2 * hour))]
             ),
@@ -280,5 +281,56 @@ public enum DemoData {
                 ])]
             ),
         ]
+    }
+}
+
+extension DemoData {
+    /// Made-up links for Show Links: the work items of some of the demo's pull requests, and the pull requests of some of
+    /// the demo sprint's work items, among them two of teammates' that the lists don't show, and two linked work items that
+    /// aren't in the sprint.
+    public static func workLinks(now: Date = Date()) -> WorkLinks {
+        let project = "Storefront"
+        let projectId = "7a0c4e1d-0000-4000-8000-000000000001"
+        func key(_ number: Int) -> PRKey { PRKey(organization, number) }
+        func workItem(_ id: Int) -> WorkItemKey { WorkItemKey(organization, id) }
+        func linked(_ id: Int, _ type: String, _ title: String, _ state: String, changed hoursAgo: Double) -> WorkItem {
+            WorkItem(
+                id: id, organization: organization, project: project, type: type, title: title, state: state,
+                category: WorkItem.Category(category: nil, state: state), changedAt: now.addingTimeInterval(-hoursAgo * 3_600)
+            )
+        }
+        func teammates(_ number: Int, _ title: String, by author: Person, repo: String, branch: String, hoursAgo: Double) -> PullRequest {
+            PullRequest(
+                key: key(number), title: title, author: author, createdAt: now.addingTimeInterval(-hoursAgo * 3_600),
+                projectId: projectId, projectName: project, repositoryId: "repository-\(repo)", repositoryName: repo,
+                sourceBranch: branch, targetBranch: "main"
+            )
+        }
+        return WorkLinks(
+            workItemsOfPullRequests: [
+                key(4091): [5110, 5112],
+                key(4071): [5140, 5141],
+                key(4102): [5160],
+                key(4093): [5170],
+            ],
+            pullRequestsOfWorkItems: [
+                workItem(5101): [key(4120)],
+                workItem(5110): [key(4091)],
+                workItem(5112): [key(4091)],
+                workItem(5120): [key(4118)],
+                workItem(5140): [key(4071)],
+                workItem(5141): [key(4071)],
+            ],
+            workItems: [
+                workItem(5160): linked(5160, "User Story", "Retry payments that fail for a moment", "Active", changed: 30),
+                workItem(5170): linked(5170, "User Story", "Dark mode for the account page", "Resolved", changed: 48),
+            ],
+            pullRequests: [
+                key(4120): teammates(4120, "Save items for later in the cart service", by: sam, repo: "shop-web", branch: "saved-items",
+                                     hoursAgo: 20),
+                key(4118): teammates(4118, "Check gift card codes with the payments API", by: alex, repo: "payments-api",
+                                     branch: "gift-card-codes", hoursAgo: 9),
+            ]
+        )
     }
 }

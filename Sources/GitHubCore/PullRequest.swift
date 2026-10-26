@@ -58,11 +58,13 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
     /// Nil when nothing checks the latest commit.
     public var checks: Checks?
     public var reviews: [Review]
+    /// The branch it merges, such as `robin/tax-rounding`.
+    public var branch: String?
 
     public init(
         id: String, number: Int, title: String, url: URL, repository: String, author: String?, isDraft: Bool = false,
         createdAt: Date, updatedAt: Date, reviewDecision: ReviewDecision? = nil, hasConflicts: Bool = false,
-        checks: Checks? = nil, reviews: [Review] = []
+        checks: Checks? = nil, reviews: [Review] = [], branch: String? = nil
     ) {
         self.id = id
         self.number = number
@@ -77,6 +79,7 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
         self.hasConflicts = hasConflicts
         self.checks = checks
         self.reviews = reviews
+        self.branch = branch
     }
 
     /// From what the query read. Values BriefBar doesn't know count as unknown.
@@ -89,7 +92,8 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
             checks: Checks(rollup: api.commits?.nodes.last?.commit.statusCheckRollup?.state),
             reviews: (api.latestOpinionatedReviews?.nodes ?? []).compactMap { review in
                 Review.State(rawValue: review.state).map { Review(reviewer: review.author?.login, state: $0) }
-            }
+            },
+            branch: api.headRefName
         )
     }
 

@@ -9,7 +9,8 @@ import SwiftUI
 /// failing or are approved. It reads github.com with the GitHub CLI's sign-in, and is off until you turn it on.
 @MainActor
 package final class GitHubSource: BriefBarSource {
-    nonisolated package static let descriptionVersion = 1
+    /// 2: each pull request's branch, and Show Links.
+    nonisolated package static let descriptionVersion = 2
 
     package let id = SourceID.github
     package let name = "GitHub"
@@ -17,7 +18,7 @@ package final class GitHubSource: BriefBarSource {
     package let description = SourceDescription(
         version: GitHubSource.descriptionVersion,
         summary: "Your GitHub pull requests: reviews requested from you, and which of yours need changes, are failing or are approved",
-        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews and whether they can merge. BriefBar keeps none of it: it reads them again each time.",
+        reads: "On github.com: the open pull requests that request your review by name, and your own open pull requests, with their checks, reviews, branches and whether they can merge. BriefBar keeps none of it: it reads them again each time. Only if you turn on Show Links: which of your Copilot sessions work on each one's branch, and the links you add to them or hide, which BriefBar keeps in its preferences as references only, never titles.",
         network: "GitHub only: api.github.com, with the GitHub CLI's sign-in. One read-only GraphQL query (sent as a POST) each refresh, every 2 minutes by default. It never changes anything on GitHub.",
         needs: "The GitHub CLI, signed in with gh auth login. No personal access token.",
         requirements: [.githubCLI]
@@ -37,6 +38,7 @@ package final class GitHubSource: BriefBarSource {
     private let services: AppServices
     let settings: AppSettings
     let store: GitHubStore
+    private var linkObservers: Set<AnyCancellable> = []
 
     package init(services: AppServices) {
         self.services = services
@@ -47,6 +49,7 @@ package final class GitHubSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> some View {
         view
+            .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(settings)
             .environmentObject(services)
@@ -57,14 +60,48 @@ package final class GitHubSource: BriefBarSource {
 
     package func start() {
         store.start()
+        // After the change: a @Published value emits before it's set.
+        services.links.$isOn.removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.publishLinks() } }
+            .store(in: &linkObservers)
+        store.$items
+            .sink { [weak self] items in MainActor.assumeIsolated { self?.publishLinks(items) } }
+            .store(in: &linkObservers)
     }
 
     package func stop() {
+        linkObservers.removeAll()
         store.stop()
+        services.links.withdraw(.github)
     }
 
-    /// Nothing to delete: the list and the token are only ever in memory, and the refresh choice is a setting.
-    package func deleteSavedData() {}
+    /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
+    /// hid to its pull requests go.
+    package func deleteSavedData() {
+        services.links.forget(.github)
+    }
+
+    /// Tells Show Links about the pull requests: what each one is, and the branch it merges, for the sessions on it.
+    private func publishLinks(_ items: [GitHubPRSnapshot]? = nil) {
+        let links = services.links
+        guard links.isOn else {
+            links.withdraw(.github)
+            return
+        }
+        let store = self.store
+        let shown = (items ?? store.items).map { item in
+            let pullRequest = item.pullRequest
+            return LinkedItem(
+                ref: .gitHubPullRequest(repository: pullRequest.repository, number: pullRequest.number), label: "#\(pullRequest.number)",
+                title: pullRequest.title, symbol: "arrow.triangle.pull", color: item.group.color, state: item.group.state,
+                status: item.headline, place: pullRequest.repository,
+                hint: pullRequest.branch.map { BranchHint(branch: $0, repositories: BranchHint.repositories([], gitHub: pullRequest.repository)) },
+                date: item.since, open: { store.open(store.items.first { $0.id == item.id } ?? item) }
+            )
+        }
+        links.publish(.github, links: [], items: shown)
+    }
 
     // MARK: Menu bar
 
@@ -113,7 +150,8 @@ package final class GitHubSource: BriefBarSource {
         guard store.problem?.needsSignIn != true else { return [] }
         return store.items.compactMap { item in
             item.group.state.map { state in
-                StateRow(id: item.id, state: state, date: item.since, view: AnyView(environment(PullRequestRow(item: item))))
+                StateRow(id: item.id, state: state, date: item.since, view: AnyView(environment(PullRequestRow(item: item))),
+                         isReady: state == .done)
             }
         }
     }
@@ -152,7 +190,7 @@ package final class GitHubSource: BriefBarSource {
     }
 
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
-        WidgetSectionView.height(rows: rows)
+        WidgetSectionView.height(rows: rows, options: services.interfaceOptions)
     }
 
     package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {

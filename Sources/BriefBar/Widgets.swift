@@ -124,6 +124,7 @@ struct WidgetView: View {
             WidgetMenu(content: content)
                 .environment(\.shownSection, content.sections.first)
         }
+        .interfaceOptions(from: content.model.services)
     }
 }
 

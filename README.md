@@ -37,9 +37,9 @@ from what it knows ([Agents](#agents)).
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
-| **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
+| **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
 service. BriefBar's
@@ -151,6 +151,27 @@ switch them.
   </picture>
 </p>
 
+## Optional appearance improvements
+
+**Settings › Appearance** has seven independent options. **All start off**, including after an
+update. Turn on only the changes you want; none enables a source, grants permissions or starts an agent.
+
+| Option | When you turn it on |
+|---|---|
+| **Compact Briefs** | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
+| **Quieter Colors and Surfaces** | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
+| **Aligned, Easier-to-Read Rows** | Aligns titles across sources and makes reasons and previews larger. Widgets grow slightly to fit complete rows. |
+| **Compact Menu Bar** | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
+| **Clearer States and Counts** | Separates **Ready to Merge** from **Finished** in the overview. Sidebar badges and list headers count items needing you or failing, while remaining sprint work is labeled **left**. |
+| **Visible Row and Widget Actions** | Adds a row's **…** menu with explicitly named destinations and its existing actions. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
+| **Simple Layout Choices** | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. |
+
+Turning an appearance option off restores its usual presentation. Compact Menu Bar never rewrites
+your saved grouping or unhides sections: turning it off restores your saved arrangement. Choosing a
+layout in **Simple Layout Choices** is an explicit layout change, just like using the existing editor.
+Opening an item retains its source's existing read/seen behavior; these options never approve or
+complete work for you.
+
 ## The brief
 
 A list by state and the window's Overview start with a brief, and the Overview widget with its first
@@ -167,9 +188,39 @@ and Teams' summaries:
 - Copilot's lines stay in BriefBar's own words.
 
 The model only words the lines BriefBar picked, and only while a list or the window shows them, never
-for the widget. Without Apple Intelligence (an Intel Mac, macOS 15, Apple Intelligence turned off or
+for the widget. Without Apple Intelligence (macOS 15, Apple Intelligence turned off or
 still getting ready), the brief stays in BriefBar's own words, without ✨, and Settings › Menu Bar says
 why.
+
+## Links
+
+**Show Links**, in **Settings › General**, shows which work items, pull requests and Copilot sessions
+go together, on their own rows: small capsules next to what's going on, for a pull request's work items
+and the sessions working on it, a work item's pull requests and their sessions, and a session's pull
+request and work item. A capsule shows a number, or how many, and the sessions' capsule says how the
+one that needs you most stands, in its color, so you see when the session on a pull request is waiting
+for your answer. It's off until you turn it on. Widgets' rows stay as they are.
+
+Links come from where they already are:
+
+| Link | From |
+|---|---|
+| A pull request and its work items | Azure DevOps: the work items linked to each of your pull requests, and the pull requests linked to the sprint's work items, a teammate's too |
+| A session and the work item or pull request it started from, and the pull request it opened | The tasks you send to Copilot, and what the Copilot app records of its own sessions |
+| A session and a pull request on its branch | The session's branch in the Copilot app, in the pull request's repository, unless everybody works on it, as on `main` |
+| Anything else | You: right-click a row, then **Link Work Items or Sessions…**, **Link Pull Requests or Sessions…** or **Link Work Items or Pull Requests…** |
+
+A work item's sessions include its pull requests' sessions, and a session's work items its pull
+request's. Right-click a row, or click a capsule on a sprint card, to open what it's linked to, link
+more, or unlink. The window that links things suggests what's on the same branch, names the same
+number or shares words with the title, and takes a pasted link to a pull request, a work item or a
+session.
+
+What you link or unlink stays in BriefBar: Azure DevOps, GitHub and Copilot never see it, so a policy
+that requires linked work items still sees only Azure DevOps' own. Unlinking what Azure DevOps or
+Copilot links hides it in BriefBar, until you choose **Show Hidden Links**. While it's on, Azure DevOps
+reads the links of your pull requests and, while the sprint is on screen, of its work items, and the
+Copilot source reads which pull request each session started from or opened.
 
 ## What each source shows
 
@@ -385,7 +436,7 @@ does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
 ## Install
 
-BriefBar needs macOS 15 or later, on Apple silicon or Intel.
+BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
 1. Download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
    from the [latest release](https://github.com/mnsn/brief-bar/releases/latest) and unzip it.
@@ -481,7 +532,7 @@ has the details.
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
 right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
 **BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
-**Check for Updates Automatically**.
+**Check for Updates Automatically**, and **Show Links**, off by default (see [Links](#links)).
 
 | Source | Setting | Options |
 |---|---|---|
@@ -555,6 +606,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
   you've seen: nothing about them goes to its preferences or to disk, where other programs running
   as you could read it. It forgets them when you turn it off.
+- **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
+  GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
+  work items while it's on screen, and what the linked ones your lists don't show are; from the Copilot
+  app's database, read-only, which pull request each session started from or opened. The links you add
+  or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
+  Azure DevOps, GitHub or Copilot.
 - **Summaries and the brief are made on your Mac**, by Apple's on-device model, never Private Cloud
   Compute or any other model, and are kept in memory only: the brief's, for ten minutes after its
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
@@ -562,7 +619,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
   read; which of your Azure DevOps pull requests you've seen, with each account, your organizations,
   and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
-  sessions you've cleared; and its settings. Turning a source off deletes what it saved.
+  sessions you've cleared; the links you added or hid, with Show Links; and its settings. Turning a source off deletes
+  what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
   are on: your Azure DevOps pull requests and their comments, pipelines, sprint, and Copilot tasks and
   sessions, never Teams or GitHub. That goes to the agent's model, which may run in the cloud. Their

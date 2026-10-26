@@ -35,13 +35,16 @@ package struct DesktopWallpaper: View {
 /// The window's translucent background: the desktop, blurred, through the sidebar material. Offscreen, where
 /// materials don't draw, the made-up desktop with the material's tint over it.
 package struct WindowBackdrop: View {
+    @Environment(\.interfaceOptions) private var options
     @Environment(\.isRendering) private var isRendering
     @Environment(\.colorScheme) private var colorScheme
 
     package init() {}
 
     package var body: some View {
-        if isRendering {
+        if options.quietAppearance {
+            Color(nsColor: .windowBackgroundColor)
+        } else if isRendering {
             DesktopWallpaper()
                 .overlay(colorScheme == .dark ? Color(white: 0.08).opacity(0.72) : Color(white: 0.97).opacity(0.66))
         } else {
@@ -76,18 +79,23 @@ package struct FloatingPanel: ViewModifier {
 
     @Environment(\.isRendering) private var isRendering
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.interfaceOptions) private var options
 
     package func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *), !isRendering {
-            content.glassEffect(.regular, in: shape)
+        if options.quietAppearance {
+            content.background(Color(nsColor: .controlBackgroundColor), in: shape)
         } else {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *), !isRendering {
+                content.glassEffect(.regular, in: shape)
+            } else {
+                frosted(content, shape)
+            }
+            #else
             frosted(content, shape)
+            #endif
         }
-        #else
-        frosted(content, shape)
-        #endif
     }
 
     private func frosted(_ content: Content, _ shape: RoundedRectangle) -> some View {
@@ -111,6 +119,7 @@ package struct GlassCard: View {
     var raised = false
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.interfaceOptions) private var options
 
     package init(cornerRadius: CGFloat = 16, isHovered: Bool = false, raised: Bool = false) {
         self.cornerRadius = cornerRadius
@@ -121,18 +130,25 @@ package struct GlassCard: View {
     package var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let dark = colorScheme == .dark
-        shape
-            .fill(fill(dark: dark))
-            .overlay(
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(dark ? 0.16 : 0.95), Color.white.opacity(dark ? 0.04 : 0.35)],
-                        startPoint: .top, endPoint: .bottom
-                    ),
-                    lineWidth: 1
+        if options.quietAppearance {
+            shape
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay(shape.strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
+                .overlay(shape.fill(isHovered ? Color.primary.opacity(0.04) : .clear))
+        } else {
+            shape
+                .fill(fill(dark: dark))
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(dark ? 0.16 : 0.95), Color.white.opacity(dark ? 0.04 : 0.35)],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
                 )
-            )
-            .shadow(color: .black.opacity(dark ? 0.28 : 0.07), radius: raised ? 4 : 12, y: raised ? 1 : 5)
+                .shadow(color: .black.opacity(dark ? 0.28 : 0.07), radius: raised ? 4 : 12, y: raised ? 1 : 5)
+        }
     }
 
     private func fill(dark: Bool) -> Color {

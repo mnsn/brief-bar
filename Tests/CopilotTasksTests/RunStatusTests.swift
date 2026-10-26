@@ -66,6 +66,22 @@ import Testing
         #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: nil, stoppedByYou: false, output: nil)
                 .detail == "Copilot ended before it started working.")
     }
+
+    /// The CLI follows an option it refuses with its usage and a hint, which say nothing of why.
+    @Test func saysTheCLIsErrorRatherThanItsHint() {
+        let output = """
+            Error: the argument '--trust-folder' cannot be used with '--session-id <id>'
+
+            Usage: copilot --prompt <text> --model <model> --autopilot --trust-folder -C <directory> --silent
+
+            For more information, try '--help'.
+
+            """
+        #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: 1, stoppedByYou: false, output: output)
+                .detail == "Error: the argument '--trust-folder' cannot be used with '--session-id <id>'")
+        #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: 1, stoppedByYou: false, output: "Not signed in.\nRun copilot login.\n")
+                .detail == "Run copilot login.")
+    }
 }
 
 @Suite struct RunTranscriptTests {
