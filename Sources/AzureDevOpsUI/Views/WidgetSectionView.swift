@@ -10,6 +10,7 @@ struct WidgetSectionView: View {
     @EnvironmentObject private var settings: AppSettings
     let size: AppSettings.WidgetSize
     let rows: Int
+    @Environment(\.interfaceOptions) private var options
 
     private static let headerHeight: CGFloat = 36
 
@@ -34,12 +35,7 @@ struct WidgetSectionView: View {
                 VStack(spacing: 0) {
                     ForEach(visible) { row($0) }
                     if hidden > 0 {
-                        Text("+\(hidden) more")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 37)
-                            .padding(.top, 4)
+                        WidgetMore(hidden: hidden, total: active.count, section: .azureDevOpsPullRequests)
                     }
                     ForEach(Array(recent.enumerated()), id: \.element.id) { index, item in
                         row(item)
@@ -57,21 +53,21 @@ struct WidgetSectionView: View {
                 Spacer(minLength: 0)
             }
         }
-        .frame(height: Self.height(rows: rows))
+        .frame(height: Self.height(rows: rows, options: options))
     }
 
     private func row(_ item: PRSnapshot) -> some View {
         PRRowView(item: item, now: store.now, compact: true, openSource: item.chatSource == nil ? nil : { store.openSource(item) }) {
             store.open(item)
         }
-            .frame(height: PRRowView.compactHeight)
+            .frame(height: options.compactRowHeight)
     }
 
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.pull")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
+                .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("Pull Requests")
                 .font(.system(size: 13, weight: .semibold))
             if let problem = store.problem {
@@ -86,7 +82,8 @@ struct WidgetSectionView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             } else {
-                CountChips(counts: store.counts, groups: size == .compact ? [.needsYou, .failing, .ready] : [.needsYou, .failing, .ready, .toReview])
+                CountChips(counts: store.counts, groups: size == .compact ? [.needsYou, .failing, .ready] : [.needsYou, .failing, .ready, .toReview],
+                           showToReview: settings.showToReview)
             }
         }
     }
@@ -114,7 +111,7 @@ struct WidgetSectionView: View {
         }
     }
 
-    static func height(rows: Int) -> CGFloat {
-        headerHeight + CGFloat(rows) * PRRowView.compactHeight
+    static func height(rows: Int, options: InterfaceOptions = InterfaceOptions()) -> CGFloat {
+        headerHeight + CGFloat(rows) * options.compactRowHeight
     }
 }

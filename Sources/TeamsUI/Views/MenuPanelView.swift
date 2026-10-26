@@ -8,6 +8,7 @@ struct MenuPanelView: View {
     let group: ChatGroup
 
     @EnvironmentObject private var store: ConversationStore
+    @Environment(\.interfaceOptions) private var options
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showRecent = false
@@ -39,7 +40,7 @@ struct MenuPanelView: View {
             PageLink(group.section, name: group.title) {
                 HStack(spacing: 8) {
                     Image(systemName: group.symbol)
-                        .foregroundStyle(group.color)
+                        .foregroundStyle(options.quietAppearance ? Color.secondary : group.color)
                     Text(group.title)
                         .font(.headline)
                     if !unread.isEmpty {
@@ -113,6 +114,7 @@ struct MenuPanelView: View {
                 SettingsMenuContent()
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

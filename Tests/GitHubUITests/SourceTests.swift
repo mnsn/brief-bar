@@ -28,6 +28,8 @@ import Testing
         #expect(states(rows) == StateCounts(needsYou: 3, failing: 2, done: 1))
         #expect(states(rows) == segment.states)
         #expect(Set(rows.map(\.id)).count == rows.count)
+        #expect(rows.filter(\.isReady).count == 1)
+        #expect(rows.filter(\.isReady).allSatisfy { $0.state == .done })
         #expect(segment.count == 3)
         #expect(segment.needsAttention)
         #expect(segment.problem == nil)
@@ -126,6 +128,17 @@ import Testing
 
     @Test func theDemoHasNoSignInToShow() {
         #expect(demoSource().statusView() == nil)
+    }
+
+    @Test func readableWidgetsGrowWithoutStartingTheSource() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = GitHubSource(services: services)
+        #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 120)
+        services.setInterfaceOption(.readableRows, enabled: true)
+        #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 128)
+        #expect(source.stateRows(for: .githubPullRequests).isEmpty)
+        services.setInterfaceOption(.readableRows, enabled: false)
+        #expect(source.widgetHeight(for: .githubPullRequests, rows: 2) == 120)
     }
 
     /// Agents (`--mcp`) get tools from Azure DevOps and Copilot, never from GitHub.

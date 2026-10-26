@@ -15,6 +15,12 @@ struct ConversationRowView: View {
     var summarize: (() -> Void)?
 
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
+
+    private var showsSummaryOnly: Bool {
+        guard options.compactBriefs, showPreview, case .done = summary else { return false }
+        return true
+    }
 
     var body: some View {
         Button(action: open) {
@@ -36,16 +42,21 @@ struct ConversationRowView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize()
                             .opacity(showsSummarizeButton ? 0 : 1)
-                    }
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(previewText)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 4)
-                        if conversation.unreadCount > 0 {
+                        if showsSummaryOnly, conversation.unreadCount > 0 {
                             CountBadge(count: conversation.unreadCount, color: conversation.group.color)
+                        }
+                    }
+                    if !showsSummaryOnly {
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(previewText)
+                                .font(.system(size: options.readableRows ? 13 : 12))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 4)
+                            if conversation.unreadCount > 0 {
+                                CountBadge(count: conversation.unreadCount, color: conversation.group.color)
+                            }
                         }
                     }
                     if showPreview, let summary {
@@ -100,11 +111,19 @@ struct ConversationRowView: View {
                 Button("Summarize", action: summarize)
             }
         }
+        .rowActions(for: conversation.name, openTitle: "Open in Teams", open: open) {
+            if let markRead, conversation.isUnread {
+                Button("Mark as Read", action: markRead)
+            }
+            if let summarize, showPreview {
+                Button("Summarize", action: summarize)
+            }
+        }
     }
 
     /// The sparkles button replaces the time while the pointer is over a chat that has no summary yet.
     private var showsSummarizeButton: Bool {
-        isHovered && showPreview && summarize != nil && summary == nil
+        isHovered && showPreview && summarize != nil && summary == nil && !options.visibleActions
     }
 
     private var lastMessageDate: Date {
@@ -144,6 +163,7 @@ struct ConversationRowView: View {
 /// A chat's summary, or why there isn't one.
 struct SummaryLine: View {
     let state: Summarizer.State
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -155,7 +175,7 @@ struct SummaryLine: View {
                     .foregroundStyle(.secondary)
             case .done(let text):
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(options.quietAppearance ? Color.secondary : .purple)
                 Text(text)
                     .foregroundStyle(.primary.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
@@ -167,6 +187,6 @@ struct SummaryLine: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.system(size: 11))
+        .font(.system(size: options.rowDetailSize))
     }
 }

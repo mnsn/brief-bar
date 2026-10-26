@@ -49,6 +49,7 @@ package final class CopilotSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> some View {
         view
+            .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(settings)
             .environmentObject(services)
@@ -190,7 +191,7 @@ package final class CopilotSource: BriefBarSource {
     }
 
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
-        WidgetSectionView.height(rows: rows)
+        WidgetSectionView.height(rows: rows, options: services.interfaceOptions)
     }
 
     package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {

@@ -244,6 +244,9 @@ private struct MergeRunRow: View {
         }
         .help("Click to open the run in Azure DevOps")
         .accessibilityElement(children: .combine)
+        .rowActions(for: status.pipeline.name, openTitle: "Open in Azure DevOps", open: {
+            if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
+        }) { EmptyView() }
     }
 }
 
@@ -254,6 +257,7 @@ private struct PipelineCard: View {
 
     @EnvironmentObject private var pipelines: PipelinesStore
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -274,6 +278,7 @@ private struct PipelineCard: View {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
+                            .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)

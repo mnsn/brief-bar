@@ -77,4 +77,40 @@ import Testing
         MenuBarDrawing.configure(button, item: two)
         #expect(button.attributedTitle.string == "A\u{2002}B")
     }
+
+    @Test func compactItemUsesOneAttentionCountWithoutCountingRunningOrFinishedWork() {
+        let item = MenuBarItemContent(segments: [
+            segment("Teams: 2 unread chats", StateCounts(needsYou: 2)),
+            segment("Copilot: 1 needs you, 2 stopped", StateCounts(needsYou: 1, failing: 2, running: 8, done: 6)),
+        ], compact: true)
+        #expect(item.attentionCount == 5)
+        #expect(item.showsWarning)
+        #expect(item.summary.hasPrefix("Needs attention: 5\n"))
+        #expect(item.summary.contains("Teams: 2 unread chats"))
+        let button = NSButton(frame: .zero)
+        MenuBarDrawing.configure(button, item: item)
+        #expect(button.image?.isTemplate == true)
+        #expect(button.attributedTitle.string.filter(\.isNumber) == "5")
+        let title = button.attributedTitle
+        #expect(title.attribute(.attachment, at: title.length - 1, effectiveRange: nil) != nil)
+    }
+
+    @Test func compactModeWorksForOneSourceAndNeverHidesMissingAccess() {
+        let button = NSButton(frame: .zero)
+        let quiet = MenuBarItemContent(segments: [segment("Copilot", StateCounts(running: 4, done: 2))], compact: true)
+        MenuBarDrawing.configure(button, item: quiet)
+        #expect(button.image != nil)
+        #expect(button.attributedTitle.length == 0)
+        #expect(!quiet.showsWarning)
+
+        let blocked = MenuBarItemContent(segments: [
+            segment("Teams", StateCounts(), problem: "Teams: Full Disk Access is off"),
+        ], compact: true)
+        MenuBarDrawing.configure(button, item: blocked)
+        #expect(blocked.showsWarning)
+        #expect(blocked.summary.hasPrefix("Known items needing attention: 0"))
+        #expect(blocked.summary.contains("Full Disk Access is off"))
+        #expect(!blocked.summary.contains("Nothing needs attention"))
+        #expect(button.attributedTitle.length > 0)
+    }
 }

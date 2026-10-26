@@ -8,6 +8,7 @@ struct SprintWidgetSection: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var store: PRStore
     let rows: Int
+    @Environment(\.interfaceOptions) private var options
     /// In a widget, its header moves it; in a popover, it doesn't, and its title opens the Sprint page.
     var draggable = true
 
@@ -21,13 +22,13 @@ struct SprintWidgetSection: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture(), including: draggable ? .all : .subviews)
             content
-                .frame(height: CGFloat(rows) * PRRowView.compactHeight, alignment: .top)
+                .frame(height: CGFloat(rows) * options.compactRowHeight, alignment: .top)
         }
-        .frame(height: Self.height(rows: rows))
+        .frame(height: Self.height(rows: rows, options: options))
     }
 
-    static func height(rows: Int) -> CGFloat {
-        headerHeight + CGFloat(rows) * PRRowView.compactHeight
+    static func height(rows: Int, options: InterfaceOptions = InterfaceOptions()) -> CGFloat {
+        headerHeight + CGFloat(rows) * options.compactRowHeight
     }
 
     private var header: some View {
@@ -36,7 +37,7 @@ struct SprintWidgetSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: AzureDevOpsPage.sprint.symbol)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AzureDevOpsPage.sprint.color)
+                        .foregroundStyle(options.quietAppearance ? Color.secondary : AzureDevOpsPage.sprint.color)
                     Text(sprint.board?.sprint.name ?? "Sprint")
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
@@ -57,12 +58,18 @@ struct SprintWidgetSection: View {
             Spacer(minLength: 4)
             if let board = sprint.board {
                 let mine = board.myWork
-                HStack(spacing: 8) {
-                    chip(SprintBoard.Column.inProgress, mine.filter { $0.category.column == .inProgress }.count)
-                    chip(SprintBoard.Column.toDo, mine.filter { $0.category.column == .toDo }.count)
-                    chip(SprintBoard.Column.done, board.myDoneCount)
+                if options.clearerStates {
+                    Text("\(mine.count) left")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 8) {
+                        chip(SprintBoard.Column.inProgress, mine.filter { $0.category.column == .inProgress }.count)
+                        chip(SprintBoard.Column.toDo, mine.filter { $0.category.column == .toDo }.count)
+                        chip(SprintBoard.Column.done, board.myDoneCount)
+                    }
+                    .help("Your work: in progress, to do and done")
                 }
-                .help("Your work: in progress, to do and done")
             }
         }
     }
@@ -91,10 +98,10 @@ struct SprintWidgetSection: View {
                     WidgetWorkRow(item: item, parent: sprint.board?.rows.first { $0.tasks.contains(item) }?.parent) {
                         sprint.open(item)
                     }
-                    .frame(height: PRRowView.compactHeight)
+                    .frame(height: options.compactRowHeight)
                 }
                 if mine.count > visible.count {
-                    WorkWidgetMore(hidden: mine.count - visible.count)
+                    WidgetMore(hidden: mine.count - visible.count, total: mine.count, section: .azureDevOpsSprint)
                 }
                 Spacer(minLength: 0)
             }
@@ -109,6 +116,7 @@ struct PipelinesWidgetSection: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
     let rows: Int
+    @Environment(\.interfaceOptions) private var options
     /// In a widget, its header moves it; in a popover, it doesn't, and its title opens the Pipelines page.
     var draggable = true
 
@@ -122,13 +130,13 @@ struct PipelinesWidgetSection: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture(), including: draggable ? .all : .subviews)
             content
-                .frame(height: CGFloat(rows) * PRRowView.compactHeight, alignment: .top)
+                .frame(height: CGFloat(rows) * options.compactRowHeight, alignment: .top)
         }
-        .frame(height: Self.height(rows: rows))
+        .frame(height: Self.height(rows: rows, options: options))
     }
 
-    static func height(rows: Int) -> CGFloat {
-        headerHeight + CGFloat(rows) * PRRowView.compactHeight
+    static func height(rows: Int, options: InterfaceOptions = InterfaceOptions()) -> CGFloat {
+        headerHeight + CGFloat(rows) * options.compactRowHeight
     }
 
     private var header: some View {
@@ -137,7 +145,7 @@ struct PipelinesWidgetSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: AzureDevOpsPage.pipelines.symbol)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AzureDevOpsPage.pipelines.color)
+                        .foregroundStyle(options.quietAppearance ? Color.secondary : AzureDevOpsPage.pipelines.color)
                     Text(AzureDevOpsPage.pipelines.title)
                         .font(.system(size: 13, weight: .semibold))
                 }
@@ -150,10 +158,14 @@ struct PipelinesWidgetSection: View {
             }
             Spacer()
             let counts = pipelines.counts
-            HStack(spacing: 8) {
-                if counts.failed > 0 { statusChip(.failed, counts.failed) }
-                if counts.running > 0 { statusChip(.running, counts.running) }
-                if counts.succeeded > 0 { statusChip(.succeeded, counts.succeeded) }
+            if options.clearerStates {
+                AttentionSummary(states: StateCounts(failing: counts.failed))
+            } else {
+                HStack(spacing: 8) {
+                    if counts.failed > 0 { statusChip(.failed, counts.failed) }
+                    if counts.running > 0 { statusChip(.running, counts.running) }
+                    if counts.succeeded > 0 { statusChip(.succeeded, counts.succeeded) }
+                }
             }
         }
     }
@@ -181,10 +193,10 @@ struct PipelinesWidgetSection: View {
                     WidgetPipelineRow(status: status, now: store.now) {
                         if let latest = status.latest { pipelines.open(latest) } else { pipelines.open(status.pipeline) }
                     }
-                    .frame(height: PRRowView.compactHeight)
+                    .frame(height: options.compactRowHeight)
                 }
                 if statuses.count > visible.count {
-                    WorkWidgetMore(hidden: statuses.count - visible.count)
+                    WidgetMore(hidden: statuses.count - visible.count, total: statuses.count, section: .azureDevOpsPipelines)
                 }
                 Spacer(minLength: 0)
             }
@@ -204,19 +216,6 @@ private struct WorkWidgetPlaceholder: View {
     }
 }
 
-private struct WorkWidgetMore: View {
-    let hidden: Int
-
-    var body: some View {
-        Text("+\(hidden) more")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 37)
-            .padding(.top, 4)
-    }
-}
-
 /// One of your tasks in the widget: its state, title and hours left, and the story it's for; and how its send to
 /// Copilot stands, if you sent it.
 private struct WidgetWorkRow: View {
@@ -226,14 +225,15 @@ private struct WidgetWorkRow: View {
 
     @EnvironmentObject private var copilot: CopilotTasksStore
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.stateSymbol)
                     .font(.system(size: 15))
                     .foregroundStyle(item.stateColor)
-                    .frame(width: 20, height: 20)
+                    .frame(width: options.rowIconWidth, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.title)
@@ -255,7 +255,7 @@ private struct WidgetWorkRow: View {
                         }
                     }
                     Text([item.state, parent?.title].compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: 11))
+                        .font(.system(size: options.rowDetailSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -277,6 +277,10 @@ private struct WidgetWorkRow: View {
             CopilotSendMenuItems(item: item)
             LinkMenuItems(item.linkRef)
         }
+        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) {
+            CopilotSendMenuItems(item: item)
+            LinkMenuItems(item.linkRef)
+        }
     }
 }
 
@@ -287,12 +291,13 @@ struct WidgetPipelineRow: View {
     let action: () -> Void
 
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 RunStatusBadge(status: status.latest?.status, size: 17)
-                    .frame(width: 20, height: 20)
+                    .frame(width: options.rowIconWidth, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(status.pipeline.name)
@@ -306,8 +311,8 @@ struct WidgetPipelineRow: View {
                     }
                     HStack(spacing: 6) {
                         Text(status.headline)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(status.headlineColor)
+                            .font(.system(size: options.rowDetailSize, weight: .medium))
+                            .foregroundStyle(options.quietAppearance ? Color.secondary : status.headlineColor)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         HStack(spacing: 3) {
@@ -332,5 +337,6 @@ struct WidgetPipelineRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help("\(status.pipeline.name): \(status.headline)\nClick to open the latest run in Azure DevOps")
+        .rowActions(for: status.pipeline.name, openTitle: "Open in Azure DevOps", open: action) { EmptyView() }
     }
 }

@@ -189,8 +189,11 @@ final class WindowContent: ObservableObject {
     /// What needs you on the window's pages, for the Overview's place in the sidebar.
     var overviewSegment: MenuBarSegment {
         let states = model.states(of: sections)
+        let summary = model.services.interfaceOptions.clearerStates
+            ? "Needs attention: \(states.needsYou + states.failing). Needs you: \(states.needsYou); failing: \(states.failing)."
+            : states.needsYou == 0 ? "Nothing needs you" : "Needs you: \(states.needsYou)"
         return MenuBarSegment(
-            glyph: nil, title: NSAttributedString(), summary: states.needsYou == 0 ? "Nothing needs you" : "Needs you: \(states.needsYou)",
+            glyph: nil, title: NSAttributedString(), summary: summary,
             count: states.needsYou, needsAttention: states.needsYou > 0, states: states
         )
     }
@@ -239,6 +242,7 @@ struct WindowView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(WindowBackdrop().ignoresSafeArea())
+        .interfaceOptions(from: content.model.services)
     }
 
     @ViewBuilder
@@ -267,6 +271,7 @@ struct WindowView: View {
 /// A window's pages, by source, each with its count, then BriefBar's menu.
 struct WindowSidebar: View {
     @ObservedObject var content: WindowContent
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         let model = content.model
@@ -316,6 +321,7 @@ struct WindowSidebar: View {
                         .environment(\.panelStyle, .page)
                 } label: {
                     Image(systemName: "gearshape")
+                        .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -359,31 +365,48 @@ private struct SidebarItem: View {
     let action: () -> Void
 
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(LinearGradient(colors: [info.tint.opacity(0.85), info.tint], startPoint: .top, endPoint: .bottom))
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.5)
+                if options.quietAppearance {
                     Image(systemName: info.symbol)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                        .frame(width: 26, height: 26)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(LinearGradient(colors: [info.tint.opacity(0.85), info.tint], startPoint: .top, endPoint: .bottom))
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.5)
+                        Image(systemName: info.symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 26, height: 26)
                 }
-                .frame(width: 26, height: 26)
                 Text(info.title)
                     .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                if segment.count > 0 {
-                    Text("\(segment.count)")
+                let count = options.clearerStates ? segment.attentionCount : segment.count
+                if count > 0 {
+                    Text("\(count)")
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(options.clearerStates ? Color.primary : .white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 18)
-                        .background(Capsule().fill(segment.needsAttention ? info.tint : Color.secondary))
+                        .background(Capsule().fill(
+                            options.clearerStates ? (segment.states.needsYou == 0 ? Color.red : .orange).opacity(0.14)
+                                : options.quietAppearance ? Color.secondary : segment.needsAttention ? info.tint : Color.secondary
+                        ))
+                } else if options.clearerStates, info.states.isEmpty, segment.count > 0 {
+                    Text("\(segment.count) left")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .help(segment.summary)
                 }
             }
             .padding(.horizontal, 7)

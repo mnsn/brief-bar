@@ -1,3 +1,4 @@
+import BriefBarCore
 import BriefBarUI
 import SwiftUI
 import TeamsCore
@@ -11,10 +12,9 @@ struct WidgetSectionView: View {
 
     @EnvironmentObject private var store: ConversationStore
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.interfaceOptions) private var options
 
     private static let headerHeight: CGFloat = 36
-    static let rowHeight: CGFloat = 42
-
     var body: some View {
         let unread = store.state.unread(in: group)
         // Reserve the last row for the "+N more" line when everything doesn't fit.
@@ -47,33 +47,28 @@ struct WidgetSectionView: View {
                             }
                     }
                     if more > 0 {
-                        Text("+\(more) more")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 37)
-                            .padding(.top, 4)
+                        WidgetMore(hidden: more, total: unread.count, section: group == .chats ? .teamsChats : .teamsGroupChats)
                     }
                 }
                 .padding(.horizontal, 6)
                 Spacer(minLength: 0)
             }
         }
-        .frame(height: Self.height(rows: rows))
+        .frame(height: Self.height(rows: rows, options: options))
     }
 
     private func row(_ conversation: ConversationSummary) -> some View {
         CompactConversationRow(conversation: conversation, now: store.now, showPreview: settings.showPreviews) {
             store.open(conversation)
         }
-        .frame(height: Self.rowHeight)
+        .frame(height: options.compactRowHeight)
     }
 
     private func header(count: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: group.symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(count > 0 ? group.color : Color.accentColor)
+                .foregroundStyle(options.quietAppearance ? Color.secondary : count > 0 ? group.color : Color.accentColor)
             Text(group.title)
                 .font(.system(size: 13, weight: .semibold))
             if let problem = store.problem, problem.isBlocking {
@@ -108,8 +103,8 @@ struct WidgetSectionView: View {
         }
     }
 
-    static func height(rows: Int) -> CGFloat {
-        headerHeight + CGFloat(rows) * rowHeight
+    static func height(rows: Int, options: InterfaceOptions = InterfaceOptions()) -> CGFloat {
+        headerHeight + CGFloat(rows) * options.compactRowHeight
     }
 }
 
@@ -121,17 +116,19 @@ struct CompactConversationRow: View {
     var open: () -> Void
 
     @LocalState private var isHovered = false
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 8) {
+            HStack(spacing: options.readableRows ? 10 : 8) {
                 AvatarView(conversation: conversation)
                     .frame(width: 22, height: 22)
+                    .frame(width: options.readableRows ? 30 : 22)
                     .opacity(conversation.isUnread ? 1 : 0.6)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(conversation.name)
-                            .font(.system(size: 12, weight: conversation.isUnread ? .semibold : .regular))
+                            .font(.system(size: options.readableRows ? 13 : 12, weight: conversation.isUnread ? .semibold : .regular))
                             .foregroundStyle(conversation.isUnread ? .primary : .secondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
@@ -141,7 +138,7 @@ struct CompactConversationRow: View {
                             .fixedSize()
                     }
                     Text(previewText)
-                        .font(.system(size: 11))
+                        .font(.system(size: options.rowDetailSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -161,6 +158,7 @@ struct CompactConversationRow: View {
         .accessibilityLabel(conversation.name)
         .accessibilityValue(showPreview ? "\(unreadText), \(previewText)" : unreadText)
         .accessibilityHint("Opens the chat in Microsoft Teams")
+        .rowActions(for: conversation.name, openTitle: "Open in Teams", open: open) { EmptyView() }
     }
 
     private var lastMessageDate: Date {

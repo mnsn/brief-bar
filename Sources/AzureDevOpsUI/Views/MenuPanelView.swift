@@ -8,6 +8,7 @@ struct MenuPanelView: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var loginItem: LoginItem
+    @Environment(\.interfaceOptions) private var options
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
@@ -39,13 +40,13 @@ struct MenuPanelView: View {
             PageLink(.azureDevOpsPullRequests, name: AzureDevOpsPage.pullRequests.title) {
                 HStack {
                     Image(systemName: AzureDevOpsPage.pullRequests.symbol)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text(AzureDevOpsPage.pullRequests.title)
                         .font(.headline)
                 }
             }
             Spacer()
-            CountChips(counts: store.counts)
+            CountChips(counts: store.counts, showToReview: settings.showToReview)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -111,7 +112,7 @@ struct MenuPanelView: View {
                     .padding(.vertical, 14)
             }
 
-            if store.showsBrief {
+            if store.showsBrief, !options.compactBriefs {
                 BriefView()
             }
 
@@ -119,6 +120,10 @@ struct MenuPanelView: View {
                 let items = store.items(in: group)
                 if !items.isEmpty {
                     section(group, items)
+                    if options.compactBriefs, store.showsBrief,
+                       group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
+                        BriefView()
+                    }
                 }
             }
 
@@ -149,7 +154,7 @@ struct MenuPanelView: View {
             HStack {
                 Text("\(group.title) (\(items.count))")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(group.color)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
                     .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
                 Spacer()
                 if group == .needsYou || group == .done {
@@ -189,6 +194,7 @@ struct MenuPanelView: View {
                 SettingsMenuContent()
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -266,23 +272,9 @@ struct RefreshStatus: View {
 struct BriefView: View {
     @EnvironmentObject private var store: PRStore
 
-    private static let gradient = LinearGradient(
-        colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.93, green: 0.30, blue: 0.55),
-                 Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 1.0)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Self.gradient)
-                Text("Brief")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(store.brief) { item in
+        BriefContainer(count: store.brief.count, isWritten: true) { collapsed in
+            ForEach(collapsed ? Array(store.brief.prefix(2)) : store.brief) { item in
                 Button {
                     if let snapshot = store.items.first(where: { $0.key == item.key }) { store.open(snapshot) }
                 } label: {
@@ -295,27 +287,16 @@ struct BriefView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
+                            .lineLimit(collapsed ? 2 : nil)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Click to open in Azure DevOps")
+                .help(collapsed ? store.briefText(item) : "Click to open in Azure DevOps")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Self.gradient.opacity(0.09))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Self.gradient.opacity(0.35), lineWidth: 1)
-        )
-        .padding(.horizontal, 4)
         .help("Summarized on this Mac by Apple Intelligence")
     }
 }
