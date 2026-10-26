@@ -9,7 +9,8 @@ import SwiftUI
 /// finished or stopped. It reads the Copilot app's own files, and needs no permission.
 @MainActor
 package final class CopilotSource: BriefBarSource {
-    nonisolated package static let descriptionVersion = 1
+    /// 2: Show Links.
+    nonisolated package static let descriptionVersion = 2
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
@@ -17,7 +18,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. BriefBar never changes them. It keeps only which finished sessions you've cleared.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database. BriefBar never changes them. It keeps only which finished sessions you've cleared, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
         network: "None. Copilot's list makes no network requests.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -37,6 +38,7 @@ package final class CopilotSource: BriefBarSource {
     private let services: AppServices
     let settings: AppSettings
     let store: SessionStore
+    private var linkObservers: Set<AnyCancellable> = []
 
     package init(services: AppServices) {
         self.services = services
@@ -58,14 +60,66 @@ package final class CopilotSource: BriefBarSource {
 
     package func start() {
         store.start()
+        // After the change: a @Published value emits before it's set.
+        services.links.$isOn.removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] on in
+                MainActor.assumeIsolated {
+                    self?.store.setReadsLinks(on)
+                    self?.publishLinks()
+                }
+            }
+            .store(in: &linkObservers)
+        store.$sessions
+            .sink { [weak self] sessions in MainActor.assumeIsolated { self?.publishLinks(sessions) } }
+            .store(in: &linkObservers)
     }
 
     package func stop() {
+        linkObservers.removeAll()
         store.stop()
+        services.links.withdraw(.copilot)
     }
 
     package func deleteSavedData() {
         settings.forgetAcknowledged()
+        // The links you added or hid to Copilot sessions.
+        services.links.forget(.copilot)
+    }
+
+    // MARK: Show Links
+
+    /// Tells Show Links about the sessions: what each one is, the branch and repository it works in, and the pull requests
+    /// the app recorded it started from or opened.
+    private func publishLinks(_ sessions: [SessionSnapshot]? = nil) {
+        let links = services.links
+        guard links.isOn else {
+            links.withdraw(.copilot)
+            return
+        }
+        var facts: [ItemLink] = []
+        var items: [LinkedItem] = []
+        for session in sessions ?? store.sessions {
+            guard let ref = ItemRef.session(session.id) else { continue }
+            let recorded = session.links
+            for pullRequest in recorded?.pullRequests ?? [] {
+                if let target = pullRequest.ref, let link = ItemLink(ref, target, origin: .copilot) { facts.append(link) }
+            }
+            let hint = session.isChat ? nil : session.branch.map {
+                BranchHint(branch: $0, repositories: BranchHint.repositories([session.projectName, recorded?.folder], gitHub: recorded?.gitHubRepository))
+            }
+            let store = self.store
+            items.append(LinkedItem(
+                ref: ref, label: session.displayName, title: session.displayName, symbol: session.rowSymbol,
+                color: session.phase == .idle ? .secondary : session.rowColor, state: session.phase.state, status: session.headline,
+                place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: hint, date: session.since,
+                open: {
+                    // As it is when you click it.
+                    store.open(store.sessions.first { $0.id == session.id } ?? session)
+                }
+            ))
+        }
+        links.publish(.copilot, links: facts, items: items)
     }
 
     // MARK: Menu bar
@@ -161,6 +215,7 @@ package final class CopilotSource: BriefBarSource {
             store.start()
             return
         }
-        store.receive(SessionEngine.loadOnce(paths: paths))
+        store.receive(SessionEngine.loadOnce(paths: paths, links: services.links.isOn))
+        publishLinks()
     }
 }

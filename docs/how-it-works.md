@@ -22,7 +22,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
   requests each account has seen; which Copilot sessions you've cleared. GitHub saves nothing but its
-  settings. Its settings stay. The links
+  settings. The links you added or hid to its things, with [Show Links](#links), go too. Its settings
+  stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
 
 ## Permissions that macOS grants once
@@ -322,6 +323,62 @@ thing. It isn't one of the layout's widgets, which show sections: it has options
 (`OverviewWidgetOptions`, saved as `overviewWidget`), and starts hidden, like Teams' widgets, since it
 can show your chats. Being always on screen, it never asks the model for words: it shows the brief as
 a list or the window last had it worded.
+
+## Links
+
+**Show Links** (`Links` in `Sources/BriefBarUI`, with `LinkGraph` and the rest in `Sources/BriefBarCore`) shows which
+work items, pull requests and Copilot sessions go together, on their own rows. It's off until you turn it on in
+Settings › General, and while it's off it shows nothing, and no source reads anything more for it.
+
+**What a link joins.** Each thing has a reference (`ItemRef`) that says which one and nothing else: an Azure DevOps work
+item or pull request, by its organization and number; a GitHub pull request, by its repository and number; or a Copilot
+session, by its ID, the app's or one BriefBar started. Two things link when they're of different kinds, and not two pull
+requests.
+
+**Where links come from.** Each source that's on tells `Links` the links it knows (`ItemLink`, with where it comes from,
+`LinkOrigin`) and what its things are, for other rows to show (`LinkedItem`):
+
+- Azure DevOps (`WorkLinksStore`): the work items linked to each of your pull requests, the pull requests linked to the
+  sprint's work items, and the tasks you sent to Copilot: each one's session, with the work item or pull request it was
+  sent from, and with the pull request it opened, which goes with the work item too.
+- Copilot: the pull request each app session started from or opened, as the app records it in its database
+  (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
+  other service's whose link it records.
+- Branches (`BranchLinks`): a session on a pull request's source branch, as the Copilot app names its workspace's
+  branch, in the same repository: the session's project, its folder or its GitHub repository is named like the pull
+  request's repository. Not a branch everybody works on (`main`, `master`, `develop` and the like), nor the one it
+  merges into.
+- You (`LinkEdits`): the links you add, and the ones you hide.
+
+**What a thing shows.** What it's linked to directly; and, between a work item and a session, what's linked through a
+pull request linked to both, since a work item's pull requests and their sessions are all its work. A pull request
+doesn't reach its work items' other sessions: they may be on other pull requests. A row shows a capsule for each kind:
+the work item's or pull request's number, or how many; and how the session that needs you most stands, in a word and in
+its color. The task Copilot is doing on a pull request, or the latest sent from a work item, isn't in them: its own
+capsule shows it. Widgets' rows show none.
+
+**Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
+BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
+Nothing goes back to Azure DevOps, GitHub or Copilot: BriefBar never writes there. The edits are kept in the
+preferences (`links`) as references only, never titles; those older than 180 days are forgotten, and turning a source
+off forgets the ones about its things. A reference another program writes there is checked as BriefBar's own are, or
+left out.
+
+**What's read for it,** only while it's on:
+
+- Azure DevOps (`LinkEngine`, with the pull requests' client, after each of their refreshes; every request a GET): each
+  of your pull requests' work items, then every quarter of an hour; the sprint's work items with their relations, while
+  the sprint is on screen; and what the linked work items and pull requests that no list shows are, so their rows can
+  say it. The [table below](#where-the-data-comes-from-1) has the requests.
+- Copilot: the same database, read-only, in a query of its own, which an app without those columns doesn't answer:
+  the list of sessions is read as before.
+- GitHub: nothing more. Each pull request's branch comes with the one query (`headRefName`).
+
+**Linking more.** **Link…** opens a window that lists what's linked, then up to four suggestions (`LinkSuggestions`):
+on the same branch, naming the other's number (a session called "Fix 5101", a branch `users/robin/5101-fix`), sharing
+words of its title, in its repository; then everything else that the sources that are on list. Checking one links it,
+unchecking unlinks it. It also takes a pasted link to an Azure DevOps pull request or work item, a GitHub pull request,
+or a session (`ghapp://sessions/<id>`, or its ID).
 
 ## Microsoft Teams
 
@@ -653,6 +710,10 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
 | `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
+| `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
+| `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
+| `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
+| `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
 | `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
@@ -1033,7 +1094,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, the "is running" flag, unread markers, the activity feed, how full each session's context window is |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
 
 BriefBar combines the two. The database says which sessions exist and whether the app
@@ -1142,7 +1203,8 @@ has no mutation. It asks for two searches, 50 pull requests each:
 | `is:pr is:open archived:false user-review-requested:@me` | pull requests that ask for your review by name, not a team's |
 | `is:pr is:open archived:false author:@me` | your own |
 
-With each pull request come its repository, author, whether it's a draft, whether it can merge
+With each pull request come its repository, author, branch (`headRefName`, for [Show Links](#links)), whether it's a
+draft, whether it can merge
 (`mergeable`), the review decision, the latest review from each reviewer, and the state of its latest
 commit's checks (`statusCheckRollup`). The client sends no cookies and keeps no cache
 (`GitHubClient.makeSession`).

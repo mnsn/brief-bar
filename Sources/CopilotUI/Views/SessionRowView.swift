@@ -46,10 +46,15 @@ struct SessionRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(session.subtitle)
-                            .font(.system(size: options.rowReasonSize, weight: .medium))
-                            .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(session.subtitle)
+                                .font(.system(size: options.rowReasonSize, weight: .medium))
+                                .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
+                                .lineLimit(1)
+                            if let ref = ItemRef.session(session.id) {
+                                LinkCapsules(ref)
+                            }
+                        }
                         if let detail = session.detail {
                             Text(detail)
                                 .font(.system(size: options.rowDetailSize))
@@ -71,12 +76,22 @@ struct SessionRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open in GitHub Copilot", action: action)
+            if let ref = ItemRef.session(session.id) {
+                LinkMenuItems(ref)
+            }
+        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the session in GitHub Copilot")
-        .rowActions(for: session.displayName, openTitle: "Open in Copilot", open: action) { EmptyView() }
+        .rowActions(for: session.displayName, openTitle: "Open in Copilot", open: action) {
+            if let ref = ItemRef.session(session.id) {
+                LinkMenuItems(ref)
+            }
+        }
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.

@@ -169,6 +169,8 @@ struct GeneralPage: View {
             .padding(.horizontal, 12)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
 
+            LinksSetting(links: model.services.links)
+
             if loginItem.isAvailable {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle("Launch BriefBar at Login", isOn: Binding(

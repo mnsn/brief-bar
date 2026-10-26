@@ -26,6 +26,25 @@ import Testing
         }
     }
 
+    @Test func appearanceOptionsAndLinkAccessRemainIndependent() {
+        let defaults = MemoryDefaults()
+        let services = AppServices(defaults: defaults, isDemo: false)
+        #expect(!services.links.isOn)
+        for option in InterfaceOption.allCases {
+            services.setInterfaceOption(option, enabled: true)
+        }
+        #expect(!services.links.isOn)
+        #expect(!defaults.bool(forKey: Links.enabledKey))
+
+        services.links.setOn(true)
+        for option in InterfaceOption.allCases {
+            services.setInterfaceOption(option, enabled: false)
+        }
+        let restored = AppServices(defaults: defaults, isDemo: false)
+        #expect(restored.links.isOn)
+        #expect(restored.interfaceOptions == InterfaceOptions())
+    }
+
     @Test func sidebarAttentionDoesNotCountOrdinaryWorkloadOrCompletedWork() {
         let sprint = MenuBarSegment(glyph: nil, title: .init(), summary: "4 left", count: 4, needsAttention: false, states: StateCounts())
         #expect(sprint.attentionCount == 0)

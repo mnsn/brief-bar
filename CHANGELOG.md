@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 - 2026-10-26
+## 0.6.0 - 2026-10-26
 
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
@@ -16,6 +16,18 @@
   below the first group with two highlights and an option to expand it. Optional row menus and
   widget **View All** buttons make actions easier to find while keeping each source's existing
   open/read behavior.
+
+## 0.5.0 - 2026-10-26
+
+- **See what goes together: Show Links.** Turn on **Show Links** in **Settings › General**, off by
+  default, and rows show small capsules for what goes with them: a pull request's work items and the
+  Copilot sessions working on it, a work item's pull requests (a teammate's too) and their sessions,
+  and a session's pull request and work item. The sessions' capsule says how the one that needs you
+  most stands, in its color. Links come from Azure DevOps, from the tasks you send to Copilot and what
+  the Copilot app records, and from a session on a pull request's branch; right-click a row to link
+  more, with suggestions, or to unlink. What you link or unlink stays in BriefBar: Azure DevOps, GitHub
+  and Copilot never see it. Azure DevOps, Copilot and GitHub say what they read for it, so each asks
+  you to look again before reading more.
 
 ## 0.4.0 - 2026-10-26
 

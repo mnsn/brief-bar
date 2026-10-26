@@ -20,11 +20,11 @@ public enum GitHubDemoData {
     static func reviewing(now: Date) -> [GitHubPullRequest] {
         [
             pullRequest(
-                412, "Add dark mode to the checkout page", repository: "contoso/shop-web", author: "priya",
+                412, "Add dark mode to the checkout page", repository: "contoso/shop-web", author: "priya", branch: "priya/checkout-dark-mode",
                 updated: now.addingTimeInterval(-25 * 60), reviewDecision: .reviewRequired, checks: .passing
             ),
             pullRequest(
-                198, "Cache product images on the CDN", repository: "contoso/shop-api", author: "sam",
+                198, "Cache product images on the CDN", repository: "contoso/shop-api", author: "sam", branch: "sam/image-cdn",
                 updated: now.addingTimeInterval(-3 * 3_600), reviewDecision: .reviewRequired, checks: .running
             ),
         ]
@@ -33,37 +33,38 @@ public enum GitHubDemoData {
     static func authored(now: Date) -> [GitHubPullRequest] {
         [
             pullRequest(
-                201, "Validate coupon codes on the server", repository: "contoso/shop-api",
+                201, "Validate coupon codes on the server", repository: "contoso/shop-api", branch: "validate-coupons",
                 updated: now.addingTimeInterval(-50 * 60), reviewDecision: .changesRequested, checks: .passing,
                 reviews: [.init(reviewer: "sam", state: .changesRequested)]
             ),
             pullRequest(
-                77, "Upgrade to Swift 6.2", repository: "contoso/shop-ios",
+                77, "Upgrade to Swift 6.2", repository: "contoso/shop-ios", branch: "swift-6.2",
                 updated: now.addingTimeInterval(-15 * 60), reviewDecision: .reviewRequired, checks: .failing
             ),
             pullRequest(
-                405, "Rename the cart service", repository: "contoso/shop-web",
+                405, "Rename the cart service", repository: "contoso/shop-web", branch: "rename-cart-service",
                 updated: now.addingTimeInterval(-2 * 3_600), reviewDecision: .reviewRequired, conflicts: true,
                 checks: .passing
             ),
             pullRequest(
-                409, "Fix the tax rounding", repository: "contoso/shop-web",
+                409, "Fix the tax rounding", repository: "contoso/shop-web", branch: "fix-tax-rounding",
                 updated: now.addingTimeInterval(-3_600), reviewDecision: .approved, checks: .passing,
                 reviews: [.init(reviewer: "priya", state: .approved)]
             ),
             pullRequest(
-                203, "Add order history export", repository: "contoso/shop-api",
+                203, "Add order history export", repository: "contoso/shop-api", branch: "order-history-export",
                 updated: now.addingTimeInterval(-5 * 60), reviewDecision: .reviewRequired, checks: .running
             ),
             pullRequest(
-                80, "Spike: one-tap reorder", repository: "contoso/shop-ios", draft: true,
+                80, "Spike: one-tap reorder", repository: "contoso/shop-ios", branch: "one-tap-reorder", draft: true,
                 updated: now.addingTimeInterval(-26 * 3_600)
             ),
         ]
     }
 
     private static func pullRequest(
-        _ number: Int, _ title: String, repository: String, author: String = login, draft: Bool = false, updated: Date,
+        _ number: Int, _ title: String, repository: String, author: String = login, branch: String? = nil, draft: Bool = false,
+        updated: Date,
         reviewDecision: GitHubPullRequest.ReviewDecision? = nil, conflicts: Bool = false,
         checks: GitHubPullRequest.Checks? = nil, reviews: [GitHubPullRequest.Review] = []
     ) -> GitHubPullRequest {
@@ -71,7 +72,7 @@ public enum GitHubDemoData {
             id: "PR_demo_\(repository.split(separator: "/").last ?? "")_\(number)", number: number, title: title,
             url: URL(string: "https://github.com/\(repository)/pull/\(number)")!, repository: repository, author: author,
             isDraft: draft, createdAt: updated.addingTimeInterval(-2 * 86_400), updatedAt: updated,
-            reviewDecision: reviewDecision, hasConflicts: conflicts, checks: checks, reviews: reviews
+            reviewDecision: reviewDecision, hasConflicts: conflicts, checks: checks, reviews: reviews, branch: branch
         )
     }
 }

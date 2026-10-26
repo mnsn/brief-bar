@@ -40,10 +40,13 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(subtitle)
-                            .font(.system(size: options.rowReasonSize, weight: .medium))
-                            .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(subtitle)
+                                .font(.system(size: options.rowReasonSize, weight: .medium))
+                                .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
+                                .lineLimit(1)
+                            LinkCapsules(linkRef)
+                        }
                         Text(item.pullRequest.reference)
                             .font(.system(size: options.rowDetailSize))
                             .foregroundStyle(.secondary)
@@ -63,16 +66,24 @@ struct PRRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open on GitHub", action: action)
+            LinkMenuItems(linkRef)
+        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
-        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) { EmptyView() }
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) { LinkMenuItems(linkRef) }
     }
 
     private var subtitle: String {
         item.detail.map { "\(item.headline) · \($0)" } ?? item.headline
+    }
+
+    private var linkRef: ItemRef {
+        .gitHubPullRequest(repository: item.pullRequest.repository, number: item.pullRequest.number)
     }
 
     private var helpText: String {

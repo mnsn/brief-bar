@@ -275,9 +275,11 @@ private struct WidgetWorkRow: View {
         .contextMenu {
             Button("Open in Azure DevOps", action: action)
             CopilotSendMenuItems(item: item)
+            LinkMenuItems(item.linkRef)
         }
         .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) {
             CopilotSendMenuItems(item: item)
+            LinkMenuItems(item.linkRef)
         }
     }
 }

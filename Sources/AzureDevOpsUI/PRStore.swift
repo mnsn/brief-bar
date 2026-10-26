@@ -618,6 +618,9 @@ final class PRStore: ObservableObject {
 
     // MARK: Copilot
 
+    /// The pull requests as the engine read them, for Show Links.
+    var records: [PRRecord] { state.records }
+
     /// A pull request as the engine read it, for Copilot's prompts.
     func record(for key: PRKey) -> PRRecord? {
         guard let record = state.records.first(where: { $0.id == key }) else { return nil }
