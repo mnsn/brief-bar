@@ -51,7 +51,7 @@ import Testing
             sink.finish()
         }
         var iterator = exits.makeAsyncIterator()
-        _ = await iterator.next()
+        #expect(await iterator.next() == 0)
         return run
     }
 
