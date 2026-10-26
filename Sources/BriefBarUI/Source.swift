@@ -358,6 +358,8 @@ package final class AppServices: ObservableObject {
     package let fullDiskAccess: FullDiskAccess
     /// In-app updates, which the app's updater reports here.
     package let updates = UpdateStatus()
+    /// Show Links: what goes together across sources, which each source tells it while it's on.
+    package let links: Links
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.
@@ -375,5 +377,6 @@ package final class AppServices: ObservableObject {
         loginItem = LoginItem()
         notifier = Notifier()
         fullDiskAccess = FullDiskAccess(defaults: defaults)
+        links = Links(defaults: defaults, isDemo: isDemo)
     }
 }

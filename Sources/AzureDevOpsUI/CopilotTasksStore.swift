@@ -33,26 +33,26 @@ struct CopilotTaskEntry: Identifiable, Equatable {
 }
 
 extension CopilotTaskEntry {
-    /// Made-up sends of the demo sprint's tasks, one that opened a pull request and one still working, and a fix of the
-    /// demo's failing pull request.
+    /// Made-up sends of the demo sprint's tasks, one that opened the demo's coupon pull request and one still working, and a
+    /// fix of the demo's failing pull request. Their IDs are sessions', as a send's are.
     static func demo(now: Date) -> [CopilotTaskEntry] {
         let team = DemoData.team
         return [
             CopilotTaskEntry(
-                id: "demo-finished", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5112),
+                id: "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5112),
                 options: CopilotModel.standard, startedAt: now.addingTimeInterval(-41 * 60),
                 status: RunStatus(phase: .finished, since: now.addingTimeInterval(-12 * 60),
-                                  detail: "Coupon totals now round half up, with tests for every currency. Opened pull request 31."),
-                pullRequest: URL(string: "https://dev.azure.com/\(team.organization)/\(team.projectName)/_git/storefront/pullrequest/31")
+                                  detail: "Coupon totals now round half up, with tests for every currency. Opened pull request 4091."),
+                pullRequest: URL(string: "https://dev.azure.com/\(team.organization)/\(team.projectName)/_git/payments-api/pullrequest/4091")
             ),
             CopilotTaskEntry(
-                id: "demo-working", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5103),
+                id: "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02", workItem: WorkItemReference(organization: team.organization, project: team.projectName, id: 5103),
                 options: CopilotModel.quick, startedAt: now.addingTimeInterval(-6 * 60),
                 status: RunStatus(phase: .working, detail: "Run the cart tests")
             ),
             // Fixing the demo's failing pull request.
             CopilotTaskEntry(
-                id: "demo-fix-build", workItem: nil,
+                id: "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b03", workItem: nil,
                 onPullRequest: PullRequestReference(organization: DemoData.organization, project: "Storefront", repository: "shop-web",
                                                     id: 4088, sourceBranch: "delivery-estimates"),
                 action: .fixBuild, options: CopilotModel.standard, startedAt: now.addingTimeInterval(-9 * 60),

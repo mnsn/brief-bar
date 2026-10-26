@@ -42,10 +42,13 @@ struct PRRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(item.group.color)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(subtitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(item.group.color)
+                                .lineLimit(1)
+                            LinkCapsules(linkRef)
+                        }
                         Text(item.pullRequest.reference)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -65,6 +68,10 @@ struct PRRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open on GitHub", action: action)
+            LinkMenuItems(linkRef)
+        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
@@ -74,6 +81,10 @@ struct PRRowView: View {
 
     private var subtitle: String {
         item.detail.map { "\(item.headline) · \($0)" } ?? item.headline
+    }
+
+    private var linkRef: ItemRef {
+        .gitHubPullRequest(repository: item.pullRequest.repository, number: item.pullRequest.number)
     }
 
     private var helpText: String {

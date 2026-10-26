@@ -25,13 +25,15 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var lastActivity: ActivityPreview?
     /// How full the session's context window was when the app last measured it.
     public var contextUsage: ContextUsage?
+    /// Where its work goes, as the app records it: read only for Show Links.
+    public var links: SessionLinks?
 
     public init(
         id: String, name: String, sessionType: String = "project", mode: String? = nil,
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
         branch: String? = nil, creatorSessionId: String? = nil, workspaceId: String? = nil,
-        lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil
+        lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
     ) {
         self.id = id
         self.name = name
@@ -48,9 +50,47 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.workspaceId = workspaceId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
+        self.links = links
     }
 
     public var isChat: Bool { sessionType == "general_chat" }
+}
+
+/// Where a session's work goes, as the Copilot app records it: its project's GitHub repository and folder, and the pull
+/// requests it started from or opened. BriefBar reads it only for Show Links.
+public struct SessionLinks: Sendable, Equatable, Codable {
+    /// The GitHub repository of its project, `owner/name`.
+    public var gitHubRepository: String?
+    /// Its project's folder's name, which is usually its repository's.
+    public var folder: String?
+    /// The pull requests it started from or opened.
+    public var pullRequests: [RecordedPullRequest]
+
+    public init(gitHubRepository: String? = nil, folder: String? = nil, pullRequests: [RecordedPullRequest] = []) {
+        self.gitHubRepository = gitHubRepository
+        self.folder = folder
+        self.pullRequests = pullRequests
+    }
+}
+
+/// A pull request the app recorded for a session: by its repository and number, its link, or both.
+public struct RecordedPullRequest: Sendable, Equatable, Codable {
+    public var repository: String?
+    public var number: Int?
+    public var url: String?
+
+    public init(repository: String?, number: Int?, url: String?) {
+        self.repository = repository
+        self.number = number
+        self.url = url
+    }
+
+    /// Which pull request it is: what its link names, or a GitHub pull request by its repository and number.
+    public var ref: ItemRef? {
+        if let url, let ref = ItemRef.from(link: url), ref.kind.isPullRequest { return ref }
+        guard let repository, let number, number > 0 else { return nil }
+        return ItemRef.from(link: "https://github.com/\(repository)/pull/\(number)")
+    }
 }
 
 /// How much of a session's context window its conversation takes up, in tokens, as the app records it.
@@ -160,6 +200,26 @@ public enum AppDatabase {
           ON l.session_id = a.session_id AND l.latest = a.created_at
         """
 
+    /// What each session's workspace records of where its work goes: its project's GitHub repository and folder, and the
+    /// pull requests it started from or opened. Only for Show Links.
+    static let linksQuery = """
+        SELECT w.session_id, p.github_owner, p.github_repo, p.main_repo_path,
+               w.source_pr_repo_full_name, w.source_pr_number, w.source_pr_html_url,
+               w.created_pr_repo_full_name, w.created_pr_number, w.created_pr_html_url
+        FROM workspaces w
+        LEFT JOIN projects p ON p.id = w.project_id
+        WHERE w.session_id IS NOT NULL AND w.archived_at IS NULL
+        """
+
+    /// The pull requests that the app's providers, such as one for another service, link workspaces to. Only for Show
+    /// Links.
+    static let providerLinksQuery = """
+        SELECT w.session_id, l.uri
+        FROM workspace_pull_request_links l
+        JOIN workspaces w ON w.id = l.workspace_id
+        WHERE w.session_id IS NOT NULL AND w.archived_at IS NULL
+        """
+
     static let viewStateQuery = """
         SELECT key, value, updated_at FROM app_state WHERE key IN ('workspace-unread', 'lastRoutePath')
         """
@@ -178,14 +238,15 @@ public enum AppDatabase {
     }
 
     /// Sessions plus the app's view state. Only the session list is required; the rest is best effort.
-    public static func load(at url: URL) throws -> DatabaseSnapshot {
+    /// - Parameter links: also where each session's work goes (`SessionLinks`), for Show Links.
+    public static func load(at url: URL, links: Bool = false) throws -> DatabaseSnapshot {
         do {
-            return try load(from: open(url))
+            return try load(from: open(url), links: links)
         } catch let error as AppDatabaseError where error.code == SQLITE_CANTOPEN && isClosedWALDatabase(url) {
             // A read-only connection can't recreate the write-ahead log, which SQLite removes when
             // the app closes the database. Without a log or journal, the file holds every committed
             // change, and the app only writes to it again through a new log, so read it as it is.
-            guard let snapshot = try? load(from: open(url, immutable: true)) else { throw error }
+            guard let snapshot = try? load(from: open(url, immutable: true), links: links) else { throw error }
             return snapshot
         }
     }
@@ -205,16 +266,22 @@ public enum AppDatabase {
             && !fileManager.fileExists(atPath: url.path + "-journal")
     }
 
-    private static func load(from connection: SQLiteConnection) throws -> DatabaseSnapshot {
+    private static func load(from connection: SQLiteConnection, links: Bool) throws -> DatabaseSnapshot {
         do {
-            return try read(connection)
+            return try read(connection, links: links)
         } catch let error as SQLiteError {
             throw AppDatabaseError.query(error.message, code: error.code)
         }
     }
 
-    private static func read(_ connection: SQLiteConnection) throws -> DatabaseSnapshot {
+    private static func read(_ connection: SQLiteConnection, links: Bool) throws -> DatabaseSnapshot {
         var sessions = try loadSessions(connection)
+        if links {
+            let bySession = readLinks(connection)
+            for index in sessions.indices {
+                sessions[index].links = bySession[sessions[index].id]
+            }
+        }
 
         if let latest = try? connection.rows(latestActivityQuery, { row in
             (row.string(0) ?? "", ActivityPreview(kind: row.string(1) ?? "", text: row.string(2) ?? "", at: row.date(3)))
@@ -283,6 +350,36 @@ public enum AppDatabase {
                 )
             }.filter { !$0.id.isEmpty }
         }
+    }
+
+    /// Each session's links, best effort: an app without these tables or columns records none.
+    static func readLinks(_ connection: SQLiteConnection) -> [String: SessionLinks] {
+        var bySession: [String: SessionLinks] = [:]
+        if let rows = try? connection.rows(linksQuery, { row in
+            (row.string(0) ?? "", row.string(1), row.string(2), row.string(3),
+             RecordedPullRequest(repository: row.string(4), number: row.int64(5).map { Int($0) }, url: row.string(6)),
+             RecordedPullRequest(repository: row.string(7), number: row.int64(8).map { Int($0) }, url: row.string(9)))
+        }) {
+            for (session, owner, repository, path, source, created) in rows where !session.isEmpty {
+                var links = bySession[session] ?? SessionLinks()
+                if let owner, let repository, !owner.isEmpty, !repository.isEmpty { links.gitHubRepository = "\(owner)/\(repository)" }
+                if let path, !path.isEmpty { links.folder = URL(fileURLWithPath: path).lastPathComponent }
+                for recorded in [source, created] where recorded.ref != nil && !links.pullRequests.contains(recorded) {
+                    links.pullRequests.append(recorded)
+                }
+                bySession[session] = links
+            }
+        }
+        if let rows = try? connection.rows(providerLinksQuery, { row in (row.string(0) ?? "", row.string(1)) }) {
+            for (session, uri) in rows where !session.isEmpty {
+                let recorded = RecordedPullRequest(repository: nil, number: nil, url: uri)
+                guard recorded.ref != nil else { continue }
+                var links = bySession[session] ?? SessionLinks()
+                if !links.pullRequests.contains(recorded) { links.pullRequests.append(recorded) }
+                bySession[session] = links
+            }
+        }
+        return bySession
     }
 
     static func parseStringArray(_ json: String) -> [String]? {

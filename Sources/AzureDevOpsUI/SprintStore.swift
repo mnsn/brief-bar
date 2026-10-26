@@ -15,6 +15,8 @@ final class SprintStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
     @Published private(set) var hasLoaded = false
+    /// Something shows the sprint on screen, so it's read.
+    @Published private(set) var isShowing = false
 
     let settings: AppSettings
     let mode: PRStore.Mode
@@ -109,6 +111,7 @@ final class SprintStore: ObservableObject {
         let wasActive = !viewers.isEmpty
         if visible { viewers.insert(viewer) } else { viewers.remove(viewer) }
         let active = !viewers.isEmpty
+        if isShowing != active { isShowing = active }
         guard active != wasActive, let engine else { return }
         Task { await engine.setActive(active) }
     }
@@ -119,6 +122,7 @@ final class SprintStore: ObservableObject {
         if let engine { Task { await engine.stop() } }
         engine = nil
         viewers = []
+        isShowing = false
     }
 
     func refresh() {
