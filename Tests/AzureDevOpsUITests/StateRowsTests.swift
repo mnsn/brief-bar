@@ -24,6 +24,8 @@ import Testing
         #expect(states(rows) == StateCounts(needsYou: 4, failing: 2, done: 2))
         #expect(states(rows) == source.segment(for: .azureDevOpsPullRequests).states)
         #expect(Set(rows.map(\.id)).count == rows.count)
+        #expect(rows.filter(\.isReady).count == 2)
+        #expect(rows.filter(\.isReady).allSatisfy { $0.state == .done })
 
         // To Review joins what needs you only while the menu bar shows it.
         source.settings.showToReview = true
@@ -53,6 +55,24 @@ import Testing
 
         source.settings.summaries = false
         #expect(source.briefLines(for: .azureDevOpsPullRequests).allSatisfy { $0.request == nil })
+    }
+
+    @Test func readableWidgetsGrowWithoutStartingASourceOrChangingOtherSettings() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services)
+        for section in [SectionID.azureDevOpsPullRequests, .azureDevOpsSprint, .azureDevOpsPipelines] {
+            let height = source.widgetHeight(for: section, rows: 3)
+            #expect(height == 162)
+        }
+        services.setInterfaceOption(.readableRows, enabled: true)
+        for section in [SectionID.azureDevOpsPullRequests, .azureDevOpsSprint, .azureDevOpsPipelines] {
+            let height = source.widgetHeight(for: section, rows: 3)
+            #expect(height == 174)
+            #expect(source.stateRows(for: section).isEmpty)
+        }
+        services.setInterfaceOption(.readableRows, enabled: false)
+        let restored = source.widgetHeight(for: .azureDevOpsPullRequests, rows: 3)
+        #expect(restored == 162)
     }
 
     /// Turning Summaries off asks lists to look again at once, though no pull request changed.

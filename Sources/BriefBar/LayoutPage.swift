@@ -12,6 +12,34 @@ struct LayoutPage: View {
 
     /// Where a chip you're dragging would go.
     @LocalState private var target: DropTarget?
+    @LocalState private var editingCustom = false
+    @LocalState private var singleSectionChoice: LayoutChoice = .together
+    @Environment(\.interfaceOptions) private var options
+
+    private enum LayoutChoice: String, CaseIterable {
+        case together = "Together"
+        case separate = "Separate"
+        case custom = "Custom"
+    }
+
+    private var layoutChoice: LayoutChoice {
+        let items = model.visibleItems(surface)
+        if editingCustom || items.isEmpty { return .custom }
+        if items.count == 1 {
+            return items[0].sections.count == 1 ? singleSectionChoice : .together
+        }
+        return items.allSatisfy { $0.sections.count == 1 } ? .separate : .custom
+    }
+
+    private func choose(_ choice: LayoutChoice) {
+        editingCustom = choice == .custom
+        if choice != .custom { singleSectionChoice = choice }
+        switch choice {
+        case .together: model.combineAll(on: surface)
+        case .separate: model.separateAll(on: surface)
+        case .custom: break
+        }
+    }
 
     private enum DropTarget: Hashable {
         /// The item with this ID.
@@ -35,11 +63,16 @@ struct LayoutPage: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Text(surface.explanation)
+            Text(options.simpleLayoutControls && layoutChoice != .custom
+                 ? "Choose a layout, or use Custom to arrange individual sections."
+                 : surface.explanation)
                 .fixedSize(horizontal: false, vertical: true)
 
             if surface == .menuBar && !items.isEmpty {
                 MenuBarLine(model: model)
+                if options.compactMenuBar {
+                    note("Compact Menu Bar temporarily combines visible sections. The arrangement below is kept for when you turn it off.")
+                }
             }
 
             if surface == .widgets {
@@ -50,49 +83,64 @@ struct LayoutPage: View {
                 Text("Turn on a source to see its sections here.")
                     .foregroundStyle(.secondary)
             } else {
-                HStack {
-                    Button("Put All in One \(surface.itemNoun)") { model.combineAll(on: surface) }
-                        .disabled(items.count < 2)
-                        .help("Every section in one \(surface.itemNoun.lowercased()), including those of sources you turn on later")
-                    Button("Give Each Its Own \(surface.itemNoun)") { model.separateAll(on: surface) }
-                        .disabled(!items.contains { $0.sections.count > 1 })
+                if options.simpleLayoutControls {
+                    // Swift 6.1 can crash emitting the actor-isolation thunk for a method-reference setter.
+                    Picker("Layout", selection: Binding(get: { layoutChoice }, set: { choice in choose(choice) })) {
+                        ForEach(LayoutChoice.allCases, id: \.self) { choice in
+                            Text(choice.rawValue).tag(choice)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    note("Together uses one \(surface.itemNoun.lowercased()); Separate gives each section its own. Custom lets you move or hide sections.")
                 }
-                Form {
-                    ForEach(items) { item in
+                if !options.simpleLayoutControls || layoutChoice == .custom {
+                    HStack {
+                        Button("Put All in One \(surface.itemNoun)") { model.combineAll(on: surface) }
+                            .disabled(items.count < 2)
+                            .help("Every section in one \(surface.itemNoun.lowercased()), including those of sources you turn on later")
+                        Button("Give Each Its Own \(surface.itemNoun)") { model.separateAll(on: surface) }
+                            .disabled(!items.contains { $0.sections.count > 1 })
+                    }
+                    Form {
+                        ForEach(items) { item in
+                            Section {
+                                dropZone(.item(item.id), to: item.sections.first.map { .with($0) }) {
+                                    chips(item.sections, in: item, items: items)
+                                }
+                                itemOptions(item)
+                            } header: {
+                                if surface == .menuBar {
+                                    MenuBarPreview(model: model, sections: item.sections, options: model.options(forMenuBarItem: item.id))
+                                }
+                            }
+                        }
                         Section {
-                            dropZone(.item(item.id), to: item.sections.first.map { .with($0) }) {
-                                chips(item.sections, in: item, items: items)
+                            newItemSlot(items: items, hidden: hidden)
+                        }
+                        Section {
+                            dropZone(.hidden, to: .hidden) {
+                                if hidden.isEmpty {
+                                    Text("Drop a \(surface.sectionNoun) here to hide it")
+                                        .foregroundStyle(.secondary)
+                                        .frame(minHeight: 26)
+                                } else {
+                                    chips(hidden, in: nil, items: items)
+                                }
                             }
-                            itemOptions(item)
                         } header: {
-                            if surface == .menuBar {
-                                MenuBarPreview(model: model, sections: item.sections, options: model.options(forMenuBarItem: item.id))
-                            }
+                            Text("Hidden")
+                        } footer: {
+                            note(surface.hiddenNote)
                         }
                     }
-                    Section {
-                        newItemSlot(items: items, hidden: hidden)
-                    }
-                    Section {
-                        dropZone(.hidden, to: .hidden) {
-                            if hidden.isEmpty {
-                                Text("Drop a \(surface.sectionNoun) here to hide it")
-                                    .foregroundStyle(.secondary)
-                                    .frame(minHeight: 26)
-                            } else {
-                                chips(hidden, in: nil, items: items)
-                            }
-                        }
-                    } header: {
-                        Text("Hidden")
-                    } footer: {
-                        note(surface.hiddenNote)
-                    }
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
+                    .scrollDisabled(true)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    note("\(items.count) \(items.count == 1 ? surface.itemNoun.lowercased() : surface.itemNoun.lowercased() + "s"), \(hidden.count) hidden sections")
+                    Button("Customize Arrangement…") { editingCustom = true }
                 }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-                .scrollDisabled(true)
-                .fixedSize(horizontal: false, vertical: true)
             }
 
             let missing = model.sourcesMissing(from: surface)
@@ -404,17 +452,24 @@ private struct SectionChip: View {
     let title: String
     let symbol: String
     let tint: Color
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         HStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(LinearGradient(colors: [tint.opacity(0.85), tint], startPoint: .top, endPoint: .bottom))
+            if options.quietAppearance {
                 Image(systemName: symbol)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(LinearGradient(colors: [tint.opacity(0.85), tint], startPoint: .top, endPoint: .bottom))
+                    Image(systemName: symbol)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 20, height: 20)
             }
-            .frame(width: 20, height: 20)
             Text(title)
                 .lineLimit(1)
         }

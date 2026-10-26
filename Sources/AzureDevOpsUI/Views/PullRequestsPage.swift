@@ -7,6 +7,7 @@ import SwiftUI
 struct PullRequestsPage: View {
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.interfaceOptions) private var options
 
     @LocalState private var showIdle = false
 
@@ -26,7 +27,7 @@ struct PullRequestsPage: View {
             PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
                     notices
-                    if store.showsBrief {
+                    if store.showsBrief, !options.compactBriefs {
                         BriefView()
                             .padding(.horizontal, -4)
                     }
@@ -34,6 +35,10 @@ struct PullRequestsPage: View {
                         let items = store.items(in: group)
                         if !items.isEmpty {
                             section(group, items)
+                            if options.compactBriefs, store.showsBrief,
+                               group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
+                                BriefView().padding(.horizontal, -4)
+                            }
                         }
                     }
                     idle

@@ -8,6 +8,7 @@ struct MenuPanelView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var loginItem: LoginItem
+    @Environment(\.interfaceOptions) private var options
 
     @LocalState private var contentHeight: CGFloat = 0
     @LocalState private var showIdle = false
@@ -38,7 +39,7 @@ struct MenuPanelView: View {
             PageLink(.copilotSessions, name: "Sessions") {
                 HStack {
                     Image(systemName: "waveform.path.ecg")
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text("Sessions")
                         .font(.headline)
                 }
@@ -99,7 +100,7 @@ struct MenuPanelView: View {
             HStack {
                 Text("\(phase.title) (\(sessions.count))")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(phase.color)
+                    .foregroundStyle(options.quietAppearance ? Color.primary : phase.color)
                 Spacer()
                 if phase == .done || phase == .stopped {
                     Button("Clear") { store.clear(phase) }
@@ -128,6 +129,7 @@ struct MenuPanelView: View {
                 SettingsMenuContent()
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

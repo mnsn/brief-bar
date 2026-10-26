@@ -49,6 +49,7 @@ package final class GitHubSource: BriefBarSource {
 
     private func environment<V: View>(_ view: V) -> some View {
         view
+            .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(settings)
             .environmentObject(services)
@@ -149,7 +150,8 @@ package final class GitHubSource: BriefBarSource {
         guard store.problem?.needsSignIn != true else { return [] }
         return store.items.compactMap { item in
             item.group.state.map { state in
-                StateRow(id: item.id, state: state, date: item.since, view: AnyView(environment(PullRequestRow(item: item))))
+                StateRow(id: item.id, state: state, date: item.since, view: AnyView(environment(PullRequestRow(item: item))),
+                         isReady: state == .done)
             }
         }
     }
@@ -188,7 +190,7 @@ package final class GitHubSource: BriefBarSource {
     }
 
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
-        WidgetSectionView.height(rows: rows)
+        WidgetSectionView.height(rows: rows, options: services.interfaceOptions)
     }
 
     package func widgetWidth(for section: SectionID, size: WidgetSize) -> CGFloat {

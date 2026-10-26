@@ -7,6 +7,7 @@ import SwiftUI
 struct MenuPanelView: View {
     @EnvironmentObject private var store: GitHubStore
     @EnvironmentObject private var loginItem: LoginItem
+    @Environment(\.interfaceOptions) private var options
 
     @LocalState private var contentHeight: CGFloat = 0
 
@@ -36,7 +37,7 @@ struct MenuPanelView: View {
             PageLink(.githubPullRequests, name: "Pull Requests") {
                 HStack {
                     Image(systemName: "arrow.triangle.merge")
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text("Pull Requests")
                         .font(.headline)
                 }
@@ -98,7 +99,7 @@ struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(group.title) (\(items.count))")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(group.color)
+                .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
                 .padding(.horizontal, 8)
             ForEach(items) { item in
                 PullRequestRow(item: item)
@@ -125,6 +126,7 @@ struct MenuPanelView: View {
                 SettingsMenuContent()
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

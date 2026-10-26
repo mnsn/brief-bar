@@ -23,6 +23,7 @@ final class OverviewWidgetHost {
             autosaveName: model.services.isDemo ? nil : "BriefBar.widget.overview", title: "BriefBar Overview"
         ) {
             AnyView(OverviewWidgetView(content: content, list: content.list, writer: model.briefWriter)
+                .interfaceOptions(from: model.services)
                 .environmentObject(model.services)
                 .environmentObject(model.services.loginItem))
         }
@@ -67,6 +68,8 @@ final class OverviewWidgetContent: ObservableObject {
     static let rowHeight: CGFloat = 24
     static let bottomPadding: CGFloat = 10
 
+    var rowHeight: CGFloat { model.services.interfaceOptions.visibleActions ? 28 : Self.rowHeight }
+
     init(model: AppModel) {
         self.model = model
         list = StateListModel(model: model, wordsBrief: false)
@@ -76,7 +79,7 @@ final class OverviewWidgetContent: ObservableObject {
         let rows = CGFloat(options.size.rows)
         return CGSize(
             width: options.size == .compact ? 300 : 340,
-            height: Self.headerHeight + Self.briefHeight + (rows + 1) * Self.rowHeight + Self.bottomPadding
+            height: Self.headerHeight + Self.briefHeight + (rows + 1) * rowHeight + Self.bottomPadding
         )
     }
 }
@@ -85,6 +88,7 @@ struct OverviewWidgetView: View {
     @ObservedObject var content: OverviewWidgetContent
     @ObservedObject var list: StateListModel
     @ObservedObject var writer: BriefWriter
+    @Environment(\.interfaceOptions) private var options
 
     private static let gradient = LinearGradient(
         colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.93, green: 0.30, blue: 0.55),
@@ -106,10 +110,10 @@ struct OverviewWidgetView: View {
                         if text.isWritten {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Self.gradient)
+                                .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(Self.gradient))
                         }
                         Text(text.text)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: options.readableRows ? 13 : 12, weight: .medium))
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,12 +132,12 @@ struct OverviewWidgetView: View {
                     HStack(spacing: 8) {
                         mark(line.source)
                         Text(writer.text(for: line).text)
-                            .font(.system(size: 12))
+                            .font(.system(size: options.readableRows ? 13 : 12))
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 0)
                     }
-                    .frame(height: OverviewWidgetContent.rowHeight)
+                    .frame(height: content.rowHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -141,11 +145,27 @@ struct OverviewWidgetView: View {
                 .help(writer.text(for: line).text)
             }
             if lines.more > 0 {
-                Text("\(lines.more) more need you")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(height: OverviewWidgetContent.rowHeight)
-                    .padding(.horizontal, 14)
+                if options.visibleActions {
+                    let hasOverview = content.model.overviewLink.window != nil
+                    Button(hasOverview ? "Open Overview" : "Show an Overview…") {
+                        if hasOverview {
+                            content.model.openOverview()
+                        } else {
+                            content.model.openSettings(.layout(.windows))
+                        }
+                    }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11))
+                        .frame(height: content.rowHeight)
+                        .padding(.horizontal, 14)
+                        .help("\(lines.more) more need you")
+                } else {
+                    Text("\(lines.more) more need you")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(height: content.rowHeight)
+                        .padding(.horizontal, 14)
+                }
             }
             if list.groups.isEmpty {
                 Text(list.sections.isEmpty ? "Turn on a source to see it here" : "Nothing needs you")
@@ -172,15 +192,15 @@ struct OverviewWidgetView: View {
             Spacer(minLength: 4)
             ForEach(list.groups) { group in
                 HStack(spacing: 2) {
-                    Image(systemName: group.state.symbol)
+                    Image(systemName: group.symbol)
                         .font(.system(size: 10, weight: .semibold))
                     Text("\(group.entries.count)")
                         .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 }
                 .foregroundStyle(group.state.color)
-                .help("\(group.state.title): \(group.entries.count)")
+                .help("\(group.title): \(group.entries.count)")
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(group.state.title): \(group.entries.count)")
+                .accessibilityLabel("\(group.title): \(group.entries.count)")
             }
         }
         .padding(.horizontal, 14)
@@ -192,7 +212,7 @@ struct OverviewWidgetView: View {
         let source = content.model.source(id)
         return Image(systemName: source?.symbol ?? "circle")
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(source?.sections.first?.tint ?? .secondary)
+            .foregroundStyle(options.quietAppearance ? Color.secondary : source?.sections.first?.tint ?? .secondary)
             .frame(width: 14)
             .help(source?.name ?? "")
             .accessibilityLabel(source?.name ?? "")

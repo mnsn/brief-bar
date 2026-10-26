@@ -84,6 +84,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     private func environment<V: View>(_ view: V) -> AnyView {
         guard let store, let sprint, let pipelines, let copilot else { return AnyView(EmptyView()) }
         return AnyView(view
+            .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(sprint)
             .environmentObject(pipelines)
@@ -309,7 +310,8 @@ package final class AzureDevOpsSource: BriefBarSource {
             let showToReview = settings.showToReview
             return store.items.compactMap { item in
                 item.group.state(showToReview: showToReview).map { state in
-                    StateRow(id: item.id, state: state, date: item.since, view: environment(PullRequestRow(item: item)))
+                    StateRow(id: item.id, state: state, date: item.since, view: environment(PullRequestRow(item: item)),
+                             isReady: item.group == .ready)
                 }
             }
         case .azureDevOpsPipelines:
@@ -418,9 +420,9 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func widgetHeight(for section: SectionID, rows: Int) -> CGFloat {
         switch section {
-        case .azureDevOpsSprint: return SprintWidgetSection.height(rows: rows)
-        case .azureDevOpsPipelines: return PipelinesWidgetSection.height(rows: rows)
-        default: return WidgetSectionView.height(rows: rows)
+        case .azureDevOpsSprint: return SprintWidgetSection.height(rows: rows, options: services.interfaceOptions)
+        case .azureDevOpsPipelines: return PipelinesWidgetSection.height(rows: rows, options: services.interfaceOptions)
+        default: return WidgetSectionView.height(rows: rows, options: services.interfaceOptions)
         }
     }
 
