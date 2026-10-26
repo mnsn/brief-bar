@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 - 2026-10-26
+
+- **Arrange the menu bar, widgets and windows by dragging.** In Settings › Menu Bar, Widgets and
+  Windows, each item is now a card with a chip for each section it shows, rather than a menu for every
+  section that named its place by the others. Drag a chip onto another card to put them together, onto
+  **New Item** to give it one of its own, or onto **Hidden**. Click **New Item** to choose a section
+  instead, or right-click a chip for the same moves.
+- **See your menu bar while you arrange it.** Settings › Menu Bar starts with BriefBar's items as they
+  are in your menu bar now, left to right, with your counts, and each card shows its own item the same
+  way, so you can see how much room they take.
+- **Added Up, rather than By Meaning.** A menu-bar item that shows several sections shows their counts
+  **Side by Side** or **Added Up** by state, and Settings now says what each one does. An item you set
+  to By Meaning stays added up.
+
 ## 0.2.1 - 2026-10-25
 
 - **Pages use the whole window.** In a wide window, such as full screen, a page no longer stays in a

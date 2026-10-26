@@ -108,6 +108,18 @@ package enum MenuBarDrawing {
         show(title, image: nil, position: .noImage, in: button)
     }
 
+    /// The item as the menu bar would show it, in an image, for Settings: drawn by a status button set up as the item
+    /// sets up its own.
+    package static func image(of item: MenuBarItemContent, appearance: NSAppearance?) -> NSImage? {
+        let button = NSStatusBarButton(frame: .zero)
+        configure(button, item: item)
+        button.frame = NSRect(x: 0, y: 0, width: ceil(button.fittingSize.width), height: 22)
+        guard let rep = Snapshot.snapshot(button, appearance: appearance) else { return nil }
+        let image = NSImage(size: button.frame.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     /// The image goes last: setting a title puts back the image a button had before.
     private static func show(_ title: NSAttributedString, image: NSImage?, position: NSControl.ImagePosition, in button: NSButton) {
         button.attributedTitle = title

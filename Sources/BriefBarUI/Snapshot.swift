@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Draws views into images, offscreen, for `--render`: README pictures, and checking layouts without
-/// screen-recording permission.
+/// Draws views into images, offscreen: for `--render` (README pictures, and checking layouts without
+/// screen-recording permission), and for Settings' pictures of menu-bar items.
 @MainActor
 package enum Snapshot {
     /// Draws a SwiftUI view at its fitting size.

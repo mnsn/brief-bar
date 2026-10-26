@@ -17,7 +17,7 @@ BriefBar brings Teams Pulse, ADO Pulse and Copilot Pulse together in one app: on
 item, and permissions that macOS grants once. Full Disk Access for Teams and notifications for Azure
 DevOps cover later sources too, but only the ones you turn on. Several sources can share a menu-bar
 item, a desktop widget or a window, and you can hide what you don't need. An item they share can add
-their counts up by what they mean, ✋ needs you, ✕ something's wrong, ✓ done or ready, and list
+up their counts, ✋ needs you, ✕ something's wrong, ✓ done or ready, and list
 everything together by state under a brief of what matters; the window and a widget give you the same
 overview. And if you let them, agents, such as the Copilot CLI, can ask it what needs you, and work
 from what it knows ([Agents](#agents)).
@@ -100,14 +100,15 @@ shows them in three places, each arranged in Settings:
   **Open in Window** too. BriefBar shows a Dock icon while a window is open.
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
-item, widget or window, then give each its own again. Items that share sections show their counts side
-by side, with a tab for each in the list. The list opens at the tab you looked at last, even after
-BriefBar restarts, and the first time at the one that needs you. You can also hide a section you don't
-need, such as Group Chats, from any of them: its source stays on, and shows wherever you didn't hide
-it. To move menu-bar items, hold ⌘ and drag them.
+item, widget or window, then give each its own again: in Settings, each item is a card with a chip for
+each of its sections, and you drag a chip onto another card. Items that share sections show their
+counts side by side, with a tab for each in the list. The list opens at the tab you looked at last,
+even after BriefBar restarts, and the first time at the one that needs you. You can also hide a section
+you don't need, such as Group Chats, from any of them: its source stays on, and shows wherever you
+didn't hide it. To move menu-bar items, hold ⌘ and drag them.
 
-A menu-bar item that shows several sections can instead add its counts up by what they mean, the same
-for every source: set its **Counts** to **By Meaning** in Settings › Menu Bar. With everything in one
+A menu-bar item that shows several sections can instead add its counts up by state, the same for
+every source: set its **Counts** to **Added Up** in Settings › Menu Bar. With everything in one
 item, that's one ✋, one ✕ and one ✓ rather than nine symbols.
 
 | | Teams | Azure DevOps | Copilot | GitHub |
@@ -134,7 +135,7 @@ switch them.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-by-state-dark.png">
-    <img src="docs/images/menubar-by-state-light.png" width="420" alt="Every section in one menu-bar item, by meaning: 11 that need you, 3 wrong and 3 done or ready; its list is open, under Overview, with a brief of five lines from Copilot, Teams and Azure DevOps, then everything that needs you, from every source, the newest first">
+    <img src="docs/images/menubar-by-state-light.png" width="420" alt="Every section in one menu-bar item, its counts added up: 11 that need you, 3 wrong and 3 done or ready; its list is open, under Overview, with a brief of five lines from Copilot, Teams and Azure DevOps, then everything that needs you, from every source, the newest first">
   </picture>
 </p>
 
@@ -503,12 +504,16 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 
 **Settings › Agents** lets agents use BriefBar, off by default (see [Agents](#agents)).
 
-In **Settings › Menu Bar**, **Widgets** and **Windows**, each section shows on its own, with others or
-not at all, and **Put All in One** and **Give Each Its Own** change them all at once. A menu-bar item
-that shows several sections has **Counts**, **Side by Side** or **By Meaning** with the states it
-shows, and **List**, **A Tab for Each Section** or **Everything by State**. Each widget has its own
-**Position** (on the desktop or floating above windows) and **Size** (compact, medium or large), there
-and in its right-click menu, and Settings › Widgets turns on the **Overview** widget.
+In **Settings › Menu Bar**, **Widgets** and **Windows**, each item is a card with a chip for each
+section it shows. Drag a chip onto another card to put them together, onto **New Item** (or **New
+Widget**, **New Window**) to give it one of its own, or onto **Hidden**; click **New Item** to choose a
+section instead, or right-click a chip for the same moves. **Put All in One** and **Give Each Its Own**
+change them all at once. Settings › Menu Bar starts with your menu bar as it is now, BriefBar's items
+left to right with your counts, and each card shows its item the same way. A menu-bar item that shows
+several sections has **Counts**, **Side by Side** or **Added Up** with the states it adds up, and
+**List**, **A Tab for Each Section** or **Everything by State**. Each widget has its own **Position**
+(on the desktop or floating above windows) and **Size** (compact, medium or large), there and in its
+right-click menu, and Settings › Widgets turns on the **Overview** widget.
 
 ## Privacy
 
