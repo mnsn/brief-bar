@@ -81,6 +81,43 @@ import BriefBarCore
         #expect(earlier.dismissedCutoff(for: key) == Date(timeIntervalSinceReferenceDate: 0))
     }
 
+    /// You took a pull request off Needs You long ago and have looked at it since, then it isn't listed for a while, such
+    /// as while its organization isn't chosen. Pruning keeps when you took it off for as long as when you looked at it, so
+    /// once it's listed again, what you took off stays off.
+    @Test func whatYouTookOffStaysOffWhileWhatYouSawIsKept() throws {
+        let key = PRKey("contoso", 7)
+        // BriefBar has run for months.
+        var seen = SeenState.firstRun(now: t(-200 * day))
+        seen.dismiss([key], at: t(-70 * day))
+        seen.markSeen([key], at: t(-day))
+        // Taken off two months ago and more, and not looked at since: it goes, as before.
+        seen.dismiss([PRKey("contoso", 8)], at: t(-90 * day))
+
+        seen.prune(keeping: [], olderThan: t(-60 * day))
+        #expect(seen.seenAt.keys.sorted() == ["contoso/7"])
+        #expect(seen.dismissedAt.keys.sorted() == ["contoso/7"])
+        #expect(seen.dismissedCutoff(for: key) == t(-70 * day))
+
+        // Listed again, with recent activity: Sam's comment, which waited on you when you took it off, still doesn't.
+        let pr = makePR(created: t(-100 * day))
+        let thread = ReviewThread(id: 5, comments: [comment(1, People.sam, "Cap it?", at: t(-80 * day))])
+        let record = PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: [thread], lastActivity: t(-hour)),
+                              me: People.me.id)
+        func classify(dismissedCutoff: Date) -> PRSnapshot? {
+            PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: key), dismissedCutoff: dismissedCutoff, now: t(0))
+        }
+        let listed = try #require(classify(dismissedCutoff: seen.dismissedCutoff(for: key)))
+        #expect(listed.group != .needsYou)
+        #expect(listed.pendingEvents.isEmpty)
+        // Forgetting only when you took it off would have brought it back.
+        #expect(classify(dismissedCutoff: seen.baseline)?.group == .needsYou)
+
+        // Once when you looked at it is old enough to go too, both go.
+        seen.prune(keeping: [], olderThan: t(0))
+        #expect(seen.seenAt.isEmpty)
+        #expect(seen.dismissedAt.isEmpty)
+    }
+
     @Test func eachAccountHasSeenItsOwn() throws {
         let key = PRKey("contoso", 1)
         // Saved before accounts were told apart: it becomes the account signed in now's.

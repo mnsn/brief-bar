@@ -69,9 +69,20 @@ public struct SeenState: Sendable, Codable, Equatable {
 
     /// Forgets pull requests that are no longer listed and were last seen long ago.
     public mutating func prune(keeping keys: Set<PRKey>, olderThan date: Date) {
+        (seenAt, dismissedAt) = Self.pruned(seenAt: seenAt, dismissedAt: dismissedAt, keeping: keys, olderThan: date)
+    }
+
+    /// What's left of when you last looked at pull requests and took them off Needs You, by `PRKey.description`, once
+    /// those no longer listed and last seen before `date` are forgotten: for `prune`, and for what's kept elsewhere, such
+    /// as in memory. When you took one off goes with when you last looked at it, never before: you may have taken it off
+    /// long ago and looked at it since, and forgetting only that would bring back what you took off, once it's listed again.
+    public static func pruned(
+        seenAt: [String: Date], dismissedAt: [String: Date], keeping keys: Set<PRKey>, olderThan date: Date
+    ) -> (seenAt: [String: Date], dismissedAt: [String: Date]) {
         let kept = Set(keys.map(\.description))
-        seenAt = seenAt.filter { kept.contains($0.key) || $0.value > date }
-        dismissedAt = dismissedAt.filter { kept.contains($0.key) || $0.value > date }
+        let seen = seenAt.filter { kept.contains($0.key) || $0.value > date }
+        let dismissed = dismissedAt.filter { seen[$0.key] != nil || kept.contains($0.key) || $0.value > date }
+        return (seen, dismissed)
     }
 }
 

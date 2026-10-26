@@ -159,6 +159,40 @@ import Testing
         #expect(settings.dismissedCutoff(for: sentInChat) < now)
     }
 
+    /// You took them off Needs You long ago and have looked at them since, then they aren't listed anymore: Dana's link
+    /// expired, and your organization isn't chosen. Pruning keeps when you took them off for as long as when you looked at
+    /// them, in memory as in the preferences, so once a new link or your organization brings them back with something new,
+    /// what you took off stays off.
+    @Test func keepsWhatYouTookOffForAsLongAsWhatYouSaw() throws {
+        let defaults = preferences(enabled: true)
+        // BriefBar has run for months.
+        let firstRun = now.addingTimeInterval(-200 * 86_400)
+        let settings = AppSettings(defaults: defaults, now: firstRun)
+        settings.startSeeing(now: firstRun)
+        let tookOff = now.addingTimeInterval(-70 * 86_400)
+        let looked = now.addingTimeInterval(-86_400)
+        settings.dismiss([(key: sentInChat, date: tookOff)], sentInChats: [sentInChat])
+        settings.markSeen([sentInChat], at: looked, sentInChats: [sentInChat])
+        settings.dismiss([(key: yours, date: tookOff)])
+        settings.markSeen([yours], at: looked)
+
+        settings.pruneSeen(keeping: [], now: now)
+        for key in [sentInChat, yours] {
+            #expect(settings.seenCutoff(for: key) == looked)
+            #expect(settings.dismissedCutoff(for: key) == tookOff)
+        }
+        #expect(!readable(defaults).contains("contoso/7"))
+        #expect(try savedSeen(in: defaults).dismissedAt.keys.sorted() == ["contoso/9"])
+        #expect(AppSettings(defaults: defaults, now: now).dismissedCutoff(for: yours) == tookOff)
+
+        // Once you last looked at them two months ago and more, both go.
+        settings.pruneSeen(keeping: [], now: looked.addingTimeInterval(61 * 86_400))
+        for key in [sentInChat, yours] {
+            #expect(settings.seenCutoff(for: key) < tookOff)
+            #expect(settings.dismissedCutoff(for: key) < tookOff)
+        }
+    }
+
     @Test func movesWhatAnEarlierBuildTookOffNeedsYouIntoMemory() throws {
         let defaults = preferences(enabled: true)
         var earlier = SeenState.firstRun(now: now)

@@ -831,7 +831,9 @@ and a vote that wants changes leave the pull request in its usual group, and a l
 stops needing you. So **Mark as Seen** sees everything in Needs You, but keeps the comments that wait on
 you there. A comment from before the three days before BriefBar first ran never needs you. What you
 take off Needs You is kept as what you've seen is: in the preferences, with each account, except for
-pull requests listed only because someone sent them to you, kept in memory only.
+pull requests listed only because someone sent them to you, kept in memory only. It's forgotten with
+when you last looked at the pull request, never before (`SeenState.pruned`): once it's no longer listed
+and you last looked at it two months ago or more.
 
 ### Answered
 

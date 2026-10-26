@@ -331,14 +331,13 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets pull requests that are no longer listed and were last seen over two months ago.
+    /// Forgets pull requests that are no longer listed and were last seen over two months ago. When you took one off Needs
+    /// You is forgotten with when you last looked at it, in the preferences and in memory alike (`SeenState.pruned`).
     func pruneSeen(keeping keys: Set<PRKey>, now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-60 * 86_400)
-        let kept = Set(keys.map(\.description))
-        let inMemory = seenSentInChats.filter { kept.contains($0.key) || $0.value > cutoff }
-        if inMemory != seenSentInChats { seenSentInChats = inMemory }
-        let dismissedInMemory = dismissedSentInChats.filter { kept.contains($0.key) || $0.value > cutoff }
-        if dismissedInMemory != dismissedSentInChats { dismissedSentInChats = dismissedInMemory }
+        let inMemory = SeenState.pruned(seenAt: seenSentInChats, dismissedAt: dismissedSentInChats, keeping: keys, olderThan: cutoff)
+        if inMemory.seenAt != seenSentInChats { seenSentInChats = inMemory.seenAt }
+        if inMemory.dismissedAt != dismissedSentInChats { dismissedSentInChats = inMemory.dismissedAt }
         var updated = seen
         updated.prune(keeping: keys, olderThan: cutoff)
         guard updated != seen else { return }
