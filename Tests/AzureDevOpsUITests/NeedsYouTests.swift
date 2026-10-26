@@ -207,6 +207,35 @@ import Testing
         #expect(demo.settings.dismissedCutoff(for: key) < asked)
     }
 
+    /// A thread you take out of the prompt holds back what it hands off while it waits on you. Resolved before the task
+    /// starts, it doesn't wait on you anymore: what the prompt hands off leaves Needs You.
+    @Test func aThreadYouTakeOutAndResolveMeanwhileDoesntHoldItBack() async throws {
+        var demo = await loadDemo()
+        let store = demo.store
+        let key = PRKey(DemoData.organization, 4102)
+        let replied = try #require(demo.item(4102)?.since)
+        let sam = try #require(demo.snapshot.records.first { $0.id == key }?.details?.threads.first { $0.id == 11 }?.comments.last?.author)
+        // Sam's earlier question, which waits on you too.
+        let asked = demo.now.addingTimeInterval(-2 * 3_600)
+        demo.add(ReviewComment(id: 1, author: sam, text: "Should the client time out too?", publishedAt: asked), to: 4102, thread: 65)
+        demo.refresh()
+        #expect(demo.item(4102)?.pendingEvents.map(\.id).sorted() == ["c11.2", "c65.1"])
+        let record = try #require(store.record(for: key))
+        let handOff = try #require(store.commentHandOff(.fixComments, for: record))
+        let prompt = await PullRequestTasks.prompt(.fixComments, for: record, client: nil)
+
+        // You keep the timeout question for yourself, delete its entry, and resolve its thread before you send the prompt.
+        let entry = "2. General comment (thread 65)\n   Sam Rivera: Should the client time out too?"
+        #expect(prompt.contains(entry))
+        demo.setStatus("fixed", of: 65, in: 4102)
+        demo.refresh()
+        store.sentToCopilot(handOff, prompt: prompt.replacingOccurrences(of: entry, with: ""))
+        demo.refresh()
+        #expect(demo.item(4102)?.group == .waiting)
+        #expect(demo.item(4102)?.pendingEvents.isEmpty == true)
+        #expect(demo.settings.dismissedCutoff(for: key) == replied)
+    }
+
     // MARK: Accounts
 
     /// Robin's prompt for 4102, written as the composer opens, with Robin signed in to the Azure CLI.

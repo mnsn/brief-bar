@@ -235,6 +235,9 @@ import BriefBarCore
         let newer = try #require(handOff.handedOff(in: deleting(1, from: prompt)))
         #expect(newer < t(-2 * hour))
         #expect(classify(threads, through: newer)?.pendingEvents.map(\.id).sorted() == ["c1.1", "c2.1"])
+        // The same as the pull request is when the task starts, where they still wait on you.
+        #expect(handOff.handedOff(in: deleting(2, from: prompt), now: record(threads)) == older)
+        #expect(handOff.handedOff(in: deleting(1, from: prompt), now: record(threads)) == newer)
         #expect(handOff.handedOff(in: deleting(1, from: deleting(2, from: prompt))) == nil)
         // An entry whose line you changed isn't one BriefBar can tell is still there either.
         #expect(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 2)", with: "(the second thread)")) == older)
@@ -249,6 +252,7 @@ import BriefBarCore
         let through = try #require(capture(threads).handedOff(in: prompt))
         #expect(through == t(-2 * hour + 30))
         #expect(classify(threads, through: through)?.pendingEvents.map(\.id) == ["c31.1"])
+        #expect(capture(threads).handedOff(in: prompt, now: record(threads)) == through)
     }
 
     /// The prompt quotes comments word for word: one that names another thread, even as its entry would, doesn't make
@@ -261,6 +265,7 @@ import BriefBarCore
         #expect(listed.contains("(thread 31)"))
         let through = try #require(capture(beyond).handedOff(in: listed))
         #expect(through == t(-2 * hour + 30))
+        #expect(capture(beyond).handedOff(in: listed, now: record(beyond)) == through)
         #expect(classify(beyond, through: through)?.pendingEvents.map(\.id) == ["c31.1"])
 
         // Deleted from the prompt: Sam's comment still names it.
@@ -269,6 +274,7 @@ import BriefBarCore
         #expect(deleted.contains("(thread 2)"))
         let kept = try #require(capture(named).handedOff(in: deleted))
         #expect(kept == t(-2 * hour))
+        #expect(capture(named).handedOff(in: deleted, now: record(named)) == kept)
         #expect(classify(named, through: kept)?.pendingEvents.map(\.id) == ["c2.1"])
     }
 
@@ -278,5 +284,31 @@ import BriefBarCore
         let handOff = capture(threads, dismissedCutoff: t(-150 * minute))
         #expect(handOff.waiting.map(\.thread) == [2])
         #expect(handOff.handedOff(in: deleting(1, from: PullRequestPrompt.fixComments(record(threads)))) == t(-hour))
+        #expect(handOff.handedOff(in: deleting(1, from: PullRequestPrompt.fixComments(record(threads))), now: record(threads)) == t(-hour))
+    }
+
+    /// A thread whose entry you deleted from the prompt holds back what it hands off while it waits on you. Answered or
+    /// resolved before the task starts, it doesn't wait on you anymore, and doesn't.
+    @Test func aThreadTakenOutOfThePromptAndAnsweredMeanwhileDoesntHoldItBack() throws {
+        let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = capture(threads)
+        let prompt = deleting(1, from: PullRequestPrompt.fixComments(record(threads)))
+        let held = try #require(handOff.handedOff(in: prompt, now: record(threads)))
+        #expect(held < t(-2 * hour))
+
+        // Resolved, or answered by you, while you checked the prompt: Priya's comment leaves Needs You.
+        var resolved = threads
+        resolved[0].status = "fixed"
+        var answered = threads
+        answered[0].comments.append(comment(2, me, "No, it's capped already.", at: t(-30 * minute)))
+        for now in [resolved, answered] {
+            let through = try #require(handOff.handedOff(in: prompt, now: record(now)))
+            #expect(through == t(-hour))
+            let after = try #require(classify(now, through: through))
+            #expect(after.group != .needsYou)
+            #expect(after.pendingEvents.isEmpty)
+        }
+        // Without the pull request as it is when the task starts, the thread holds it back as the prompt was written.
+        #expect(handOff.handedOff(in: prompt) == held)
     }
 }

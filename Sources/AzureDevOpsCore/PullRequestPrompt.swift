@@ -294,22 +294,26 @@ public struct CommentHandOff: Sendable, Equatable {
     }
 
     /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
-    /// threads whose entries are still in it, but before the first that still needs you, since a pull request has one
-    /// cutoff. That's one in a thread whose entry isn't in the prompt, and, with the pull request as BriefBar last read
-    /// it when the task starts (`now`), one that waits on you then that the prompt doesn't have, such as in a thread
-    /// reopened since it was written. A thread's entry is still there while its own line is: a comment in another entry
+    /// threads whose entries are still in it, but before the first that still waits on you and isn't handed off, since
+    /// a pull request has one cutoff. With the pull request as BriefBar last read it when the task starts (`now`),
+    /// that's one that waits on you then that the prompt doesn't have: in a thread whose entry isn't in the prompt, in
+    /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
+    /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
+    /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
     /// that names it doesn't count. Nil when none of them is still there.
     public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
         let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
         guard let last = kept.map(\.last).max() else { return nil }
-        var stays = waiting.filter { !kept.contains($0) }.map(\.first)
-        if let now {
+        let stays: [Date]
+        if let threads = now?.details?.threads {
             let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
-            for thread in now.details?.threads ?? [] where !thread.isResolved {
-                stays += PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff)
+            stays = threads.filter { !$0.isResolved }.flatMap { thread in
+                PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff)
                     .filter { !handed.contains("\(thread.id).\($0.id)") }.map(\.publishedAt)
             }
+        } else {
+            stays = waiting.filter { !kept.contains($0) }.map(\.first)
         }
         guard let first = stays.min() else { return last }
         return min(last, first.addingTimeInterval(-0.001))
