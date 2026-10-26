@@ -84,6 +84,51 @@ import Testing
         #expect(RunTranscript.pullRequest(in: "No link here") == nil)
     }
 
+    @Test func findsALinkAmongMarkdownAndPunctuation() {
+        let link = "https://github.com/contoso/web/pull/5"
+        for text in ["**\(link)**", "_\(link)_", "`\(link)`", "<\(link)>", "(\(link)).", "\"\(link)\"", "\(link):", "- \(link)\n",
+                     "[#5](\(link) \"Fix it\")", "Opened \(link), not https://evil.example/?next=https://github.com/contoso/web/pull/6"] {
+            #expect(RunTranscript.pullRequest(in: text)?.absoluteString == link, "\(text)")
+        }
+    }
+
+    /// Where it goes is the pull request's page, on its host in lowercase.
+    @Test func linksToThePullRequestsPage() {
+        let github = "https://github.com/Contoso/Web/pull/5"
+        for text in ["\(github)/files", "\(github)/", "\(github)?w=1#diff", "HTTPS://GitHub.com/Contoso/Web/pull/5"] {
+            #expect(RunTranscript.pullRequest(in: text)?.absoluteString == github, "\(text)")
+        }
+        let azure = "https://contoso.visualstudio.com/Storefront/_git/web/pullrequest/77"
+        #expect(RunTranscript.pullRequest(in: "Opened \(azure)?_a=files.")?.absoluteString == azure)
+        #expect(RunTranscript.pullRequest(in: "HTTPS://Contoso.VisualStudio.com/Storefront/_git/web/pullrequest/77")?.absoluteString == azure)
+        #expect(RunTranscript.pullRequest(in: "https://dev.azure.com/contoso/Café/_git/web/pullrequest/5")?.absoluteString
+                == "https://dev.azure.com/contoso/Caf%C3%A9/_git/web/pullrequest/5")
+    }
+
+    @Test func ignoresLinksThatOnlyLookLikePullRequests() {
+        for text in [
+            "https://evil.example/?next=https://github.com/contoso/web/pull/5",
+            "https://github.com/login?return_to=https://github.com/contoso/web/pull/5",
+            "https://evil.example/github.com/contoso/web/pull/5",
+            "https://github.com.evil.example/contoso/web/pull/5",
+            "https://github.com@evil.example/contoso/web/pull/5",
+            "https://github.com\\@evil.example/contoso/web/pull/5",
+            "https://github.com:8443/contoso/web/pull/5",
+            "https://contoso.visualstudio.com.evil.example/Storefront/_git/web/pullrequest/77",
+            "https://contoso.fabrikam.visualstudio.com/Storefront/_git/web/pullrequest/77",
+            "https://dev.azure.com/contoso/a/b/c/_git/web/pullrequest/77",
+            "http://github.com/contoso/web/pull/5",
+            "xhttps://github.com/contoso/web/pull/5",
+            "https://github.com/contoso/web/pull/5.evil.example",
+            "https://github.com/contoso/web/pull/5evil",
+            "https://github.com/contoso/web/issues/5",
+            "https://github.com/contoso/pull/5",
+            "https://github.com//contoso/pull/5",
+        ] {
+            #expect(RunTranscript.pullRequest(in: text) == nil, "\(text)")
+        }
+    }
+
     /// The summary it called the task done with, and its own last message, not a subagent's.
     @Test func readsCopilotsLastWords() throws {
         let folder = try makeTemporaryDirectory()
