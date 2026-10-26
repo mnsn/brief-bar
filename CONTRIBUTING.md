@@ -4,7 +4,8 @@ Bug reports, ideas and pull requests are welcome.
 
 ## Getting started
 
-You need macOS 15 or later and Swift 6. Xcode works, and so do just the Command Line Tools.
+You need an Apple silicon Mac (M1 or later), macOS 15 or later and Swift 6. Xcode works, and so do just
+the Command Line Tools.
 
 ```sh
 git clone https://github.com/mnsn/brief-bar.git
@@ -37,7 +38,7 @@ make app                # build BriefBar.app into ./build, signed ad hoc
 make install            # build the app, copy it to ~/Applications and open it
 make signing-identity   # optional: a certificate that builds are then signed with, to keep Full Disk Access
 make pppc-profile       # a configuration profile that grants the built app Full Disk Access, for MDM
-make package            # what a release ships: the universal app, checked and zipped, in build/release
+make package            # what a release ships: the Apple silicon app, checked and zipped, in build/release
 make icon               # regenerate Resources/AppIcon.icns
 ```
 
@@ -252,7 +253,7 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - Keep each pull request focused, and describe the change users will see.
 - Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 15 (with
   Xcode 16, so without summaries) and macOS 26, checks the signing keys' protection, packages the app,
-  checks its updater, and runs it on Apple silicon and Intel.
+  checks its updater, and runs it on Apple silicon only.
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
@@ -290,14 +291,14 @@ security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN" && rmdir "$(dirname "$BRIE
 `.github/workflows/ci.yml` runs on every push to `main` that changes more than docs, on pull requests,
 and when started by hand:
 
-- It builds and tests on macOS 15, whose Xcode 16 SDK has no FoundationModels, and on macOS 26. Each
-  runs the boundary and demo checks and `make signing-key-check`, packages the universal app with a
-  throwaway certificate, signs its update with a throwaway key, the way a release does
+- It builds and tests on Apple silicon on macOS 15, whose Xcode 16 SDK has no FoundationModels, and on
+  macOS 26. Each runs the boundary and demo checks and `make signing-key-check`, packages the arm64
+  app with a throwaway certificate, signs its update with a throwaway key, the way a release does
   (`scripts/appcast-dry-run.sh`), checks that its updater can't use BriefBar's permissions
   (`scripts/test-updater-isolation.sh`), and installs an update through it
   (`scripts/update-rehearsal.sh`).
-- The macOS 26 job uploads the package as the `BriefBar` artifact, and the next jobs run it on
-  macOS 15, on Apple silicon and on Intel, with the updater check too.
+- The macOS 26 job uploads the package as the `BriefBar` artifact, and the next job runs it on
+  macOS 15, on Apple silicon, with the updater check too. Intel builds and checks aren't supported.
 
 ## Releasing
 
@@ -323,13 +324,18 @@ Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
    and click **Approve and deploy**.
 
 The tag starts the [release workflow](.github/workflows/release.yml). Its first job checks the
-version and the changelog, then builds and tests the universal app on macOS 26, signed with a
+version and the changelog, then builds and tests the Apple silicon app on macOS 26, signed with a
 throwaway certificate. After your approval, the second job signs the app again with the release
 certificate (`scripts/sign-release.sh`), checks that it's the certificate in
 `Resources/ReleaseRequirement.txt` and deletes it from the runner. It then signs the zip and writes
 `appcast.xml` (`scripts/make-appcast.sh`), checks the signatures with the public key
 (`scripts/verify-appcast.swift`), attests both files, and publishes the release with `BriefBar.zip`,
 its SHA-256, `appcast.xml` and the changelog section.
+
+The app and its updater are built only for arm64. Sparkle derives
+`<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>` from the app's binary, and
+`scripts/verify-appcast.swift` requires it before publication, so Intel Macs aren't offered an
+incompatible update.
 
 ### The release keys
 

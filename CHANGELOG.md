@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
+  The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
+  Existing Intel installs aren't offered incompatible updates.
+
 ## 0.4.0 - 2026-10-26
 
 - **Copilot tasks on pull requests start again.** Sending a PR to Copilot, such as **Pre-review with

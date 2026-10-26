@@ -9,20 +9,18 @@
 # - It's set up for signed updates. On this Mac it launches, starts the updater, which loads its Sparkle, and sorts
 #   every source's demo data into the expected groups. (That the updater can't use BriefBar's permissions is
 #   checked where it shows, in a copy macOS opens: scripts/test-updater-isolation.sh.)
-#   scripts/check-app.sh [app] [--universal] [--release] [--allow-ad-hoc]   (default: build/BriefBar.app)
-#   --universal     requires code for both Apple silicon and Intel (releases and CI).
+# - BriefBar and its updater contain only arm64 code; Sparkle supports arm64 too.
+#   scripts/check-app.sh [app] [--release] [--allow-ad-hoc]   (default: build/BriefBar.app)
 #   --release       also requires the update signing key in Info.plist (scripts/make-release-keys.sh).
 #   --allow-ad-hoc  accepts an ad-hoc signature, for a build of your own.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="build/BriefBar.app"
-UNIVERSAL=false
 RELEASE=false
 ALLOW_AD_HOC=false
 for arg in "$@"; do
     case "$arg" in
-        --universal) UNIVERSAL=true ;;
         --release) RELEASE=true ;;
         --allow-ad-hoc) ALLOW_AD_HOC=true ;;
         -*) echo "Unknown option: $arg" >&2; exit 2 ;;
@@ -106,24 +104,19 @@ done
 [[ ! -e "$FRAMEWORK/Versions/B/XPCServices" ]] || fail "still has Sparkle's XPC services."
 [[ -f "$UPDATER/Contents/Resources/Sparkle-LICENSE.txt" ]] || fail "doesn't include Sparkle's license."
 ARCHS="$(lipo -archs "$BIN")"
-REQUIRED_ARCHS="$(uname -m)"
-if $UNIVERSAL; then
-    REQUIRED_ARCHS="arm64 x86_64"
-fi
-for arch in $REQUIRED_ARCHS; do
-    for binary in "$BIN" "$UPDATER_BIN" "$FRAMEWORK/Versions/B/Sparkle"; do
-        [[ " $(lipo -archs "$binary") " == *" $arch "* ]] || fail "${binary#"$APP/"} has no $arch code."
-    done
-    OTHERS="$(links_other_than "$arch" "$BIN" '^/(usr/lib|System/Library)/')"
-    [[ -z "$OTHERS" ]] || fail "${BIN#"$APP/"} ($arch) links libraries that aren't Apple's: $OTHERS"
-    [[ -z "$(rpaths "$arch" "$BIN")" ]] || fail "${BIN#"$APP/"} ($arch) looks for libraries in $(rpaths "$arch" "$BIN")"
-    OTHERS="$(links_other_than "$arch" "$UPDATER_BIN" '^/(usr/lib|System/Library)/|^@rpath/Sparkle\.framework/')"
-    [[ -z "$OTHERS" ]] || fail "${UPDATER_BIN#"$APP/"} ($arch) links libraries other than Apple's and Sparkle: $OTHERS"
-    otool -arch "$arch" -L "$UPDATER_BIN" | grep '@rpath/Sparkle.framework/' >/dev/null ||
-        fail "${UPDATER_BIN#"$APP/"} ($arch) doesn't link Sparkle."
-    [[ "$(rpaths "$arch" "$UPDATER_BIN")" == "@executable_path/../Frameworks " ]] ||
-        fail "${UPDATER_BIN#"$APP/"} ($arch) looks for libraries in other folders than its Frameworks: $(rpaths "$arch" "$UPDATER_BIN")"
+for binary in "$BIN" "$UPDATER_BIN"; do
+    [[ "$(lipo -archs "$binary")" == arm64 ]] || fail "${binary#"$APP/"} must contain only arm64 code."
 done
+[[ " $(lipo -archs "$FRAMEWORK/Versions/B/Sparkle") " == *" arm64 "* ]] || fail "Sparkle has no arm64 code."
+OTHERS="$(links_other_than arm64 "$BIN" '^/(usr/lib|System/Library)/')"
+[[ -z "$OTHERS" ]] || fail "${BIN#"$APP/"} links libraries that aren't Apple's: $OTHERS"
+[[ -z "$(rpaths arm64 "$BIN")" ]] || fail "${BIN#"$APP/"} looks for libraries in $(rpaths arm64 "$BIN")"
+OTHERS="$(links_other_than arm64 "$UPDATER_BIN" '^/(usr/lib|System/Library)/|^@rpath/Sparkle\.framework/')"
+[[ -z "$OTHERS" ]] || fail "${UPDATER_BIN#"$APP/"} links libraries other than Apple's and Sparkle: $OTHERS"
+otool -arch arm64 -L "$UPDATER_BIN" | grep '@rpath/Sparkle.framework/' >/dev/null ||
+    fail "${UPDATER_BIN#"$APP/"} doesn't link Sparkle."
+[[ "$(rpaths arm64 "$UPDATER_BIN")" == "@executable_path/../Frameworks " ]] ||
+    fail "${UPDATER_BIN#"$APP/"} looks for libraries in other folders than its Frameworks: $(rpaths arm64 "$UPDATER_BIN")"
 
 # Signed updates only, from the feed in the latest GitHub release; Sparkle compares CFBundleVersion.
 [[ "$(plist SUFeedURL)" == https://github.com/mnsn/brief-bar/releases/latest/download/appcast.xml ]] ||

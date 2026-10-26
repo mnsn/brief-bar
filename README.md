@@ -167,7 +167,7 @@ and Teams' summaries:
 - Copilot's lines stay in BriefBar's own words.
 
 The model only words the lines BriefBar picked, and only while a list or the window shows them, never
-for the widget. Without Apple Intelligence (an Intel Mac, macOS 15, Apple Intelligence turned off or
+for the widget. Without Apple Intelligence (macOS 15, Apple Intelligence turned off or
 still getting ready), the brief stays in BriefBar's own words, without ✨, and Settings › Menu Bar says
 why.
 
@@ -385,7 +385,7 @@ does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
 ## Install
 
-BriefBar needs macOS 15 or later, on Apple silicon or Intel.
+BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
 1. Download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
    from the [latest release](https://github.com/mnsn/brief-bar/releases/latest) and unzip it.
