@@ -38,6 +38,10 @@ struct LayoutPage: View {
             Text(surface.explanation)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if surface == .menuBar && !items.isEmpty {
+                MenuBarLine(model: model)
+            }
+
             if surface == .widgets {
                 overviewWidget
             }
@@ -67,15 +71,7 @@ struct LayoutPage: View {
                         }
                     }
                     Section {
-                        dropZone(.newItem, to: .alone) {
-                            Label {
-                                Text("New \(surface.itemNoun)")
-                                Text("Drop a \(surface.sectionNoun) here to give it one of its own")
-                            } icon: {
-                                Image(systemName: "plus.rectangle.on.rectangle")
-                            }
-                            .foregroundStyle(.secondary)
-                        }
+                        newItemSlot(items: items, hidden: hidden)
                     }
                     Section {
                         dropZone(.hidden, to: .hidden) {
@@ -188,11 +184,65 @@ struct LayoutPage: View {
         }
     }
 
+    /// After the cards, the way to add one: drop a chip on New Item, or click it and pick a section, to give that
+    /// section an item of its own. It stands in for any item you could add, so there are never empty cards; once
+    /// every section has an item of its own, it says so.
+    private func newItemSlot(items: [SectionLayout.Item], hidden: [SectionID]) -> some View {
+        let sharing = items.filter { $0.sections.count > 1 }.flatMap(\.sections)
+        let canMove = !sharing.isEmpty || !hidden.isEmpty
+        return dropZone(.newItem, to: canMove ? .alone : nil) {
+            Menu {
+                if !sharing.isEmpty {
+                    Section("With Others") {
+                        ForEach(sharing, id: \.self) { section in
+                            Button { move(section, to: .alone) } label: { menuLabel(of: section) }
+                        }
+                    }
+                }
+                if !hidden.isEmpty {
+                    Section("Hidden") {
+                        ForEach(hidden, id: \.self) { section in
+                            Button { move(section, to: .alone) } label: { menuLabel(of: section) }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(canMove ? Color.accentColor : Color.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("New \(surface.itemNoun)")
+                            .foregroundStyle(canMove ? .primary : .secondary)
+                        Text(canMove
+                             ? "Drop a \(surface.sectionNoun) here, or click to choose one"
+                             : "Every \(surface.sectionNoun) has \(surface.anItem) of its own")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .disabled(!canMove)
+            .help(canMove
+                  ? "Give a \(surface.sectionNoun) \(surface.anItem) of its own"
+                  : "Every \(surface.sectionNoun) has \(surface.anItem) of its own")
+        }
+    }
+
+    private func menuLabel(of section: SectionID) -> some View {
+        Label(shortName(of: section), systemImage: model.info(for: section)?.symbol ?? AppSymbols.app)
+    }
+
     /// Where chips can be dropped, highlighted while one is over it. Nil drops nothing.
     private func dropZone<Content: View>(
         _ zone: DropTarget, to destination: SectionDestination?, @ViewBuilder content: () -> Content
     ) -> some View {
-        let isTargeted = target == zone
+        let isTargeted = destination != nil && target == zone
         return content()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(5)
@@ -272,7 +322,7 @@ struct LayoutPage: View {
         }
     }
 
-    /// Side by side, or added up by what they mean, with which states.
+    /// Side by side, or added up by state, with which states.
     @ViewBuilder
     private func menuBarOptions(_ item: SectionLayout.Item) -> some View {
         let options = model.options(forMenuBarItem: item.id)
@@ -281,9 +331,14 @@ struct LayoutPage: View {
             body(&changed)
             model.setOptions(changed, forMenuBarItem: item.id)
         }
-        Picker("Counts", selection: Binding(get: { options.byState }, set: { byState in change { $0.byState = byState } })) {
+        Picker(selection: Binding(get: { options.byState }, set: { byState in change { $0.byState = byState } })) {
             Text("Side by Side").tag(false)
-            Text("By Meaning").tag(true)
+            Text("Added Up").tag(true)
+        } label: {
+            Text("Counts")
+            Text(options.byState
+                 ? "One count for each state below, added up across its sections"
+                 : "Each section's own symbol and counts, one after the other")
         }
         .pickerStyle(.segmented)
         if options.byState {
@@ -372,41 +427,102 @@ private struct SectionChip: View {
     }
 }
 
-/// A menu-bar item as it shows in the menu bar, and kept up to date as its sections' counts change.
+/// A menu-bar item's card's header: the item as it shows in the menu bar, with your counts as they are now.
 private struct MenuBarPreview: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     let sections: [SectionID]
     let options: MenuBarItemOptions
 
-    @Environment(\.colorScheme) private var colorScheme
-    /// Goes up when the sections' counts may have changed, to draw them again.
-    @LocalState private var updates = 0
-
     var body: some View {
-        let _ = updates
-        let content = model.menuBarContent(sections: sections, options: options)
-        let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
-        Group {
-            if let image = MenuBarDrawing.image(of: content, appearance: appearance) {
-                Image(nsImage: image)
-            }
+        LiveCounts(model: model, sections: sections) {
+            MenuBarItemPicture(content: model.menuBarContent(sections: sections, options: options))
         }
         .padding(.horizontal, 5)
         .frame(height: 24)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.07)))
         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .help(content.summary)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("In the menu bar")
-        .accessibilityValue(content.summary)
-        // Subscribed once for these sections, not on every update: some sources send what they have as soon as
-        // they're subscribed to, which would draw it again, and subscribe again, without end.
-        .task(id: sections) { @MainActor in
-            let changes = Publishers.MergeMany(model.sourceParts(of: sections).map { $0.source.segmentsChanged })
-            for await _ in changes.values {
-                updates += 1
+    }
+}
+
+/// BriefBar's items, left to right as they are in your menu bar, with your counts as they are now: how much room
+/// they take, all together.
+private struct MenuBarLine: View {
+    @ObservedObject var model: AppModel
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let spacing: CGFloat = 12
+
+    var body: some View {
+        let items = model.menuBarItemsInOrder()
+        VStack(alignment: .leading, spacing: 6) {
+            Text("In your menu bar now")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            LiveCounts(model: model, sections: items.flatMap(\.sections)) {
+                let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+                let contents = items.map { model.menuBarContent(sections: $0.sections, options: model.options(forMenuBarItem: $0.id)) }
+                let pictures = contents.compactMap { MenuBarDrawing.image(of: $0, appearance: appearance) }
+                let width = pictures.reduce(0) { $0 + $1.size.width } + spacing * CGFloat(max(pictures.count - 1, 0))
+                // Right-aligned, as in the menu bar, and smaller if they don't all fit.
+                GeometryReader { proxy in
+                    HStack(spacing: spacing) {
+                        ForEach(pictures.indices, id: \.self) { index in
+                            Image(nsImage: pictures[index])
+                        }
+                    }
+                    .fixedSize()
+                    .scaleEffect(min(1, proxy.size.width / max(width, 1)), anchor: .trailing)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .trailing)
+                }
+                .frame(height: 22)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("In your menu bar now")
+                .accessibilityValue(contents.map(\.summary).joined(separator: "\n"))
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+    }
+}
+
+/// A menu-bar item, drawn as the menu bar draws it.
+private struct MenuBarItemPicture: View {
+    let content: MenuBarItemContent
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if let image = MenuBarDrawing.image(of: content, appearance: NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)) {
+            Image(nsImage: image)
+                .help(content.summary)
+                .accessibilityLabel("In the menu bar")
+                .accessibilityValue(content.summary)
+        }
+    }
+}
+
+/// Draws `content` again whenever the counts of `sections` may have changed.
+private struct LiveCounts<Content: View>: View {
+    let model: AppModel
+    let sections: [SectionID]
+    @ViewBuilder let content: () -> Content
+
+    /// Goes up when the sections' counts may have changed.
+    @LocalState private var updates = 0
+
+    var body: some View {
+        let _ = updates
+        content()
+            // Subscribed once for these sections, not on every update: some sources send what they have as soon as
+            // they're subscribed to, which would draw it again, and subscribe again, without end.
+            .task(id: sections) { @MainActor in
+                let changes = Publishers.MergeMany(model.sourceParts(of: sections).map { $0.source.segmentsChanged })
+                for await _ in changes.values {
+                    updates += 1
+                }
+            }
     }
 }
 
@@ -474,6 +590,15 @@ extension Surface {
         self == .windows ? "page" : "section"
     }
 
+    /// One of its items, in a sentence: "an item", "a widget", "a window".
+    var anItem: String {
+        switch self {
+        case .menuBar: return "an item"
+        case .widgets: return "a widget"
+        case .windows: return "a window"
+        }
+    }
+
     var subtitle: String {
         switch self {
         case .menuBar: return "Which sections show, and which share a menu-bar item"
@@ -485,7 +610,7 @@ extension Surface {
     var explanation: String {
         switch self {
         case .menuBar:
-            return "Each card is a menu-bar item. Drag a section onto another card to put them in one item, with their counts side by side or added up by what they mean, and a tab for each in its list or everything in one list by state. Drag it onto New Item to give it one of its own, or onto Hidden if you don't need it. To move items in the menu bar, hold ⌘ and drag them."
+            return "Each card is a menu-bar item. Drag a section onto another card to show them in one item, onto New Item to give it one of its own, or onto Hidden if you don't need it. To move items in the menu bar, hold ⌘ and drag them."
         case .widgets:
             return "Each card is a widget, which shows its sections one above the other, behind your windows or floating above them. Drag a section onto another card to put them in one widget, onto New Widget to give it one of its own, or onto Hidden; Teams' start hidden. Drag a widget by its header, and right-click it for its settings."
         case .windows:

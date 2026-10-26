@@ -48,7 +48,7 @@ enum Renderer {
         combined.combine(.copilotSessions, with: .azureDevOpsPullRequests)
         let combinedItems = combined.visibleItems(showing: shown)
         let combinedIndex = combinedItems.firstIndex { $0.sections.count > 1 }
-        // Every section in one item, side by side, then added up by what they mean, as Settings suggests.
+        // Every section in one item, side by side, then added up by state, as Settings suggests.
         var all = model.layout(.menuBar)
         all.combineAll(items.flatMap(\.sections))
         let allItems = all.visibleItems(showing: shown)

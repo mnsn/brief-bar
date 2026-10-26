@@ -176,6 +176,15 @@ final class AppModel: ObservableObject {
         layout(surface).visibleItems(showing: sections(surface))
     }
 
+    /// The menu-bar items that show, left to right as they are in the menu bar, where you may have ⌘-dragged them;
+    /// in the layout's order until they're all there, as for `--render`.
+    func menuBarItemsInOrder() -> [SectionLayout.Item] {
+        let visible = visibleItems(.menuBar)
+        let positions = visible.compactMap { items[$0.id]?.screenX }
+        guard positions.count == visible.count else { return visible }
+        return zip(visible, positions).sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
     /// Puts a section where you dropped it in Settings: with others, on its own, or hidden. A hidden section's source
     /// stays on.
     func move(_ section: SectionID, to destination: SectionDestination, on surface: Surface) {

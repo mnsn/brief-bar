@@ -23,6 +23,11 @@ final class MenuBarItemController: NSObject {
     /// The sections whose counts the item shows.
     private var counted: [SectionID] = []
 
+    /// Where the item is across the screen, to put items in the order they're in the menu bar. Nil until it's there.
+    var screenX: CGFloat? {
+        statusItem.button?.window?.frame.minX
+    }
+
     init(id: String, sections: [SectionID], options: MenuBarItemOptions, model: AppModel) {
         self.id = id
         self.sections = sections

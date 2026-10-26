@@ -2,7 +2,7 @@ import Foundation
 
 /// What something a source shows means for you, the same for every source: a chat, a pull request, a Copilot
 /// session or a pipeline. Each source maps its own groups onto these, so that a menu-bar item can add up its
-/// sections' counts by meaning: 2 unread chats and 3 pull requests that need you make ✋ 5. What a source doesn't
+/// sections' counts by state: 2 unread chats and 3 pull requests that need you make ✋ 5. What a source doesn't
 /// count in the menu bar, such as a pull request waiting on others or an idle session, has no state.
 public enum ItemState: String, CaseIterable, Codable, Sendable {
     /// ✋ Waits for you: an unread chat, a pull request with something new for you, a Copilot session's question,

@@ -1,7 +1,7 @@
 import Foundation
 
 /// How a menu-bar item shows its sections: side by side, each with its source's own symbols, as items always did, or
-/// added up by what they mean (`ItemState`), the same for every source; and its list, with a tab for each section,
+/// added up by state (`ItemState`), the same for every source; and its list, with a tab for each section,
 /// or one list by state. Each item starts as items always did, until you switch it over in Settings.
 public struct MenuBarItemOptions: Codable, Equatable, Sendable {
     /// Adds its sections' counts up by state. Only for an item that shows several sections.
