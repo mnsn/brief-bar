@@ -11,7 +11,7 @@ DEMO_DIR := $(abspath build/demo)
 DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DIR="$(DEMO_DIR)/teams/state" \
 	BRIEFBAR_COPILOT_DIR="$(DEMO_DIR)/copilot"
 # The binary that demo-check runs: the debug build, unless scripts/check-app.sh passes a built app.
-BRIEFBAR = $(shell swift build --show-bin-path)/BriefBar
+BRIEFBAR = $(shell swift build --arch arm64 --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
 	menubar-by-state-light menubar-by-state-dark widget-all-medium-light widget-all-medium-dark
 # The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
@@ -19,12 +19,12 @@ WINDOW_SHOTS := window-overview-light window-overview-dark \
 	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark
 
 build:
-	swift build
+	swift build --arch arm64
 
 # With a single thread in Swift's cooperative pool, rather than one per core, code that blocks a thread of it while
 # waiting for async work hangs here too, as it would on a runner with few cores.
 test:
-	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
+	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
 
 # Only the Azure DevOps and GitHub sources may use the network, and only BriefBarCore starts programs.
 check-boundaries: build
@@ -49,7 +49,7 @@ update-rehearsal:
 app:
 	./scripts/build-app.sh
 
-# What a release ships, in build/release: the universal app, checked and zipped, and its notes. It's signed with
+# What a release ships, in build/release: the Apple silicon app, checked and zipped, and its notes. It's signed with
 # a certificate, as a release is (see "Signing" in CONTRIBUTING.md).
 package:
 	./scripts/package.sh

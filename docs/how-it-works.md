@@ -1527,7 +1527,8 @@ when BriefBar does.
   cookies, and the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays
   off.
 - **What it accepts**: only an appcast and a zip signed with the project's EdDSA key, and it checks the
-  zip before unpacking it. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
+  zip before unpacking it. The appcast requires arm64 hardware, so existing Intel installs aren't
+  offered an incompatible update. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
 - **Gently**: right after launch, Sparkle shows a new version itself. A later, scheduled check doesn't
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
@@ -1548,9 +1549,10 @@ when BriefBar does.
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar
   has no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the
   updater has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in
-  its own `Frameworks`, without the XPC services, with its license, for every architecture; a
-  designated requirement that names a certificate, unless `--allow-ad-hoc` says a build of your own
-  may be ad hoc; the update settings (the feed, the signed-appcast keys, and with `--release` the
+  its own `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and
+  its updater contain only arm64 code; a designated requirement that names a certificate, unless
+  `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
+  signed-appcast keys, and with `--release` the
   public key); FoundationModels linked weakly so it opens on macOS 15; and that it runs, starts the
   updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS
