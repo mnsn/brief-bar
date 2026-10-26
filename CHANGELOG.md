@@ -1,7 +1,12 @@
 # Changelog
 
-## 0.6.0 - 2026-10-26
+## Unreleased
 
+- **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
+  The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
+  Existing Intel installs aren't offered incompatible updates.
+  
+## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
   clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any

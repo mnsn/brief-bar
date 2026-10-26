@@ -2,8 +2,7 @@ name: CI
 
 # On pushes to main that change more than docs, on pull requests, and when started by hand. Builds and tests on
 # the oldest supported macOS, whose Xcode 16 SDK has no FoundationModels, and the current one, packages the
-# universal app and signs its update the way a release does, then runs the package on macOS 15 on Apple silicon
-# and Intel.
+# Apple silicon app and signs its update the way a release does, then runs the package on macOS 15.
 on:
   push:
     branches: [main]
@@ -66,7 +65,7 @@ jobs:
           KEYCHAIN="$(./scripts/ci-signing-identity.sh "$RUNNER_TEMP")"
           echo "BRIEFBAR_SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
-      # The universal app that a release ships, checked and zipped (see scripts/package.sh).
+      # The Apple silicon app that a release ships, checked and zipped (see scripts/package.sh).
       - name: Package the app
         run: make package
 
@@ -94,15 +93,11 @@ jobs:
           if-no-files-found: error
 
   run-package:
-    name: Run the package (${{ matrix.os }})
+    name: Run the package (macos-15)
     needs: build
-    runs-on: ${{ matrix.os }}
+    # The oldest supported macOS, on Apple silicon.
+    runs-on: macos-15
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # The oldest supported macOS, on Apple silicon and on Intel.
-        os: [macos-15, macos-15-intel]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -121,7 +116,7 @@ jobs:
       # Launches it without FoundationModels, starts its updater, which loads Sparkle under the hardened
       # runtime, and runs the demo check.
       - name: Check the app
-        run: ./scripts/check-app.sh build/BriefBar.app --universal
+        run: ./scripts/check-app.sh build/BriefBar.app
 
       - name: Check the updater's isolation
         run: ./scripts/test-updater-isolation.sh build/BriefBar.app

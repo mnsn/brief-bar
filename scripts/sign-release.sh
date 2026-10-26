@@ -39,7 +39,7 @@ if [[ "$REQUIREMENT" != "$EXPECTED" ]]; then
     echo "Got:      $REQUIREMENT" >&2
     exit 1
 fi
-./scripts/check-app.sh "$APP" --universal --release
+./scripts/check-app.sh "$APP" --release
 
 if [[ "$(grep -c "$OLD_SHA" "$OUT/notes.md")" != 1 ]]; then
     echo "$OUT/notes.md doesn't give the zip's SHA-256 exactly once." >&2

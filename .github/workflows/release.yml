@@ -1,6 +1,6 @@
 name: Release
 
-# Pushing a version tag such as v0.1.0 publishes a GitHub release with the universal app and the appcast that
+# Pushing a version tag such as v0.1.0 publishes a GitHub release with the Apple silicon app and the appcast that
 # the app's updater reads. The tag must match CFBundleShortVersionString in Resources/Info.plist and be higher
 # than every earlier tag, and CHANGELOG.md needs a section for that version; it becomes the release notes. See
 # "Releasing" in CONTRIBUTING.md.
@@ -45,7 +45,7 @@ jobs:
           KEYCHAIN="$(./scripts/ci-signing-identity.sh "$RUNNER_TEMP")"
           echo "BRIEFBAR_SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
-      # Checks the tag, the version and the changelog, then builds, checks and zips the universal app.
+      # Checks the tag, the version and the changelog, then builds, checks and zips the Apple silicon app.
       - name: Package the app
         run: ./scripts/package.sh "$GITHUB_REF_NAME"
 
