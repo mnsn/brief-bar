@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds what a GitHub release ships, into build/release: a universal "BriefBar.app", checked and zipped,
+# Builds what a GitHub release ships, into build/release: an Apple silicon "BriefBar.app", checked and zipped,
 # the zip's SHA-256, and release notes from CHANGELOG.md (notes.md for the release page, changes.md for the
 # appcast that scripts/make-appcast.sh writes). CI keeps it as the run's artifact.
 #   scripts/package.sh [tag]   with a tag such as v0.1.0, fails unless it matches Info.plist and is
@@ -65,8 +65,8 @@ if [[ -z "${BRIEFBAR_SIGNING_KEYCHAIN:-}" ]] && ! signing_identity "$IDENTITY" >
     echo "  security delete-keychain \"\$BRIEFBAR_SIGNING_KEYCHAIN\" && rmdir \"\$(dirname \"\$BRIEFBAR_SIGNING_KEYCHAIN\")\"" >&2
     exit 1
 fi
-./scripts/build-app.sh --universal
-./scripts/check-app.sh "$APP" --universal $([[ $# -gt 0 ]] && echo --release)
+./scripts/build-app.sh
+./scripts/check-app.sh "$APP" $([[ $# -gt 0 ]] && echo --release)
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -93,7 +93,7 @@ $CHANGES
 
 ## Install
 
-Requires macOS 15 or later, on Apple silicon or Intel.
+Requires macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
 1. Download **$ZIP** below, unzip it, and move **BriefBar** to your Applications folder.
 2. Open it. The app isn't notarized, so macOS blocks it the first time: click **Done**, then

@@ -1,6 +1,7 @@
 // Checks a signed appcast before it's published, the way Sparkle checks it in the app, but with
 // only the public EdDSA key: the appcast's signature, and its one update: the download URL, length,
-// version, and the zip's signature. See SPUExtractAppcastContent and SUSignatureVerifier in Sparkle.
+// version, Apple silicon requirement, and the zip's signature. See SPUExtractAppcastContent and
+// SUSignatureVerifier in Sparkle.
 //   swift scripts/verify-appcast.swift <appcast.xml> <zip> <download URL prefix> <public key> <version>
 import CryptoKit
 import Foundation
@@ -70,6 +71,10 @@ func text(_ name: String) -> String? {
 }
 guard text("version") == version, text("shortVersionString") == version else {
     fail("the update's version isn't \(version)")
+}
+guard item.elements(forLocalName: "hardwareRequirements", uri: sparkle).count == 1,
+      text("hardwareRequirements") == "arm64" else {
+    fail("the update must require Apple silicon (hardwareRequirements=arm64)")
 }
 guard text("releaseNotesLink") == nil, item.elements(forName: "description").first?.stringValue?.isEmpty == false else {
     fail("the release notes must be embedded in the appcast")
