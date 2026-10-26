@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-26
 
 - **See what goes together: Show Links.** Turn on **Show Links** in **Settings › General**, off by
   default, and rows show small capsules for what goes with them: a pull request's work items and the
