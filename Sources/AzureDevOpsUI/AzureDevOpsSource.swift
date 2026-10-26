@@ -13,8 +13,8 @@ import SwiftUI
 @MainActor
 package final class AzureDevOpsSource: BriefBarSource {
     /// 2: the Sprint and Pipelines sections. 3: Send Work to Copilot. 4: the pipelines after your merges, the pull
-    /// requests you watch, and pull requests sent to Copilot.
-    nonisolated package static let descriptionVersion = 4
+    /// requests you watch, and pull requests sent to Copilot. 5: Show Links.
+    nonisolated package static let descriptionVersion = 5
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -22,8 +22,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
         summary: "Your pull requests: which need you, which are failing and which are ready to complete; and your team's sprint and your pipelines",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts, until it ends; for a pull request's failed build, the run's timeline, for its errors. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended.",
-        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, a few more while the Sprint or Pipelines section is on screen, and a few more after you merge a pull request, while its pipelines run. When you send a work item or a pull request to Copilot, BriefBar itself still connects nowhere, but the programs it starts for you do: git fetches the repository, and the Copilot CLI uses GitHub Copilot and your MCP servers, pushes a branch, opens a pull request or replies on one, as you.",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts, until it ends; for a pull request's failed build, the run's timeline, for its errors. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended. Only if you turn on Show Links: the work items linked to each of your pull requests, the pull requests linked to the sprint's work items while the sprint is on screen, and what the linked work items and pull requests that your lists don't show are; BriefBar keeps the links you add or hide, as references only, never titles.",
+        network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, a few more while the Sprint or Pipelines section is on screen, a few more after you merge a pull request, while its pipelines run, and, with Show Links on, one for each pull request's work items every quarter of an hour, and a few for the sprint's links while it's on screen. When you send a work item or a pull request to Copilot, BriefBar itself still connects nowhere, but the programs it starts for you do: git fetches the repository, and the Copilot CLI uses GitHub Copilot and your MCP servers, pushes a branch, opens a pull request or replies on one, as you.",
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar. Send Work to Copilot needs the Copilot CLI, signed in, which BriefBar runs with your shell's environment and without any of BriefBar's own permissions.",
         requirements: [.azureCLI, .notifications]
     )
@@ -61,6 +61,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var pipelines: PipelinesStore?
     /// Sends work items to Copilot, when you ask, and follows them.
     private var copilot: CopilotTasksStore?
+    /// Tells Show Links what Azure DevOps links, while it's on.
+    private var workLinks: WorkLinksStore?
     private let changes = PassthroughSubject<Void, Never>()
     /// What a list by state shows changed: any pull request or pipeline, not only the counts.
     private let rowChanges = PassthroughSubject<Void, Never>()
@@ -104,6 +106,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             store?.items.first { $0.key.number == reference.id && $0.key.organization.caseInsensitiveCompare(reference.organization) == .orderedSame }?.title
         }
         self.copilot = copilot
+        workLinks = WorkLinksStore(links: services.links, store: store, sprint: sprint, copilot: copilot, settings: settings)
         return store
     }
 
@@ -164,6 +167,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         sprint?.start()
         pipelines?.start()
         copilot?.start()
+        workLinks?.start()
         changes.send()
     }
 
@@ -185,10 +189,12 @@ package final class AzureDevOpsSource: BriefBarSource {
         sprint?.stop()
         pipelines?.stop()
         copilot?.stop()
+        workLinks?.stop()
         store = nil
         sprint = nil
         pipelines = nil
         copilot = nil
+        workLinks = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -208,6 +214,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func deleteSavedData() {
         settings.forgetSeen()
         settings.forgetCopilotRuns()
+        // The links you added or hid between pull requests, work items and sessions.
+        services.links.forget(.azureDevOps)
         // What Copilot printed for each task: the demo never wrote any, and mustn't delete yours.
         if !services.isDemo {
             CopilotTasksStore.deleteOutput()
@@ -451,23 +459,34 @@ package final class AzureDevOpsSource: BriefBarSource {
         await store.loadOnce()
         await sprint?.loadOnce()
         await pipelines?.loadOnce()
+        await workLinks?.loadOnce()
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }
 
     /// The window that sends a work item to Copilot, for the first of your work items not sent yet, and Send Work to
-    /// Copilot's settings, which Settings' picture is too short to show.
+    /// Copilot's settings, which Settings' picture is too short to show; and, with Show Links, the window that links the
+    /// first of your pull requests with links.
     package func extraRenderings() -> [(name: String, view: AnyView)] {
-        guard let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) else { return [] }
-        let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
-            .background(Color(nsColor: .windowBackgroundColor))
-        let options = Form { CopilotSetting() }
-            .formStyle(.grouped)
-            .environment(\.inSettingsForm, true)
-            .frame(width: 600)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(Color(nsColor: .windowBackgroundColor))
-        return [(name: "copilot-composer", view: environment(composer)), (name: "copilot-settings", view: environment(options))]
+        var renderings: [(name: String, view: AnyView)] = []
+        if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
+            let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
+                .background(Color(nsColor: .windowBackgroundColor))
+            let options = Form { CopilotSetting() }
+                .formStyle(.grouped)
+                .environment(\.inSettingsForm, true)
+                .frame(width: 600)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(Color(nsColor: .windowBackgroundColor))
+            renderings += [(name: "copilot-composer", view: environment(composer)), (name: "copilot-settings", view: environment(options))]
+        }
+        let links = services.links
+        if let linked = store?.items.first(where: { !links.connections(of: $0.key.linkRef).isEmpty }) {
+            let picker = LinkPickerView(subject: linked.key.linkRef, links: links) {}
+                .background(Color(nsColor: .windowBackgroundColor))
+            renderings.append((name: "link-picker", view: AnyView(picker)))
+        }
+        return renderings
     }
 }
 

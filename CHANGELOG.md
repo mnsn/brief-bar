@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **See what goes together: Show Links.** Turn on **Show Links** in **Settings › General**, off by
+  default, and rows show small capsules for what goes with them: a pull request's work items and the
+  Copilot sessions working on it, a work item's pull requests (a teammate's too) and their sessions,
+  and a session's pull request and work item. The sessions' capsule says how the one that needs you
+  most stands, in its color. Links come from Azure DevOps, from the tasks you send to Copilot and what
+  the Copilot app records, and from a session on a pull request's branch; right-click a row to link
+  more, with suggestions, or to unlink. What you link or unlink stays in BriefBar: Azure DevOps, GitHub
+  and Copilot never see it. Azure DevOps, Copilot and GitHub say what they read for it, so each asks
+  you to look again before reading more.
+
 ## 0.4.0 - 2026-10-26
 
 - **Copilot tasks on pull requests start again.** Sending a PR to Copilot, such as **Pre-review with

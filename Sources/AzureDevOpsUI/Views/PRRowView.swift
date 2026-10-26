@@ -91,6 +91,7 @@ struct PRRowView: View {
                             .foregroundStyle(item.rowColor)
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
+                        PullRequestLinks(key: item.key)
                     }
                     if let detail = item.detail {
                         Text(detail)
@@ -112,6 +113,7 @@ struct PRRowView: View {
             Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }
         PullRequestCopilotMenuItems(item: item)
+        LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
             Divider()
             Button("Stop Watching", action: stopWatching)
