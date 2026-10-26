@@ -1189,8 +1189,19 @@ login shell's environment, so it finds the CLI and its `COPILOT_HOME` as Termina
 reads or writes the CLI's configuration itself: other servers' settings are there, tokens included.
 Turning agents on replaces a server that runs another copy of BriefBar, such as one you built, with
 this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
-removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. The page
-shows the command for any other agent.
+removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is.
+
+The page's **Install** lists the agents' apps on your Mac that BriefBar can be installed in (`AgentApp` in
+`Sources/BriefBarCore`), as LaunchServices finds them by bundle identifier. Visual Studio Code and
+Cursor each get the install link their own link generators make, with BriefBar's binary and `--mcp`:
+`vscode:mcp/install?` and the server as JSON, and Cursor's `anysphere.cursor-deeplink/mcp/install`
+with it in Base64. Both decode the link's query twice, so a `%` for VS Code, and a `+` in Cursor's
+Base64, are encoded twice. The app shows what it would add and asks you first, and keeps it in its
+own settings, which BriefBar never reads or writes: BriefBar can't tell whether it's there, and
+turning agents off doesn't remove it, but then its tools answer that agents are off. The GitHub
+Copilot app has no such link; its sessions use the Copilot CLI's servers, so **GitHub Copilot** adds
+BriefBar there, as above, and is checked once the CLI has it. **Copy Command** copies the command for
+any other agent. The demo and `--render` list all three, and the demo opens none.
 
 ### What it answers
 
