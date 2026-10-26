@@ -97,7 +97,7 @@ import BriefBarCore
         func classify(_ statuses: [PipelineStatus], seen: Date) -> PRSnapshot? {
             let merge = MergePipelines(pullRequest: pr.key, title: pr.title, targetBranch: pr.targetBranch, mergedAt: t(-hour),
                                        url: pr.webURL, pipelines: statuses, isFollowing: true)
-            return PRClassifier.snapshot(for: PRRecord(pullRequest: pr, role: .author, me: People.me.id, merge: merge), seenCutoff: seen, now: t(0))
+            return PRClassifier.snapshot(for: PRRecord(pullRequest: pr, role: .author, me: People.me.id, merge: merge), seenCutoff: seen, dismissedCutoff: seen, now: t(0))
         }
 
         // While they run, it stays in Done, even once you've seen it.
@@ -137,7 +137,7 @@ import BriefBarCore
         let merge = MergePipelines(pullRequest: pr.key, title: pr.title, targetBranch: "main", mergedAt: t(-hour), url: pr.webURL,
                                    pipelines: [status(1, .failed)], isFollowing: false)
         let gone = PRClassifier.snapshot(
-            for: PRRecord(pullRequest: abandoned, role: .author, me: People.me.id, merge: merge), seenCutoff: t(-2 * hour), now: t(0)
+            for: PRRecord(pullRequest: abandoned, role: .author, me: People.me.id, merge: merge), seenCutoff: t(-2 * hour), dismissedCutoff: t(-2 * hour), now: t(0)
         )
         #expect(gone?.group == .done)
         #expect(gone?.reason == .abandoned)
@@ -264,8 +264,9 @@ import BriefBarCore
     }
 
     private func classify(_ snapshot: PulseSnapshot, now: Date) -> PRSnapshot? {
-        snapshot.records.first { $0.id.number == 3 }.flatMap { record in
-            PRClassifier.snapshot(for: record, seenCutoff: SeenState.firstRun(now: now).cutoff(for: record.id), now: now)
+        let seen = SeenState.firstRun(now: now)
+        return snapshot.records.first { $0.id.number == 3 }.flatMap { record in
+            PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now)
         }
     }
 }

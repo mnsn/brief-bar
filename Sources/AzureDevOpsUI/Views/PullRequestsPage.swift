@@ -87,10 +87,11 @@ struct PullRequestsPage: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Spacer()
-                if group == .needsYou || group == .done {
+                if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
                         .font(.system(size: 11))
+                        .help(group == .needsYou ? MenuPanelView.markAsSeenHelp : "Remove these from the list")
                 }
             }
             .font(.system(size: 12, weight: .semibold))
@@ -100,7 +101,10 @@ struct PullRequestsPage: View {
                     if index > 0 {
                         Divider().padding(.leading, 44).padding(.trailing, 12)
                     }
-                    PRRowView(item: item, now: store.now, showsActions: true, openSource: source(item), stopWatching: watching(item)) { store.open(item) }
+                    PRRowView(
+                        item: item, now: store.now, showsActions: true, openSource: source(item), stopWatching: watching(item),
+                        dismiss: dismissing(item)
+                    ) { store.open(item) }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                 }
@@ -152,5 +156,9 @@ struct PullRequestsPage: View {
 
     private func watching(_ item: PRSnapshot) -> (() -> Void)? {
         item.isWatched ? { store.stopWatching(item) } : nil
+    }
+
+    private func dismissing(_ item: PRSnapshot) -> (() -> Void)? {
+        item.group == .needsYou ? { store.dismiss(item) } : nil
     }
 }

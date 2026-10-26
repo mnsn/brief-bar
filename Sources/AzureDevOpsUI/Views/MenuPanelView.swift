@@ -16,6 +16,8 @@ struct MenuPanelView: View {
     static let width: CGFloat = 400
     private static let maxListHeight: CGFloat = 560
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
+    /// What Needs You's Mark as Seen does, in the popover and on the window's page.
+    static let markAsSeenHelp = "You've seen these: what's new moves on, and comments that wait on you stay until you reply, they're resolved, or you remove them"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -157,11 +159,11 @@ struct MenuPanelView: View {
                     .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
                     .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
                 Spacer()
-                if group == .needsYou || group == .done {
+                if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
                         .font(.system(size: 11))
-                        .help(group == .needsYou ? "You've seen these: move them to their usual group" : "Remove these from the list")
+                        .help(group == .needsYou ? Self.markAsSeenHelp : "Remove these from the list")
                 }
             }
             .padding(.horizontal, 8)
@@ -208,7 +210,7 @@ struct MenuPanelView: View {
 }
 
 /// A pull request in a list by state that mixes every source's: the row Azure DevOps' own list shows, which opens it,
-/// and from its menu, the message it was sent in.
+/// and from its menu, the message it was sent in, or takes it off Needs You.
 struct PullRequestRow: View {
     let item: PRSnapshot
 
@@ -217,7 +219,8 @@ struct PullRequestRow: View {
     var body: some View {
         PRRowView(
             item: item, now: store.now, openSource: item.chatSource == nil ? nil : { store.openSource(item) },
-            stopWatching: item.isWatched ? { store.stopWatching(item) } : nil
+            stopWatching: item.isWatched ? { store.stopWatching(item) } : nil,
+            dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil
         ) {
             store.open(item)
         }

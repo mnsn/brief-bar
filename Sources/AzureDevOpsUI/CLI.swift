@@ -163,7 +163,10 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
-            PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now, options: options)
+            PRClassifier.snapshot(
+                for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now,
+                options: options
+            )
         })
     }
 

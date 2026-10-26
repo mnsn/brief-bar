@@ -304,9 +304,10 @@ struct AzureDevOpsAgent: Sendable {
                 title: "Pull Requests",
                 description: """
                     The user's Azure DevOps pull requests as BriefBar groups them, each with why it's there and its link: \
-                    Needs You (new comments, replies, mentions, review requests, votes that want changes), Answered, \
-                    Failing (failed builds or checks, merge conflicts, a pipeline that failed after it merged), Ready to \
-                    Complete, To Review, Waiting, Done and Idle. Theirs, the ones they review, and the ones they watch.
+                    Needs You (new comments, replies, mentions, review requests, votes that want changes, and comments \
+                    they've seen that still wait on them), Answered, Failing (failed builds or checks, merge conflicts, a \
+                    pipeline that failed after it merged), Ready to Complete, To Review, Waiting, Done and Idle. Theirs, \
+                    the ones they review, and the ones they watch.
                     """,
                 inputSchema: MCPSchema.object([
                     "group": MCPSchema.string("Only this group", oneOf: PRGroup.allCases.map(\.agentName)),
@@ -318,8 +319,8 @@ struct AzureDevOpsAgent: Sendable {
                 description: """
                     One pull request in detail, by its number or link: where it stands in BriefBar, its branches, \
                     reviewers' votes, checks and where a failed build failed, merge conflicts, the pipelines after its \
-                    merge, what's new for the user, its unresolved comment threads word for word with their files and \
-                    lines, and what Copilot can do with it.
+                    merge, what's new for the user and what they've seen that still waits on them, its unresolved \
+                    comment threads word for word with their files and lines, and what Copilot can do with it.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_request": MCPSchema.string("Its number, such as 4088, or its link"),
@@ -696,11 +697,13 @@ enum AgentText {
         return parts.joined(separator: ", ")
     }
 
-    /// A pull request in a list: what it is, why it's there and since when, and its link.
+    /// A pull request in a list: what it is, why it's there and since when, and its link. In Needs You, whether you've
+    /// seen what's there.
     static func line(_ item: PRSnapshot, now: Date) -> String {
         var text = "- !\(item.key.number) “\(item.title)” in \(item.repository) "
             + "(\(whose(role: item.role, author: item.author, isWatched: item.isWatched, isDraft: item.isDraft))): \(item.headline)"
         if let since = item.since { text += ", \(ago(since, now: now))" }
+        if item.group == .needsYou && !item.hasNews { text += " (seen, still waiting on you)" }
         // Its detail says who wrote it, when that's all it says, as whose it is does.
         if let detail = item.detail, !detail.isEmpty, detail != "By \(item.author)" { text += ". \(detail)" }
         return text + "\n  \(item.url.absoluteString)"
@@ -748,10 +751,16 @@ enum AgentText {
             }
         }
 
-        let news = item?.pendingEvents ?? []
+        let pending = item?.pendingEvents ?? []
+        let news = pending.filter(\.isNew)
         if !news.isEmpty {
             lines.append("\n## New for you")
             lines += news.map { Self.event($0, now: now) }
+        }
+        let seen = pending.filter { !$0.isNew }
+        if !seen.isEmpty {
+            lines.append("\n## Seen, still waiting on you")
+            lines += seen.map { Self.event($0, now: now) }
         }
 
         if let details = record.details {

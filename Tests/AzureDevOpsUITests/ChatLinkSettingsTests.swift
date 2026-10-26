@@ -131,6 +131,83 @@ import Testing
         #expect(settings.seenCutoff(for: sentInChat) < now)
     }
 
+    /// Taking a pull request off Needs You is remembered like seeing it: yours in the preferences, and one listed only
+    /// because someone sent it to you in memory only.
+    @Test func takesThemOffNeedsYouInMemoryOnly() throws {
+        let defaults = preferences(enabled: true)
+        let settings = AppSettings(defaults: defaults, now: now)
+        settings.startSeeing(now: now)
+        #expect(settings.addChatLinks([link(7, sentAt: now)], now: now))
+        let before = readable(defaults)
+
+        settings.dismiss([(key: sentInChat, date: now)], sentInChats: [sentInChat])
+        #expect(settings.dismissedCutoff(for: sentInChat) == now)
+        #expect(settings.seenCutoff(for: sentInChat) == now)
+        #expect(readable(defaults) == before)
+
+        settings.dismiss([(key: yours, date: now)])
+        #expect(settings.dismissedCutoff(for: yours) == now)
+        #expect(try savedSeen(in: defaults).dismissedAt.keys.sorted() == ["contoso/9"])
+        #expect(AppSettings(defaults: defaults, now: now).dismissedCutoff(for: yours) == now)
+
+        // Forgotten with the links, or when someone else signs in.
+        settings.chatLinksEnabled = false
+        #expect(settings.dismissedCutoff(for: sentInChat) < now)
+        #expect(!settings.useAccount("avery@contoso.example", now: now))
+        settings.dismiss([(key: sentInChat, date: now)], sentInChats: [sentInChat])
+        #expect(settings.useAccount("sam@contoso.example", now: now))
+        #expect(settings.dismissedCutoff(for: sentInChat) < now)
+    }
+
+    /// You took them off Needs You long ago and have looked at them since, then they aren't listed anymore: Dana's link
+    /// expired, and your organization isn't chosen. Pruning keeps when you took them off for as long as when you looked at
+    /// them, in memory as in the preferences, so once a new link or your organization brings them back with something new,
+    /// what you took off stays off.
+    @Test func keepsWhatYouTookOffForAsLongAsWhatYouSaw() throws {
+        let defaults = preferences(enabled: true)
+        // BriefBar has run for months.
+        let firstRun = now.addingTimeInterval(-200 * 86_400)
+        let settings = AppSettings(defaults: defaults, now: firstRun)
+        settings.startSeeing(now: firstRun)
+        let tookOff = now.addingTimeInterval(-70 * 86_400)
+        let looked = now.addingTimeInterval(-86_400)
+        settings.dismiss([(key: sentInChat, date: tookOff)], sentInChats: [sentInChat])
+        settings.markSeen([sentInChat], at: looked, sentInChats: [sentInChat])
+        settings.dismiss([(key: yours, date: tookOff)])
+        settings.markSeen([yours], at: looked)
+
+        settings.pruneSeen(keeping: [], now: now)
+        for key in [sentInChat, yours] {
+            #expect(settings.seenCutoff(for: key) == looked)
+            #expect(settings.dismissedCutoff(for: key) == tookOff)
+        }
+        #expect(!readable(defaults).contains("contoso/7"))
+        #expect(try savedSeen(in: defaults).dismissedAt.keys.sorted() == ["contoso/9"])
+        #expect(AppSettings(defaults: defaults, now: now).dismissedCutoff(for: yours) == tookOff)
+
+        // Once you last looked at them two months ago and more, both go.
+        settings.pruneSeen(keeping: [], now: looked.addingTimeInterval(61 * 86_400))
+        for key in [sentInChat, yours] {
+            #expect(settings.seenCutoff(for: key) < tookOff)
+            #expect(settings.dismissedCutoff(for: key) < tookOff)
+        }
+    }
+
+    @Test func movesWhatAnEarlierBuildTookOffNeedsYouIntoMemory() throws {
+        let defaults = preferences(enabled: true)
+        var earlier = SeenState.firstRun(now: now)
+        earlier.dismiss([sentInChat, yours], at: now)
+        defaults.set(try JSONEncoder().encode(earlier), forKey: SettingsKey.seen)
+        let settings = AppSettings(defaults: defaults, now: now)
+
+        settings.keepSeenInMemory([sentInChat])
+        let saved = try savedSeen(in: defaults)
+        #expect(saved.dismissedAt.keys.sorted() == ["contoso/9"])
+        #expect(saved.seenAt.keys.sorted() == ["contoso/9"])
+        #expect(settings.dismissedCutoff(for: sentInChat) == now)
+        #expect(settings.seenCutoff(for: sentInChat) == now)
+    }
+
     /// As the list does it: clearing Needs You, in the demo, keeps what you've seen of the pull request Dana sent you
     /// in memory, and of the others in the preferences.
     @Test func theListKeepsWhatYouveSeenOfPullRequestsSentInChatsInMemory() async throws {
