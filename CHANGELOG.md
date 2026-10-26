@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-10-26
 
 - **Needs You keeps what still waits on you.** Opening a pull request from BriefBar, or **Mark as
   Seen**, no longer takes it off Needs You while a comment there waits on you: a reply to you, a
