@@ -7,16 +7,22 @@ import Testing
 
 /// A whole send, with a real repository and a made-up `copilot` that writes a session log as the real one does.
 @Suite struct CopilotLauncherTests {
-    /// Records its arguments, writes a short session log, and prints the pull request it "opened".
+    /// Records its arguments, writes a short session log, and prints the pull request it "opened". Like the real CLI,
+    /// it refuses `--trust-folder` with `--session-id`.
     static let fakeCopilot = """
         #!/bin/sh
         printf '%s\\n' "$@" > "$FAKE_COPILOT_ARGUMENTS"
         while [ $# -gt 0 ]; do
           case "$1" in
             --session-id) id="$2"; shift 2 ;;
+            --trust-folder) trust=1; shift ;;
             *) shift ;;
           esac
         done
+        if [ -n "$trust" ] && [ -n "$id" ]; then
+          echo "error: the argument '--trust-folder' cannot be used with '--session-id <id>'" >&2
+          exit 2
+        fi
         log="$COPILOT_HOME/session-state/$id/events.jsonl"
         mkdir -p "$(dirname "$log")"
         cat > "$log" <<'EOF'
@@ -113,11 +119,11 @@ import Testing
         let launcher = CopilotLauncher(outputFolder: fixture.folder.appendingPathComponent("output"), environment: { launchEnvironment }, locate: { _ in copilot })
         let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
         let request = CopilotLauncher.Request(workItem: sampleItem, prompt: "Fix it", options: CopilotModel.standard, repository: fixture.checkout, worktreesFolder: nil)
-        _ = try await launcher.launch(request) { exitSink.yield($0) }
+        let run = try await launcher.launch(request) { exitSink.yield($0) }
         var iterator = exits.makeAsyncIterator()
-        _ = await iterator.next()
+        #expect(await iterator.next() == 0)
         let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
-        #expect(arguments.contains("--session-id"))
+        #expect(arguments.contains("--session-id") && arguments.contains(run.id))
         #expect(!arguments.contains("--trust-folder"))
     }
 
