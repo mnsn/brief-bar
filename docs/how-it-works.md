@@ -160,10 +160,16 @@ sections each one shows, and the sections you've hidden from it.
 
 - Each section starts in a menu-bar item and a widget of its own, and every section starts in one
   window. Teams' widgets start hidden, so an update doesn't put your chats on the desktop.
-- In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), you put a section in
-  another item or hide it. **Put All in One** puts every section in one item: those that show, in
-  order, then those of the sources that are off, so a source you turn on later joins it. **Give Each
-  Its Own** undoes it.
+- In **Settings › Menu Bar**, **Widgets** and **Windows** (`LayoutPage`), each item is a card with a
+  chip for each section it shows. You drag a chip onto another card, onto **New Item** or onto
+  **Hidden**, or pick the same move from its right-click menu, or a section from New Item's
+  (`SectionLayout.move`): dropped in the item it's already in, a section stays in its place. New Item
+  stands in for any item you could add, so the page never shows empty ones. Settings › Menu Bar
+  starts with the menu bar's line: the items that show, in the order they're in the menu bar
+  (`menuBarItemsInOrder`), each drawn as `MenuBarDrawing` draws it, with the counts as they are, and
+  each card shows its own item the same way; they draw again whenever a source's counts change. **Put
+  All in One** puts every section in one item: those that show, in order, then those of the sources
+  that are off, so a source you turn on later joins it. **Give Each Its Own** undoes it.
 - A hidden section keeps its place, for when you show it again, and its source keeps running: it
   still shows on the other surfaces, and Azure DevOps still notifies you. A notification that would
   open the hidden pull requests opens them in Azure DevOps instead. Turning on a source whose
@@ -175,7 +181,7 @@ sections each one shows, and the sections you've hidden from it.
   keeps neither, so it never moves yours.
 
 **Menu-bar items** show their sections' counts side by side, each drawn the way its source draws it,
-or added up by meaning ([below](#everything-by-meaning)), and their popover has a tab for each, or
+or added up by state ([below](#everything-by-state)), and their popover has a tab for each, or
 one list by state. It opens at the tab it showed last, whether it opened there or you switched to it,
 which each item keeps by its ID (`MenuBarTabs`, saved as `menuBarTabs`), so it outlasts a restart.
 When something opens it at a section, such as a notification about several pull requests, it shows
@@ -203,13 +209,14 @@ their settings and positions (`WidgetMigration`).
 
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
 each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
-([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`); a
-source can draw a page of its own instead. A window opens at the page of the list or widget you opened
-it from, or at its Overview when no page is asked for, and remembers the page you left it at. BriefBar is a menu-bar app
-(`LSUIElement`): while a window is open, it shows a Dock icon and the usual menus, and it goes back once
-they're all closed.
+([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`), the
+whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
+Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
+of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
+the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window is open, it shows a
+Dock icon and the usual menus, and it goes back once they're all closed.
 
-## Everything by meaning
+## Everything by state
 
 ### Counts by state
 
@@ -228,13 +235,13 @@ the sprint's work, is in no state. Each section reports its counts in `MenuBarSe
 draws them: Azure DevOps and GitHub report none while they need a sign-in. `--json` prints them by
 section, and `make demo-check` checks them, each section's and their sum.
 
-### An item by meaning
+### An item that adds its counts up
 
 A menu-bar item that shows several sections has options of its own (`MenuBarItemOptions`, saved as
-`menuBarItemOptions` by the item's ID, like a widget's): **Counts** side by side or by meaning, with
+`menuBarItemOptions` by the item's ID, like a widget's): **Counts** side by side or added up, with
 the states it shows, and its **List**. They start as items always were, side by side with a tab per
 section, with ✋, ✕ and ✓ but not ⚡, and an item that goes away takes its options with it, so one
-that later gets its ID starts over. By meaning, the item draws one symbol and count per state, in
+that later gets its ID starts over. Added up, the item draws one symbol and count per state, in
 Azure DevOps' and Copilot's colors (`MenuBarItemContent`), then a small ⚠ if a section can't show what
 it should (`MenuBarSegment.problem`, such as Teams without Full Disk Access). Its tooltip and VoiceOver
 say what's in each count: "Needs you: 2 chats, 2 group chats, 4 pull requests, 3 Copilot sessions"
