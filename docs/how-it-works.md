@@ -812,9 +812,13 @@ It stops waiting on you when:
 - you reply in its thread, or the thread is resolved (fixed, won't fix, closed or by design);
 - you choose **Remove from Needs You** in the pull request's menu (right-click it, or **Actions** in the
   window), or a task that takes care of its comments, **Fix Comments** or **Push & Reply**, starts in
-  Copilot. Each pull request has a second cutoff for this (`SeenState.dismissedAt`), set to the newest
-  thing the list showed (for Copilot, by the time you sent the task), which sees it too; what comes
-  after needs you again, as new;
+  Copilot. Each pull request has a second cutoff for this (`SeenState.dismissedAt`), which sees it too:
+  for **Remove from Needs You**, the newest thing the list showed; for Copilot, the last comment that
+  waited on you in the threads its prompt quotes, as they were when BriefBar wrote it, opening the composer
+  (`CommentHandOff`). A comment that came after, while you checked the prompt, say, isn't handed off,
+  and neither is one in a thread the prompt doesn't quote: beyond the 30 it quotes at most, or one you
+  took out of it before you sent it. Since there's one cutoff, it then stops before the first comment
+  that waits on you in such a thread. What comes after needs you again, as new;
 - the pull request has had no activity for as long as **Idle After No Activity For** says (two weeks
   by default): it's idle, as it would be otherwise. Something new still needs you.
 

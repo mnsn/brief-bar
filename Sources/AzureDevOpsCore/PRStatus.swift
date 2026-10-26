@@ -614,6 +614,13 @@ public enum PRClassifier {
         thread.comments.filter { $0.author.id != me && !$0.author.isBot && $0.publishedAt > date }
     }
 
+    /// The comments in an unresolved thread on your pull request that wait on you: from people other than you, after your
+    /// last word in it and after `dismissedCutoff`, as `authorEvents` finds them.
+    static func waitingComments(in thread: ReviewThread, me: String, dismissedCutoff: Date) -> [ReviewComment] {
+        let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt ?? .distantPast
+        return unanswered(thread, me: me, after: max(dismissedCutoff, lastMine))
+    }
+
     /// Since when a thread's comments can need you: in an open one, those you've seen wait on you too, back to when you
     /// last removed the pull request from Needs You; in a resolved one, only new ones are news.
     private static func waitingSince(_ thread: ReviewThread, _ seenCutoff: Date, _ dismissedCutoff: Date) -> Date {

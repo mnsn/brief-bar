@@ -212,8 +212,14 @@ public enum PullRequestPrompt {
                 let who = comment.author.id == record.me ? "You" : comment.author.name
                 return "   \(who): \(comment.text)"
             }
-            return "\(index + 1). \(place) (thread \(thread.id))\n" + lines.joined(separator: "\n")
+            return "\(index + 1). \(place) \(marker(thread: thread.id))\n" + lines.joined(separator: "\n")
         }.joined(separator: "\n")
+    }
+
+    /// How a prompt names a comment thread: what's handed to Copilot is told by what's still in the prompt you send
+    /// (`CommentHandOff`).
+    static func marker(thread id: Int) -> String {
+        "(thread \(id))"
     }
 
     /// When you last voted or commented on it.
@@ -222,6 +228,56 @@ public enum PullRequestPrompt {
         let votes = details.activity.filter { $0.kind == .vote && $0.actor?.id == record.me }.map(\.at)
         let comments = details.threads.flatMap(\.comments).filter { $0.author.id == record.me }.map(\.publishedAt)
         return (votes + comments).max()
+    }
+}
+
+/// What a prompt that takes care of the comments that wait on you on your pull request, Fix Comments' or Push & Reply's,
+/// hands to Copilot, as it was when it was written: the comments that waited on you then, by thread. Sending it takes those
+/// in the threads it still quotes off Needs You. A comment that came after it was written isn't among them, and neither is
+/// one in a thread the prompt doesn't quote, beyond the most it quotes or taken out of it before you sent it: those still
+/// need you.
+public struct CommentHandOff: Sendable, Equatable {
+    /// An unresolved thread, with the first and the last of its comments that waited on you.
+    public struct Waiting: Sendable, Equatable {
+        public var thread: Int
+        public var first: Date
+        public var last: Date
+
+        public init(thread: Int, first: Date, last: Date) {
+            self.thread = thread
+            self.first = first
+            self.last = last
+        }
+    }
+
+    /// The pull request, as the list names it.
+    public var key: PRKey
+    public var waiting: [Waiting]
+
+    public init(key: PRKey, waiting: [Waiting]) {
+        self.key = key
+        self.waiting = waiting
+    }
+
+    /// As the prompt sees `record`.
+    /// - Parameter dismissedCutoff: what came up to then doesn't wait on you anymore (`SeenState.dismissedCutoff`).
+    public init(_ record: PRRecord, dismissedCutoff: Date) {
+        let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
+        self.init(key: record.id, waiting: threads.compactMap { thread in
+            let times = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff).map(\.publishedAt)
+            guard let first = times.min(), let last = times.max() else { return nil }
+            return Waiting(thread: thread.id, first: first, last: last)
+        })
+    }
+
+    /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
+    /// threads it quotes, but before the first in one it doesn't, since a pull request has one cutoff. Nil when it quotes
+    /// none of them.
+    public func handedOff(in prompt: String) -> Date? {
+        let quoted = Set(waiting.map(\.thread).filter { prompt.contains(PullRequestPrompt.marker(thread: $0)) })
+        guard let last = waiting.filter({ quoted.contains($0.thread) }).map(\.last).max() else { return nil }
+        guard let kept = waiting.filter({ !quoted.contains($0.thread) }).map(\.first).min() else { return last }
+        return min(last, kept.addingTimeInterval(-0.001))
     }
 }
 

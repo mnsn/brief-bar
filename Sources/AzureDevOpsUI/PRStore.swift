@@ -451,13 +451,12 @@ final class PRStore: ObservableObject {
         settings.dismiss([(item.key, item.events.map(\.at).max() ?? item.since ?? Date())], sentInChats: sentInChats([item.key]))
     }
 
-    /// A task that takes care of a pull request's comments, Fix Comments or Push & Reply, started in Copilot: they're
-    /// off Needs You, up to when you sent it. A comment that came after still needs you.
-    func sentToCopilot(_ key: PRKey, action: PullRequestAction, at date: Date) {
-        // Organization names are case-insensitive in Azure DevOps.
-        let item = items.first { $0.key.number == key.number && $0.key.organization.caseInsensitiveCompare(key.organization) == .orderedSame }
-        guard action.takesCareOfComments, let item, let newest = item.pendingEvents.map(\.at).filter({ $0 <= date }).max() else { return }
-        settings.dismiss([(item.key, newest)], sentInChats: sentInChats([item.key]))
+    /// A task that takes care of a pull request's comments started in Copilot, with the prompt you sent: what waited on
+    /// you in the threads it quotes leaves Needs You, as it was when the prompt was written. A comment that came after,
+    /// while you checked the prompt, say, or one in a thread the prompt doesn't quote, still needs you.
+    func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
+        guard let through = handOff.handedOff(in: prompt) else { return }
+        settings.dismiss([(handOff.key, through)], sentInChats: sentInChats([handOff.key]))
     }
 
     /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
@@ -667,9 +666,17 @@ final class PRStore: ObservableObject {
             projectId: pr.projectId, repositoryId: pr.repositoryId
         )
         let client = mode == .live ? client : nil
+        let handOff = commentHandOff(action, for: record)
         Task {
             let prompt = await PullRequestTasks.prompt(action, for: record, client: client)
-            copilot.compose(task, action: action, prompt: prompt)
+            copilot.compose(task, action: action, prompt: prompt, handOff: handOff)
         }
+    }
+
+    /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
+    /// that wait on you as the prompt is written from `record`, not as they are when you send it.
+    func commentHandOff(_ action: PullRequestAction, for record: PRRecord) -> CommentHandOff? {
+        guard action.takesCareOfComments, record.role == .author else { return nil }
+        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id))
     }
 }

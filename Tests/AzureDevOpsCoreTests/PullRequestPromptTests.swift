@@ -117,3 +117,113 @@ import BriefBarCore
         #expect(PipelineFailure.errors(in: timeline, limit: 1) == ["First"])
     }
 }
+
+/// What sending a prompt that takes care of the comments that wait on you hands to Copilot: what waited on you in the
+/// threads it quotes, as it was when it was written. A comment that came after, or one in a thread it doesn't quote, still
+/// needs you.
+@Suite struct CommentHandOffTests {
+    private let me = People.me
+    private let pr = makePR(4071)
+
+    private func record(_ threads: [ReviewThread]) -> PRRecord {
+        PRRecord(pullRequest: pr, role: .author, details: makeDetails(for: pr, threads: threads), me: me.id)
+    }
+
+    /// Once what's handed off up to `through` has left Needs You, which sees it too.
+    private func classify(_ threads: [ReviewThread], through: Date) -> PRSnapshot? {
+        PRClassifier.snapshot(for: record(threads), seenCutoff: through, dismissedCutoff: through, now: t(0))
+    }
+
+    private func waiting(_ id: Int, _ author: Person, at date: Date) -> ReviewThread {
+        ReviewThread(id: id, comments: [comment(1, author, "Thread \(id)", at: date)])
+    }
+
+    @Test func handsOffWhatWaitsOnYouInTheThreadsItQuotes() throws {
+        let threads = [
+            waiting(1, People.sam, at: t(-2 * hour)),
+            waiting(2, People.priya, at: t(-hour)),
+            // Answered, resolved, or only a bot's: nothing waits on you there.
+            ReviewThread(id: 3, comments: [comment(1, People.sam, "Typo?", at: t(-3 * hour)), comment(2, me, "Fixed", at: t(-150 * minute))]),
+            ReviewThread(id: 4, status: "fixed", comments: [comment(1, People.sam, "Done", at: t(-90 * minute))]),
+            ReviewThread(id: 5, comments: [comment(1, People.bot, "2 tests failed", at: t(-10 * minute))]),
+        ]
+        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day))
+        #expect(handOff.key == pr.key)
+        #expect(handOff.waiting == [
+            CommentHandOff.Waiting(thread: 1, first: t(-2 * hour), last: t(-2 * hour)),
+            CommentHandOff.Waiting(thread: 2, first: t(-hour), last: t(-hour)),
+        ])
+        for prompt in [PullRequestPrompt.fixComments(record(threads)), PullRequestPrompt.pushAndReply(record(threads))] {
+            #expect(handOff.handedOff(in: prompt) == t(-hour))
+        }
+        let after = try #require(classify(threads, through: t(-hour)))
+        #expect(after.group == .waiting)
+        #expect(after.pendingEvents.isEmpty)
+        // A prompt rewritten without its threads hands nothing off.
+        #expect(handOff.handedOff(in: "Fix every comment.") == nil)
+    }
+
+    @Test func aCommentThatComesAfterThePromptIsWrittenStillNeedsYou() throws {
+        let written = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = CommentHandOff(record(written), dismissedCutoff: t(-3 * day))
+        let through = try #require(handOff.handedOff(in: PullRequestPrompt.fixComments(record(written))))
+        #expect(through == t(-hour))
+
+        // While you check the prompt, Sam adds to his thread and Alex starts one: they're after what it quotes, whether
+        // they were written then or only read then.
+        var later = written
+        later[0].comments.append(comment(2, People.sam, "And log each retry", at: t(-30 * minute)))
+        later.append(waiting(6, People.alex, at: t(-20 * minute)))
+        let after = try #require(classify(later, through: through))
+        #expect(after.group == .needsYou)
+        #expect(after.pendingEvents.map(\.id).sorted() == ["c1.2", "c6.1"])
+        #expect(after.hasNews)
+        // Taking them off up to when you sent it would have taken those too.
+        #expect(classify(later, through: t(0))?.group == .waiting)
+    }
+
+    @Test func aThreadTakenOutOfThePromptStillNeedsYou() throws {
+        let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-3 * day))
+        let prompt = PullRequestPrompt.fixComments(record(threads))
+
+        // Without the newer thread: only the older one is handed off.
+        let older = try #require(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 2)", with: "")))
+        #expect(older == t(-2 * hour))
+        #expect(classify(threads, through: older)?.pendingEvents.map(\.id) == ["c2.1"])
+
+        // Without the older one: a pull request has one cutoff, so the newer stays too, rather than taking the older off.
+        let newer = try #require(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 1)", with: "")))
+        #expect(newer < t(-2 * hour))
+        #expect(classify(threads, through: newer)?.pendingEvents.map(\.id).sorted() == ["c1.1", "c2.1"])
+        #expect(handOff.handedOff(in: prompt.replacingOccurrences(of: "(thread 1)", with: "").replacingOccurrences(of: "(thread 2)", with: "")) == nil)
+    }
+
+    @Test func aThreadBeyondTheMostAPromptQuotesStillNeedsYou() throws {
+        // 30 threads, then the newest, which the prompt leaves out.
+        let threads = (1...30).map { waiting($0, People.sam, at: t(-2 * hour + TimeInterval($0))) } + [waiting(31, People.priya, at: t(-minute))]
+        let prompt = PullRequestPrompt.fixComments(record(threads))
+        #expect(prompt.contains("(thread 30)"))
+        #expect(!prompt.contains("(thread 31)"))
+        let through = try #require(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day)).handedOff(in: prompt))
+        #expect(through == t(-2 * hour + 30))
+        #expect(classify(threads, through: through)?.pendingEvents.map(\.id) == ["c31.1"])
+    }
+
+    @Test func onlyWhatStillWaitsOnYouHoldsItBack() throws {
+        // You took the older one off Needs You before: leaving its thread out of the prompt doesn't hold the newer one back.
+        let threads = [waiting(1, People.sam, at: t(-3 * hour)), waiting(2, People.priya, at: t(-hour))]
+        let handOff = CommentHandOff(record(threads), dismissedCutoff: t(-150 * minute))
+        #expect(handOff.waiting.map(\.thread) == [2])
+        let prompt = PullRequestPrompt.fixComments(record(threads)).replacingOccurrences(of: "(thread 1)", with: "")
+        #expect(handOff.handedOff(in: prompt) == t(-hour))
+    }
+
+    @Test func tellsThreadsApartByTheirWholeNumber() {
+        // Thread 1, taken out of the prompt, isn't quoted by thread 12's "(thread 12)".
+        let threads = [waiting(1, People.sam, at: t(-2 * hour)), waiting(12, People.priya, at: t(-hour))]
+        let prompt = PullRequestPrompt.fixComments(record(threads)).replacingOccurrences(of: "(thread 1)\n", with: "\n")
+        #expect(prompt.contains("(thread 12)"))
+        #expect(CommentHandOff(record(threads), dismissedCutoff: t(-3 * day)).handedOff(in: prompt) == t(-2 * hour).addingTimeInterval(-0.001))
+    }
+}

@@ -19,9 +19,14 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
     /// - Parameters:
     ///   - prompt: a pull request's, written for it; nil for a work item's, from the template in Settings.
     ///   - continuing: an earlier run whose session it goes on with, unless you choose a new one.
-    func show(subject: TaskSubject, prompt: String?, options: CopilotRunOptions, continuing: CopilotRun?, store: CopilotTasksStore) {
+    ///   - handOff: what a pull request's prompt takes off Needs You once it's sent, as it was written.
+    func show(
+        subject: TaskSubject, prompt: String?, options: CopilotRunOptions, continuing: CopilotRun?, handOff: CommentHandOff? = nil,
+        store: CopilotTasksStore
+    ) {
         let view = CopilotComposerView(
-            subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt, continuing: continuing
+            subject: subject, options: options, template: store.settings.copilotPromptTemplate, prompt: prompt, continuing: continuing,
+            handOff: handOff
         ) { [weak self] in
             self?.window?.close()
         }
@@ -53,6 +58,9 @@ struct CopilotComposerView: View {
     let subject: TaskSubject
     /// The run it can go on with.
     let continuing: CopilotRun?
+    /// What the prompt takes off Needs You once it's sent: the comments it quoted when it was written, in the threads it
+    /// still quotes when you send it.
+    let handOff: CommentHandOff?
     let close: () -> Void
 
     @EnvironmentObject private var store: CopilotTasksStore
@@ -75,10 +83,11 @@ struct CopilotComposerView: View {
     ///   - prompt: a pull request's prompt, written for it.
     init(
         subject: TaskSubject, options: CopilotRunOptions, template: String, prompt: String? = nil, continuing: CopilotRun? = nil,
-        close: @escaping () -> Void
+        handOff: CommentHandOff? = nil, close: @escaping () -> Void
     ) {
         self.subject = subject
         self.continuing = continuing
+        self.handOff = handOff
         self.close = close
         let filledIn: String
         switch subject {
@@ -350,7 +359,7 @@ struct CopilotComposerView: View {
         let continuing = isContinuing ? self.continuing : nil
         guard canSend, let folder = continuing?.repository ?? repository?.root else { return }
         store.send(subject, prompt: prompt, options: CopilotRunOptions(model: model.trimmingCharacters(in: .whitespaces), effort: effort),
-                   repository: folder, continuing: continuing)
+                   repository: folder, continuing: continuing, handOff: handOff)
         close()
     }
 }
