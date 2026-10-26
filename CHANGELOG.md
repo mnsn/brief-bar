@@ -29,6 +29,11 @@
   below the first group with two highlights and an option to expand it. Optional row menus and
   widget **View All** buttons make actions easier to find while keeping each source's existing
   open/read behavior.
+- **Copilot tasks start again in repositories you trust.** With Copilot CLI 1.0.100 or later, a pull
+  request or work item sent from a trusted repository failed at once: the CLI refuses the option
+  BriefBar added to trust its worktree. BriefBar no longer adds it, and Copilot still trusts the
+  worktree of a repository you trust. When Copilot can't start, the notification now gives the CLI's
+  error rather than a hint to try `--help`.
 
 ## 0.5.0 - 2026-10-26
 
