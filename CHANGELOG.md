@@ -1,11 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-10-26
 
+- **Needs You keeps what still waits on you.** Opening a pull request from BriefBar, or **Mark as
+  Seen**, no longer takes it off Needs You while a comment there waits on you: a reply to you, a
+  mention, or a comment on your pull request. It stays, and counts in the menu bar, without the dot that
+  now marks what's new, until you reply in its thread or the thread is resolved, you send the comments
+  to Copilot with **Fix Comments** or **Push & Reply**, or you choose **Remove from Needs You** in its
+  menu (right-click it, or **Actions** in the window). Anything after that needs you again, and a pull
+  request without activity for two weeks goes to Idle, as before. After the update, a pull request you'd
+  opened whose comments still wait on you is back in Needs You.
 - **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
   The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
   Existing Intel installs aren't offered incompatible updates.
-  
+
 ## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,

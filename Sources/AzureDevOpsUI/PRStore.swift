@@ -194,6 +194,7 @@ final class PRStore: ObservableObject {
 
         settings.$seen.dropFirst().map { _ in () }
             .merge(with: settings.$seenSentInChats.dropFirst().map { _ in () })
+            .merge(with: settings.$dismissedSentInChats.dropFirst().map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -414,7 +415,8 @@ final class PRStore: ObservableObject {
         }
     }
 
-    /// Opens the pull request (at the comment that needs you) and marks it seen.
+    /// Opens the pull request (at the comment that needs you) and marks it seen. Comments that wait on you there keep it
+    /// in Needs You, no longer as new, until you answer them or remove it.
     func open(_ item: PRSnapshot) {
         markSeen(item)
         AzureDevOps.open(item.url)
@@ -433,13 +435,31 @@ final class PRStore: ObservableObject {
         settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 
-    /// Marks a group's pull requests seen: Needs You moves on, Done empties. Each is seen up to what the panel
-    /// showed, not up to now, so a comment that arrives before the next refresh still counts as new.
+    /// Marks a group's pull requests seen: Needs You keeps only those whose comments still wait on you, and Done empties.
+    /// Each is seen up to what the panel showed, not up to now, so a comment that arrives before the next refresh still
+    /// counts as new.
     func clear(_ group: PRGroup) {
         let cleared = items(in: group)
         settings.markSeen(cleared.map { item in
             (item.key, item.events.map(\.at).max() ?? item.since ?? Date())
         }, sentInChats: sentInChats(cleared.map(\.key)))
+    }
+
+    /// Takes a pull request off Needs You, up to what the panel showed: what waited on you there doesn't anymore, and
+    /// it's seen. Anything that comes after needs you again.
+    func dismiss(_ item: PRSnapshot) {
+        settings.dismiss([(item.key, item.events.map(\.at).max() ?? item.since ?? Date())], sentInChats: sentInChats([item.key]))
+    }
+
+    /// A task that takes care of a pull request's comments started in Copilot, with the prompt you sent: what waited on
+    /// you in the threads it quotes leaves Needs You, as it was when the prompt was written. A comment that came after,
+    /// while you checked the prompt, say, one in a thread the prompt doesn't quote, or one that waits on you as the list
+    /// last read the pull request but the prompt doesn't have, such as in a thread reopened meanwhile, still needs you. It
+    /// leaves the Needs You of the account the prompt was written with, even if another has signed in to the Azure CLI
+    /// since.
+    func sentToCopilot(_ handOff: CommentHandOff, prompt: String) {
+        guard let through = handOff.handedOff(in: prompt, now: record(for: handOff.key)) else { return }
+        settings.dismiss([(handOff.key, through)], for: handOff.account)
     }
 
     /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
@@ -530,7 +550,10 @@ final class PRStore: ObservableObject {
             var record = watched.contains(record.id) ? record.watched() : record
             let found = links.links(for: record.id).filter { link in !record.chatLinks.contains { $0.id == link.id } }
             record.chatLinks += found
-            return PRClassifier.snapshot(for: record, seenCutoff: settings.seenCutoff(for: record.id), now: now, options: options)
+            return PRClassifier.snapshot(
+                for: record, seenCutoff: settings.seenCutoff(for: record.id), dismissedCutoff: settings.dismissedCutoff(for: record.id),
+                now: now, options: options
+            )
         }
         let sorted = PROrdering.sorted(resolved)
         self.now = now
@@ -646,9 +669,18 @@ final class PRStore: ObservableObject {
             projectId: pr.projectId, repositoryId: pr.repositoryId
         )
         let client = mode == .live ? client : nil
+        let handOff = commentHandOff(action, for: record)
         Task {
             let prompt = await PullRequestTasks.prompt(action, for: record, client: client)
-            copilot.compose(task, action: action, prompt: prompt)
+            copilot.compose(task, action: action, prompt: prompt, handOff: handOff)
         }
+    }
+
+    /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
+    /// that wait on you as the prompt is written from `record`, not as they are when you send it, for the account signed in
+    /// now.
+    func commentHandOff(_ action: PullRequestAction, for record: PRRecord) -> CommentHandOff? {
+        guard action.takesCareOfComments, record.role == .author else { return nil }
+        return CommentHandOff(record, dismissedCutoff: settings.dismissedCutoff(for: record.id), account: settings.account)
     }
 }

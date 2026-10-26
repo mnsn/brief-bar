@@ -26,6 +26,7 @@ public struct PulseNotification: Sendable, Equatable, Identifiable {
 
 /// Decides what's worth a notification by comparing two consecutive lists: new events (replies,
 /// mentions, review requests, votes...), and your pull requests failing, becoming ready or completing.
+/// What you've seen isn't news, even while it still waits on you.
 public enum NotificationPlanner {
     /// `notBefore`: events from before then (usually when BriefBar started) are in the panel, not announced.
     public static func plan(previous: [PRSnapshot], current: [PRSnapshot], notBefore: Date, limit: Int = 4) -> [PulseNotification] {
@@ -47,7 +48,7 @@ public enum NotificationPlanner {
             let changedGroup = old.map { $0.hasDetails && $0.group != snapshot.group } ?? false
             let becameReady = changedGroup && snapshot.role == .author && snapshot.group == .ready
 
-            for event in snapshot.events where !known.contains(event.id) && event.at >= notBefore {
+            for event in snapshot.events where event.isNew && !known.contains(event.id) && event.at >= notBefore {
                 // "Ready to complete" names who approved.
                 if event.kind == .approved && becameReady { continue }
                 // The chat app already announced the message.

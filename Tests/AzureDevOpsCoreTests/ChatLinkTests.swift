@@ -305,10 +305,10 @@ private func waitFor(_ what: String, timeout: Duration = .seconds(10), until con
     }
 
     private func classify(_ pr: PullRequest, role: PRRole, details: PRDetails?, links: [ChatLink], cutoff: Date? = nil,
-                          now: Date = t(0)) -> PRSnapshot? {
+                          dismissed: Date? = nil, now: Date = t(0)) -> PRSnapshot? {
         PRClassifier.snapshot(
             for: PRRecord(pullRequest: pr, role: role, details: details, me: me.id, chatLinks: links),
-            seenCutoff: cutoff ?? self.cutoff, now: now
+            seenCutoff: cutoff ?? self.cutoff, dismissedCutoff: dismissed ?? min(cutoff ?? self.cutoff, self.cutoff), now: now
         )
     }
 

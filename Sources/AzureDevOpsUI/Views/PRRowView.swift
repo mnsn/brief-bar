@@ -4,7 +4,7 @@ import BriefBarUI
 import SwiftUI
 
 /// One pull request: an icon for why it's here, the title, what's going on and where, a detail such as
-/// the comment that needs you, and how long ago it happened.
+/// the comment that needs you, and how long ago it happened. In Needs You, a dot marks what's new.
 struct PRRowView: View {
     let item: PRSnapshot
     let now: Date
@@ -14,10 +14,15 @@ struct PRRowView: View {
     var openSource: (() -> Void)? = nil
     /// Stops watching it (right-click); nil when you don't watch it.
     var stopWatching: (() -> Void)? = nil
+    /// Takes it off Needs You (right-click); nil when it isn't there.
+    var dismiss: (() -> Void)? = nil
     var action: () -> Void
 
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+
+    /// Needs you with something you haven't seen; without it, it's what you've seen and haven't answered.
+    private var isNew: Bool { item.group == .needsYou && item.hasNews }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -31,7 +36,7 @@ struct PRRowView: View {
             .help(helpText)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(item.title), \(item.headline)")
-            .accessibilityValue([item.repository, item.detail].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
             .accessibilityHint("Opens the pull request in Azure DevOps")
 
             if showsActions, !options.visibleActions {
@@ -73,6 +78,12 @@ struct PRRowView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
+                    if isNew {
+                        Circle()
+                            .fill(.tint)
+                            .frame(width: 7, height: 7)
+                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
+                    }
                     Text(Elapsed.short(since: item.since, now: now))
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -116,6 +127,9 @@ struct PRRowView: View {
         if let source = item.chatSource, let openSource {
             Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }
+        if let dismiss {
+            Button("Remove from Needs You", action: dismiss)
+        }
         PullRequestCopilotMenuItems(item: item)
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
@@ -133,10 +147,16 @@ struct PRRowView: View {
         var lines = [item.title, "\(item.repository) · \(item.project) · !\(item.key.number) by \(item.author)", item.headline]
         if let detail = item.detail { lines.append(detail) }
         if !item.approvals.isEmpty && item.group != .ready { lines.append("Approved by " + item.approvals.joined(separator: ", ")) }
+        if item.group == .needsYou && !isNew {
+            lines.append("You've seen it: it stays here until you reply, the comments are resolved, or you remove it")
+        }
         lines.append("Click to open in Azure DevOps")
+        let menu = showsActions ? "Use Actions" : "Right-click"
         if let source = item.chatSource {
-            let menu = showsActions ? "Use Actions" : "Right-click"
             lines.append(source.messageURL == nil ? "\(menu) to show \(source.appName)" : "\(menu) to open the message in \(source.appName)")
+        }
+        if dismiss != nil {
+            lines.append("\(menu) to remove it from Needs You")
         }
         if item.isWatched {
             lines.append(showsActions ? "You watch it: use Actions to stop" : "You watch it: right-click to stop")
