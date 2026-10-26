@@ -97,7 +97,7 @@ shows them in three places, each arranged in Settings:
   by state, with the brief, then has a page for every section, and a sidebar with their counts. Open
   it from the top of any list: **Overview** opens it on the Overview, with how many things need you
   there, and the list's title, such as **Pull Requests ›**, at the list's page. A widget's menu has
-  **Open in Window** too. BriefBar shows a Dock icon while a window is open.
+  **Open in Window** too. BriefBar shows a Dock icon while a window or Settings is open.
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again: in Settings, each item is a card with a chip for
@@ -737,7 +737,8 @@ on, each display has a menu bar of its own, and it can still belong to an app yo
 switching another display to a different Space doesn't change it. A click anywhere in that menu bar
 first makes that app active. If its windows are in a Space you switched away from, macOS switches back
 to that Space, as it does when you switch to the app with ⌘-Tab. An item that does nothing when clicked
-causes it too, so BriefBar can't prevent it. Its list does stay on the display you clicked.
+causes it too, so BriefBar can't prevent it. Its list does stay on the display you clicked. While you're
+in BriefBar's Settings or window, the menu bar is BriefBar's, so clicking its items leaves you there.
 
 ### How do I troubleshoot it?
 

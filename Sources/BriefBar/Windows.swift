@@ -5,7 +5,7 @@ import Combine
 import SwiftUI
 
 /// One BriefBar window: a page for each of its sections, with a sidebar to switch between them when there are
-/// several. BriefBar stays a menu-bar app: it shows a Dock icon only while a window is open.
+/// several. BriefBar stays a menu-bar app: it shows a Dock icon only while a window or Settings is open.
 @MainActor
 final class WindowHost: NSObject, NSWindowDelegate {
     let id: String
@@ -86,7 +86,7 @@ final class WindowHost: NSObject, NSWindowDelegate {
     nonisolated func windowWillClose(_ notification: Notification) {
         MainActor.assumeIsolated {
             content.isOnScreen = false
-            model.windowDidClose(self)
+            model.windowDidClose()
         }
     }
 

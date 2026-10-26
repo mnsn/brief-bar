@@ -214,8 +214,14 @@ each with its count, and ⌘1 to ⌘9. A window with several pages starts with a
 whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
 Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
 of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
-the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window is open, it shows a
-Dock icon and the usual menus, and it goes back once they're all closed.
+the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window or Settings is open,
+it shows a Dock icon and the usual menus, and it goes back once they're all closed. It needs the menu bar
+then: a click on a menu-bar item first makes the app the menu bar belongs to active again
+([FAQ](../README.md#why-did-clicking-briefbar-switch-my-other-displays-space)), whose windows would cover
+Settings, or whose Space macOS would switch to, each time you clicked an item to see what you arranged. An
+app only takes the menu bar as it becomes active, so when BriefBar already is, as when you open Settings
+from a list, it hands over to the Dock, which has no windows to bring forward, and comes straight back
+(`AppModel.showInDock`).
 
 ### Optional presentation
 

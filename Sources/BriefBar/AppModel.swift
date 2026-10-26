@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
     /// The Overview at the top of every list.
     private(set) lazy var overviewLink = OverviewLink(model: self)
     private var cancellables: Set<AnyCancellable> = []
+    /// Activates BriefBar again once the Dock is active, to take the menu bar (`showInDock`).
+    private var takingMenuBar: AnyCancellable?
 
     private static let launchedKey = "hasLaunched"
 
@@ -431,8 +433,7 @@ final class AppModel: ObservableObject {
         windows[entry.id] = window
         window.update(sections: entry.sections)
         window.show(at: section)
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        showInDock()
     }
 
     /// Opens one window, at its Overview if it has one.
@@ -443,8 +444,7 @@ final class AppModel: ObservableObject {
         windows[entry.id] = window
         window.update(sections: entry.sections)
         window.show(at: nil)
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        showInDock()
     }
 
     /// Opens the window that has the Overview, at the Overview; with none, the first window.
@@ -461,16 +461,42 @@ final class AppModel: ObservableObject {
         visibleItems(.windows).contains { $0.sections.contains(section) }
     }
 
-    /// Whether a BriefBar window is open, for the Dock icon.
+    /// Whether a BriefBar window or Settings is open, for the Dock icon.
     var hasOpenWindow: Bool {
-        windows.values.contains { $0.isOpen }
+        windows.values.contains { $0.isOpen } || settingsWindow.isOpen
     }
 
-    /// A window closed: BriefBar goes back to being a menu-bar app once none is open.
-    func windowDidClose(_ window: WindowHost) {
+    /// A window or Settings closed: BriefBar goes back to being a menu-bar app once none is open.
+    func windowDidClose() {
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.hasOpenWindow else { return }
+            takingMenuBar = nil
             NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    /// While a window or Settings is open, BriefBar shows a Dock icon and its own menus, and becomes the active app.
+    ///
+    /// A menu-bar app has no menu bar: the app you were in keeps it, and a click on a BriefBar item first makes that
+    /// app active again, so its windows would cover BriefBar's, or macOS would switch to its Space. An app only takes
+    /// the menu bar as it becomes active, so when BriefBar already is, such as from its list, it hands over to the
+    /// Dock, which has no windows to bring forward, and comes straight back.
+    private func showInDock() {
+        let isActiveMenuBarApp = NSApp.isActive && NSApp.activationPolicy() != .regular
+        NSApp.setActivationPolicy(.regular)
+        guard isActiveMenuBarApp,
+              let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first
+        else {
+            NSApp.activate()
+            return
+        }
+        takingMenuBar = NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .first()
+            .timeout(.seconds(1), scheduler: DispatchQueue.main)
+            .sink { _ in MainActor.assumeIsolated { NSApp.activate() } }
+        NSApp.yieldActivation(to: dock)
+        if !dock.activate(from: .current, options: []) {
+            takingMenuBar = nil
         }
     }
 
@@ -525,8 +551,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Opens Settings at `destination`. As with a window, BriefBar shows a Dock icon and has the menu bar until it
+    /// closes, so you can click its items to see what you arrange without Settings going away (`showInDock`).
     func openSettings(_ destination: SettingsDestination) {
         closePanels()
         settingsWindow.show(destination)
+        showInDock()
     }
 }

@@ -1,8 +1,8 @@
 import AppKit
 import BriefBarUI
 
-/// The menus macOS shows while a BriefBar window is open: without them, ⌘W, ⌘Q and the Edit menu's shortcuts
-/// don't work.
+/// The menus macOS shows while a BriefBar window or Settings is open: without them, ⌘W, ⌘Q and the Edit menu's
+/// shortcuts don't work.
 @MainActor
 final class MainMenu: NSObject {
     private unowned let model: AppModel

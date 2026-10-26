@@ -5,6 +5,10 @@
 - **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
   The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
   Existing Intel installs aren't offered incompatible updates.
+- **Settings stays open while you arrange.** Clicking a BriefBar menu-bar item to see what you just
+  arranged no longer hides Settings behind the app you were in before, or switches to that app's
+  Space. While Settings is open, BriefBar shows a Dock icon and its own menus, as it does for its
+  window, so you can also get back to Settings from the Dock or with ⌘-Tab.
   
 ## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
