@@ -1,10 +1,12 @@
 # Changelog
 
-## 0.6.0 - 2026-10-26
+## Unreleased
 
-- **Copilot tasks start in repositories you trust.** Sending a pull request or work item to Copilot
-  no longer fails as soon as it starts when Copilot trusts the repository's folder. The Copilot CLI
-  refuses the extra trust option BriefBar added, and already trusts the task's worktree itself.
+- **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
+  The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
+  Existing Intel installs aren't offered incompatible updates.
+  
+## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
   clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any
@@ -19,6 +21,11 @@
   below the first group with two highlights and an option to expand it. Optional row menus and
   widget **View All** buttons make actions easier to find while keeping each source's existing
   open/read behavior.
+- **Copilot tasks start again in repositories you trust.** With Copilot CLI 1.0.100 or later, a pull
+  request or work item sent from a trusted repository failed at once: the CLI refuses the option
+  BriefBar added to trust its worktree. BriefBar no longer adds it, and Copilot still trusts the
+  worktree of a repository you trust. When Copilot can't start, the notification now gives the CLI's
+  error rather than a hint to try `--help`.
 
 ## 0.5.0 - 2026-10-26
 

@@ -4,8 +4,8 @@ import Foundation
 public enum CopilotCommand {
     /// A run that works on its own: the prompt, in autopilot until Copilot calls the task done, with every tool allowed
     /// and no questions, since nobody is there to answer them. Its session gets the ID BriefBar chose, to follow it by.
-    /// No `--trust-folder`: the CLI refuses it with `--session-id`, and carries a trusted repository's trust to its
-    /// worktrees itself.
+    /// No `--trust-folder`: the CLI refuses it with `--session-id`, and it trusts a worktree of a repository you trust
+    /// by itself, so it loads the worktree's own skills, MCP servers and hooks then.
     /// - Parameters:
     ///   - name: the new session's name; nil to go on with an existing session, under its own.
     ///   - denied: tools the CLI refuses, though every other tool is allowed.

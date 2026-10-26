@@ -3,7 +3,7 @@
 # a broken release pipeline shows up before a tag is pushed. Run it after scripts/package.sh; CI does.
 # It signs a copy of the packaged app that trusts the throwaway key, with scripts/make-appcast.sh,
 # then checks the result with scripts/verify-appcast.swift and Sparkle's sign_update, and checks that
-# the verifier rejects another key, a changed appcast and a changed zip.
+# the verifier rejects another key, a changed appcast, a changed zip and missing or wrong hardware requirements.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -70,4 +70,14 @@ expect_rejected() {
 expect_rejected "another key" "$APPCAST" "$WORK/release/$ZIP" "$REAL_KEY"
 expect_rejected "a changed appcast" "$WORK/changed.xml" "$WORK/release/$ZIP" "$PUBLIC_KEY"
 expect_rejected "a changed zip" "$APPCAST" "$WORK/$ZIP" "$PUBLIC_KEY"
+
+# Sign the invalid feeds again so it's the hardware requirement, not the signature, that fails.
+sed '/<sparkle:hardwareRequirements>/d' "$APPCAST" > "$WORK/missing-hardware.xml"
+sed 's#<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>#<sparkle:hardwareRequirements>x86_64</sparkle:hardwareRequirements>#' \
+    "$APPCAST" > "$WORK/wrong-hardware.xml"
+for name in missing-hardware wrong-hardware; do
+    "$TOOLS/sign_update" --ed-key-file - "$WORK/$name.xml" < "$WORK/private-key"
+    "$TOOLS/sign_update" --verify --ed-key-file - "$WORK/$name.xml" < "$WORK/private-key"
+    expect_rejected "$name requirement" "$WORK/$name.xml" "$WORK/release/$ZIP" "$PUBLIC_KEY"
+done
 echo "Dry run passed: a release signs and verifies its update and appcast."

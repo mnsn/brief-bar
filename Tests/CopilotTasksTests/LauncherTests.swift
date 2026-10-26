@@ -77,6 +77,7 @@ import Testing
         #expect(arguments.prefix(6) == ["-p", "Fix 4217 from main", "--model", "claude-sonnet-5.5", "--reasoning-effort", "medium"])
         #expect(arguments.contains("--session-id") && arguments.contains(id))
         #expect(arguments.suffix(3) == ["-C", worktree.path, "--silent"])
+        #expect(!arguments.contains("--trust-folder"))
 
         let log = await RunMonitor().log(id: run.id, events: events)
         let status = RunStatus.derive(log: log, isRunning: DetachedProgram.isRunning(run.process), exitStatus: 0, stoppedByYou: false, output: nil)
@@ -97,10 +98,10 @@ import Testing
         }
     }
 
-    /// Copilot carries a trusted repository's trust to its worktrees itself, and refuses `--trust-folder` with
-    /// `--session-id`, so a worktree of a repository you trust starts like any other.
+    /// The CLI gives a worktree of a repository you trust the same trust by itself, and refuses `--trust-folder` with
+    /// `--session-id`: a trusted repository's run starts like any other.
     @Test(.timeLimit(.minutes(1)))
-    func startsAWorktreeOfATrustedRepositoryWithItsSessionID() async throws {
+    func startsTheWorktreeOfATrustedRepositoryWithoutTrustingTheFolder() async throws {
         let fixture = try await RepositoryFixture()
         defer { fixture.remove() }
         let copilotHome = fixture.folder.appendingPathComponent("copilot-home")

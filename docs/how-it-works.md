@@ -1020,9 +1020,9 @@ last one's session, if its worktree is still there: `--session-id` is that sessi
 offered once a task that changed files is done.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
-its `config.json`). It carries a repository's trust to that repository's worktrees, so a task's
-worktree loads them when you trust the repository, and only your own configuration when you don't.
-BriefBar adds no trust of its own: the CLI refuses `--trust-folder` with `--session-id`.
+its `config.json`). The CLI gives a worktree of a repository you trust the same trust by itself, and no
+more: a worktree of one you don't trust loads only your own configuration. BriefBar doesn't pass
+`--trust-folder`: the CLI refuses it with `--session-id`, and wouldn't start.
 
 **Following it.** Copilot logs the session to `~/.copilot/session-state/<id>/events.jsonl` (under
 `COPILOT_HOME`, if your shell sets it), as for the app's sessions, and BriefBar reads it the same way
@@ -1496,7 +1496,8 @@ when BriefBar does.
   cookies, and the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays
   off.
 - **What it accepts**: only an appcast and a zip signed with the project's EdDSA key, and it checks the
-  zip before unpacking it. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
+  zip before unpacking it. The appcast requires arm64 hardware, so existing Intel installs aren't
+  offered an incompatible update. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
 - **Gently**: right after launch, Sparkle shows a new version itself. A later, scheduled check doesn't
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
@@ -1517,9 +1518,10 @@ when BriefBar does.
 - `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar
   has no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the
   updater has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in
-  its own `Frameworks`, without the XPC services, with its license, for every architecture; a
-  designated requirement that names a certificate, unless `--allow-ad-hoc` says a build of your own
-  may be ad hoc; the update settings (the feed, the signed-appcast keys, and with `--release` the
+  its own `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and
+  its updater contain only arm64 code; a designated requirement that names a certificate, unless
+  `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
+  signed-appcast keys, and with `--release` the
   public key); FoundationModels linked weakly so it opens on macOS 15; and that it runs, starts the
   updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS

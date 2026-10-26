@@ -53,6 +53,16 @@ import Testing
         #expect(!arguments.contains("--reasoning-effort"))
     }
 
+    /// The CLI refuses `--trust-folder` with `--session-id`, which every run has, and won't start.
+    @Test func neverAsksToTrustTheFolder() {
+        let arguments = CopilotCommand.arguments(
+            prompt: "p", options: CopilotModel.standard, sessionId: "s", name: nil, directory: URL(fileURLWithPath: "/w"),
+            denied: ["shell(git push)"]
+        )
+        #expect(arguments.contains("--session-id"))
+        #expect(!arguments.contains("--trust-folder"))
+    }
+
     @Test func namesTheSessionAfterTheWorkItemShortly() {
         #expect(CopilotCommand.sessionName(for: sampleItem) == "Task 4217: Show the order total in the cart")
         var long = sampleItem
