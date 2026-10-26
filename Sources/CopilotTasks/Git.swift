@@ -18,12 +18,14 @@ public struct GitRepository: Sendable, Equatable {
 public enum GitError: Error, Sendable, Equatable, CustomStringConvertible {
     case notARepository(String)
     case noOrigin(String)
+    case wrongRepository(String)
     case failed(String)
 
     public var description: String {
         switch self {
         case .notARepository(let folder): return "\(folder) isn't a git repository."
         case .noOrigin(let name): return "\(name) has no origin remote to start the work from."
+        case .wrongRepository(let name): return "This folder's origin isn't \(name). Choose a local clone of that repository."
         case .failed(let message): return message
         }
     }
@@ -49,6 +51,21 @@ public struct Git: Sendable {
         }
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
         return GitRepository(root: rootURL, baseBranch: try await baseBranch(of: rootURL))
+    }
+
+    /// A local clone of the PR's repository, checked without fetching or changing the checkout.
+    public func repository(at folder: URL, for pullRequest: TaskPullRequest) async throws -> GitRepository {
+        let repository = try await repository(at: folder)
+        try await validate(repository, for: pullRequest)
+        return repository
+    }
+
+    func validate(_ repository: GitRepository, for pullRequest: TaskPullRequest) async throws {
+        // Read the configured URL, before a credential helper's insteadOf rewrite.
+        let remote = try await run(["-C", repository.root.path, "config", "--get", "remote.origin.url"], timeout: 30)
+        guard pullRequest.matches(remote: remote) else {
+            throw GitError.wrongRepository("\(pullRequest.organization)/\(pullRequest.project)/\(pullRequest.repository)")
+        }
     }
 
     /// Where `origin/HEAD` points, or `origin/main` or `origin/master` if it isn't set.

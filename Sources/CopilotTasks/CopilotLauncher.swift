@@ -94,6 +94,9 @@ public struct CopilotLauncher: Sendable {
         var made = false
         do {
             repository = try await git.repository(at: request.repository)
+            if case .pullRequest(let pullRequest, _) = request.subject {
+                try await git.validate(repository, for: pullRequest)
+            }
             if let continuing = request.continuing {
                 // Its worktree, as the earlier run left it: what it changed is what this one goes on with.
                 guard FileManager.default.fileExists(atPath: continuing.worktree.path) else {

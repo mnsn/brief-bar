@@ -906,7 +906,9 @@ each project's work went in, by organization and project. Then BriefBar:
    `~/Library/Application Support/BriefBar/Copilot/<id>.log`, which only you can read.
 
 **Pull requests.** With it on, a pull request's menu sends it too, for one of five actions
-(`PullRequestAction`). BriefBar writes the prompt from what it read of the pull request
+(`PullRequestAction`). In the main window, every row has a visible **Actions** menu; the same actions
+remain available by right-clicking, including in the menu-bar popover and widgets.
+BriefBar writes the prompt from what it read of the pull request
 (`PullRequestPrompt`): the unresolved comment threads, those that wait on you first, word for word,
 each with its file, line and thread; for a failed build, each run's link, where it failed and its
 errors, read again from its timeline (one GET a build, when you ask); for a review, the threads already
@@ -918,8 +920,15 @@ whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 `--deny-tool write --deny-tool 'shell(git commit)' --deny-tool 'shell(git push)'`, fixing comments or a
 build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
-takes the branch from a checkout that has it. The clone is the one you chose for that repository last
-(by organization, project and repository), or the one named like it. A later task goes on with the
+takes the branch from a checkout that has it. The composer already knows and shows the remote
+repository. **Local Clone** selects its folder on this Mac, not which repository the PR belongs to.
+BriefBar checks the clone's `origin` against the PR's organization, project and repository (names or
+IDs, with Azure DevOps HTTPS and SSH URLs), and remembers a valid choice immediately, even if you
+cancel without sending. Later PRs in that repository reuse it. When there is no saved choice, it
+checks previously chosen clones by their remotes, never by folder name or an unrelated default.
+If none matches, it asks you to choose a local clone once; it never clones automatically. A moved
+clone or changed origin is reported so you can choose again, and the origin is checked again before
+launching a task. A later task goes on with the
 last one's session, if its worktree is still there: `--session-id` is that session's, without
 `--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
 offered once a task that changed files is done.

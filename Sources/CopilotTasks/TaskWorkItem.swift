@@ -54,6 +54,9 @@ public struct TaskPullRequest: Sendable, Codable, Equatable, Hashable {
     public var organization: String
     public var project: String
     public var repository: String
+    /// Git remotes can use these IDs instead of the project's and repository's names.
+    public var projectId: String?
+    public var repositoryId: String?
     public var id: Int
     public var title: String
     public var url: URL
@@ -64,11 +67,13 @@ public struct TaskPullRequest: Sendable, Codable, Equatable, Hashable {
 
     public init(
         organization: String, project: String, repository: String, id: Int, title: String, url: URL, sourceBranch: String,
-        targetBranch: String
+        targetBranch: String, projectId: String? = nil, repositoryId: String? = nil
     ) {
         self.organization = organization
         self.project = project
         self.repository = repository
+        self.projectId = projectId
+        self.repositoryId = repositoryId
         self.id = id
         self.title = title
         self.url = url
@@ -78,6 +83,43 @@ public struct TaskPullRequest: Sendable, Codable, Equatable, Hashable {
 
     public var reference: PullRequestReference {
         PullRequestReference(organization: organization, project: project, repository: repository, id: id, sourceBranch: sourceBranch)
+    }
+
+    /// Matches Azure DevOps' HTTPS and SSH clone URLs, not a local folder's name.
+    public func matches(remote: String) -> Bool {
+        var address = remote.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !address.contains("://"), let colon = address.firstIndex(of: ":") {
+            address = "ssh://" + address[..<colon] + "/" + address[address.index(after: colon)...]
+        }
+        guard let url = URLComponents(string: address), let host = url.host?.lowercased(),
+              let scheme = url.scheme?.lowercased(), url.query == nil, url.fragment == nil else { return false }
+        let encodedParts = url.percentEncodedPath.split(separator: "/")
+        var parts = encodedParts.compactMap { String($0).removingPercentEncoding }
+        guard parts.count == encodedParts.count else { return false }
+        let remoteOrganization: String
+        if scheme == "ssh", host == "ssh.dev.azure.com" || host == "vs-ssh.visualstudio.com" {
+            guard parts.count == 4, parts.removeFirst().lowercased() == "v3" else { return false }
+            remoteOrganization = parts.removeFirst()
+        } else if scheme == "https" {
+            if host == "dev.azure.com" {
+                guard parts.count == 4 else { return false }
+                remoteOrganization = parts.removeFirst()
+            } else if host.hasSuffix(".visualstudio.com") {
+                remoteOrganization = String(host.dropLast(".visualstudio.com".count))
+                if parts.first?.lowercased() == "defaultcollection" { parts.removeFirst() }
+            } else {
+                return false
+            }
+            guard parts.count == 3, parts[1].lowercased() == "_git" else { return false }
+            parts.remove(at: 1)
+        } else {
+            return false
+        }
+        guard parts.count == 2, remoteOrganization.caseInsensitiveCompare(organization) == .orderedSame else { return false }
+        let projects = [project, projectId].compactMap { $0 }
+        let repositories = [repository, repositoryId].compactMap { $0 }
+        return projects.contains { $0.caseInsensitiveCompare(parts[0]) == .orderedSame }
+            && repositories.contains { $0.caseInsensitiveCompare(parts[1]) == .orderedSame }
     }
 }
 
