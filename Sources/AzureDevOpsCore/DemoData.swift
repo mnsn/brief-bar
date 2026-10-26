@@ -24,9 +24,12 @@ public enum DemoData {
         Person(id: "6f1c1a52-0000-4000-8000-00000000\(suffix)", name: name)
     }
 
-    /// The first-run seen state: only the last three days are new.
+    /// The first-run seen state, where only the last three days are new, with one pull request you've opened since
+    /// Sam replied on it: his reply still waits on you.
     public static func seenState(now: Date = Date()) -> SeenState {
-        SeenState.firstRun(now: now)
+        var seen = SeenState.firstRun(now: now)
+        seen.markSeen([PRKey(organization, 4102)], at: now.addingTimeInterval(-5 * 60))
+        return seen
     }
 
     public static func snapshot(now: Date = Date()) -> PulseSnapshot {
@@ -138,7 +141,7 @@ public enum DemoData {
         }
 
         return [
-            // Needs you: a reply to your comment.
+            // Needs you: a reply to your comment, which you've seen (`seenState`) but haven't answered.
             record(
                 pr(4102, "Add retry with backoff to the payments client", repo: "payments-api", created: ago(26 * hour),
                    reviewers: [reviewer(sam, required: true), reviewer(priya, .approved)], branch: "payments-retry"),

@@ -9,12 +9,12 @@ import BriefBarCore
         let pr = makePR(author: People.alex)
         let record = PRRecord(pullRequest: pr, role: .linked, details: makeDetails(for: pr, lastActivity: t(-hour)), me: People.me.id)
         // Not watched, and not sent in a chat: not listed.
-        #expect(PRClassifier.snapshot(for: record, seenCutoff: t(-day), now: t(0)) == nil)
+        #expect(PRClassifier.snapshot(for: record, seenCutoff: t(-day), dismissedCutoff: t(-day), now: t(0)) == nil)
 
         let watched = record.watched()
         #expect(watched.role == .reviewer)
         #expect(watched.isWatched)
-        let snapshot = try #require(PRClassifier.snapshot(for: watched, seenCutoff: t(-day), now: t(0)))
+        let snapshot = try #require(PRClassifier.snapshot(for: watched, seenCutoff: t(-day), dismissedCutoff: t(-day), now: t(0)))
         #expect(snapshot.group == .toReview)
         #expect(snapshot.headline == "Watching")
         #expect(snapshot.detail == "By Alex Kim")
@@ -23,12 +23,12 @@ import BriefBarCore
         // A mention there needs you, as on any review.
         let mention = ReviewThread(id: 3, comments: [comment(1, People.alex, "@Robin could you look?", at: t(-minute), mentions: [People.me])])
         let mentioned = PRRecord(pullRequest: pr, role: .linked, details: makeDetails(for: pr, threads: [mention]), me: People.me.id).watched()
-        #expect(PRClassifier.snapshot(for: mentioned, seenCutoff: t(-day), now: t(0))?.reason == .mentioned)
+        #expect(PRClassifier.snapshot(for: mentioned, seenCutoff: t(-day), dismissedCutoff: t(-day), now: t(0))?.reason == .mentioned)
 
         // Once you're a reviewer, or it's yours, it's that.
         let named = makePR(author: People.alex, reviewers: [Reviewer(person: People.me, vote: .none, isRequired: true)])
         let review = PRRecord(pullRequest: named, role: .reviewer, details: makeDetails(for: named, lastActivity: t(-hour)), me: People.me.id)
-        #expect(PRClassifier.snapshot(for: review.watched(), seenCutoff: t(-day), now: t(0))?.headline == "Required review")
+        #expect(PRClassifier.snapshot(for: review.watched(), seenCutoff: t(-day), dismissedCutoff: t(-day), now: t(0))?.headline == "Required review")
         #expect(PRRecord(pullRequest: makePR(), role: .author, me: People.me.id).watched().role == .author)
     }
 

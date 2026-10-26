@@ -106,6 +106,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot.pullRequestTitle = { [weak store] reference in
             store?.items.first { $0.key.number == reference.id && $0.key.organization.caseInsensitiveCompare(reference.organization) == .orderedSame }?.title
         }
+        copilot.startedOnPullRequest = { [weak store] key, action, date in store?.sentToCopilot(key, action: action, at: date) }
         self.copilot = copilot
         workLinks = WorkLinksStore(links: services.links, store: store, sprint: sprint, copilot: copilot, settings: settings)
         return store

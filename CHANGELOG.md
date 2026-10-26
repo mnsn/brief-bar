@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Needs You keeps what still waits on you.** Opening a pull request from BriefBar, or **Mark as
+  Seen**, no longer takes it off Needs You while a comment there waits on you: a reply to you, a
+  mention, or a comment on your pull request. It stays, and counts in the menu bar, without the dot that
+  now marks what's new, until you reply in its thread or the thread is resolved, you send the comments
+  to Copilot with **Fix Comments** or **Push & Reply**, or you choose **Remove from Needs You** in its
+  menu (right-click it, or **Actions** in the window). Anything after that needs you again, and a pull
+  request without activity for two weeks goes to Idle, as before. After the update, a pull request you'd
+  opened whose comments still wait on you is back in Needs You.
+
 ## 0.6.0 - 2026-10-26
 
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers

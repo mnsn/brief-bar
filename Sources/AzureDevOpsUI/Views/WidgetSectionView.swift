@@ -57,7 +57,10 @@ struct WidgetSectionView: View {
     }
 
     private func row(_ item: PRSnapshot) -> some View {
-        PRRowView(item: item, now: store.now, compact: true, openSource: item.chatSource == nil ? nil : { store.openSource(item) }) {
+        PRRowView(
+            item: item, now: store.now, compact: true, openSource: item.chatSource == nil ? nil : { store.openSource(item) },
+            dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil
+        ) {
             store.open(item)
         }
             .frame(height: options.compactRowHeight)

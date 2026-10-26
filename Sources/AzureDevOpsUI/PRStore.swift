@@ -194,6 +194,7 @@ final class PRStore: ObservableObject {
 
         settings.$seen.dropFirst().map { _ in () }
             .merge(with: settings.$seenSentInChats.dropFirst().map { _ in () })
+            .merge(with: settings.$dismissedSentInChats.dropFirst().map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -414,7 +415,8 @@ final class PRStore: ObservableObject {
         }
     }
 
-    /// Opens the pull request (at the comment that needs you) and marks it seen.
+    /// Opens the pull request (at the comment that needs you) and marks it seen. Comments that wait on you there keep it
+    /// in Needs You, no longer as new, until you answer them or remove it.
     func open(_ item: PRSnapshot) {
         markSeen(item)
         AzureDevOps.open(item.url)
@@ -433,13 +435,29 @@ final class PRStore: ObservableObject {
         settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 
-    /// Marks a group's pull requests seen: Needs You moves on, Done empties. Each is seen up to what the panel
-    /// showed, not up to now, so a comment that arrives before the next refresh still counts as new.
+    /// Marks a group's pull requests seen: Needs You keeps only those whose comments still wait on you, and Done empties.
+    /// Each is seen up to what the panel showed, not up to now, so a comment that arrives before the next refresh still
+    /// counts as new.
     func clear(_ group: PRGroup) {
         let cleared = items(in: group)
         settings.markSeen(cleared.map { item in
             (item.key, item.events.map(\.at).max() ?? item.since ?? Date())
         }, sentInChats: sentInChats(cleared.map(\.key)))
+    }
+
+    /// Takes a pull request off Needs You, up to what the panel showed: what waited on you there doesn't anymore, and
+    /// it's seen. Anything that comes after needs you again.
+    func dismiss(_ item: PRSnapshot) {
+        settings.dismiss([(item.key, item.events.map(\.at).max() ?? item.since ?? Date())], sentInChats: sentInChats([item.key]))
+    }
+
+    /// A task that takes care of a pull request's comments, Fix Comments or Push & Reply, started in Copilot: they're
+    /// off Needs You, up to when you sent it. A comment that came after still needs you.
+    func sentToCopilot(_ key: PRKey, action: PullRequestAction, at date: Date) {
+        // Organization names are case-insensitive in Azure DevOps.
+        let item = items.first { $0.key.number == key.number && $0.key.organization.caseInsensitiveCompare(key.organization) == .orderedSame }
+        guard action.takesCareOfComments, let item, let newest = item.pendingEvents.map(\.at).filter({ $0 <= date }).max() else { return }
+        settings.dismiss([(item.key, newest)], sentInChats: sentInChats([item.key]))
     }
 
     /// The pull requests among these that are listed only because someone sent them to you, or aren't listed at all:
@@ -530,7 +548,10 @@ final class PRStore: ObservableObject {
             var record = watched.contains(record.id) ? record.watched() : record
             let found = links.links(for: record.id).filter { link in !record.chatLinks.contains { $0.id == link.id } }
             record.chatLinks += found
-            return PRClassifier.snapshot(for: record, seenCutoff: settings.seenCutoff(for: record.id), now: now, options: options)
+            return PRClassifier.snapshot(
+                for: record, seenCutoff: settings.seenCutoff(for: record.id), dismissedCutoff: settings.dismissedCutoff(for: record.id),
+                now: now, options: options
+            )
         }
         let sorted = PROrdering.sorted(resolved)
         self.now = now

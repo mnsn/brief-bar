@@ -4,9 +4,9 @@ import Combine
 import CopilotTasks
 import Foundation
 
-/// Azure DevOps' settings, and which pull requests you've seen, in BriefBar's preferences. Nothing from Notification
-/// Center goes there: the links people sent you in chats, and what you've seen of the pull requests listed only
-/// because of them, stay in memory, since any program running as you can read the preferences.
+/// Azure DevOps' settings, and which pull requests you've seen or removed from Needs You, in BriefBar's preferences.
+/// Nothing from Notification Center goes there: the links people sent you in chats, and what you've seen of the pull
+/// requests listed only because of them, stay in memory, since any program running as you can read the preferences.
 @MainActor
 final class AppSettings: ObservableObject {
     /// The installed app's preferences, which the command line reads too.
@@ -128,6 +128,8 @@ final class AppSettings: ObservableObject {
     /// When you last looked at each pull request that's listed only because someone sent it to you (`PRKey.description`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
     @Published private(set) var seenSentInChats: [String: Date] = [:]
+    /// When you last removed each of those from Needs You, in memory only too.
+    @Published private(set) var dismissedSentInChats: [String: Date] = [:]
     /// What the other accounts you've signed in with have seen.
     private var otherSeen: [String: SeenState]
 
@@ -243,17 +245,34 @@ final class AppSettings: ObservableObject {
     /// Each pull request seen up to its own time. Those in `sentInChats`, listed only because someone sent them to
     /// you, are remembered in memory only, and leave the preferences if an earlier build saved them there.
     func markSeen(_ entries: [(key: PRKey, date: Date)], sentInChats: Set<PRKey> = []) {
+        update(entries, sentInChats: sentInChats, dismissing: false)
+    }
+
+    /// Removes each pull request from Needs You up to its own time, which sees it too: the comments that waited on you
+    /// there don't anymore, and what comes after needs you again. Those in `sentInChats` are remembered in memory only,
+    /// as for what you've seen.
+    func dismiss(_ entries: [(key: PRKey, date: Date)], sentInChats: Set<PRKey> = []) {
+        update(entries, sentInChats: sentInChats, dismissing: true)
+    }
+
+    private func update(_ entries: [(key: PRKey, date: Date)], sentInChats: Set<PRKey>, dismissing: Bool) {
         keepSeenInMemory(sentInChats)
         var updated = seen
-        var inMemory = seenSentInChats
+        var seenInMemory = seenSentInChats
+        var dismissedInMemory = dismissedSentInChats
         for entry in entries {
+            let key = entry.key.description
             if sentInChats.contains(entry.key) {
-                inMemory[entry.key.description] = max(entry.date, inMemory[entry.key.description] ?? .distantPast)
+                seenInMemory[key] = max(entry.date, seenInMemory[key] ?? .distantPast)
+                if dismissing { dismissedInMemory[key] = max(entry.date, dismissedInMemory[key] ?? .distantPast) }
+            } else if dismissing {
+                updated.dismiss([entry.key], at: entry.date)
             } else {
                 updated.markSeen([entry.key], at: entry.date)
             }
         }
-        if inMemory != seenSentInChats { seenSentInChats = inMemory }
+        if seenInMemory != seenSentInChats { seenSentInChats = seenInMemory }
+        if dismissedInMemory != dismissedSentInChats { dismissedSentInChats = dismissedInMemory }
         guard updated != seen else { return }
         seen = updated
         persistSeen()
@@ -264,18 +283,30 @@ final class AppSettings: ObservableObject {
         max(seen.cutoff(for: key), seenSentInChats[key.description] ?? .distantPast)
     }
 
+    /// Up to when the comments that wait on you in a pull request don't need you anymore: when you last removed it from
+    /// Needs You, or sent them to Copilot.
+    func dismissedCutoff(for key: PRKey) -> Date {
+        max(seen.dismissedCutoff(for: key), dismissedSentInChats[key.description] ?? .distantPast)
+    }
+
     /// Moves what the preferences say you've seen of these pull requests, listed only because someone sent them to
-    /// you, into memory. Earlier builds kept that in the preferences.
+    /// you, into memory: and when you removed them from Needs You. Earlier builds kept that in the preferences.
     func keepSeenInMemory(_ keys: Set<PRKey>) {
-        let saved = keys.compactMap { key in seen.seenAt[key.description].map { (key: key.description, date: $0) } }
-        guard !saved.isEmpty else { return }
-        var inMemory = seenSentInChats
+        let names = keys.map(\.description).filter { seen.seenAt[$0] != nil || seen.dismissedAt[$0] != nil }
+        guard !names.isEmpty else { return }
+        var seenInMemory = seenSentInChats
+        var dismissedInMemory = dismissedSentInChats
         var updated = seen
-        for entry in saved {
-            inMemory[entry.key] = max(entry.date, inMemory[entry.key] ?? .distantPast)
-            updated.seenAt[entry.key] = nil
+        for name in names {
+            if let date = updated.seenAt.removeValue(forKey: name) {
+                seenInMemory[name] = max(date, seenInMemory[name] ?? .distantPast)
+            }
+            if let date = updated.dismissedAt.removeValue(forKey: name) {
+                dismissedInMemory[name] = max(date, dismissedInMemory[name] ?? .distantPast)
+            }
         }
-        seenSentInChats = inMemory
+        if seenInMemory != seenSentInChats { seenSentInChats = seenInMemory }
+        if dismissedInMemory != dismissedSentInChats { dismissedSentInChats = dismissedInMemory }
         seen = updated
         persistSeen()
     }
@@ -286,6 +317,8 @@ final class AppSettings: ObservableObject {
         let kept = Set(keys.map(\.description))
         let inMemory = seenSentInChats.filter { kept.contains($0.key) || $0.value > cutoff }
         if inMemory != seenSentInChats { seenSentInChats = inMemory }
+        let dismissedInMemory = dismissedSentInChats.filter { kept.contains($0.key) || $0.value > cutoff }
+        if dismissedInMemory != dismissedSentInChats { dismissedSentInChats = dismissedInMemory }
         var updated = seen
         updated.prune(keeping: keys, olderThan: cutoff)
         guard updated != seen else { return }
@@ -309,6 +342,7 @@ final class AppSettings: ObservableObject {
     func forgetChatLinks() {
         if !chatLinks.links.isEmpty { chatLinks = ChatLinkState() }
         if !seenSentInChats.isEmpty { seenSentInChats = [:] }
+        if !dismissedSentInChats.isEmpty { dismissedSentInChats = [:] }
     }
 
     /// Replaces the seen state, for the demo and for pictures.
@@ -324,6 +358,7 @@ final class AppSettings: ObservableObject {
         let switched = book.signIn(account, now: now)
         // What the last account saw of pull requests sent in chats was its own, and is kept in memory only.
         if switched, !seenSentInChats.isEmpty { seenSentInChats = [:] }
+        if switched, !dismissedSentInChats.isEmpty { dismissedSentInChats = [:] }
         guard book.current != seen else { return switched }
         otherSeen = book.others
         seen = book.current

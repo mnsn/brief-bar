@@ -1,23 +1,41 @@
 import Foundation
 
-/// What you've already seen. Azure DevOps has no read/unread state for pull requests, so BriefBar keeps
-/// its own: activity up to the baseline, or up to when you last opened a pull request from BriefBar (or
-/// cleared it), counts as seen.
+/// What you've already seen, and what you've taken off Needs You. Azure DevOps has no read/unread state for pull
+/// requests, so BriefBar keeps its own: activity up to the baseline, or up to when you last opened a pull request from
+/// BriefBar (or marked it seen), counts as seen. Comments you've seen still need you while they wait on you, until you
+/// remove the pull request from Needs You, or send them to Copilot.
 public struct SeenState: Sendable, Codable, Equatable {
     /// Activity before this was there before BriefBar first ran.
     public var baseline: Date
     /// Pull request (`PRKey.description`) → when you last looked at it.
     public var seenAt: [String: Date]
+    /// Pull request → when you last removed it from Needs You, or sent its comments to Copilot: comments up to then
+    /// that still wait on you don't need you anymore. Never later than when you last looked at it.
+    public var dismissedAt: [String: Date]
     /// Whose this is (`AccessToken.account`), once known: each account you sign in with has its own.
     public var account: String?
 
     /// On the first run, only the last few days count as new, so years of old threads don't all need you.
     public static let firstRunLookback: TimeInterval = 3 * 86_400
 
-    public init(baseline: Date, seenAt: [String: Date] = [:], account: String? = nil) {
+    public init(baseline: Date, seenAt: [String: Date] = [:], dismissedAt: [String: Date] = [:], account: String? = nil) {
         self.baseline = baseline
         self.seenAt = seenAt
+        self.dismissedAt = dismissedAt
         self.account = account
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case baseline, seenAt, dismissedAt, account
+    }
+
+    /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        baseline = try container.decode(Date.self, forKey: .baseline)
+        seenAt = try container.decode([String: Date].self, forKey: .seenAt)
+        dismissedAt = try container.decodeIfPresent([String: Date].self, forKey: .dismissedAt) ?? [:]
+        account = try container.decodeIfPresent(String.self, forKey: .account)
     }
 
     public static func firstRun(now: Date = Date(), account: String? = nil) -> SeenState {
@@ -28,16 +46,32 @@ public struct SeenState: Sendable, Codable, Equatable {
         max(baseline, seenAt[key.description] ?? .distantPast)
     }
 
+    /// Comments up to this that still wait on you don't need you anymore.
+    public func dismissedCutoff(for key: PRKey) -> Date {
+        max(baseline, dismissedAt[key.description] ?? .distantPast)
+    }
+
     public mutating func markSeen<S: Sequence>(_ keys: S, at date: Date) where S.Element == PRKey {
         for key in keys {
             seenAt[key.description] = max(date, seenAt[key.description] ?? .distantPast)
         }
     }
 
+    /// Removes pull requests from Needs You up to `date`, which sees them too: what waited on you there doesn't
+    /// anymore, and what comes after needs you again.
+    public mutating func dismiss<S: Sequence>(_ keys: S, at date: Date) where S.Element == PRKey {
+        let keys = Array(keys)
+        for key in keys {
+            dismissedAt[key.description] = max(date, dismissedAt[key.description] ?? .distantPast)
+        }
+        markSeen(keys, at: date)
+    }
+
     /// Forgets pull requests that are no longer listed and were last seen long ago.
     public mutating func prune(keeping keys: Set<PRKey>, olderThan date: Date) {
         let kept = Set(keys.map(\.description))
         seenAt = seenAt.filter { kept.contains($0.key) || $0.value > date }
+        dismissedAt = dismissedAt.filter { kept.contains($0.key) || $0.value > date }
     }
 }
 

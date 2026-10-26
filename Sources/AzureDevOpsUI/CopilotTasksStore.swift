@@ -85,6 +85,8 @@ final class CopilotTasksStore: ObservableObject {
     var title: (WorkItemReference) -> String? = { _ in nil }
     /// A pull request's title, when the list shows it, for notifications.
     var pullRequestTitle: (PullRequestReference) -> String? = { _ in nil }
+    /// A task on a pull request started, with when you sent it, for the list: what it takes care of leaves Needs You.
+    var startedOnPullRequest: (PRKey, PullRequestAction, Date) -> Void = { _, _, _ in }
 
     private let notifier: Notifier?
     private let monitor = RunMonitor()
@@ -321,6 +323,9 @@ final class CopilotTasksStore: ObservableObject {
                     settings.copilotRuns.append(run)
                 }
                 Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
+                if case .pullRequest(let pullRequest, let action) = subject {
+                    startedOnPullRequest(PRKey(pullRequest.organization, pullRequest.id), action, now)
+                }
                 refresh()
             } catch {
                 Log.app.error("Couldn't send a task to Copilot: \(Self.kind(of: error), privacy: .public)")

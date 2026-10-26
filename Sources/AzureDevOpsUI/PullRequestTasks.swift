@@ -2,6 +2,12 @@ import AzureDevOpsCore
 import CopilotTasks
 import Foundation
 
+extension PullRequestAction {
+    /// It takes care of the comments that wait on you: sending it takes them off Needs You. Fix Comments addresses them,
+    /// and Push & Reply answers them.
+    var takesCareOfComments: Bool { self == .fixComments || self == .pushAndReply }
+}
+
 /// What Copilot can do with a pull request, and the prompt that asks it to: for the pull requests' rows, and for agents
 /// through `--mcp`.
 enum PullRequestTasks {

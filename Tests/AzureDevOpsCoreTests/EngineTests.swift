@@ -55,6 +55,32 @@ import BriefBarCore
         #expect(data.flatMap { try? JSONDecoder().decode(SeenState.self, from: $0) } == seen)
     }
 
+    @Test func takingAPullRequestOffNeedsYou() throws {
+        var seen = SeenState.firstRun(now: t(0))
+        let key = PRKey("contoso", 1)
+        #expect(seen.dismissedCutoff(for: key) == t(-3 * day))
+        seen.markSeen([key], at: t(-hour))
+        #expect(seen.dismissedCutoff(for: key) == t(-3 * day))
+
+        // It's seen up to then too, and neither moves back.
+        seen.dismiss([key], at: t(0))
+        #expect(seen.dismissedCutoff(for: key) == t(0))
+        #expect(seen.cutoff(for: key) == t(0))
+        seen.dismiss([key], at: t(-minute))
+        #expect(seen.dismissedCutoff(for: key) == t(0))
+
+        seen.dismiss([PRKey("contoso", 2)], at: t(-40 * day))
+        seen.prune(keeping: [], olderThan: t(-30 * day))
+        #expect(seen.dismissedAt.keys.sorted() == ["contoso/1"])
+
+        let data = try JSONEncoder().encode(seen)
+        #expect(try JSONDecoder().decode(SeenState.self, from: data) == seen)
+        // Saved before you could: nothing was taken off.
+        let earlier = try JSONDecoder().decode(SeenState.self, from: Data(#"{"baseline": 0, "seenAt": {"contoso/1": 864000}}"#.utf8))
+        #expect(earlier.dismissedAt.isEmpty)
+        #expect(earlier.dismissedCutoff(for: key) == Date(timeIntervalSinceReferenceDate: 0))
+    }
+
     @Test func eachAccountHasSeenItsOwn() throws {
         let key = PRKey("contoso", 1)
         // Saved before accounts were told apart: it becomes the account signed in now's.
@@ -239,7 +265,9 @@ import BriefBarCore
         let seen = SeenState.firstRun(now: now)
         var result: [Int: PRSnapshot] = [:]
         for record in snapshot.records {
-            if let item = PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now) {
+            if let item = PRClassifier.snapshot(
+                for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now
+            ) {
                 result[record.id.number] = item
             }
         }
@@ -559,10 +587,10 @@ import BriefBarCore
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().account == "tenant/robin")
 
-        // Robin opens it from BriefBar.
+        // Robin opens it from BriefBar, and takes it off Needs You.
         var book = SeenBook(current: .firstRun(now: now))
         book.signIn("tenant/robin", now: now)
-        book.current.markSeen([PRKey(Fixture.org, 1)], at: now)
+        book.current.dismiss([PRKey(Fixture.org, 1)], at: now)
 
         // Then Sam signs in to the Azure CLI on the same Mac, and sees the same pull request.
         server.serveOrganization(me: People.sam.id, reviewing: [pr])
@@ -574,9 +602,9 @@ import BriefBarCore
         #expect(record.id == PRKey(Fixture.org, 1))
         #expect(record.role == .reviewer && record.me == People.sam.id)
 
-        // What Robin has seen would hide the comment for Sam.
+        // What Robin took off Needs You would hide the comment for Sam.
         func group(_ seen: SeenState) -> PRGroup? {
-            PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), now: now)?.group
+            PRClassifier.snapshot(for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now)?.group
         }
         #expect(group(book.current) != .needsYou)
         let switched = book.signIn("tenant/sam", now: now)

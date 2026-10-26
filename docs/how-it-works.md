@@ -21,7 +21,7 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
   its notifications, and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
-  requests each account has seen; which Copilot sessions you've cleared. GitHub saves nothing but its
+  requests each account has seen or taken off Needs You; which Copilot sessions you've cleared. GitHub saves nothing but its
   settings. The links you added or hid to its things, with [Show Links](#links), go too. Its settings
   stay. The links
   to pull requests people sent you are kept in memory only, and forgotten with it.
@@ -761,13 +761,15 @@ policies, nobody can tell whether a pull request there is ready: it waits, as **
 policies**, even when its threads couldn't be read that time. And ready means ready as the pull
 request is now: until its policies have been read again after a push or a vote, it waits.
 
-**Your pull requests** are, in order: in **Needs You** if something new needs you; **Idle** if
+**Your pull requests** are, in order: in **Needs You** if something new needs you, or a comment you've
+seen still waits on you (below); **Idle** if
 they're drafts or have had no activity (comments, pushes, votes) for two weeks; **Failing** for a
 failed build or status check, merge conflicts or an expired build; **Waiting** while a reviewer
 wants changes; **Ready to Complete** when every blocking policy passes (or, without reviewer
 policies, someone approved); and **Waiting** otherwise, with what it's waiting for.
 
-**Pull requests you review** are in **Needs You** for something new, **Idle** if they're drafts,
+**Pull requests you review** are in **Needs You** for something new, or a reply or mention you've seen
+that still waits on you, **Idle** if they're drafts,
 inactive, or you approved or declined them, **To Review** if you haven't voted, and **Waiting** if
 you asked the author for changes.
 
@@ -795,6 +797,33 @@ After the cutoff, these need you:
   haven't voted yet, and new commits since your vote.
 
 Approvals are news too: they're announced, but they don't need you.
+
+### What still waits on you
+
+Seeing a comment doesn't answer it. A **reply**, **mention** or **comment** that needed you keeps the
+pull request in **Needs You** once you've seen it, for as long as it waits on you: its thread is still
+active (or pending), and you haven't commented in it since. The list marks only what's new, with a dot,
+and says "3 replies" rather than "3 new replies" once you've seen them; what's new names the reason when
+there's both. It's counted in the menu bar like the rest of Needs You, but never announced again, nor
+in **Answered** when you then answer it: the pull request just goes back to its usual group.
+
+It stops waiting on you when:
+
+- you reply in its thread, or the thread is resolved (fixed, won't fix, closed or by design);
+- you choose **Remove from Needs You** in the pull request's menu (right-click it, or **Actions** in the
+  window), or a task that takes care of its comments, **Fix Comments** or **Push & Reply**, starts in
+  Copilot. Each pull request has a second cutoff for this (`SeenState.dismissedAt`), set to the newest
+  thing the list showed (for Copilot, by the time you sent the task), which sees it too; what comes
+  after needs you again, as new;
+- the pull request has had no activity for as long as **Idle After No Activity For** says (two weeks
+  by default): it's idle, as it would be otherwise. Something new still needs you.
+
+The rest don't wait like that once you've seen them: a review request is in **To Review**, new commits
+and a vote that wants changes leave the pull request in its usual group, and a link someone sent you
+stops needing you. So **Mark as Seen** sees everything in Needs You, but keeps the comments that wait on
+you there. A comment from before the three days before BriefBar first ran never needs you. What you
+take off Needs You is kept as what you've seen is: in the preferences, with each account, except for
+pull requests listed only because someone sent them to you, kept in memory only.
 
 ### Answered
 
@@ -874,9 +903,10 @@ from a menu, turning it on opens its Settings page, which says what it reads.
 - It keeps only the link, the app, the sender, the time and, for Teams, the chat and message IDs (to
   open the message). Never the message itself. Links are kept in memory only, for at most two weeks,
   and forgotten when you turn the setting off, or Azure DevOps. So is what you've seen of the pull
-  requests listed only because of a link. None of it goes to BriefBar's preferences or to disk, where
-  any program running as you could read it: only what you've seen of your own pull requests is in the
-  preferences. Builds from before the first release did keep the links there (`ado.chatLinks`), so at
+  requests listed only because of a link, and what you've taken off Needs You there. None of it goes to
+  BriefBar's preferences or to disk, where any program running as you could read it: only what you've
+  seen of your own pull requests, and taken off Needs You, is in the preferences. Builds from before the
+  first release did keep the links there (`ado.chatLinks`), so at
   launch BriefBar removes them. What those builds saved of which of those pull requests you'd seen
   leaves the preferences once they're listed again, and otherwise two months after you last saw
   them, as for any pull request no longer listed.
@@ -1051,7 +1081,8 @@ pull requests and sessions are yours, and stay.
 
 After each refresh, BriefBar compares the new list with the previous one (`NotificationPlanner`)
 and announces events it hasn't seen before, as well as your pull requests that start failing,
-become ready or complete, and what the pipelines after your merges do. Events from before BriefBar started aren't announced: they're in the
+become ready or complete, and what the pipelines after your merges do. What you've seen is never
+announced, even while it still waits on you. Events from before BriefBar started aren't announced: they're in the
 panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
 Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
 about, and marks the pull request seen.
@@ -1295,9 +1326,10 @@ It's a command-line mode like `--json`, with the same rules:
   its own tools (`SourceCommandLine.mcp`), and `needs_me` asks all of them at once. Teams gives none:
   its chats come from what only Full Disk Access reads, and what a tool answers goes to the agent's
   model, which may run in the cloud. GitHub gives none either: its pull requests aren't offered to agents.
-- Azure DevOps reads as the app does, with its organizations, its settings and what you've seen in it,
-  so the groups match the menu bar's, and like the other modes it leaves out pull requests sent in
-  chats. One `PulseEngine` serves the whole session (`AzureDevOpsReader`): a tool reads again only
+- Azure DevOps reads as the app does, with its organizations, its settings and what you've seen and
+  taken off Needs You in it, so the groups match the menu bar's, and like the other modes it leaves out
+  pull requests sent in chats. In Needs You, what you've seen that still waits on you says so. One
+  `PulseEngine` serves the whole session (`AzureDevOpsReader`): a tool reads again only
   when what it has is a minute old, as the app does at its most often, so calls one after another share
   a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
   next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs

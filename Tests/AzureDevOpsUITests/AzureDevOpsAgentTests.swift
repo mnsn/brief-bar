@@ -38,6 +38,9 @@ import Testing
         #expect(text.contains("Failing (2):"))
         #expect(text.contains("Ready to Complete (2):"))
         #expect(text.contains("Pinned pipelines that failed (1):\n- “shop-web CI” failed in Test."))
+        // What you've seen and haven't answered says so.
+        #expect(text.contains("(yours): Sam Rivera replied, 12m ago (seen, still waiting on you). Could we cap"))
+        #expect(text.contains("Alex Kim mentioned you, 25m ago. @Robin Diaz"))
         // Not what waits on others, or what's idle.
         #expect(!text.contains("Waiting"))
         #expect(!text.contains("!3990"))
@@ -69,12 +72,17 @@ import Testing
         #expect(text.contains("pull_request_prompt has the prompt to: fix_build. Once you've changed it, push_and_reply's prompt"))
         #expect(text.contains("- Fix the Build on !4088 in shop-web: working"))
 
-        // By its link, and with its comment threads, word for word.
+        // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
+        // waits on you, but isn't new.
         let linked = try await call("pull_request", ["pull_request": .string("https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4102?discussionId=11")])
         #expect(linked.contains("## Unresolved comment threads (1)"))
         #expect(linked.contains("Could we cap the backoff at 30 seconds?"))
-        #expect(linked.contains("## New for you\n- Sam Rivera replied"))
+        #expect(linked.contains("## Seen, still waiting on you\n- Sam Rivera replied"))
+        #expect(!linked.contains("## New for you"))
         #expect(linked.contains("fix_comments"))
+        let mentioned = try await call("pull_request", ["pull_request": .int(4097)])
+        #expect(mentioned.contains("## New for you\n- Alex Kim mentioned you"))
+        #expect(!mentioned.contains("## Seen"))
 
         let merged = try await call("pull_request", ["pull_request": .int(4085)])
         #expect(merged.contains("- After it merged into main"))

@@ -3,7 +3,8 @@ import Foundation
 
 /// The groups the panel shows, in display order.
 public enum PRGroup: String, Sendable, Codable, CaseIterable, Comparable {
-    /// Something new for you: a reply, a mention, a comment, a review request, a vote that wants changes.
+    /// Something new for you: a reply, a mention, a comment, a review request, a vote that wants changes. And comments
+    /// you've seen that still wait on you, until you reply, they're resolved, or you remove the pull request from here.
     case needsYou
     /// Something that needed you that you've since answered yourself in Azure DevOps, until you've seen it
     /// in the panel. Only for pull requests that would otherwise wait or be idle.
@@ -43,7 +44,8 @@ public enum PRReason: String, Sendable, Codable {
     case draft, inactive, youApproved, declined
 }
 
-/// Something that happened that you haven't seen yet. Approvals are news, but don't need you.
+/// Something that happened that you haven't seen yet, or a comment you have that still waits on you. Approvals are
+/// news, but don't need you.
 public struct PREvent: Sendable, Codable, Equatable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Codable {
         case mention, sentInChat, reply, comment, reviewRequest, newCommits, changesRequested, rejected, approved
@@ -77,10 +79,13 @@ public struct PREvent: Sendable, Codable, Equatable, Hashable, Identifiable {
     public var count: Int?
     /// The app it was sent in, for `sentInChat`: "Teams".
     public var app: String?
+    /// You haven't seen it: it came after you last opened the pull request. A comment you've seen is kept while it
+    /// waits on you, until you reply, its thread is resolved, or you remove the pull request from Needs You.
+    public var isNew: Bool
 
     public init(
         id: String, kind: Kind, at: Date, actor: String? = nil, text: String? = nil, threadId: Int? = nil, count: Int? = nil,
-        app: String? = nil
+        app: String? = nil, isNew: Bool = true
     ) {
         self.id = id
         self.kind = kind
@@ -90,6 +95,7 @@ public struct PREvent: Sendable, Codable, Equatable, Hashable, Identifiable {
         self.threadId = threadId
         self.count = count
         self.app = app
+        self.isNew = isNew
     }
 }
 
@@ -150,7 +156,7 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var since: Date?
     /// The pull request, or the thread of the comment that needs you.
     public var url: URL
-    /// What you haven't seen yet, newest first.
+    /// What you haven't seen yet, and the comments you have that still wait on you, newest first.
     public var events: [PREvent]
     /// People who approved.
     public var approvals: [String]
@@ -170,6 +176,10 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
 
     /// Events that need you, rather than news such as approvals.
     public var pendingEvents: [PREvent] { events.filter(\.kind.needsYou) }
+
+    /// Something that needs you is new: in Needs You, it's marked until you open the pull request. Without it, what's
+    /// there is what you've seen and haven't answered.
+    public var hasNews: Bool { pendingEvents.contains(where: \.isNew) }
 
     /// The pull request's page, scrolled to a comment thread when there's one.
     public func pageURL(thread: Int? = nil) -> URL {
@@ -217,16 +227,21 @@ public struct ClassifierOptions: Sendable, Equatable {
 
 /// Decides each pull request's group, reason and unseen events.
 public enum PRClassifier {
-    /// `seenCutoff`: activity up to this time counts as seen. Nil when the pull request shouldn't be listed:
-    /// done a while ago, or done and already seen.
+    /// `seenCutoff`: activity up to this time counts as seen. `dismissedCutoff`: comments up to this time that still
+    /// wait on you don't need you anymore, since you removed the pull request from Needs You or sent them to Copilot;
+    /// those after it that you've seen still do. Nil when the pull request shouldn't be listed: done a while ago, or
+    /// done and already seen.
     public static func snapshot(
-        for record: PRRecord, seenCutoff: Date, now: Date, options: ClassifierOptions = ClassifierOptions()
+        for record: PRRecord, seenCutoff: Date, dismissedCutoff: Date, now: Date, options: ClassifierOptions = ClassifierOptions()
     ) -> PRSnapshot? {
+        // Removing it from Needs You saw it, too.
+        let seenCutoff = max(seenCutoff, dismissedCutoff)
         let pr = record.pullRequest
         let me = record.me
         let details = record.details
         let approvals = pr.reviewers.filter { $0.vote.isApproval && !$0.isGroup }
         let lastActivity = max(pr.createdAt, details?.lastActivity ?? .distantPast)
+        let inactive = options.inactiveAfter.map { now.timeIntervalSince(lastActivity) > $0 } ?? false
 
         var snapshot = PRSnapshot(
             key: pr.key, title: pr.title.isEmpty ? "Pull request \(pr.key.number)" : pr.title,
@@ -286,9 +301,12 @@ public enum PRClassifier {
         var events: [PREvent] = []
         if let details {
             events = record.role == .author
-                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff)
-                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff)
+                ? authorEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
+                : reviewerEvents(pr, details, me: me, seenCutoff: seenCutoff, dismissedCutoff: dismissedCutoff)
         }
+        // Comments you've seen wait on you while the pull request is active: once nothing has happened on it for a
+        // while, it's idle, as it would be without them.
+        if inactive { events.removeAll { !$0.isNew } }
         let chats = pendingChatLinks(record, seenCutoff: seenCutoff, now: now, options: options)
         events += chats.map { link in
             PREvent(id: "s" + link.id, kind: .sentInChat, at: link.sentAt, actor: link.sender, app: link.appName)
@@ -298,8 +316,11 @@ public enum PRClassifier {
             snapshot.chatSource = ChatSource(app: newest.app, appName: newest.appName, sender: newest.sender, messageURL: newest.messageURL)
         }
         let pending = snapshot.pendingEvents
-        if let top = pending.min(by: { ($0.kind.priority, -$0.at.timeIntervalSince1970) < ($1.kind.priority, -$1.at.timeIntervalSince1970) }) {
-            let (reason, headline) = describe(top, among: pending)
+        // What's new says why it's here; what you've seen, only when nothing is.
+        let fresh = pending.filter(\.isNew)
+        let named = fresh.isEmpty ? pending : fresh
+        if let top = named.min(by: { ($0.kind.priority, -$0.at.timeIntervalSince1970) < ($1.kind.priority, -$1.at.timeIntervalSince1970) }) {
+            let (reason, headline) = describe(top, among: named)
             set(.needsYou, reason, headline, top.text ?? eventDetail(top, pr, role: record.role), since: pending.map(\.at).max())
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return snapshot
@@ -317,15 +338,15 @@ public enum PRClassifier {
             if let thread = top.threadId { snapshot.url = pr.threadURL(thread) }
             return true
         }
-        // A pull request you're not on is listed only while someone's message about it needs you, and until
-        // you've seen that you answered it.
+        // A pull request you're not on is listed only while someone's message about it needs you, or a comment there
+        // waits on you, and until you've seen that you answered it.
         if record.role == .linked { return showAnswer() ? snapshot : nil }
 
         if record.role == .reviewer, pr.reviewer(me)?.hasDeclined == true {
             set(.idle, .declined, "You declined")
         } else if pr.isDraft {
             set(.idle, .draft, "Draft", record.role == .reviewer ? "By \(pr.author.name)" : nil)
-        } else if let inactiveAfter = options.inactiveAfter, now.timeIntervalSince(lastActivity) > inactiveAfter {
+        } else if inactive {
             let days = Int(now.timeIntervalSince(lastActivity) / 86_400)
             set(.idle, .inactive, "No activity for \(days) days")
         } else {
@@ -347,14 +368,15 @@ public enum PRClassifier {
     // MARK: Events
 
     /// On your pull request: comments from others that came after your last word in their thread, and
-    /// votes that are still standing.
-    static func authorEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date) -> [PREvent] {
+    /// votes that are still standing. Comments you've seen count while their thread is open, from
+    /// `dismissedCutoff`; everything else only while it's new.
+    static func authorEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(seenCutoff, lastMine ?? .distantPast)) {
+            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
                 let kind: PREvent.Kind = comment.mentions.contains(me) ? .mention : lastMine != nil ? .reply : .comment
-                events.append(event(kind, comment, in: thread))
+                events.append(event(kind, comment, in: thread, seenCutoff: seenCutoff))
             }
         }
 
@@ -381,16 +403,16 @@ public enum PRClassifier {
     }
 
     /// On a pull request you review: replies and mentions, a review request you haven't seen, and pushes
-    /// since your vote.
-    static func reviewerEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date) -> [PREvent] {
+    /// since your vote. Replies and mentions you've seen count while their thread is open, from `dismissedCutoff`.
+    static func reviewerEvents(_ pr: PullRequest, _ details: PRDetails, me: String, seenCutoff: Date, dismissedCutoff: Date) -> [PREvent] {
         var events: [PREvent] = []
         for thread in details.threads {
             let lastMine = thread.comments.last { $0.author.id == me }?.publishedAt
-            for comment in unanswered(thread, me: me, after: max(seenCutoff, lastMine ?? .distantPast)) {
+            for comment in unanswered(thread, me: me, after: max(waitingSince(thread, seenCutoff, dismissedCutoff), lastMine ?? .distantPast)) {
                 if comment.mentions.contains(me) {
-                    events.append(event(.mention, comment, in: thread))
+                    events.append(event(.mention, comment, in: thread, seenCutoff: seenCutoff))
                 } else if lastMine != nil {
-                    events.append(event(.reply, comment, in: thread))
+                    events.append(event(.reply, comment, in: thread, seenCutoff: seenCutoff))
                 }
             }
         }
@@ -592,21 +614,29 @@ public enum PRClassifier {
         thread.comments.filter { $0.author.id != me && !$0.author.isBot && $0.publishedAt > date }
     }
 
-    private static func event(_ kind: PREvent.Kind, _ comment: ReviewComment, in thread: ReviewThread) -> PREvent {
-        PREvent(id: "c\(thread.id).\(comment.id)", kind: kind, at: comment.publishedAt, actor: comment.author.name,
-                text: comment.text, threadId: thread.id)
+    /// Since when a thread's comments can need you: in an open one, those you've seen wait on you too, back to when you
+    /// last removed the pull request from Needs You; in a resolved one, only new ones are news.
+    private static func waitingSince(_ thread: ReviewThread, _ seenCutoff: Date, _ dismissedCutoff: Date) -> Date {
+        thread.isResolved ? seenCutoff : dismissedCutoff
     }
 
+    private static func event(_ kind: PREvent.Kind, _ comment: ReviewComment, in thread: ReviewThread, seenCutoff: Date) -> PREvent {
+        PREvent(id: "c\(thread.id).\(comment.id)", kind: kind, at: comment.publishedAt, actor: comment.author.name,
+                text: comment.text, threadId: thread.id, isNew: comment.publishedAt > seenCutoff)
+    }
+
+    /// "Sam Rivera replied", or "3 new replies"; "3 replies" once you've seen them.
     private static func describe(_ top: PREvent, among events: [PREvent]) -> (PRReason, String) {
         let actor = top.actor ?? "Someone"
         let sameKind = events.filter { $0.kind == top.kind }.count
+        let new = top.isNew ? "new " : ""
         switch top.kind {
         case .mention: return (.mentioned, "\(actor) mentioned you")
         case .sentInChat:
             let app = top.app ?? "a chat"
             return (.sentInChat, top.actor.map { "\($0) sent this in \(app)" } ?? "Sent to you in \(app)")
-        case .reply: return (.replied, sameKind > 1 ? "\(sameKind) new replies" : "\(actor) replied")
-        case .comment: return (.commented, sameKind > 1 ? "\(sameKind) new comments" : "\(actor) commented")
+        case .reply: return (.replied, sameKind > 1 ? "\(sameKind) \(new)replies" : "\(actor) replied")
+        case .comment: return (.commented, sameKind > 1 ? "\(sameKind) \(new)comments" : "\(actor) commented")
         case .reviewRequest: return (.reviewRequested, "Review requested")
         case .newCommits:
             let count = top.count.map { $0 == 1 ? "1 new commit" : "\($0) new commits" } ?? "New commits"
