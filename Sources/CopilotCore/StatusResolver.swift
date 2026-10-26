@@ -58,6 +58,8 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
     public var since: Date?
     /// How full the session's context window is, when the app has measured it.
     public var contextUsage: ContextUsage? = nil
+    /// Where its work goes, as the app records it, while Show Links reads it.
+    public var links: SessionLinks? = nil
 
     public var displayName: String {
         if !name.isEmpty { return name }
@@ -99,7 +101,7 @@ public enum StatusResolver {
             id: meta.id, name: PlainText.singleLine(meta.name), projectName: meta.projectName, branch: meta.branch,
             isChat: meta.isChat, mode: meta.mode, phase: .idle, reason: .idle,
             headline: StatusReason.idle.headline, detail: nil, choices: [], since: meta.updatedAt,
-            contextUsage: meta.contextUsage
+            contextUsage: meta.contextUsage, links: meta.links
         )
 
         func set(_ phase: DisplayPhase, _ reason: StatusReason, since: Date?, detail: String? = nil, choices: [String] = []) {

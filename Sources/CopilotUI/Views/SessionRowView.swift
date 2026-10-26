@@ -48,10 +48,15 @@ struct SessionRowView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
-                        Text(session.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(session.phase == .idle ? Color.secondary : session.rowColor)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(session.subtitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(session.phase == .idle ? Color.secondary : session.rowColor)
+                                .lineLimit(1)
+                            if let ref = ItemRef.session(session.id) {
+                                LinkCapsules(ref)
+                            }
+                        }
                         if let detail = session.detail {
                             Text(detail)
                                 .font(.system(size: 11))
@@ -73,6 +78,12 @@ struct SessionRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open in GitHub Copilot", action: action)
+            if let ref = ItemRef.session(session.id) {
+                LinkMenuItems(ref)
+            }
+        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")

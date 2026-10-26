@@ -21,6 +21,8 @@ final class SessionStore: ObservableObject {
     private var state = EngineSnapshot()
     private var ticker: Timer?
     private var cancellables: Set<AnyCancellable> = []
+    /// Show Links: the engine reads where each session's work goes too.
+    private var readsLinks = false
 
     init(settings: AppSettings, paths: CopilotPaths?) {
         self.settings = settings
@@ -46,6 +48,7 @@ final class SessionStore: ObservableObject {
             }
         }
         self.engine = engine
+        engine.setReadsLinks(readsLinks)
         engine.start()
 
         settings.$keepEndedMinutes.map { _ in () }
@@ -85,6 +88,12 @@ final class SessionStore: ObservableObject {
 
     func refresh() {
         engine?.refresh()
+    }
+
+    /// Whether to read where each session's work goes too, for Show Links.
+    func setReadsLinks(_ reads: Bool) {
+        readsLinks = reads
+        engine?.setReadsLinks(reads)
     }
 
     /// Opens the session in the Copilot app; opening a finished one also dismisses it.

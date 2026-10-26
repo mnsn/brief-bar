@@ -12,7 +12,7 @@ public enum PullRequestQuery {
           rateLimit { remaining resetAt }
         }
         fragment BriefBarPullRequest on PullRequest {
-          id number title url isDraft createdAt updatedAt
+          id number title url isDraft createdAt updatedAt headRefName
           author { login }
           repository { nameWithOwner }
           reviewDecision
@@ -149,6 +149,8 @@ public struct APIPullRequest: Decodable, Sendable, Equatable {
     /// Nil for a deleted account.
     public var author: Login?
     public var repository: Repository
+    /// The branch it merges.
+    public var headRefName: String?
     /// Nil when the repository doesn't require reviews.
     public var reviewDecision: String?
     public var mergeable: String?
