@@ -206,15 +206,46 @@ public enum RunTranscript {
         return value?.isEmpty == false ? value : nil
     }
 
-    /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's.
+    /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the
+    /// pull request's page. A link that's part of another, in its query say, doesn't count.
     public static func pullRequest(in text: String) -> URL? {
-        let pattern = #"https://(?:dev\.azure\.com|[A-Za-z0-9-]+\.visualstudio\.com)(?:/[^\s/()<>\[\]"'`]+){1,3}/_git/[^\s/()<>\[\]"'`]+/pullrequest/\d+|https://github\.com/[^\s/()<>\[\]"'`]+/[^\s/()<>\[\]"'`]+/pull/\d+"#
-        guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = expression.matches(in: text, range: range).last, let found = Range(match.range, in: text) else {
+        text.components(separatedBy: linkBreaks).reversed().lazy.compactMap { pullRequestPage(of: $0) }.first
+    }
+
+    /// What ends a link in prose and Markdown: spaces, brackets, quotes and backticks.
+    private static let linkBreaks = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()<>[]\"'`"))
+    /// What can come before or after a link without being part of it: emphasis and punctuation.
+    private static let linkMarks = CharacterSet(charactersIn: "*_~.,;:!?")
+
+    /// The page of the pull request that a word links to, without a query or fragment; nil when it links to anything else.
+    private static func pullRequestPage(of word: String) -> URL? {
+        guard let link = URLComponents(string: word.trimmingCharacters(in: linkMarks), encodingInvalidCharacters: true),
+              link.scheme?.lowercased() == "https", link.user == nil, link.password == nil, link.port == nil,
+              let host = link.percentEncodedHost?.lowercased()
+        else { return nil }
+        let segments = link.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: false).dropFirst().map(String.init)
+        // GitHub: owner/repository/pull/number. Azure DevOps: one to three names, then _git/repository/pullrequest/number.
+        let route: (keyword: String, index: Int)
+        if host == "github.com" {
+            route = ("pull", 2)
+        } else if isAzureDevOps(host), let git = segments.firstIndex(where: { $0.lowercased() == "_git" }), (1...3).contains(git) {
+            route = ("pullrequest", git + 2)
+        } else {
             return nil
         }
-        return URL(string: String(text[found]))
+        let number = route.index + 1
+        guard segments.count > number, segments[route.index].lowercased() == route.keyword,
+              segments[...number].allSatisfy({ !$0.isEmpty }), segments[number].allSatisfy({ $0.isASCII && $0.isNumber })
+        else { return nil }
+        return URL(string: "https://\(host)/\(segments[...number].joined(separator: "/"))")
+    }
+
+    /// Whether the host is dev.azure.com, or an organization's own, with a name of a single word.
+    private static func isAzureDevOps(_ host: String) -> Bool {
+        guard host != "dev.azure.com" else { return true }
+        guard host.hasSuffix(".visualstudio.com") else { return false }
+        let organization = host.dropLast(".visualstudio.com".count)
+        return !organization.isEmpty && organization.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
     }
 }
 
