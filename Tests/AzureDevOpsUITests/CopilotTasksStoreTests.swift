@@ -3,6 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import Foundation
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -128,6 +129,107 @@ import Testing
         var elsewhere = item
         elsewhere.project = "Search"
         #expect(store.repository(for: elsewhere.copilotTask) == nil)
+    }
+
+    private var pullRequest: TaskPullRequest {
+        TaskPullRequest(
+            organization: "Contoso", project: "Storefront", repository: "shop-web", id: 4071, title: "Fix totals",
+            url: URL(string: "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4071")!,
+            sourceBranch: "fix-totals", targetBranch: "main"
+        )
+    }
+
+    private final class CloneRunner: ProcessRunning, Sendable {
+        let remotes: [String: String]
+        let calls = Mutex(0)
+
+        init(_ remotes: [String: String]) { self.remotes = remotes }
+
+        var git: Git { Git(executable: URL(fileURLWithPath: "/usr/bin/git"), environment: [:], runner: self) }
+
+        func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
+            calls.withLock { $0 += 1 }
+            guard arguments.count > 2, let remote = remotes[arguments[1]] else {
+                return ProcessResult(status: 128, stderr: Data("fatal: not a repository".utf8))
+            }
+            let result: String
+            if arguments.contains("--show-toplevel") { result = arguments[1] }
+            else if arguments.contains("symbolic-ref") { result = "origin/main" }
+            else if arguments.last == "remote.origin.url" { result = remote }
+            else { return ProcessResult(status: 1) }
+            return ProcessResult(status: 0, stdout: Data(result.utf8))
+        }
+    }
+
+    @Test func remembersAVerifiedCloneBeforeSendingAndReusesItForAnotherPR() async throws {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.copilotEnabled = true
+        let folder = URL(fileURLWithPath: "/dev/my-renamed-checkout", isDirectory: true)
+        let runner = CloneRunner([folder.path: "git@ssh.dev.azure.com:v3/contoso/Storefront/shop-web"])
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        #expect(try await store.checkRepository(at: folder, for: pullRequest, using: runner.git).root == folder)
+        #expect(settings.copilotRuns.isEmpty)
+
+        var anotherPR = pullRequest
+        anotherPR.id = 5000
+        anotherPR.organization = "CONTOSO"
+        anotherPR.project = "storefront"
+        let reloaded = CopilotTasksStore(settings: AppSettings(defaults: defaults), mode: .live, notifier: nil)
+        #expect(try await reloaded.repository(for: anotherPR, using: runner.git)?.root == folder)
+        #expect(reloaded.settings.copilotRepositories[pullRequest.reference.repositoryKey] == folder.path)
+    }
+
+    @Test func findsAKnownCloneByOriginRatherThanItsFolderName() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        settings.copilotRepositories = ["another/project": "/a/shop-web", "contoso/storefront": "/b/renamed"]
+        let runner = CloneRunner([
+            "/a/shop-web": "https://dev.azure.com/another/Storefront/_git/shop-web",
+            "/b/renamed": "https://dev.azure.com/contoso/Storefront/_git/shop-web",
+        ])
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        #expect(try await store.repository(for: pullRequest, using: runner.git)?.root.path == "/b/renamed")
+        #expect(settings.copilotRepositories[pullRequest.reference.repositoryKey] == "/b/renamed")
+    }
+
+    @Test func asksForALocalCloneWhenOnlyUnrelatedRepositoriesAreKnown() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        settings.copilotRepositories = ["another/project": "/dev/shop-web", "old/project": "/gone"]
+        let runner = CloneRunner(["/dev/shop-web": "https://dev.azure.com/another/Storefront/_git/shop-web"])
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        #expect(try await store.repository(for: pullRequest, using: runner.git) == nil)
+        #expect(settings.copilotRepositories[pullRequest.reference.repositoryKey] == nil)
+        await #expect(throws: GitError.wrongRepository("Contoso/Storefront/shop-web")) {
+            try await store.checkRepository(at: URL(fileURLWithPath: "/dev/shop-web"), for: pullRequest, using: runner.git)
+        }
+        #expect(settings.copilotRepositories[pullRequest.reference.repositoryKey] == nil)
+    }
+
+    @Test func reportsARememberedCloneThatMovedOrChangedItsOrigin() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        settings.copilotRepositories[pullRequest.reference.repositoryKey] = "/dev/clone"
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        await #expect(throws: GitError.notARepository("/dev/clone")) {
+            try await store.repository(for: pullRequest, using: CloneRunner([:]).git)
+        }
+        let runner = CloneRunner(["/dev/clone": "https://dev.azure.com/contoso/OtherProject/_git/shop-web"])
+        await #expect(throws: GitError.wrongRepository("Contoso/Storefront/shop-web")) {
+            try await store.repository(for: pullRequest, using: runner.git)
+        }
+    }
+
+    @Test func doesNotDiscoverClonesWhileOffOrInTheDemo() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotRepositories[pullRequest.reference.repositoryKey] = "/dev/shop-web"
+        let runner = CloneRunner(["/dev/shop-web": "https://dev.azure.com/contoso/Storefront/_git/shop-web"])
+        let off = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        #expect(try await off.repository(for: pullRequest, using: runner.git) == nil)
+        let demo = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        #expect(try await demo.repository(for: pullRequest, using: runner.git) == nil)
+        #expect(runner.calls.withLock { $0 } == 0)
     }
 
     /// Waits for the store's reads, which run on the main actor between this test's awaits.

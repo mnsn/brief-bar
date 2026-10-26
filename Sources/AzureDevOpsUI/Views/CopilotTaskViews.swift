@@ -232,7 +232,7 @@ extension CopilotTaskEntry {
     var opensPullRequest: Bool { status.phase == .finished && pullRequest != nil && action == nil }
 }
 
-/// A pull request's Copilot tasks, in its context menu: what Copilot can do with it now, and its last task.
+/// A pull request's Copilot tasks, in its Actions and context menus.
 struct PullRequestCopilotMenuItems: View {
     let item: PRSnapshot
 
@@ -264,6 +264,7 @@ struct PullRequestCopilotMenuItems: View {
 /// On a pull request's row: how Copilot's last task on it stands, while it works, and until you clear it.
 struct PullRequestCopilotStatus: View {
     let key: PRKey
+    var showsActions = false
 
     @EnvironmentObject private var copilot: CopilotTasksStore
 
@@ -281,7 +282,7 @@ struct PullRequestCopilotStatus: View {
             .padding(.vertical, 1.5)
             .background(Capsule().fill(phase.color.opacity(0.14)))
             .fixedSize()
-            .help("Copilot, with \(entry.options.title): \(entry.sentence(now: Date())). Right-click for its menu.")
+            .help("Copilot, with \(entry.options.title): \(entry.sentence(now: Date())). \(showsActions ? "Use Actions" : "Right-click") for its menu.")
             .accessibilityLabel("Copilot: \(entry.sentence(now: Date()))")
         }
     }
@@ -299,9 +300,10 @@ struct CopilotSetting: View {
         Adds a button to the sprint's work items that sends one to the Copilot CLI on this Mac, with a prompt you can \
         change and the model you choose. Copilot works on its own, in a new worktree of the repository you pick, with \
         your sign-in, tools, MCP servers and instructions, then pushes a branch and opens a pull request, as you. Your \
-        pull requests' menus send their comments, failed builds and conflicts the same way, to be fixed without \
+        pull requests' Actions menus in the window send their comments, failed builds and conflicts the same way, to be fixed without \
         pushing, then pushed and answered with Push & Reply; and the menus of those you review, to be read and reviewed \
-        for you. BriefBar starts it only when you send something, and follows it from Copilot's own log of the session.
+        for you. Choose a pull request repository's local clone once; BriefBar remembers it. BriefBar starts Copilot \
+        only when you send something, and follows it from Copilot's own log of the session.
         """
 
     var body: some View {

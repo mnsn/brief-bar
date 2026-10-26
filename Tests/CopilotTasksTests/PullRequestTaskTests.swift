@@ -21,6 +21,10 @@ import Testing
         try "Storefront, with totals\n".write(to: seed.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         try await fixture.git(["-C", seed.path, "-c", "user.name=Robin Diaz", "-c", "user.email=robin@example.com", "commit", "--quiet", "-am", "Totals"])
         try await fixture.git(["-C", seed.path, "push", "--quiet", fixture.origin.path, pullRequest.sourceBranch])
+        let remote = "https://dev.azure.com/contoso/Storefront/_git/checkout"
+        try await fixture.git(["-C", fixture.checkout.path, "remote", "set-url", "origin", remote])
+        // Use a real Azure DevOps URL for identity, but fetch only from the fixture on disk.
+        try await fixture.git(["-C", fixture.checkout.path, "config", "url.\(fixture.origin.path).insteadOf", remote])
         return fixture
     }
 
@@ -122,6 +126,67 @@ import Testing
         for name in ["", "-x", "--upload-pack=evil", "a..b", "a b", "a:b"] {
             #expect(!Git.isBranchName(name), "\(name)")
         }
+    }
+
+    @Test(arguments: [
+        "https://dev.azure.com/contoso/Storefront/_git/checkout",
+        "https://contoso@dev.azure.com/CONTOSO/storefront/_git/CHECKOUT/",
+        "https://contoso.visualstudio.com/Storefront/_git/checkout",
+        "https://contoso.visualstudio.com/DefaultCollection/Storefront/_git/checkout",
+        "git@ssh.dev.azure.com:v3/contoso/Storefront/checkout",
+        "ssh://git@ssh.dev.azure.com/v3/contoso/Storefront/checkout",
+        "contoso@vs-ssh.visualstudio.com:v3/contoso/Storefront/checkout",
+    ])
+    func recognizesItsCloneURLs(_ remote: String) {
+        #expect(pullRequest.matches(remote: remote))
+    }
+
+    @Test(arguments: [
+        "https://dev.azure.com/another-org/Storefront/_git/checkout",
+        "https://dev.azure.com/contoso/another-project/_git/checkout",
+        "https://dev.azure.com/contoso/Storefront/_git/another-repo",
+        "https://dev.azure.com/contoso/Storefront/_git/checkout.git",
+        "https://github.com/contoso/checkout.git",
+        "https://dev.azure.com.example.com/contoso/Storefront/_git/checkout",
+        "https://contoso.visualstudio.com.example.com/Storefront/_git/checkout",
+        "git@ssh.dev.azure.com:v3/another-org/Storefront/checkout",
+        "git@ssh.dev.azure.com:v3/contoso/another-project/checkout",
+        "git@ssh.dev.azure.com:v3/contoso/Storefront/checkout/extra",
+        "https://dev.azure.com/contoso/Storefront/_git/checkout?repository=another",
+        "/Users/robin/checkout",
+        "",
+    ])
+    func doesNotMistakeAnotherRepositoryForItsClone(_ remote: String) {
+        #expect(!pullRequest.matches(remote: remote))
+    }
+
+    @Test func recognizesEncodedNamesAndRepositoryIDs() {
+        var pr = pullRequest
+        pr.project = "Online Store"
+        pr.repository = "Shop Web"
+        pr.projectId = "11111111-1111-4111-8111-111111111111"
+        pr.repositoryId = "22222222-2222-4222-8222-222222222222"
+        #expect(pr.matches(remote: "https://dev.azure.com/contoso/Online%20Store/_git/Shop%20Web"))
+        #expect(pr.matches(remote: "git@ssh.dev.azure.com:v3/contoso/Online%20Store/Shop%20Web"))
+        #expect(pr.matches(remote: "https://dev.azure.com/contoso/\(pr.projectId!)/_git/\(pr.repositoryId!)"))
+        #expect(pr.matches(remote: "https://dev.azure.com/contoso/Online%20Store/_git/\(pr.repositoryId!)"))
+    }
+
+    @Test func refusesTheWrongCloneBeforeFetchingOrStartingCopilot() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        try await fixture.git(["-C", fixture.checkout.path, "remote", "set-url", "origin",
+                               "https://dev.azure.com/another-org/Storefront/_git/checkout"])
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil
+        )
+        await #expect(throws: LaunchError.git(.wrongRepository("contoso/Storefront/checkout"))) {
+            try await launcher.launch(request) { _ in }
+        }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees").path))
     }
 
     @Test func keepsWhichPullRequestAndWhatForButNotItsTitle() throws {

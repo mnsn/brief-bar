@@ -8,6 +8,13 @@
   its own settings, which BriefBar never reads or writes. **GitHub Copilot**, in the same menu, adds
   BriefBar to the Copilot CLI, whose servers the GitHub Copilot app's sessions use, and is checked
   once it's there. **Copy Command** still copies the command, for any other agent.
+- **Visible pull request actions.** Every Azure DevOps PR row in the main window has an **Actions**
+  menu, including its Copilot actions, without needing a right-click. Menu-bar popovers and widgets
+  keep their existing menus.
+- **Choose a PR's local clone once.** The Copilot composer shows the PR's remote repository and
+  remembers its verified local clone as soon as you choose it. Known clones are matched by their
+  `origin`, not their folder names, and an unrelated repository is never selected as a fallback.
+  BriefBar asks when it has no matching clone; it does not clone automatically.
 
 ## 0.3.0 - 2026-10-26
 
