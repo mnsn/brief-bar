@@ -15,6 +15,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    var isOpen: Bool {
+        window?.isVisible == true
+    }
+
     func show(_ destination: SettingsDestination) {
         navigation.destination = destination
         if window == nil {
@@ -33,8 +37,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.window = window
         }
         model.services.loginItem.refresh()
-        NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated { model.windowDidClose() }
     }
 }
 

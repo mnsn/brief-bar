@@ -37,8 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.terminate()
     }
 
-    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings. With a window open,
-    /// clicking the Dock icon brings it forward, as for any app.
+    /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings. With a window or Settings
+    /// open, clicking the Dock icon brings it forward, as for any app.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if model.hasOpenWindow {
             return true

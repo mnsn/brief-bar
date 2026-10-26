@@ -1,7 +1,11 @@
 # Changelog
 
-## 0.7.0 - 2026-10-26
+## 0.8.0 - 2026-10-26
 
+- **Settings stays open while you arrange.** Clicking a BriefBar menu-bar item to see what you just
+  arranged no longer hides Settings behind the app you were in before, or switches to that app's
+  Space. While Settings is open, BriefBar shows a Dock icon and its own menus, as it does for its
+  window, so you can also get back to Settings from the Dock or with ⌘-Tab.
 - **Needs You keeps what still waits on you.** Opening a pull request from BriefBar, or **Mark as
   Seen**, no longer takes it off Needs You while a comment there waits on you: a reply to you, a
   mention, or a comment on your pull request. It stays, and counts in the menu bar, without the dot that
@@ -13,8 +17,6 @@
 - **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
   The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
   Existing Intel installs aren't offered incompatible updates.
-
-## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
   clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any
@@ -34,9 +36,6 @@
   BriefBar added to trust its worktree. BriefBar no longer adds it, and Copilot still trusts the
   worktree of a repository you trust. When Copilot can't start, the notification now gives the CLI's
   error rather than a hint to try `--help`.
-
-## 0.5.0 - 2026-10-26
-
 - **See what goes together: Show Links.** Turn on **Show Links** in **Settings › General**, off by
   default, and rows show small capsules for what goes with them: a pull request's work items and the
   Copilot sessions working on it, a work item's pull requests (a teammate's too) and their sessions,
