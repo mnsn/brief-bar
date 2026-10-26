@@ -45,6 +45,7 @@ final class MenuBarItemController: NSObject {
             self?.remember(section)
             self?.updateVisible()
         }
+        panel.didChangePresentation = { [weak self] in self?.updateVisible() }
 
         if let button = statusItem.button {
             button.target = self
@@ -62,8 +63,9 @@ final class MenuBarItemController: NSObject {
         if let selected = panel.selected, !sections.contains(selected) {
             panel.selected = nil
         }
-        panel.listByState = options.listByState && sections.count > 1
-        panel.stateList.update(sections: panel.listByState ? sections : [])
+        panel.usesCompactMenuBar = model.services.interfaceOptions.compactMenuBar
+        panel.listByState = options.listByState && sections.count > 1 && sections.contains { model.info(for: $0)?.states.isEmpty == false }
+        panel.stateList.update(sections: panel.listByState || panel.usesCompactMenuBar ? sections : [])
         updateVisible()
         setCounted(sections)
         cancellables.removeAll()
@@ -98,6 +100,9 @@ final class MenuBarItemController: NSObject {
               )
         else { return }
         panel.selected = selected
+        if panel.usesCompactMenuBar {
+            panel.listByState = section == nil && !panel.stateList.sections.isEmpty
+        }
         if panel.listByState {
             for section in panel.stateList.sections {
                 model.source(for: section)?.panelWillShow(section)
@@ -210,9 +215,11 @@ final class ItemPanelModel: ObservableObject {
     @Published var selected: SectionID?
     /// One list by state rather than a tab for each section.
     @Published var listByState = false
+    @Published var usesCompactMenuBar = false
     let stateList: StateListModel
     /// Another tab was chosen.
     var didSelect: (SectionID) -> Void = { _ in }
+    var didChangePresentation: () -> Void = {}
     fileprivate unowned let model: AppModel
 
     init(model: AppModel) {
@@ -236,14 +243,16 @@ final class ItemPanelModel: ObservableObject {
     func title(for section: SectionID) -> String {
         guard let source = model.source(for: section) else { return section.rawValue }
         let title = source.info(for: section)?.title ?? source.name
-        let count = source.segment(for: section).count
+        let segment = source.segment(for: section)
+        let count = model.services.interfaceOptions.clearerStates ? segment.attentionCount : segment.count
         return count > 0 ? "\(title) \(count)" : title
     }
 
     /// The section's symbol and count, for tabs too small for titles.
     func shortTitle(for section: SectionID) -> some View {
         let symbol = model.info(for: section)?.symbol ?? "circle"
-        let count = model.source(for: section)?.segment(for: section).count ?? 0
+        let segment = model.source(for: section)?.segment(for: section)
+        let count = model.services.interfaceOptions.clearerStates ? (segment?.attentionCount ?? 0) : (segment?.count ?? 0)
         return Label(count > 0 ? "\(count)" : "", systemImage: symbol)
             .labelStyle(.titleAndIcon)
     }
@@ -260,9 +269,18 @@ final class ItemPanelModel: ObservableObject {
     }
 
     func select(_ section: SectionID) {
+        if usesCompactMenuBar { listByState = false }
         selected = section
         model.source(for: section)?.panelWillShow(section)
         didSelect(section)
+    }
+
+    func showAllActivity() {
+        listByState = true
+        for section in stateList.sections {
+            model.source(for: section)?.panelWillShow(section)
+        }
+        didChangePresentation()
     }
 }
 
@@ -273,6 +291,25 @@ struct ItemPanelView: View {
         VStack(spacing: 0) {
             OverviewLinkView(link: panel.model.overviewLink)
             UpdateBanner(updates: panel.updates)
+            if panel.usesCompactMenuBar {
+                Menu {
+                    if !panel.stateList.sections.isEmpty {
+                        Button("All Activity") { panel.showAllActivity() }
+                        Divider()
+                    }
+                    ForEach(panel.sections, id: \.self) { section in
+                        Button(panel.spokenTitle(for: section)) { panel.select(section) }
+                    }
+                } label: {
+                    Text(panel.listByState ? "All Activity" : panel.current.map(panel.spokenTitle) ?? "Sections")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(width: panel.width)
+                .accessibilityLabel("Choose a source or all activity")
+                Divider()
+            }
             if panel.listByState {
                 StateListView(list: panel.stateList, model: panel.model, width: panel.width)
                     .environmentObject(panel.model.services)
@@ -282,11 +319,12 @@ struct ItemPanelView: View {
             }
         }
         .environment(\.panelStyle, .popover(width: panel.sections.count > 1 ? panel.width : nil))
+        .interfaceOptions(from: panel.model.services)
     }
 
     @ViewBuilder
     private var tabbed: some View {
-        if panel.sections.count > 1, let current = panel.current {
+        if panel.sections.count > 1, !panel.usesCompactMenuBar, let current = panel.current {
             // As many sections as there are: smaller tabs, then symbols with counts, then a menu, as they stop
             // fitting the popover's width.
             ViewThatFits(in: .horizontal) {

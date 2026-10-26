@@ -216,6 +216,24 @@ of the list or widget you opened it from, or at its Overview when no page is ask
 the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window is open, it shows a
 Dock icon and the usual menus, and it goes back once they're all closed.
 
+### Optional presentation
+
+**Settings › Appearance** exposes seven independent `InterfaceOption`s. `InterfaceOptions` loads
+each boolean from `interface.<option>` and defaults every missing value to false. `AppServices`
+publishes changes to the shared SwiftUI environment, so existing windows, lists and widgets update
+without changing a source's consent or its settings. The app also refreshes menu-bar items and widget
+sizes; rendering never starts these live surfaces.
+
+Compact Menu Bar derives one temporary item from the sections already visible in the saved layout.
+It never saves that item into `SectionLayout`, changes hidden sections, or removes the original items'
+options. Its count is Needs You plus failures, not running or finished work. Its source picker keeps
+sections such as Sprint reachable even though they do not contribute to a list by state.
+
+Clearer States separates ready pull requests from finished sessions using `StateRow.isReady`, without
+changing `ItemState`, source classification, notifications or agent responses. Readable Rows uses the
+same row-height calculation in widget content and window sizing. Simple Layout Choices only exposes
+preset controls: choosing a preset is an explicit layout edit; enabling the appearance option is not.
+
 ## Everything by state
 
 ### Counts by state

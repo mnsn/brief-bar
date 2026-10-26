@@ -13,17 +13,15 @@ struct SessionRowView: View {
 
     @EnvironmentObject private var settings: AppSettings
     @LocalState private var isHovered = false
-
-    /// Fixed height of a compact row, so the widget can size itself to a whole number of rows.
-    static let compactHeight: CGFloat = 42
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: session.rowSymbol)
                     .font(.system(size: compact ? 15 : 17))
                     .foregroundStyle(session.rowColor)
-                    .frame(width: 20, height: 20)
+                    .frame(width: options.rowIconWidth, height: 20)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -44,17 +42,17 @@ struct SessionRowView: View {
                     }
                     if compact {
                         Text(compactLine)
-                            .font(.system(size: 11))
+                            .font(.system(size: options.rowDetailSize))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
                         Text(session.subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(session.phase == .idle ? Color.secondary : session.rowColor)
+                            .font(.system(size: options.rowReasonSize, weight: .medium))
+                            .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
                             .lineLimit(1)
                         if let detail = session.detail {
                             Text(detail)
-                                .font(.system(size: 11))
+                                .font(.system(size: options.rowDetailSize))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(session.phase == .needsYou ? 3 : 2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -78,6 +76,7 @@ struct SessionRowView: View {
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the session in GitHub Copilot")
+        .rowActions(for: session.displayName, openTitle: "Open in Copilot", open: action) { EmptyView() }
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.
@@ -140,22 +139,27 @@ struct ContextUsageView: View {
 struct CountChips: View {
     let counts: PhaseCounts
     var phases: [DisplayPhase] = [.needsYou, .running, .done, .stopped]
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(phases, id: \.self) { phase in
-                if counts[phase] > 0 {
-                    HStack(spacing: 3) {
-                        Image(systemName: phase.symbol)
-                            .foregroundStyle(phase.color)
-                        Text("\(counts[phase])")
-                            .monospacedDigit()
+        if options.clearerStates {
+            AttentionSummary(states: counts.states)
+        } else {
+            HStack(spacing: 8) {
+                ForEach(phases, id: \.self) { phase in
+                    if counts[phase] > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: phase.symbol)
+                                .foregroundStyle(phase.color)
+                            Text("\(counts[phase])")
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .help("\(counts[phase]) \(phase.title.lowercased())")
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .help("\(counts[phase]) \(phase.title.lowercased())")
                 }
             }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }

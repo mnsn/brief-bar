@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-26
+
+- **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
+  compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
+  clearer states and counts, visible row and widget actions, and simple layout choices. Turn on any
+  combination; leaving them off keeps the existing presentation. None turns on a source, changes its
+  permissions or enables an agent.
+- **A compact menu bar without losing your arrangement.** Its single icon counts items that need you
+  or are failing, with a warning for failures or missing access. Its list can show all activity or a
+  particular source. It combines only sections already visible, and turning it off restores your
+  saved arrangement.
+- **Clearer lists when you want them.** Ready-to-merge pull requests can be shown separately from
+  finished sessions, important rows can use larger text and aligned titles, and the brief can move
+  below the first group with two highlights and an option to expand it. Optional row menus and
+  widget **View All** buttons make actions easier to find while keeping each source's existing
+  open/read behavior.
 - **Install BriefBar in another agent with a click.** In **Settings › Agents**, **Install** replaces
   copying a command: it adds BriefBar to Visual Studio Code or Cursor, whichever are on your Mac, with
   each app's own install link, so the app shows what it would add and asks you first, and keeps it in

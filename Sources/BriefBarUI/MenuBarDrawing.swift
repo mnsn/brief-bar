@@ -9,11 +9,13 @@ package struct MenuBarItemContent {
     /// The states it adds up, in the order it shows them; nil to show its sections side by side, as an item with
     /// one section always does.
     package var byState: [ItemState]?
+    package var compact: Bool
 
-    package init(segments: [MenuBarSegment], counted: [CountNoun] = [], byState: [ItemState]? = nil) {
+    package init(segments: [MenuBarSegment], counted: [CountNoun] = [], byState: [ItemState]? = nil, compact: Bool = false) {
         self.segments = segments
         self.counted = counted
         self.byState = segments.count > 1 ? byState : nil
+        self.compact = compact
     }
 
     /// What its sections count in each state, added up.
@@ -21,9 +23,18 @@ package struct MenuBarItemContent {
         segments.reduce(StateCounts()) { $0 + $1.states }
     }
 
+    package var attentionCount: Int { totals.needsYou + totals.failing }
+    package var showsWarning: Bool { totals.failing > 0 || segments.contains { $0.problem != nil } }
+
     /// For the tooltip and VoiceOver: each section's own summary; or, for an item that adds them up, a line for each
     /// state it shows that has anything, with what each section has in it, then what keeps a section from showing.
     package var summary: String {
+        if compact {
+            let heading = segments.contains { $0.problem != nil }
+                ? "Known items needing attention: \(attentionCount)"
+                : attentionCount == 0 ? "Nothing needs attention" : "Needs attention: \(attentionCount)"
+            return ([heading] + segments.map(\.summary) + segments.compactMap(\.problem)).joined(separator: "\n")
+        }
         guard let states = byState else { return segments.map(\.summary).joined(separator: "\n") }
         var lines: [String] = []
         for state in states {
@@ -52,6 +63,23 @@ package enum MenuBarDrawing {
     /// Sets up a status button for an item. `--render` uses it too, so the README's pictures can't drift from the
     /// real items.
     package static func configure(_ button: NSButton, item: MenuBarItemContent) {
+        if item.compact {
+            let title = NSMutableAttributedString()
+            if item.attentionCount > 0 {
+                title.append(count(item.attentionCount))
+            }
+            if item.showsWarning {
+                title.append(NSAttributedString(string: "\u{2009}"))
+                title.append(symbol(
+                    "exclamationmark.triangle.fill", color: item.totals.failing > 0 ? .systemRed : .systemOrange,
+                    scale: 0.75, monochrome: true
+                ))
+            }
+            let image = NSImage(systemSymbolName: AppSymbols.app, accessibilityDescription: item.summary)
+            image?.isTemplate = true
+            show(title, image: image, position: title.length == 0 ? .imageOnly : .imageLeading, in: button)
+            return
+        }
         guard let states = item.byState else {
             configure(button, segments: item.segments)
             return

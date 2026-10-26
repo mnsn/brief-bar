@@ -21,6 +21,11 @@ links sent in chats, sprint, pipelines and tasks sent to Copilot, and never runs
 screenshots without showing your own chats, pull requests or sessions. `make demo ARGS=--window` also
 opens the window.
 
+Settings › Appearance offers independent presentation options, all off by default. `--demo --render`
+also draws each option separately and all of them together (`interface-*`), plus the Appearance page
+with its switches off and on. These examples use in-memory preferences and never create live menu-bar
+items or widgets, change your layout, or enable optional features in the installed app.
+
 Other targets:
 
 ```sh

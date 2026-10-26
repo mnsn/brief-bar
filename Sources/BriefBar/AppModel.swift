@@ -81,6 +81,18 @@ final class AppModel: ObservableObject {
         NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.closePanels() } }
             .store(in: &cancellables)
+
+        services.$interfaceOptions
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.objectWillChange.send()
+                    if !rendering { self?.updateSurfaces() }
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: Sources
@@ -179,10 +191,14 @@ final class AppModel: ObservableObject {
     /// The menu-bar items that show, left to right as they are in the menu bar, where you may have ⌘-dragged them;
     /// in the layout's order until they're all there, as for `--render`.
     func menuBarItemsInOrder() -> [SectionLayout.Item] {
-        let visible = visibleItems(.menuBar)
+        let visible = presentedMenuBarItems
         let positions = visible.compactMap { items[$0.id]?.screenX }
         guard positions.count == visible.count else { return visible }
         return zip(visible, positions).sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    var presentedMenuBarItems: [SectionLayout.Item] {
+        services.interfaceOptions.menuBarItems(visibleItems(.menuBar))
     }
 
     /// Puts a section where you dropped it in Settings: with others, on its own, or hidden. A hidden section's source
@@ -222,7 +238,10 @@ final class AppModel: ObservableObject {
     }
 
     func options(forMenuBarItem id: String) -> MenuBarItemOptions {
-        menuBarItemOptions[id] ?? MenuBarItemOptions()
+        if services.interfaceOptions.compactMenuBar, id == InterfaceOptions.compactMenuBarID {
+            return MenuBarItemOptions(byState: true, listByState: true)
+        }
+        return menuBarItemOptions[id] ?? MenuBarItemOptions()
     }
 
     func setOptions(_ options: MenuBarItemOptions, forMenuBarItem id: String) {
@@ -309,12 +328,13 @@ final class AppModel: ObservableObject {
         return MenuBarItemContent(
             segments: shown.compactMap { source(for: $0)?.segment(for: $0) },
             counted: shown.map { info(for: $0)?.counted ?? CountNoun("item", "items") },
-            byState: options.byState ? options.shownStates : nil
+            byState: options.byState ? options.shownStates : nil,
+            compact: services.interfaceOptions.compactMenuBar
         )
     }
 
     private func updateMenuBar() {
-        let visible = visibleItems(.menuBar)
+        let visible = presentedMenuBarItems
         let ids = Set(visible.map(\.id))
         for (id, item) in items where !ids.contains(id) {
             item.remove()
@@ -342,7 +362,7 @@ final class AppModel: ObservableObject {
     /// Opens the list that shows `section`. False when no item shows it, because it's hidden.
     @discardableResult
     func showPanel(_ section: SectionID) -> Bool {
-        guard let entry = visibleItems(.menuBar).first(where: { $0.sections.contains(section) }),
+        guard let entry = presentedMenuBarItems.first(where: { $0.sections.contains(section) }),
               let item = items[entry.id]
         else { return false }
         item.showPopover(at: section)

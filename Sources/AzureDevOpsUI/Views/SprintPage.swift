@@ -450,6 +450,9 @@ private struct StoryCard: View {
                     Button("Open in Azure DevOps") { open(parent) }
                     CopilotSendMenuItems(item: parent)
                 }
+                .rowActions(for: parent.title, openTitle: "Open in Azure DevOps", open: { open(parent) }) {
+                    CopilotSendMenuItems(item: parent)
+                }
                 HStack(spacing: 6) {
                     Avatar(name: parent.assignedTo?.name, size: 18, isMe: parent.isAssigned(to: me))
                     Text(parent.assignedTo?.name ?? "Unassigned")
@@ -540,6 +543,9 @@ private struct TaskLine: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             Button("Open in Azure DevOps", action: open)
+            CopilotSendMenuItems(item: task)
+        }
+        .rowActions(for: task.title, openTitle: "Open in Azure DevOps", open: open) {
             CopilotSendMenuItems(item: task)
         }
     }

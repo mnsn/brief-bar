@@ -78,9 +78,12 @@ enum Renderer {
                 let panel = ItemPanelModel(model: model)
                 panel.sections = items[index].sections
                 panel.selected = section
+                panel.usesCompactMenuBar = model.services.interfaceOptions.compactMenuBar
                 panel.listByState = itemOptions(items[index]).listByState && items[index].sections.count > 1
-                if panel.listByState {
+                if panel.listByState || panel.usesCompactMenuBar {
                     panel.stateList.update(sections: items[index].sections)
+                }
+                if panel.listByState {
                     panel.stateList.isShowing = true
                     // With BRIEFBAR_RENDER_SUMMARIES=1, the brief as Apple Intelligence words it.
                     let deadline = Date().addingTimeInterval(60)
@@ -134,6 +137,7 @@ enum Renderer {
                     content.list.update(sections: model.overviewSections)
                     content.list.isShowing = true
                     let view = OverviewWidgetView(content: content, list: content.list, writer: model.briefWriter)
+                        .interfaceOptions(from: model.services)
                         .environmentObject(model.services)
                         .environmentObject(model.services.loginItem)
                         .background(Color(nsColor: .windowBackgroundColor))
@@ -201,7 +205,7 @@ enum Renderer {
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(view, appearance: appearance), "settings-\(name)-\(suffix)")
             }
-            let pages: [(String, SettingsDestination)] = [("general", .general)]
+            let pages: [(String, SettingsDestination)] = [("general", .general), ("appearance", .appearance)]
                 + Surface.allCases.map { ($0.title.lowercased().replacingOccurrences(of: " ", with: "-"), .layout($0)) }
                 + model.sources.map { ($0.id.rawValue, .source($0.id)) }
                 + [("agents", .agents)]
@@ -223,6 +227,44 @@ enum Renderer {
                 model.agents.useForRendering(on: true)
                 page(.agents, name: "agents-on")
                 model.agents.useForRendering(on: false)
+            }
+
+            if demo {
+                let savedInterface = model.services.interfaceOptions
+                func interfaceExample(_ enabled: Set<InterfaceOption>, name: String) {
+                    for option in InterfaceOption.allCases {
+                        model.services.setInterfaceOption(option, enabled: enabled.contains(option))
+                    }
+                    if !windowSections.isEmpty {
+                        let content = WindowContent(id: "render-interface", model: model)
+                        content.update(sections: windowSections)
+                        content.select(WindowContent.overview, notify: false)
+                        content.overviewList.isShowing = true
+                        let view = WindowView(content: content)
+                            .environment(\.isRendering, true)
+                            .environmentObject(model.services)
+                            .environmentObject(model.services.loginItem)
+                            .frame(width: 980, height: 680)
+                        write(Snapshot.render(view, appearance: appearance), "interface-\(name)-window-\(suffix)")
+                    }
+                    if enabled.contains(.compactMenuBar), let first = model.presentedMenuBarItems.first {
+                        picture(of: [first], pressed: 0, name: "interface-\(name)-menubar")
+                    }
+                    if enabled.contains(.readableRows) || enabled.contains(.visibleActions) {
+                        widget(shownWidgetSections, size: .medium, name: "interface-\(name)-widget")
+                    }
+                    if enabled.contains(.simpleLayoutControls) {
+                        page(.layout(.menuBar), name: "interface-\(name)-layout")
+                    }
+                }
+                for option in InterfaceOption.allCases {
+                    interfaceExample([option], name: option.rawValue)
+                }
+                interfaceExample(Set(InterfaceOption.allCases), name: "all")
+                page(.appearance, name: "appearance-enabled")
+                for option in InterfaceOption.allCases {
+                    model.services.setInterfaceOption(option, enabled: savedInterface[option])
+                }
             }
         }
         written.forEach { print($0) }

@@ -98,6 +98,7 @@ package struct MenuBarSegment: Equatable {
     /// What keeps it from showing what it should, such as a sign-in it needs, in a sentence that names the source.
     /// An item that adds its sections up by state shows a small ⚠ for it, and says it in its tooltip. Nil for none.
     package var problem: String?
+    package var attentionCount: Int { states.needsYou + states.failing }
 
     package init(
         glyph: String?, title: NSAttributedString, summary: String, count: Int, needsAttention: Bool, states: StateCounts,
@@ -118,14 +119,17 @@ package struct StateRow: Identifiable {
     /// Unique within its section.
     package var id: String
     package var state: ItemState
+    /// A ready pull request still has an action; a finished session does not.
+    package var isReady: Bool
     /// When it got to its state, or last changed, for showing the newest first. Nil goes last.
     package var date: Date?
     /// The row that the section's own list shows for it, with its actions and its menu.
     package var view: AnyView
 
-    package init(id: String, state: ItemState, date: Date?, view: AnyView) {
+    package init(id: String, state: ItemState, date: Date?, view: AnyView, isReady: Bool = false) {
         self.id = id
         self.state = state
+        self.isReady = isReady
         self.date = date
         self.view = view
     }
@@ -162,6 +166,7 @@ package struct SectionViewer: Hashable, Sendable {
 /// Where the Settings window opens.
 package enum SettingsDestination: Hashable, Sendable {
     case general
+    case appearance
     case source(SourceID)
     /// Which sections the menu bar, the widgets or the windows show, and which share an item.
     case layout(Surface)
@@ -353,6 +358,7 @@ package final class AppServices: ObservableObject {
     package let defaults: UserDefaults
     /// Made-up data instead of yours (`--demo`).
     package let isDemo: Bool
+    @Published package private(set) var interfaceOptions: InterfaceOptions
     package let loginItem: LoginItem
     package let notifier: Notifier
     package let fullDiskAccess: FullDiskAccess
@@ -372,8 +378,17 @@ package final class AppServices: ObservableObject {
     package init(defaults: UserDefaults, isDemo: Bool) {
         self.defaults = defaults
         self.isDemo = isDemo
+        interfaceOptions = InterfaceOptions.load(from: defaults)
         loginItem = LoginItem()
         notifier = Notifier()
         fullDiskAccess = FullDiskAccess(defaults: defaults)
+    }
+
+    package func setInterfaceOption(_ option: InterfaceOption, enabled: Bool) {
+        var changed = interfaceOptions
+        changed[option] = enabled
+        guard changed != interfaceOptions else { return }
+        interfaceOptions = changed
+        changed.save(to: defaults)
     }
 }

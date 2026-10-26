@@ -151,6 +151,27 @@ switch them.
   </picture>
 </p>
 
+## Optional appearance improvements
+
+**Settings › Appearance** has seven independent options. **All start off**, including after an
+update. Turn on only the changes you want; none enables a source, grants permissions or starts an agent.
+
+| Option | When you turn it on |
+|---|---|
+| **Compact Briefs** | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |
+| **Quieter Colors and Surfaces** | Uses neutral navigation, avatars and backgrounds, with less decorative color. Status symbols keep their meaning. |
+| **Aligned, Easier-to-Read Rows** | Aligns titles across sources and makes reasons and previews larger. Widgets grow slightly to fit complete rows. |
+| **Compact Menu Bar** | Temporarily combines the sections already visible in the menu bar into one BriefBar icon. Its count adds **Needs You** and failures; a warning also flags failures or missing access. Choose **All Activity** or a source from its list. |
+| **Clearer States and Counts** | Separates **Ready to Merge** from **Finished** in the overview. Sidebar badges and list headers count items needing you or failing, while remaining sprint work is labeled **left**. |
+| **Visible Row and Widget Actions** | Adds a row's **…** menu with explicitly named destinations and its existing actions. Widgets offer **View All**; if a section is hidden from windows, **Show in a Window…** opens layout settings instead. |
+| **Simple Layout Choices** | Starts Menu Bar, Widgets and Windows settings with **Together**, **Separate** and **Custom**. Custom keeps the full arrangement editor. |
+
+Turning an appearance option off restores its usual presentation. Compact Menu Bar never rewrites
+your saved grouping or unhides sections: turning it off restores your saved arrangement. Choosing a
+layout in **Simple Layout Choices** is an explicit layout change, just like using the existing editor.
+Opening an item retains its source's existing read/seen behavior; these options never approve or
+complete work for you.
+
 ## The brief
 
 A list by state and the window's Overview start with a brief, and the Overview widget with its first

@@ -36,11 +36,18 @@ final class StateListModel: ObservableObject {
     /// is always there, only shows what they had worded.
     private let wordsBrief: Bool
     private var cancellables: Set<AnyCancellable> = []
+    private var optionsCancellable: AnyCancellable?
     private var needsRefresh = true
 
     init(model: AppModel, wordsBrief: Bool = true) {
         self.model = model
         self.wordsBrief = wordsBrief
+        optionsCancellable = model.services.$interfaceOptions
+            .map(\.clearerStates)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.changed() } }
     }
 
     func update(sections: [SectionID]) {
@@ -66,7 +73,7 @@ final class StateListModel: ObservableObject {
         needsRefresh = false
         groups = StateList.groups(sections.flatMap { section in
             (model.source(for: section)?.stateRows(for: section) ?? []).map { StateListEntry(section: section, row: $0) }
-        })
+        }, separateReady: model.services.interfaceOptions.clearerStates)
         // Worded on screen only: never while the list is closed.
         lines = sections.flatMap { model.source(for: $0)?.briefLines(for: $0) ?? [] }
         brief = Briefing.pick(lines)
@@ -91,6 +98,7 @@ struct StateListView: View {
     var showsFooter = true
 
     @LocalState private var contentHeight: CGFloat = 0
+    @Environment(\.interfaceOptions) private var options
 
     private static let maxListHeight: CGFloat = 560
 
@@ -114,7 +122,7 @@ struct StateListView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             StateListProblems(list: list, model: model)
-            if !list.brief.isEmpty {
+            if !options.compactBriefs, !list.brief.isEmpty {
                 BriefPanel(lines: list.brief, writer: model.briefWriter)
                     .padding(.bottom, 2)
             }
@@ -131,9 +139,9 @@ struct StateListView: View {
             }
             ForEach(list.groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(group.state.title) (\(group.entries.count))")
+                    Text("\(group.title) (\(group.entries.count))")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(group.state.color)
+                        .foregroundStyle(options.quietAppearance ? Color.primary : group.state.color)
                         .padding(.horizontal, 8)
                     ForEach(group.entries) { entry in
                         HStack(alignment: .top, spacing: 0) {
@@ -142,6 +150,10 @@ struct StateListView: View {
                                 .environment(\.shownSection, entry.section)
                         }
                     }
+                }
+                if options.compactBriefs, group.id == list.groups.first?.id, !list.brief.isEmpty {
+                    BriefPanel(lines: list.brief, writer: model.briefWriter)
+                        .padding(.vertical, 4)
                 }
             }
         }
@@ -158,6 +170,7 @@ struct StateListView: View {
                 AppMenuItems(source: nil)
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -174,6 +187,7 @@ struct StateListView: View {
 struct OverviewPage: View {
     @ObservedObject var list: StateListModel
     let model: AppModel
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         VStack(spacing: 0) {
@@ -181,7 +195,7 @@ struct OverviewPage: View {
             PageScroll {
                 VStack(alignment: .leading, spacing: 18) {
                     StateListProblems(list: list, model: model)
-                    if !list.brief.isEmpty {
+                    if !options.compactBriefs, !list.brief.isEmpty {
                         BriefPanel(lines: list.brief, writer: model.briefWriter)
                             .padding(.horizontal, -4)
                     }
@@ -198,6 +212,10 @@ struct OverviewPage: View {
                     }
                     ForEach(list.groups) { group in
                         section(group)
+                        if options.compactBriefs, group.id == list.groups.first?.id, !list.brief.isEmpty {
+                            BriefPanel(lines: list.brief, writer: model.briefWriter)
+                                .padding(.horizontal, -4)
+                        }
                     }
                 }
             }
@@ -205,16 +223,16 @@ struct OverviewPage: View {
     }
 
     private var subtitle: String {
-        let parts = list.groups.map { "\($0.entries.count) \($0.state.countLabel)" }
+        let parts = list.groups.map { "\($0.entries.count) \($0.countLabel)" }
         return parts.isEmpty ? "Nothing needs you" : parts.joined(separator: " · ")
     }
 
     private func section(_ group: StateListGroup) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: group.state.symbol)
+                Image(systemName: group.symbol)
                     .foregroundStyle(group.state.color)
-                Text(group.state.title)
+                Text(group.title)
                     .foregroundStyle(.primary)
                 Text("\(group.entries.count)")
                     .foregroundStyle(.secondary)
@@ -247,6 +265,7 @@ struct OverviewPage: View {
 struct SourceMark: View {
     let section: SectionID
     let model: AppModel
+    @Environment(\.interfaceOptions) private var options
 
     var body: some View {
         let info = model.info(for: section)
@@ -255,7 +274,7 @@ struct SourceMark: View {
         } ?? ""
         Image(systemName: info?.symbol ?? "circle")
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(info?.tint ?? .secondary)
+            .foregroundStyle(options.quietAppearance ? .secondary : info?.tint ?? .secondary)
             .frame(width: 14)
             .padding(.top, 12)
             .help(name)
@@ -295,27 +314,12 @@ struct BriefPanel: View {
     let lines: [BriefLine]
     @ObservedObject var writer: BriefWriter
 
-    private static let gradient = LinearGradient(
-        colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.93, green: 0.30, blue: 0.55),
-                 Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 1.0)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
-
     var body: some View {
         let texts = lines.map { writer.text(for: $0) }
         let isWritten = texts.contains { $0.isWritten }
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 5) {
-                if isWritten {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Self.gradient)
-                }
-                Text("Brief")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(Array(zip(lines, texts)), id: \.0.id) { line, text in
+        let pairs = Array(zip(lines, texts))
+        BriefContainer(count: lines.count, isWritten: isWritten) { collapsed in
+            ForEach(collapsed ? Array(pairs.prefix(2)) : pairs, id: \.0.id) { line, text in
                 Button {
                     line.open()
                 } label: {
@@ -328,27 +332,16 @@ struct BriefPanel: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
+                            .lineLimit(collapsed ? 2 : nil)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Click to open it")
+                .help(collapsed ? text.text : "Click to open it")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isWritten ? AnyShapeStyle(Self.gradient.opacity(0.09)) : AnyShapeStyle(Color.primary.opacity(0.04)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isWritten ? AnyShapeStyle(Self.gradient.opacity(0.35)) : AnyShapeStyle(Color.primary.opacity(0.1)), lineWidth: 1)
-        )
-        .padding(.horizontal, 4)
         .help(isWritten ? "Written on this Mac by Apple Intelligence" : "In BriefBar's own words")
     }
 }
