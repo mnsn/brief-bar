@@ -97,6 +97,37 @@ import Testing
         }
     }
 
+    /// A program doesn't inherit the signals that the thread starting it blocks, as Dispatch's and Swift concurrency's
+    /// workers do: Git Credential Manager, which git runs to fetch, hung until the timeout without the ones it needs.
+    @Test(.timeLimit(.minutes(1)))
+    func startsProgramsWithNoSignalsBlocked() async throws {
+        let result = try await withTaskExecutorPreference(SignalBlockingExecutor()) {
+            try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "kill -USR1 $$; echo survived"], environment: nil, timeout: 10
+            )
+        }
+        #expect(result.status == SIGUSR1)
+        #expect(result.stdout.isEmpty)
+    }
+
+    /// Runs its jobs on a thread that blocks SIGUSR1 while they run.
+    private final class SignalBlockingExecutor: TaskExecutor {
+        private let queue = DispatchQueue(label: "BriefBarTests.SignalBlocking")
+
+        func enqueue(_ job: consuming ExecutorJob) {
+            let job = UnownedJob(job)
+            queue.async {
+                var blocked = sigset_t()
+                sigemptyset(&blocked)
+                sigaddset(&blocked, SIGUSR1)
+                var previous = sigset_t()
+                pthread_sigmask(SIG_BLOCK, &blocked, &previous)
+                job.runSynchronously(on: self.asUnownedTaskExecutor())
+                pthread_sigmask(SIG_SETMASK, &previous, nil)
+            }
+        }
+    }
+
     /// Measure process deadlines without counting delays in resuming the test on the shared cooperative pool.
     private func measured<Value: Sendable>(
         _ operation: @escaping @Sendable () async throws -> Value

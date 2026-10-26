@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased
-
-## 0.4.0 - 2026-10-26
+## 0.5.0 - 2026-10-26
 
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
@@ -18,6 +16,13 @@
   below the first group with two highlights and an option to expand it. Optional row menus and
   widget **View All** buttons make actions easier to find while keeping each source's existing
   open/read behavior.
+
+## 0.4.0 - 2026-10-26
+
+- **Copilot tasks on pull requests start again.** Sending a PR to Copilot, such as **Pre-review with
+  Copilot**, no longer waits five minutes and then fails with "git failed" when your clone signs in
+  to Azure DevOps with Git Credential Manager. Programs BriefBar starts now begin with no signals
+  blocked, so the credential helper answers and the PR's branch is fetched right away.
 - **Install BriefBar in another agent with a click.** In **Settings › Agents**, **Install** replaces
   copying a command: it adds BriefBar to Visual Studio Code or Cursor, whichever are on your Mac, with
   each app's own install link, so the app shows what it would add and asks you first, and keeps it in
