@@ -129,13 +129,10 @@ public struct CopilotLauncher: Sendable {
             throw LaunchError.git(error)
         }
 
-        let copilotHome = CopilotCLI.home(environment: environment)
-        let config = LocalFile.tail(of: copilotHome.appendingPathComponent("config.json"), maxBytes: 1 << 20)
-        let trusted = config.map(CopilotCLI.trustedFolders) ?? []
         let arguments = CopilotCommand.arguments(
             prompt: PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch), options: request.options,
             sessionId: id, name: request.continuing == nil ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
-            trustFolder: CopilotCLI.isTrusted(repository.root, trusted: trusted), denied: request.subject.deniedTools
+            denied: request.subject.deniedTools
         )
         var run: CopilotRun
         switch request.subject {

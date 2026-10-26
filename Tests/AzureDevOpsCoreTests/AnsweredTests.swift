@@ -9,10 +9,10 @@ import Testing
     private let cutoff = t(-3 * day)
 
     private func classify(_ pr: PullRequest, role: PRRole = .reviewer, details: PRDetails?, links: [ChatLink] = [],
-                          cutoff: Date? = nil, now: Date = t(0)) -> PRSnapshot? {
+                          cutoff: Date? = nil, dismissed: Date? = nil, now: Date = t(0)) -> PRSnapshot? {
         PRClassifier.snapshot(
             for: PRRecord(pullRequest: pr, role: role, details: details, me: me.id, chatLinks: links),
-            seenCutoff: cutoff ?? self.cutoff, now: now
+            seenCutoff: cutoff ?? self.cutoff, dismissedCutoff: dismissed ?? min(cutoff ?? self.cutoff, self.cutoff), now: now
         )
     }
 

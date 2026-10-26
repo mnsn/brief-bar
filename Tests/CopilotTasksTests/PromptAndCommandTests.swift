@@ -36,7 +36,7 @@ import Testing
     @Test func runsOnItsOwnWithTheChosenModelAndSession() {
         let arguments = CopilotCommand.arguments(
             prompt: "Fix it", options: CopilotRunOptions(model: "claude-opus-5.5", effort: "max"), sessionId: "abc",
-            name: "Task 1: Fix it", directory: URL(fileURLWithPath: "/tmp/wt"), trustFolder: false
+            name: "Task 1: Fix it", directory: URL(fileURLWithPath: "/tmp/wt")
         )
         #expect(arguments == [
             "-p", "Fix it", "--model", "claude-opus-5.5", "--reasoning-effort", "max",
@@ -45,13 +45,22 @@ import Testing
         ])
     }
 
-    @Test func leavesTheEffortToTheModelAndTrustsAFolderOnlyWhenAsked() {
+    @Test func leavesTheEffortToTheModel() {
         let arguments = CopilotCommand.arguments(
             prompt: "p", options: CopilotRunOptions(model: "auto", effort: nil), sessionId: "s", name: "n",
-            directory: URL(fileURLWithPath: "/w"), trustFolder: true
+            directory: URL(fileURLWithPath: "/w")
         )
         #expect(!arguments.contains("--reasoning-effort"))
-        #expect(arguments.contains("--trust-folder"))
+    }
+
+    /// The CLI refuses `--trust-folder` with `--session-id`, which every run has, and won't start.
+    @Test func neverAsksToTrustTheFolder() {
+        let arguments = CopilotCommand.arguments(
+            prompt: "p", options: CopilotModel.standard, sessionId: "s", name: nil, directory: URL(fileURLWithPath: "/w"),
+            denied: ["shell(git push)"]
+        )
+        #expect(arguments.contains("--session-id"))
+        #expect(!arguments.contains("--trust-folder"))
     }
 
     @Test func namesTheSessionAfterTheWorkItemShortly() {

@@ -202,18 +202,26 @@ public enum PullRequestPrompt {
     /// The threads, numbered: where each is, and its comments, each person's on a line of its own.
     public static func list(_ threads: [ReviewThread], record: PRRecord, full: Bool = true) -> String {
         threads.prefix(threadLimit).enumerated().map { index, thread in
-            var place = "General comment"
-            if let path = thread.filePath {
-                let file = path.hasPrefix("/") ? String(path.dropFirst()) : path
-                place = thread.line.map { "\(file), line \($0)" } ?? file
-            }
             let comments = full ? thread.comments : Array(thread.comments.suffix(1))
             let lines = comments.map { comment in
                 let who = comment.author.id == record.me ? "You" : comment.author.name
                 return "   \(who): \(comment.text)"
             }
-            return "\(index + 1). \(place) (thread \(thread.id))\n" + lines.joined(separator: "\n")
+            return entry(index, thread) + "\n" + lines.joined(separator: "\n")
         }.joined(separator: "\n")
+    }
+
+    /// The line a thread's entry in the list starts with: its number, where it is, and which thread. Its comments follow,
+    /// each on an indented line of its own (`CommentText.plain` makes a comment one line), so no comment, whatever it says,
+    /// makes a line like it: what's handed to Copilot is told by which of these lines are still in the prompt you send
+    /// (`CommentHandOff`).
+    static func entry(_ index: Int, _ thread: ReviewThread) -> String {
+        var place = "General comment"
+        if let path = thread.filePath {
+            let file = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            place = thread.line.map { "\(file), line \($0)" } ?? file
+        }
+        return "\(index + 1). \(place) (thread \(thread.id))"
     }
 
     /// When you last voted or commented on it.
@@ -222,6 +230,93 @@ public enum PullRequestPrompt {
         let votes = details.activity.filter { $0.kind == .vote && $0.actor?.id == record.me }.map(\.at)
         let comments = details.threads.flatMap(\.comments).filter { $0.author.id == record.me }.map(\.publishedAt)
         return (votes + comments).max()
+    }
+}
+
+/// What a prompt that takes care of the comments that wait on you on your pull request, Fix Comments' or Push & Reply's,
+/// hands to Copilot, as it was when it was written: the comments that waited on you then, by thread, for the account
+/// signed in then. Sending it takes those in the entries still in the prompt off that account's Needs You. A comment that
+/// came after it was written isn't among them, and neither is one in a thread whose entry isn't in the prompt you send,
+/// beyond the most it lists or deleted from it, nor one that waits on you when the task starts but didn't when the prompt
+/// was written, such as in a thread reopened since: those still need you.
+public struct CommentHandOff: Sendable, Equatable {
+    /// An unresolved thread, with its comments that waited on you.
+    public struct Waiting: Sendable, Equatable {
+        public var thread: Int
+        /// The line its entry in the prompt starts with; nil when the prompt doesn't list it.
+        public var entry: String?
+        /// Those comments, by ID.
+        public var comments: [Int]
+        public var first: Date
+        public var last: Date
+
+        public init(thread: Int, entry: String?, comments: [Int], first: Date, last: Date) {
+            self.thread = thread
+            self.entry = entry
+            self.comments = comments
+            self.first = first
+            self.last = last
+        }
+    }
+
+    /// The pull request, as the list names it.
+    public var key: PRKey
+    public var waiting: [Waiting]
+    /// The Azure CLI account whose seen state the prompt was written with (`SeenState.account`), once known: the
+    /// comments leave its Needs You, whoever is signed in once the task starts.
+    public var account: String?
+    /// Your identity ID in the pull request's organization, with that account (`PRRecord.me`).
+    public var me: String
+    /// What came up to then didn't wait on you anymore when the prompt was written (`SeenState.dismissedCutoff`).
+    public var dismissedCutoff: Date
+
+    public init(key: PRKey, waiting: [Waiting], account: String?, me: String, dismissedCutoff: Date) {
+        self.key = key
+        self.waiting = waiting
+        self.account = account
+        self.me = me
+        self.dismissedCutoff = dismissedCutoff
+    }
+
+    /// As the prompt sees `record`, with `account` signed in.
+    /// - Parameter dismissedCutoff: what came up to then doesn't wait on you anymore (`SeenState.dismissedCutoff`).
+    public init(_ record: PRRecord, dismissedCutoff: Date, account: String?) {
+        // The prompts list these, in this order, each under its entry's line.
+        let listed = PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit)
+        let entries = Dictionary(listed.enumerated().map { ($1.id, PullRequestPrompt.entry($0, $1)) }, uniquingKeysWith: { first, _ in first })
+        let threads = (record.details?.threads ?? []).filter { !$0.isResolved }
+        self.init(key: record.id, waiting: threads.compactMap { thread in
+            let comments = PRClassifier.waitingComments(in: thread, me: record.me, dismissedCutoff: dismissedCutoff)
+            let times = comments.map(\.publishedAt)
+            guard let first = times.min(), let last = times.max() else { return nil }
+            return Waiting(thread: thread.id, entry: entries[thread.id], comments: comments.map(\.id), first: first, last: last)
+        }, account: account, me: record.me, dismissedCutoff: dismissedCutoff)
+    }
+
+    /// Up to when what waits on you leaves Needs You once `prompt` is sent: the last comment that waited on you in the
+    /// threads whose entries are still in it, but before the first that still waits on you and isn't handed off, since
+    /// a pull request has one cutoff. With the pull request as BriefBar last read it when the task starts (`now`),
+    /// that's one that waits on you then that the prompt doesn't have: in a thread whose entry isn't in the prompt, in
+    /// one reopened since it was written, or one that came since. A thread answered or resolved meanwhile doesn't wait
+    /// on you, and doesn't hold it back. Without it, that's one that waited on you in a thread whose entry isn't in the
+    /// prompt, as it was written. A thread's entry is still there while its own line is: a comment in another entry
+    /// that names it doesn't count. Nil when none of them is still there.
+    public func handedOff(in prompt: String, now: PRRecord? = nil) -> Date? {
+        let lines = Set(prompt.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
+        let kept = waiting.filter { $0.entry.map(lines.contains) ?? false }
+        guard let last = kept.map(\.last).max() else { return nil }
+        let stays: [Date]
+        if let threads = now?.details?.threads {
+            let handed = Set(kept.flatMap { thread in thread.comments.map { "\(thread.thread).\($0)" } })
+            stays = threads.filter { !$0.isResolved }.flatMap { thread in
+                PRClassifier.waitingComments(in: thread, me: me, dismissedCutoff: dismissedCutoff)
+                    .filter { !handed.contains("\(thread.id).\($0.id)") }.map(\.publishedAt)
+            }
+        } else {
+            stays = waiting.filter { !kept.contains($0) }.map(\.first)
+        }
+        guard let first = stays.min() else { return last }
+        return min(last, first.addingTimeInterval(-0.001))
     }
 }
 

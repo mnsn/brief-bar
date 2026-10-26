@@ -85,6 +85,11 @@ final class CopilotTasksStore: ObservableObject {
     var title: (WorkItemReference) -> String? = { _ in nil }
     /// A pull request's title, when the list shows it, for notifications.
     var pullRequestTitle: (PullRequestReference) -> String? = { _ in nil }
+    /// A task that takes care of a pull request's comments started, with what its prompt handed off and the prompt you sent:
+    /// for the list, to take those comments off Needs You.
+    var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
+    /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
+    var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
 
     private let notifier: Notifier?
     private let monitor = RunMonitor()
@@ -266,16 +271,21 @@ final class CopilotTasksStore: ObservableObject {
 
     /// Opens the composer for a pull request, with its prompt for what to do, going on with its last task's session by
     /// default.
-    func compose(_ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String) {
+    /// - Parameter handOff: what the prompt takes off Needs You once it's sent, as it was written.
+    func compose(_ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String, handOff: CommentHandOff? = nil) {
         let key = PRKey(pullRequest.organization, pullRequest.id)
         CopilotComposer.shared.show(
             subject: .pullRequest(pullRequest, action), prompt: prompt, options: settings.copilotOptions,
-            continuing: continuable(forPullRequest: key), store: self
+            continuing: continuable(forPullRequest: key), handOff: handOff, store: self
         )
     }
 
-    /// Starts Copilot on a work item or a pull request; or goes on with an earlier run's session, in its worktree.
-    func send(_ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil) {
+    /// Starts Copilot on a work item or a pull request; or goes on with an earlier run's session, in its worktree. Once it
+    /// has started, what `handOff` says its prompt took care of leaves Needs You.
+    func send(
+        _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
+        handOff: CommentHandOff? = nil
+    ) {
         guard canSend, isOn else { return }
         switch subject {
         case .workItem(let item): settings.copilotRepositories[item.reference.projectKey] = repository.path
@@ -305,12 +315,17 @@ final class CopilotTasksStore: ObservableObject {
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing
         )
         Task { [self] in
-            // Asked again for each send, so a tool you've just installed is found.
-            let environment = await environment(fresh: true)
-            let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
             do {
-                let run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
-                    MainActor.assumeIsolated { self?.exited(id, status: status) }
+                let run: CopilotRun
+                if let launchForTests {
+                    run = try await launchForTests(request, id, now)
+                } else {
+                    // Asked again for each send, so a tool you've just installed is found.
+                    let environment = await environment(fresh: true)
+                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
+                    run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
+                        MainActor.assumeIsolated { self?.exited(id, status: status) }
+                    }
                 }
                 startedHere.insert(id)
                 pending.removeAll { $0.id == id }
@@ -321,6 +336,7 @@ final class CopilotTasksStore: ObservableObject {
                     settings.copilotRuns.append(run)
                 }
                 Log.app.info("Sent a task to Copilot\(continuing == nil ? "" : ", going on with its session", privacy: .public)")
+                if let handOff { handedOff(handOff, prompt) }
                 refresh()
             } catch {
                 Log.app.error("Couldn't send a task to Copilot: \(Self.kind(of: error), privacy: .public)")

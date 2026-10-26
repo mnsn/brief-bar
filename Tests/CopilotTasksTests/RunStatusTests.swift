@@ -66,6 +66,22 @@ import Testing
         #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: nil, stoppedByYou: false, output: nil)
                 .detail == "Copilot ended before it started working.")
     }
+
+    /// The CLI follows an option it refuses with its usage and a hint, which say nothing of why.
+    @Test func saysTheCLIsErrorRatherThanItsHint() {
+        let output = """
+            Error: the argument '--trust-folder' cannot be used with '--session-id <id>'
+
+            Usage: copilot --prompt <text> --model <model> --autopilot --trust-folder -C <directory> --silent
+
+            For more information, try '--help'.
+
+            """
+        #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: 1, stoppedByYou: false, output: output)
+                .detail == "Error: the argument '--trust-folder' cannot be used with '--session-id <id>'")
+        #expect(RunStatus.derive(log: nil, isRunning: false, exitStatus: 1, stoppedByYou: false, output: "Not signed in.\nRun copilot login.\n")
+                .detail == "Run copilot login.")
+    }
 }
 
 @Suite struct RunTranscriptTests {
@@ -78,8 +94,55 @@ import Testing
         #expect(RunTranscript.pullRequest(in: "See https://contoso.visualstudio.com/DefaultCollection/Storefront/_git/web/pullRequest/9, thanks")?
             .absoluteString == "https://contoso.visualstudio.com/DefaultCollection/Storefront/_git/web/pullRequest/9")
         #expect(RunTranscript.pullRequest(in: "https://github.com/contoso/web/pull/5.")?.absoluteString == "https://github.com/contoso/web/pull/5")
+        #expect(RunTranscript.pullRequest(in: "https://evil.example/?next=https://github.com/contoso/web/pull/5") == nil)
+        #expect(RunTranscript.pullRequest(in: "https://github.com/contoso/web/pull/5.evil.example") == nil)
         #expect(RunTranscript.pullRequest(in: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217") == nil)
         #expect(RunTranscript.pullRequest(in: "No link here") == nil)
+    }
+
+    @Test func findsALinkAmongMarkdownAndPunctuation() {
+        let link = "https://github.com/contoso/web/pull/5"
+        for text in ["**\(link)**", "_\(link)_", "`\(link)`", "<\(link)>", "(\(link)).", "\"\(link)\"", "\(link):", "- \(link)\n",
+                     "[#5](\(link) \"Fix it\")", "Opened \(link), not https://evil.example/?next=https://github.com/contoso/web/pull/6"] {
+            #expect(RunTranscript.pullRequest(in: text)?.absoluteString == link, "\(text)")
+        }
+    }
+
+    /// Where it goes is the pull request's page, on its host in lowercase.
+    @Test func linksToThePullRequestsPage() {
+        let github = "https://github.com/Contoso/Web/pull/5"
+        for text in ["\(github)/files", "\(github)/", "\(github)?w=1#diff", "HTTPS://GitHub.com/Contoso/Web/pull/5"] {
+            #expect(RunTranscript.pullRequest(in: text)?.absoluteString == github, "\(text)")
+        }
+        let azure = "https://contoso.visualstudio.com/Storefront/_git/web/pullrequest/77"
+        #expect(RunTranscript.pullRequest(in: "Opened \(azure)?_a=files.")?.absoluteString == azure)
+        #expect(RunTranscript.pullRequest(in: "HTTPS://Contoso.VisualStudio.com/Storefront/_git/web/pullrequest/77")?.absoluteString == azure)
+        #expect(RunTranscript.pullRequest(in: "https://dev.azure.com/contoso/Café/_git/web/pullrequest/5")?.absoluteString
+                == "https://dev.azure.com/contoso/Caf%C3%A9/_git/web/pullrequest/5")
+    }
+
+    @Test func ignoresLinksThatOnlyLookLikePullRequests() {
+        for text in [
+            "https://evil.example/?next=https://github.com/contoso/web/pull/5",
+            "https://github.com/login?return_to=https://github.com/contoso/web/pull/5",
+            "https://evil.example/github.com/contoso/web/pull/5",
+            "https://github.com.evil.example/contoso/web/pull/5",
+            "https://github.com@evil.example/contoso/web/pull/5",
+            "https://github.com\\@evil.example/contoso/web/pull/5",
+            "https://github.com:8443/contoso/web/pull/5",
+            "https://contoso.visualstudio.com.evil.example/Storefront/_git/web/pullrequest/77",
+            "https://contoso.fabrikam.visualstudio.com/Storefront/_git/web/pullrequest/77",
+            "https://dev.azure.com/contoso/a/b/c/_git/web/pullrequest/77",
+            "http://github.com/contoso/web/pull/5",
+            "xhttps://github.com/contoso/web/pull/5",
+            "https://github.com/contoso/web/pull/5.evil.example",
+            "https://github.com/contoso/web/pull/5evil",
+            "https://github.com/contoso/web/issues/5",
+            "https://github.com/contoso/pull/5",
+            "https://github.com//contoso/pull/5",
+        ] {
+            #expect(RunTranscript.pullRequest(in: text) == nil, "\(text)")
+        }
     }
 
     /// The summary it called the task done with, and its own last message, not a subagent's.

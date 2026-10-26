@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-10-26
 
+- **Needs You keeps what still waits on you.** Opening a pull request from BriefBar, or **Mark as
+  Seen**, no longer takes it off Needs You while a comment there waits on you: a reply to you, a
+  mention, or a comment on your pull request. It stays, and counts in the menu bar, without the dot that
+  now marks what's new, until you reply in its thread or the thread is resolved, you send the comments
+  to Copilot with **Fix Comments** or **Push & Reply**, or you choose **Remove from Needs You** in its
+  menu (right-click it, or **Actions** in the window). Anything after that needs you again, and a pull
+  request without activity for two weeks goes to Idle, as before. After the update, a pull request you'd
+  opened whose comments still wait on you is back in Needs You.
 - **Apple silicon only.** BriefBar now requires an M1 or later Mac, still on macOS 15 or later.
   The app and its updater are built only for arm64, and pull requests no longer build or test for Intel.
   Existing Intel installs aren't offered incompatible updates.
@@ -9,7 +17,7 @@
   arranged no longer hides Settings behind the app you were in before, or switches to that app's
   Space. While Settings is open, BriefBar shows a Dock icon and its own menus, as it does for its
   window, so you can also get back to Settings from the Dock or with ⌘-Tab.
-  
+
 ## 0.6.0 - 2026-10-26
 - **Seven appearance improvements, each off until you choose it.** **Settings › Appearance** offers
   compact briefs, quieter colors and surfaces, aligned and easier-to-read rows, a compact menu bar,
@@ -25,6 +33,11 @@
   below the first group with two highlights and an option to expand it. Optional row menus and
   widget **View All** buttons make actions easier to find while keeping each source's existing
   open/read behavior.
+- **Copilot tasks start again in repositories you trust.** With Copilot CLI 1.0.100 or later, a pull
+  request or work item sent from a trusted repository failed at once: the CLI refuses the option
+  BriefBar added to trust its worktree. BriefBar no longer adds it, and Copilot still trusts the
+  worktree of a repository you trust. When Copilot can't start, the notification now gives the CLI's
+  error rather than a hint to try `--help`.
 
 ## 0.5.0 - 2026-10-26
 

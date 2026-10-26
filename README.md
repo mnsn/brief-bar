@@ -263,7 +263,7 @@ Apple Intelligence sums up the newest of each.
 
 | Group | When |
 |---|---|
-| **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on) |
+| **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on). And comments you've seen that still wait on you |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
 | **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
 | **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
@@ -272,13 +272,19 @@ Apple Intelligence sums up the newest of each.
 | **Done** | Completed or abandoned in the last day, and while the pipelines that run after it merged are still going or wait for an approval |
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
 
-**Needs You** works like an inbox: opening a pull request from BriefBar, or **Mark as Seen**, moves it
-on until something new happens. The first time, only the last three days count as new, and each
-account you sign in to the Azure CLI with has its own. Notifications announce new replies, mentions,
-comments, review requests, votes, new commits, failed builds, pull requests that become ready or
-complete, and, after you merge one, a pipeline that fails or waits for an approval, or all of them
-passing. Clicking one opens the comment, or the run, it's about. The first time, BriefBar finds the
-organizations where you have pull requests; **Organizations** in its settings changes them.
+**Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, or
+**Mark as Seen**, sees it: what's new moves on until something new happens, but a comment that waits on
+you, such as a reply to you, a mention or a comment on your pull request, stays there and in the menu
+bar's count, no longer marked new. It leaves once you reply in its thread or the thread is resolved,
+once you send the comments to Copilot with **Fix Comments** or **Push & Reply**, or when you choose
+**Remove from Needs You** in its menu (right-click it, or **Actions** in the window); anything after
+that needs you again. A pull request without activity for two weeks goes to Idle, as before. The first
+time, only the last three days count as new, and each account you sign in to the Azure CLI with has its
+own. Notifications announce new replies, mentions, comments, review requests, votes, new commits, failed
+builds, pull requests that become ready or complete, and, after you merge one, a pipeline that fails or
+waits for an approval, or all of them passing. Clicking one opens the comment, or the run, it's about.
+The first time, BriefBar finds the organizations where you have pull requests; **Organizations** in its
+settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
 was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
@@ -363,8 +369,10 @@ and a review can't change files or commit. Each works in a worktree detached at 
 commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
-and its menu has the task's own menu. Comments are written by whoever wrote them, and go to an agent that
-may run any command: send only what you'd hand to Copilot yourself.
+and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, the comments its
+prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out
+of it, or in one reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go
+to an agent that may run any command: send only what you'd hand to Copilot yourself.
 
 ### GitHub Copilot
 
@@ -604,8 +612,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
-  you've seen: nothing about them goes to its preferences or to disk, where other programs running
-  as you could read it. It forgets them when you turn it off.
+  you've seen or taken off Needs You: nothing about them goes to its preferences or to disk, where
+  other programs running as you could read it. It forgets them when you turn it off.
 - **Show Links** reads more only if you turn it on, with the same sign-ins: from Azure DevOps, through
   GET requests, the work items linked to your pull requests, the pull requests linked to the sprint's
   work items while it's on screen, and what the linked ones your lists don't show are; from the Copilot
@@ -617,8 +625,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
-  read; which of your Azure DevOps pull requests you've seen, with each account, your organizations,
-  and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
+  read; which of your Azure DevOps pull requests you've seen or taken off Needs You, with each account,
+  your organizations, and the pull requests you watch; the tasks you sent to Copilot, and what Copilot printed at their end; which Copilot
   sessions you've cleared; the links you added or hid, with Show Links; and its settings. Turning a source off deletes
   what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that

@@ -84,26 +84,4 @@ import Testing
         #expect(CopilotCLI.home(environment: [:], userHome: home).path == "/Users/robin/.copilot")
         #expect(CopilotCLI.home(environment: ["COPILOT_HOME": "/data/copilot"], userHome: home).path == "/data/copilot")
     }
-
-    /// Copilot's config allows comments.
-    @Test func readsTrustedFoldersFromItsConfig() {
-        let config = Data("""
-            // User settings belong in settings.json.
-            {
-              "trustedFolders": ["~/dev/repos", "/work"],
-              "theme": "dark"
-            }
-            """.utf8)
-        #expect(CopilotCLI.trustedFolders(config: config) == ["~/dev/repos", "/work"])
-        #expect(CopilotCLI.trustedFolders(config: Data("not json".utf8)) == [])
-    }
-
-    @Test func trustsAFolderInsideATrustedOne() {
-        let trusted = ["~/dev/repos", "/work/"]
-        #expect(CopilotCLI.isTrusted(URL(fileURLWithPath: "/Users/robin/dev/repos/Storefront"), trusted: trusted, home: home))
-        #expect(CopilotCLI.isTrusted(URL(fileURLWithPath: "/Users/robin/dev/repos"), trusted: trusted, home: home))
-        #expect(CopilotCLI.isTrusted(URL(fileURLWithPath: "/work/web"), trusted: trusted, home: home))
-        #expect(!CopilotCLI.isTrusted(URL(fileURLWithPath: "/Users/robin/dev/repos-old/Storefront"), trusted: trusted, home: home))
-        #expect(!CopilotCLI.isTrusted(URL(fileURLWithPath: "/Users/robin/dev"), trusted: trusted, home: home))
-    }
 }

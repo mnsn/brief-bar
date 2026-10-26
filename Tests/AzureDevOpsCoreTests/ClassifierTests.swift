@@ -144,12 +144,15 @@ import BriefBarCore
     private let me = People.me
     private let cutoff = t(-3 * day)
 
+    /// Seen up to `cutoff`; taken off Needs You up to `dismissed`, or else nothing since the earlier of `cutoff` and the
+    /// first run's three days.
     private func classify(
-        _ pr: PullRequest, role: PRRole = .author, details: PRDetails? = nil, cutoff: Date? = nil, now: Date = t(0),
-        options: ClassifierOptions = ClassifierOptions()
+        _ pr: PullRequest, role: PRRole = .author, details: PRDetails? = nil, cutoff: Date? = nil, dismissed: Date? = nil,
+        now: Date = t(0), options: ClassifierOptions = ClassifierOptions()
     ) -> PRSnapshot? {
         PRClassifier.snapshot(
-            for: PRRecord(pullRequest: pr, role: role, details: details, me: me.id), seenCutoff: cutoff ?? self.cutoff, now: now, options: options
+            for: PRRecord(pullRequest: pr, role: role, details: details, me: me.id), seenCutoff: cutoff ?? self.cutoff,
+            dismissedCutoff: dismissed ?? min(cutoff ?? self.cutoff, self.cutoff), now: now, options: options
         )
     }
 
@@ -176,18 +179,153 @@ import BriefBarCore
         #expect(snapshot.events.map(\.id) == ["c5.3"])
     }
 
-    @Test func answeringOrSeeingItClearsIt() throws {
+    @Test func answeringItClearsIt() throws {
         let pr = makePR()
         let answered = ReviewThread(id: 5, comments: [
             comment(1, People.sam, "Cap it?", at: t(-hour)), comment(2, me, "Done", at: t(-30 * minute)),
         ])
         let snapshot = try #require(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: [answered])))
         #expect(snapshot.group == .ready)
+    }
 
+    /// Opening a pull request sees what's there, but a comment that waits on you still needs you: it stays in Needs You,
+    /// no longer new, until you reply, its thread is resolved, or you take the pull request off Needs You.
+    @Test func seeingItKeepsWhatWaitsOnYou() throws {
+        let pr = makePR()
         let unanswered = ReviewThread(id: 5, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))])
         let details = makeDetails(for: pr, checks: passing(), threads: [unanswered])
+        let new = try #require(classify(pr, details: details))
+        #expect(new.group == .needsYou)
+        #expect(new.hasNews)
+        #expect(new.events.map(\.isNew) == [true])
+
+        let seen = try #require(classify(pr, details: details, cutoff: t(-hour)))
+        #expect(seen.group == .needsYou)
+        #expect(!seen.hasNews)
+        #expect(seen.reason == .commented)
+        #expect(seen.headline == "Sam Rivera commented")
+        #expect(seen.detail == "Cap it?")
+        #expect(seen.since == t(-hour))
+        #expect(seen.url == pr.threadURL(5))
+        #expect(seen.events.map(\.id) == ["c5.1"])
+        #expect(seen.events.map(\.isNew) == [false])
+
+        // Resolved, it doesn't wait on you anymore.
+        var resolved = unanswered
+        resolved.status = "fixed"
+        #expect(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: [resolved]), cutoff: t(-hour))?.group == .ready)
+        // Nor once you've taken it off Needs You, which sees it too.
+        let removed = try #require(classify(pr, details: details, cutoff: t(-2 * hour), dismissed: t(-hour)))
+        #expect(removed.group == .ready)
+        #expect(removed.events.isEmpty)
+
+        // Until something comes after: that needs you, as new.
+        let more = ReviewThread(id: 5, comments: unanswered.comments + [comment(2, People.sam, "Ping", at: t(-minute))])
+        let again = try #require(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: [more]), cutoff: t(-hour),
+                                          dismissed: t(-hour)))
+        #expect(again.group == .needsYou)
+        #expect(again.hasNews)
+        #expect(again.headline == "Sam Rivera commented")
+        #expect(again.events.map(\.id) == ["c5.2"])
+    }
+
+    /// The report that started it: a review you approved goes back to Idle once you've seen it, and so does your draft.
+    /// Not while a comment there waits on you.
+    @Test func aCommentThatWaitsOnYouKeepsAPullRequestOutOfIdle() throws {
+        let review = makePR(author: People.sam, reviewers: [Reviewer(person: me, vote: .approved)])
+        let reply = ReviewThread(id: 7, comments: [
+            comment(1, me, "Should this retry?", at: t(-day)), comment(2, People.sam, "It does, see line 40", at: t(-hour)),
+        ])
+        let details = makeDetails(for: review, threads: [reply])
+        let seen = try #require(classify(review, role: .reviewer, details: details, cutoff: t(-30 * minute)))
+        #expect(seen.group == .needsYou)
+        #expect(seen.reason == .replied)
+        #expect(seen.headline == "Sam Rivera replied")
+        #expect(!seen.hasNews)
+        // Once it's resolved, or taken off Needs You, it's idle as before.
+        var resolved = reply
+        resolved.status = "closed"
+        #expect(classify(review, role: .reviewer, details: makeDetails(for: review, threads: [resolved]), cutoff: t(-30 * minute))?.reason
+            == .youApproved)
+        #expect(classify(review, role: .reviewer, details: details, cutoff: t(-30 * minute), dismissed: t(-30 * minute))?.reason == .youApproved)
+
+        let draft = makePR(draft: true)
+        let question = ReviewThread(id: 8, comments: [comment(1, People.priya, "Is this ready for a look?", at: t(-hour))])
+        let drafted = makeDetails(for: draft, threads: [question])
+        #expect(classify(draft, details: drafted, cutoff: t(-30 * minute))?.group == .needsYou)
+        #expect(classify(draft, details: drafted, cutoff: t(-30 * minute), dismissed: t(-30 * minute))?.reason == .draft)
+    }
+
+    /// What's new says why it's in Needs You, ahead of what you've seen, and only it is "new".
+    @Test func whatsNewComesBeforeWhatYouveSeen() throws {
+        let pr = makePR()
+        let threads = [
+            ReviewThread(id: 1, comments: [comment(1, People.priya, "@Robin Diaz why?", at: t(-2 * hour), mentions: [me])]),
+            ReviewThread(id: 2, comments: [comment(1, People.sam, "Nit: typo", at: t(-minute))]),
+        ]
+        let snapshot = try #require(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: threads), cutoff: t(-hour)))
+        #expect(snapshot.group == .needsYou)
+        #expect(snapshot.hasNews)
+        // A mention would come first, but the one here you've seen: what's new names it.
+        #expect(snapshot.reason == .commented)
+        #expect(snapshot.headline == "Sam Rivera commented")
+        #expect(snapshot.url == pr.threadURL(2))
+        #expect(snapshot.events.map(\.isNew) == [true, false])
+
+        // Several you've seen aren't "new".
+        let seen = [
+            ReviewThread(id: 1, comments: [comment(1, People.sam, "Nit: typo", at: t(-2 * hour))]),
+            ReviewThread(id: 2, comments: [comment(1, People.priya, "Add a test?", at: t(-hour))]),
+        ]
+        let both = try #require(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: seen)))
+        #expect(both.headline == "2 new comments")
+        #expect(try #require(classify(pr, details: makeDetails(for: pr, checks: passing(), threads: seen), cutoff: t(-hour))).headline
+            == "2 comments")
+    }
+
+    /// A comment in a resolved thread is news, but doesn't wait on you once you've seen it.
+    @Test func aResolvedThreadIsOnlyNews() throws {
+        let pr = makePR()
+        let thread = ReviewThread(id: 3, status: "fixed", comments: [comment(1, People.sam, "Fixed it for you", at: t(-hour))])
+        let details = makeDetails(for: pr, checks: passing(), threads: [thread])
         #expect(classify(pr, details: details)?.group == .needsYou)
         #expect(classify(pr, details: details, cutoff: t(-hour))?.group == .ready)
+    }
+
+    /// What you've seen waits on you while the pull request is active; once nothing has happened on it for a while, it's
+    /// idle. Something new still needs you.
+    @Test func whatYouveSeenGoesIdleWithThePullRequest() throws {
+        let old = makePR(created: t(-40 * day))
+        let thread = ReviewThread(id: 1, comments: [comment(1, People.sam, "Still needed?", at: t(-20 * day))])
+        let details = makeDetails(for: old, threads: [thread])
+        let quiet = try #require(classify(old, details: details, cutoff: t(-19 * day), dismissed: t(-30 * day)))
+        #expect(quiet.group == .idle)
+        #expect(quiet.reason == .inactive)
+        #expect(quiet.events.isEmpty)
+        let never = ClassifierOptions(inactiveAfter: nil)
+        #expect(classify(old, details: details, cutoff: t(-19 * day), dismissed: t(-30 * day), options: never)?.group == .needsYou)
+        #expect(classify(old, details: details, cutoff: t(-30 * day))?.group == .needsYou)
+    }
+
+    /// Seen again after you took it off Needs You: what you took off stays off.
+    @Test func takingItOffNeedsYouSeesItToo() throws {
+        let pr = makePR()
+        let thread = ReviewThread(id: 5, comments: [comment(1, People.sam, "Cap it?", at: t(-90 * minute))])
+        let details = makeDetails(for: pr, checks: passing(), threads: [thread])
+        // Taken off later than the time it was seen: it counts as seen up to then.
+        #expect(classify(pr, details: details, cutoff: t(-2 * hour), dismissed: t(-hour))?.group == .ready)
+    }
+
+    @Test func whatYouveSeenIsntAnnounced() throws {
+        let pr = makePR()
+        let thread = ReviewThread(id: 5, comments: [comment(1, People.sam, "Cap it?", at: t(-hour))])
+        let details = makeDetails(for: pr, checks: passing(), threads: [thread])
+        let new = try #require(classify(pr, details: details))
+        let seen = try #require(classify(pr, details: details, cutoff: t(-hour)))
+        #expect(NotificationPlanner.plan(previous: [], current: [new], notBefore: t(-day)).map(\.title) == ["Sam Rivera commented"])
+        // Not when it's first listed already seen, nor when you've just seen it.
+        #expect(NotificationPlanner.plan(previous: [], current: [seen], notBefore: t(-day)).isEmpty)
+        #expect(NotificationPlanner.plan(previous: [new], current: [seen], notBefore: t(-day)).isEmpty)
     }
 
     @Test func newCommentsOnYourPullRequestNeedYou() throws {
@@ -519,7 +657,7 @@ import BriefBarCore
         let now = Date()
         let seen = DemoData.seenState(now: now)
         let snapshots = DemoData.records(now: now).compactMap {
-            PRClassifier.snapshot(for: $0, seenCutoff: seen.cutoff(for: $0.id), now: now)
+            PRClassifier.snapshot(for: $0, seenCutoff: seen.cutoff(for: $0.id), dismissedCutoff: seen.dismissedCutoff(for: $0.id), now: now)
         }
         let counts = GroupCounts(snapshots)
         for group in PRGroup.allCases {
@@ -535,7 +673,7 @@ import BriefBarCore
         // A minute later, a new comment: announced once, and the pull request needs you.
         let later = now.addingTimeInterval(60)
         let updated = DemoData.update(DemoData.snapshot(now: now), at: later).records.compactMap {
-            PRClassifier.snapshot(for: $0, seenCutoff: seen.cutoff(for: $0.id), now: later)
+            PRClassifier.snapshot(for: $0, seenCutoff: seen.cutoff(for: $0.id), dismissedCutoff: seen.dismissedCutoff(for: $0.id), now: later)
         }
         #expect(updated.first { $0.key.number == 4091 }?.group == .needsYou)
         let notes = NotificationPlanner.plan(previous: snapshots, current: updated, notBefore: now)
