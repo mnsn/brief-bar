@@ -237,6 +237,8 @@ struct CopilotComposerView: View {
         .padding(20)
         .frame(width: 620)
         .onAppear(perform: setUp)
+        // After the change: a published value emits before it's set.
+        .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
     }
 
     private var header: some View {
@@ -573,11 +575,23 @@ struct CopilotComposerView: View {
         }
     }
 
+    /// Keeps up with BriefBar's tasks while the window is open: a session frees up once the task working in it, or in its
+    /// folder, is done, and one a task starts in is taken. Where it goes, and the prompt, stay as they are.
+    private func refreshAvailability() {
+        guard hasAppeared, !choices.isEmpty else { return }
+        let refreshed = store.availability(of: choices)
+        guard refreshed != choices else { return }
+        choices = refreshed
+        update()
+    }
+
     /// Keeps the chosen session as it was found, and goes to the suggested one until you choose one or change the prompt.
     /// Push & Reply stays with its last task's session.
     private func update() {
         if let current = target, let found = choices.first(where: { $0.id == current.id }), found != current {
             target = found
+            // While it couldn't be used, neither could the way to send it be chosen: it's back to the usual one.
+            if current.isUnavailable, !found.isUnavailable { delivery = found.opensInApp ? .app : .cli }
             checkSession()
         }
         guard Self.followsSuggestions(choseTarget: choseTarget, mustContinue: mustContinue, promptChanged: prompt != filledIn) else {

@@ -62,8 +62,14 @@ struct SessionChoice: Identifiable, Equatable {
     /// checkout: nothing goes to it until that's done, or their work would mix.
     var isFolderBusy = false
 
+    /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened.
+    var appFolder: URL?
+
     /// Nothing goes to it now: Copilot works in it, or in its folder.
     var isUnavailable: Bool { isBusy || isFolderBusy }
+
+    /// The folder it works in: an earlier task's worktree, or the one the app's session works in, as found.
+    var folder: URL? { run?.worktree ?? appFolder }
 
     var id: String {
         switch kind {
@@ -90,46 +96,53 @@ extension CopilotTasksStore {
     /// The sessions a task could go to instead of a new one: BriefBar's own for it, its earlier tasks' and, for a pull
     /// request, the session of its work item's task that opened it, the newest first; then the Copilot app's, those that
     /// go with it first. Read when the composer opens, and only while Send Work to Copilot is on: the app's database,
-    /// read-only, and which sessions the app has open.
+    /// read-only, which sessions the app has open, and the folder each of its sessions works in.
     func sessionChoices(for subject: TaskSubject) async -> [SessionChoice] {
         guard canSend, isOn else { return [] }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
-        var tasks = taskChoices(for: subject)
+        let tasks = taskChoices(for: subject)
         let ids = Set(tasks.map(\.id))
         let sessions = await Task.detached(priority: .userInitiated) {
             (try? AppSessions.load(home: home)) ?? []
         }.value.filter { !ids.contains($0.id) }
         let linked = linkedReasons(for: subject)
-        var apps = sessions.map { session in
+        let apps = sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
-                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? []),
-                // A task of BriefBar's works in it, for another work item or pull request: opening it in the app now, or
-                // starting another run in it, would fork its history.
-                isBusy: isWorking(inSession: session.id)
+                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? [])
             )
         }
-        let open = await Task.detached(priority: .userInitiated) { [tasks, apps] in
-            Set((tasks + apps).map(\.id).filter { id in
+        // Which of them the app has open, and the folder each of the app's sessions works in, which may be shared.
+        let found = await Task.detached(priority: .userInitiated) { [tasks, apps] in
+            let open = Set((tasks + apps).map(\.id).filter { id in
                 AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
             })
-        }.value
-        for index in tasks.indices { tasks[index].isOpenInApp = open.contains(tasks[index].id) }
-        for index in apps.indices { apps[index].isOpenInApp = open.contains(apps[index].id) }
-        // The folders BriefBar's tasks work in now, and the sessions that work in them: usually none, so the app's
-        // sessions' folders are read only then.
-        let busy = busyFolders()
-        if !busy.isEmpty {
-            for index in tasks.indices {
-                if let run = tasks[index].run, busy.contains(Self.folderKey(run.worktree)) { tasks[index].isFolderBusy = true }
+            let folders = apps.reduce(into: [String: URL]()) { folders, choice in
+                folders[choice.id] = AppSessions.folder(of: choice.id, home: home)
             }
-            let sharing = await Task.detached(priority: .userInitiated) { [apps] in
-                Set(apps.map(\.id).filter { id in AppSessions.folder(of: id, home: home).map { busy.contains(Self.folderKey($0)) } ?? false })
-            }.value
-            for index in apps.indices where sharing.contains(apps[index].id) { apps[index].isFolderBusy = true }
+            return (open: open, folders: folders)
+        }.value
+        var all = tasks + Self.sorted(apps, createdAt: nil)
+        for index in all.indices {
+            all[index].isOpenInApp = found.open.contains(all[index].id)
+            if all[index].appSession != nil { all[index].appFolder = found.folders[all[index].id] }
         }
-        return tasks + Self.sorted(apps, createdAt: nil)
+        return availability(of: all)
+    }
+
+    /// The sessions as they stand now, for the composer to keep up with BriefBar's tasks while it's open: which ones a task
+    /// works in, or in whose folders, as when two of the app's sessions share a checkout; opening such a session in the app,
+    /// or starting another run in it, would fork its history or mix their work. Everything else stays as it was found.
+    func availability(of choices: [SessionChoice]) -> [SessionChoice] {
+        let folders = busyFolders()
+        let active = Set(entries.filter { $0.status.phase.isActive }.map(\.id))
+        return choices.map { choice in
+            var choice = choice
+            choice.isBusy = active.contains(choice.id) || isWorking(inSession: choice.id)
+            choice.isFolderBusy = choice.folder.map { folders.contains(Self.folderKey($0)) } ?? false
+            return choice
+        }
     }
 
     /// The folder a session works in: an earlier task's worktree, or the folder one of the app's sessions says.

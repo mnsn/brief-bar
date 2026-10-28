@@ -372,6 +372,7 @@ private struct DatabaseError: Error {
         #expect(!other.isBusy)
         #expect(other.isFolderBusy)
         #expect(other.isUnavailable)
+        #expect(other.folder.map(CopilotTasksStore.folderKey) == CopilotTasksStore.folderKey(checkout))
         // Sharing the checkout, both are on the pull request's branch.
         #expect(other.reasons == [.recordedByCopilot, .onItsBranch])
         #expect(choices.first { $0.id == onBranch }?.isBusy == true)
@@ -397,10 +398,24 @@ private struct DatabaseError: Error {
         #expect(launched.withLock { $0 } == 0)
         #expect(store.pending.isEmpty)
 
-        // Once that task is done, the folder is free again.
+        // Once that task is done, as BriefBar sees it end, the folder is free again, and the sessions the composer found
+        // free up without it opening again.
         store.settings.copilotRuns[0].process = DetachedProgram.Handle(pid: 0, startedAt: nil)
+        store.settings.copilotRuns[0].ended = .finished
         #expect(!store.isWorking(inFolder: checkout))
         #expect(store.busyReason(for: other) == nil)
+        let freed = store.availability(of: choices)
+        #expect(freed.allSatisfy { !$0.isUnavailable })
+        #expect(freed.map(\.id) == choices.map(\.id))
+        #expect(freed.map(\.reasons) == choices.map(\.reasons))
+        #expect(CopilotTasksStore.suggestedChoice(freed, for: subject, continuable: nil, createdAt: nil) != nil)
+
+        // A task that starts in one of them takes both again, as it gets ready.
+        store.launchForTests = { _, _, _ in throw LaunchError.couldntStart("not now") }
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
+        let taken = store.availability(of: freed)
+        #expect(taken.first { $0.id == recorded }?.isBusy == true)
+        #expect(taken.first { $0.id == onBranch }?.isFolderBusy == true)
     }
 
     /// Another of the app's sessions that works in the same folder and runs a turn now keeps the CLI out of it: only you

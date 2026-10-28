@@ -1097,7 +1097,9 @@ BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
 its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
 suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it. So
 is one that works in the same folder as such a task (`CopilotTasksStore.busyFolders`), since two of the
-app's sessions can share a checkout, and their work would mix.
+app's sessions can share a checkout, and their work would mix. The composer keeps up while it's open
+(`CopilotTasksStore.availability`): a session frees up once the task working in it, or in its folder, is
+done, and one that a task starts in is taken, while where the task goes and its prompt stay as they are.
 
 The prompt is for where Copilot works (`CopilotComposerView.writtenPrompt`). A pull request's is for a
 worktree of BriefBar's, detached at its latest commit, for a new session and a pull request task's
