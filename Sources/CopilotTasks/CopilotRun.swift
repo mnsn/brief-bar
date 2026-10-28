@@ -83,6 +83,12 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         return "this task"
     }
 
+    /// It works in a worktree BriefBar made for a pull request, detached at its latest commit: a pull request's task, not
+    /// one that went on with a work item's task, which kept its own checkout, nor with one of the Copilot app's sessions.
+    public var worksInPullRequestWorktree: Bool {
+        onPullRequest != nil && workItem == nil && isAppSession != true
+    }
+
     /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).
     public func events(in copilotHome: URL) -> URL {
         copilotHome.appendingPathComponent("session-state", isDirectory: true)

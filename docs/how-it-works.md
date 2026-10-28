@@ -1080,26 +1080,40 @@ with it:
 - Show Links links them, because you did or through a pull request (`LinkedSession`);
 - its log has a link to it (`SessionMentions`): `…/pullrequest/<id>` or the REST API's
   `…/pullRequests/<id>` for a pull request, `…/_workitems/edit/<id>` or `…/workItems/<id>` for a work
-  item, not followed by another digit, with the organization's name shortly before. Only the logs of the
-  40 most recently active sessions are read for it, of those active since the pull request was created,
-  or in the last 30 days for a work item; each in chunks, without following a symbolic link, until its
-  first mention.
+  item, not followed by another digit, in a link to its organization, read from the link itself:
+  `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`. Only the logs
+  of the 40 most recently active sessions are read for it, of those active since the pull request was
+  created, or in the last 30 days for a work item; each in chunks, without following a symbolic link,
+  until its first mention.
 
 The rest of the app's sessions follow, the most recently active first. A pull request's task goes on with
 its last task's session, as before; else with the session of the work item's task that opened it; else
 with the app's session that the app records with it, that you linked, or that's on its branch, the most
 recently active; else with one that mentions it and was there before it was created, which likely opened
 it (`CopilotTasksStore.suggestedChoice`). A work item's task starts a new session unless you choose
-one. There are two ways to send to a session that's there:
+one. A session that a task of BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
+its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
+suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it.
+
+The prompt is for where Copilot works (`CopilotComposerView.writtenPrompt`). A pull request's is for a
+worktree of BriefBar's, detached at its latest commit, for a new session and a pull request task's
+(`CopilotRun.worksInPullRequestWorktree`); and for wherever the session works otherwise
+(`PullRequestPrompt.Workplace.agent`): the app's sessions, and the work item's task that opened it, which
+kept its own checkout, as does a pull request task that went on with it. That one asks Copilot to fetch
+the pull request's latest commit and check it out where it works, and to ask first if that isn't a clone
+of its repository or has changes of its own; Push & Reply's checks that what it would push was made for
+the pull request. A work item's is the one in Settings for a new worktree, and BriefBar's own for a
+session that's there (`PromptTemplate.existingSession`), which checks the same way before it branches
+from the latest default branch, and commits only what it changed for the work item. There are two ways
+to send to a session that's there:
 
 - **Open in Copilot**, the default for the app's sessions, puts the prompt on the clipboard and opens the
   session with its `ghapp://sessions/<id>` link, for you to paste and send. The app has no way for
   another program to send a session a message, and its link for a new session doesn't reach one that's
   there. Copilot then works with the session's own model, mode and permissions: the CLI's `--deny-tool`
-  limits don't apply, only the prompt's words. A pull request's prompt for such a session
-  (`PullRequestPrompt.Workplace.agent`) asks it to fetch the pull request's latest commit and check it
-  out where it works, and to ask first if that isn't a clone of its repository or has changes of its
-  own. The comments the prompt quotes are handed off then.
+  limits don't apply, only the prompt's words. It needs an app that opens `ghapp://` links, which only
+  the Copilot app does: without one, it isn't offered. The comments the prompt quotes are handed off
+  only once the session opened; if it didn't, the window stays open and says so.
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without

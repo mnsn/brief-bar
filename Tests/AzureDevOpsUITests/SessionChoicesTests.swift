@@ -252,13 +252,14 @@ private struct DatabaseError: Error {
     @Test func handsThePromptToTheSessionInTheCopilotApp() throws {
         let store = store(home: URL(fileURLWithPath: "/nonexistent"))
         var opened: [(String, String)] = []
-        store.openForTests = { opened.append(($0, $1)) }
+        var opens = true
+        store.openForTests = { opened.append(($0, $1)); return opens }
         var handed: [String] = []
         store.handedOff = { _, prompt in handed.append(prompt) }
         let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
         let session = choice(onBranch, reasons: [.onItsBranch], active: 0)
 
-        store.openInCopilot(session, prompt: "Fix the comments", handOff: handOff)
+        #expect(store.openInCopilot(session, prompt: "Fix the comments", handOff: handOff) == nil)
         #expect(opened.map(\.0) == [onBranch])
         #expect(opened.map(\.1) == ["Fix the comments"])
         // It's in your hands now: its comments leave Needs You.
@@ -267,9 +268,123 @@ private struct DatabaseError: Error {
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
 
+        // When it doesn't open, nothing's handed off: the comments still wait on you, and the window says why.
+        opens = false
+        #expect(store.openInCopilot(session, prompt: "Fix them again", handOff: handOff) == CopilotTasksStore.cantOpenInApp)
+        #expect(opened.count == 2)
+        #expect(handed == ["Fix the comments"])
+
         store.settings.copilotEnabled = false
-        store.openInCopilot(session, prompt: "Again", handOff: nil)
-        #expect(opened.count == 1)
+        #expect(store.openInCopilot(session, prompt: "Again", handOff: nil) != nil)
+        #expect(opened.count == 2)
+    }
+
+    /// Without the Copilot app, nothing opens its `ghapp://` links: BriefBar doesn't try, leaves the clipboard alone, and
+    /// hands nothing off.
+    @Test func handsNothingOffWhenNothingOpensTheAppsSessions() {
+        let store = store(home: URL(fileURLWithPath: "/nonexistent"))
+        store.opensLinksForTests = false
+        var handed = 0
+        store.handedOff = { _, _ in handed += 1 }
+        let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
+        #expect(!store.canOpenInApp)
+        #expect(store.openInCopilot(choice(onBranch, reasons: [], active: 0), prompt: "Fix it", handOff: handOff) == CopilotTasksStore.cantOpenInApp)
+        #expect(handed == 0)
+        store.opensLinksForTests = true
+        #expect(store.canOpenInApp)
+    }
+
+    /// A session that a task of BriefBar's works in, for another pull request, is busy: it isn't suggested, nothing opens
+    /// it in the app, and no second run starts in it, any of which would fork its history.
+    @Test func keepsOutOfASessionThatATaskWorksIn() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, sessions: [
+            (onBranch, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+        ])
+        let store = store(home: home)
+        // Working on pull request 5000 in the app's session, in a process that runs: this test's own stands in for it.
+        var elsewhere = run(onBranch, worktree: home, onPullRequest: 5000, ended: nil)
+        elsewhere.isAppSession = true
+        elsewhere.process = DetachedProgram.Handle(pid: getpid(), startedAt: nil)
+        store.settings.copilotRuns = [elsewhere]
+        #expect(store.isWorking(inSession: onBranch))
+
+        let choices = await store.sessionChoices(for: subject)
+        let busy = try #require(choices.first { $0.id == onBranch })
+        #expect(busy.isBusy)
+        #expect(busy.reasons == [.onItsBranch])
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil, createdAt: nil) == nil)
+
+        var opened = 0
+        store.openForTests = { _, _ in opened += 1; return true }
+        #expect(store.openInCopilot(busy, prompt: "Fix the comments", handOff: nil) != nil)
+        #expect(opened == 0)
+
+        let launched = Mutex(0)
+        store.launchForTests = { request, _, _ in
+            launched.withLock { $0 += 1 }
+            guard let run = request.continuing else { throw LaunchError.couldntStart("no session") }
+            return run
+        }
+        var again = elsewhere
+        again.onPullRequest = pullRequest.reference
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: home, continuing: again)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(launched.withLock { $0 } == 0)
+        #expect(store.pending.isEmpty)
+
+        // Once its process is gone, it's free again.
+        store.settings.copilotRuns[0].process = DetachedProgram.Handle(pid: 0, startedAt: nil)
+        #expect(!store.isWorking(inSession: onBranch))
+        store.stop()
+    }
+
+    // MARK: Prompts
+
+    /// Where Copilot works decides the prompt: BriefBar's worktree at the pull request's latest commit, for a new session
+    /// or a pull request task's; elsewhere, for the Copilot app's sessions and a work item's task that kept its checkout,
+    /// with the checks that go with it, Push & Reply's too.
+    @Test func writesThePromptForWhereCopilotWorks() {
+        let worktree = URL(fileURLWithPath: "/tmp/pr-4071")
+        func prompt(_ choice: SessionChoice?, _ subject: TaskSubject? = nil) -> String {
+            CopilotComposerView.writtenPrompt(
+                for: choice, subject: subject ?? self.subject, template: PromptTemplate.standard, worktreePrompt: "worktree",
+                sessionPrompt: "session", baseBranch: "main"
+            )
+        }
+        let fixingRun = run(fixing, worktree: worktree, onPullRequest: 4071)
+        #expect(fixingRun.worksInPullRequestWorktree)
+        #expect(prompt(nil) == "worktree")
+        #expect(prompt(choice(fixing, reasons: [.earlierTask], active: 0, task: fixingRun)) == "worktree")
+        #expect(prompt(choice(onBranch, reasons: [.onItsBranch], active: 0)) == "session")
+
+        // A pull request task that went on with the work item's task that opened it keeps that task's checkout.
+        var kept = run(opener, worktree: worktree, onPullRequest: 4071, workItem: 4217)
+        #expect(!kept.worksInPullRequestWorktree)
+        #expect(prompt(choice(opener, reasons: [.earlierTask], active: 0, task: kept)) == "session")
+        let opened = run(opener, worktree: worktree, workItem: 4217, opened: 4071)
+        #expect(prompt(choice(opener, reasons: [.openedIt], active: 0, task: opened)) == "session")
+
+        // One that went on with the app's session works in the app's folder, and opens in the app by default.
+        kept.workItem = nil
+        kept.isAppSession = true
+        #expect(!kept.worksInPullRequestWorktree)
+        let appTask = choice(opener, reasons: [.earlierTask], active: 0, task: kept)
+        #expect(prompt(appTask) == "session")
+        #expect(appTask.opensInApp)
+        #expect(!choice(fixing, reasons: [.earlierTask], active: 0, task: fixingRun).opensInApp)
+
+        // A work item's: the one in Settings for a new worktree; BriefBar's own, which checks first, for a session.
+        let item = TaskWorkItem(organization: "contoso", project: "Storefront", id: 4217, type: "Task", title: "Show the total",
+                                url: URL(string: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217")!)
+        let fresh = prompt(nil, .workItem(item))
+        #expect(fresh.contains("You're in a new git worktree of this repository, detached at origin/main."))
+        let existing = prompt(choice(onBranch, reasons: [], active: 0), .workItem(item))
+        #expect(existing.hasPrefix("Work on Azure DevOps Task 4217: Show the total\nhttps://dev.azure.com/contoso/Storefront/_workitems/edit/4217"))
+        #expect(existing.contains("git status"))
+        #expect(!existing.contains("new git worktree"))
+        #expect(!existing.contains("{"))
     }
 
     /// The CLI goes on with one of the app's sessions in the folder it works in, which isn't a repository to start new

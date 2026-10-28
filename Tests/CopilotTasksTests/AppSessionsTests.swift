@@ -46,6 +46,35 @@ import Testing
         #expect(!SessionMentions.mentions(pullRequest, in: folder.appendingPathComponent("missing.jsonl")))
     }
 
+    /// The organization is the link's own: its path's first segment on dev.azure.com, or its host's first part, not a
+    /// name that only contains it, nor the name somewhere before another organization's link.
+    @Test func takesTheOrganizationFromTheLinkItself() throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let mentioned: [(String, Bool)] = [
+            ("https://dev.azure.com/notcontoso/Storefront/_git/checkout/pullrequest/4071", false),
+            ("https://dev.azure.com/contosoltd/Storefront/_git/checkout/pullrequest/4071", false),
+            ("contoso asked about https://dev.azure.com/fabrikam/Storefront/_git/checkout/pullrequest/4071", false),
+            (#"{"org":"contoso","url":"https://dev.azure.com/fabrikam/Storefront/_git/checkout/pullrequest/4071"}"#, false),
+            ("https://notcontoso.visualstudio.com/Storefront/_git/checkout/pullrequest/4071", false),
+            ("https://contoso.visualstudio.com.example.com/Storefront/_git/checkout/pullrequest/4071", false),
+            ("https://example.com/contoso/Storefront/_git/checkout/pullrequest/4071", false),
+            // Not a link at all: no scheme, or broken by a space.
+            ("dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071", false),
+            ("https://dev.azure.com/contoso/Storefront/_git/checkout /pullrequest/4071", false),
+            ("https://Dev.Azure.com/CONTOSO/Storefront/_git/checkout/pullrequest/4071", true),
+            ("https://contoso@dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071", true),
+            ("https://fabrikam@dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071", true),
+            ("http://contoso.visualstudio.com/DefaultCollection/Storefront/_git/checkout/pullrequest/4071", true),
+            ("[!4071](https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071)", true),
+            // The same number in another organization first, then this one's.
+            ("https://dev.azure.com/fabrikam/x/_git/y/pullrequest/4071 and https://dev.azure.com/contoso/x/_git/y/pullrequest/4071", true),
+        ]
+        for (text, expected) in mentioned {
+            #expect(SessionMentions.mentions(pullRequest, in: try log(text, in: folder)) == expected, "\(text)")
+        }
+    }
+
     /// A log is read in chunks: a link across two of them, or at the very end, still counts.
     @Test func findsALinkAcrossChunksAndAtTheEnd() throws {
         let folder = try makeTemporaryDirectory()

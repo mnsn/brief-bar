@@ -98,7 +98,10 @@ extension CopilotTasksStore {
         var apps = sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
-                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? [])
+                reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? []),
+                // A task of BriefBar's works in it, for another work item or pull request: opening it in the app now, or
+                // starting another run in it, would fork its history.
+                isBusy: isWorking(inSession: session.id)
             )
         }
         let open = await Task.detached(priority: .userInitiated) { [tasks, apps] in
@@ -301,23 +304,61 @@ extension CopilotTasksStore {
 
     /// Hands a task to a session in the Copilot app: copies the prompt, and opens the session there, for you to paste and
     /// send. Copilot works on it there, with the session's own model, mode and permissions, where you see it. It's in your
-    /// hands then: what `handOff` says the prompt takes care of leaves Needs You.
-    func openInCopilot(_ choice: SessionChoice, prompt: String, handOff: CommentHandOff?) {
-        guard canSend, isOn, ItemRef.session(choice.id) != nil else { return }
+    /// hands then: what `handOff` says the prompt takes care of leaves Needs You, but only once the session opened.
+    /// - Returns: why it didn't, or nil once it did.
+    @discardableResult
+    func openInCopilot(_ choice: SessionChoice, prompt: String, handOff: CommentHandOff?) -> String? {
+        guard canSend, isOn, ItemRef.session(choice.id) != nil else { return "BriefBar can't send anything now." }
+        // Opening it while Copilot works in it would fork its history.
+        if isWorking(inSession: choice.id) { return "Copilot is still working in it. Open it once it's done." }
+        let opened: Bool
         if let openForTests {
-            openForTests(choice.id, prompt)
-        } else {
+            opened = openForTests(choice.id, prompt)
+        } else if canOpenInApp {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(prompt, forType: .string)
-            Self.openInApp(choice.id)
+            opened = Self.openInApp(choice.id)
+        } else {
+            opened = false
+        }
+        guard opened else {
+            Log.app.error("Couldn't open a session in the Copilot app")
+            return Self.cantOpenInApp
         }
         Log.app.info("Handed a task to a session in the Copilot app")
         if let handOff { handedOff(handOff, prompt) }
+        return nil
     }
 
-    /// Opens a session in the Copilot app, by its `ghapp://sessions/` link.
-    static func openInApp(_ id: String) {
-        guard ItemRef.session(id) != nil, let url = URL(string: "ghapp://sessions/\(id)") else { return }
-        NSWorkspace.shared.open(url)
+    /// Whether BriefBar works in the session now, for a task it sent: one getting its worktree ready, or one whose
+    /// Copilot process still runs.
+    func isWorking(inSession id: String) -> Bool {
+        if pending.contains(where: { $0.id == id && $0.status.phase.isActive }) { return true }
+        return settings.copilotRuns.contains { $0.id == id && $0.ended == nil && DetachedProgram.isRunning($0.process) }
+    }
+
+    /// Whether an app on this Mac opens the Copilot app's `ghapp://` links: without the app, nothing does.
+    var canOpenInApp: Bool {
+        if let opensLinksForTests { return opensLinksForTests }
+        return URL(string: "ghapp://sessions").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) } != nil
+    }
+
+    static let cantOpenInApp = "No app on this Mac opens the Copilot app's sessions. Install the GitHub Copilot app, or run it with the CLI."
+
+    /// Opens a session in the Copilot app, by its `ghapp://sessions/` link: false when nothing opened it.
+    @discardableResult
+    static func openInApp(_ id: String) -> Bool {
+        guard ItemRef.session(id) != nil, let url = URL(string: "ghapp://sessions/\(id)") else { return false }
+        return NSWorkspace.shared.open(url)
+    }
+
+    /// Opens a session in the Copilot app, and says so when it can't.
+    static func openInAppOrSay(_ id: String) {
+        guard !openInApp(id) else { return }
+        let alert = NSAlert()
+        alert.messageText = "The session didn't open in Copilot"
+        alert.informativeText = "No app on this Mac opens the Copilot app's sessions. Install or open the GitHub Copilot app, then try again."
+        NSApp.activate()
+        alert.runModal()
     }
 }

@@ -395,8 +395,15 @@ session of the work item's task that opened it, or to the app's session that lik
 
 **Run with the CLI** is only there while the Copilot app doesn't have the session open: the app keeps an
 open session's history in memory and wouldn't see a turn the CLI runs in it, so the session's history
-would fork. For the same reason, don't open the session in the app until Copilot is done. For a pull
-request, the session's folder has to be a clone of its repository.
+would fork. For the same reason, don't open the session in the app until Copilot is done; and a session
+that a task of BriefBar's still works in shows as working, and can't be chosen until it's done. For a
+pull request, the session's folder has to be a clone of its repository. **Open in Copilot** needs the
+Copilot app, and the comments its prompt quotes leave **Needs You** only once the session has opened.
+
+The prompt fits where Copilot works. In a session that's already there, which may be on another branch
+or hold work of its own, a pull request's prompt asks Copilot to check out the pull request's latest
+commit only if that's safe, and to ask you first otherwise; a work item's is BriefBar's own, which checks
+the same way before it branches, rather than the one in Settings, which is for a new worktree.
 
 ### GitHub Copilot
 

@@ -99,8 +99,10 @@ final class CopilotTasksStore: ObservableObject {
     var linkedSessions: (ItemRef) -> [LinkedSession] = { _ in [] }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
-    /// Stands in for copying a prompt and opening a session in the Copilot app, in tests.
-    var openForTests: ((_ sessionId: String, _ prompt: String) -> Void)?
+    /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.
+    var openForTests: ((_ sessionId: String, _ prompt: String) -> Bool)?
+    /// Whether an app opens `ghapp://` links, in tests.
+    var opensLinksForTests: Bool?
     /// Where the Copilot app's files are, in tests; `AppSessions.home()` otherwise.
     var appHomeForTests: URL?
 
@@ -315,6 +317,11 @@ final class CopilotTasksStore: ObservableObject {
         handOff: CommentHandOff? = nil
     ) {
         guard canSend, isOn else { return }
+        // A second run in a session Copilot still works in would fork its history.
+        if let continuing, isWorking(inSession: continuing.id) {
+            Log.app.error("Didn't send a task to Copilot: it still works in that session")
+            return
+        }
         // An app's session's folder is no repository to start new work in.
         if continuing?.isAppSession != true {
             switch subject {
@@ -676,7 +683,7 @@ final class CopilotTasksStore: ObservableObject {
             let environment = await environment()
             let isOpen = AppSessions.isOpen(run.id, home: CopilotCLI.home(environment: environment)) || AppSessions.isOpen(run.id, home: appHome)
             if run.isAppSession == true || isOpen {
-                Self.openInApp(run.id)
+                Self.openInAppOrSay(run.id)
                 return
             }
             guard let copilot = CopilotCLI.locate(environment: environment) else {
@@ -701,7 +708,7 @@ final class CopilotTasksStore: ObservableObject {
     /// Opens a task's session in the Copilot app: one of the app's own, that a task went on with.
     func openSessionInApp(_ entry: CopilotTaskEntry) {
         guard let run = entry.run, run.isValid else { return }
-        Self.openInApp(run.id)
+        Self.openInAppOrSay(run.id)
     }
 
     /// Deletes the worktree's folder, after asking, and forgets the task. Its branch and pull request stay. Never the

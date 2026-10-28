@@ -7,7 +7,7 @@ import Foundation
 public enum SessionMentions {
     /// What a mention is: a link that ends with its number, in its organization.
     public struct Target: Sendable, Equatable {
-        /// The Azure DevOps organization, which a link names shortly before the number.
+        /// The Azure DevOps organization, which the link names: in its path on dev.azure.com, or in its own host.
         public var organization: String
         public var number: Int
         /// What comes right before the number in a link to it.
@@ -27,11 +27,12 @@ public enum SessionMentions {
         var needles: [[UInt8]] { prefixes.map { Array("\($0)\(number)".utf8) } }
     }
 
-    /// How far before the number the organization's name may be, in bytes: farther than in any link to it.
+    /// How far before the number its link may start, in bytes: farther than any link to it reaches.
     static let window = 512
 
-    /// Whether the log mentions it: its number right after one of its links' paths, and not followed by another digit,
-    /// with its organization's name shortly before. False for a symbolic link, or anything but a regular file.
+    /// Whether the log mentions it: its number right after one of its links' paths, not followed by another digit, in a
+    /// link to its organization, `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`.
+    /// False for a symbolic link, or anything but a regular file.
     public static func mentions(_ target: Target, in events: URL, chunkSize: Int = 1 << 20) -> Bool {
         let descriptor = open(events.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard descriptor >= 0 else { return false }
@@ -40,7 +41,7 @@ public enum SessionMentions {
         guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return false }
 
         let needles = target.needles
-        let organization = Array(target.organization.lowercased().utf8)
+        let organization = Array(target.organization.utf8).map(lowercased)
         guard !organization.isEmpty, let longest = needles.map(\.count).max() else { return false }
         // What's kept of the bytes read before: enough for a link that starts in them, and the window before it.
         let overlap = window + longest
@@ -57,7 +58,8 @@ public enum SessionMentions {
         return found(needles, organization: organization, in: buffer, isEnd: true)
     }
 
-    /// Whether the bytes hold a mention. One whose next byte hasn't been read yet waits for it, unless they're the last.
+    /// Whether the bytes hold a mention. One whose next byte hasn't been read yet waits for it, unless they're the last:
+    /// it's then at least `window` bytes from the start of the bytes kept, so its link's start is still there.
     static func found(_ needles: [[UInt8]], organization: [UInt8], in buffer: [UInt8], isEnd: Bool) -> Bool {
         buffer.withUnsafeBytes { bytes in
             guard let base = bytes.baseAddress else { return false }
@@ -70,15 +72,75 @@ public enum SessionMentions {
                     start = at + 1
                     if next == bytes.count, !isEnd { continue }
                     if next < bytes.count, (0x30...0x39).contains(bytes[next]) { continue }
-                    let from = max(0, at - window)
-                    let before = bytes[from..<at].map { (0x41...0x5A).contains($0) ? $0 | 0x20 : $0 }
-                    let named = before.withUnsafeBytes { window in
-                        organization.withUnsafeBytes { memmem(window.baseAddress, window.count, $0.baseAddress, $0.count) } != nil
-                    }
-                    if named { return true }
+                    if self.organization(ofLinkTo: at, in: bytes) == organization { return true }
                 }
             }
             return false
         }
+    }
+
+    /// The organization of the Azure DevOps link whose path reaches `end`, lowercased: its path's first segment on
+    /// `dev.azure.com`, or the first part of an organization's own host, `<organization>.visualstudio.com`. Nil when the
+    /// bytes before `end`, within `window`, aren't part of such a link: back to its `http://` or `https://`, nothing that
+    /// ends a link, such as a space or a quote.
+    static func organization(ofLinkTo end: Int, in bytes: UnsafeRawBufferPointer) -> [UInt8]? {
+        let floor = max(0, end - window)
+        var index = end - 1
+        var separator: Int?
+        while index >= floor {
+            let byte = bytes[index]
+            if endsLink(byte) { return nil }
+            if byte == slash, index >= 2, bytes[index - 1] == slash, bytes[index - 2] == colon {
+                separator = index - 2
+                break
+            }
+            index -= 1
+        }
+        guard let separator, hasScheme(endingAt: separator, in: bytes) else { return nil }
+        // The host, without a user name or a port.
+        let hostStart = separator + 3
+        var hostEnd = hostStart
+        while hostEnd < end, bytes[hostEnd] != slash { hostEnd += 1 }
+        guard hostEnd < end else { return nil }
+        var host = bytes[hostStart..<hostEnd].map(lowercased)
+        if let at = host.lastIndex(of: 0x40) { host = Array(host[(at + 1)...]) }
+        if let port = host.firstIndex(of: colon) { host = Array(host[..<port]) }
+        if host == devAzure {
+            let segmentStart = hostEnd + 1
+            var segmentEnd = segmentStart
+            while segmentEnd < end, bytes[segmentEnd] != slash { segmentEnd += 1 }
+            guard segmentEnd < end, segmentEnd > segmentStart else { return nil }
+            return bytes[segmentStart..<segmentEnd].map(lowercased)
+        }
+        if host.count > visualStudio.count, host.suffix(visualStudio.count).elementsEqual(visualStudio) {
+            return Array(host.dropLast(visualStudio.count))
+        }
+        return nil
+    }
+
+    private static let slash = UInt8(ascii: "/")
+    private static let colon = UInt8(ascii: ":")
+    private static let devAzure = Array("dev.azure.com".utf8)
+    private static let visualStudio = Array(".visualstudio.com".utf8)
+
+    /// `http` or `https`, right before the `://` at `separator`.
+    private static func hasScheme(endingAt separator: Int, in bytes: UnsafeRawBufferPointer) -> Bool {
+        ["https", "http"].contains { scheme in
+            let letters = Array(scheme.utf8)
+            guard separator >= letters.count else { return false }
+            return bytes[(separator - letters.count)..<separator].map(lowercased).elementsEqual(letters)
+        }
+    }
+
+    /// What can't be part of a link: spaces and control characters, quotes and backticks, brackets, and the backslash
+    /// that escapes a quote in JSON.
+    private static func endsLink(_ byte: UInt8) -> Bool {
+        byte <= 0x20 || byte == 0x7F || linkEnds.contains(byte)
+    }
+
+    private static let linkEnds = Set("\"'`<>()[]{}|^\\".utf8)
+
+    private static func lowercased(_ byte: UInt8) -> UInt8 {
+        (0x41...0x5A).contains(byte) ? byte | 0x20 : byte
     }
 }
