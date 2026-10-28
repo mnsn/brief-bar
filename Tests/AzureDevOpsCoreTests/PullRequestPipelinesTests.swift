@@ -292,6 +292,63 @@ import Testing
         #expect(await engine.nextDelay() > 100)
     }
 
+    @Test func skippedOldAccountPRsDoNotDisablePinnedListBackoff() async {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/sam")
+        let pinned = PipelineRef(organization: Fixture.org, projectId: "p1", projectName: "Shop", definitionId: 31, name: "CI")
+        server.on("/p1/_apis/build/builds") { _ in .status(500) }
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens),
+            configuration: .init(pipelines: [pinned], pullRequests: [makePR()], pullRequestAccount: "tenant/robin")
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .unreachable("Azure DevOps answered with HTTP 500."))
+        #expect(await engine.nextDelay() == 120)
+        await engine.refreshNow()
+        #expect(await engine.nextDelay() == 240)
+        #expect(server.requests.count == 2)
+    }
+
+    @Test func PRsClosedDuringRefreshDoNotCountAsSuccessfulListReads() async throws {
+        let server = StubServer()
+        let tokens = HeldTokens(server.id, holdAt: 2)
+        let pinned = PipelineRef(organization: Fixture.org, projectId: "p1", projectName: "Shop", definitionId: 31, name: "CI")
+        server.on("/p1/_apis/build/builds") { _ in .status(500) }
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: .init(pipelines: [pinned], pullRequests: [makePR()])
+        ) { _ in }
+        let refresh = Task { await engine.refreshNow() }
+        try await waitUntilHeld(tokens)
+        await engine.setConfiguration(.init(pipelines: [pinned]))
+        await tokens.release()
+        await refresh.value
+        #expect(server.requests.count == 1)
+        #expect(await engine.nextDelay() == 120)
+        #expect(await engine.currentSnapshot().problem == .unreachable("Azure DevOps answered with HTTP 500."))
+    }
+
+    @Test func successfulPRListKeepsPinnedFailurePartialWithoutBackoff() async {
+        let server = StubServer()
+        let pinned = PipelineRef(organization: Fixture.org, projectId: "p1", projectName: "Shop", definitionId: 31, name: "CI")
+        server.on("/p1/_apis/build/builds") { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if query.contains(URLQueryItem(name: "branchName", value: "refs/pull/7/merge")) {
+                return .json(Fixture.list([]))
+            }
+            return .status(500)
+        }
+        let engine = PipelinesEngine(
+            client: server.client(), configuration: .init(pipelines: [pinned], pullRequests: [makePR()])
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.nextDelay() == 60)
+        #expect(await engine.currentSnapshot().problem == .unreachable(
+            "Couldn't read some pipelines: Azure DevOps answered with HTTP 500."
+        ))
+        #expect(server.requests.count == 2)
+    }
+
     @Test func demoUsesSeparateRunsForEachPRAndIncludesOutdatedResults() {
         let prs = DemoData.records(now: t(0)).filter { $0.role == .author && $0.pullRequest.status == .active }.map(\.pullRequest)
         let groups = DemoData.pullRequestPipelines(prs, now: t(0))

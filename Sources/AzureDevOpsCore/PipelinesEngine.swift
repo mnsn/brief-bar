@@ -307,9 +307,11 @@ public actor PipelinesEngine {
         }
         // Errors reading the lists, which say whether the page is up to date; a run's stages are extra.
         var errors: [ADOError] = []
+        var attemptedLists = 0
         var throttled: ADOError?
         for key in groups.keys.sorted() {
             guard let pipelines = groups[key], let first = pipelines.first else { continue }
+            attemptedLists += 1
             do {
                 let url = ADOEndpoint.builds(
                     organization: first.organization, projectId: first.projectId, definitionIds: pipelines.map(\.definitionId),
@@ -335,6 +337,7 @@ public actor PipelinesEngine {
             guard configuration.pullRequestAccount == account,
                   self.configuration.pullRequestAccount == account else { break }
             guard self.configuration.pullRequests.contains(where: { $0.key == pr.key }) else { continue }
+            attemptedLists += 1
             do {
                 let builds = try await get(ADOEndpoint.pullRequestBuilds(pr), as: ADOList<ADOBuild>.self).value
                 // Configuration can change while a request is in flight, including a PR closing.
@@ -410,7 +413,7 @@ public actor PipelinesEngine {
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
-        } else if let error = errors.first, errors.count >= groups.count + configuration.pullRequests.count {
+        } else if let error = errors.first, errors.count == attemptedLists {
             problem = PulseProblem.from(error)
             failures += 1
         } else if let error = errors.first {
