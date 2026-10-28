@@ -178,6 +178,8 @@ struct GeneralPage: View {
 
             LinksSetting(links: model.services.links)
 
+            NotificationsSetting(recent: model.services.recentNotifications)
+
             if loginItem.isAvailable {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle("Launch BriefBar at Login", isOn: Binding(
@@ -200,6 +202,36 @@ struct GeneralPage: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit BriefBar") { NSApp.terminate(nil) }
+            }
+        }
+    }
+}
+
+/// The Notifications page, off until you turn it on, and how long it keeps what BriefBar posted: in Settings › General.
+struct NotificationsSetting: View {
+    @ObservedObject var recent: RecentNotifications
+
+    static let title = "Notifications Page"
+    static let explanation = """
+        Lists what BriefBar notified you of, from every source, on a page in its window, after the Overview, so you can \
+        see what you missed, even what macOS didn't show. Click one to open what it's about. The page shows only while \
+        it lists something. BriefBar keeps them in memory only, so the page starts empty when BriefBar restarts.
+        """
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(Self.title, isOn: Binding(get: { recent.isOn }, set: { recent.setOn($0) }))
+            Text(Self.explanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if recent.isOn {
+                Picker("Keep Notifications For", selection: Binding(get: { recent.keepHours }, set: { recent.setKeepHours($0) })) {
+                    ForEach(NotificationsPage.keepChoices, id: \.hours) { Text($0.title).tag($0.hours) }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .padding(.top, 4)
             }
         }
     }

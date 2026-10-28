@@ -9,6 +9,16 @@
   marked **Outdated**, and results whose commit cannot be verified say so rather than counting as
   current passes. A card disappears when its pull request is merged or abandoned. Pinned pipelines,
   their counts and widgets stay unchanged.
+- **Clicking a notification shows what it's about.** BriefBar opened the comment or the run in your
+  browser, but macOS then brought BriefBar to the front, over it, as if you'd opened BriefBar again,
+  so it looked as if nothing happened. It now opens it once BriefBar is in front, and doesn't open its
+  own list for the click.
+- **A Notifications page, so you can see what you missed.** Turn on **Notifications Page** in
+  **Settings › General**, and BriefBar's window lists what BriefBar notified you of, the newest first,
+  right after the Overview: banners that went away, notifications macOS didn't show, during a Focus
+  or with notifications off for BriefBar, and every update of a refresh that had more than its
+  notifications show. Click one to open what it's about. It keeps them for a day, or 4 hours or 3
+  days, in memory only, and shows only while it lists something.
 - **Send comments to the session that opened the pull request.** Fixing a pull request's comments, build
   or conflicts, reviewing it, or sending a sprint's work item to Copilot no longer always starts a new
   session. The window's new **Session** menu lists where the task can go instead: BriefBar's earlier tasks

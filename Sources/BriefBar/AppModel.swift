@@ -74,9 +74,12 @@ final class AppModel: ObservableObject {
         services.closePanels = { [weak self] in self?.closePanels() }
         services.openWindow = { [weak self] section in self?.openWindow(at: section) }
         services.hasPage = { [weak self] section in self?.hasPage(section) ?? false }
-        services.notifier.onOpen = { [weak self] source, info in
-            guard let self, let source, self.state(of: source) == .on else { return }
-            self.source(source)?.openNotification(info)
+        services.notifier.onOpen = { [weak self] click in
+            guard let self else { return }
+            // One that only counted the updates: the Notifications page lists them, while the window has it.
+            if click.sumsUp, self.openNotificationsPage() { return }
+            guard let source = click.source, self.state(of: source) == .on else { return }
+            self.source(source)?.openNotification(click.userInfo)
         }
 
         // Opening something hands focus to another app; don't leave a list hanging open.
@@ -156,6 +159,7 @@ final class AppModel: ObservableObject {
         source.stop()
         source.deleteSavedData()
         services.notifier.removeDelivered(from: id)
+        services.recentNotifications.forget(id)
         choices.turnOff(id)
         choices.save(to: services.defaults)
         Log.app.info("Turned off \(id.rawValue, privacy: .public)")
@@ -436,14 +440,14 @@ final class AppModel: ObservableObject {
         showInDock()
     }
 
-    /// Opens one window, at its Overview if it has one.
-    func openWindow(item id: String) {
+    /// Opens one window, at `page`, or at its Overview if it has one.
+    func openWindow(item id: String, at page: SectionID? = nil) {
         closePanels()
         guard let entry = visibleItems(.windows).first(where: { $0.id == id }) else { return }
         let window = windows[entry.id] ?? WindowHost(id: entry.id, model: self)
         windows[entry.id] = window
         window.update(sections: entry.sections)
-        window.show(at: nil)
+        window.show(at: page)
         showInDock()
     }
 
@@ -454,6 +458,31 @@ final class AppModel: ObservableObject {
         } else {
             openWindow(at: nil)
         }
+    }
+
+    // MARK: Notifications
+
+    /// Whether a window has the Notifications page: the one with the Overview has it, while the page is on and lists
+    /// something.
+    func hasNotificationsPage(window id: String) -> Bool {
+        services.recentNotifications.showsPage && overviewLink.window?.id == id
+    }
+
+    /// Opens the window that has the Notifications page, at that page. False when none has it.
+    @discardableResult
+    func openNotificationsPage() -> Bool {
+        guard let window = overviewLink.window, hasNotificationsPage(window: window.id) else { return false }
+        openWindow(item: window.id, at: WindowPages.notifications)
+        return true
+    }
+
+    /// Opens what a notification on the Notifications page is about, as clicking it in Notification Center does, which
+    /// then has no need to keep it.
+    func open(_ entry: NotificationHistory.Entry) {
+        services.recentNotifications.markSeen(entry.id)
+        services.notifier.removeDelivered(entry.id)
+        guard state(of: entry.source) == .on else { return }
+        source(entry.source)?.openNotification(entry.userInfo)
     }
 
     /// Whether a window has a page for `section`: not once you've hidden it from windows.

@@ -38,4 +38,23 @@ import Testing
         #expect(WindowPages(sections: []).current(chosen: nil) == nil)
         #expect(WindowPages.overview.source == nil)
     }
+
+    @Test func theNotificationsPageFollowsTheOverviewWhileItShows() {
+        let sections: [SectionID] = [.teamsChats, .azureDevOpsPullRequests]
+        let window = WindowPages(sections: sections, notifications: true)
+        #expect(window.pages == [WindowPages.overview, WindowPages.notifications, .teamsChats, .azureDevOpsPullRequests])
+        #expect(window.current(chosen: nil) == WindowPages.overview)
+        #expect(window.current(chosen: WindowPages.notifications) == WindowPages.notifications)
+        #expect(window.page(for: WindowPages.notifications) == WindowPages.notifications)
+        #expect(WindowPages.notifications.source == nil)
+
+        // Once there's nothing to show, the window goes back to its Overview.
+        let empty = WindowPages(sections: sections)
+        #expect(empty.pages == [WindowPages.overview, .teamsChats, .azureDevOpsPullRequests])
+        #expect(empty.current(chosen: WindowPages.notifications) == WindowPages.overview)
+        #expect(empty.page(for: WindowPages.notifications) == nil)
+
+        // A window without an Overview has no Notifications page either.
+        #expect(WindowPages(sections: [.copilotSessions], notifications: true).pages == [.copilotSessions])
+    }
 }
