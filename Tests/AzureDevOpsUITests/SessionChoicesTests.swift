@@ -598,16 +598,27 @@ private struct DatabaseError: Error {
 
         // That's done; another of the app's sessions runs a turn in a folder of it, as the app's database says.
         store.settings.copilotRuns = [earlier]
-        try database(at: home, sessions: [(other, "Cart follow-up", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z")], running: [other])
-        let state = home.appendingPathComponent("session-state/\(other)", isDirectory: true)
-        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-        try Data("cwd: \(sources.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
-        let turn = "Another Copilot session is working in it now. Remove it once that's done."
+        try database(at: home, sessions: [
+            (other, "Cart follow-up", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+            (fixing, "Fix Comments", "project", "fix-totals", "shop", nil, "2026-10-26T10:00:00.000Z"),
+        ], running: [other])
+        for (id, folder) in [(other, sources), (fixing, worktree)] {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("cwd: \(folder.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        }
+        let turn = "Copilot is working in it now, in a session of the Copilot app. Remove it once that's done."
         #expect(await store.worktreeInUse(earlier) == turn)
         await #expect(throws: WorktreeInUse(reason: turn)) { try await store.deleteWorktree(of: earlier) }
 
-        // Once that turn ended, git goes ahead: here, where the folder isn't one of its worktrees, it says why it can't.
+        // The task's own session, once you went on with it in the app: its process is long gone, but the app's turn isn't.
         try setRunning(other, false, home: home)
+        try setRunning(fixing, true, home: home)
+        #expect(await store.worktreeInUse(earlier) == turn)
+        await #expect(throws: WorktreeInUse(reason: turn)) { try await store.deleteWorktree(of: earlier, force: true) }
+
+        // Once that turn ended, git goes ahead: here, where the folder isn't one of its worktrees, it says why it can't.
+        try setRunning(fixing, false, home: home)
         #expect(await store.worktreeInUse(earlier) == nil)
         do {
             try await store.deleteWorktree(of: earlier)

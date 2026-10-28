@@ -132,9 +132,10 @@ public enum AppSessions {
     }
 
     /// Whether another of the app's sessions runs a turn now, by its own flag, in the same checkout as the folder
-    /// (`checkoutKey`), as the app's database and the sessions' state say now. Never `id`, the session Copilot would go on
-    /// with. None when the database can't be read.
-    public static func anotherRunsATurn(inCheckoutOf folder: URL, besides id: String, home: URL) -> Bool {
+    /// (`checkoutKey`), as the app's database and the sessions' state say now. Not `id`, when given: the session Copilot
+    /// would go on with, which the app runs a turn in only while it has it open (`isOpen`). None when the database can't
+    /// be read.
+    public static func anotherRunsATurn(inCheckoutOf folder: URL, besides id: String?, home: URL) -> Bool {
         let others = ((try? running(home: home)) ?? []).filter { $0 != id }
         guard !others.isEmpty else { return false }
         let checkout = checkoutKey(folder)

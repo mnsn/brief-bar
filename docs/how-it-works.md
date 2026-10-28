@@ -1208,8 +1208,9 @@ can read. Turning Azure DevOps off forgets the tasks and the repositories, and d
 printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
-task BriefBar sent in another session or in another of the app's sessions running a turn there, as it
-looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`). What **Open in Copilot** hands over isn't kept. Copilot's
+task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
+own too once you went on with it in the app, as it looks right before git deletes it, after each answer
+(`CopilotTasksStore.worktreeInUse`). What **Open in Copilot** hands over isn't kept. Copilot's
 branches, pull requests and sessions are yours, and stay.
 
 ### Notifications

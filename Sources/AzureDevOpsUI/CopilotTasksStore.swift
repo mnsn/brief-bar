@@ -801,14 +801,14 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// Why a task's worktree can't be removed now, or nil: Copilot works in its checkout for a task BriefBar sent, in its
-    /// session or another, such as one of the app's sessions that a task went on with there; or another of the app's
-    /// sessions runs a turn there.
+    /// session or another, such as one of the app's sessions that a task went on with there; or one of the app's sessions
+    /// runs a turn there, the task's own too, once you went on with it in the app.
     func worktreeInUse(_ run: CopilotRun) async -> String? {
         if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
             return "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
         }
-        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: run.id) {
-            return "Another Copilot session is working in it now. Remove it once that's done."
+        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: nil) {
+            return "Copilot is working in it now, in a session of the Copilot app. Remove it once that's done."
         }
         return nil
     }

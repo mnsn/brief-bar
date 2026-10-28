@@ -350,10 +350,10 @@ extension CopilotTasksStore {
 
     /// Whether another of the Copilot app's sessions runs a turn now, by the app's own flag, in the same checkout as the
     /// folder (`checkoutKey`), as the app's database and the sessions' state say now, not as the window found them; and
-    /// whether the window lists it as one of the app's sessions or as an earlier task that went on with one. Never `id`,
-    /// the session Copilot would go on with (`AppSessions.anotherRunsATurn`). Read off the main thread, and not at all
-    /// while Send Work to Copilot is off.
-    func anotherSessionRuns(inCheckoutOf folder: URL, besides id: String) async -> Bool {
+    /// whether the window lists it as one of the app's sessions or as an earlier task that went on with one. Not `id`,
+    /// when given: the session Copilot would go on with (`AppSessions.anotherRunsATurn`). Read off the main thread, and
+    /// not at all while Send Work to Copilot is off.
+    func anotherSessionRuns(inCheckoutOf folder: URL, besides id: String?) async -> Bool {
         guard canSend, isOn else { return false }
         let home = appHome
         return await Task.detached(priority: .userInitiated) {
