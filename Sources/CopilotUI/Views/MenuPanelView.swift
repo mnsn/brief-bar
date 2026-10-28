@@ -106,7 +106,7 @@ struct MenuPanelView: View {
                     Button("Clear") { store.clear(phase) }
                         .buttonStyle(.borderless)
                         .font(.system(size: 11))
-                        .help("Mark these as seen")
+                        .help("Move these sessions to Idle")
                 }
             }
             .padding(.horizontal, 8)

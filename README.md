@@ -386,15 +386,18 @@ to an agent that may run any command: send only what you'd hand to Copilot yours
 | **Stopped** | Interrupted, Error, Stopped responding | You cancelled the turn, it failed, or it went silent mid-turn for 90 s |
 | **Idle** | Idle | Everything else |
 
-**Done** and **Stopped** sessions stay highlighted until you've seen them: you open the session, click
-**Clear** on its group, or **Keep Finished Sessions For** passes. Click a session to open it in the
+**Done** and **Stopped** sessions stay highlighted until you click **Clear** on their group or
+**Keep Finished Sessions For** passes. **Move Viewed Sessions to Idle**, off by default, also hides
+them after you open or view them in Copilot; turning it off shows recent viewed completions again,
+but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
 
 The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
 "Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the
 app doesn't list them. Each is in **Running** while it gets ready and works, then in **Done** or
 **Stopped**, as a session is; one you stopped yourself goes straight to **Idle**. Click one to open its
-pull request, or its work item; right-click it for the task's own menu.
+pull request, or its work item; right-click it for the task's own menu. The same **Move Viewed Sessions
+to Idle** setting controls whether opening a finished task dismisses it.
 
 ### GitHub
 
@@ -569,6 +572,7 @@ right-click menu of its widget), next to **Launch BriefBar at Login**, **Check f
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
+| | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
 

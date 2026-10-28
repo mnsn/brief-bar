@@ -3,6 +3,7 @@ import Combine
 import BriefBarCore
 import BriefBarUI
 import CopilotCore
+import Foundation
 
 /// Main-thread view model: turns engine snapshots into the sorted, resolved session list, with the tasks BriefBar sent to
 /// the Copilot CLI, which the app doesn't list.
@@ -18,6 +19,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var tasks: [String: SentTask] = [:]
 
     private let settings: AppSettings
+    private let openSession: @MainActor (String) -> Void
     /// Where the Copilot app's files are; nil for the demo without made-up data, which reads nothing.
     let paths: CopilotPaths?
     /// The tasks BriefBar sent to the Copilot CLI, as the source that sent them says.
@@ -29,9 +31,13 @@ final class SessionStore: ObservableObject {
     /// Show Links: the engine reads where each session's work goes too.
     private var readsLinks = false
 
-    init(settings: AppSettings, paths: CopilotPaths?, sentTasks: SentTasks? = nil) {
+    init(
+        settings: AppSettings, paths: CopilotPaths?, sentTasks: SentTasks? = nil,
+        openSession: @escaping @MainActor (String) -> Void = CopilotApp.open
+    ) {
         self.settings = settings
         self.paths = paths
+        self.openSession = openSession
         self.sentTasks = sentTasks
     }
 
@@ -58,8 +64,10 @@ final class SessionStore: ObservableObject {
         engine.start()
 
         settings.$keepEndedMinutes.map { _ in () }
-            .merge(with: settings.$acknowledged.map { _ in () })
-            .dropFirst(2)
+            .merge(with: settings.$cleared.map { _ in () },
+                   settings.$viewed.map { _ in () },
+                   settings.$moveViewedToIdle.map { _ in () })
+            .dropFirst(4)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -109,15 +117,16 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session in the Copilot app, or a task what it's for; opening a finished one also dismisses it.
+    /// Opens the session or task; only the opt-in setting dismisses its recent completion.
     func open(_ session: SessionSnapshot) {
-        if session.phase == .done || session.phase == .stopped {
-            settings.acknowledge([session.id])
+        if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
+            settings.markViewed([session.id])
+            recompute()
         }
         if let task = tasks[session.id] {
             task.open()
         } else {
-            CopilotApp.open(sessionId: session.id)
+            openSession(session.id)
         }
     }
 
@@ -127,7 +136,8 @@ final class SessionStore: ObservableObject {
     }
 
     func clear(_ phase: DisplayPhase) {
-        settings.acknowledge(sessions(in: phase).map(\.id))
+        settings.clear(sessions(in: phase).map(\.id))
+        recompute()
     }
 
     func receive(_ state: EngineSnapshot) {
@@ -142,20 +152,23 @@ final class SessionStore: ObservableObject {
 
     private func recompute() {
         let now = Date()
-        let options = ResolverOptions(recentWindow: TimeInterval(settings.keepEndedMinutes * 60))
+        let options = ResolverOptions(
+            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle
+        )
         var resolved = state.records.map {
             StatusResolver.snapshot(
-                for: $0, now: now, options: options, view: state.view, acknowledgedAt: settings.acknowledged[$0.id]
+                for: $0, now: now, options: options, view: state.view,
+                clearedAt: settings.cleared[$0.id], viewedAt: settings.viewed[$0.id]
             )
         }
 
-        // A session the user is looking at in the Copilot app right now doesn't need highlighting.
-        if CopilotApp.isFrontmost, let viewed = state.view.viewedSessionId,
+        if settings.moveViewedToIdle, CopilotApp.isFrontmost, let viewed = state.view.viewedSessionId,
            let index = resolved.firstIndex(where: { $0.id == viewed }),
            resolved[index].phase == .done || resolved[index].phase == .stopped {
-            settings.acknowledge([viewed], at: now)
+            settings.markViewed([viewed], at: now)
             resolved[index] = StatusResolver.snapshot(
-                for: state.records[index], now: now, options: options, view: state.view, acknowledgedAt: now
+                for: state.records[index], now: now, options: options, view: state.view,
+                clearedAt: settings.cleared[viewed], viewedAt: now
             )
         }
 
@@ -170,7 +183,9 @@ final class SessionStore: ObservableObject {
         let listed = Set(resolved.map(\.id))
         for task in sent where !listed.contains(task.id) && shown[task.id] == nil {
             shown[task.id] = task
-            resolved.append(Self.snapshot(of: task, now: now, options: options, acknowledgedAt: settings.acknowledged[task.id]))
+            resolved.append(Self.snapshot(
+                of: task, now: now, options: options, clearedAt: settings.cleared[task.id], viewedAt: settings.viewed[task.id]
+            ))
         }
 
         let sorted = SessionOrdering.sorted(resolved)
@@ -183,9 +198,9 @@ final class SessionStore: ObservableObject {
     }
 
     /// A task BriefBar sent, as the list shows it with the sessions: running while it gets ready and works; once it ends,
-    /// highlighted until you've seen it or Keep Finished Sessions For passes, as a session is. One you stopped yourself
+    /// highlighted until dismissed or Keep Finished Sessions For passes, as a session is. One you stopped yourself
     /// is idle at once.
-    static func snapshot(of task: SentTask, now: Date, options: ResolverOptions, acknowledgedAt: Date?) -> SessionSnapshot {
+    static func snapshot(of task: SentTask, now: Date, options: ResolverOptions, clearedAt: Date?, viewedAt: Date?) -> SessionSnapshot {
         let reason: StatusReason
         switch task.stage {
         case .starting: reason = .starting
@@ -194,10 +209,11 @@ final class SessionStore: ObservableObject {
         case .failed: reason = .failed
         case .stopped: reason = .interrupted
         }
-        let isSeen = task.stoppedByYou || acknowledgedAt.map { $0 >= (task.since ?? .distantPast) } == true
+        let isCleared = clearedAt.map { $0 >= (task.since ?? .distantPast) } == true
+        let isViewed = options.moveViewedToIdle && viewedAt.map { $0 >= (task.since ?? .distantPast) } == true
         return StatusResolver.snapshot(
             unlisted: task.id, name: task.name, place: task.place, reason: reason, detail: task.detail, since: task.since,
-            now: now, options: options, isSeen: isSeen
+            now: now, options: options, isSeen: task.stoppedByYou || isCleared || isViewed
         )
     }
 }

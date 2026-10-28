@@ -32,7 +32,7 @@ import Testing
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)
 
-            let phases = records.mapValues { StatusResolver.snapshot(for: $0, now: t(60), view: snapshot.view).phase }
+            let phases = records.mapValues { StatusResolver.snapshot(for: $0, now: t(60)).phase }
             #expect(phases == ["asking": .needsYou, "finished": .done, "fresh": .idle])
         }
     }
