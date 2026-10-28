@@ -105,6 +105,10 @@ final class CopilotTasksStore: ObservableObject {
     var opensLinksForTests: Bool?
     /// Where the Copilot app's files are, in tests; `AppSessions.home()` otherwise.
     var appHomeForTests: URL?
+    /// Stands in for git removing a task's worktree, in tests.
+    var removeWorktreeForTests: ((CopilotRun, _ force: Bool) async throws -> Void)?
+    /// Hears of each session whose log the search for mentions read, in tests.
+    var mentionReadForTests: ((_ sessionId: String) -> Void)?
 
     /// Where the Copilot app keeps its sessions.
     var appHome: URL { appHomeForTests ?? AppSessions.home() }
@@ -125,6 +129,8 @@ final class CopilotTasksStore: ObservableObject {
     /// Where each send that goes on with a session works, by the session's ID, while it gets ready: no other task goes there
     /// meanwhile.
     private var continuingFolders: [String: URL] = [:]
+    /// The worktrees git removes now, by their task's session ID: no task goes there meanwhile.
+    private var removingWorktrees: [String: URL] = [:]
 
     /// Where what each run prints goes: its last words, or why it couldn't start.
     nonisolated static let outputFolder = UserHome.url.appendingPathComponent("Library/Application Support/BriefBar/Copilot", isDirectory: true)
@@ -419,9 +425,10 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// The checkouts that tasks of BriefBar's work in now (`checkoutKey`): those of sends that go on with a session, while
-    /// they get ready, and those of runs whose Copilot process still runs. A new task's worktree is its own.
+    /// they get ready, and those of runs whose Copilot process still runs; and those of worktrees git removes now. A new
+    /// task's worktree is its own.
     func busyFolders() -> Set<String> {
-        var folders = Set<String>()
+        var folders = Set(removingWorktrees.values.map(Self.checkoutKey))
         for entry in pending where entry.status.phase.isActive {
             if let folder = continuingFolders[entry.id] { folders.insert(Self.checkoutKey(folder)) }
         }
@@ -807,20 +814,36 @@ final class CopilotTasksStore: ObservableObject {
     /// session or another, such as one of the app's sessions that a task went on with there; or one of the app's sessions
     /// runs a turn there, the task's own too, once you went on with it in the app.
     func worktreeInUse(_ run: CopilotRun) async -> String? {
+        if let reason = taskInWorktree(run) { return reason }
+        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: nil) { return Self.turnInWorktree }
+        return nil
+    }
+
+    /// Deletes a task's worktree with git, unless it's in use (`worktreeInUse`), as looked at right before. From that
+    /// look until git is done, its checkout is busy (`busyFolders`), so no task of BriefBar's starts there meanwhile.
+    func deleteWorktree(of run: CopilotRun, force: Bool = false) async throws {
+        if let reason = taskInWorktree(run) { throw WorktreeInUse(reason: reason) }
+        // Before anything is awaited, so that nothing starts there between the look and git.
+        removingWorktrees[run.id] = run.worktree
+        defer { removingWorktrees[run.id] = nil }
+        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: nil) { throw WorktreeInUse(reason: Self.turnInWorktree) }
+        if let removeWorktreeForTests {
+            try await removeWorktreeForTests(run, force)
+        } else {
+            try await git().removeWorktree(at: run.worktree, of: run.repository, force: force)
+        }
+    }
+
+    /// Why a task's worktree can't be removed now, as BriefBar's own tasks say, or nil.
+    private func taskInWorktree(_ run: CopilotRun) -> String? {
+        if removingWorktrees[run.id] != nil { return "BriefBar is removing it already." }
         if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
             return "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
-        }
-        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: nil) {
-            return "Copilot is working in it now, in a session of the Copilot app. Remove it once that's done."
         }
         return nil
     }
 
-    /// Deletes a task's worktree with git, unless it's in use (`worktreeInUse`), as looked at right before.
-    func deleteWorktree(of run: CopilotRun, force: Bool = false) async throws {
-        if let reason = await worktreeInUse(run) { throw WorktreeInUse(reason: reason) }
-        try await git().removeWorktree(at: run.worktree, of: run.repository, force: force)
-    }
+    private static let turnInWorktree = "Copilot is working in it now, in a session of the Copilot app. Remove it once that's done."
 
     private static func sayNotRemoved(_ reason: String) {
         let alert = NSAlert()

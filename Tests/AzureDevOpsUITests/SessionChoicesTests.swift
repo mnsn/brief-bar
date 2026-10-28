@@ -204,6 +204,32 @@ private struct DatabaseError: Error {
         #expect(await store.sessionChoices(for: subject).isEmpty)
     }
 
+    /// The search reads one log at a time, and opens none once Send Work to Copilot is off, as when it's turned off while
+    /// the logs are read.
+    @Test func stopsReadingLogsOnceSendingIsOff() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = store(home: home)
+        defer { store.stop() }
+        let link = #"{"data":{"content":"Opened https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4071"}}"#
+        let choices = try [onBranch, recorded, other].enumerated().map { index, id in
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data(link.utf8).write(to: state.appendingPathComponent("events.jsonl"))
+            let active = now.addingTimeInterval(TimeInterval(-60 * index))
+            return SessionChoice(kind: .app(AppSession(id: id, name: id, lastActive: active)), name: id, lastActive: active, reasons: [])
+        }
+        let read = Mutex<[String]>([])
+        store.mentionReadForTests = { id in
+            read.withLock { $0.append(id) }
+            // Turned off as the first log is read.
+            store.settings.copilotEnabled = false
+        }
+        let found = await store.sessionsMentioning(subject, among: choices, since: .distantPast)
+        #expect(read.withLock { $0 } == [onBranch])
+        #expect(found == [onBranch])
+    }
+
     // MARK: What it goes to
 
     private func choice(_ id: String, reasons: [SessionChoice.Reason], active: TimeInterval, born: TimeInterval? = nil, task: CopilotRun? = nil, busy: Bool = false) -> SessionChoice {
@@ -627,6 +653,43 @@ private struct DatabaseError: Error {
             #expect(!(error is WorktreeInUse))
         }
         #expect(FileManager.default.fileExists(atPath: sources.path))
+    }
+
+    /// From the look right before git removes a task's worktree until git is done, its checkout is busy: no task of BriefBar's
+    /// starts there meanwhile, such as one that goes on with that task's session, and the window doesn't offer it.
+    @Test func startsNothingInAWorktreeWhileGitRemovesIt() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4071", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try Data("gitdir: \(home.path)/shop-web/.git/worktrees/pr-4071\n".utf8).write(to: worktree.appendingPathComponent(".git"))
+        let store = store(home: home)
+        defer { store.stop() }
+        let earlier = run(fixing, worktree: worktree, onPullRequest: 4071)
+        store.settings.copilotRuns = [earlier]
+        let launched = Mutex(0)
+        store.launchForTests = { request, _, _ in
+            launched.withLock { $0 += 1 }
+            guard let run = request.continuing else { throw LaunchError.couldntStart("no session") }
+            return run
+        }
+        let removed = Mutex(0)
+        store.removeWorktreeForTests = { run, _ in
+            // As git removes it: busy, and a task that would go on with its session there doesn't start.
+            #expect(store.isWorking(inFolder: worktree))
+            #expect(await store.worktreeInUse(run) == "BriefBar is removing it already.")
+            store.send(.pullRequest(self.pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+                       repository: run.repository, continuing: run)
+            removed.withLock { $0 += 1 }
+        }
+        try await store.deleteWorktree(of: earlier)
+        #expect(removed.withLock { $0 } == 1)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(launched.withLock { $0 } == 0)
+        #expect(store.pending.isEmpty)
+        // Once git is done, it's free again.
+        #expect(!store.isWorking(inFolder: worktree))
+        #expect(await store.worktreeInUse(earlier) == nil)
     }
 
     /// Nothing of Copilot's is read while Send Work to Copilot is off: not whether the app has a session open, nor which of

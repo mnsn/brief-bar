@@ -1128,7 +1128,8 @@ with it:
   `…/pullRequests/<id>` for a pull request, `…/_workitems/edit/<id>` or `…/workItems/<id>` for a work
   item, whatever their case, not followed by another digit, in a link to its organization, read from the link itself:
   `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`. Only the logs
-  of the 40 most recently active sessions are read for it, of those active since the pull request was
+  of the 40 most recently active sessions are read for it, one at a time, none once Send Work to Copilot is
+  off, of those active since the pull request was
   created, or in the last 30 days for a work item; each in chunks, until its first mention, opened below
   the app's folder without following a symbolic link (`LocalFile.openFile(below:_:)`): neither the log nor
   `session-state` or the session's folder may be one, so the search reads nothing outside the app's
@@ -1242,7 +1243,8 @@ worktree with git, and asks again before deleting changes that aren't committed;
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
 task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
 own too once you went on with it in the app, as it looks right before git deletes it, after each answer
-(`CopilotTasksStore.worktreeInUse`). What **Open in Copilot** hands over isn't kept. Copilot's
+(`CopilotTasksStore.worktreeInUse`); from that look until git is done, its checkout is busy, so no task of
+BriefBar's starts there meanwhile. What **Open in Copilot** hands over isn't kept. Copilot's
 branches, pull requests and sessions are yours, and stay.
 
 ### Notifications

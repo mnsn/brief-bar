@@ -101,28 +101,29 @@ extension CopilotTasksStore {
         guard canSend, isOn else { return [] }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
+        // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile.
+        guard canSend, isOn else { return [] }
         let tasks = taskChoices(for: subject)
         let ids = Set(tasks.map(\.id))
-        let sessions = await Task.detached(priority: .userInitiated) {
-            (try? AppSessions.load(home: home)) ?? []
-        }.value.filter { !ids.contains($0.id) }
+        // In one pass: the app's sessions, which of them and of BriefBar's the app has open, and the folder each of the
+        // app's sessions works in, which may be shared.
+        let found = await Task.detached(priority: .userInitiated) { () -> (sessions: [AppSession], open: Set<String>, folders: [String: URL]) in
+            let sessions = ((try? AppSessions.load(home: home)) ?? []).filter { !ids.contains($0.id) }
+            let open = Set((Array(ids) + sessions.map(\.id)).filter { id in
+                AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
+            })
+            let folders = sessions.reduce(into: [String: URL]()) { folders, session in
+                folders[session.id] = AppSessions.folder(of: session.id, home: home)
+            }
+            return (sessions, open, folders)
+        }.value
         let linked = linkedReasons(for: subject)
-        let apps = sessions.map { session in
+        let apps = found.sessions.map { session in
             SessionChoice(
                 kind: .app(session), name: session.name, place: Self.place(of: session), lastActive: session.lastActive,
                 reasons: Self.reasons(for: session, subject: subject, linked: linked[session.id] ?? [])
             )
         }
-        // Which of them the app has open, and the folder each of the app's sessions works in, which may be shared.
-        let found = await Task.detached(priority: .userInitiated) { [tasks, apps] in
-            let open = Set((tasks + apps).map(\.id).filter { id in
-                AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
-            })
-            let folders = apps.reduce(into: [String: URL]()) { folders, choice in
-                folders[choice.id] = AppSessions.folder(of: choice.id, home: home)
-            }
-            return (open: open, folders: folders)
-        }.value
         var all = tasks + Self.sorted(apps, createdAt: nil)
         for index in all.indices {
             all[index].isOpenInApp = found.open.contains(all[index].id)
@@ -260,8 +261,9 @@ extension CopilotTasksStore {
     }
 
     /// Which of the app's sessions mention it in their logs, by a link (`SessionMentions`): only those active since it
-    /// was created, or in the last 30 days for a work item, the most recently active 40. Read off the main thread, each
-    /// log only up to its first mention.
+    /// was created, or in the last 30 days for a work item, the most recently active 40. Read off the main thread, one
+    /// log at a time, each only up to its first mention, and none once Send Work to Copilot is off, as when it's turned
+    /// off meanwhile.
     func sessionsMentioning(_ subject: TaskSubject, among choices: [SessionChoice], since createdAt: Date?) async -> Set<String> {
         guard canSend, isOn else { return [] }
         let target: SessionMentions.Target
@@ -273,9 +275,14 @@ extension CopilotTasksStore {
         let candidates = choices.compactMap(\.appSession).filter { ($0.lastActive ?? .distantPast) >= cutoff }
             .sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) }.prefix(Self.mentionLimit).map(\.id)
         let home = appHome
-        return await Task.detached(priority: .utility) {
-            Set(candidates.filter { SessionMentions.mentions(target, inSession: $0, home: home) })
-        }.value
+        var mentioning = Set<String>()
+        for id in candidates {
+            guard canSend, isOn else { break }
+            let mentions = await Task.detached(priority: .utility) { SessionMentions.mentions(target, inSession: id, home: home) }.value
+            mentionReadForTests?(id)
+            if mentions { mentioning.insert(id) }
+        }
+        return mentioning
     }
 
     /// The most sessions whose logs are read for mentions.
