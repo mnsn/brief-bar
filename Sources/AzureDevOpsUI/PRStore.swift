@@ -34,6 +34,8 @@ final class PRStore: ObservableObject {
     @Published private(set) var brief: [BriefItem] = []
     /// The pipelines after your merges, the newest merge first.
     @Published private(set) var merges: [MergePipelines] = []
+    @Published private(set) var authoredPullRequestList = AuthoredPullRequestList()
+    var authoredPullRequests: [PullRequest] { authoredPullRequestList.pullRequests }
     /// Your name in Azure DevOps, so a brief's line can say "you" where a comment names you.
     private(set) var reader: String?
     /// Notifications are on for Azure DevOps but turned off for BriefBar in System Settings.
@@ -521,6 +523,10 @@ final class PRStore: ObservableObject {
             Log.app.info("Signed in to the Azure CLI as another account")
         }
         state = snapshot
+        let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
+            .map(\.pullRequest).sorted { ($0.createdAt, $0.key) > ($1.createdAt, $1.key) }
+        let authoredList = AuthoredPullRequestList(account: snapshot.account, pullRequests: authored)
+        if authoredList != authoredPullRequestList { authoredPullRequestList = authoredList }
         let newMerges = snapshot.records.compactMap(\.merge).sorted { ($0.mergedAt, $0.pullRequest) > ($1.mergedAt, $1.pullRequest) }
         if newMerges != merges { merges = newMerges }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }

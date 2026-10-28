@@ -12,6 +12,16 @@
   for your answer are only opened for you, never answered. The plugin comes with BriefBar and updates
   with it, and gives agents nothing BriefBar didn't already.
 
+## 0.8.3 - 2026-10-28
+
+- **Follow pipeline runs by pull request.** Below pinned pipelines, **Your Pull Requests** shows one
+  expandable card for each active Azure DevOps pull request you authored, including drafts. See its
+  pipeline status at a glance, or expand it for the latest runs, stages and failure details, without
+  mixing up the same pipeline's runs on different pull requests. Results from older commits are
+  marked **Outdated**, and results whose commit cannot be verified say so rather than counting as
+  current passes. A card disappears when its pull request is merged or abandoned. Pinned pipelines,
+  their counts and widgets stay unchanged.
+
 ## 0.8.2 - 2026-10-28
 
 - **Choose when Copilot completions move to Idle.** Finished and stopped sessions stay in their
