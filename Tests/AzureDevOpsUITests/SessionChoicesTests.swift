@@ -377,14 +377,14 @@ private struct DatabaseError: Error {
         #expect(other.reasons == [.recordedByCopilot, .onItsBranch])
         #expect(choices.first { $0.id == onBranch }?.isBusy == true)
         #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil, createdAt: nil) == nil)
-        #expect(store.busyReason(for: other)?.hasPrefix("Copilot is working in its folder") == true)
+        #expect(store.busyReason(for: other)?.hasPrefix("Copilot is working in its checkout") == true)
 
         var opened = 0
         store.openForTests = { _, _ in opened += 1; return true }
         #expect(store.openInCopilot(other, prompt: "Fix the comments", handOff: nil) != nil)
         #expect(opened == 0)
         let session = try #require(other.appSession)
-        #expect(await store.cliProblem(for: session, subject: subject) == "Copilot is working in the same folder for another task BriefBar sent.")
+        #expect(await store.cliProblem(for: other, subject: subject) == "Copilot is working in the same checkout for another task BriefBar sent.")
 
         let launched = Mutex(0)
         store.launchForTests = { request, _, _ in
@@ -433,14 +433,88 @@ private struct DatabaseError: Error {
         }
         let store = store(home: home)
         let session = AppSession(id: onBranch, name: "Fix the totals")
+        let choice = SessionChoice(kind: .app(session), name: session.name, reasons: [.onItsBranch])
         let busy = AppSession(id: recorded, name: "Totals follow-up", isRunning: true)
-        #expect(await store.cliProblem(for: session, subject: subject, others: [session, busy])
-            == "Another Copilot session is working in the same folder now, so Copilot won't work there on its own.")
+        #expect(await store.cliProblem(for: choice, subject: subject, others: [session, busy])
+            == "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own.")
         // Idle, it doesn't: the checks go on, to whether the folder is a clone of the pull request's repository.
         var idle = busy
         idle.isRunning = false
-        let problem = await store.cliProblem(for: session, subject: subject, others: [session, idle])
+        let problem = await store.cliProblem(for: choice, subject: subject, others: [session, idle])
         #expect(problem?.contains("isn't a git repository") == true)
+    }
+
+    /// Sessions share a checkout wherever in it each works: the nearest folder with a `.git` of its own, a worktree's file
+    /// too. A folder that holds checkouts is one of its own, as its sessions mostly work elsewhere. The CLI keeps out of a
+    /// checkout that a task of BriefBar's, or another of the app's sessions running a turn, works in: for BriefBar's earlier
+    /// tasks' sessions as for the app's, those that went on with one of the app's, and those in BriefBar's own worktrees.
+    @Test func keepsOutOfACheckoutWhereverInItSessionsWork() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let repos = home.appendingPathComponent("repos", isDirectory: true)
+        let checkout = repos.appendingPathComponent("shop-web", isDirectory: true)
+        let cart = checkout.appendingPathComponent("Sources/Cart", isDirectory: true)
+        let worktree = repos.appendingPathComponent("worktrees/shop-web-pr-4071", isDirectory: true)
+        let docs = repos.appendingPathComponent("docs", isDirectory: true)
+        for folder in [cart, worktree, docs.appendingPathComponent(".git"), checkout.appendingPathComponent(".git")] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        try Data("gitdir: \(checkout.path)/.git/worktrees/shop-web-pr-4071\n".utf8).write(to: worktree.appendingPathComponent(".git"))
+        func works(_ id: String, in folder: URL) throws {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("cwd: \(folder.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+            try Data().write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        func key(_ folder: URL) -> String { CopilotTasksStore.checkoutKey(folder) }
+        #expect(key(cart) == CopilotTasksStore.folderKey(checkout))
+        #expect(key(worktree) == CopilotTasksStore.folderKey(worktree))
+        #expect(key(repos) == CopilotTasksStore.folderKey(repos))
+        #expect(Set([checkout, worktree, docs, repos].map(key)).count == 4)
+
+        // A task of BriefBar's in the checkout, in a process that runs: this test's own stands in for it.
+        let store = store(home: home)
+        defer { store.stop() }
+        var working = run(elsewhere, worktree: checkout, onPullRequest: 5000, ended: nil)
+        working.isAppSession = true
+        working.process = DetachedProgram.Handle(pid: getpid(), startedAt: nil)
+        store.settings.copilotRuns = [working]
+        #expect(store.isWorking(inFolder: cart))
+        #expect(![repos, worktree, docs].contains { store.isWorking(inFolder: $0) })
+        try works(onBranch, in: cart)
+        try works(recorded, in: repos)
+        let inCart = SessionChoice(kind: .app(AppSession(id: onBranch, name: "Cart")), name: "Cart", reasons: [], appFolder: cart)
+        let inRepos = SessionChoice(kind: .app(AppSession(id: recorded, name: "Repos")), name: "Repos", reasons: [], appFolder: repos)
+        #expect(store.availability(of: [inCart, inRepos]).map(\.isFolderBusy) == [true, false])
+        #expect(store.busyReason(for: inCart)?.hasPrefix("Copilot is working in its checkout") == true)
+        #expect(store.busyReason(for: inRepos) == nil)
+        #expect(await store.cliProblem(for: inCart, subject: subject) == "Copilot is working in the same checkout for another task BriefBar sent.")
+
+        // Once it's done, another of the app's sessions runs a turn in a folder of the checkout.
+        store.settings.copilotRuns = []
+        let sharing = "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own."
+        let turn = AppSession(id: other, name: "Cart follow-up", isRunning: true)
+        try works(other, in: cart)
+        try works(fixing, in: checkout)
+        let atRoot = SessionChoice(kind: .app(AppSession(id: fixing, name: "Fix the totals")), name: "Fix the totals", reasons: [])
+        #expect(await store.cliProblem(for: atRoot, subject: subject, others: [turn]) == sharing)
+        // An earlier task that went on with one of the app's sessions, there.
+        var wentOn = run(opener, worktree: checkout, onPullRequest: 4071)
+        wentOn.isAppSession = true
+        try works(opener, in: checkout)
+        let earlier = SessionChoice(kind: .task(wentOn), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(await store.cliProblem(for: earlier, subject: subject, others: [turn]) == sharing)
+        // An earlier task in BriefBar's own worktree, which the CLI made: another of the app's sessions can work there too.
+        try works(other, in: worktree)
+        let made = run("99999999-9999-4999-8999-999999999999", worktree: worktree, onPullRequest: 4071)
+        let own = SessionChoice(kind: .task(made), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(await store.cliProblem(for: own, subject: subject, others: [turn]) == sharing)
+        // One in the folder that holds the checkouts works elsewhere: the checks go on, to the repository.
+        try works(other, in: repos)
+        for choice in [atRoot, earlier, own] {
+            let problem = await store.cliProblem(for: choice, subject: subject, others: [turn])
+            #expect(problem?.contains("isn't a git repository") == true)
+        }
     }
 
     // MARK: Prompts

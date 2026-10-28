@@ -58,14 +58,14 @@ struct SessionChoice: Identifiable, Equatable {
     var isOpenInApp = false
     /// BriefBar's task in it is still working: nothing goes to it until it's done.
     var isBusy = false
-    /// A task of BriefBar's works in its folder, for another session, as when two of the Copilot app's sessions share a
-    /// checkout: nothing goes to it until that's done, or their work would mix.
+    /// A task of BriefBar's works in its checkout, for another session, as when two of the Copilot app's sessions share
+    /// one (`CopilotTasksStore.checkoutKey`): nothing goes to it until that's done, or their work would mix.
     var isFolderBusy = false
 
     /// The folder one of the app's sessions works in, as BriefBar found it when the composer opened.
     var appFolder: URL?
 
-    /// Nothing goes to it now: Copilot works in it, or in its folder.
+    /// Nothing goes to it now: Copilot works in it, or in its checkout.
     var isUnavailable: Bool { isBusy || isFolderBusy }
 
     /// The folder it works in: an earlier task's worktree, or the one the app's session works in, as found.
@@ -140,7 +140,7 @@ extension CopilotTasksStore {
         return choices.map { choice in
             var choice = choice
             choice.isBusy = active.contains(choice.id) || isWorking(inSession: choice.id)
-            choice.isFolderBusy = choice.folder.map { folders.contains(Self.folderKey($0)) } ?? false
+            choice.isFolderBusy = !folders.isEmpty && (choice.folder.map { folders.contains(Self.checkoutKey($0)) } ?? false)
             return choice
         }
     }
@@ -153,11 +153,11 @@ extension CopilotTasksStore {
         }
     }
 
-    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its folder, for a task BriefBar sent.
+    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its checkout, for a task BriefBar sent.
     func busyReason(for choice: SessionChoice) -> String? {
         if isWorking(inSession: choice.id) { return "Copilot is still working in it. Try again once it's done." }
         if let folder = folder(of: choice), isWorking(inFolder: folder) {
-            return "Copilot is working in its folder for another task BriefBar sent. Try again once that's done."
+            return "Copilot is working in its checkout for another task BriefBar sent. Try again once that's done."
         }
         return nil
     }
@@ -306,30 +306,36 @@ extension CopilotTasksStore {
         }.min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
     }
 
-    /// Whether Copilot can go on with one of the app's sessions from here, with the CLI: why not, or nil. The app mustn't
-    /// have it open; the CLI has to know it; neither a task of BriefBar's nor another of the app's sessions may be working
-    /// in the folder it works in, which can be shared; and that folder has to be in a git repository, for a pull request
-    /// a clone of its repository.
-    /// - Parameter others: the app's other sessions, as the composer found them, with whether each one runs a turn now.
-    func cliProblem(for session: AppSession, subject: TaskSubject, others: [AppSession] = []) async -> String? {
+    /// Whether Copilot can go on with a session from here, with the CLI: why not, or nil. The app mustn't have it open; for
+    /// one of the app's sessions, the CLI has to know it; neither a task of BriefBar's nor another of the app's sessions
+    /// that runs a turn now may be working in the checkout it works in, which can be shared, whichever folder of it each
+    /// works in (`CopilotTasksStore.checkoutKey`); and that folder has to be in a git repository, for a pull request a
+    /// clone of its repository. The same for an earlier task of BriefBar's, which may have gone on with one of the app's
+    /// sessions, in the folder it works in.
+    /// - Parameter others: the app's sessions, as the composer found them, with whether each one runs a turn now.
+    func cliProblem(for choice: SessionChoice, subject: TaskSubject, others: [AppSession] = []) async -> String? {
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
+        let id = choice.id
+        let isAppsSession = choice.appSession != nil || choice.run?.isAppSession == true
+        let worktree = choice.run?.worktree
         let found = await Task.detached(priority: .userInitiated) { () -> (open: Bool, known: Bool, folder: URL?) in
-            let open = AppSessions.isOpen(session.id, home: home) || AppSessions.isOpen(session.id, home: cliHome)
-            let known = AppSessions.events(of: session.id, home: cliHome).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
-            return (open, known, AppSessions.folder(of: session.id, home: home))
+            let open = AppSessions.isOpen(id, home: home) || AppSessions.isOpen(id, home: cliHome)
+            let known = !isAppsSession || (AppSessions.events(of: id, home: cliHome).map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
+            // An earlier task's worktree, or the folder it went on with; the folder one of the app's sessions says now.
+            return (open, known, worktree ?? AppSessions.folder(of: id, home: home))
         }.value
         if found.open { return "The Copilot app has it open: Copilot can go on with it only there." }
         guard found.known else { return "The Copilot CLI doesn't have this session, in \(UserPath.abbreviate(cliHome.path))." }
         guard let folder = found.folder else { return "BriefBar can't tell which folder it works in." }
-        if isWorking(inFolder: folder) { return "Copilot is working in the same folder for another task BriefBar sent." }
-        // Another of the app's sessions that works in the same folder, as when they share a checkout, and runs a turn now.
-        let running = others.filter { $0.id != session.id && $0.isRunning }.map(\.id)
-        let key = Self.folderKey(folder)
+        if isWorking(inFolder: folder) { return "Copilot is working in the same checkout for another task BriefBar sent." }
+        // Another of the app's sessions that runs a turn now in the same checkout, as when they share one.
+        let running = others.filter { $0.id != id && $0.isRunning }.map(\.id)
         let sharing = await Task.detached(priority: .userInitiated) {
-            running.contains { AppSessions.folder(of: $0, home: home).map(Self.folderKey) == key }
+            let checkout = Self.checkoutKey(folder)
+            return running.contains { AppSessions.folder(of: $0, home: home).map(Self.checkoutKey) == checkout }
         }.value
-        if sharing { return "Another Copilot session is working in the same folder now, so Copilot won't work there on its own." }
+        if sharing { return "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own." }
         let git = await git()
         do {
             switch subject {
@@ -367,7 +373,7 @@ extension CopilotTasksStore {
     @discardableResult
     func openInCopilot(_ choice: SessionChoice, prompt: String, handOff: CommentHandOff?) -> String? {
         guard canSend, isOn, ItemRef.session(choice.id) != nil else { return "BriefBar can't send anything now." }
-        // Opening it while Copilot works in it would fork its history; while Copilot works in its folder, their work would mix.
+        // Opening it while Copilot works in it would fork its history; while Copilot works in its checkout, their work would mix.
         if let busy = busyReason(for: choice) { return busy }
         let opened: Bool
         if let openForTests {

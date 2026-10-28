@@ -330,8 +330,8 @@ final class CopilotTasksStore: ObservableObject {
         handOff: CommentHandOff? = nil
     ) {
         guard canSend, isOn else { return }
-        // A second run in a session Copilot still works in would fork its history; one in a folder it works in, for another
-        // session, would mix their work up, as when two of the Copilot app's sessions share a checkout.
+        // A second run in a session Copilot still works in would fork its history; one in a checkout it works in, for another
+        // session, would mix their work up, as when two of the Copilot app's sessions share one.
         if let continuing, isWorking(inSession: continuing.id) || isWorking(inFolder: continuing.worktree) {
             Log.app.error("Didn't send a task to Copilot: it still works in that session or its folder")
             return
@@ -413,27 +413,42 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// The folders that tasks of BriefBar's work in now: those of sends that go on with a session, while they get ready,
-    /// and those of runs whose Copilot process still runs. A new task's worktree is its own.
+    /// The checkouts that tasks of BriefBar's work in now (`checkoutKey`): those of sends that go on with a session, while
+    /// they get ready, and those of runs whose Copilot process still runs. A new task's worktree is its own.
     func busyFolders() -> Set<String> {
         var folders = Set<String>()
         for entry in pending where entry.status.phase.isActive {
-            if let folder = continuingFolders[entry.id] { folders.insert(Self.folderKey(folder)) }
+            if let folder = continuingFolders[entry.id] { folders.insert(Self.checkoutKey(folder)) }
         }
         for run in settings.copilotRuns where run.ended == nil && DetachedProgram.isRunning(run.process) {
-            folders.insert(Self.folderKey(run.worktree))
+            folders.insert(Self.checkoutKey(run.worktree))
         }
         return folders
     }
 
-    /// Whether a task of BriefBar's works in the folder now, in any session (`busyFolders`).
+    /// Whether a task of BriefBar's works in the folder's checkout now, in any session (`busyFolders`).
     func isWorking(inFolder folder: URL) -> Bool {
-        busyFolders().contains(Self.folderKey(folder))
+        busyFolders().contains(Self.checkoutKey(folder))
     }
 
     /// A folder's path, to compare it with another's however each is written.
     nonisolated static func folderKey(_ folder: URL) -> String {
         folder.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// The checkout a folder is in, by its `folderKey`, to tell whether two sessions' work would mix: the nearest folder,
+    /// itself or one it's within, with a `.git` of its own, as a repository's checkout, one of its worktrees and a submodule
+    /// have; else the folder itself, as for one that holds checkouts, whose sessions mostly work elsewhere. Read from the
+    /// disk, without running git.
+    nonisolated static func checkoutKey(_ folder: URL) -> String {
+        let key = folderKey(folder)
+        var path = key
+        while !FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(".git")) {
+            let parent = (path as NSString).deletingLastPathComponent
+            guard parent != path, !parent.isEmpty else { return key }
+            path = parent
+        }
+        return path
     }
 
     /// What went wrong, without paths or names, for the log.

@@ -360,7 +360,7 @@ struct CopilotComposerView: View {
     /// "on its branch · Spectre · users/robin/fix · 7m ago", "Fix Comments, done · 3h ago".
     private func detail(of choice: SessionChoice) -> String {
         var parts: [String] = []
-        if choice.isBusy { parts.append("working") } else if choice.isFolderBusy { parts.append("its folder is busy") }
+        if choice.isBusy { parts.append("working") } else if choice.isFolderBusy { parts.append("its checkout is busy") }
         if let run = choice.run {
             if !choice.isBusy, let entry = store.entries.first(where: { $0.id == run.id }) {
                 parts.append(entry.status.phase.title.lowercased())
@@ -384,7 +384,7 @@ struct CopilotComposerView: View {
                 : "Copilot starts a new session, in a new worktree at the pull request's latest commit."
         }
         if target.isBusy { return "Copilot is still working in it." }
-        if target.isFolderBusy { return "Copilot is working in its folder for another task BriefBar sent." }
+        if target.isFolderBusy { return "Copilot is working in its checkout for another task BriefBar sent." }
         switch target.kind {
         case .task(let run):
             let what = run.isAppSession == true ? "The Copilot app's session"
@@ -639,9 +639,10 @@ struct CopilotComposerView: View {
         if delivery == .app, appProblem != nil, cliProblem == nil { delivery = .cli }
     }
 
-    /// Whether the CLI can go on with the chosen session from here: not while Copilot works in it or in its folder, or the
-    /// Copilot app has it open; and for one of the app's, not while another of its sessions runs in the same folder, and
-    /// only in a repository, the pull request's clone for one.
+    /// Whether the CLI can go on with the chosen session from here: not while Copilot works in it or in its checkout, or the
+    /// Copilot app has it open; not while another of the app's sessions runs a turn in that checkout; and only in a
+    /// repository, the pull request's clone for one (`CopilotTasksStore.cliProblem`). An earlier task's session too: it
+    /// may have gone on with one of the app's sessions, or another of them may work in its worktree.
     private func checkSession() {
         cliProblem = nil
         checkingSession = nil
@@ -649,14 +650,14 @@ struct CopilotComposerView: View {
         if choice.isBusy {
             cliProblem = "Copilot is still working in it."
         } else if choice.isFolderBusy {
-            cliProblem = "Copilot is working in its folder for another task BriefBar sent."
+            cliProblem = "Copilot is working in its checkout for another task BriefBar sent."
         } else if choice.isOpenInApp {
             cliProblem = "The Copilot app has it open: Copilot can go on with it only there, where its history is."
-        } else if let session = choice.appSession {
-            checkingSession = session.id
+        } else {
+            checkingSession = choice.id
             Task {
-                let problem = await store.cliProblem(for: session, subject: subject, others: choices.compactMap(\.appSession))
-                guard checkingSession == session.id, target?.id == session.id else { return }
+                let problem = await store.cliProblem(for: choice, subject: subject, others: choices.compactMap(\.appSession))
+                guard checkingSession == choice.id, target?.id == choice.id else { return }
                 checkingSession = nil
                 cliProblem = problem
                 fixDelivery()
@@ -717,7 +718,7 @@ struct CopilotComposerView: View {
             close()
             return
         }
-        // Copilot started working in it, or in its folder, since the window opened.
+        // Copilot started working in it, or in its checkout, since the window opened.
         if store.busyReason(for: target) != nil {
             self.target?.isBusy = store.isWorking(inSession: target.id)
             self.target?.isFolderBusy = !(self.target?.isBusy ?? false)

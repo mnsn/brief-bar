@@ -1096,9 +1096,12 @@ session or change the prompt (`CopilotComposerView.followsSuggestions`). A sessi
 BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
 its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
 suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it. So
-is one that works in the same folder as such a task (`CopilotTasksStore.busyFolders`), since two of the
-app's sessions can share a checkout, and their work would mix. The composer keeps up while it's open
-(`CopilotTasksStore.availability`): a session frees up once the task working in it, or in its folder, is
+is one that works in the same checkout as such a task (`CopilotTasksStore.busyFolders`), since two of the
+app's sessions can share one, and their work would mix. A folder's checkout (`CopilotTasksStore.checkoutKey`)
+is the nearest folder, itself or one it's within, with a `.git` of its own, as a checkout, a worktree and a
+submodule have, so sessions in different folders of one checkout share it; a folder without one, as one
+that holds checkouts, is its own, since its sessions mostly work elsewhere. The composer keeps up while it's open
+(`CopilotTasksStore.availability`): a session frees up once the task working in it, or in its checkout, is
 done, and one that a task starts in is taken, while where the task goes and its prompt stay as they are.
 
 The prompt is for where Copilot works (`CopilotComposerView.writtenPrompt`). A pull request's is for a
@@ -1125,8 +1128,10 @@ there:
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
-  following a link, which for a pull request has to be a clone of its repository, and in which no other
-  of the app's sessions runs a turn now, by the app's own flag. A run in one of the
+  following a link, which for a pull request has to be a clone of its repository, and in whose checkout no
+  other of the app's sessions runs a turn now, by the app's own flag (`CopilotTasksStore.cliProblem`). The
+  composer checks an earlier task's session the same way, which may have gone on with one of the app's
+  sessions, or be in a worktree another of them works in. A run in one of the
   app's sessions keeps `isAppSession`, so **Remove Worktree…** never deletes that folder and its menu
   opens the session in the app rather than in Terminal. Going on with the work item's task that opened
   a pull request, the task stays that work item's too, and shows on the pull request's row as soon as you
