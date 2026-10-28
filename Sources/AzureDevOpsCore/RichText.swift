@@ -802,11 +802,14 @@ private enum MarkdownReader {
                 continue
             }
             if let fence = Self.fence(trimmed) {
+                // Where its closing fence may be, as CommonMark has it: up to three columns into what it's in, the text of
+                // a list's item, as indented as the fence there, or the page.
+                let closingIndent = (listIndents.isEmpty ? 0 : indent) + 3
                 flush()
                 endList()
                 var code: [String] = []
                 index += 1
-                while index < lines.count, !Self.closes(fence, lines[index]) {
+                while index < lines.count, !Self.closes(fence, lines[index], indentedUpTo: closingIndent) {
                     code.append(Self.droppingIndentation(raw[index], columns: indent))
                     index += 1
                 }
@@ -919,8 +922,10 @@ private enum MarkdownReader {
         return blocks
     }
 
-    /// A line that closes a code block: nothing but the fence's character, at least as many times.
-    private static func closes(_ fence: String, _ line: String) -> Bool {
+    /// A line that closes a code block: nothing but the fence's character, at least as many times, indented no further
+    /// than `indentedUpTo` columns. Further, it's code too. `line`'s indentation is in spaces.
+    private static func closes(_ fence: String, _ line: String, indentedUpTo maxIndent: Int) -> Bool {
+        guard line.prefix(while: { $0 == " " }).count <= maxIndent else { return false }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         return trimmed.count >= fence.count && trimmed.allSatisfy { $0 == fence.first }
     }

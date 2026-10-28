@@ -216,6 +216,13 @@ private typealias Run = RichText.Run
         ])
         // A shorter fence doesn't end it either.
         #expect(RichText(markdown: "````\n```\n````").blocks == [.code("```")])
+        // Nor does one indented four columns into what the block is in: that's code. Up to three, it ends it.
+        #expect(RichText(markdown: "```\ncode\n    ```\nmore\n```").blocks == [.code("code\n    ```\nmore")])
+        #expect(RichText(markdown: "```\ncode\n   ```\nAfter").blocks == [.code("code"), .paragraph([Run("After")])])
+        // In a list's item, its fence and code are indented as its text.
+        #expect(RichText(markdown: "- Run:\n  ```\n  make\n  ```\n- Then test").blocks == [
+            .listItem(.bullet, depth: 0, [Run("Run:")]), .code("make"), .listItem(.bullet, depth: 0, [Run("Then test")]),
+        ])
     }
 
     @Test func readsQuotesInQuotesToADepth() {
