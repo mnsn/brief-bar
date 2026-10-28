@@ -1,6 +1,17 @@
 import BriefBarCore
 import Foundation
 
+/// An authored list and the sign-in that supplied it, published together.
+public struct AuthoredPullRequestList: Sendable, Equatable {
+    public var account: String?
+    public var pullRequests: [PullRequest]
+
+    public init(account: String? = nil, pullRequests: [PullRequest] = []) {
+        self.account = account
+        self.pullRequests = pullRequests
+    }
+}
+
 /// The latest run of each pipeline validating one of your active pull requests.
 public struct PullRequestPipelines: Sendable, Equatable, Identifiable {
     public enum Revision: Sendable, Equatable {

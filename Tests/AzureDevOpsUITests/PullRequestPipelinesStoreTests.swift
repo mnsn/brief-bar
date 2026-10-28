@@ -1,12 +1,29 @@
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
+import Combine
 import Foundation
 import Testing
 @testable import AzureDevOpsUI
 
 @MainActor
 @Suite struct PullRequestPipelinesStoreTests {
+    @Test func publishesAccountAndAuthoredListAtomicallyEvenWhenPRsAreUnchanged() async {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        var snapshot = DemoData.snapshot(now: Date())
+        snapshot.account = "tenant/robin"
+        store.receive(snapshot)
+        let first = store.authoredPullRequestList
+        var received: [AuthoredPullRequestList] = []
+        let subscription = store.$authoredPullRequestList.sink { received.append($0) }
+        snapshot.account = "tenant/sam"
+        store.receive(snapshot)
+        #expect(received.count == 2)
+        #expect(received.last?.account == "tenant/sam")
+        #expect(received.last?.pullRequests == first.pullRequests)
+        subscription.cancel()
+    }
+
     @Test func includesOnlyAuthoredActivePRsIncludingDraftsAndIdlePRs() async {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = PRStore(settings: settings, mode: .demo)

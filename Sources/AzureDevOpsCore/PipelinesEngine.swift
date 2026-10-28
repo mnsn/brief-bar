@@ -5,6 +5,7 @@ public struct PipelinesSnapshot: Sendable, Equatable {
     /// In the order the pipelines were pinned.
     public var statuses: [PipelineStatus]
     public var pullRequests: [PullRequestPipelines]
+    public var account: String?
     public var problem: PulseProblem?
     public var refreshedAt: Date?
     public var isRefreshing: Bool
@@ -12,10 +13,11 @@ public struct PipelinesSnapshot: Sendable, Equatable {
 
     public init(
         statuses: [PipelineStatus] = [], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false, pullRequests: [PullRequestPipelines] = []
+        hasLoaded: Bool = false, pullRequests: [PullRequestPipelines] = [], account: String? = nil
     ) {
         self.statuses = statuses
         self.pullRequests = pullRequests
+        self.account = account
         self.problem = problem
         self.refreshedAt = refreshedAt
         self.isRefreshing = isRefreshing
@@ -33,13 +35,18 @@ public actor PipelinesEngine {
     public struct Configuration: Sendable, Equatable {
         public var pipelines: [PipelineRef]
         public var pullRequests: [PullRequest]
+        public var pullRequestAccount: String?
         public var interval: TimeInterval
         /// Runs listed for each pipeline.
         public var runs: Int
 
-        public init(pipelines: [PipelineRef], interval: TimeInterval = 60, runs: Int = 12, pullRequests: [PullRequest] = []) {
+        public init(
+            pipelines: [PipelineRef], interval: TimeInterval = 60, runs: Int = 12, pullRequests: [PullRequest] = [],
+            pullRequestAccount: String? = nil
+        ) {
             self.pipelines = pipelines
             self.pullRequests = pullRequests.filter { $0.status == .active }
+            self.pullRequestAccount = pullRequestAccount
             self.interval = interval
             self.runs = runs
         }
@@ -162,7 +169,9 @@ public actor PipelinesEngine {
     public func setConfiguration(_ configuration: Configuration) {
         guard configuration != self.configuration else { return }
         let added = !Set(configuration.pipelines).subtracting(self.configuration.pipelines).isEmpty
-        let changedPRs = configuration.pullRequests != self.configuration.pullRequests
+        let changedAccount = configuration.pullRequestAccount != self.configuration.pullRequestAccount
+        let changedPRs = configuration.pullRequests != self.configuration.pullRequests || changedAccount
+        if changedAccount { pullRequestBuilds = [:] }
         self.configuration = configuration
         let kept = Set(configuration.pipelines.map(\.id))
         runs = runs.filter { kept.contains($0.key) }
@@ -279,14 +288,16 @@ public actor PipelinesEngine {
         } catch let error as AuthError {
             throw ADOError.auth(error)
         }
-        if let signedIn = token.account {
-            if let account, account != signedIn {
-                runs = [:]
-                pullRequestBuilds = [:]
-                stages = [:]
-                attempts = [:]
-            }
-            account = signedIn
+        if account != token.account {
+            runs = [:]
+            pullRequestBuilds = [:]
+            stages = [:]
+            attempts = [:]
+        }
+        account = token.account
+        if configuration.pullRequestAccount != account {
+            pullRequestBuilds = [:]
+            publish()
         }
 
         // One request per project and branch filter, for all of its pinned pipelines.
@@ -321,11 +332,14 @@ public actor PipelinesEngine {
         }
 
         for pr in configuration.pullRequests where throttled == nil {
+            guard configuration.pullRequestAccount == account,
+                  self.configuration.pullRequestAccount == account else { break }
             guard self.configuration.pullRequests.contains(where: { $0.key == pr.key }) else { continue }
             do {
                 let builds = try await get(ADOEndpoint.pullRequestBuilds(pr), as: ADOList<ADOBuild>.self).value
                 // Configuration can change while a request is in flight, including a PR closing.
-                if self.configuration.pullRequests.contains(where: { $0.key == pr.key }) {
+                if self.configuration.pullRequestAccount == account,
+                   self.configuration.pullRequests.contains(where: { $0.key == pr.key }) {
                     pullRequestBuilds[pr.key] = builds
                 }
             } catch let error as ADOError {
@@ -422,12 +436,13 @@ public actor PipelinesEngine {
         }
         return PipelinesSnapshot(
             statuses: statuses, problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded,
-            pullRequests: pullRequests()
+            pullRequests: pullRequests(), account: account
         )
     }
 
     private func pullRequests() -> [PullRequestPipelines] {
-        configuration.pullRequests.map { pr in
+        guard configuration.pullRequestAccount == account else { return [] }
+        return configuration.pullRequests.map { pr in
             PullRequestPipelines(pullRequest: pr, builds: pullRequestBuilds[pr.key]) { pipeline, runs in
                 let latest = runs.first.flatMap { run in
                     stages[RunKey(pipeline, run)].flatMap { $0.readFor == RunState(run) ? $0 : nil }

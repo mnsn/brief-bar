@@ -102,8 +102,10 @@ package final class AzureDevOpsSource: BriefBarSource {
         self.sprint = sprint
         let pipelines = PipelinesStore(settings: settings, mode: store.mode, client: store.client)
         self.pipelines = pipelines
-        store.$authoredPullRequests.removeDuplicates()
-            .sink { [weak pipelines] prs in MainActor.assumeIsolated { pipelines?.setPullRequests(prs) } }
+        store.$authoredPullRequestList.removeDuplicates()
+            .sink { [weak pipelines] list in
+                MainActor.assumeIsolated { pipelines?.setPullRequests(list.pullRequests, account: list.account) }
+            }
             .store(in: &cancellables)
         let copilot = CopilotTasksStore(settings: settings, mode: store.mode, notifier: notifier)
         copilot.title = { [weak sprint] reference in sprint?.title(of: reference) }

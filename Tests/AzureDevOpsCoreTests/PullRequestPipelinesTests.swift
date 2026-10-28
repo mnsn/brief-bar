@@ -217,15 +217,67 @@ import Testing
         ]))
         server.on("/timeline", json: WorkFixture.timeline([]))
         let engine = PipelinesEngine(
-            client: server.client(tokens: tokens), configuration: .init(pipelines: [], pullRequests: [makePR()])
+            client: server.client(tokens: tokens),
+            configuration: .init(pipelines: [], pullRequests: [makePR()], pullRequestAccount: "tenant/robin")
         ) { _ in }
         await engine.refreshNow()
         #expect(await engine.currentSnapshot().pullRequests.first?.pipelines.count == 1)
         await tokens.signIn(as: "tenant/sam")
         server.on("/p1/_apis/build/builds") { _ in .status(403) }
         await engine.refreshNow()
-        #expect(await engine.currentSnapshot().pullRequests.first?.pipelines.isEmpty == true)
+        #expect(await engine.currentSnapshot().pullRequests.isEmpty)
+    }
+
+    @Test func readableOldAccountsPRsStaySuspendedUntilMatchingAuthoredListArrives() async {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/robin")
+        server.on("/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(1, definition: 31, queued: t(-hour), branch: "refs/pull/7/merge"),
+        ]))
+        server.on("/timeline", json: WorkFixture.timeline([]))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens),
+            configuration: .init(pipelines: [], pullRequests: [makePR()], pullRequestAccount: "tenant/robin")
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().pullRequests.first?.pipelines.count == 1)
+        let requests = server.requests.count
+
+        // Both identities can read this repository: a 403 must not be needed to protect the old authored list.
+        await tokens.signIn(as: "tenant/sam")
+        await engine.refreshNow()
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().account == "tenant/sam")
+        #expect(await engine.currentSnapshot().pullRequests.isEmpty)
+        #expect(server.requests.count == requests)
+
+        // A delayed update from the old PR engine must not resume reads.
+        await engine.setConfiguration(.init(
+            pipelines: [], pullRequests: [makePR(), makePR(8)], pullRequestAccount: "tenant/robin"
+        ))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().pullRequests.isEmpty)
+        #expect(server.requests.count == requests)
+
+        // Even if the fresh authored list happens to contain the same PR, the previous account's cache is gone.
+        await engine.setConfiguration(.init(pipelines: [], pullRequests: [makePR()], pullRequestAccount: "tenant/sam"))
         #expect(await engine.currentSnapshot().pullRequests.first?.hasLoaded == false)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().pullRequests.first?.pipelines.count == 1)
+        #expect(server.requests.count > requests)
+    }
+
+    @Test func refusesUnattributedPRConfigurationWithAnIdentifiedToken() async {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id)
+        await tokens.signIn(as: "tenant/sam")
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: .init(pipelines: [], pullRequests: [makePR()])
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().pullRequests.isEmpty)
+        #expect(server.requests.isEmpty)
     }
 
     @Test func PRListThrottlingStopsRequestsAndBacksOff() async {

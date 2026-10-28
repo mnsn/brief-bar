@@ -1019,6 +1019,9 @@ excluded from the current pass/fail summary. If Azure DevOps doesn't provide eno
 the result says **Commit not verified**, rather than assuming it validates your latest changes.
 Cards disappear when the PR is merged or abandoned. This does not pin those pipelines, change pinned
 pipeline counts or widgets, or affect **After Your Merges**.
+The authored PR list carries the account that supplied it. When the pipeline reader detects another
+sign-in, it clears the old runs and suspends PR cards and validation requests until the pull request
+reader supplies a list for that account, even when both accounts can read the same repository.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines

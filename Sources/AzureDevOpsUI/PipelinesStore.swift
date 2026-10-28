@@ -21,6 +21,7 @@ final class PipelinesStore: ObservableObject {
     private var viewers: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
     private var authoredPullRequests: [PullRequest] = []
+    private var authoredAccount: String?
 
     init(settings: AppSettings, mode: PRStore.Mode, client: ADOClient) {
         self.settings = settings
@@ -32,12 +33,15 @@ final class PipelinesStore: ObservableObject {
 
     private var configuration: PipelinesEngine.Configuration {
         PipelinesEngine.Configuration(
-            pipelines: settings.pinnedPipelines, interval: TimeInterval(settings.refreshSeconds), pullRequests: authoredPullRequests
+            pipelines: settings.pinnedPipelines, interval: TimeInterval(settings.refreshSeconds), pullRequests: authoredPullRequests,
+            pullRequestAccount: authoredAccount
         )
     }
 
-    func setPullRequests(_ pullRequests: [PullRequest]) {
-        guard pullRequests != authoredPullRequests else { return }
+    func setPullRequests(_ pullRequests: [PullRequest], account: String? = nil) {
+        guard pullRequests != authoredPullRequests || account != authoredAccount else { return }
+        if account != authoredAccount { self.pullRequests = [] }
+        authoredAccount = account
         authoredPullRequests = pullRequests
         if mode == .demo {
             self.pullRequests = DemoData.pullRequestPipelines(pullRequests)
@@ -116,11 +120,11 @@ final class PipelinesStore: ObservableObject {
     private func receive(_ snapshot: PipelinesSnapshot) {
         if statuses != snapshot.statuses { statuses = snapshot.statuses }
         // A refresh queued before a PR closed must not bring its card back.
-        let pullRequests = authoredPullRequests.map { pr in
+        let pullRequests = snapshot.account == authoredAccount ? authoredPullRequests.map { pr in
             snapshot.pullRequests.first { $0.pullRequest == pr }
                 ?? self.pullRequests.first { $0.pullRequest == pr }
                 ?? PullRequestPipelines(pullRequest: pr, pipelines: [], revisions: [:], hasLoaded: false)
-        }
+        } : []
         if self.pullRequests != pullRequests { self.pullRequests = pullRequests }
         if problem != snapshot.problem {
             problem = snapshot.problem
