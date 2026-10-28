@@ -126,6 +126,9 @@ private struct PullRequestPipelinesCard: View {
                             EmptyView()
                         }
                         MergeRunRow(status: status, now: now)
+                        if !status.stages.isEmpty {
+                            StageFlow(stages: status.stages, now: now)
+                        }
                     }
                     .font(.system(size: 11))
                 }

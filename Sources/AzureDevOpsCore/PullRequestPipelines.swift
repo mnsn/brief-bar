@@ -74,8 +74,9 @@ public struct PullRequestPipelines: Sendable, Equatable, Identifiable {
     static func revision(of build: ADOBuild, for pr: PullRequest) -> Revision {
         if let source = build.triggerInfo?["pr.sourceSha"], let current = pr.sourceCommit,
            source.lowercased() != current.lowercased() { return .outdated }
+        guard pr.mergeStatus == "succeeded" else { return .unknown }
         // PR validation builds normally build the synthetic merge commit, not the source branch's SHA.
-        if let version = build.sourceVersion, let merge = pr.mergeCommit, pr.mergeStatus == "succeeded" {
+        if let version = build.sourceVersion, let merge = pr.mergeCommit {
             return version.lowercased() == merge.lowercased() ? .current : .outdated
         }
         if let source = build.triggerInfo?["pr.sourceSha"], let current = pr.sourceCommit {

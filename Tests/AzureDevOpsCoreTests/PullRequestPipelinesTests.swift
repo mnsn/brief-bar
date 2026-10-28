@@ -61,6 +61,20 @@ import Testing
         #expect(result.headline == "1 succeeded with issues · 1 canceled")
     }
 
+    @Test func requiresSuccessfulMergeComputationBeforeCountingCurrentResults() throws {
+        let statuses: [String?] = ["queued", "conflicts", "failure", nil]
+        for mergeStatus in statuses {
+            var pr = makePR(merge: mergeStatus)
+            let sourceOnly = try build(1, version: nil, source: "abc")
+            #expect(group(pr, [sourceOnly]).headline == "1 commit unverified")
+            pr.mergeCommit = "merge"
+            let matchingMerge = try build(2, source: "abc")
+            #expect(group(pr, [matchingMerge]).headline == "1 commit unverified")
+            let olderSource = try build(3, source: "old-source")
+            #expect(group(pr, [olderSource]).headline == "1 outdated")
+        }
+    }
+
     @Test func scopesEndpointToRepositoryAndExactPRRef() {
         let url = ADOEndpoint.pullRequestBuilds(makePR())
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
