@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0 - 2026-10-28
+
+- **/briefbar in the GitHub Copilot app.** Once agents are on, **Settings › Agents** can install
+  BriefBar's Copilot plugin, which the GitHub Copilot app and the Copilot CLI load. It's off until you
+  click **Install**, and turning agents off removes it. Type **/briefbar** in the app to see what needs
+  you as an inbox you can search, sort and group, with links to each pull request, pipeline and
+  Copilot session waiting for you. Ask it to fix a pull request's comments, build or conflicts, or to
+  review one, and the work starts in a session of its own in the app, in a worktree of your clone,
+  where you can follow and steer it; **Push & Reply** then goes to that same session. Sessions waiting
+  for your answer are only opened for you, never answered. The plugin comes with BriefBar and updates
+  with it, and gives agents nothing BriefBar didn't already.
+
 ## 0.8.2 - 2026-10-28
 
 - **Choose when Copilot completions move to Idle.** Finished and stopped sessions stay in their
