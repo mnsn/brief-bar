@@ -20,11 +20,15 @@ public struct EngineSnapshot: Sendable, Equatable {
     public var view: AppViewState
     /// Set when the Copilot data couldn't be read (shown in the UI instead of an empty list).
     public var problem: String?
+    /// The sessions are the ones the app's database lists, rather than every recent session folder, which is all there
+    /// is to go on while the database has never been readable (`SessionStateScanner`).
+    public var listedByApp: Bool
 
-    public init(records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil) {
+    public init(records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true) {
         self.records = records
         self.view = view
         self.problem = problem
+        self.listedByApp = listedByApp
     }
 }
 
@@ -261,7 +265,7 @@ public final class SessionEngine: @unchecked Sendable {
             let reader = readers[meta.id]
             return SessionRecord(meta: meta, log: reader?.isLoaded == true ? reader?.state : nil)
         }
-        return EngineSnapshot(records: records, view: view, problem: problem)
+        return EngineSnapshot(records: records, view: view, problem: problem, listedByApp: metadataFromDatabase)
     }
 
     private func publish(force: Bool = false) {

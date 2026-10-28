@@ -159,10 +159,16 @@ final class SessionStore: ObservableObject {
             )
         }
 
-        // The tasks BriefBar sent, unless the app lists their sessions itself.
+        // The tasks BriefBar sent. Once you open one's session in the app, its database lists it, and then it's the app's;
+        // without the database, every recent session folder is listed, the tasks' too, and those are the tasks'.
+        let sent = sentTasks?.tasks ?? []
+        if !state.listedByApp {
+            let ids = Set(sent.map(\.id))
+            resolved.removeAll { ids.contains($0.id) }
+        }
         var shown: [String: SentTask] = [:]
         let listed = Set(resolved.map(\.id))
-        for task in sentTasks?.tasks ?? [] where !listed.contains(task.id) && shown[task.id] == nil {
+        for task in sent where !listed.contains(task.id) && shown[task.id] == nil {
             shown[task.id] = task
             resolved.append(Self.snapshot(of: task, now: now, options: options, acknowledgedAt: settings.acknowledged[task.id]))
         }

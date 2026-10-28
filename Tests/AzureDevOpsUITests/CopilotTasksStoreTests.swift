@@ -298,6 +298,8 @@ import Testing
         )
         let note = CopilotTasksStore.startedNotification(entry, subject: "!4071 Fix totals")
         #expect(note.id == "copilot.\(first)")
+        // The one that says how it ended takes its place, and stopping it takes it away.
+        #expect(note.id == CopilotTasksStore.notificationID(first))
         #expect(note.source == .azureDevOps)
         #expect(note.title == "Copilot is fixing the comments")
         #expect(note.subtitle == "!4071 Fix totals")

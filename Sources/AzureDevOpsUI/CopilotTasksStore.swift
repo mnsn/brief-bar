@@ -510,7 +510,7 @@ final class CopilotTasksStore: ObservableObject {
             return
         }
         notifier.post([BriefBarNotification(
-            id: "copilot.\(entry.id)", source: .azureDevOps, title: heading, subtitle: subject, body: body, thread: "copilot",
+            id: Self.notificationID(entry.id), source: .azureDevOps, title: heading, subtitle: subject, body: body, thread: "copilot",
             userInfo: (entry.pullRequest ?? entry.workItemURL).map { ["url": $0.absoluteString] } ?? [:]
         )])
     }
@@ -553,9 +553,14 @@ final class CopilotTasksStore: ObservableObject {
         var info = [taskKey: entry.id]
         if let url = entry.pullRequest ?? entry.workItemURL { info["url"] = url.absoluteString }
         return BriefBarNotification(
-            id: "copilot.\(entry.id)", source: .azureDevOps, title: heading, subtitle: subject,
+            id: notificationID(entry.id), source: .azureDevOps, title: heading, subtitle: subject,
             body: body + " You'll hear when it's done.", thread: "copilot", userInfo: info
         )
+    }
+
+    /// A task's notification: the one that says it started, then the one that says how it ended, in its place.
+    nonisolated static func notificationID(_ id: String) -> String {
+        "copilot.\(id)"
     }
 
     /// A notification's key for the task it's about, as it starts.
@@ -569,6 +574,8 @@ final class CopilotTasksStore: ObservableObject {
         if let index = settings.copilotRuns.firstIndex(where: { $0.id == run.id }) {
             settings.copilotRuns[index].stoppedByYou = true
         }
+        // Nothing takes the place of the notification that says it's working, so it goes now.
+        notifier?.remove([Self.notificationID(run.id)])
         DetachedProgram.stop(run.process)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refresh() }
     }

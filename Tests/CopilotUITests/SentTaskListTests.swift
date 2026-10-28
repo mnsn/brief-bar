@@ -64,6 +64,22 @@ import Testing
         #expect(store.task(for: "s1") == nil)
     }
 
+    /// Without the app's database, the list is every recent session folder, the tasks' too: those are the tasks', with
+    /// what they open and their menus.
+    @Test func aTasksFolderFoundWithoutTheAppsDatabaseIsTheTask() {
+        let sent = SentTasks()
+        sent.publish(.azureDevOps, tasks: [task("t1", stage: .working, since: now)])
+        let store = store(sent)
+        let folder = SessionRecord(
+            meta: SessionMeta(id: "t1", name: "Session t1", sessionType: "unknown", isRunning: nil, updatedAt: now), log: nil
+        )
+        store.receive(EngineSnapshot(records: [folder, appSession("s1")], listedByApp: false))
+        #expect(store.sessions.map(\.id).sorted() == ["s1", "t1"])
+        #expect(store.task(for: "t1") != nil)
+        #expect(store.sessions.first { $0.id == "t1" }?.displayName == "Fix Comments: !4071 Fix totals")
+        #expect(store.task(for: "s1") == nil)
+    }
+
     @Test func openingAFinishedTaskOpensWhatItsForAndDismissesIt() throws {
         var opened = 0
         let sent = SentTasks()

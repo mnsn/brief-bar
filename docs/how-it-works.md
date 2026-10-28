@@ -1088,11 +1088,11 @@ went; clicking it opens the pull request, or the work item.
 **Showing it.** Nothing opens: Copilot works in a session of its own, which the Copilot app doesn't list.
 So as you send a task, while its worktree is still getting ready, a notification says Copilot is on it,
 what it does and what it won't (`CopilotTasksStore.startedNotification`); the one that says how it ended
-takes its place, and clicking it shows the task with your Copilot sessions, in the menu bar or a window.
-The work item's card or pull request's row shows how it's going. And while the GitHub Copilot source is
-on, Azure DevOps tells it every task, as it stands, through `AppServices.sentTasks` (`SentTasks`, in
-memory only), and its list shows each one with the app's sessions ([below](#how-a-status-is-decided)).
-Neither source reads anything more for it.
+takes its place, or, if you stop the task, it's taken away. Clicking it shows the task with your Copilot
+sessions, in the menu bar or a window. The work item's card or pull request's row shows how it's going.
+And while the GitHub Copilot source is on, Azure DevOps tells it every task, as it stands, through
+`AppServices.sentTasks` (`SentTasks`, in memory only), and its list shows each one with the app's
+sessions ([below](#how-a-status-is-decided)). Neither source reads anything more for it.
 
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
 repository and worktree, whether you stopped it, and the pull request's link go to the preferences (`ado.copilot.runs`),
@@ -1194,8 +1194,9 @@ it applies. A few more details:
   orange from 70%. Sessions the app hasn't measured show nothing.
 - Clicking a session opens it through the Copilot app's `ghapp://sessions/<id>` link.
 - The tasks you sent to Copilot from Azure DevOps ([above](#send-work-to-copilot)) are in the list too,
-  with ✈︎ before their names, unless the app lists their sessions itself, as it does once you open one
-  there. Azure DevOps already follows them, so the list takes how each one stands from it rather than
+  with ✈︎ before their names, unless the app's database lists their sessions itself, as it does once you
+  open one there. (Without the database, the list is every recent session folder, and a task's folder is
+  the task.) Azure DevOps already follows them, so the list takes how each one stands from it rather than
   reading anything (`StatusResolver.snapshot(unlisted:…)`): **Running** while its worktree gets ready
   (Starting…) and while Copilot works, with its current step; then **Done** or **Stopped**, highlighted as
   long as a session would be, and seen the same ways, except that one you stopped yourself is idle at
