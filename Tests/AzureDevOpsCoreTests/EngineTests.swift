@@ -206,6 +206,10 @@ import BriefBarCore
         #expect(Set(notes.map(\.title)) == ["Build failed", "Ready to complete", "Completed"])
         #expect(notes.first { $0.title == "Build failed" }?.body == "web-ci")
         #expect(notes.first { $0.title == "Ready to complete" }?.body == "Approved by Priya Shah")
+        // For their symbols on the Notifications page.
+        #expect(notes.first { $0.title == "Build failed" }?.state == .failing)
+        #expect(notes.first { $0.title == "Ready to complete" }?.state == .done)
+        #expect(notes.first { $0.title == "Completed" }?.state == .done)
     }
 
     @Test func aBuildThatFailsAgainIsNewsAgain() {
@@ -259,6 +263,28 @@ import BriefBarCore
         #expect(notes.prefix(3).map(\.subtitle) == ["Pull request 6", "Pull request 5", "Pull request 4"])
         #expect(notes.last?.body == "3 more pull request updates")
         #expect(notes.last?.url == nil)
+    }
+
+    @Test func whatASummaryCountsIsKeptForTheNotificationsPage() {
+        let after = (1...6).map { number in
+            snapshot(number, group: .needsYou, events: [PREvent(id: "c\(number)", kind: .comment, at: t(Double(number)), actor: "Sam Rivera")])
+        }
+        let news = NotificationPlanner.news(previous: [], current: after) { _ in t(0) }
+        #expect(news.map(\.subtitle) == (1...6).reversed().map { "Pull request \($0)" })
+        #expect(news.allSatisfy { $0.state == .needsYou })
+
+        let plan = NotificationPlanner.collapse(news, limit: 4)
+        #expect(plan.shown.map(\.subtitle) == ["Pull request 6", "Pull request 5", "Pull request 4"])
+        #expect(plan.summarized.map(\.subtitle) == ["Pull request 3", "Pull request 2", "Pull request 1"])
+        #expect(plan.summary?.body == "3 more pull request updates")
+        #expect(plan.summary?.state == nil)
+        #expect(plan.posted == NotificationPlanner.plan(previous: [], current: after, notBefore: t(0), limit: 4))
+
+        // Few enough, each has a notification of its own.
+        let few = NotificationPlanner.collapse(Array(news.prefix(4)), limit: 4)
+        #expect(few.posted == Array(news.prefix(4)))
+        #expect(few.summary == nil)
+        #expect(few.summarized.isEmpty)
     }
 
     @Test func briefSummarizesAcrossGroupsAndPromptsOneItemAtATime() {

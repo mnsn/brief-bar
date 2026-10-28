@@ -108,14 +108,19 @@ final class WindowHost: NSObject, NSWindowDelegate {
 final class WindowContent: ObservableObject {
     /// The Overview's page, first in a window with several pages.
     static let overview = WindowPages.overview
+    /// The Notifications page, after the Overview, while it lists something.
+    static let notifications = WindowPages.notifications
 
     let id: String
     @Published private(set) var sections: [SectionID] = []
     @Published private(set) var selected: SectionID?
+    /// Whether it has the Notifications page: the window with the Overview, while the page is on and lists something.
+    @Published private(set) var hasNotifications = false
     unowned let model: AppModel
     /// What the Overview shows.
     let overviewList: StateListModel
     private var cancellables: Set<AnyCancellable> = []
+    private var notificationsChanges: AnyCancellable?
     /// Whether its window shows on screen, as its host says.
     var isOnScreen = false {
         didSet { updateVisible() }
@@ -133,16 +138,26 @@ final class WindowContent: ObservableObject {
         overviewList = StateListModel(model: model)
         let saved = model.services.defaults.dictionary(forKey: Self.pagesKey) as? [String: String]
         selected = saved?[id].map(SectionID.init(rawValue:))
+        let recent = model.services.recentNotifications
+        notificationsChanges = recent.$isOn.removeDuplicates().map { _ in () }
+            .merge(with: recent.$history.map(\.isEmpty).removeDuplicates().map { _ in () })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in MainActor.assumeIsolated { self?.updateNotifications() } }
     }
 
-    /// Its pages: the Overview first, when it has several sections, then a page for each.
+    private var windowPages: WindowPages {
+        WindowPages(sections: sections, notifications: hasNotifications)
+    }
+
+    /// Its pages: the Overview first, when it has several sections, then the Notifications page, while it has it, then a
+    /// page for each.
     var pages: [SectionID] {
-        WindowPages(sections: sections).pages
+        windowPages.pages
     }
 
     /// The page that shows: the one you chose, or the first.
     var current: SectionID? {
-        WindowPages(sections: sections).current(chosen: selected)
+        windowPages.current(chosen: selected)
     }
 
     /// Such as "GitHub Copilot: Sessions" for a window with one page, for the window list and VoiceOver.
@@ -157,7 +172,7 @@ final class WindowContent: ObservableObject {
     func update(sections: [SectionID]) {
         self.sections = sections
         overviewList.update(sections: sections.count > 1 ? sections : [])
-        updateVisible()
+        updateNotifications()
         // The sidebar's counts follow the menu bar's.
         cancellables.removeAll()
         var seen = Set<SourceID>()
@@ -172,16 +187,30 @@ final class WindowContent: ObservableObject {
     /// Shows `section`'s page, or for nil, the Overview, which a window opens on, and tells their sources, which may
     /// refresh; `--render` doesn't. A window without an Overview keeps the page that shows.
     func select(_ section: SectionID?, notify: Bool = true) {
-        if let page = WindowPages(sections: sections).page(for: section) {
+        if let page = windowPages.page(for: section) {
             selected = page
             var saved = model.services.defaults.dictionary(forKey: Self.pagesKey) as? [String: String] ?? [:]
             saved[id] = page.rawValue
             model.services.defaults.set(saved, forKey: Self.pagesKey)
         }
-        if notify, let current {
+        if notify, let current, current != Self.notifications {
             for section in current == Self.overview ? overviewList.sections : [current] {
                 model.source(for: section)?.pageWillShow(section)
             }
+        }
+        updateVisible()
+    }
+
+    /// Whether the window has the Notifications page, after the page was turned on or off, began to list something or
+    /// stopped, or the windows changed. Once it goes, the window goes back to its Overview, rather than coming back to the
+    /// page with the next notification.
+    private func updateNotifications() {
+        let has = model.hasNotificationsPage(window: id)
+        if has != hasNotifications {
+            hasNotifications = has
+        }
+        if !has, selected == Self.notifications {
+            selected = nil
         }
         updateVisible()
     }
@@ -204,11 +233,12 @@ final class WindowContent: ObservableObject {
         if isOnScreen, let current {
             if current == Self.overview {
                 for section in overviewList.sections { shown[section] = .stateList }
-            } else {
+            } else if current != Self.notifications {
                 shown[current] = .window
             }
         }
         overviewList.isShowing = isOnScreen && current == Self.overview
+        model.services.recentNotifications.pageVisibilityChanged(isOnScreen && current == Self.notifications, by: "window.\(id)")
         guard shown != visible else { return }
         let before = visible
         visible = shown
@@ -249,6 +279,8 @@ struct WindowView: View {
     private var page: some View {
         if content.current == WindowContent.overview {
             OverviewPage(list: content.overviewList, model: content.model)
+        } else if content.current == WindowContent.notifications {
+            NotificationsPage(recent: content.model.services.recentNotifications, model: content.model)
         } else if let section = content.current, let source = content.model.source(for: section) {
             source.page(for: section)
                 .environment(\.shownSection, section)
@@ -285,6 +317,14 @@ struct WindowSidebar: View {
                             segment: content.overviewSegment, isSelected: content.current == WindowContent.overview, shortcut: 1
                         ) {
                             content.select(WindowContent.overview)
+                        }
+                    }
+                    // Without a shortcut: coming and going, it would move the sections' own.
+                    if content.pages.contains(WindowContent.notifications) {
+                        NotificationsSidebarItem(
+                            recent: model.services.recentNotifications, isSelected: content.current == WindowContent.notifications
+                        ) {
+                            content.select(WindowContent.notifications)
                         }
                     }
                     ForEach(Array(content.sections.enumerated()), id: \.element) { index, section in
@@ -362,6 +402,8 @@ private struct SidebarItem: View {
     let isSelected: Bool
     /// ⌘1 to ⌘9.
     let shortcut: Int?
+    /// Counts what's new, as the Notifications page does, rather than what needs attention: the same with Clearer States.
+    var countsNew = false
     let action: () -> Void
 
     @LocalState private var isHovered = false
@@ -391,18 +433,19 @@ private struct SidebarItem: View {
                     .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                let count = options.clearerStates ? segment.attentionCount : segment.count
+                let clearer = options.clearerStates && !countsNew
+                let count = clearer ? segment.attentionCount : segment.count
                 if count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(options.clearerStates ? Color.primary : .white)
+                        .foregroundStyle(clearer ? Color.primary : .white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 18)
                         .background(Capsule().fill(
-                            options.clearerStates ? (segment.states.needsYou == 0 ? Color.red : .orange).opacity(0.14)
+                            clearer ? (segment.states.needsYou == 0 ? Color.red : .orange).opacity(0.14)
                                 : options.quietAppearance ? Color.secondary : segment.needsAttention ? info.tint : Color.secondary
                         ))
-                } else if options.clearerStates, info.states.isEmpty, segment.count > 0 {
+                } else if clearer, info.states.isEmpty, segment.count > 0 {
                     Text("\(segment.count) left")
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -424,6 +467,25 @@ private struct SidebarItem: View {
         .accessibilityLabel(info.title)
         .accessibilityValue(segment.summary)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// The Notifications page in the sidebar, with how many it lists that you haven't seen.
+private struct NotificationsSidebarItem: View {
+    @ObservedObject var recent: RecentNotifications
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let unseen = recent.history.unseenCount
+        SidebarItem(
+            info: SectionInfo(id: WindowContent.notifications, title: "Notifications", symbol: NotificationsPage.symbol, tint: .red),
+            segment: MenuBarSegment(
+                glyph: nil, title: NSAttributedString(), summary: unseen == 0 ? "Nothing new" : "\(unseen) new", count: unseen,
+                needsAttention: unseen > 0, states: StateCounts()
+            ),
+            isSelected: isSelected, shortcut: nil, countsNew: true, action: action
+        )
     }
 }
 

@@ -186,6 +186,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .store(in: &cancellables)
         }
         publishSentTasks()
+        listDemoNotifications(from: store)
         changes.send()
     }
 
@@ -196,6 +197,18 @@ package final class AzureDevOpsSource: BriefBarSource {
             return
         }
         services.sentTasks.publish(.azureDevOps, tasks: copilot.sentTasks())
+    }
+
+    /// The demo's made-up news on the Notifications page, as if BriefBar had been running for a while: what came over
+    /// the last hour is new, the rest seen.
+    private func listDemoNotifications(from store: PRStore) {
+        guard services.isDemo else { return }
+        let recent = services.recentNotifications
+        let hourAgo = Date().addingTimeInterval(-3600)
+        for (notification, date) in store.demoNotifications {
+            recent.record([notification], at: date)
+            if date < hourAgo { recent.markSeen(notification.id) }
+        }
     }
 
     package func didTurnOn() {
@@ -499,6 +512,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
+        listDemoNotifications(from: store)
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }

@@ -498,6 +498,7 @@ final class CopilotTasksStore: ObservableObject {
         let subject = subject(of: entry)
         let heading: String
         let body: String
+        var state = ItemState.done
         switch status.phase {
         case .finished where entry.action != nil:
             switch entry.action {
@@ -513,15 +514,17 @@ final class CopilotTasksStore: ObservableObject {
         case .failed:
             heading = "Copilot couldn't finish"
             body = Self.firstLine(status.detail) ?? "It reported an error."
+            state = .failing
         case .stopped:
             heading = "Copilot stopped"
             body = "It stopped before it finished."
+            state = .failing
         case .preparing, .working:
             return
         }
         notifier.post([BriefBarNotification(
-            id: Self.notificationID(entry.id), source: .azureDevOps, title: heading, subtitle: subject, body: body, thread: "copilot",
-            userInfo: (entry.pullRequest ?? entry.workItemURL).map { ["url": $0.absoluteString] } ?? [:]
+            id: Self.notificationID(entry.id), source: .azureDevOps, state: state, title: heading, subtitle: subject, body: body,
+            thread: "copilot", userInfo: (entry.pullRequest ?? entry.workItemURL).map { ["url": $0.absoluteString] } ?? [:]
         )])
     }
 
@@ -563,7 +566,7 @@ final class CopilotTasksStore: ObservableObject {
         var info = [taskKey: entry.id]
         if let url = entry.pullRequest ?? entry.workItemURL { info["url"] = url.absoluteString }
         return BriefBarNotification(
-            id: notificationID(entry.id), source: .azureDevOps, title: heading, subtitle: subject,
+            id: notificationID(entry.id), source: .azureDevOps, state: .running, title: heading, subtitle: subject,
             body: body + " You'll hear when it's done.", thread: "copilot", userInfo: info
         )
     }
