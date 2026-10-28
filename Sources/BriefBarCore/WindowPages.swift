@@ -1,18 +1,26 @@
 import Foundation
 
-/// A window's pages: an Overview first, when it shows several sections, then a page for each section.
+/// A window's pages: an Overview first, when it shows several sections, then the Notifications page, while it has one,
+/// then a page for each section.
 public struct WindowPages: Equatable, Sendable {
     /// The Overview's page: everything on the window's other pages by state, with the brief.
     public static let overview = SectionID(rawValue: "briefbar.overview")
+    /// The Notifications page: what BriefBar notified you of lately, from every source (`NotificationHistory`). Only a
+    /// window with an Overview has it.
+    public static let notifications = SectionID(rawValue: "briefbar.notifications")
 
     public var sections: [SectionID]
+    /// Whether it shows the Notifications page, after its Overview: a window without an Overview doesn't.
+    public var showsNotifications: Bool
 
-    public init(sections: [SectionID]) {
+    public init(sections: [SectionID], notifications: Bool = false) {
         self.sections = sections
+        showsNotifications = notifications
     }
 
     public var pages: [SectionID] {
-        sections.count > 1 ? [Self.overview] + sections : sections
+        guard sections.count > 1 else { return sections }
+        return [Self.overview] + (showsNotifications ? [Self.notifications] : []) + sections
     }
 
     public var hasOverview: Bool {

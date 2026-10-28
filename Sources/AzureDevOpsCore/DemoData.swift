@@ -337,3 +337,18 @@ extension DemoData {
         )
     }
 }
+
+extension DemoData {
+    /// What the demo notified you of, for the Notifications page: the made-up pull requests' news, each as of when it
+    /// happened, as if BriefBar had been running all along.
+    public static func notifications(for items: [PRSnapshot]) -> [PulseNotification] {
+        let before = items.map { item in
+            var item = item
+            item.group = .waiting
+            item.events = []
+            item.merge = nil
+            return item
+        }
+        return NotificationPlanner.news(previous: before, current: items) { _ in .distantPast }
+    }
+}
