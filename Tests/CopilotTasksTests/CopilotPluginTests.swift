@@ -67,6 +67,42 @@ import Testing
         #expect(!description.isEmpty && description.count <= 1024)
     }
 
+    /// The skill's points, each a line starting with "- " and the indented lines after it.
+    static func points(in text: String) -> [String] {
+        var points: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            if line.hasPrefix("- ") {
+                points.append(String(line.dropFirst(2)))
+            } else if line.hasPrefix("  "), !points.isEmpty {
+                points[points.count - 1] += " " + line.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return points
+    }
+
+    /// When agents are off or paused, no tool of BriefBar's answers, so the agent stops. When only a source is off,
+    /// `needs_me` still has the others, under their own headings, so the agent shows them.
+    @Test func skillStopsOnlyWhenAgentsAreOff() throws {
+        let points = Self.points(in: try String(contentsOf: Self.skill, encoding: .utf8)).map { $0.lowercased() }
+        // What BriefBar answers, up to its first full stop: "Agents are off in BriefBar", "… is off in BriefBar".
+        func lead(_ refusal: String) -> String {
+            String(refusal.prefix { $0 != "." }).lowercased()
+        }
+        let agentsOff = lead(try #require(AgentAccess.refusal(.off)))
+        let sourceOff = lead(String(AgentAccess.refusal(source: "Azure DevOps").dropFirst("Azure DevOps ".count)))
+        #expect(agentsOff == "agents are off in briefbar")
+        #expect(sourceOff == "is off in briefbar")
+
+        let forAgents = try #require(points.first { $0.contains(agentsOff) }, "The skill doesn't say what to do when agents are off")
+        #expect(forAgents.contains("stop"))
+        let forASource = points.filter { $0.contains(sourceOff) }
+        #expect(!forASource.isEmpty, "The skill doesn't say what to do when a source is off")
+        for point in forASource {
+            #expect(!point.contains("stop"), "The skill stops when only a source is off: \(point)")
+            #expect(point.contains("`needs_me`"))
+        }
+    }
+
     // MARK: The tools it names
 
     /// Whether macOS says enough here to tell a program started plainly from one responsible for itself, which

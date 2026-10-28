@@ -7,7 +7,8 @@ import SwiftUI
 /// Whether agents may use BriefBar (`BriefBar --mcp`), and BriefBar among the Copilot CLI's MCP servers. Agents are off
 /// until you turn them on, like a source: turning them on adds BriefBar to the Copilot CLI, and turning them off
 /// removes it. BriefBar's plugin for Copilot, which gives the GitHub Copilot app and the CLI `/briefbar`, is installed
-/// only when you ask, once agents are on, and turning them off removes it too. Other agents' apps, such as VS Code, get
+/// only when you ask, once agents are on, and turning them off removes it too. If the CLI can't remove either, the page
+/// says so while agents are off, and tries again when you ask. Other agents' apps, such as VS Code, get
 /// BriefBar only when you install it in them, with their own install links, and keep it until you remove it there. The
 /// demo and `--render` never run the CLI or open another app, and show what the CLI would say.
 @MainActor
@@ -18,6 +19,11 @@ final class AgentsModel: ObservableObject {
         /// Asking the CLI, or changing what it has.
         case working
         case known(CopilotMCPRegistration.Status)
+
+        var status: CopilotMCPRegistration.Status? {
+            if case .known(let status) = self { return status }
+            return nil
+        }
     }
 
     /// BriefBar's plugin among the Copilot CLI's, as the CLI last said.
@@ -26,6 +32,11 @@ final class AgentsModel: ObservableObject {
         /// Asking the CLI, or changing what it has.
         case working
         case known(CopilotPluginRegistration.Status)
+
+        var status: CopilotPluginRegistration.Status? {
+            if case .known(let status) = self { return status }
+            return nil
+        }
     }
 
     @Published private(set) var state: SourceState
@@ -147,6 +158,27 @@ final class AgentsModel: ObservableObject {
         change(demo: .absent) { await $0.remove() }
     }
 
+    // MARK: Turned off
+
+    /// While agents are off, what turning them off couldn't remove from the Copilot CLI; nil while BriefBar is still
+    /// removing it, once it has, or when agents are on.
+    var leftovers: AgentCleanup? {
+        guard state == .off, !isLeaving else { return nil }
+        let cleanup = AgentCleanup(server: registration.status, plugin: plugin.status)
+        return cleanup.isDone ? nil : cleanup
+    }
+
+    /// While agents are off, BriefBar is removing itself, or its plugin, from the Copilot CLI.
+    var isLeaving: Bool { state == .off && (registration == .working || plugin == .working) }
+
+    /// Removes again what turning agents off couldn't.
+    func removeLeftovers() {
+        guard let leftovers else { return }
+        Log.app.info("Removing what turning agents off left in the Copilot CLI")
+        if leftovers.server != nil { change(demo: .absent) { await $0.remove() } }
+        if leftovers.plugin != nil { changePlugin(demo: .absent) { await $0.remove() } }
+    }
+
     // MARK: The plugin
 
     /// This copy of BriefBar has its plugin to install: BriefBar.app does, a build from `swift build` doesn't.
@@ -209,7 +241,9 @@ final class AgentsModel: ObservableObject {
         withCLI { [weak self] cli in
             let status: CopilotPluginRegistration.Status
             if let cli {
-                status = await action(CopilotPluginRegistration(cli: cli, marketplace: marketplace))
+                status = await action(CopilotPluginRegistration(
+                    cli: cli, marketplace: marketplace, bundleIdentifier: AppIdentity.bundleIdentifier
+                ))
             } else {
                 status = .noCLI
             }
@@ -239,6 +273,13 @@ final class AgentsModel: ObservableObject {
         state = on ? .on : AgentAccess.state(in: defaults)
         registration = on ? .known(.added(enabled: true)) : .unknown
         plugin = on ? .known(.absent) : .unknown
+    }
+
+    /// For `--render`: agents just turned off, and the Copilot CLI couldn't remove the plugin, without saving either.
+    func useForRenderingLeftovers() {
+        state = .off
+        registration = .known(.absent)
+        plugin = .known(.failed("Couldn't save the settings: another Copilot process is writing them."))
     }
 
     /// A path as a shell reads it.
@@ -304,6 +345,7 @@ struct AgentsPage: View {
 
             switch agents.state {
             case .off:
+                AgentsLeftoversRow(agents: agents)
                 AgentsDescriptionBox()
                 Button("Let Agents Use BriefBar") { agents.turnOn() }
                     .keyboardShortcut(.defaultAction)
@@ -350,6 +392,45 @@ struct AgentsPage: View {
             }
         }
         .onAppear { agents.refresh() }
+    }
+}
+
+/// While agents are off: BriefBar leaving the Copilot CLI, and what it couldn't remove there, with Try Again.
+private struct AgentsLeftoversRow: View {
+    @ObservedObject var agents: AgentsModel
+
+    var body: some View {
+        if agents.isLeaving {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Removing BriefBar from the Copilot CLI…")
+                    .foregroundStyle(.secondary)
+            }
+        } else if let leftovers = agents.leftovers {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("BriefBar couldn't leave the Copilot CLI")
+                        .font(.headline)
+                    if let server = leftovers.server {
+                        Text("Its MCP server, \(CopilotMCPRegistration.name): \(server)")
+                    }
+                    if let plugin = leftovers.plugin {
+                        Text("Its Copilot plugin: \(plugin)")
+                    }
+                    Text("Agents are off either way: BriefBar's tools answer that they are.")
+                        .foregroundStyle(.secondary)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Try Again") { agents.removeLeftovers() }
+            }
+            .padding(12)
+            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
 
@@ -524,7 +605,11 @@ private struct CopilotPluginRow: View {
                      : "Not installed. This copy of BriefBar doesn't have it: BriefBar.app does.")
                     .foregroundStyle(.secondary)
             case .taken:
-                Text("Copilot has another marketplace named \(CopilotPluginRegistration.name), which BriefBar leaves.")
+                Text("""
+                    Copilot has a plugin marketplace named \(CopilotPluginRegistration.name) that BriefBar can't tell \
+                    is its own, so it leaves it. To install BriefBar's, remove it with copilot plugin marketplace \
+                    remove \(CopilotPluginRegistration.name).
+                    """)
                     .foregroundStyle(.secondary)
             case .noCLI:
                 Text("It needs the Copilot CLI, which isn't installed: brew install copilot-cli installs it.")

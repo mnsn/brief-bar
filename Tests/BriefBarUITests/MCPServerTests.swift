@@ -1,3 +1,4 @@
+import BriefBarCore
 import BriefBarUI
 import Foundation
 import Synchronization
@@ -205,6 +206,26 @@ private final class Output: Sendable {
         refusal.withLock { $0 = nil }
         #expect(try await tools[1].run(.object(["text": .string("x")])) == "x")
         #expect(try await tools[0].run(.object([:])).contains("Two need you."))
+    }
+
+    /// A source that's off answers so under its own heading, and the others still answer: the skill relies on that, and
+    /// stops only when agents are off.
+    @Test func needsMeAnswersForTheSourcesThatAreOn() async throws {
+        let sources = [
+            MCPSource(name: "Azure DevOps", tools: [echo]) { "- !1 needs you" }
+                .available(while: { false }, refusal: AgentAccess.refusal(source: "Azure DevOps")),
+            MCPSource(name: "GitHub Copilot", tools: []) { "- “Add dark mode” waits for your answer" },
+        ]
+        let text = try await MCPSource.tools(sources)[0].run(.object([:]))
+        #expect(text == """
+            ## Azure DevOps
+
+            Azure DevOps is off in BriefBar. Turn it on in BriefBar's Settings to use it here.
+
+            ## GitHub Copilot
+
+            - “Add dark mode” waits for your answer
+            """)
     }
 
     @Test func needsMeHasEverySourceInOrder() async throws {

@@ -8,13 +8,55 @@ import Testing
 /// made-up CLI that behaves as Copilot CLI 1.0.105 does with a marketplace in a folder.
 @Suite struct CopilotPluginRegistrationTests {
     private static let here = URL(fileURLWithPath: "/Applications/BriefBar.app/Contents/Resources/CopilotPlugin")
-    private static let otherCopy = "/Users/me/briefbar/build/BriefBar.app/Contents/Resources/CopilotPlugin"
 
-    /// What the made-up CLI keeps: its marketplaces' sources by name, and whether each plugin is turned on, by
-    /// plugin@marketplace, as its settings keep them.
+    /// Folders that a marketplace named briefbar could be in, made up in a temporary folder: another copy of BriefBar,
+    /// and others that only look like one.
+    struct Folders {
+        let root: URL
+
+        init() throws {
+            root = try makeTemporaryDirectory()
+            try Self.app(at: otherCopyApp, identifier: CopilotPluginRegistration.bundleIdentifier)
+            try Self.app(at: otherApp, identifier: "com.example.Notes")
+            try Self.marketplace(at: URL(fileURLWithPath: lookalike))
+        }
+
+        func remove() {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        /// Another copy of BriefBar.app, such as one you built.
+        var otherCopyApp: URL { root.appendingPathComponent("build/BriefBar.app", isDirectory: true) }
+        var otherCopy: String { otherCopyApp.appendingPathComponent("Contents/Resources/CopilotPlugin").path }
+        /// Another app, with a marketplace in the same place as BriefBar's.
+        var otherApp: URL { root.appendingPathComponent("Notes.app", isDirectory: true) }
+        var inOtherApp: String { otherApp.appendingPathComponent("Contents/Resources/CopilotPlugin").path }
+        /// A folder of someone's own, which is named like BriefBar's.
+        var lookalike: String { root.appendingPathComponent("plugins/CopilotPlugin").path }
+        /// Where a copy of BriefBar was, before it was deleted or moved.
+        var gone: String { root.appendingPathComponent("Old/BriefBar.app/Contents/Resources/CopilotPlugin").path }
+
+        private static func app(at app: URL, identifier: String) throws {
+            try marketplace(at: app.appendingPathComponent("Contents/Resources/CopilotPlugin", isDirectory: true))
+            let info = try PropertyListSerialization.data(
+                fromPropertyList: ["CFBundleIdentifier": identifier, "CFBundlePackageType": "APPL"], format: .xml, options: 0
+            )
+            try info.write(to: app.appendingPathComponent("Contents/Info.plist"))
+        }
+
+        private static func marketplace(at folder: URL) throws {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"name":"briefbar","owner":{"name":"Someone"},"plugins":[]}"#.utf8)
+                .write(to: folder.appendingPathComponent("marketplace.json"))
+        }
+    }
+
+    /// What the made-up CLI keeps: its marketplaces' sources by name, whether each plugin is turned on, by
+    /// plugin@marketplace, as its settings keep them, and the commands that fail once, by their first arguments.
     struct State: Sendable, Equatable {
         var marketplaces: [String: String] = [:]
         var plugins: [String: Bool] = [:]
+        var failures: [[String]: String] = [:]
     }
 
     /// A CLI with these marketplaces and plugins, which changes them as asked, and fails where the real one does.
@@ -55,6 +97,10 @@ import Testing
         }
 
         static func answer(_ arguments: [String], _ state: inout State) -> ProcessResult {
+            if let key = state.failures.keys.first(where: { arguments.starts(with: $0) }),
+               let message = state.failures.removeValue(forKey: key) {
+                return failed(key.dropFirst().joined(separator: "."), message)
+            }
             switch arguments {
             case ["plugin", "marketplace", "list", "--json"]:
                 return json(state.marketplaces.sorted { $0.key < $1.key }.map { ["name": $0.key, "source": $0.value, "isDefault": false] }
@@ -81,6 +127,10 @@ import Testing
                 guard state.marketplaces.removeValue(forKey: name) != nil else {
                     return failed("marketplaces.remove", "Marketplace \"\(name)\" is not registered")
                 }
+                // With --force, it uninstalls whatever plugins came from it, whoever's they are.
+                if arguments.contains("--force") {
+                    state.plugins = state.plugins.filter { !$0.key.hasSuffix("@\(name)") }
+                }
                 return .ok("Marketplace \"\(name)\" removed successfully.\n")
             case ["plugin", "install", "briefbar@briefbar"]:
                 guard state.marketplaces["briefbar"] != nil else { return failed("install", "Marketplace \"briefbar\" not found") }
@@ -96,22 +146,37 @@ import Testing
         }
     }
 
-    private static func installed(at folder: String = here.path, enabled: Bool = true) -> State {
+    static func installed(at folder: String = here.path, enabled: Bool = true) -> State {
         State(marketplaces: ["briefbar": "Local: \(folder)"], plugins: ["briefbar@briefbar": enabled])
     }
 
-    private static func changes(_ cli: CLI) -> [[String]] {
+    static func changes(_ cli: CLI) -> [[String]] {
         cli.runner.arguments.filter { !$0.contains("--json") }
     }
 
-    @Test func tellsWhoseAMarketplaceIs() {
+    @Test func tellsWhoseAMarketplaceIs() throws {
+        let folders = try Folders()
+        defer { folders.remove() }
         typealias Registration = CopilotPluginRegistration
-        #expect(Registration.marketplace(Self.here.path, this: Self.here) == .this)
-        #expect(Registration.marketplace(Self.here.path + "/", this: Self.here) == .this)
-        #expect(Registration.marketplace(Self.otherCopy, this: Self.here) == .elsewhere(Self.otherCopy))
-        #expect(Registration.marketplace(Self.otherCopy, this: nil) == .elsewhere(Self.otherCopy))
-        #expect(Registration.marketplace("/Users/me/plugins/briefbar", this: Self.here) == .other)
-        #expect(Registration.marketplace(nil, this: Self.here) == .other)
+        func whose(_ folder: String?, this: URL? = Self.here) -> Registration.Found.Marketplace {
+            Registration.marketplace(folder, this: this, bundleIdentifier: Registration.bundleIdentifier)
+        }
+        #expect(whose(Self.here.path) == .this)
+        #expect(whose(Self.here.path + "/") == .this)
+        // Another copy of BriefBar.app, by its bundle identifier, also for a build without a plugin of its own.
+        #expect(whose(folders.otherCopy) == .elsewhere(folders.otherCopy))
+        #expect(whose(folders.otherCopy, this: nil) == .elsewhere(folders.otherCopy))
+        // Neither its name nor its folder's makes one BriefBar's.
+        #expect(whose(folders.lookalike) == .other)
+        #expect(whose(folders.inOtherApp) == .other)
+        #expect(whose(folders.gone) == .other)
+        #expect(whose(nil) == .other)
+        #expect(Registration.marketplace(folders.otherCopy, this: Self.here, bundleIdentifier: "com.example.Notes") == .other)
+
+        #expect(Registration.app(holding: URL(fileURLWithPath: folders.otherCopy))?.standardizedFileURL == folders.otherCopyApp.standardizedFileURL)
+        #expect(Registration.app(holding: URL(fileURLWithPath: folders.lookalike)) == nil)
+        #expect(Registration.identifier(of: folders.otherApp) == "com.example.Notes")
+        #expect(Registration.identifier(of: folders.root) == nil)
 
         #expect(Registration.localFolder("Local: /tmp/CopilotPlugin") == "/tmp/CopilotPlugin")
         #expect(Registration.localFolder("/tmp/CopilotPlugin") == "/tmp/CopilotPlugin")
@@ -127,14 +192,17 @@ import Testing
         #expect(Registration.firstLine(Data("\nError: Not signed in.\n".utf8)) == "Not signed in.")
     }
 
-    @Test func readsWhatTheCLISays() async {
+    @Test func readsWhatTheCLISays() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
         #expect(await CLI().registration().status() == .absent)
         #expect(await CLI(Self.installed()).registration().status() == .installed(enabled: true))
         #expect(await CLI(Self.installed(enabled: false)).registration().status() == .installed(enabled: false))
-        #expect(await CLI(Self.installed(at: Self.otherCopy)).registration().status() == .installedElsewhere(Self.otherCopy))
+        #expect(await CLI(Self.installed(at: folders.otherCopy)).registration().status() == .installedElsewhere(folders.otherCopy))
         // Its marketplace, without the plugin.
         #expect(await CLI(State(marketplaces: ["briefbar": "Local: \(Self.here.path)"])).registration().status() == .absent)
         #expect(await CLI(State(marketplaces: ["briefbar": "GitHub: someone/briefbar"])).registration().status() == .taken)
+        #expect(await CLI(Self.installed(at: folders.lookalike)).registration().status() == .taken)
     }
 
     @Test func installsItWhenItsAbsent() async {
@@ -153,27 +221,42 @@ import Testing
         #expect(Self.changes(cli) == [["plugin", "install", "briefbar@briefbar"]])
     }
 
-    @Test func replacesAnotherCopysPlugin() async {
-        let cli = CLI(Self.installed(at: Self.otherCopy))
+    @Test func replacesAnotherCopysPlugin() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
+        let cli = CLI(Self.installed(at: folders.otherCopy))
         #expect(await cli.registration().install() == .installed(enabled: true))
         #expect(Self.changes(cli) == [
-            ["plugin", "uninstall", "briefbar@briefbar"], ["plugin", "marketplace", "remove", "briefbar", "--force"],
+            ["plugin", "uninstall", "briefbar@briefbar"], ["plugin", "marketplace", "remove", "briefbar"],
             ["plugin", "marketplace", "add", Self.here.path], ["plugin", "install", "briefbar@briefbar"],
         ])
         #expect(cli.current.marketplaces == ["briefbar": "Local: \(Self.here.path)"])
     }
 
-    @Test func leavesAMarketplaceByItsNameThatIsntBriefBars() async {
-        let cli = CLI(State(marketplaces: ["briefbar": "GitHub: someone/briefbar"], plugins: ["briefbar@briefbar": true]))
-        #expect(await cli.registration().install() == .taken)
-        #expect(await cli.registration().remove() == .taken)
-        #expect(Self.changes(cli).isEmpty)
+    /// A marketplace named briefbar that BriefBar can't tell is its own: on GitHub, in a folder of someone's own named
+    /// like BriefBar's, in another app, or where a copy of BriefBar was. Neither Install nor turning agents off touches
+    /// it, or the plugins it has.
+    @Test func leavesAMarketplaceThatIsntBriefBars() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
+        for source in ["GitHub: someone/briefbar", "Local: \(folders.lookalike)", "Local: \(folders.inOtherApp)", "Local: \(folders.gone)"] {
+            let theirs = State(marketplaces: ["briefbar": source], plugins: ["briefbar@briefbar": true, "helper@briefbar": true])
+            let cli = CLI(theirs)
+            #expect(await cli.registration().status() == .taken, "\(source)")
+            #expect(await cli.registration().install() == .taken, "\(source)")
+            #expect(await cli.registration().remove() == .taken, "\(source)")
+            #expect(await cli.registration(marketplace: nil).remove() == .taken, "\(source)")
+            #expect(Self.changes(cli).isEmpty, "\(source): \(Self.changes(cli))")
+            #expect(cli.current == theirs, "\(source)")
+        }
     }
 
-    @Test func removesWhicheverCopyItIs() async {
-        let cli = CLI(Self.installed(at: Self.otherCopy))
+    @Test func removesWhicheverCopyItIs() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
+        let cli = CLI(Self.installed(at: folders.otherCopy))
         #expect(await cli.registration().remove() == .absent)
-        #expect(Self.changes(cli) == [["plugin", "uninstall", "briefbar@briefbar"], ["plugin", "marketplace", "remove", "briefbar", "--force"]])
+        #expect(Self.changes(cli) == [["plugin", "uninstall", "briefbar@briefbar"], ["plugin", "marketplace", "remove", "briefbar"]])
         // Turned off, so that it doesn't come back on by itself with its marketplace.
         #expect(cli.current == State(plugins: ["briefbar@briefbar": false]))
         #expect(await cli.registration().remove() == .absent)
@@ -183,12 +266,28 @@ import Testing
     @Test func removesItsMarketplaceWithoutThePlugin() async {
         let cli = CLI(State(marketplaces: ["briefbar": "Local: \(Self.here.path)"]))
         #expect(await cli.registration().remove() == .absent)
-        #expect(Self.changes(cli) == [["plugin", "marketplace", "remove", "briefbar", "--force"]])
+        #expect(Self.changes(cli) == [["plugin", "marketplace", "remove", "briefbar"]])
     }
 
-    @Test func installsOnlyAPluginItHas() async {
-        let cli = CLI(Self.installed(at: Self.otherCopy))
-        #expect(await cli.registration(marketplace: nil).status() == .installedElsewhere(Self.otherCopy))
+    /// `--force` would uninstall whatever else a marketplace had: BriefBar's has only its plugin, and BriefBar never
+    /// passes it, so that the CLI refuses instead if it's wrong about that.
+    @Test func neverForcesARemoval() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
+        var state = Self.installed(at: folders.otherCopy)
+        state.plugins["helper@briefbar"] = true
+        let cli = CLI(state)
+        #expect(await cli.registration().install() == .installed(enabled: true))
+        #expect(await cli.registration().remove() == .absent)
+        #expect(!cli.runner.arguments.contains { $0.contains("--force") })
+        #expect(cli.current.plugins["helper@briefbar"] == true)
+    }
+
+    @Test func installsOnlyAPluginItHas() async throws {
+        let folders = try Folders()
+        defer { folders.remove() }
+        let cli = CLI(Self.installed(at: folders.otherCopy))
+        #expect(await cli.registration(marketplace: nil).status() == .installedElsewhere(folders.otherCopy))
         #expect(await cli.registration(marketplace: nil).install() == .failed("This copy of BriefBar has no plugin to install."))
         #expect(Self.changes(cli).isEmpty)
         // It can still take another copy's away.

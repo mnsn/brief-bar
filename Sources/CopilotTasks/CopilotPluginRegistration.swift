@@ -6,7 +6,9 @@ import Foundation
 /// BriefBar.app, in a marketplace of its own on this Mac (`Contents/Resources/CopilotPlugin`), which the CLI loads in
 /// place: nothing is copied, and it updates with BriefBar. BriefBar asks the CLI itself (`copilot plugin marketplace
 /// list`, `add` and `remove`, and `copilot plugin list`, `install` and `uninstall`), and never reads or writes its
-/// files, where other plugins' and marketplaces' settings are.
+/// files, where other plugins' and marketplaces' settings are. It changes a marketplace by its name only once it knows
+/// it's BriefBar's: this copy's, or one in another copy of BriefBar.app, by that app's bundle identifier. It never
+/// passes `--force`, which would uninstall whatever else a marketplace has.
 public struct CopilotPluginRegistration: Sendable {
     /// The name of BriefBar's marketplace, and of its plugin.
     public static let name = "briefbar"
@@ -14,6 +16,8 @@ public struct CopilotPluginRegistration: Sendable {
     static let plugin = "\(name)@\(name)"
     /// The folder in BriefBar.app's resources that holds the marketplace.
     public static let folderName = "CopilotPlugin"
+    /// BriefBar's bundle identifier, which another copy of BriefBar.app has too.
+    public static let bundleIdentifier = "com.asaf.BriefBar"
 
     public enum Status: Sendable, Equatable {
         /// There's no Copilot CLI.
@@ -25,7 +29,8 @@ public struct CopilotPluginRegistration: Sendable {
         case installed(enabled: Bool)
         /// It loads the plugin of another copy of BriefBar, from this folder.
         case installedElsewhere(String)
-        /// It has a marketplace by BriefBar's name that isn't BriefBar's.
+        /// It has a marketplace by BriefBar's name that BriefBar can't tell is its own: one somewhere else, or in an app
+        /// that's no longer there.
         case taken
         /// The CLI couldn't say, or couldn't change it.
         case failed(String)
@@ -37,22 +42,30 @@ public struct CopilotPluginRegistration: Sendable {
     let environment: [String: String]
     /// The marketplace in this copy of BriefBar, or nil for a build without one, which can only remove another copy's.
     let marketplace: URL?
+    /// The bundle identifier of the apps whose marketplaces are BriefBar's.
+    let bundleIdentifier: String
     let runner: any ProcessRunning
 
     public init(
-        cli: URL, environment: [String: String], marketplace: URL?, runner: any ProcessRunning = ProcessRunner()
+        cli: URL, environment: [String: String], marketplace: URL?,
+        bundleIdentifier: String = CopilotPluginRegistration.bundleIdentifier,
+        runner: any ProcessRunning = ProcessRunner()
     ) {
         self.cli = cli
         self.environment = environment
         self.marketplace = marketplace
+        self.bundleIdentifier = bundleIdentifier
         self.runner = runner
     }
 
     /// With the Copilot CLI, and your login shell's environment, that `registration` found.
-    public init(cli registration: CopilotMCPRegistration, marketplace: URL?) {
+    public init(
+        cli registration: CopilotMCPRegistration, marketplace: URL?,
+        bundleIdentifier: String = CopilotPluginRegistration.bundleIdentifier
+    ) {
         self.init(
             cli: registration.cli, environment: registration.environment, marketplace: marketplace,
-            runner: registration.runner
+            bundleIdentifier: bundleIdentifier, runner: registration.runner
         )
     }
 
@@ -73,9 +86,9 @@ public struct CopilotPluginRegistration: Sendable {
             case none
             /// This copy of BriefBar's.
             case this
-            /// Another copy of BriefBar's, in this folder.
+            /// Another copy of BriefBar's, in this folder, in an app with BriefBar's bundle identifier.
             case elsewhere(String)
-            /// One that isn't BriefBar's.
+            /// One BriefBar can't tell is its own, which it leaves.
             case other
         }
 
@@ -145,10 +158,11 @@ public struct CopilotPluginRegistration: Sendable {
         }
     }
 
-    /// Turns the plugin off, so that it stays off if its marketplace comes back, then removes the marketplace.
+    /// Turns the plugin off, so that it stays off if its marketplace comes back, then removes the marketplace: without
+    /// `--force`, so that the CLI refuses rather than uninstall anything else it has from it.
     private func removeFound(_ found: Found) async -> Status? {
         if found.plugin != nil, let failure = await change(["plugin", "uninstall", Self.plugin]) { return failure }
-        return await change(["plugin", "marketplace", "remove", Self.name, "--force"])
+        return await change(["plugin", "marketplace", "remove", Self.name])
     }
 
     // MARK: The CLI
@@ -178,7 +192,8 @@ public struct CopilotPluginRegistration: Sendable {
         let folder = (plugin?["installedFrom"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? (row["source"] as? String).flatMap(Self.localFolder)
         let enabled = plugin.map { $0["enabled"] as? Bool ?? true }
-        return .success(Found(marketplace: Self.marketplace(folder, this: marketplace), plugin: enabled))
+        let whose = Self.marketplace(folder, this: marketplace, bundleIdentifier: bundleIdentifier)
+        return .success(Found(marketplace: whose, plugin: enabled))
     }
 
     private func list(_ arguments: [String]) async -> Result<[[String: Any]], Failure> {
@@ -206,11 +221,31 @@ public struct CopilotPluginRegistration: Sendable {
         }
     }
 
-    /// Whose a marketplace by BriefBar's name is, by its folder: BriefBar's is a folder named `CopilotPlugin`.
-    static func marketplace(_ folder: String?, this: URL?) -> Found.Marketplace {
-        guard let folder, URL(fileURLWithPath: folder).lastPathComponent == folderName else { return .other }
+    /// Whose a marketplace by BriefBar's name is, by its folder: this copy's, another copy's, or one BriefBar can't tell
+    /// is its own. Its name and its folder's prove nothing, as anyone can choose them, so another copy's is a
+    /// `Contents/Resources/CopilotPlugin` folder in an app whose bundle identifier is BriefBar's.
+    static func marketplace(_ folder: String?, this: URL?, bundleIdentifier: String) -> Found.Marketplace {
+        guard let folder else { return .other }
         if let this, CopilotMCPRegistration.isSameFile(folder, this.path) { return .this }
+        guard let app = app(holding: URL(fileURLWithPath: folder)), identifier(of: app) == bundleIdentifier
+        else { return .other }
         return .elsewhere(folder)
+    }
+
+    /// The app whose `Contents/Resources/CopilotPlugin` a folder is, or nil if it's anywhere else.
+    static func app(holding folder: URL) -> URL? {
+        let folder = folder.standardizedFileURL
+        guard folder.pathComponents.suffix(3) == ["Contents", "Resources", folderName] else { return nil }
+        let app = folder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return app.pathExtension == "app" ? app : nil
+    }
+
+    /// An app's bundle identifier, from its Info.plist, or nil if it has none, or isn't there anymore.
+    static func identifier(of app: URL) -> String? {
+        guard let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
+              let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        return info["CFBundleIdentifier"] as? String
     }
 
     /// Whether BriefBar runs from where macOS moved it for now, as it does with an app opened where it was downloaded

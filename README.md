@@ -458,11 +458,12 @@ does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
 Once agents are on, **Install** in **Settings › Agents › Copilot plugin** adds BriefBar's plugin to
 the Copilot CLI, which the GitHub Copilot app loads too. It's off until you install it, and turning
-agents off removes it. Its one skill, **/briefbar**, works in the app and the CLI:
+agents off removes it; if Copilot can't, the page says so, with **Try Again**. Its one skill,
+**/briefbar**, works in the app and the CLI:
 
 - **/briefbar** on its own, or "what needs me?", shows what the menu bar counts, in the app as an
   inbox you can search, sort and group, with each pull request's and pipeline's link, and a link to
-  each Copilot session that waits for you.
+  each Copilot session that waits for you. A source that's off in BriefBar is listed as off.
 - "Fix the comments on !4102", or its build, its conflicts or a review, starts a session of its own
   in the app, in a worktree of your clone of that repository, which you can follow and steer. It asks
   BriefBar for the prompt of the same Copilot action, and does what it allows: it changes files there,
@@ -472,7 +473,8 @@ agents off removes it. Its one skill, **/briefbar**, works in the app and the CL
 
 The plugin comes with BriefBar.app, which the Copilot CLI loads it from, so it updates with BriefBar
 and nothing is copied. It gives agents nothing BriefBar didn't already: it uses BriefBar's MCP server,
-so add BriefBar to the Copilot CLI too.
+so add BriefBar to the Copilot CLI too. BriefBar changes only its own plugin marketplace, by the
+bundle identifier of the app it's in, and leaves any other named `briefbar`, with its plugins.
 
 ## Install
 

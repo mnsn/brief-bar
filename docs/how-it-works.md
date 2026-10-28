@@ -1358,7 +1358,8 @@ Turning agents on replaces a server that runs another copy of BriefBar, such as 
 this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
 removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. Turning
 them off also removes BriefBar's plugin, if you installed it ([below](#its-copilot-plugin)); turning them
-on never installs it.
+on never installs it. If the CLI can't remove either, the page says so while agents are off, with **Try
+Again** ([below](#its-copilot-plugin)).
 
 The page's **Install** lists the agents' apps on your Mac that BriefBar can be installed in (`AgentApp` in
 `Sources/BriefBarCore`), as LaunchServices finds them by bundle identifier. Visual Studio Code and
@@ -1426,16 +1427,27 @@ briefbar@briefbar` turns the plugin on. The CLI loads a plugin from a marketplac
 is, without copying it, so the plugin is the one in the app: an update to BriefBar updates it for the
 sessions that start afterwards. The build adds BriefBar's version to it, and `scripts/check-app.sh`
 checks that. Removing it turns the plugin off first, with `copilot plugin uninstall`, so that it doesn't
-come back on with its marketplace, then removes the marketplace. What the page says comes from
-`copilot plugin list --json`, whose `installedFrom` is the folder the plugin loads from, and `copilot
-plugin marketplace list --json`. A marketplace named `briefbar` in a folder named `CopilotPlugin` is
-another copy of BriefBar's, such as one you built, which **Use This Copy** replaces; any other stays as
-it is. Opened where it was downloaded, BriefBar runs from a temporary copy (App Translocation), and
+come back on with its marketplace, then removes the marketplace, without `--force`: that would uninstall
+whatever else the marketplace has, so the CLI refuses instead if it has anything. What the page says
+comes from `copilot plugin list --json`, whose `installedFrom` is the folder the plugin loads from, and
+`copilot plugin marketplace list --json`. A marketplace's name, and its folder's, prove nothing, as
+anyone can choose them, so BriefBar changes one named `briefbar` only if it's this copy's, or the
+`Contents/Resources/CopilotPlugin` folder of an app whose bundle identifier is BriefBar's, as it reads it
+in that app's `Info.plist`: another copy of BriefBar, such as one you built, which **Use This Copy**
+replaces. It leaves any other, and one in an app that's no longer there, and says how to remove it
+yourself. Opened where it was downloaded, BriefBar runs from a temporary copy (App Translocation), and
 doesn't install the plugin from there.
+
+**Turning agents off.** BriefBar removes its MCP server and its plugin from the CLI. Agents are off
+then, so the page shows only what's still going on: removing them, and what the CLI couldn't remove,
+such as when it timed out, with **Try Again**, which removes it again (`AgentCleanup`). It keeps that only
+until BriefBar quits: either way, BriefBar answers agents that they're off.
 
 **What the skill does.** **/briefbar** on its own calls `needs_me`, and in the app shows what it lists
 in the app's inbox widget, by BriefBar's groups, with the links BriefBar gives, and
-`ghapp://sessions/<id>` for a Copilot session. Asked to fix a pull request's comments, its build or its
+`ghapp://sessions/<id>` for a Copilot session. When agents are off, every tool says so, and the agent
+stops there; when only a source is off, `needs_me` says so under its heading and has the others, which
+the agent still shows. Asked to fix a pull request's comments, its build or its
 conflicts, or to review it, the agent in the app starts a session for it with the app's own tools, in a
 worktree of a repository the app knows whose `origin` is the pull request's repository: it asks you
 when none or several are, never clones, and never works in a folder that is your own checkout. That
@@ -1448,7 +1460,8 @@ open the session, with the app's `navigate_to`.
 
 `CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
-BriefBar has.
+BriefBar has; and that it stops only for what BriefBar answers when agents are off
+(`AgentAccess.refusal`), not when a source is.
 
 ## Desktop widgets
 

@@ -198,7 +198,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   configuration changes only through its own commands (`CopilotMCPRegistration`, and
   `CopilotPluginRegistration` for BriefBar's plugin, which only **Install** installs), when you turn
   agents on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
-  links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings. The plugin's
+  links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings. It changes a
+  plugin marketplace only once it knows it's its own, in an app with BriefBar's bundle identifier, never
+  by its name or its folder's name alone, and never with `--force`. The plugin's
   skill (`Resources/CopilotPlugin`) only says how to use the tools: what it names must be what `--mcp`
   lists, which `CopilotPluginTests` checks.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its

@@ -226,6 +226,8 @@ enum Renderer {
             if model.agents.state == .off {
                 model.agents.useForRendering(on: true)
                 page(.agents, name: "agents-on")
+                model.agents.useForRenderingLeftovers()
+                page(.agents, name: "agents-off-leftovers")
                 model.agents.useForRendering(on: false)
             }
 
