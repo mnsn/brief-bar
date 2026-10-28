@@ -18,8 +18,18 @@ final class WorkItemDetailsStore: ObservableObject {
     /// The work items you went to from the details, to go back to: the latest last.
     @Published private(set) var history: [WorkItem] = []
 
+    /// What reading a work item brings: its details, or why they couldn't be read; and who's signed in to the Azure CLI,
+    /// when the sign-in says.
+    struct Read: Sendable {
+        var result: Result<WorkItemDetails, ADOError>
+        var account: String?
+    }
+
+    /// Reads a work item's details: from Azure DevOps, or, in tests, as they say.
+    typealias Reader = @Sendable (WorkItem) async -> Read
+
     let mode: PRStore.Mode
-    private let client: ADOClient
+    private let reader: Reader
     private let now: () -> Date
     /// Whether a window shows the Sprint page, and opening it there: the source's.
     var hasPage: () -> Bool = { false }
@@ -32,7 +42,10 @@ final class WorkItemDetailsStore: ObservableObject {
     /// only while one does, and once one does again.
     private var viewers: Set<String> = []
     private var cache: [WorkItemKey: WorkItemDetails] = [:]
-    private var loading: (key: WorkItemKey, task: Task<Void, Never>?)?
+    /// Who's signed in to the Azure CLI, which what's kept was read as, once known.
+    private var account: String?
+    /// The work item being read, and whether the sprint showed it changed meanwhile, which what's read may not have.
+    private var loading: (key: WorkItemKey, task: Task<Void, Never>?, changedMeanwhile: Bool)?
     /// Forgets what was read a quarter of an hour ago, when it's due.
     private var expiry: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
@@ -44,9 +57,13 @@ final class WorkItemDetailsStore: ObservableObject {
     static let keptFor: TimeInterval = 15 * 60
     static let keptCount = 30
 
-    init(mode: PRStore.Mode, client: ADOClient, board: AnyPublisher<SprintBoard?, Never>, now: @escaping () -> Date = Date.init) {
+    /// - Parameter reader: how to read a work item's details live; Azure DevOps, with `client`, by default.
+    init(
+        mode: PRStore.Mode, client: ADOClient, board: AnyPublisher<SprintBoard?, Never>, now: @escaping () -> Date = Date.init,
+        reader: Reader? = nil
+    ) {
         self.mode = mode
-        self.client = client
+        self.reader = reader ?? { [client] item in await Self.read(item, client: client) }
         self.now = now
         board
             .receive(on: DispatchQueue.main)
@@ -134,11 +151,32 @@ final class WorkItemDetailsStore: ObservableObject {
     /// The work items whose details are kept, for tests.
     var keptWorkItems: Set<WorkItemKey> { Set(cache.keys) }
 
+    /// A work item the details link to, such as a task: the newest of what the sprint knows of it and what was read with
+    /// the details.
+    func linked(_ link: WorkItemDetails.Link) -> WorkItem? {
+        guard let organization = selected?.organization else { return link.item }
+        return Self.newest(board?.item(WorkItemKey(organization, link.workItemId)), link.item)
+    }
+
+    /// Someone signed in to the Azure CLI, as the pull requests' refresh or a read tells. When it's someone else than
+    /// before, nothing read as the last one stays: what shows closes, what's being read stops, and what's kept goes, as
+    /// the sprint starts over with what the new one can read.
+    func accountChanged(_ account: String?) {
+        guard let account else { return }
+        defer { self.account = account }
+        guard let known = self.account, known != account else { return }
+        close()
+        cache = [:]
+        scheduleExpiry()
+        Log.app.info("Signed in to the Azure CLI as another account: forgot the work items' details")
+    }
+
     /// Stops for good, when Azure DevOps is turned off, and forgets what it read.
     func stop() {
         close()
         cache = [:]
         board = nil
+        account = nil
         viewers = []
         expiry?.cancel()
         expiry = nil
@@ -158,7 +196,9 @@ final class WorkItemDetailsStore: ObservableObject {
     // MARK: Reading
 
     private func select(_ item: WorkItem) {
-        let item = board?.item(item.key) ?? item
+        // The newest of what the sprint knows and what came with it, such as a link read with other details: what it
+        // knows of when it changed decides whether what's kept of it is still fresh.
+        let item = Self.newest(board?.item(item.key), item) ?? item
         let key = item.key
         if selected?.key != key {
             cancelLoading()
@@ -186,41 +226,61 @@ final class WorkItemDetailsStore: ObservableObject {
         case .demo:
             let read = DemoData.workItemDetails(organization: item.organization, id: item.id, now: now())
                 ?? WorkItemDetails(item: item, readAt: now())
-            loading = (key, nil)
-            finish(key, .success(read))
+            loading = (key, nil, false)
+            finish(key, Read(result: .success(read), account: nil))
         case .live:
-            let client = self.client
+            let reader = self.reader
             let task = Task { [weak self] in
-                let result: Result<WorkItemDetails, ADOError>
-                do {
-                    result = .success(try await WorkItemDetailsReader.read(
-                        client: client, organization: item.organization, project: item.project, id: item.id
-                    ))
-                } catch let error as ADOError {
-                    result = .failure(error)
-                } catch {
-                    result = .failure(.network(error.localizedDescription))
-                }
+                let result = await reader(item)
                 // Another work item, or none, shows now.
                 guard !Task.isCancelled else { return }
                 self?.finish(key, result)
             }
-            loading = (key, task)
+            loading = (key, task, false)
         }
     }
 
-    private func finish(_ key: WorkItemKey, _ result: Result<WorkItemDetails, ADOError>) {
-        guard loading?.key == key else { return }
+    /// Reads a work item's details from Azure DevOps, with the sign-in its requests used.
+    nonisolated static func read(_ item: WorkItem, client: ADOClient) async -> Read {
+        let result: Result<WorkItemDetails, ADOError>
+        do {
+            result = .success(try await WorkItemDetailsReader.read(
+                client: client, organization: item.organization, project: item.project, id: item.id
+            ))
+        } catch let error as ADOError {
+            result = .failure(error)
+        } catch {
+            result = .failure(.network(error.localizedDescription))
+        }
+        // The token the requests went with, which the client keeps, even one it got again during them.
+        return Read(result: result, account: try? await client.tokens.token().account)
+    }
+
+    private func finish(_ key: WorkItemKey, _ outcome: Read) {
+        guard let current = loading, current.key == key else { return }
         loading = nil
         isLoading = false
-        switch result {
+        if let account = outcome.account, let known = self.account, account != known {
+            // Someone else signed in while it was read: start over, without what was read as either.
+            accountChanged(account)
+            return
+        }
+        if let account = outcome.account { self.account = account }
+        switch outcome.result {
         case .success(let read):
             remember(read)
             defer { scheduleExpiry() }
             guard selected?.key == key else { return }
             details = read
             failure = nil
-            selected = Self.newest(board?.item(key) ?? selected, read.item)
+            // What the sprint, or a link, last said of it.
+            let shown = Self.newest(board?.item(key), selected)
+            selected = Self.newest(shown, read.item)
+            // The sprint showed it changed while it was read, after what was read: read it again, while it's on screen,
+            // rather than show an old description under a new title.
+            if current.changedMeanwhile, !viewers.isEmpty, let shown, Self.isNewer(shown.changedAt, than: read.item.changedAt) {
+                load(shown)
+            }
         case .failure(let error):
             guard selected?.key == key else { return }
             failure = error
@@ -272,9 +332,13 @@ final class WorkItemDetailsStore: ObservableObject {
         }
         team = board.team.id
         guard let selected, let fresh = board.item(selected.key) else { return }
+        let changed = Self.isNewer(fresh.changedAt, than: selected.changedAt)
         let newest = Self.newest(fresh, selected)
         if newest != selected { self.selected = newest }
-        if !viewers.isEmpty, let details, loading?.key != fresh.key, Self.isNewer(fresh.changedAt, than: details.item.changedAt) {
+        if loading?.key == fresh.key {
+            // Being read: what comes may be from before the change, which its end checks.
+            if changed { loading?.changedMeanwhile = true }
+        } else if !viewers.isEmpty, let details, Self.isNewer(fresh.changedAt, than: details.item.changedAt) {
             load(fresh)
         }
     }

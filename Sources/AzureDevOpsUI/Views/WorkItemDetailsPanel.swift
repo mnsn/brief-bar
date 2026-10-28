@@ -377,10 +377,9 @@ struct WorkItemDetailsPanel: View {
         }
     }
 
-    /// A linked work item, as the sprint knows it when it's there, which is newer and knows its team's states.
+    /// A linked work item: the newest of what the sprint knows of it and what was read with the details.
     private func shown(_ link: WorkItemDetails.Link) -> WorkItem? {
-        guard let organization = details.selected?.organization else { return link.item }
-        return sprint.board?.item(WorkItemKey(organization, link.workItemId)) ?? link.item
+        details.linked(link)
     }
 
     private func follow(_ item: WorkItem) {

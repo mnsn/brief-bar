@@ -14,27 +14,45 @@ struct SprintPage: View {
 
     @LocalState private var showDone = false
 
-    /// The narrowest page that has room for the board beside the details.
-    private static let besideWidth: CGFloat = 700
+    /// Where a work item's details go on a page this wide: beside the board, taking room from it, or over it.
+    struct DetailsLayout: Equatable {
+        /// The narrowest page that has room for the board beside the details.
+        static let besideWidth: CGFloat = 700
+
+        var isBeside: Bool
+        /// The details cover the board, which can't be seen, read by VoiceOver or reached with the keyboard meanwhile.
+        var coversBoard: Bool
+        /// How wide the details are beside the board.
+        var panelWidth: CGFloat
+
+        init(width: CGFloat, showsDetails: Bool) {
+            isBeside = width >= Self.besideWidth
+            coversBoard = showsDetails && !isBeside
+            panelWidth = min(max(width * 0.4, 330), 480)
+        }
+    }
 
     var body: some View {
         // The width the window offers, whatever the board needs: what the board needs depends on where the details go.
         GeometryReader { proxy in
-            page(width: proxy.size.width)
+            page(DetailsLayout(width: proxy.size.width, showsDetails: details.selected != nil))
         }
     }
 
-    private func page(width: CGFloat) -> some View {
-        let isBeside = width >= Self.besideWidth
-        let panelWidth = min(max(width * 0.4, 330), 480)
+    private func page(_ layout: DetailsLayout) -> some View {
+        let isBeside = layout.isBeside
+        let panelWidth = layout.panelWidth
         return VStack(spacing: 0) {
             PageHeader(title: sprint.board?.sprint.name ?? "Sprint", subtitle: subtitle) {
                 controls
             }
-            // The details beside the board take room from it; in a narrow window, they cover it.
+            // The details beside the board take room from it; in a narrow window, they cover it, and it's out of reach
+            // until they close. Before the overlay, so the details aren't.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.trailing, details.selected != nil && isBeside ? panelWidth + 14 : 0)
+                .accessibilityHidden(layout.coversBoard)
+                .disabled(layout.coversBoard)
                 .overlay(alignment: .topTrailing) {
                     if details.selected != nil {
                         if isBeside {

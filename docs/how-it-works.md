@@ -1050,7 +1050,9 @@ addresses open (in your browser), and an image is a link to it, never loaded. Wh
 memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but for
 the details on screen, which stay while they show; it shows again without being read for a minute.
 The sprint's refresh tells when a work item changed (`System.ChangedDate`), which reads its details
-again while they show. Another team's sprint closes them. Its parent, its tasks and related work items
+again while they show, once more when it changed while they were read, and a linked work item shows as
+the newer of the sprint's and what was read with the details. Another team's sprint closes them, and
+so does someone else signing in to the Azure CLI, which forgets what was read as the last one. Its parent, its tasks and related work items
 open in the details too, and **‹** goes back. A link to a work item in another organization, such as a
 remote link, opens there, in your browser: its ID names another work item in this organization. A click on one of your work items in a
 menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no

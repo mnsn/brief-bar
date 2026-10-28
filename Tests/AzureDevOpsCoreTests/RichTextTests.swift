@@ -54,6 +54,13 @@ private typealias Run = RichText.Run
         #expect(text.plainText == "Fish & chips\u{00A0}— été &unknown; 5 < 6 &#0;")
     }
 
+    @Test func decodesEveryNamedReference() {
+        let text = RichText(html: "caf&eacute; &ouml; &Eacute;&szlig; &alpha;&Omega; &hearts; &hellip; &rsquo;&euro;&trade; &lang;x&rang; &apos;")
+        #expect(text.plainText == "café ö Éß αΩ ♥ … ’€™ ⟨x⟩ '")
+        // Names are case-sensitive, as in HTML.
+        #expect(RichText(html: "&EACUTE;").plainText == "&EACUTE;")
+    }
+
     @Test func leavesOutScriptsStylesAndComments() {
         let text = RichText(html: "<style>p { color: red }</style><script>alert('<p>no</p>')</script><!-- <p>hidden</p> --><p>Shown</p>")
         #expect(text.blocks == [.paragraph([Run("Shown")])])
@@ -164,6 +171,20 @@ private typealias Run = RichText.Run
             Run("bold", style: .bold), Run(" "), Run("italic", style: .italic), Run(" "), Run("code", style: .code), Run(" "),
             Run("gone", style: .strikethrough), Run(" "), Run("a link", link: URL(string: "https://example.test")), Run(" not"),
         ])])
+    }
+
+    @Test func readsIndentedCodeWhateverItLooksLike() {
+        #expect(RichText(markdown: "    # a comment\n    - not a list\n\n    > not a quote").blocks == [
+            .code("# a comment\n- not a list\n\n> not a quote"),
+        ])
+        #expect(RichText(markdown: "Text\n\n    ```\n    code\n    ```\n\nAfter").blocks == [
+            .paragraph([Run("Text")]), .code("```\ncode\n```"), .paragraph([Run("After")]),
+        ])
+        // Under a paragraph, it's more of it; in a list, a list in it.
+        #expect(RichText(markdown: "Text\n    # more of it").blocks == [.paragraph([Run("Text\n# more of it")])])
+        #expect(RichText(markdown: "- One\n    - Nested").blocks == [
+            .listItem(.bullet, depth: 0, [Run("One")]), .listItem(.bullet, depth: 1, [Run("Nested")]),
+        ])
     }
 
     @Test func readsQuotesInQuotesToADepth() {
