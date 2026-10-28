@@ -76,6 +76,9 @@ package final class Notifier: NSObject, ObservableObject {
     /// The click whose notification opens once BriefBar is in front.
     private var pendingClick: NotificationClick?
     private var clickedAt: Date?
+    /// Opens the pending click if BriefBar doesn't come to the front in time: that click's own wait, which goes as soon as
+    /// the click opens, so it can't open a later one.
+    private(set) var clickTimeout: Task<Void, Never>?
 
     /// - Parameter posts: whether it posts to Notification Center, which only an app bundle can: a bare `swift run` binary
     ///   only lists them on the Notifications page, and so do tests.
@@ -186,8 +189,10 @@ package final class Notifier: NSObject, ObservableObject {
         pendingClick = click
         clickedAt = date
         let wait = clickWait
-        Task { @MainActor [weak self] in
+        // Its own wait: one left over from an earlier click would open this one before BriefBar is in front for it.
+        clickTimeout = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
             self?.openClicked(reason: "BriefBar didn't come to the front")
         }
     }
@@ -203,6 +208,9 @@ package final class Notifier: NSObject, ObservableObject {
     private func openClicked(reason: String) {
         guard let click = pendingClick else { return }
         pendingClick = nil
+        // It opens now, so its wait is over.
+        clickTimeout?.cancel()
+        clickTimeout = nil
         Log.app.info("Opening a clicked notification: \(reason, privacy: .public)")
         onOpen?(click)
     }

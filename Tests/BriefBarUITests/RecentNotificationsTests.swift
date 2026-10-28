@@ -158,4 +158,25 @@ import Testing
         #expect(notifier.handleReopen())
         #expect(opened == ["a", "b", "c"])
     }
+
+    @Test func anOpenedClicksWaitCantOpenTheNextOneEarly() async {
+        let (notifier, _) = makeNotifier(wait: 0.05)
+        var opened: [String] = []
+        notifier.onOpen = { opened.append($0.id) }
+        notifier.clicked(NotificationClick(id: "a", source: .azureDevOps))
+        let firstWait = notifier.clickTimeout
+        #expect(firstWait != nil)
+        #expect(notifier.handleReopen())
+        #expect(opened == ["a"])
+
+        // Clicked before the first one's wait would have been over: the second waits for BriefBar to come to the front for
+        // it, not for what's left of the first one's wait.
+        notifier.clickWait = 60
+        notifier.clicked(NotificationClick(id: "b", source: .azureDevOps))
+        await firstWait?.value
+        #expect(opened == ["a"])
+        #expect(notifier.handleReopen())
+        #expect(opened == ["a", "b"])
+        #expect(notifier.clickTimeout == nil)
+    }
 }
