@@ -113,30 +113,21 @@ import Testing
     }
 
     /// The tools that the built `BriefBar --demo --mcp` lists to an agent, started plainly, as an agent starts it.
-    static func listedTools() throws -> [[String: Any]] {
+    static func listedTools() async throws -> [[String: Any]] {
         let binary = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent().appendingPathComponent("BriefBar")
         try #require(FileManager.default.isExecutableFile(atPath: binary.path), "Build BriefBar first (swift build): \(binary.path)")
         let copilot = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: copilot) }
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["--demo", "--mcp"]
-        process.environment = ["PATH": "/usr/bin:/bin", "HOME": copilot.path, "BRIEFBAR_COPILOT_DIR": copilot.path]
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        try process.run()
         let messages = [
             #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}"#,
             #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
             #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
         ]
-        input.fileHandleForWriting.write(Data((messages.joined(separator: "\n") + "\n").utf8))
-        try input.fileHandleForWriting.close()
-        let answer = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        let answer = try await Self.runPlainly(
+            binary, arguments: ["--demo", "--mcp"],
+            environment: ["PATH": "/usr/bin:/bin", "HOME": copilot.path, "BRIEFBAR_COPILOT_DIR": copilot.path],
+            input: Data((messages.joined(separator: "\n") + "\n").utf8)
+        )
         for line in answer.split(separator: 0x0A) {
             guard let message = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
                   message["id"] as? Int == 2, let result = message["result"] as? [String: Any]
@@ -147,9 +138,41 @@ import Testing
         return []
     }
 
+    /// Runs a program the usual way, attributed to this process, gives it `input`, and returns what it printed once it
+    /// has ended. It's waited for on a thread of its own, never one of Swift's cooperative pool: on CI, the first run
+    /// of a BriefBar just built takes 10 to 20 seconds, and a thread of the pool held that long holds up every other
+    /// test, as `make test` runs them on a single one, until those waiting with a deadline give up.
+    static func runPlainly(
+        _ binary: URL, arguments: [String], environment: [String: String], input: Data
+    ) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let process = Process()
+                    process.executableURL = binary
+                    process.arguments = arguments
+                    process.environment = environment
+                    let stdin = Pipe()
+                    let stdout = Pipe()
+                    process.standardInput = stdin
+                    process.standardOutput = stdout
+                    process.standardError = FileHandle.nullDevice
+                    try process.run()
+                    stdin.fileHandleForWriting.write(input)
+                    try stdin.fileHandleForWriting.close()
+                    let output = stdout.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    continuation.resume(returning: output)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     @Test(.timeLimit(.minutes(2)), .enabled(if: canTellProgramsApart, "macOS doesn't say enough here to tell"))
-    func skillNamesOnlyRealTools() throws {
-        let tools = try Self.listedTools()
+    func skillNamesOnlyRealTools() async throws {
+        let tools = try await Self.listedTools()
         let names = Set(tools.compactMap { $0["name"] as? String })
         #expect(names.isSuperset(of: ["needs_me", "pull_request_prompt", "copilot_sessions"]))
         // Their arguments, and the values those take.
