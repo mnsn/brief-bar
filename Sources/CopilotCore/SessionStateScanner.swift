@@ -31,8 +31,14 @@ public enum SessionStateScanner {
     static func workspaceName(in directory: URL) -> String? {
         let file = directory.appendingPathComponent("workspace.yaml")
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) where line.hasPrefix("name:") {
-            var value = line.dropFirst("name:".count).trimmingCharacters(in: .whitespaces)
+        return value("name", inWorkspace: text)
+    }
+
+    /// One of the top-level values in a session's `workspace.yaml`, such as its `name`, or its `cwd`, the folder it
+    /// works in, without its quotes; nil when it isn't there or is empty.
+    public static func value(_ key: String, inWorkspace text: String) -> String? {
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) where line.hasPrefix("\(key):") {
+            var value = line.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)
             if value.count >= 2, let first = value.first, first == "\"" || first == "'", value.last == first {
                 value = String(value.dropFirst().dropLast())
             }

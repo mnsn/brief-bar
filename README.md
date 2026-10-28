@@ -38,7 +38,7 @@ from what it knows ([Agents](#agents)), and its plugin brings **/briefbar** to t
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item, the repository you choose and Copilot's log of that session; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
@@ -391,10 +391,43 @@ commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. As with a work item, a notification says Copilot is
 on it, and the task is listed with your Copilot sessions. The pull request's row shows how its task is
-going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, the comments its
-prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out
-of it, or in one reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go
-to an agent that may run any command: send only what you'd hand to Copilot yourself.
+going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, or you open
+it in Copilot ([below](#sending-to-a-session-thats-already-there)), the comments its prompt quotes are
+off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
+reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go to an agent that
+may run any command: send only what you'd hand to Copilot yourself.
+
+#### Sending to a session that's already there
+
+A task doesn't have to start a new session. The window's **Session** menu lists the ones it can go to
+instead: BriefBar's earlier tasks on the work item or pull request, and the task of the work item that
+opened the pull request; then your Copilot app's sessions that go with it, such as the one on the pull
+request's branch, one the app records with it, one you linked to it with [Show Links](#links), or one
+whose log links to it; and, under **Other Copilot Sessions**, the rest, the most recently active first.
+A pull request's task goes on with its last task's session, as before; without one, it goes to the
+session of the work item's task that opened it, or to the app's session that likely did. Choose
+**New Session** for a new worktree instead.
+
+| Send | What happens |
+|---|---|
+| **Open in Copilot** | BriefBar copies the prompt and opens the session in the Copilot app: paste it there and send it. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it. The default for the app's sessions. |
+| **Run with the CLI** | The Copilot CLI goes on with the session now, on its own, in the folder it works in, and BriefBar follows it as it does a new task, with the same limits on what the action may do. The default for BriefBar's own tasks. |
+
+**Run with the CLI** is only there while the Copilot app doesn't have the session open: the app keeps an
+open session's history in memory and wouldn't see a turn the CLI runs in it, so the session's history
+would fork. For the same reason, don't open the session in the app until Copilot is done; and a session
+that a task of BriefBar's still works in, or one that shares its checkout, shows as working, and can't be
+chosen until it's done. Nor is **Run with the CLI** there while another of the app's sessions runs a turn in
+the same checkout, wherever in it each works. The window looks again every few seconds while it's open, and BriefBar
+once more as the task starts. For a pull request, the session's folder has to be a clone of its repository. **Open in Copilot** needs the
+Copilot app, and the comments its prompt quotes leave **Needs You** only once the session has opened.
+
+The prompt fits where Copilot works. In a session that's already there, which may be on another branch
+or hold work of its own, a pull request's prompt asks Copilot to check out the pull request's latest
+commit only if that's safe, and to ask you first otherwise; a work item's is BriefBar's own, which checks
+the same way before it branches, rather than the one in Settings, which is for a new worktree. Once you
+choose a session or change the prompt, BriefBar doesn't change where it goes. A prompt you changed stays
+as you wrote it when you choose another session, and **Reset** goes back to the one for that session.
 
 ### GitHub Copilot
 
@@ -657,8 +690,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
   item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
-  choose, with git, and Copilot's log of that session, and nothing of Copilot's while the feature is
-  off. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  choose, with git, and Copilot's log of that session; and, as the window that sends one opens, the
+  Copilot app's sessions it could go to instead, read-only: their names, projects, branches, the pull
+  requests the app records with them and which run a turn now, from its database; the folder each works
+  in, from its session state; which ones the app has open; and which of those active lately link to it in
+  their logs. It reads nothing of Copilot's while the feature is off.
+  **Open in Copilot** puts the prompt on the clipboard. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
@@ -767,7 +804,9 @@ It's the agent the GitHub Copilot app runs, on your Mac, with your sign-in, tool
 skills and instructions, and it can work on its own while nothing is open. The app's own link for a
 new session asks you to confirm in the app, can't choose the model, and takes only repositories on
 GitHub. Copilot in Azure DevOps works in the cloud, without your tools and MCP servers. To go on with a
-task, choose **Continue in Terminal** in its menu: that resumes the same session, in its worktree.
+task, choose **Continue in Terminal** in its menu: that resumes the same session, in its worktree. To
+hand a task to one of the Copilot app's sessions instead, such as the one that opened the pull request,
+choose it in the window's **Session** menu.
 Copilot loads a repository's own skills, MCP servers and hooks only from a folder you trust: when you
 trust a repository's folder in Copilot, its worktrees get the same trust.
 

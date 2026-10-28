@@ -19,6 +19,16 @@
   or with notifications off for BriefBar, and every update of a refresh that had more than its
   notifications show. Click one to open what it's about. It keeps them for a day, or 4 hours or 3
   days, in memory only, and shows only while it lists something.
+- **Send comments to the session that opened the pull request.** Fixing a pull request's comments, build
+  or conflicts, reviewing it, or sending a sprint's work item to Copilot no longer always starts a new
+  session. The window's new **Session** menu lists where the task can go instead: BriefBar's earlier tasks
+  on it, the task of the work item that opened the pull request, and your Copilot app's sessions that go
+  with it, such as the one on the pull request's branch, one you linked with Show Links, or one whose log
+  links to it, with the rest under **Other Copilot Sessions**. Unless its last task's session is there, a
+  pull request's task goes to the session that likely opened it. **Open in Copilot** copies the prompt
+  and opens that session in the Copilot app, for you to paste and send; **Run with the CLI** goes on with
+  it right away, on its own, while the app doesn't have it open. Azure DevOps asks you to look at what it
+  reads once more: as the window opens, it now reads the Copilot app's sessions, read-only.
 - **/briefbar in the GitHub Copilot app.** Once agents are on, **Settings › Agents** can install
   BriefBar's Copilot plugin, which the GitHub Copilot app and the Copilot CLI load. It's off until
   you click **Install**, and turning agents off removes it, or says what it couldn't remove, with

@@ -1114,6 +1114,94 @@ last one's session, if its worktree is still there: `--session-id` is that sessi
 `--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
 offered once a task that changed files is done.
 
+**A session that's already there.** The composer's **Session** menu also lists the sessions a task can
+go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
+is on. First BriefBar's own: its tasks on the work item or pull request whose worktrees are still there,
+and, for a pull request, the work item's task that opened it, by the pull request's link the task kept.
+Then the Copilot app's sessions, from its `data.db`, read-only (`AppSessions`), each with why it goes
+with it:
+
+- the app records the pull request with the session's workspace (as for [Show Links](#links));
+- the session's branch is the pull request's, in the same repository (`BranchLinks`);
+- Show Links links them, because you did or through a pull request (`LinkedSession`);
+- its log has a link to it (`SessionMentions`): `…/pullrequest/<id>` or the REST API's
+  `…/pullRequests/<id>` for a pull request, `…/_workitems/edit/<id>` or `…/workItems/<id>` for a work
+  item, whatever their case, not followed by another digit, in a link to its organization, read from the link itself:
+  `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`. Only the logs
+  of the 40 most recently active sessions are read for it, one at a time, none once Send Work to Copilot is
+  off, of those active since the pull request was
+  created, or in the last 30 days for a work item; each in chunks, until its first mention, opened below
+  the app's folder without following a symbolic link (`LocalFile.openFile(below:_:)`): neither the log nor
+  `session-state` or the session's folder may be one, so the search reads nothing outside the app's
+  sessions. A session's `workspace.yaml` is read the same way.
+
+The rest of the app's sessions follow, the most recently active first. A pull request's task goes on with
+its last task's session, as before; else with the session of the work item's task that opened it; else
+with the app's session that the app records with it, that you linked, or that's on its branch, the most
+recently active; else with one that mentions it and was there before it was created, which likely opened
+it (`CopilotTasksStore.suggestedChoice`). A work item's task starts a new session unless you choose
+one. What BriefBar finds while the composer is open changes where a task goes only until you choose a
+session or change the prompt (`CopilotComposerView.followsSuggestions`). A session that a task of
+BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
+its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
+suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it. So
+is one that works in the same checkout as such a task (`CopilotTasksStore.busyFolders`), since two of the
+app's sessions can share one, and their work would mix. A folder's checkout (`CopilotTasksStore.checkoutKey`)
+is the nearest folder, itself or one it's within, with a `.git` of its own, as a checkout, a worktree and a
+submodule have, so sessions in different folders of one checkout share it; a folder without one, as one
+that holds checkouts, is its own, since its sessions mostly work elsewhere. The composer keeps up while it's open
+(`CopilotTasksStore.availability`): a session frees up once the task working in it, or in its checkout, is
+done, and one that a task starts in is taken, while where the task goes and its prompt stay as they are.
+
+The prompt is for where Copilot works (`CopilotComposerView.writtenPrompt`). A pull request's is for a
+worktree of BriefBar's, detached at its latest commit, for a new session and a pull request task's
+(`CopilotRun.worksInPullRequestWorktree`); and for wherever the session works otherwise
+(`PullRequestPrompt.Workplace.agent`): the app's sessions, and the work item's task that opened it, which
+kept its own checkout, as does a pull request task that went on with it. That one asks Copilot to fetch
+the pull request's latest commit and check it out where it works, and to ask first if that isn't a clone
+of its repository or has changes of its own; Push & Reply's checks that what it would push was made for
+the pull request. A work item's is the one in Settings for a new worktree, and BriefBar's own for a
+session that's there (`PromptTemplate.existingSession`), which checks the same way before it branches
+from the latest default branch, and commits only what it changed for the work item. A prompt you
+changed stays as you wrote it when you choose another session, and **Reset** goes back to the one for
+the session you chose (`CopilotComposerView.rewritten`). There are two ways to send to a session that's
+there:
+
+- **Open in Copilot**, the default for the app's sessions, puts the prompt on the clipboard and opens the
+  session with its `ghapp://sessions/<id>` link, for you to paste and send. The app has no way for
+  another program to send a session a message, and its link for a new session doesn't reach one that's
+  there. Copilot then works with the session's own model, mode and permissions: the CLI's `--deny-tool`
+  limits don't apply, only the prompt's words. It needs an app that opens `ghapp://` links, which only
+  the Copilot app does: without one, it isn't offered. The comments the prompt quotes are handed off
+  only once the session opened; if it didn't, the window stays open and says so.
+- **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
+  session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
+  worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
+  following a link, which for a pull request has to be a clone of its repository, and in whose checkout no
+  other of the app's sessions runs a turn now, by the app's own flag (`CopilotTasksStore.cliProblem`). The
+  composer checks an earlier task's session the same way, which may have gone on with one of the app's
+  sessions, or be in a worktree another of them works in. It reads the app's database and the sessions'
+  state each time, not as the window found them, and looks again every five seconds while it's open
+  (`CopilotComposerView.recheckSession`), without git once the repository passed, and reads nothing while
+  Send Work to Copilot is off. The store looks once more as the task starts, and the launcher right before
+  it starts the CLI, after its git commands, next to its last look at the lock (`LaunchError.sharedCheckout`).
+  A run in one of the
+  app's sessions keeps `isAppSession`, so **Remove Worktree…** never deletes that folder and its menu
+  opens the session in the app rather than in Terminal. Going on with the work item's task that opened
+  a pull request, the task stays that work item's too, and shows on the pull request's row as soon as you
+  send it, so no other task starts on it meanwhile; if it can't start, the run it went on with stays as
+  it was, to go on with again.
+
+The Copilot app's runtime keeps each session it has open in memory, and marks it with `inuse.<pid>.lock`
+in its `session-state` folder (`SessionLock`). A turn another program runs in such a session is one the
+app never sees: tried with the Copilot CLI 1.0.105, the app answered its next message without that turn,
+and the session's log then held both, forked. The CLI doesn't check for the lock, so BriefBar does, for
+every session it goes on with: while a running program holds one, **Run with the CLI** isn't offered,
+the launcher refuses (`LaunchError.openInApp`), looking again after its git commands, right before it
+starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count, nor does one whose
+process ID belongs to a program that started after the lock was written, since macOS reuses them. Nothing keeps the app
+from opening a session while the CLI works in it, so the composer asks you not to until Copilot is done.
+
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). The CLI gives a worktree of a repository you trust the same trust by itself, and no
 more: a worktree of one you don't trust loads only your own configuration. BriefBar doesn't pass
@@ -1142,7 +1230,8 @@ in memory only), and its list shows each one with the app's sessions ([below](#h
 Neither source reads anything more for it.
 
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
-repository and worktree, whether you stopped it, and the pull request's link go to the preferences (`ado.copilot.runs`),
+repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
+and the pull request's link go to the preferences (`ado.copilot.runs`),
 without their titles; and so
 do your choices and the repository of each project. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
@@ -1150,8 +1239,13 @@ there: a task keeps its session's ID, a UUID, which names its session log and it
 are read without following a symbolic link. What Copilot printed when it ended stays in a file only you
 can read. Turning Azure DevOps off forgets the tasks and the repositories, and deletes what Copilot
 printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
-worktree with git, and asks again before deleting changes that aren't committed. Copilot's branches,
-pull requests and sessions are yours, and stay.
+worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
+of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
+task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
+own too once you went on with it in the app, as it looks right before git deletes it, after each answer
+(`CopilotTasksStore.worktreeInUse`); from that look until git is done, its checkout is busy, so no task of
+BriefBar's starts there meanwhile. What **Open in Copilot** hands over isn't kept. Copilot's
+branches, pull requests and sessions are yours, and stay.
 
 ### Notifications
 
@@ -1251,7 +1345,8 @@ it applies. A few more details:
   long as a session would be, until Clear or retention expiry, with optional dismissal on opening
   while **Move Viewed Sessions to Idle** is on. One you stopped yourself is idle at once.
   Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
-  Terminal, show the worktree or what Copilot printed, stop it, remove its worktree or clear it.
+  Terminal, or in the Copilot app for one of its sessions, show the worktree or what Copilot printed,
+  stop it, remove its worktree or clear it.
 
 ### Updates are pushed, not polled
 

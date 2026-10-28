@@ -23,6 +23,28 @@ public enum PromptTemplate {
         request's link.
         """
 
+    /// For a session that's there already, such as one of the Copilot app's: it works where that session does, which
+    /// may be another repository or hold other work, so it checks first, and asks rather than mixing work up.
+    public static let existingSession = """
+        Work on Azure DevOps {type} {id}: {title}
+        {url}
+
+        1. Read the work item with your Azure DevOps tools: its description, acceptance criteria, comments and \
+        attachments, and its parent's.
+        2. Before you change anything, make sure you're in a clone of the repository this work goes in, and that it \
+        has no changes of its own that aren't for this work item (git status). If it isn't, or you're not sure, stop \
+        and ask me where to work.
+        3. Unless you're on this work item's branch already, create one for it from the latest default branch of \
+        origin, named the way this repository names its branches.
+        4. Make the change, following the repository's instructions and conventions. Build, and run the tests that \
+        cover what you changed.
+        5. Commit only what you changed for this work item, and push the branch. Open a pull request into the default \
+        branch in Azure DevOps that's published, ready for review, and linked to work item {id}, or push to the one it \
+        has already.
+
+        If something stops you, say what and why. End with the pull request's link.
+        """
+
     /// Fills in the placeholders. Without a base branch yet, `{baseBranch}` stays, to be filled in once the
     /// repository says which it is.
     public static func render(_ template: String, item: TaskWorkItem, baseBranch: String? = nil) -> String {
