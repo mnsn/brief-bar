@@ -1,6 +1,7 @@
 import BriefBarCore
 import CopilotCore
 import Foundation
+import Synchronization
 import Testing
 @testable import CopilotTasks
 
@@ -28,7 +29,7 @@ import Testing
         return fixture
     }
 
-    private func launcher(_ fixture: RepositoryFixture) throws -> (CopilotLauncher, arguments: URL) {
+    private func launcher(_ fixture: RepositoryFixture, runner: any ProcessRunning = ProcessRunner()) throws -> (CopilotLauncher, arguments: URL) {
         let copilot = fixture.folder.appendingPathComponent("bin/copilot")
         try FileManager.default.createDirectory(at: copilot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try CopilotLauncherTests.fakeCopilot.write(to: copilot, atomically: true, encoding: .utf8)
@@ -39,7 +40,8 @@ import Testing
         environment["FAKE_COPILOT_ARGUMENTS"] = argumentsFile.path
         let launchEnvironment = environment
         let launcher = CopilotLauncher(
-            outputFolder: fixture.folder.appendingPathComponent("output"), environment: { launchEnvironment }, locate: { _ in copilot }
+            outputFolder: fixture.folder.appendingPathComponent("output"), runner: runner, environment: { launchEnvironment },
+            locate: { _ in copilot }
         )
         return (launcher, argumentsFile)
     }
@@ -154,6 +156,35 @@ import Testing
         // Whatever the session could do in the app, here it can't commit or push.
         #expect(arguments.joined(separator: " ").contains("--deny-tool shell(git commit) --deny-tool shell(git push)"))
         #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees").path))
+    }
+
+    /// The Copilot app may open a session while BriefBar gets ready to go on with it, as git runs: the launcher looks again
+    /// right before it starts the CLI, and doesn't start it then.
+    @Test(.timeLimit(.minutes(1)))
+    func looksAgainWhetherTheAppOpenedTheSessionRightBeforeStarting() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let id = "6a1f0e2c-3b8d-4d9e-8b4f-2e3d4c5b6a7f"
+        let state = fixture.folder.appendingPathComponent("copilot-home/session-state/\(id)")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        // The app opens it as soon as git runs: this test's own process stands in for the app's.
+        let runner = OpensSessionRunner(lock: state.appendingPathComponent("inuse.\(getpid()).lock"))
+        let (launcher, argumentsFile) = try launcher(fixture, runner: runner)
+        let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let fix = CopilotRun(
+            id: id, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: fixture.checkout, worktree: worktree, startedAt: Date(), process: DetachedProgram.Handle(pid: 0, startedAt: nil),
+            ended: .finished, pullRequest: pullRequest.url
+        )
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .pushAndReply), prompt: "Push and reply", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: fix
+        )
+        await #expect(throws: LaunchError.openInApp) { try await launcher.launch(request) { _ in } }
+        // Nothing held it when the launch began: the lock came while git ran, and Copilot never started.
+        #expect(runner.ran)
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
     }
 
     /// The CLI keeps its sessions in its own folder: one of the app's that isn't there can't be gone on with.
@@ -287,5 +318,25 @@ import Testing
         #expect(decoded.workItem?.id == 7)
         #expect(decoded.onPullRequest == nil)
         #expect(decoded.isValid)
+    }
+}
+
+/// Runs programs as `ProcessRunner` does, and leaves a lock in a session's folder as the first one starts, as the Copilot app
+/// does when it opens the session.
+private final class OpensSessionRunner: ProcessRunning {
+    let lock: URL
+    private let inner = ProcessRunner()
+    private let calls = Mutex(0)
+
+    init(lock: URL) {
+        self.lock = lock
+    }
+
+    var ran: Bool { calls.withLock { $0 } > 0 }
+
+    func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
+        calls.withLock { $0 += 1 }
+        try? Data().write(to: lock)
+        return try await inner.run(executable, arguments: arguments, environment: environment, timeout: timeout)
     }
 }

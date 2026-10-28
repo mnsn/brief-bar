@@ -143,10 +143,20 @@ final class CopilotTasksStore: ObservableObject {
 
     /// Every send, newest first.
     var entries: [CopilotTaskEntry] {
+        let continued = Dictionary(pending.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let runs = settings.copilotRuns.filter(\.isValid).map { run in
-            entry(for: run, status: statuses[run.id] ?? RunStatus(phase: run.ended ?? .working))
+            let status = statuses[run.id] ?? RunStatus(phase: run.ended ?? .working)
+            guard let next = continued[run.id] else { return entry(for: run, status: status) }
+            // A run being continued shows once, as what it's continued for, as the launcher will keep it: such as a pull
+            // request's task in the session of the work item's task that opened it, while it gets ready, so the pull
+            // request's row shows it, or why it couldn't start. The run stays as it was until then, for the next try.
+            var shown = next
+            shown.run = run
+            if shown.onPullRequest != nil, shown.workItem == nil { shown.workItem = run.workItem }
+            if shown.pullRequest == nil { shown.pullRequest = run.pullRequest }
+            shown.status = statuses[run.id] ?? next.status
+            return shown
         }
-        // A run being continued shows once, as the run.
         let waiting = pending.filter { entry in !runs.contains { $0.id == entry.id } }
         return (waiting + runs + demoEntries).sorted { $0.startedAt > $1.startedAt }
     }

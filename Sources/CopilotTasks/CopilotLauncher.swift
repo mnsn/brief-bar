@@ -144,6 +144,10 @@ public struct CopilotLauncher: Sendable {
         } catch let error as GitError {
             throw LaunchError.git(error)
         }
+        // Again, after the git commands above: the app may have opened the session meanwhile.
+        if request.continuing != nil, AppSessions.isOpen(id, home: CopilotCLI.home(environment: environment)) {
+            throw LaunchError.openInApp
+        }
 
         let arguments = CopilotCommand.arguments(
             prompt: PromptTemplate.render(request.prompt, baseBranch: repository.baseBranch), options: request.options,

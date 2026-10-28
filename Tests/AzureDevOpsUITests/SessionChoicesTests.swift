@@ -387,6 +387,48 @@ private struct DatabaseError: Error {
         #expect(!existing.contains("{"))
     }
 
+    /// Reset goes back to the prompt BriefBar wrote for the session you chose, with that session's checks, even when you'd
+    /// changed the prompt before you chose it; and a prompt you changed stays as you wrote it.
+    @Test func resetGoesBackToThePromptForTheSessionYouChose() {
+        let worktree = "You're in a git worktree of this repository, detached at origin/fix-totals."
+        let session = "Work on its branch in a clone of shop-web. If it has changes of its own, ask me where to work."
+        func written(_ choice: SessionChoice?) -> String {
+            CopilotComposerView.writtenPrompt(
+                for: choice, subject: subject, template: "", worktreePrompt: worktree, sessionPrompt: session, baseBranch: nil
+            )
+        }
+        let appSession = choice(onBranch, reasons: [.onItsBranch], active: 0)
+        #expect(written(nil) == worktree)
+        #expect(written(appSession) == session)
+
+        // Unchanged, the prompt follows the session you choose.
+        var shown = CopilotComposerView.rewritten(prompt: worktree, filledIn: worktree, written: written(appSession))
+        #expect(shown.prompt == session)
+        #expect(shown.filledIn == session)
+
+        // Changed for a new session, then another session chosen: it stays as you wrote it, and Reset goes back to the
+        // prompt for the session you chose, not the one for a new worktree.
+        let edited = worktree + " Mind the rounding tests."
+        shown = CopilotComposerView.rewritten(prompt: edited, filledIn: worktree, written: written(appSession))
+        #expect(shown.prompt == edited)
+        #expect(shown.filledIn == session)
+        // Back to a new session: still as you wrote it, and Reset goes back to the worktree's again.
+        shown = CopilotComposerView.rewritten(prompt: shown.prompt, filledIn: shown.filledIn, written: written(nil))
+        #expect(shown.prompt == edited)
+        #expect(shown.filledIn == worktree)
+    }
+
+    /// What BriefBar finds later doesn't move a task you chose a session for, nor one whose prompt you changed for where it
+    /// goes now, nor Push & Reply.
+    @Test func keepsWhereItGoesOnceYouChooseOrChangeThePrompt() {
+        #expect(CopilotComposerView.followsSuggestions(choseTarget: false, mustContinue: false, promptChanged: false))
+        #expect(!CopilotComposerView.followsSuggestions(choseTarget: true, mustContinue: false, promptChanged: false))
+        #expect(!CopilotComposerView.followsSuggestions(choseTarget: false, mustContinue: true, promptChanged: false))
+        #expect(!CopilotComposerView.followsSuggestions(choseTarget: false, mustContinue: false, promptChanged: true))
+    }
+
+    // MARK: Going on with a session
+
     /// The CLI goes on with one of the app's sessions in the folder it works in, which isn't a repository to start new
     /// work in: it isn't remembered as one.
     @Test func goesOnWithAnAppsSessionInItsFolder() async throws {
@@ -425,6 +467,83 @@ private struct DatabaseError: Error {
         #expect(store.settings.copilotRuns.map(\.id) == [onBranch])
         #expect(store.settings.copilotRuns.first?.isAppSession == true)
         store.stop()
+    }
+
+    /// A pull request's task that goes on with the session of the work item's task that opened it shows on the pull request's
+    /// row as you send it, so no other task starts on it meanwhile. If it can't start, the run it went on with stays as it
+    /// was, to go on with again; once it starts, it's the pull request's task, and still the work item's.
+    @Test func showsATaskGoingOnWithTheWorkItemsSessionOnThePullRequestAtOnce() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/wi-4217", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let store = store(home: home)
+        defer { store.stop() }
+        let opened = run(opener, worktree: worktree, workItem: 4217, opened: 4071)
+        store.settings.copilotRuns = [opened]
+        let key = PRKey("Contoso", 4071)
+        let item = WorkItem(
+            id: 4217, organization: "Contoso", project: "Storefront", type: "Task", title: "Show the order total in the cart",
+            state: "Active", category: .inProgress
+        )
+        #expect(store.latest(forPullRequest: key) == nil)
+
+        let launches = Mutex(0)
+        store.launchForTests = { _, _, _ in
+            launches.withLock { $0 += 1 }
+            throw LaunchError.couldntStart("its worktree is busy")
+        }
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.quick, repository: worktree, continuing: opened)
+
+        // As you send it, before it launches: on the pull request's row and the work item's, getting ready, and busy.
+        let sending = try #require(store.latest(forPullRequest: key))
+        #expect(sending.id == opener)
+        #expect(sending.action == .fixComments)
+        #expect(sending.options == CopilotModel.quick)
+        #expect(sending.status.phase == .preparing)
+        #expect(sending.run == opened)
+        #expect(sending.workItem == opened.workItem)
+        #expect(store.latest(for: item)?.id == opener)
+        #expect(store.entries.count == 1)
+        #expect(store.isWorking(inSession: opener))
+        #expect(store.taskChoices(for: subject).first?.isBusy == true)
+        #expect(store.continuable(forPullRequest: key) == nil)
+
+        // It couldn't start: the pull request's row says so, and the run it went on with is as it was.
+        for _ in 0..<100 where store.statuses[opener]?.phase != .failed {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(launches.withLock { $0 } == 1)
+        let failed = try #require(store.latest(forPullRequest: key))
+        #expect(failed.status.phase == .failed)
+        #expect(failed.run == opened)
+        #expect(store.settings.copilotRuns == [opened])
+        #expect(!store.isWorking(inSession: opener))
+        let retry = try #require(store.continuable(forPullRequest: key))
+        #expect(retry == opened)
+
+        // Again, and it starts: the run is the pull request's task now, and still the work item's.
+        store.launchForTests = { request, _, now in
+            guard case .pullRequest(let pullRequest, let action) = request.subject, var run = request.continuing else {
+                throw LaunchError.couldntStart("no session")
+            }
+            run.onPullRequest = pullRequest.reference
+            run.action = action
+            run.pullRequest = pullRequest.url
+            run.startedAt = now
+            run.ended = nil
+            return run
+        }
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.quick, repository: worktree, continuing: retry)
+        for _ in 0..<100 where store.settings.copilotRuns.first?.onPullRequest == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let started = try #require(store.settings.copilotRuns.first)
+        #expect(store.settings.copilotRuns.count == 1)
+        #expect(started.onPullRequest == pullRequest.reference)
+        #expect(started.workItem == opened.workItem)
+        #expect(store.pending.isEmpty)
+        #expect(store.latest(forPullRequest: key)?.run == started)
     }
 
     /// A task on the pull request a work item's task opened is named for the pull request.

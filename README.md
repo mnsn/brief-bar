@@ -403,7 +403,9 @@ Copilot app, and the comments its prompt quotes leave **Needs You** only once th
 The prompt fits where Copilot works. In a session that's already there, which may be on another branch
 or hold work of its own, a pull request's prompt asks Copilot to check out the pull request's latest
 commit only if that's safe, and to ask you first otherwise; a work item's is BriefBar's own, which checks
-the same way before it branches, rather than the one in Settings, which is for a new worktree.
+the same way before it branches, rather than the one in Settings, which is for a new worktree. Once you
+choose a session or change the prompt, BriefBar doesn't change where it goes. A prompt you changed stays
+as you wrote it when you choose another session, and **Reset** goes back to the one for that session.
 
 ### GitHub Copilot
 

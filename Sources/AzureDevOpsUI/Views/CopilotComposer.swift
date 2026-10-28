@@ -572,16 +572,25 @@ struct CopilotComposerView: View {
         }
     }
 
-    /// Keeps the chosen session as it was found, and goes to the suggested one until you choose. Push & Reply stays with
-    /// its last task's session.
+    /// Keeps the chosen session as it was found, and goes to the suggested one until you choose one or change the prompt.
+    /// Push & Reply stays with its last task's session.
     private func update() {
         if let current = target, let found = choices.first(where: { $0.id == current.id }), found != current {
             target = found
             checkSession()
         }
-        guard !choseTarget, !mustContinue else { return }
+        guard Self.followsSuggestions(choseTarget: choseTarget, mustContinue: mustContinue, promptChanged: prompt != filledIn) else {
+            return
+        }
         let suggested = CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuing, createdAt: createdAt)
         if suggested?.id != target?.id { select(suggested, byYou: false) }
+    }
+
+    /// Whether a session BriefBar suggests later, as it finds them, takes the place of the one chosen now. Not once you
+    /// chose one; not for Push & Reply, which ships its last task's changes in its session; and not once you changed the
+    /// prompt, which you wrote for where it goes now.
+    static func followsSuggestions(choseTarget: Bool, mustContinue: Bool, promptChanged: Bool) -> Bool {
+        !choseTarget && !mustContinue && !promptChanged
     }
 
     private func select(_ choice: SessionChoice?, byYou: Bool) {
@@ -592,15 +601,20 @@ struct CopilotComposerView: View {
         checkSession()
     }
 
-    /// The prompt BriefBar writes for where Copilot works now (`writtenPrompt`), unless you changed the one it wrote.
+    /// The prompt BriefBar writes for where Copilot works now (`writtenPrompt`). Reset goes back to it from now on; the
+    /// prompt itself changes only if you hadn't changed the one it wrote before.
     private func refreshPrompt() {
         let written = Self.writtenPrompt(
             for: target, subject: subject, template: template, worktreePrompt: worktreePrompt, sessionPrompt: sessionPrompt,
             baseBranch: repository?.baseBranch
         )
-        guard prompt == filledIn, written != filledIn else { return }
-        filledIn = written
-        prompt = written
+        (prompt, filledIn) = Self.rewritten(prompt: prompt, filledIn: filledIn, written: written)
+    }
+
+    /// The prompt and what Reset goes back to, once BriefBar writes `written`: Reset always goes back to what it wrote
+    /// last, and the prompt follows only if you hadn't changed it.
+    static func rewritten(prompt: String, filledIn: String, written: String) -> (prompt: String, filledIn: String) {
+        (prompt == filledIn ? written : prompt, written)
     }
 
     /// Goes the way that works when only one does: in the Copilot app when the CLI can't go on with the session, with the
