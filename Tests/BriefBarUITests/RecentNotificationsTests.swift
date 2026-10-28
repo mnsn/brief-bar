@@ -110,6 +110,13 @@ import Testing
 
 @MainActor
 @Suite struct NotificationClickTests {
+    /// A wait that never runs out during a test, which CI stops after ten minutes: a click with it opens only on a reopen,
+    /// or when another click comes.
+    private static let longWait: TimeInterval = 3600
+
+    // Each click and reopen is given its time, and a test awaits a click's wait rather than sleeping, so how long a busy
+    // runner takes to come back to a test changes nothing: only the order of what happens does.
+
     private func makeNotifier(wait: TimeInterval) -> (Notifier, RecentNotifications) {
         let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
         let notifier = Notifier(recent: recent, posts: false)
@@ -118,44 +125,50 @@ import Testing
     }
 
     @Test func aClickOpensOnceBriefBarIsInFrontInsteadOfWhatOpeningItShows() {
-        let (notifier, recent) = makeNotifier(wait: 60)
+        let (notifier, recent) = makeNotifier(wait: Self.longWait)
         var opened: [NotificationClick] = []
         notifier.onOpen = { opened.append($0) }
         recent.record([BriefBarNotification(id: "a", source: .azureDevOps, title: "Sam Rivera replied", body: "Done.", thread: "t")])
+        let clickedAt = Date()
 
         // Without a click, opening BriefBar again is just that.
-        #expect(!notifier.handleReopen())
+        #expect(!notifier.handleReopen(at: clickedAt))
         let click = NotificationClick(id: "a", source: .azureDevOps, userInfo: ["url": "https://dev.azure.com/contoso"])
-        notifier.clicked(click)
+        notifier.clicked(click, at: clickedAt)
         #expect(opened.isEmpty)
         #expect(recent.history.unseenCount == 0)
 
-        // macOS brings BriefBar to the front for the click: what it's about opens then, and nothing else does.
-        #expect(notifier.handleReopen())
+        // macOS brings BriefBar to the front for the click, a tenth of a second later: what it's about opens then, and
+        // nothing else does.
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(0.1)))
         #expect(opened == [click])
+        #expect(notifier.clickTimeout == nil)
         // Once only.
-        #expect(notifier.handleReopen())
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(0.2)))
         #expect(opened == [click])
         // Well after the click, opening BriefBar again is just that.
-        #expect(!notifier.handleReopen(at: Date().addingTimeInterval(10)))
+        #expect(!notifier.handleReopen(at: clickedAt.addingTimeInterval(10)))
     }
 
-    @Test func aClickOpensAnywayWhenBriefBarDoesntComeToTheFront() async throws {
+    @Test func aClickOpensAnywayWhenBriefBarDoesntComeToTheFront() async {
         let (notifier, _) = makeNotifier(wait: 0)
         var opened: [String] = []
         notifier.onOpen = { opened.append($0.id) }
-        notifier.clicked(NotificationClick(id: "a", source: .azureDevOps))
-        for _ in 0..<200 where opened.isEmpty {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let clickedAt = Date()
+        notifier.clicked(NotificationClick(id: "a", source: .azureDevOps), at: clickedAt)
+        let wait = notifier.clickTimeout
+        #expect(opened.isEmpty)
+        // Its wait runs out without a reopen.
+        await wait?.value
         #expect(opened == ["a"])
+        #expect(notifier.clickTimeout == nil)
 
         // A click while another waits opens that one first.
-        notifier.clickWait = 60
-        notifier.clicked(NotificationClick(id: "b", source: .azureDevOps))
-        notifier.clicked(NotificationClick(id: "c", source: .azureDevOps, sumsUp: true))
+        notifier.clickWait = Self.longWait
+        notifier.clicked(NotificationClick(id: "b", source: .azureDevOps), at: clickedAt.addingTimeInterval(5))
+        notifier.clicked(NotificationClick(id: "c", source: .azureDevOps, sumsUp: true), at: clickedAt.addingTimeInterval(5.1))
         #expect(opened == ["a", "b"])
-        #expect(notifier.handleReopen())
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(5.2)))
         #expect(opened == ["a", "b", "c"])
     }
 
@@ -163,20 +176,23 @@ import Testing
         let (notifier, _) = makeNotifier(wait: 0.05)
         var opened: [String] = []
         notifier.onOpen = { opened.append($0.id) }
-        notifier.clicked(NotificationClick(id: "a", source: .azureDevOps))
+        let clickedAt = Date()
+        notifier.clicked(NotificationClick(id: "a", source: .azureDevOps), at: clickedAt)
         let firstWait = notifier.clickTimeout
         #expect(firstWait != nil)
-        #expect(notifier.handleReopen())
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(0.01)))
         #expect(opened == ["a"])
 
         // Clicked before the first one's wait would have been over: the second waits for BriefBar to come to the front for
-        // it, not for what's left of the first one's wait.
-        notifier.clickWait = 60
-        notifier.clicked(NotificationClick(id: "b", source: .azureDevOps))
+        // it, not for what's left of the first one's wait, which runs out first without opening it.
+        notifier.clickWait = Self.longWait
+        notifier.clicked(NotificationClick(id: "b", source: .azureDevOps), at: clickedAt.addingTimeInterval(0.02))
+        let secondWait = notifier.clickTimeout
         await firstWait?.value
         #expect(opened == ["a"])
-        #expect(notifier.handleReopen())
+        #expect(notifier.handleReopen(at: clickedAt.addingTimeInterval(0.1)))
         #expect(opened == ["a", "b"])
         #expect(notifier.clickTimeout == nil)
+        #expect(secondWait?.isCancelled == true)
     }
 }
