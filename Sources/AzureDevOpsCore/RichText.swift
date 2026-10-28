@@ -84,6 +84,10 @@ public struct RichText: Sendable, Equatable {
 
     public var isEmpty: Bool { blocks.isEmpty }
 
+    /// How deep HTML's inline elements' styles are followed. Text nests a few; deeper, it takes the style around it, so
+    /// that every piece of text, and every closing tag, looks at a few elements at most.
+    static let htmlInlineDepth = 32
+
     /// The text without its formatting, a line for each block: for VoiceOver, copying and tests.
     public var plainText: String {
         blocks.map { block in
@@ -199,7 +203,11 @@ private struct HTMLReader {
     private var blocks: [RichText.Block] = []
     private var runs: [RichText.Run] = []
     private var kind = Kind.paragraph
+    /// The inline elements open, whose styles and links the text takes.
     private var inline: [Inline] = []
+    /// Inline elements opened deeper than `RichText.htmlInlineDepth`, by name: their closing tags close them before any of
+    /// `inline`.
+    private var untracked: [String: Int] = [:]
     private var lists: [(ordered: Bool, next: Int)] = []
     private var listItems = 0
     private var quotes = 0
@@ -297,7 +305,7 @@ private struct HTMLReader {
         case "h1", "h2", "h3", "h4", "h5", "h6":
             if tables > 0 {
                 lineBreak()
-                inline.append(Inline(name: name, style: .bold))
+                push(Inline(name: name, style: .bold))
             } else {
                 flush()
                 kind = .heading(Int(String(name.dropFirst())) ?? 1)
@@ -329,7 +337,7 @@ private struct HTMLReader {
         case "pre":
             if tables > 0 {
                 lineBreak()
-                inline.append(Inline(name: name, style: .code))
+                push(Inline(name: name, style: .code))
             } else {
                 flush()
                 preDepth = 1
@@ -344,7 +352,7 @@ private struct HTMLReader {
             let alt = tag.attributes["alt"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let title = alt.isEmpty ? RichText.fileName(of: url) ?? "Image" : alt
             if tables > 0 {
-                inline.append(Inline(name: "img", style: [], link: url))
+                push(Inline(name: "img", style: [], link: url))
                 append(title)
                 pop("img")
             } else {
@@ -367,7 +375,7 @@ private struct HTMLReader {
             if tables == 1 {
                 endCell()
                 inCell = true
-                if name == "th" { inline.append(Inline(name: "th", style: .bold)) }
+                if name == "th" { push(Inline(name: "th", style: .bold)) }
             } else if tables > 1 {
                 append(" ")
             }
@@ -381,7 +389,7 @@ private struct HTMLReader {
             if Self.lineElements.contains(name) {
                 lineBreak()
             } else if let style = Self.inlineStyle(name, tag.attributes) {
-                inline.append(style)
+                push(style)
             }
         }
     }
@@ -482,7 +490,19 @@ private struct HTMLReader {
         append("\n")
     }
 
+    private mutating func push(_ element: Inline) {
+        guard inline.count < RichText.htmlInlineDepth else {
+            untracked[element.name, default: 0] += 1
+            return
+        }
+        inline.append(element)
+    }
+
     private mutating func pop(_ name: String) {
+        if let count = untracked[name] {
+            untracked[name] = count > 1 ? count - 1 : nil
+            return
+        }
         if let index = inline.lastIndex(where: { $0.name == name }) {
             inline.remove(at: index)
         }
@@ -515,6 +535,7 @@ private struct HTMLReader {
     private mutating func endCell() {
         guard inCell else { return }
         inline.removeAll { $0.name == "th" }
+        untracked["th"] = nil
         row.append(RichText.normalized(runs))
         runs = []
         inCell = false
@@ -749,7 +770,8 @@ private enum MarkdownReader {
         var pending: [String] = []
         var pendingKind = Pending.paragraph
         var listIndents: [Int] = []
-        var numbers: [Int: Int] = [:]
+        /// Each open list's next number, by depth: nil for a bulleted one.
+        var numbers: [Int?] = []
         var afterBlank = false
         var index = 0
 
@@ -766,9 +788,11 @@ private enum MarkdownReader {
             case .listItem(let marker, let depth): blocks.append(.listItem(marker, depth: depth, runs))
             }
         }
-        func endList() {
-            listIndents = []
-            numbers = [:]
+        /// Closes the lists that a block indented this much is outside of: those whose items are indented as much or more.
+        /// It's in the others' items, which go on after it, counting on.
+        func closeLists(at indent: Int) {
+            while let last = listIndents.last, last >= indent { listIndents.removeLast() }
+            if numbers.count > listIndents.count { numbers.removeSubrange(listIndents.count...) }
         }
 
         while index < lines.count {
@@ -785,7 +809,7 @@ private enum MarkdownReader {
             // or more of the paragraph above it.
             if listIndents.isEmpty, indent >= 4 {
                 if !pending.isEmpty {
-                    pending.append(trimmed)
+                    pending.append(Self.unindented(line))
                     index += 1
                     continue
                 }
@@ -804,9 +828,9 @@ private enum MarkdownReader {
             if let fence = Self.fence(trimmed) {
                 // Where its closing fence may be, as CommonMark has it: up to three columns into what it's in, the text of
                 // a list's item, as indented as the fence there, or the page.
-                let closingIndent = (listIndents.isEmpty ? 0 : indent) + 3
                 flush()
-                endList()
+                closeLists(at: indent)
+                let closingIndent = (listIndents.isEmpty ? 0 : indent) + 3
                 var code: [String] = []
                 index += 1
                 while index < lines.count, !Self.closes(fence, lines[index], indentedUpTo: closingIndent) {
@@ -829,7 +853,7 @@ private enum MarkdownReader {
             }
             if let match = trimmed.wholeMatch(of: /(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*/) {
                 flush()
-                endList()
+                closeLists(at: indent)
                 let runs = inline(String(match.2 ?? ""))
                 if !runs.isEmpty { blocks.append(.heading(level: match.1.count, runs)) }
                 index += 1
@@ -837,17 +861,18 @@ private enum MarkdownReader {
             }
             if Self.isRule(trimmed) {
                 flush()
-                endList()
+                closeLists(at: indent)
                 blocks.append(.rule)
                 index += 1
                 continue
             }
             if trimmed.hasPrefix(">") {
                 flush()
-                endList()
+                closeLists(at: indent)
                 var quoted: [String] = []
                 while index < lines.count {
-                    let next = lines[index].trimmingCharacters(in: .whitespaces)
+                    // What ends its lines stays: spaces after a backslash keep it from breaking the line.
+                    let next = Self.unindented(lines[index])
                     guard next.hasPrefix(">") else { break }
                     var content = next.dropFirst()
                     if content.first == " " { content = content.dropFirst() }
@@ -867,7 +892,7 @@ private enum MarkdownReader {
             }
             if line.contains("|"), index + 1 < lines.count, Self.isTableSeparator(lines[index + 1]) {
                 flush()
-                endList()
+                closeLists(at: indent)
                 var rows = [Self.cells(line).map { cell in inline(cell).map { run in
                     var bold = run
                     bold.style.insert(.bold)
@@ -883,6 +908,8 @@ private enum MarkdownReader {
             }
             if let match = trimmed.wholeMatch(of: /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+["'(][^)]*["')])?\s*\)/) {
                 flush()
+                // Like a paragraph, after a blank line: in the list items it's indented into, and after the lists it isn't.
+                if afterBlank { closeLists(at: indent) }
                 let url = RichText.webLink(String(match.2))
                 let alt = String(match.1).trimmingCharacters(in: .whitespaces)
                 blocks.append(.image(alt: alt.isEmpty ? RichText.fileName(of: url) ?? "Image" : alt, url: url))
@@ -895,7 +922,10 @@ private enum MarkdownReader {
                 while let last = listIndents.last, last > itemIndent { listIndents.removeLast() }
                 if listIndents.last != itemIndent { listIndents.append(itemIndent) }
                 let depth = listIndents.count - 1
-                numbers = numbers.filter { $0.key <= depth }
+                // The lists deeper than it are over. Less indented than the list it ends but more than the one around it,
+                // it's that list's next item, as CommonMark has it, and counts on.
+                if numbers.count > depth + 1 { numbers.removeSubrange((depth + 1)...) }
+                while numbers.count <= depth { numbers.append(nil) }
                 var content = String(match.4 ?? "")
                 var marker = RichText.ListMarker.bullet
                 if let digits = match.3 {
@@ -914,12 +944,18 @@ private enum MarkdownReader {
                 index += 1
                 continue
             }
-            if afterBlank, indent == 0, pending.isEmpty { endList() }
-            pending.append(trimmed)
+            // A paragraph after a blank line: in the list items it's indented into, and after the lists it isn't.
+            if afterBlank, pending.isEmpty { closeLists(at: indent) }
+            pending.append(Self.unindented(line))
             index += 1
         }
         flush()
         return blocks
+    }
+
+    /// A line without its indentation, but with what ends it: spaces after a backslash keep it from breaking the line.
+    private static func unindented(_ line: String) -> String {
+        String(line.drop { $0 == " " || $0 == "\t" })
     }
 
     /// A line that closes a code block: nothing but the fence's character, at least as many times, indented no further
@@ -995,14 +1031,9 @@ private enum MarkdownReader {
             .map { $0.replacingOccurrences(of: placeholder, with: "|").trimmingCharacters(in: .whitespaces) }
     }
 
-    /// A block's lines as one text: a line that ends in a backslash ends with it, and the others with their line break.
+    /// A block's lines as one text, as they were written: inline Markdown reads their backslashes, a line break's among them.
     private static func joined(_ lines: [String]) -> String {
-        lines.map { line in
-            var line = line.trimmingCharacters(in: .whitespaces)
-            if line.hasSuffix("\\") { line.removeLast() }
-            return line
-        }
-        .joined(separator: "\n")
+        lines.joined(separator: "\n")
     }
 
     /// Inline Markdown: emphasis, code, strikethrough, links and images, which link to where they are.

@@ -122,6 +122,28 @@ private typealias Run = RichText.Run
         #expect(RichText(html: "<b>Bold</b> <i").blocks == [.paragraph([Run("Bold", style: .bold), Run(" <i")])])
     }
 
+    @Test func readsDeeplyNestedInlineElementsInLinearTime() {
+        // Every piece of text, and every closing tag, would otherwise look through all the elements open.
+        let html = String(repeating: "<span>x", count: 20_000) + String(repeating: "</b>", count: 20_000)
+        var text = RichText()
+        let elapsed = ContinuousClock().measure { text = RichText(html: html) }
+        #expect(text.plainText == String(repeating: "x", count: 20_000))
+        #expect(elapsed < .seconds(3))
+        // Styles nest as written; deeper than they're followed, the text keeps the style around it, and closing tags still
+        // close what they opened.
+        let spans = RichText.htmlInlineDepth + 8
+        let deep = "<b>" + String(repeating: "<span>", count: spans) + "<i>x</i>" + String(repeating: "</span>", count: spans)
+            + "y</b>z"
+        #expect(RichText(html: deep).blocks == [.paragraph([Run("xy", style: .bold), Run("z")])])
+        #expect(RichText(html: "<b>" + String(repeating: "<span>", count: 10) + "<i>x</i></b>").blocks == [
+            .paragraph([Run("x", style: [.bold, .italic])]),
+        ])
+        // A closing tag closes the deepest element of its name, even one deeper than that: not the bold around it all.
+        let inner = "<b>" + String(repeating: "<span>", count: spans) + "<b>x</b>y" + String(repeating: "</span>", count: spans)
+            + "</b>z"
+        #expect(RichText(html: inner).blocks == [.paragraph([Run("xy", style: .bold), Run("z")])])
+    }
+
     @Test func keepsTheLookOfPastedText() {
         let text = RichText(html: """
             <span style="font-weight: 700">B</span><span style="text-decoration: line-through">S</span>\
@@ -223,6 +245,74 @@ private typealias Run = RichText.Run
         #expect(RichText(markdown: "- Run:\n  ```\n  make\n  ```\n- Then test").blocks == [
             .listItem(.bullet, depth: 0, [Run("Run:")]), .code("make"), .listItem(.bullet, depth: 0, [Run("Then test")]),
         ])
+    }
+
+    @Test func blocksInAListItemKeepTheList() {
+        // Ordered lists written with "1." throughout count on past code in an item.
+        #expect(RichText(markdown: "1. Build\n   ```\n   make\n   ```\n1. Test").blocks == [
+            .listItem(.number(1), depth: 0, [Run("Build")]), .code("make"), .listItem(.number(2), depth: 0, [Run("Test")]),
+        ])
+        // Nested items stay nested past a quote, a heading, a table or a rule in one.
+        let nested = "- a\n  - b\n    > quoted\n  - c\n    ### Title\n  - d\n    | x | y |\n    | - | - |\n    | 1 | 2 |\n  - e\n    ***\n  - f"
+        #expect(RichText(markdown: nested).blocks == [
+            .listItem(.bullet, depth: 0, [Run("a")]), .listItem(.bullet, depth: 1, [Run("b")]), .quote([Run("quoted")]),
+            .listItem(.bullet, depth: 1, [Run("c")]), .heading(level: 3, [Run("Title")]),
+            .listItem(.bullet, depth: 1, [Run("d")]), .table([[[Run("x", style: .bold)], [Run("y", style: .bold)]], [[Run("1")], [Run("2")]]]),
+            .listItem(.bullet, depth: 1, [Run("e")]), .rule, .listItem(.bullet, depth: 1, [Run("f")]),
+        ])
+        // A block that isn't indented into the list ends it: its numbers start over.
+        #expect(RichText(markdown: "1. One\n# Title\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .heading(level: 1, [Run("Title")]), .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        // A paragraph in an outer item, after a blank line, ends the list in that item, and the next one starts over.
+        #expect(RichText(markdown: "1. a\n   1. b\n   1. c\n\n   More of a.\n   1. d").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .listItem(.number(1), depth: 1, [Run("b")]),
+            .listItem(.number(2), depth: 1, [Run("c")]), .paragraph([Run("More of a.")]), .listItem(.number(1), depth: 1, [Run("d")]),
+        ])
+        // A list in the next item counts from its own first number.
+        #expect(RichText(markdown: "1. a\n   1. b\n   2. c\n2. d\n   5. e").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .listItem(.number(1), depth: 1, [Run("b")]),
+            .listItem(.number(2), depth: 1, [Run("c")]), .listItem(.number(2), depth: 0, [Run("d")]),
+            .listItem(.number(5), depth: 1, [Run("e")]),
+        ])
+        // An item less indented than the list it's in, but more than the one around it, is that list's next one, as
+        // CommonMark has it.
+        #expect(RichText(markdown: "1. a\n    3. b\n   7. c").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .listItem(.number(3), depth: 1, [Run("b")]), .listItem(.number(4), depth: 1, [Run("c")]),
+        ])
+        #expect(RichText(markdown: "  1. a\n1. b").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .listItem(.number(2), depth: 0, [Run("b")]),
+        ])
+        // A fence the list's items aren't indented into ends the list, and is the page's: its closing fence is indented
+        // three columns at most.
+        #expect(RichText(markdown: "  1. a\n  ```\n  code\n     ```\n  ```").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .code("code\n   ```"),
+        ])
+        // An image on its own, as a paragraph: in the item it's indented into, and after the list it isn't.
+        let image = RichText.Block.image(alt: "Diagram", url: URL(string: "https://example.com/d.png"))
+        #expect(RichText(markdown: "1. One\n\n   ![Diagram](https://example.com/d.png)\n\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), image, .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n\n![Diagram](https://example.com/d.png)\n\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), image, .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+    }
+
+    @Test func keepsBackslashesThatArentLineBreaks() {
+        // Nothing follows it to break: it's the path's.
+        #expect(RichText(markdown: #"Folder: C:\"#).plainText == #"Folder: C:\"#)
+        #expect(RichText(markdown: "- Copy it to D:\\").plainText == "• Copy it to D:\\")
+        #expect(RichText(markdown: "> Saved in C:\\").plainText == "Saved in C:\\")
+        // An escaped backslash at the end of a line is one backslash, and the line still ends there.
+        #expect(RichText(markdown: "Path \\\\\nnext").plainText == "Path \\\nnext")
+        #expect(RichText(markdown: "# Saved in C:\\").plainText == "Saved in C:\\")
+        #expect(RichText(markdown: "Saved in C:\\\n===").plainText == "Saved in C:\\")
+        #expect(RichText(markdown: "| Path |\n| - |\n| C:\\ |").blocks == [.table([[[Run("Path", style: .bold)]], [[Run("C:\\")]]])])
+        // A backslash then spaces is a backslash.
+        #expect(RichText(markdown: "C:\\ \nnext").plainText == "C:\\\nnext")
+        #expect(RichText(markdown: "> C:\\ \n> next").plainText == "C:\\\nnext")
+        // A backslash that ends a line that goes on breaks it, as Markdown says, and goes.
+        #expect(RichText(markdown: "First\\\nSecond").plainText == "First\nSecond")
     }
 
     @Test func readsQuotesInQuotesToADepth() {
