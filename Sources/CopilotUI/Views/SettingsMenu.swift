@@ -31,6 +31,9 @@ struct CopilotSettings: View {
         }
         .pickerStyle(.menu)
 
+        Toggle("Move Viewed Sessions to Idle", isOn: $settings.moveViewedToIdle)
+            .help("Hide finished and stopped sessions after you open them or view them in Copilot. Off keeps them until Clear or the retention time expires.")
+
         Toggle("Show Context Usage", isOn: $settings.showContextUsage)
     }
 }

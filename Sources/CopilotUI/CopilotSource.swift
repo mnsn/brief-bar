@@ -18,7 +18,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database. BriefBar never changes them. It keeps only which finished sessions you've cleared, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
         network: "None. Copilot's list makes no network requests.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -84,7 +84,7 @@ package final class CopilotSource: BriefBarSource {
     }
 
     package func deleteSavedData() {
-        settings.forgetAcknowledged()
+        settings.forgetDismissed()
         // The links you added or hid to Copilot sessions.
         services.links.forget(.copilot)
     }

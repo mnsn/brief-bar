@@ -7,7 +7,7 @@ extension CopilotCommandLine {
     /// `--mcp`: the GitHub Copilot app's sessions, for agents, as the app shows them. It only reads.
     package static func mcp(_ options: CommandLineOptions) -> MCPSource? {
         guard let paths = paths(options) else { return nil }
-        let agent = CopilotAgent(paths: paths)
+        let agent = CopilotAgent(paths: paths, isDemo: options.demo)
         return MCPSource(name: "GitHub Copilot", tools: agent.tools) { await agent.needsYou() }
     }
 }
@@ -15,6 +15,7 @@ extension CopilotCommandLine {
 /// The tools `--mcp` gives agents for the GitHub Copilot app's sessions.
 struct CopilotAgent: Sendable {
     let paths: CopilotPaths
+    var isDemo = false
 
     var tools: [MCPTool] {
         [
@@ -42,7 +43,7 @@ struct CopilotAgent: Sendable {
                 continuation.resume(returning: SessionEngine.loadOnce(paths: paths))
             }
         }
-        return (CopilotCommandLine.resolve(state, now: now), state.problem)
+        return (CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil), state.problem)
     }
 
     func sessions(phase: JSONValue?, now: Date = Date()) async throws -> String {

@@ -80,11 +80,13 @@ import Testing
         #expect(store.task(for: "s1") == nil)
     }
 
-    @Test func openingAFinishedTaskOpensWhatItsForAndDismissesIt() throws {
+    @Test(arguments: [false, true])
+    func openingAFinishedTaskOnlyDismissesItWhenEnabled(_ moveViewedToIdle: Bool) throws {
         var opened = 0
         let sent = SentTasks()
         sent.publish(.azureDevOps, tasks: [task("t1", stage: .finished, since: now.addingTimeInterval(-60)) { opened += 1 }])
         let settings = AppSettings(defaults: MemoryDefaults())
+        settings.moveViewedToIdle = moveViewedToIdle
         let store = store(sent, settings: settings)
         store.receive(EngineSnapshot())
         let finished = try #require(store.sessions.first)
@@ -92,13 +94,24 @@ import Testing
 
         store.open(finished)
         #expect(opened == 1)
-        #expect(settings.acknowledged["t1"] != nil)
+        #expect((settings.viewed["t1"] != nil) == moveViewedToIdle)
+        #expect(settings.cleared.isEmpty)
         store.receive(EngineSnapshot())
-        #expect(store.sessions.first?.phase == .idle)
-        #expect(store.counts.active == 0)
+        #expect(store.sessions.first?.phase == (moveViewedToIdle ? .idle : .done))
+        #expect(store.counts.active == (moveViewedToIdle ? 0 : 1))
+
+        settings.moveViewedToIdle = false
+        store.receive(EngineSnapshot())
+        #expect(store.sessions.first?.phase == .done)
+        store.clear(.done)
+        #expect(store.counts.done == 0)
+        #expect(settings.cleared["t1"] != nil)
+        sent.publish(.azureDevOps, tasks: [task("t1", stage: .finished, since: Date().addingTimeInterval(1))])
+        store.receive(EngineSnapshot())
+        #expect(store.sessions.first?.phase == .done)
     }
 
-    /// A task you stopped yourself is nothing to look at; one that failed or stopped by itself is, until you've seen it.
+    /// A task you stopped yourself is nothing to look at; one that failed or stopped by itself stays until dismissed.
     @Test func aTaskYouStoppedIsNothingToLookAt() {
         let sent = SentTasks()
         sent.publish(.azureDevOps, tasks: [

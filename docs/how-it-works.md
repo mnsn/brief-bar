@@ -1229,14 +1229,16 @@ it applies. A few more details:
 
 - "Needs you" sorts the longest-waiting session first; the other groups show the most recent
   first.
-- **Done** and **Stopped** sessions stay highlighted until you've seen them. That happens when:
-  - you open the session from BriefBar, or click **Clear** on its group in the menu-bar
-    panel,
-  - you're looking at it in the Copilot app (the app is frontmost and showing that session),
-  - the Copilot app clears its own unread marker for the session's workspace, or
-  - the **Keep Finished Sessions For** time passes (1 hour by default).
-
-  After that, the session moves to Idle.
+- **Done** and **Stopped** sessions stay highlighted until you click **Clear** on their group
+  in the menu-bar panel, or the **Keep Finished Sessions For** time passes (1 hour by default).
+  **Move Viewed Sessions to Idle**, off by default, optionally dismisses them sooner: when you
+  open one from BriefBar, view it in the frontmost Copilot app, or Copilot clears its unread marker.
+  Turning the option off shows recent viewed completions again, but doesn't undo explicit clears.
+  Clear and viewed markers are kept separately. Clear applies only to runs that have already ended:
+  a later completion in the same session appears again, timed from that run's end.
+  After clearing or expiry, the session moves to Idle.
+  Old saved "seen" markers are treated only as viewed, never as explicit clears, so they don't
+  suppress recent completions unless the option is on.
 - Detailed states (questions, plans, permissions, the current step) come from the agent's log on
   this Mac. A session without a local log only shows Running, Interrupted or Idle, based on the
   app's own flags.
@@ -1251,8 +1253,9 @@ it applies. A few more details:
   the task.) Azure DevOps already follows them, so the list takes how each one stands from it rather than
   reading anything (`StatusResolver.snapshot(unlisted:…)`): **Running** while its worktree gets ready
   (Starting…) and while Copilot works, with its current step; then **Done** or **Stopped**, highlighted as
-  long as a session would be, and seen the same ways, except that one you stopped yourself is idle at
-  once. Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
+  long as a session would be, until Clear or retention expiry, with optional dismissal on opening
+  while **Move Viewed Sessions to Idle** is on. One you stopped yourself is idle at once.
+  Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
   Terminal, show the worktree or what Copilot printed, stop it, remove its worktree or clear it.
 
 ### Updates are pushed, not polled
