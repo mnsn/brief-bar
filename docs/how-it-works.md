@@ -1256,7 +1256,8 @@ it applies. A few more details:
   long as a session would be, until Clear or retention expiry, with optional dismissal on opening
   while **Move Viewed Sessions to Idle** is on. One you stopped yourself is idle at once.
   Clicking one opens its pull request, or its work item, and its menu is the task's own: go on in
-  Terminal, show the worktree or what Copilot printed, stop it, remove its worktree or clear it.
+  Terminal, or in the Copilot app for one of its sessions, show the worktree or what Copilot printed,
+  stop it, remove its worktree or clear it.
 
 ### Updates are pushed, not polled
 
