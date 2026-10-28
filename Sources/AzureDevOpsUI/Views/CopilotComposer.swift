@@ -566,15 +566,13 @@ struct CopilotComposerView: View {
     private func findSessions() {
         isLooking = true
         Task {
-            var found = await store.sessionChoices(for: subject)
+            let found = await store.sessionChoices(for: subject)
             choices = found
             update()
             let mentioned = await store.sessionsMentioning(subject, among: found, since: createdAt)
             if !mentioned.isEmpty {
-                for index in found.indices where mentioned.contains(found[index].id) && !found[index].reasons.contains(.mentionsIt) {
-                    found[index].reasons.append(.mentionsIt)
-                }
-                choices = found.filter { $0.run != nil } + CopilotTasksStore.sorted(found.filter { $0.appSession != nil }, createdAt: createdAt)
+                // On the sessions as they are by now, which kept up with BriefBar's tasks while the logs were read.
+                choices = store.marking(mentioned, in: choices, createdAt: createdAt)
                 update()
             }
             isLooking = false

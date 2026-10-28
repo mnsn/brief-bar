@@ -656,6 +656,26 @@ private struct DatabaseError: Error {
         #expect(await store.anotherSessionRuns(inCheckoutOf: checkout, besides: onBranch) == false)
     }
 
+    /// Reading the logs for mentions takes a while: what it found goes on the sessions as they are by then, each as
+    /// available as it is now, so a session that a task stopped working in meanwhile isn't taken again.
+    @Test func marksMentionsOnTheSessionsAsTheyAreNow() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = store(home: home)
+        defer { store.stop() }
+        // Found while a task of BriefBar's still worked in one, which has ended since: nothing works in either now.
+        let found = [
+            choice(onBranch, reasons: [], active: -60, busy: true),
+            choice(recorded, reasons: [.linked], active: -120),
+        ]
+        let marked = store.marking([onBranch], in: found, createdAt: nil)
+        #expect(marked.map(\.id) == [recorded, onBranch])
+        #expect(marked.first { $0.id == onBranch }?.reasons == [.mentionsIt])
+        #expect(marked.allSatisfy { !$0.isUnavailable })
+        // Marked once.
+        #expect(store.marking([onBranch], in: marked, createdAt: nil).first { $0.id == onBranch }?.reasons == [.mentionsIt])
+    }
+
     // MARK: Prompts
 
     /// Where Copilot works decides the prompt: BriefBar's worktree at the pull request's latest commit, for a new session

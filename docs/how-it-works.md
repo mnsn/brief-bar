@@ -1126,7 +1126,7 @@ with it:
 - Show Links links them, because you did or through a pull request (`LinkedSession`);
 - its log has a link to it (`SessionMentions`): `…/pullrequest/<id>` or the REST API's
   `…/pullRequests/<id>` for a pull request, `…/_workitems/edit/<id>` or `…/workItems/<id>` for a work
-  item, not followed by another digit, in a link to its organization, read from the link itself:
+  item, whatever their case, not followed by another digit, in a link to its organization, read from the link itself:
   `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`. Only the logs
   of the 40 most recently active sessions are read for it, of those active since the pull request was
   created, or in the last 30 days for a work item; each in chunks, until its first mention, opened below

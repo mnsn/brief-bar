@@ -281,6 +281,17 @@ extension CopilotTasksStore {
     /// The most sessions whose logs are read for mentions.
     static let mentionLimit = 40
 
+    /// The sessions, with those whose logs mention it (`sessionsMentioning`) marked so: BriefBar's tasks first, then the
+    /// app's sessions in their order (`sorted`), each as available as it is now (`availability`), since a task may have
+    /// started or ended while the logs were read.
+    func marking(_ mentioned: Set<String>, in choices: [SessionChoice], createdAt: Date?) -> [SessionChoice] {
+        var marked = choices
+        for index in marked.indices where mentioned.contains(marked[index].id) && !marked[index].reasons.contains(.mentionsIt) {
+            marked[index].reasons.append(.mentionsIt)
+        }
+        return availability(of: marked.filter { $0.run != nil } + Self.sorted(marked.filter { $0.appSession != nil }, createdAt: createdAt))
+    }
+
     /// The session a task goes to unless you choose another. A pull request's goes on with its last task's, as before;
     /// else with the session of the work item's task that opened it; else with the app's session that the app records
     /// with it, that you linked to it, or that works on its branch, the most recently active; else with the one that

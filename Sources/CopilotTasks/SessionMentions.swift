@@ -10,18 +10,19 @@ public enum SessionMentions {
         /// The Azure DevOps organization, which the link names: in its path on dev.azure.com, or in its own host.
         public var organization: String
         public var number: Int
-        /// What comes right before the number in a link to it.
+        /// What comes right before the number in a link to it, in lowercase: a link matches whatever its case, as Azure
+        /// DevOps takes them.
         var prefixes: [String]
 
-        /// A pull request's page, `…/_git/<repository>/pullrequest/<number>`, or its link in the REST API,
-        /// `…/pullRequests/<number>`.
+        /// A pull request's page, `…/_git/<repository>/pullrequest/<number>`, also written `pullRequest`, or its link in
+        /// the REST API, `…/pullRequests/<number>`.
         public static func pullRequest(organization: String, number: Int) -> Target {
-            Target(organization: organization, number: number, prefixes: ["pullrequest/", "pullRequests/", "pullrequests/"])
+            Target(organization: organization, number: number, prefixes: ["pullrequest/", "pullrequests/"])
         }
 
         /// A work item's page, `…/_workitems/edit/<id>`, or its link in the REST API, `…/workItems/<id>`.
         public static func workItem(organization: String, id: Int) -> Target {
-            Target(organization: organization, number: id, prefixes: ["_workitems/edit/", "workItems/", "workitems/"])
+            Target(organization: organization, number: id, prefixes: ["_workitems/edit/", "workitems/"])
         }
 
         var needles: [[UInt8]] { prefixes.map { Array("\($0)\(number)".utf8) } }
@@ -64,6 +65,10 @@ public enum SessionMentions {
             let count = chunk.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
             if count < 0, errno == EINTR { continue }
             guard count > 0 else { break }
+            // In lowercase, as the prefixes are: a link's path matches whatever its case.
+            chunk.withUnsafeMutableBytes { bytes in
+                for index in 0..<count { bytes[index] = lowercased(bytes[index]) }
+            }
             buffer.append(contentsOf: chunk[..<count])
             if found(needles, organization: organization, in: buffer, isEnd: false) { return true }
             if buffer.count > overlap { buffer.removeFirst(buffer.count - overlap) }

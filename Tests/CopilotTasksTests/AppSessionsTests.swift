@@ -32,6 +32,11 @@ import Testing
         // An organization's own host.
         let host = try log("See https://contoso.visualstudio.com/Storefront/_git/checkout/pullrequest/4071.", in: folder)
         #expect(SessionMentions.mentions(pullRequest, in: host))
+        // A path whatever its case, as Azure DevOps takes them and RunTranscript reads them.
+        for route in ["pullRequest", "PullRequest", "PULLREQUESTS", "pullrequests"] {
+            let cased = try log("https://dev.azure.com/contoso/Storefront/_git/checkout/\(route)/4071", in: folder)
+            #expect(SessionMentions.mentions(pullRequest, in: cased, chunkSize: 16), "\(route)")
+        }
     }
 
     @Test func doesNotMistakeAnotherNumberOrOrganization() throws {
@@ -99,6 +104,8 @@ import Testing
         #expect(SessionMentions.mentions(item, in: page))
         let api = try log(#""url":"https://dev.azure.com/contoso/_apis/wit/workItems/4217""#, in: folder)
         #expect(SessionMentions.mentions(item, in: api))
+        let cased = try log("https://dev.azure.com/contoso/Storefront/_workItems/Edit/4217", in: folder)
+        #expect(SessionMentions.mentions(item, in: cased))
         #expect(!SessionMentions.mentions(pullRequest, in: page))
     }
 
