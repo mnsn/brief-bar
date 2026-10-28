@@ -274,7 +274,7 @@ extension CopilotTasksStore {
             .sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) }.prefix(Self.mentionLimit).map(\.id)
         let home = appHome
         return await Task.detached(priority: .utility) {
-            Set(candidates.filter { id in AppSessions.events(of: id, home: home).map { SessionMentions.mentions(target, in: $0) } ?? false })
+            Set(candidates.filter { SessionMentions.mentions(target, inSession: $0, home: home) })
         }.value
     }
 
@@ -315,6 +315,8 @@ extension CopilotTasksStore {
     /// - Parameter checksRepository: false to leave out the repository, which doesn't change while the window is open,
     ///   once it passed.
     func cliProblem(for choice: SessionChoice, subject: TaskSubject, checksRepository: Bool = true) async -> String? {
+        // Nothing of Copilot's is read while Send Work to Copilot is off.
+        guard canSend, isOn else { return "BriefBar can't send anything now." }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
         let id = choice.id
@@ -349,14 +351,13 @@ extension CopilotTasksStore {
     /// Whether another of the Copilot app's sessions runs a turn now, by the app's own flag, in the same checkout as the
     /// folder (`checkoutKey`), as the app's database and the sessions' state say now, not as the window found them; and
     /// whether the window lists it as one of the app's sessions or as an earlier task that went on with one. Never `id`,
-    /// the session Copilot would go on with. Read off the main thread.
+    /// the session Copilot would go on with (`AppSessions.anotherRunsATurn`). Read off the main thread, and not at all
+    /// while Send Work to Copilot is off.
     func anotherSessionRuns(inCheckoutOf folder: URL, besides id: String) async -> Bool {
+        guard canSend, isOn else { return false }
         let home = appHome
         return await Task.detached(priority: .userInitiated) {
-            let running = ((try? AppSessions.running(home: home)) ?? []).filter { $0 != id }
-            guard !running.isEmpty else { return false }
-            let checkout = Self.checkoutKey(folder)
-            return running.contains { AppSessions.folder(of: $0, home: home).map(Self.checkoutKey) == checkout }
+            AppSessions.anotherRunsATurn(inCheckoutOf: folder, besides: id, home: home)
         }.value
     }
 

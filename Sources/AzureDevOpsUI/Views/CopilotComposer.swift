@@ -617,6 +617,8 @@ struct CopilotComposerView: View {
     private func select(_ choice: SessionChoice?, byYou: Bool) {
         if byYou { choseTarget = true }
         target = choice
+        // Whether the Copilot app's sessions open at all, rather than why the last one didn't: it can be tried again.
+        appProblem = store.canOpenInApp ? nil : CopilotTasksStore.cantOpenInApp
         delivery = choice?.opensInApp == true ? .app : .cli
         refreshPrompt()
         checkSession()
@@ -677,7 +679,7 @@ struct CopilotComposerView: View {
     /// once something did, so nothing flickers; as when it opened, it goes in the Copilot app once the CLI can't go on
     /// with it, which Send then says, and stays so once the CLI can again, until you choose.
     private func recheckSession() async {
-        guard let choice = target, !choice.isUnavailable, checkingSession == nil else { return }
+        guard store.canSend, store.isOn, let choice = target, !choice.isUnavailable, checkingSession == nil else { return }
         let problem = await store.cliProblem(for: choice, subject: subject, checksRepository: cliProblem != nil)
         guard target?.id == choice.id, checkingSession == nil, problem != cliProblem else { return }
         cliProblem = problem

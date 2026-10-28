@@ -88,11 +88,11 @@ public enum AppSessions {
         return SessionLock.isHeld(sessionFolder: folder)
     }
 
-    /// The folder a session works in, as its `workspace.yaml` says, read without following a symbolic link; nil when it
-    /// doesn't say, or that folder isn't there.
+    /// The folder a session works in, as its `workspace.yaml` says, read without following a symbolic link below the app's
+    /// folder (`LocalFile.openFile(below:_:)`); nil when it doesn't say, or that folder isn't there.
     public static func folder(of id: String, home: URL) -> URL? {
-        guard let state = sessionFolder(id, home: home),
-              let data = LocalFile.tail(of: state.appendingPathComponent("workspace.yaml"), maxBytes: 64 << 10),
+        guard isSessionID(id),
+              let data = LocalFile.tail(below: home, stateFile(id, "workspace.yaml", home: home), maxBytes: 64 << 10),
               let path = SessionStateScanner.value("cwd", inWorkspace: String(decoding: data, as: UTF8.self)),
               path.hasPrefix("/")
         else { return nil }
@@ -104,6 +104,41 @@ public enum AppSessions {
     /// A session's log, `session-state/<id>/events.jsonl`.
     public static func events(of id: String, home: URL) -> URL? {
         sessionFolder(id, home: home)?.appendingPathComponent("events.jsonl")
+    }
+
+    /// `session-state/<id>/<name>`, by its components below the app's folder, to open it without following a link.
+    static func stateFile(_ id: String, _ name: String, home: URL) -> [String] {
+        [CopilotPaths(root: home).sessionState.lastPathComponent, id, name]
+    }
+
+    /// A folder's path, to compare it with another's however each is written.
+    public static func folderKey(_ folder: URL) -> String {
+        folder.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// The checkout a folder is in, by its `folderKey`, to tell whether two sessions' work would mix: the nearest folder,
+    /// itself or one it's within, with a `.git` of its own, as a repository's checkout, one of its worktrees and a submodule
+    /// have; else the folder itself, as for one that holds checkouts, whose sessions mostly work elsewhere. Read from the
+    /// disk, without running git.
+    public static func checkoutKey(_ folder: URL) -> String {
+        let key = folderKey(folder)
+        var path = key
+        while !FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(".git")) {
+            let parent = (path as NSString).deletingLastPathComponent
+            guard parent != path, !parent.isEmpty else { return key }
+            path = parent
+        }
+        return path
+    }
+
+    /// Whether another of the app's sessions runs a turn now, by its own flag, in the same checkout as the folder
+    /// (`checkoutKey`), as the app's database and the sessions' state say now. Never `id`, the session Copilot would go on
+    /// with. None when the database can't be read.
+    public static func anotherRunsATurn(inCheckoutOf folder: URL, besides id: String, home: URL) -> Bool {
+        let others = ((try? running(home: home)) ?? []).filter { $0 != id }
+        guard !others.isEmpty else { return false }
+        let checkout = checkoutKey(folder)
+        return others.contains { self.folder(of: $0, home: home).map(checkoutKey) == checkout }
     }
 
     /// `session-state/<id>`, for an ID that's a session's: a lowercase UUID, which can't step out of the folder.

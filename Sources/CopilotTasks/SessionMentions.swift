@@ -3,7 +3,7 @@ import Foundation
 
 /// Which sessions' logs mention a pull request or a work item by a link to it: to find the session that opened a pull
 /// request when nothing else says, such as one that worked in a folder of repositories rather than on the pull request's
-/// branch. A log is read in chunks, without following a symbolic link, only until its first mention.
+/// branch. A log is read in chunks, without following a symbolic link below the app's folder, only until its first mention.
 public enum SessionMentions {
     /// What a mention is: a link that ends with its number, in its organization.
     public struct Target: Sendable, Equatable {
@@ -30,11 +30,24 @@ public enum SessionMentions {
     /// How far before the number its link may start, in bytes: farther than any link to it reaches.
     static let window = 512
 
+    /// Whether a session's log, `session-state/<id>/events.jsonl` in the app's folder, mentions it (`mentions(_:in:)`).
+    /// Opened without following a symbolic link below that folder (`LocalFile.openFile(below:_:)`): neither the log nor
+    /// the session's folders may be one, so BriefBar, which may have Full Disk Access, reads nothing outside the app's
+    /// sessions. False for an ID that isn't a session's.
+    public static func mentions(_ target: Target, inSession id: String, home: URL, chunkSize: Int = 1 << 20) -> Bool {
+        guard AppSessions.isSessionID(id) else { return false }
+        let descriptor = LocalFile.openFile(below: home, AppSessions.stateFile(id, "events.jsonl", home: home))
+        return mentions(target, descriptor: descriptor, chunkSize: chunkSize)
+    }
+
     /// Whether the log mentions it: its number right after one of its links' paths, not followed by another digit, in a
     /// link to its organization, `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`.
     /// False for a symbolic link, or anything but a regular file.
-    public static func mentions(_ target: Target, in events: URL, chunkSize: Int = 1 << 20) -> Bool {
-        let descriptor = open(events.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+    static func mentions(_ target: Target, in events: URL, chunkSize: Int = 1 << 20) -> Bool {
+        mentions(target, descriptor: open(events.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK), chunkSize: chunkSize)
+    }
+
+    private static func mentions(_ target: Target, descriptor: Int32, chunkSize: Int) -> Bool {
         guard descriptor >= 0 else { return false }
         defer { close(descriptor) }
         var info = stat()

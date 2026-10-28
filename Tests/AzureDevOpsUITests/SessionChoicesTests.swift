@@ -573,6 +573,78 @@ private struct DatabaseError: Error {
         #expect(await store.cliProblem(for: earlier, subject: subject)?.contains("isn't a git repository") == true)
     }
 
+    /// A task's worktree isn't removed while Copilot works in it: for a task BriefBar sent in another session, such as one
+    /// of the app's sessions that a task went on with in a folder of it, or in another of the app's sessions, which runs a
+    /// turn there. As things are right before git removes it, with or without force.
+    @Test func keepsAWorktreeThatCopilotWorksIn() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4071", isDirectory: true)
+        let sources = worktree.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+        try Data("gitdir: \(home.path)/shop-web/.git/worktrees/pr-4071\n".utf8).write(to: worktree.appendingPathComponent(".git"))
+        let store = store(home: home)
+        defer { store.stop() }
+        let earlier = run(fixing, worktree: worktree, onPullRequest: 4071)
+        var wentOn = run(opener, worktree: sources, onPullRequest: 4071, ended: nil)
+        wentOn.isAppSession = true
+        // In a process that runs: this test's own stands in for it.
+        wentOn.process = DetachedProgram.Handle(pid: getpid(), startedAt: nil)
+        store.settings.copilotRuns = [earlier, wentOn]
+        let working = "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
+        #expect(await store.worktreeInUse(earlier) == working)
+        await #expect(throws: WorktreeInUse(reason: working)) { try await store.deleteWorktree(of: earlier, force: true) }
+        #expect(FileManager.default.fileExists(atPath: sources.path))
+
+        // That's done; another of the app's sessions runs a turn in a folder of it, as the app's database says.
+        store.settings.copilotRuns = [earlier]
+        try database(at: home, sessions: [(other, "Cart follow-up", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z")], running: [other])
+        let state = home.appendingPathComponent("session-state/\(other)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("cwd: \(sources.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        let turn = "Another Copilot session is working in it now. Remove it once that's done."
+        #expect(await store.worktreeInUse(earlier) == turn)
+        await #expect(throws: WorktreeInUse(reason: turn)) { try await store.deleteWorktree(of: earlier) }
+
+        // Once that turn ended, git goes ahead: here, where the folder isn't one of its worktrees, it says why it can't.
+        try setRunning(other, false, home: home)
+        #expect(await store.worktreeInUse(earlier) == nil)
+        do {
+            try await store.deleteWorktree(of: earlier)
+            Issue.record("git removed a folder that isn't one of its worktrees")
+        } catch {
+            #expect(!(error is WorktreeInUse))
+        }
+        #expect(FileManager.default.fileExists(atPath: sources.path))
+    }
+
+    /// Nothing of Copilot's is read while Send Work to Copilot is off: not whether the app has a session open, nor which of
+    /// its sessions run a turn, even while the window that looks again every few seconds is open.
+    @Test func readsNothingOfCopilotsWhileSendingIsOff() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checkout = home.appendingPathComponent("checkouts/shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        for id in [onBranch, recorded] {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("cwd: \(checkout.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        }
+        // The app has one open, this test's own process standing in for it, and runs a turn in the other.
+        try Data().write(to: home.appendingPathComponent("session-state/\(onBranch)/inuse.\(getpid()).lock"))
+        try database(at: home, sessions: [(recorded, "Totals follow-up", "project", "fix-totals", "shop", nil, "2026-10-26T10:00:00.000Z")], running: [recorded])
+        let store = store(home: home)
+        defer { store.stop() }
+        let choice = SessionChoice(kind: .app(AppSession(id: onBranch, name: "Fix the totals")), name: "Fix the totals", reasons: [])
+        #expect(await store.cliProblem(for: choice, subject: subject)?.hasPrefix("The Copilot app has it open") == true)
+        #expect(await store.anotherSessionRuns(inCheckoutOf: checkout, besides: onBranch))
+
+        store.settings.copilotEnabled = false
+        #expect(await store.cliProblem(for: choice, subject: subject) == "BriefBar can't send anything now.")
+        #expect(await store.cliProblem(for: choice, subject: subject, checksRepository: false) == "BriefBar can't send anything now.")
+        #expect(await store.anotherSessionRuns(inCheckoutOf: checkout, besides: onBranch) == false)
+    }
+
     // MARK: Prompts
 
     /// Where Copilot works decides the prompt: BriefBar's worktree at the pull request's latest commit, for a new session

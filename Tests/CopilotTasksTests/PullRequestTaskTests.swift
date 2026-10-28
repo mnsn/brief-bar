@@ -1,6 +1,7 @@
 import BriefBarCore
 import CopilotCore
 import Foundation
+import SQLite3
 import Synchronization
 import Testing
 @testable import CopilotTasks
@@ -41,7 +42,7 @@ import Testing
         let launchEnvironment = environment
         let launcher = CopilotLauncher(
             outputFolder: fixture.folder.appendingPathComponent("output"), runner: runner, environment: { launchEnvironment },
-            locate: { _ in copilot }
+            locate: { _ in copilot }, appHome: fixture.folder.appendingPathComponent("copilot-home")
         )
         return (launcher, argumentsFile)
     }
@@ -187,6 +188,46 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
     }
 
+    /// Another of the Copilot app's sessions may start a turn in the same checkout, in a folder of it, while BriefBar gets
+    /// ready to go on with a session there, as git runs: the launcher looks again right before it starts the CLI, by the
+    /// app's database, and doesn't start it then. Once that turn ended, it does.
+    @Test(.timeLimit(.minutes(1)))
+    func looksAgainWhetherAnotherSessionRunsATurnInTheCheckoutRightBeforeStarting() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let home = fixture.folder.appendingPathComponent("copilot-home")
+        let id = "6a1f0e2c-3b8d-4d9e-8b4f-2e3d4c5b6a7f"
+        let other = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+        let worktree = fixture.folder.appendingPathComponent("copilot-worktrees/checkout/pr-4071")
+        let sources = worktree.appendingPathComponent("Sources")
+        try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+        try Data("gitdir: \(fixture.checkout.path)/.git/worktrees/pr-4071\n".utf8).write(to: worktree.appendingPathComponent(".git"))
+        let state = home.appendingPathComponent("session-state/\(other)")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("cwd: \(sources.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        try appDatabase(at: home, session: other)
+        // It starts a turn as soon as git runs.
+        let runner = MeanwhileRunner { try? setTurn(other, running: true, home: home) }
+        let (launcher, argumentsFile) = try launcher(fixture, runner: runner)
+        let fix = CopilotRun(
+            id: id, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: fixture.checkout, worktree: worktree, startedAt: Date(), process: DetachedProgram.Handle(pid: 0, startedAt: nil),
+            ended: .finished, pullRequest: pullRequest.url
+        )
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix the comments", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: fix
+        )
+        await #expect(throws: LaunchError.sharedCheckout) { try await launcher.launch(request) { _ in } }
+        #expect(runner.ran)
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+
+        try setTurn(other, running: false, home: home)
+        let run = try await launch(launcher, request, id: id)
+        #expect(run.id == id)
+        #expect(FileManager.default.fileExists(atPath: argumentsFile.path))
+    }
+
     /// The CLI keeps its sessions in its own folder: one of the app's that isn't there can't be gone on with.
     @Test func doesNotStartAnAppSessionTheCLIDoesntHave() async throws {
         let fixture = try await repositoryWithBranch()
@@ -318,6 +359,58 @@ import Testing
         #expect(decoded.workItem?.id == 7)
         #expect(decoded.onPullRequest == nil)
         #expect(decoded.isValid)
+    }
+}
+
+/// A stand-in for the Copilot app's `data.db`, with one of its sessions, in a project, idle.
+private func appDatabase(at home: URL, session id: String) throws {
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try execute("""
+        CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
+        CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
+            is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0, interruption_reason TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+        CREATE TABLE workspaces (id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
+            name TEXT NOT NULL, creator_session_id TEXT, archived_at TEXT, updated_at TEXT NOT NULL);
+        INSERT INTO projects (id, name) VALUES ('p1', 'checkout');
+        INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+            VALUES ('\(id)', 'Fix the cart', 'project', '2026-10-27T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
+        INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+            VALUES ('w1', 'p1', '\(id)', 'fix-cart', 'Fix the cart', '2026-10-27T10:00:00.000Z');
+        """, home: home)
+}
+
+/// The app starts or ends a turn in a session, as its database says.
+private func setTurn(_ id: String, running: Bool, home: URL) throws {
+    try execute("UPDATE sessions SET is_running = \(running ? 1 : 0) WHERE id = '\(id)';", home: home)
+}
+
+private func execute(_ statements: String, home: URL) throws {
+    var handle: OpaquePointer?
+    guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw TestError("no database") }
+    defer { sqlite3_close(handle) }
+    guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw TestError(String(cString: sqlite3_errmsg(handle))) }
+}
+
+/// Runs programs as `ProcessRunner` does, and does something else as the first one starts, as another program might then.
+private final class MeanwhileRunner: ProcessRunning {
+    private let meanwhile: @Sendable () -> Void
+    private let inner = ProcessRunner()
+    private let calls = Mutex(0)
+
+    init(_ meanwhile: @escaping @Sendable () -> Void) {
+        self.meanwhile = meanwhile
+    }
+
+    var ran: Bool { calls.withLock { $0 } > 0 }
+
+    func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
+        let isFirst = calls.withLock { count in
+            count += 1
+            return count == 1
+        }
+        if isFirst { meanwhile() }
+        return try await inner.run(executable, arguments: arguments, environment: environment, timeout: timeout)
     }
 }
 

@@ -112,6 +112,50 @@ import Testing
         #expect(!SessionMentions.mentions(pullRequest, in: link))
     }
 
+    /// BriefBar may have Full Disk Access: a session's folder that's a symbolic link, a log that's one, or a `session-state`
+    /// that's one, leads nowhere, so neither the search nor finding where a session works reads outside the app's own
+    /// sessions. The app's folder itself may be one, as `~/.copilot` can.
+    @Test func readsOnlyTheAppsOwnSessionFolders() throws {
+        let home = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        defer { for folder in [home, outside] { try? FileManager.default.removeItem(at: folder) } }
+        let text = "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4071"
+        let sessions = home.appendingPathComponent("session-state", isDirectory: true)
+        let own = sessions.appendingPathComponent(opener, isDirectory: true)
+        try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: own.appendingPathComponent("events.jsonl"))
+        try Data("cwd: \(outside.path)\n".utf8).write(to: own.appendingPathComponent("workspace.yaml"))
+        #expect(SessionMentions.mentions(pullRequest, inSession: opener, home: home))
+        #expect(AppSessions.folder(of: opener, home: home)?.path == outside.path)
+
+        // A session's folder that's a link to one elsewhere, with a log and a workspace that would say as much.
+        try Data(text.utf8).write(to: outside.appendingPathComponent("events.jsonl"))
+        try Data("cwd: \(outside.path)\n".utf8).write(to: outside.appendingPathComponent("workspace.yaml"))
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent(chat), withDestinationURL: outside)
+        #expect(!SessionMentions.mentions(pullRequest, inSession: chat, home: home))
+        #expect(AppSessions.folder(of: chat, home: home) == nil)
+
+        // A log that's a link to one elsewhere.
+        let linked = sessions.appendingPathComponent(archived, isDirectory: true)
+        try FileManager.default.createDirectory(at: linked, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent("events.jsonl"), withDestinationURL: outside.appendingPathComponent("events.jsonl"))
+        #expect(!SessionMentions.mentions(pullRequest, inSession: archived, home: home))
+
+        // Nor an ID that isn't a session's, nor a path that steps out.
+        #expect(!SessionMentions.mentions(pullRequest, inSession: "../\(opener)", home: home))
+        #expect(LocalFile.openFile(below: home, ["session-state", "..", "session-state", opener, "events.jsonl"]) == -1)
+
+        // The app's folder may be a link; a `session-state` in it that's one leads nowhere.
+        let alias = outside.appendingPathComponent("copilot-home")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: home)
+        #expect(SessionMentions.mentions(pullRequest, inSession: opener, home: alias))
+        let elsewhere = outside.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: elsewhere.appendingPathComponent("session-state"), withDestinationURL: sessions)
+        #expect(!SessionMentions.mentions(pullRequest, inSession: opener, home: elsewhere))
+        #expect(AppSessions.folder(of: opener, home: elsewhere) == nil)
+    }
+
     // MARK: The app's sessions
 
     /// A stand-in for the app's `data.db`, with what the session list and its links read.

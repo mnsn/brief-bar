@@ -375,7 +375,7 @@ final class CopilotTasksStore: ObservableObject {
         Task { [self] in
             do {
                 // Again, as it starts: another of the app's sessions may have started a turn in the same checkout since the
-                // window looked. The launcher looks again whether the app has the session open.
+                // window looked. The launcher looks once more right before Copilot starts, after its git commands.
                 if let continuing, await anotherSessionRuns(inCheckoutOf: continuing.worktree, besides: id) {
                     throw LaunchError.sharedCheckout
                 }
@@ -385,7 +385,7 @@ final class CopilotTasksStore: ObservableObject {
                 } else {
                     // Asked again for each send, so a tool you've just installed is found.
                     let environment = await environment(fresh: true)
-                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment })
+                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome)
                     run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
                         MainActor.assumeIsolated { self?.exited(id, status: status) }
                     }
@@ -436,24 +436,14 @@ final class CopilotTasksStore: ObservableObject {
         busyFolders().contains(Self.checkoutKey(folder))
     }
 
-    /// A folder's path, to compare it with another's however each is written.
+    /// A folder's path, to compare it with another's however each is written (`AppSessions.folderKey`).
     nonisolated static func folderKey(_ folder: URL) -> String {
-        folder.standardizedFileURL.resolvingSymlinksInPath().path
+        AppSessions.folderKey(folder)
     }
 
-    /// The checkout a folder is in, by its `folderKey`, to tell whether two sessions' work would mix: the nearest folder,
-    /// itself or one it's within, with a `.git` of its own, as a repository's checkout, one of its worktrees and a submodule
-    /// have; else the folder itself, as for one that holds checkouts, whose sessions mostly work elsewhere. Read from the
-    /// disk, without running git.
+    /// The checkout a folder is in, to tell whether two sessions' work would mix (`AppSessions.checkoutKey`).
     nonisolated static func checkoutKey(_ folder: URL) -> String {
-        let key = folderKey(folder)
-        var path = key
-        while !FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(".git")) {
-            let parent = (path as NSString).deletingLastPathComponent
-            guard parent != path, !parent.isEmpty else { return key }
-            path = parent
-        }
-        return path
+        AppSessions.checkoutKey(folder)
     }
 
     /// What went wrong, without paths or names, for the log.
@@ -773,20 +763,23 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// Deletes the worktree's folder, after asking, and forgets the task. Its branch and pull request stay. Never the
-    /// folder of one of the Copilot app's sessions, which is the app's.
+    /// folder of one of the Copilot app's sessions, which is the app's; nor one that's in use (`worktreeInUse`), as
+    /// looked at again after each answer, right before git deletes it.
     func removeWorktree(_ entry: CopilotTaskEntry) {
         guard let run = entry.run, run.isAppSession != true, !entry.status.phase.isActive else { return }
-        let alert = NSAlert()
-        alert.messageText = "Remove the worktree for \(run.subjectName)?"
-        alert.informativeText = "BriefBar deletes \(run.worktree.path). Its branch, its pull request and Copilot's session stay."
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
         Task {
-            let git = await git()
+            if let reason = await worktreeInUse(run) { return Self.sayNotRemoved(reason) }
+            let alert = NSAlert()
+            alert.messageText = "Remove the worktree for \(run.subjectName)?"
+            alert.informativeText = "BriefBar deletes \(run.worktree.path). Its branch, its pull request and Copilot's session stay."
+            alert.addButton(withTitle: "Remove")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate()
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
             do {
-                try await git.removeWorktree(at: run.worktree, of: run.repository)
+                try await deleteWorktree(of: run)
+            } catch let error as WorktreeInUse {
+                return Self.sayNotRemoved(error.reason)
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "The worktree wasn't removed"
@@ -795,7 +788,9 @@ final class CopilotTasksStore: ObservableObject {
                 alert.addButton(withTitle: "Cancel")
                 guard alert.runModal() == .alertFirstButtonReturn else { return }
                 do {
-                    try await git.removeWorktree(at: run.worktree, of: run.repository, force: true)
+                    try await deleteWorktree(of: run, force: true)
+                } catch let error as WorktreeInUse {
+                    return Self.sayNotRemoved(error.reason)
                 } catch {
                     NSAlert(error: error).runModal()
                     return
@@ -804,4 +799,36 @@ final class CopilotTasksStore: ObservableObject {
             clear(entry)
         }
     }
+
+    /// Why a task's worktree can't be removed now, or nil: Copilot works in its checkout for a task BriefBar sent, in its
+    /// session or another, such as one of the app's sessions that a task went on with there; or another of the app's
+    /// sessions runs a turn there.
+    func worktreeInUse(_ run: CopilotRun) async -> String? {
+        if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
+            return "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
+        }
+        if await anotherSessionRuns(inCheckoutOf: run.worktree, besides: run.id) {
+            return "Another Copilot session is working in it now. Remove it once that's done."
+        }
+        return nil
+    }
+
+    /// Deletes a task's worktree with git, unless it's in use (`worktreeInUse`), as looked at right before.
+    func deleteWorktree(of run: CopilotRun, force: Bool = false) async throws {
+        if let reason = await worktreeInUse(run) { throw WorktreeInUse(reason: reason) }
+        try await git().removeWorktree(at: run.worktree, of: run.repository, force: force)
+    }
+
+    private static func sayNotRemoved(_ reason: String) {
+        let alert = NSAlert()
+        alert.messageText = "The worktree wasn't removed"
+        alert.informativeText = reason
+        NSApp.activate()
+        alert.runModal()
+    }
+}
+
+/// A worktree that Copilot works in now, which BriefBar doesn't remove.
+struct WorktreeInUse: Error, Equatable {
+    var reason: String
 }

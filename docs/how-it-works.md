@@ -1097,8 +1097,10 @@ with it:
   item, not followed by another digit, in a link to its organization, read from the link itself:
   `https://dev.azure.com/<organization>/…` or `https://<organization>.visualstudio.com/…`. Only the logs
   of the 40 most recently active sessions are read for it, of those active since the pull request was
-  created, or in the last 30 days for a work item; each in chunks, without following a symbolic link,
-  until its first mention.
+  created, or in the last 30 days for a work item; each in chunks, until its first mention, opened below
+  the app's folder without following a symbolic link (`LocalFile.openFile(below:_:)`): neither the log nor
+  `session-state` or the session's folder may be one, so the search reads nothing outside the app's
+  sessions. A session's `workspace.yaml` is read the same way.
 
 The rest of the app's sessions follow, the most recently active first. A pull request's task goes on with
 its last task's session, as before; else with the session of the work item's task that opened it; else
@@ -1147,8 +1149,10 @@ there:
   composer checks an earlier task's session the same way, which may have gone on with one of the app's
   sessions, or be in a worktree another of them works in. It reads the app's database and the sessions'
   state each time, not as the window found them, and looks again every five seconds while it's open
-  (`CopilotComposerView.recheckSession`), without git once the repository passed; the store looks once
-  more as the task starts (`LaunchError.sharedCheckout`). A run in one of the
+  (`CopilotComposerView.recheckSession`), without git once the repository passed, and reads nothing while
+  Send Work to Copilot is off. The store looks once more as the task starts, and the launcher right before
+  it starts the CLI, after its git commands, next to its last look at the lock (`LaunchError.sharedCheckout`).
+  A run in one of the
   app's sessions keeps `isAppSession`, so **Remove Worktree…** never deletes that folder and its menu
   opens the session in the app rather than in Terminal. Going on with the work item's task that opened
   a pull request, the task stays that work item's too, and shows on the pull request's row as soon as you
@@ -1203,7 +1207,9 @@ are read without following a symbolic link. What Copilot printed when it ended s
 can read. Turning Azure DevOps off forgets the tasks and the repositories, and deletes what Copilot
 printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree…** deletes its
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
-of the app's sessions, whose folder is the app's. What **Open in Copilot** hands over isn't kept. Copilot's
+of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
+task BriefBar sent in another session or in another of the app's sessions running a turn there, as it
+looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`). What **Open in Copilot** hands over isn't kept. Copilot's
 branches, pull requests and sessions are yours, and stay.
 
 ### Notifications

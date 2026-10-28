@@ -68,15 +68,20 @@ public struct CopilotLauncher: Sendable {
     let runner: any ProcessRunning
     let environment: @Sendable () async -> [String: String]
     let locate: @Sendable ([String: String]) -> URL?
+    /// The Copilot app's folder: whose sessions it keeps out of, when one of them runs a turn in the same checkout.
+    let appHome: URL
 
     /// - Parameters:
     ///   - environment: what Copilot and git run with; by default, your login shell's (`LoginEnvironment`).
     ///   - locate: finds `copilot` in that environment; by default, `CopilotCLI.locate`.
+    ///   - appHome: the Copilot app's folder; by default, `AppSessions.home()`.
     public init(
         outputFolder: URL, runner: any ProcessRunning = ProcessRunner(),
         environment: (@Sendable () async -> [String: String])? = nil,
-        locate: @escaping @Sendable ([String: String]) -> URL? = { CopilotCLI.locate(environment: $0) }
+        locate: @escaping @Sendable ([String: String]) -> URL? = { CopilotCLI.locate(environment: $0) },
+        appHome: URL = AppSessions.home()
     ) {
+        self.appHome = appHome
         self.outputFolder = outputFolder
         self.runner = runner
         self.environment = environment ?? { await LoginEnvironment.load(runner: runner) }
@@ -148,9 +153,11 @@ public struct CopilotLauncher: Sendable {
         } catch let error as GitError {
             throw LaunchError.git(error)
         }
-        // Again, after the git commands above: the app may have opened the session meanwhile.
-        if request.continuing != nil, AppSessions.isOpen(id, home: CopilotCLI.home(environment: environment)) {
-            throw LaunchError.openInApp
+        // Again, after the git commands above, right before it starts: the app may have opened the session meanwhile, or
+        // another of its sessions started a turn in the same checkout.
+        if request.continuing != nil {
+            if AppSessions.isOpen(id, home: CopilotCLI.home(environment: environment)) { throw LaunchError.openInApp }
+            if AppSessions.anotherRunsATurn(inCheckoutOf: worktree, besides: id, home: appHome) { throw LaunchError.sharedCheckout }
         }
 
         let arguments = CopilotCommand.arguments(
