@@ -3,22 +3,87 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// The Sprint section's page, in a window or a popover: your team's current sprint at a glance, how far along it
-/// is, then its stories and bugs, each with its tasks, by where they stand.
+/// The Sprint section's page, in a window: your team's current sprint at a glance, how far along it is, then its stories
+/// and bugs, each with its tasks, by where they stand. A click on one shows its details beside the board, or over it when
+/// the window is narrow.
 struct SprintPage: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var details: WorkItemDetailsStore
 
     @LocalState private var showDone = false
 
+    /// Where a work item's details go on a page this wide: beside the board, taking room from it, or over it.
+    struct DetailsLayout: Equatable {
+        /// The narrowest page that has room for the board beside the details.
+        static let besideWidth: CGFloat = 700
+
+        var isBeside: Bool
+        /// The details cover the board, which can't be seen, read by VoiceOver or reached with the keyboard meanwhile.
+        var coversBoard: Bool
+        /// How wide the details are beside the board.
+        var panelWidth: CGFloat
+
+        init(width: CGFloat, showsDetails: Bool) {
+            isBeside = width >= Self.besideWidth
+            coversBoard = showsDetails && !isBeside
+            panelWidth = min(max(width * 0.4, 330), 480)
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        // The width the window offers, whatever the board needs: what the board needs depends on where the details go.
+        GeometryReader { proxy in
+            page(DetailsLayout(width: proxy.size.width, showsDetails: details.selected != nil))
+        }
+    }
+
+    private func page(_ layout: DetailsLayout) -> some View {
+        let isBeside = layout.isBeside
+        let panelWidth = layout.panelWidth
+        return VStack(spacing: 0) {
             PageHeader(title: sprint.board?.sprint.name ?? "Sprint", subtitle: subtitle) {
                 controls
             }
+            // The details beside the board take room from it; in a narrow window, they cover it, and it's out of reach
+            // until they close. Before the overlay, so the details aren't.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.trailing, details.selected != nil && isBeside ? panelWidth + 14 : 0)
+                .accessibilityHidden(layout.coversBoard)
+                .disabled(layout.coversBoard)
+                .overlay(alignment: .topTrailing) {
+                    if details.selected != nil {
+                        if isBeside {
+                            detailsPanel
+                                .frame(width: panelWidth)
+                                .padding(.trailing, 14)
+                                .padding(.bottom, 14)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        } else {
+                            ZStack {
+                                WindowBackdrop()
+                                detailsPanel
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 12)
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                }
         }
+    }
+
+    private var detailsPanel: some View {
+        WorkItemDetailsPanel()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .floatingPanel(cornerRadius: 18)
+    }
+
+    /// Shows a work item's details.
+    private func select(_ item: WorkItem) {
+        withAnimation(.easeOut(duration: 0.2)) { details.show(item) }
     }
 
     private var subtitle: String {
@@ -129,7 +194,7 @@ struct SprintPage: View {
                     SectionTitle(column: column, title: column == .inProgress ? "In Progress" : "Not Started", count: rows.count)
                     MasonryLayout(minColumnWidth: 330, spacing: 14) {
                         ForEach(rows) { row in
-                            StoryCard(row: row, me: board.me) { sprint.open($0) }
+                            StoryCard(row: row, me: board.me, selected: details.selected?.key) { select($0) }
                         }
                     }
                 }
@@ -139,7 +204,7 @@ struct SprintPage: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(symbol: "tray.full.fill", color: .secondary, title: "Not in a Story", count: loose.tasks.count)
                 MasonryLayout(minColumnWidth: 330, spacing: 14) {
-                    StoryCard(row: loose, me: board.me) { sprint.open($0) }
+                    StoryCard(row: loose, me: board.me, selected: details.selected?.key) { select($0) }
                 }
             }
         }
@@ -163,11 +228,11 @@ struct SprintPage: View {
                 if showDone {
                     MasonryLayout(minColumnWidth: 330, spacing: 14) {
                         ForEach(done) { row in
-                            StoryCard(row: row, me: board.me) { sprint.open($0) }
+                            StoryCard(row: row, me: board.me, selected: details.selected?.key) { select($0) }
                         }
                     }
                 } else {
-                    DoneStrip(rows: done) { sprint.open($0) }
+                    DoneStrip(rows: done, selected: details.selected?.key) { select($0) }
                 }
             }
         }
@@ -229,15 +294,36 @@ private struct SprintHero: View {
     let now: Date
 
     var body: some View {
-        HStack(spacing: 0) {
-            done
-                .frame(maxWidth: .infinity, alignment: .leading)
-            divider
-            time
-                .frame(maxWidth: .infinity, alignment: .leading)
-            divider
-            yours
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // Side by side when there's room; on two lines, or three, beside a work item's details or in a narrow window.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                done
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                divider
+                time
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                divider
+                yours
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 0) {
+                    done
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    divider
+                    time
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                rule
+                yours
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                done
+                rule
+                time
+                rule
+                yours
+            }
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 20)
@@ -249,6 +335,12 @@ private struct SprintHero: View {
             .fill(Color.primary.opacity(0.08))
             .frame(width: 1, height: 52)
             .padding(.horizontal, 18)
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 1)
     }
 
     private var done: some View {
@@ -363,12 +455,16 @@ enum DisplayName {
     }
 }
 
-/// A story or bug: what it is, where it stands and who has it, how far along its tasks are, and the tasks.
+/// A story or bug: what it is, where it stands and who has it, how far along its tasks are, and the tasks. A click on it,
+/// or on one of its tasks, shows its details.
 private struct StoryCard: View {
     let row: SprintBoard.Row
     let me: String
+    /// The work item whose details show.
+    let selected: WorkItemKey?
     let open: (WorkItem) -> Void
 
+    @EnvironmentObject private var sprint: SprintStore
     @LocalState private var isHovered = false
     @LocalState private var showAll = false
 
@@ -398,7 +494,7 @@ private struct StoryCard: View {
                     let ordered = row.tasksInWorkOrder
                     let shown = showAll ? ordered : Array(ordered.prefix(Self.shownTasks))
                     ForEach(shown) { task in
-                        TaskLine(task: task, isMine: task.isAssigned(to: me)) { open(task) }
+                        TaskLine(task: task, isMine: task.isAssigned(to: me), isSelected: task.key == selected) { open(task) }
                     }
                     if ordered.count > Self.shownTasks {
                         Button(showAll ? "Show Fewer" : "Show \(ordered.count - Self.shownTasks) More") {
@@ -418,6 +514,12 @@ private struct StoryCard: View {
         }
         .padding(14)
         .background(GlassCard(cornerRadius: 18, isHovered: isHovered))
+        .overlay {
+            if let parent = row.parent, parent.key == selected {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.75), lineWidth: 1.5)
+            }
+        }
         .onHover { isHovered = $0 }
     }
 
@@ -446,13 +548,15 @@ private struct StoryCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("\(parent.type) \(parent.id): \(parent.title)\nClick to open in Azure DevOps")
+                .help("\(parent.type) \(parent.id): \(parent.title)\nClick to see its details")
                 .contextMenu {
-                    Button("Open in Azure DevOps") { open(parent) }
+                    Button("Show Details") { open(parent) }
+                    Button("Open in Azure DevOps") { sprint.open(parent) }
                     CopilotSendMenuItems(item: parent)
                     LinkMenuItems(parent.linkRef)
                 }
-                .rowActions(for: parent.title, openTitle: "Open in Azure DevOps", open: { open(parent) }) {
+                .rowActions(for: parent.title, openTitle: "Show Details", open: { open(parent) }) {
+                    Button("Open in Azure DevOps") { sprint.open(parent) }
                     CopilotSendMenuItems(item: parent)
                     LinkMenuItems(parent.linkRef)
                 }
@@ -477,13 +581,16 @@ private struct StoryCard: View {
 }
 
 /// A task in its story's card: where it stands, what it is, the hours left and who has it; and, with Send Work to
-/// Copilot on, a button that sends it to Copilot, or how its send stands.
+/// Copilot on, a button that sends it to Copilot, or how its send stands. A click shows its details.
 private struct TaskLine: View {
     let task: WorkItem
     let isMine: Bool
+    /// Its details show.
+    let isSelected: Bool
     let open: () -> Void
 
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var sprint: SprintStore
     @LocalState private var isHovered = false
 
     var body: some View {
@@ -517,7 +624,7 @@ private struct TaskLine: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("\(task.type) \(task.id): \(task.title)\n\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\nClick to open in Azure DevOps")
+            .help("\(task.type) \(task.id): \(task.title)\n\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\nClick to see its details")
             .accessibilityLabel("\(task.title), \(task.state), \(task.assignedTo?.name ?? "unassigned")")
             let entry = copilot.isOn ? copilot.latest(for: task) : nil
             WorkItemLinks(item: task)
@@ -542,26 +649,32 @@ private struct TaskLine: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(isHovered ? 0.07 : 0))
+                .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.22 : 0.16) : Color.primary.opacity(isHovered ? 0.07 : 0))
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .contextMenu {
-            Button("Open in Azure DevOps", action: open)
+            Button("Show Details", action: open)
+            Button("Open in Azure DevOps") { sprint.open(task) }
             CopilotSendMenuItems(item: task)
             LinkMenuItems(task.linkRef)
         }
-        .rowActions(for: task.title, openTitle: "Open in Azure DevOps", open: open) {
+        .rowActions(for: task.title, openTitle: "Show Details", open: open) {
+            Button("Open in Azure DevOps") { sprint.open(task) }
             CopilotSendMenuItems(item: task)
             LinkMenuItems(task.linkRef)
         }
     }
 }
 
-/// The stories that are done, while they're folded away: one line each.
+/// The stories that are done, while they're folded away: one line each, which shows its details.
 private struct DoneStrip: View {
     let rows: [SprintBoard.Row]
+    let selected: WorkItemKey?
     let open: (WorkItem) -> Void
+
+    @EnvironmentObject private var sprint: SprintStore
 
     var body: some View {
         VStack(spacing: 0) {
@@ -589,9 +702,19 @@ private struct DoneStrip: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.accentColor.opacity(parent.key == selected ? 0.14 : 0))
+                                .padding(3)
+                        )
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("\(parent.type) \(parent.id): \(parent.title)\nClick to see its details")
+                    .contextMenu {
+                        Button("Show Details") { open(parent) }
+                        Button("Open in Azure DevOps") { sprint.open(parent) }
+                    }
                 }
             }
         }
@@ -605,7 +728,8 @@ struct MasonryLayout: Layout {
     var spacing: CGFloat = 14
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? minColumnWidth * 2 + spacing
+        // Asked for its ideal size, or as wide as it likes: two columns.
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? minColumnWidth * 2 + spacing
         return CGSize(width: width, height: arrange(width: width, subviews: subviews).height)
     }
 

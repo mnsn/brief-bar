@@ -38,7 +38,7 @@ from what it knows ([Agents](#agents)), and its plugin brings **/briefbar** to t
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
 | **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
@@ -337,6 +337,14 @@ are in a card of their own, and your avatar has a blue ring. **Just Mine** shows
 team menu shows another team's sprint. Its widget and menu-bar item list your own work; in the list,
 its title opens this page, and **Open Task Board** the sprint's task board in Azure DevOps.
 
+Click a story, bug or task to see its details beside the board, without leaving BriefBar: its state,
+who has it, its description, acceptance criteria or repro steps, its fields, its tasks and related work
+items, its attachments and its discussion. Its parent, its tasks and related work items open the same
+way, and **‹** goes back. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
+the board does too. In a narrow window the details cover the board, until **✕** or Esc closes them.
+Clicking one of your work items in the Sprint list or widget opens its details here, in BriefBar's
+window.
+
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
 runs went. **Add Pipeline** searches a project's pipelines by name or number, or takes a link to a
@@ -346,7 +354,8 @@ menu shows only one branch's runs, moves it, or unpins it.
 Both start in BriefBar's window only, and read Azure DevOps only while something shows them on screen:
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
 covered, a menu-bar item or its list. The pipelines after your merges are the exception: they're read
-with your pull requests, so that you hear when one fails. Click anything to open it in Azure DevOps.
+with your pull requests, so that you hear when one fails. Click a pipeline or a run to open it in Azure
+DevOps, and a work item to see its details.
 
 <p align="center">
   <picture>
@@ -702,7 +711,11 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
   sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
   are read with your pull requests, while Done keeps it, unless you turn **Follow Pipelines After You
-  Merge** off.
+  Merge** off. A work item's details are read only when you open them, and again when it changes while
+  they show, and kept in memory only: they're forgotten a quarter of an hour after they're read, unless
+  they're still on screen. BriefBar draws their text
+  itself, without a web page: nothing they link to or embed, such as an image, is loaded, until you
+  click it and it opens in your browser.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
@@ -773,8 +786,9 @@ FSEvents, and reads them again only when they change.
 Azure DevOps can only push changes through service hooks, which need a project administrator and a
 server on the internet. So BriefBar asks every minute: about 10 to 25 small requests a minute, and
 right away when you open the list, when your Mac wakes, and when it's back online. Your sprint and
-pipelines add a few requests a minute, and only while something shows them. After you merge a pull
-request, its pipelines add a few more, while they run.
+pipelines add a few requests a minute, and only while something shows them; opening a work item's
+details adds two or three. After you merge a pull request, its pipelines add a few more, while they
+run.
 
 ### Why isn't a pull request assigned to my team shown?
 
