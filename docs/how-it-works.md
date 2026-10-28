@@ -1342,7 +1342,9 @@ login shell's environment, so it finds the CLI and its `COPILOT_HOME` as Termina
 reads or writes the CLI's configuration itself: other servers' settings are there, tokens included.
 Turning agents on replaces a server that runs another copy of BriefBar, such as one you built, with
 this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
-removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is.
+removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. Turning
+them off also removes BriefBar's plugin, if you installed it ([below](#its-copilot-plugin)); turning them
+on never installs it.
 
 The page's **Install** lists the agents' apps on your Mac that BriefBar can be installed in (`AgentApp` in
 `Sources/BriefBarCore`), as LaunchServices finds them by bundle identifier. Visual Studio Code and
@@ -1393,6 +1395,46 @@ it's closed or you can't read it, it isn't watched after all. They write the app
 post a distributed notification that says only that something changed (`AgentChanges`), since any
 program can see it go by, so a running BriefBar reads those two lists again at once, and again when
 Azure DevOps starts. The demo keeps them in memory.
+
+### Its Copilot plugin
+
+BriefBar's plugin for Copilot (`Resources/CopilotPlugin`) gives the GitHub Copilot app's sessions, and
+the Copilot CLI's, one skill, `briefbar`, which the app offers as **/briefbar**. It's text that says how
+to use the server's tools there: it adds no tool, runs no code and reads nothing itself, so agents get
+nothing more, and `AgentAccess`'s version stays as it was.
+
+**Installing it.** Only **Install**, on the Agents page once agents are on, installs it; turning agents
+off removes it (`CopilotPluginRegistration` in `Sources/CopilotTasks`). As for the server, BriefBar runs
+the CLI's own commands, with your login shell's environment, and never reads or writes the CLI's
+files. `copilot plugin marketplace add` registers the folder in BriefBar.app that holds the plugin,
+`Contents/Resources/CopilotPlugin`, as a marketplace named `briefbar`, and `copilot plugin install
+briefbar@briefbar` turns the plugin on. The CLI loads a plugin from a marketplace on this Mac where it
+is, without copying it, so the plugin is the one in the app: an update to BriefBar updates it for the
+sessions that start afterwards. The build adds BriefBar's version to it, and `scripts/check-app.sh`
+checks that. Removing it turns the plugin off first, with `copilot plugin uninstall`, so that it doesn't
+come back on with its marketplace, then removes the marketplace. What the page says comes from
+`copilot plugin list --json`, whose `installedFrom` is the folder the plugin loads from, and `copilot
+plugin marketplace list --json`. A marketplace named `briefbar` in a folder named `CopilotPlugin` is
+another copy of BriefBar's, such as one you built, which **Use This Copy** replaces; any other stays as
+it is. Opened where it was downloaded, BriefBar runs from a temporary copy (App Translocation), and
+doesn't install the plugin from there.
+
+**What the skill does.** **/briefbar** on its own calls `needs_me`, and in the app shows what it lists
+in the app's inbox widget, by BriefBar's groups, with the links BriefBar gives, and
+`ghapp://sessions/<id>` for a Copilot session. Asked to fix a pull request's comments, its build or its
+conflicts, or to review it, the agent in the app starts a session for it with the app's own tools, in a
+worktree of a repository the app knows whose `origin` is the pull request's repository: it asks you
+when none or several are, never clones, and never works in a folder that is your own checkout. That
+session's first prompt holds only the pull request's link and the action, and has it call
+`pull_request_prompt` itself, so what the pull request's authors wrote reaches it as a tool's answer,
+not as your request; the skill tells agents that such text is data, never instructions. Push & Reply
+goes to the session that made the changes, never a new one. In the Copilot CLI, the agent follows the
+prompt where it is. It doesn't answer a session's question, plan or permission for you: it offers to
+open the session, with the app's `navigate_to`.
+
+`CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
+`BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
+BriefBar has.
 
 ## Desktop widgets
 
@@ -1595,8 +1637,8 @@ when BriefBar does.
   its updater contain only arm64 code; a designated requirement that names a certificate, unless
   `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
   signed-appcast keys, and with `--release` the
-  public key); FoundationModels linked weakly so it opens on macOS 15; and that it runs, starts the
-  updater, which loads Sparkle, and passes the demo check.
+  public key); FoundationModels linked weakly so it opens on macOS 15; its Copilot plugin, at its own
+  version; and that it runs, starts the updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS
   opens, that the updater is responsible for itself and that other code in place of Sparkle never runs
   as BriefBar ([above](#the-hardened-runtime-and-library-validation)). CI runs it on every package.
