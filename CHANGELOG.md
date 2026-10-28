@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Choose when Copilot completions move to Idle.** Finished and stopped sessions stay in their
+  groups until you click **Clear** or **Keep Finished Sessions For** expires. Turn on **Move Viewed
+  Sessions to Idle**, off by default, to hide them after opening or viewing them instead. Turning it
+  off brings back recent viewed results, without undoing explicit clears. Running the same session
+  again brings its next completion back.
+
 ## 0.8.0 - 2026-10-26
 
 - **Settings stays open while you arrange.** Clicking a BriefBar menu-bar item to see what you just

@@ -16,11 +16,11 @@ private func meta(
 
 private func resolve(
     _ lines: [String]?, _ meta: SessionMeta, now: Date, options: ResolverOptions = ResolverOptions(),
-    view: AppViewState = AppViewState(), acknowledgedAt: Date? = nil
+    view: AppViewState = AppViewState(), clearedAt: Date? = nil, viewedAt: Date? = nil
 ) -> SessionSnapshot {
     StatusResolver.snapshot(
         for: SessionRecord(meta: meta, log: lines.map(logState)), now: now, options: options, view: view,
-        acknowledgedAt: acknowledgedAt
+        clearedAt: clearedAt, viewedAt: viewedAt
     )
 }
 
@@ -116,20 +116,52 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         verify(resolve(finishedTurn, meta(), now: t(64), options: shortWindow), .idle, .finished, since: t(3))
     }
 
-    @Test func openingASessionFromPulseAcknowledgesIt() {
-        verify(resolve(finishedTurn, meta(), now: t(60), acknowledgedAt: t(3)), .idle, .finished, since: t(3))
-        verify(resolve(finishedTurn, meta(), now: t(60), acknowledgedAt: t(2)), .done, .finished, since: t(3))
+    @Test func onlyClearingThisCompletionDismissesIt() {
+        verify(resolve(finishedTurn, meta(), now: t(60), clearedAt: t(3)), .idle, .finished, since: t(3))
+        verify(resolve(finishedTurn, meta(), now: t(60), clearedAt: t(2)), .done, .finished, since: t(3))
     }
 
-    @Test func theAppsUnreadMarkersTellWhatWasSeen() {
-        func phase(_ session: SessionMeta, unread: Set<String>?, updatedAt: Date?) -> DisplayPhase {
+    @Test func clearingAnEarlierRunDoesNotHideTheNextCompletion() {
+        let rerun = finishedTurn + [
+            Line.userMessage(at: t(10)), Line.assistantMessage(at: t(11)), Line.turnEnd(at: t(12)),
+        ]
+        verify(resolve(rerun, meta(), now: t(60), clearedAt: t(4)), .done, .finished, since: t(12))
+        verify(resolve(rerun, meta(), now: t(60), clearedAt: t(12)), .idle, .finished, since: t(12))
+    }
+
+    @Test func stoppedSessionsAlsoRequireExplicitClearingOrExpiry() {
+        let stopped = [Line.userMessage(at: t(1)), Line.sessionError("Failed", at: t(3))]
+        verify(resolve(stopped, meta(), now: t(60)), .stopped, .failed, since: t(3), detail: "Failed")
+        verify(resolve(stopped, meta(), now: t(60), clearedAt: t(3)), .idle, .failed, since: t(3), detail: "Failed")
+        verify(resolve(stopped, meta(), now: t(3_604)), .idle, .failed, since: t(3), detail: "Failed")
+    }
+
+    @Test func viewedCompletionsOnlyMoveToIdleWhenEnabled() {
+        let autoIdle = ResolverOptions(moveViewedToIdle: true)
+        verify(resolve(finishedTurn, meta(), now: t(60), viewedAt: t(4)), .done, .finished, since: t(3))
+        verify(resolve(finishedTurn, meta(), now: t(60), options: autoIdle, viewedAt: t(4)), .idle, .finished, since: t(3))
+        verify(resolve(finishedTurn, meta(), now: t(60), options: autoIdle, viewedAt: t(2)), .done, .finished, since: t(3))
+        let rerun = finishedTurn + [
+            Line.userMessage(at: t(10)), Line.assistantMessage(at: t(11)), Line.turnEnd(at: t(12)),
+        ]
+        verify(resolve(rerun, meta(), now: t(60), options: autoIdle, viewedAt: t(4)), .done, .finished, since: t(12))
+        let stopped = [Line.userMessage(at: t(1)), Line.sessionError("Failed", at: t(3))]
+        verify(resolve(stopped, meta(), now: t(60), viewedAt: t(4)), .stopped, .failed, since: t(3), detail: "Failed")
+        verify(
+            resolve(stopped, meta(), now: t(60), options: autoIdle, viewedAt: t(4)),
+            .idle, .failed, since: t(3), detail: "Failed"
+        )
+    }
+
+    @Test func theAppsUnreadMarkersOnlyDismissWhenEnabled() {
+        func phase(_ session: SessionMeta, unread: Set<String>?, updatedAt: Date?, enabled: Bool = true) -> DisplayPhase {
             let view = AppViewState(unreadWorkspaceIds: unread, unreadUpdatedAt: updatedAt)
-            return resolve(finishedTurn, session, now: t(60), view: view).phase
+            return resolve(finishedTurn, session, now: t(60), options: ResolverOptions(moveViewedToIdle: enabled), view: view).phase
         }
+        #expect(phase(meta(), unread: [], updatedAt: t(10), enabled: false) == .done)
         #expect(phase(meta(), unread: [], updatedAt: t(10)) == .idle)
         #expect(phase(meta(), unread: ["w9"], updatedAt: t(10)) == .idle)
         #expect(phase(meta(), unread: ["w1"], updatedAt: t(10)) == .done)
-        // A marker list older than the end of the turn can't have been cleared for it.
         #expect(phase(meta(), unread: [], updatedAt: t(2)) == .done)
         #expect(phase(meta(), unread: nil, updatedAt: t(10)) == .done)
         #expect(phase(meta(type: "general_chat", workspaceId: nil), unread: [], updatedAt: t(10)) == .done)

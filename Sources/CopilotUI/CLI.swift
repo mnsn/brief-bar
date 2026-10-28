@@ -29,7 +29,7 @@ package enum CopilotCommandLine: SourceCommandLine {
     package static func dump(_ options: CommandLineOptions) -> Int32 {
         guard let paths = paths(options) else { return 1 }
         let state = SessionEngine.loadOnce(paths: paths)
-        printTable(resolve(state, now: Date()), problem: state.problem)
+        printTable(resolve(state, now: Date(), defaults: options.demo ? MemoryDefaults() : nil), problem: state.problem)
         return 0
     }
 
@@ -44,16 +44,14 @@ package enum CopilotCommandLine: SourceCommandLine {
     package static func json(_ options: CommandLineOptions) -> [String: Any]? {
         guard let paths = paths(options) else { return nil }
         let state = SessionEngine.loadOnce(paths: paths)
-        let sessions = resolve(state, now: Date())
+        let sessions = resolve(state, now: Date(), defaults: options.demo ? MemoryDefaults() : nil)
         let counts = PhaseCounts(sessions)
         return jsonObject(Output(sessions: sessions, counts: counts, states: [SectionID.copilotSessions.rawValue: counts.states],
                                  problem: state.problem))
     }
 
-    static func resolve(_ state: EngineSnapshot, now: Date) -> [SessionSnapshot] {
-        SessionOrdering.sorted(state.records.map {
-            StatusResolver.snapshot(for: $0, now: now, view: state.view)
-        })
+    static func resolve(_ state: EngineSnapshot, now: Date, defaults: UserDefaults? = nil) -> [SessionSnapshot] {
+        AppSettings.resolve(state, now: now, defaults: defaults ?? AppIdentity.installedAppDefaults ?? .standard)
     }
 
     private static func printTable(_ sessions: [SessionSnapshot], problem: String?) {
@@ -86,7 +84,7 @@ package enum CopilotCommandLine: SourceCommandLine {
     package static func watch(_ options: CommandLineOptions) -> Bool {
         guard let paths = paths(options) else { exit(1) }
         let queue = DispatchQueue(label: "BriefBar.Copilot.watch")
-        let printer = WatchPrinter()
+        let printer = WatchPrinter(isDemo: options.demo)
         let engine = SessionEngine(paths: paths) { state in queue.async { printer.print(state) } }
         // Statuses also change with time alone, e.g. "done" turns "idle" after an hour.
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -103,6 +101,7 @@ package enum CopilotCommandLine: SourceCommandLine {
 
 /// Prints only the sessions whose displayed status changed. Confined to the watch queue.
 private final class WatchPrinter: @unchecked Sendable {
+    private let isDemo: Bool
     private var latest: EngineSnapshot?
     private var problem: String?
     private var previous: [String: SessionSnapshot] = [:]
@@ -111,6 +110,10 @@ private final class WatchPrinter: @unchecked Sendable {
         formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
     }()
+
+    init(isDemo: Bool) {
+        self.isDemo = isDemo
+    }
 
     func print(_ state: EngineSnapshot) {
         latest = state
@@ -128,7 +131,7 @@ private final class WatchPrinter: @unchecked Sendable {
             problem = state.problem
             if let problem { Swift.print("\(formatter.string(from: now))  ! \(problem)") }
         }
-        for session in CopilotCommandLine.resolve(state, now: now) {
+        for session in CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil) {
             let old = previous[session.id]
             previous[session.id] = session
             guard old == nil || old?.phase != session.phase || old?.headline != session.headline

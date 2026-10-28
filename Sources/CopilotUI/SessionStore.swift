@@ -3,6 +3,7 @@ import Combine
 import BriefBarCore
 import BriefBarUI
 import CopilotCore
+import Foundation
 
 /// Main-thread view model: turns engine snapshots into the sorted, resolved session list.
 @MainActor
@@ -15,6 +16,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var hasLoaded = false
 
     private let settings: AppSettings
+    private let openSession: @MainActor (String) -> Void
     /// Where the Copilot app's files are; nil for the demo without made-up data, which reads nothing.
     let paths: CopilotPaths?
     private var engine: SessionEngine?
@@ -24,9 +26,10 @@ final class SessionStore: ObservableObject {
     /// Show Links: the engine reads where each session's work goes too.
     private var readsLinks = false
 
-    init(settings: AppSettings, paths: CopilotPaths?) {
+    init(settings: AppSettings, paths: CopilotPaths?, openSession: @escaping @MainActor (String) -> Void = CopilotApp.open) {
         self.settings = settings
         self.paths = paths
+        self.openSession = openSession
     }
 
     var activeSessions: [SessionSnapshot] { sessions.filter { $0.phase != .idle } }
@@ -52,8 +55,10 @@ final class SessionStore: ObservableObject {
         engine.start()
 
         settings.$keepEndedMinutes.map { _ in () }
-            .merge(with: settings.$acknowledged.map { _ in () })
-            .dropFirst(2)
+            .merge(with: settings.$cleared.map { _ in () },
+                   settings.$viewed.map { _ in () },
+                   settings.$moveViewedToIdle.map { _ in () })
+            .dropFirst(4)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -96,16 +101,18 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session in the Copilot app; opening a finished one also dismisses it.
+    /// Opens the session; only the opt-in setting dismisses its recent completion.
     func open(_ session: SessionSnapshot) {
-        if session.phase == .done || session.phase == .stopped {
-            settings.acknowledge([session.id])
+        if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
+            settings.markViewed([session.id])
+            recompute()
         }
-        CopilotApp.open(sessionId: session.id)
+        openSession(session.id)
     }
 
     func clear(_ phase: DisplayPhase) {
-        settings.acknowledge(sessions(in: phase).map(\.id))
+        settings.clear(sessions(in: phase).map(\.id))
+        recompute()
     }
 
     func receive(_ state: EngineSnapshot) {
@@ -120,20 +127,23 @@ final class SessionStore: ObservableObject {
 
     private func recompute() {
         let now = Date()
-        let options = ResolverOptions(recentWindow: TimeInterval(settings.keepEndedMinutes * 60))
+        let options = ResolverOptions(
+            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle
+        )
         var resolved = state.records.map {
             StatusResolver.snapshot(
-                for: $0, now: now, options: options, view: state.view, acknowledgedAt: settings.acknowledged[$0.id]
+                for: $0, now: now, options: options, view: state.view,
+                clearedAt: settings.cleared[$0.id], viewedAt: settings.viewed[$0.id]
             )
         }
 
-        // A session the user is looking at in the Copilot app right now doesn't need highlighting.
-        if CopilotApp.isFrontmost, let viewed = state.view.viewedSessionId,
+        if settings.moveViewedToIdle, CopilotApp.isFrontmost, let viewed = state.view.viewedSessionId,
            let index = resolved.firstIndex(where: { $0.id == viewed }),
            resolved[index].phase == .done || resolved[index].phase == .stopped {
-            settings.acknowledge([viewed], at: now)
+            settings.markViewed([viewed], at: now)
             resolved[index] = StatusResolver.snapshot(
-                for: state.records[index], now: now, options: options, view: state.view, acknowledgedAt: now
+                for: state.records[index], now: now, options: options, view: state.view,
+                clearedAt: settings.cleared[viewed], viewedAt: now
             )
         }
 

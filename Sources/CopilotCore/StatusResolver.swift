@@ -82,11 +82,17 @@ public struct ResolverOptions: Sendable, Equatable {
     public var staleAfter: TimeInterval
     /// How long to trust the app's running flag before the CLI has written anything.
     public var startingGrace: TimeInterval
+    /// Whether a session viewed since it ended moves to idle before the recent window expires.
+    public var moveViewedToIdle: Bool
 
-    public init(recentWindow: TimeInterval = 3_600, staleAfter: TimeInterval = 90, startingGrace: TimeInterval = 120) {
+    public init(
+        recentWindow: TimeInterval = 3_600, staleAfter: TimeInterval = 90, startingGrace: TimeInterval = 120,
+        moveViewedToIdle: Bool = false
+    ) {
         self.recentWindow = recentWindow
         self.staleAfter = staleAfter
         self.startingGrace = startingGrace
+        self.moveViewedToIdle = moveViewedToIdle
     }
 }
 
@@ -94,7 +100,7 @@ public struct ResolverOptions: Sendable, Equatable {
 public enum StatusResolver {
     public static func snapshot(
         for record: SessionRecord, now: Date, options: ResolverOptions = ResolverOptions(),
-        view: AppViewState = AppViewState(), acknowledgedAt: Date? = nil
+        view: AppViewState = AppViewState(), clearedAt: Date? = nil, viewedAt: Date? = nil
     ) -> SessionSnapshot {
         let meta = record.meta
         var snapshot = SessionSnapshot(
@@ -116,9 +122,11 @@ public enum StatusResolver {
         func ended(_ reason: StatusReason, at date: Date?, detail: String?) {
             let endedAt = date ?? meta.updatedAt
             let isRecent = endedAt.map { now.timeIntervalSince($0) <= options.recentWindow } ?? false
-            let isSeen = hasBeenSeen(meta: meta, endedAt: endedAt, view: view, acknowledgedAt: acknowledgedAt)
+            let isCleared = clearedAt.map { $0 >= (endedAt ?? .distantPast) } ?? false
+            let isViewed = options.moveViewedToIdle
+                && hasBeenViewed(meta: meta, endedAt: endedAt, view: view, viewedAt: viewedAt)
             let phase: DisplayPhase = reason == .finished ? .done : .stopped
-            set(isRecent && !isSeen ? phase : .idle, reason, since: endedAt, detail: detail)
+            set(isRecent && !isCleared && !isViewed ? phase : .idle, reason, since: endedAt, detail: detail)
         }
 
         guard let log = record.log, log.phase != .unknown else {
@@ -168,10 +176,8 @@ public enum StatusResolver {
         return snapshot
     }
 
-    /// Whether the user has already looked at a session since it ended: they opened it from
-    /// BriefBar, or the app's own unread marker for its workspace has since been cleared.
-    static func hasBeenSeen(meta: SessionMeta, endedAt: Date?, view: AppViewState, acknowledgedAt: Date?) -> Bool {
-        if let acknowledgedAt, acknowledgedAt >= (endedAt ?? .distantPast) { return true }
+    static func hasBeenViewed(meta: SessionMeta, endedAt: Date?, view: AppViewState, viewedAt: Date?) -> Bool {
+        if let viewedAt, viewedAt >= (endedAt ?? .distantPast) { return true }
         if let workspaceId = meta.workspaceId, let unread = view.unreadWorkspaceIds,
            let updatedAt = view.unreadUpdatedAt, let endedAt, updatedAt >= endedAt {
             return !unread.contains(workspaceId)
