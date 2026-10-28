@@ -74,6 +74,13 @@ public enum AppSessions {
             .sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) }
     }
 
+    /// The sessions that run a turn now, by the app's own flag, as its database says now: their IDs. Throws when it can't
+    /// be read.
+    public static func running(home: URL) throws -> [String] {
+        try AppDatabase.load(at: CopilotPaths(root: home).database).sessions
+            .filter { $0.isRunning == true && isSessionID($0.id) }.map(\.id)
+    }
+
     /// Whether the Copilot app, or another program, has the session open now (`SessionLock`): a turn the CLI runs in it
     /// then is one the app never sees.
     public static func isOpen(_ id: String, home: URL) -> Bool {

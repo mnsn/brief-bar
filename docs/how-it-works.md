@@ -1145,7 +1145,10 @@ there:
   following a link, which for a pull request has to be a clone of its repository, and in whose checkout no
   other of the app's sessions runs a turn now, by the app's own flag (`CopilotTasksStore.cliProblem`). The
   composer checks an earlier task's session the same way, which may have gone on with one of the app's
-  sessions, or be in a worktree another of them works in. A run in one of the
+  sessions, or be in a worktree another of them works in. It reads the app's database and the sessions'
+  state each time, not as the window found them, and looks again every five seconds while it's open
+  (`CopilotComposerView.recheckSession`), without git once the repository passed; the store looks once
+  more as the task starts (`LaunchError.sharedCheckout`). A run in one of the
   app's sessions keeps `isAppSession`, so **Remove Worktree…** never deletes that folder and its menu
   opens the session in the app rather than in Terminal. Going on with the work item's task that opened
   a pull request, the task stays that work item's too, and shows on the pull request's row as soon as you

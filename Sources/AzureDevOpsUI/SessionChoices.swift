@@ -308,12 +308,13 @@ extension CopilotTasksStore {
 
     /// Whether Copilot can go on with a session from here, with the CLI: why not, or nil. The app mustn't have it open; for
     /// one of the app's sessions, the CLI has to know it; neither a task of BriefBar's nor another of the app's sessions
-    /// that runs a turn now may be working in the checkout it works in, which can be shared, whichever folder of it each
-    /// works in (`CopilotTasksStore.checkoutKey`); and that folder has to be in a git repository, for a pull request a
-    /// clone of its repository. The same for an earlier task of BriefBar's, which may have gone on with one of the app's
-    /// sessions, in the folder it works in.
-    /// - Parameter others: the app's sessions, as the composer found them, with whether each one runs a turn now.
-    func cliProblem(for choice: SessionChoice, subject: TaskSubject, others: [AppSession] = []) async -> String? {
+    /// that runs a turn may be working in the checkout it works in, which can be shared, whichever folder of it each works
+    /// in (`CopilotTasksStore.checkoutKey`); and that folder has to be in a git repository, for a pull request a clone of
+    /// its repository. The same for an earlier task of BriefBar's, which may have gone on with one of the app's sessions,
+    /// in the folder it works in. As things are now: the app's database and the sessions' state are read again each time.
+    /// - Parameter checksRepository: false to leave out the repository, which doesn't change while the window is open,
+    ///   once it passed.
+    func cliProblem(for choice: SessionChoice, subject: TaskSubject, checksRepository: Bool = true) async -> String? {
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
         let id = choice.id
@@ -325,17 +326,14 @@ extension CopilotTasksStore {
             // An earlier task's worktree, or the folder it went on with; the folder one of the app's sessions says now.
             return (open, known, worktree ?? AppSessions.folder(of: id, home: home))
         }.value
-        if found.open { return "The Copilot app has it open: Copilot can go on with it only there." }
+        if found.open { return "The Copilot app has it open: Copilot can go on with it only there, where its history is." }
         guard found.known else { return "The Copilot CLI doesn't have this session, in \(UserPath.abbreviate(cliHome.path))." }
         guard let folder = found.folder else { return "BriefBar can't tell which folder it works in." }
         if isWorking(inFolder: folder) { return "Copilot is working in the same checkout for another task BriefBar sent." }
-        // Another of the app's sessions that runs a turn now in the same checkout, as when they share one.
-        let running = others.filter { $0.id != id && $0.isRunning }.map(\.id)
-        let sharing = await Task.detached(priority: .userInitiated) {
-            let checkout = Self.checkoutKey(folder)
-            return running.contains { AppSessions.folder(of: $0, home: home).map(Self.checkoutKey) == checkout }
-        }.value
-        if sharing { return "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own." }
+        if await anotherSessionRuns(inCheckoutOf: folder, besides: id) {
+            return "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own."
+        }
+        guard checksRepository else { return nil }
         let git = await git()
         do {
             switch subject {
@@ -346,6 +344,20 @@ extension CopilotTasksStore {
         } catch {
             return String(describing: error)
         }
+    }
+
+    /// Whether another of the Copilot app's sessions runs a turn now, by the app's own flag, in the same checkout as the
+    /// folder (`checkoutKey`), as the app's database and the sessions' state say now, not as the window found them; and
+    /// whether the window lists it as one of the app's sessions or as an earlier task that went on with one. Never `id`,
+    /// the session Copilot would go on with. Read off the main thread.
+    func anotherSessionRuns(inCheckoutOf folder: URL, besides id: String) async -> Bool {
+        let home = appHome
+        return await Task.detached(priority: .userInitiated) {
+            let running = ((try? AppSessions.running(home: home)) ?? []).filter { $0 != id }
+            guard !running.isEmpty else { return false }
+            let checkout = Self.checkoutKey(folder)
+            return running.contains { AppSessions.folder(of: $0, home: home).map(Self.checkoutKey) == checkout }
+        }.value
     }
 
     /// The run that goes on with one of the app's sessions, with the CLI, in the folder it works in: nil when it doesn't

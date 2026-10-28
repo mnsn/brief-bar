@@ -239,6 +239,12 @@ struct CopilotComposerView: View {
         .onAppear(perform: setUp)
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                await recheckSession()
+            }
+        }
     }
 
     private var header: some View {
@@ -641,8 +647,9 @@ struct CopilotComposerView: View {
 
     /// Whether the CLI can go on with the chosen session from here: not while Copilot works in it or in its checkout, or the
     /// Copilot app has it open; not while another of the app's sessions runs a turn in that checkout; and only in a
-    /// repository, the pull request's clone for one (`CopilotTasksStore.cliProblem`). An earlier task's session too: it
-    /// may have gone on with one of the app's sessions, or another of them may work in its worktree.
+    /// repository, the pull request's clone for one (`CopilotTasksStore.cliProblem`), as things are now, not as the window
+    /// found them. An earlier task's session too: it may have gone on with one of the app's sessions, or another of them
+    /// may work in its worktree.
     private func checkSession() {
         cliProblem = nil
         checkingSession = nil
@@ -651,18 +658,29 @@ struct CopilotComposerView: View {
             cliProblem = "Copilot is still working in it."
         } else if choice.isFolderBusy {
             cliProblem = "Copilot is working in its checkout for another task BriefBar sent."
-        } else if choice.isOpenInApp {
-            cliProblem = "The Copilot app has it open: Copilot can go on with it only there, where its history is."
         } else {
             checkingSession = choice.id
             Task {
-                let problem = await store.cliProblem(for: choice, subject: subject, others: choices.compactMap(\.appSession))
+                let problem = await store.cliProblem(for: choice, subject: subject)
                 guard checkingSession == choice.id, target?.id == choice.id else { return }
                 checkingSession = nil
                 cliProblem = problem
                 fixDelivery()
             }
         }
+        fixDelivery()
+    }
+
+    /// Looks again, every few seconds while the window is open, as what the CLI needs can change by itself: the Copilot
+    /// app opens or closes the session, or another of its sessions starts or ends a turn in the same checkout. Its
+    /// repository doesn't change meanwhile: once it passed, it isn't checked again. What the window shows changes only
+    /// once something did, so nothing flickers; as when it opened, it goes in the Copilot app once the CLI can't go on
+    /// with it, which Send then says, and stays so once the CLI can again, until you choose.
+    private func recheckSession() async {
+        guard let choice = target, !choice.isUnavailable, checkingSession == nil else { return }
+        let problem = await store.cliProblem(for: choice, subject: subject, checksRepository: cliProblem != nil)
+        guard target?.id == choice.id, checkingSession == nil, problem != cliProblem else { return }
+        cliProblem = problem
         fixDelivery()
     }
 

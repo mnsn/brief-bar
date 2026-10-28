@@ -7,6 +7,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case couldntStart(String)
     /// The Copilot app has the session open: a turn the CLI ran in it now is one the app would never see.
     case openInApp
+    /// Another of the Copilot app's sessions runs a turn in the same checkout now: their work would mix.
+    case sharedCheckout
 
     public var description: String {
         switch self {
@@ -15,6 +17,8 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
         case .couldntStart(let message): return "Copilot couldn't start: \(message)"
         case .openInApp:
             return "The Copilot app has this session open, and wouldn't see what Copilot did in it from here. Open it in Copilot, and send it there."
+        case .sharedCheckout:
+            return "Another Copilot session is working in the same checkout now, so Copilot didn't start there on its own. Send it again once that's done, or open the session in Copilot."
         }
     }
 }

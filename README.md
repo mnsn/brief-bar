@@ -398,7 +398,8 @@ open session's history in memory and wouldn't see a turn the CLI runs in it, so 
 would fork. For the same reason, don't open the session in the app until Copilot is done; and a session
 that a task of BriefBar's still works in, or one that shares its checkout, shows as working, and can't be
 chosen until it's done. Nor is **Run with the CLI** there while another of the app's sessions runs a turn in
-the same checkout, wherever in it each works. For a pull request, the session's folder has to be a clone of its repository. **Open in Copilot** needs the
+the same checkout, wherever in it each works. The window looks again every few seconds while it's open, and BriefBar
+once more as the task starts. For a pull request, the session's folder has to be a clone of its repository. **Open in Copilot** needs the
 Copilot app, and the comments its prompt quotes leave **Needs You** only once the session has opened.
 
 The prompt fits where Copilot works. In a session that's already there, which may be on another branch

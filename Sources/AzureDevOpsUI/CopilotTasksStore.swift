@@ -374,6 +374,11 @@ final class CopilotTasksStore: ObservableObject {
         )
         Task { [self] in
             do {
+                // Again, as it starts: another of the app's sessions may have started a turn in the same checkout since the
+                // window looked. The launcher looks again whether the app has the session open.
+                if let continuing, await anotherSessionRuns(inCheckoutOf: continuing.worktree, besides: id) {
+                    throw LaunchError.sharedCheckout
+                }
                 let run: CopilotRun
                 if let launchForTests {
                     run = try await launchForTests(request, id, now)
@@ -462,6 +467,7 @@ final class CopilotTasksStore: ObservableObject {
         case .git(.failed)?: return "git failed"
         case .couldntStart?: return "Copilot couldn't start"
         case .openInApp?: return "the Copilot app has the session open"
+        case .sharedCheckout?: return "another session works in the checkout"
         case nil: return "unexpected error"
         }
     }

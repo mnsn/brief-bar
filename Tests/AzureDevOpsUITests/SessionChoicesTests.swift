@@ -61,7 +61,11 @@ private struct DatabaseError: Error {
     }
 
     /// A stand-in for the Copilot app's `data.db`: what its session list and their links read.
-    private func database(at home: URL, sessions: [(id: String, title: String, type: String, branch: String?, project: String?, link: String?, updated: String)]) throws {
+    /// - Parameter running: the sessions that run a turn now, by the app's flag.
+    private func database(
+        at home: URL, sessions: [(id: String, title: String, type: String, branch: String?, project: String?, link: String?, updated: String)],
+        running: Set<String> = []
+    ) throws {
         var handle: OpaquePointer?
         guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw DatabaseError(message: "no database") }
         defer { sqlite3_close(handle) }
@@ -80,8 +84,9 @@ private struct DatabaseError: Error {
             """
         for (index, session) in sessions.enumerated() {
             statements += """
-                INSERT INTO sessions (id, title, session_type, created_at, updated_at)
-                    VALUES ('\(session.id)', '\(session.title)', '\(session.type)', '2026-10-01T09:00:00.000Z', '\(session.updated)');
+                INSERT INTO sessions (id, title, session_type, is_running, created_at, updated_at)
+                    VALUES ('\(session.id)', '\(session.title)', '\(session.type)', \(running.contains(session.id) ? 1 : 0),
+                        '2026-10-01T09:00:00.000Z', '\(session.updated)');
 
                 """
             if let branch = session.branch, let project = session.project {
@@ -96,6 +101,15 @@ private struct DatabaseError: Error {
             }
         }
         guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw DatabaseError(message: String(cString: sqlite3_errmsg(handle))) }
+    }
+
+    /// The app starts or ends a turn in a session, as its database says.
+    private func setRunning(_ id: String, _ isRunning: Bool, home: URL) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw DatabaseError(message: "no database") }
+        defer { sqlite3_close(handle) }
+        let statement = "UPDATE sessions SET is_running = \(isRunning ? 1 : 0) WHERE id = '\(id)';"
+        guard sqlite3_exec(handle, statement, nil, nil, nil) == SQLITE_OK else { throw DatabaseError(message: String(cString: sqlite3_errmsg(handle))) }
     }
 
     // MARK: BriefBar's tasks
@@ -419,7 +433,8 @@ private struct DatabaseError: Error {
     }
 
     /// Another of the app's sessions that works in the same folder and runs a turn now keeps the CLI out of it: only you
-    /// decide, in the app, whether both work there.
+    /// decide, in the app, whether both work there. As the app's database says now, not as the window found it: a turn that
+    /// starts later keeps it out too, as the task starts, and one that ends lets it in.
     @Test func doesNotRunWhereAnotherAppSessionRunsATurn() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -431,17 +446,47 @@ private struct DatabaseError: Error {
             try Data("cwd: \(checkout.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
             try Data().write(to: state.appendingPathComponent("events.jsonl"))
         }
+        try database(at: home, sessions: [
+            (onBranch, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+            (recorded, "Totals follow-up", "project", "fix-totals", "shop", nil, "2026-10-26T10:00:00.000Z"),
+        ], running: [recorded])
         let store = store(home: home)
+        defer { store.stop() }
+        #expect(try AppSessions.running(home: home) == [recorded])
         let session = AppSession(id: onBranch, name: "Fix the totals")
         let choice = SessionChoice(kind: .app(session), name: session.name, reasons: [.onItsBranch])
-        let busy = AppSession(id: recorded, name: "Totals follow-up", isRunning: true)
-        #expect(await store.cliProblem(for: choice, subject: subject, others: [session, busy])
-            == "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own.")
-        // Idle, it doesn't: the checks go on, to whether the folder is a clone of the pull request's repository.
-        var idle = busy
-        idle.isRunning = false
-        let problem = await store.cliProblem(for: choice, subject: subject, others: [session, idle])
+        let sharing = "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own."
+        #expect(await store.cliProblem(for: choice, subject: subject) == sharing)
+        #expect(await store.cliProblem(for: choice, subject: subject, checksRepository: false) == sharing)
+        // Idle, it doesn't: the checks go on, to whether the folder is a clone of the pull request's repository, which the
+        // window leaves out when it looks again once that passed.
+        try setRunning(recorded, false, home: home)
+        let problem = await store.cliProblem(for: choice, subject: subject)
         #expect(problem?.contains("isn't a git repository") == true)
+        #expect(await store.cliProblem(for: choice, subject: subject, checksRepository: false) == nil)
+
+        // A turn that starts after the window looked keeps the task out as it starts: it fails, and nothing launches.
+        let launched = Mutex(0)
+        store.launchForTests = { request, _, _ in
+            launched.withLock { $0 += 1 }
+            guard let run = request.continuing else { throw LaunchError.couldntStart("no session") }
+            return run
+        }
+        let appRun = try #require(store.appRun(for: session, subject: subject, options: CopilotModel.standard))
+        try setRunning(recorded, true, home: home)
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
+        for _ in 0..<100 where store.pending.first(where: { $0.id == onBranch })?.status.phase != .failed {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(store.pending.first { $0.id == onBranch }?.status.detail == LaunchError.sharedCheckout.description)
+        #expect(launched.withLock { $0 } == 0)
+        // Once that turn ended, it starts.
+        try setRunning(recorded, false, home: home)
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
+        for _ in 0..<100 where launched.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(launched.withLock { $0 } == 1)
     }
 
     /// Sessions share a checkout wherever in it each works: the nearest folder with a `.git` of its own, a worktree's file
@@ -490,31 +535,42 @@ private struct DatabaseError: Error {
         #expect(store.busyReason(for: inRepos) == nil)
         #expect(await store.cliProblem(for: inCart, subject: subject) == "Copilot is working in the same checkout for another task BriefBar sent.")
 
-        // Once it's done, another of the app's sessions runs a turn in a folder of the checkout.
+        // Once it's done, another of the app's sessions runs a turn in a folder of the checkout, as its database says.
         store.settings.copilotRuns = []
         let sharing = "Another Copilot session is working in the same checkout now, so Copilot won't work there on its own."
-        let turn = AppSession(id: other, name: "Cart follow-up", isRunning: true)
+        try database(at: home, sessions: [
+            (other, "Cart follow-up", "project", "fix-cart", "shop", nil, "2026-10-27T10:00:00.000Z"),
+            (opener, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-26T10:00:00.000Z"),
+        ], running: [other])
         try works(other, in: cart)
         try works(fixing, in: checkout)
         let atRoot = SessionChoice(kind: .app(AppSession(id: fixing, name: "Fix the totals")), name: "Fix the totals", reasons: [])
-        #expect(await store.cliProblem(for: atRoot, subject: subject, others: [turn]) == sharing)
+        #expect(await store.cliProblem(for: atRoot, subject: subject) == sharing)
         // An earlier task that went on with one of the app's sessions, there.
         var wentOn = run(opener, worktree: checkout, onPullRequest: 4071)
         wentOn.isAppSession = true
         try works(opener, in: checkout)
         let earlier = SessionChoice(kind: .task(wentOn), name: "Fix Comments", reasons: [.earlierTask])
-        #expect(await store.cliProblem(for: earlier, subject: subject, others: [turn]) == sharing)
+        #expect(await store.cliProblem(for: earlier, subject: subject) == sharing)
         // An earlier task in BriefBar's own worktree, which the CLI made: another of the app's sessions can work there too.
         try works(other, in: worktree)
         let made = run("99999999-9999-4999-8999-999999999999", worktree: worktree, onPullRequest: 4071)
         let own = SessionChoice(kind: .task(made), name: "Fix Comments", reasons: [.earlierTask])
-        #expect(await store.cliProblem(for: own, subject: subject, others: [turn]) == sharing)
+        #expect(await store.cliProblem(for: own, subject: subject) == sharing)
         // One in the folder that holds the checkouts works elsewhere: the checks go on, to the repository.
         try works(other, in: repos)
         for choice in [atRoot, earlier, own] {
-            let problem = await store.cliProblem(for: choice, subject: subject, others: [turn])
+            let problem = await store.cliProblem(for: choice, subject: subject)
             #expect(problem?.contains("isn't a git repository") == true)
         }
+
+        // The window lists a session that an earlier task went on with as that task, never as one of the app's: one that
+        // runs a turn in the checkout keeps the CLI out all the same.
+        try setRunning(other, false, home: home)
+        try setRunning(opener, true, home: home)
+        #expect(await store.cliProblem(for: atRoot, subject: subject) == sharing)
+        // Never the session it would go on with: the app has that one open while it runs a turn, which BriefBar checks first.
+        #expect(await store.cliProblem(for: earlier, subject: subject)?.contains("isn't a git repository") == true)
     }
 
     // MARK: Prompts
