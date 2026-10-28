@@ -342,12 +342,13 @@ see the prompt, which you can change, and choose the model, how hard it thinks a
 change goes in, then **Send**. Or right-click a task to send it right away, with your model or with the
 one for easy work. BriefBar fetches the repository, makes a new worktree of it at the latest base
 branch, in `copilot-worktrees` next to it, and starts Copilot there, on its own: in autopilot, with
-every tool allowed and no questions. Nothing opens. The task shows Copilot working, then **PR** once it
-has opened a pull request, published and linked to the work item, which you'll find under Pull Requests
-as your own; a notification says when it's done, or why it stopped. The badge's menu opens the pull
-request, goes on with the session in Terminal, shows the worktree, stops Copilot or removes the
-worktree, and the ✈︎ menu at the top of the Sprint page lists every task you sent. Copilot keeps going
-if BriefBar quits.
+every tool allowed and no questions. Nothing opens, so a notification says Copilot is on it as you send
+it. The task shows Copilot working, then **PR** once it has opened a pull request, published and linked
+to the work item, which you'll find under Pull Requests as your own; a notification says when it's
+done, or why it stopped. While **GitHub Copilot** is on, each task you sent is listed with your Copilot
+sessions too, marked ✈︎ ([below](#github-copilot)). The badge's menu opens the pull request, goes on
+with the session in Terminal, shows the worktree, stops Copilot or removes the worktree, and the ✈︎
+menu at the top of the Sprint page lists every task you sent. Copilot keeps going if BriefBar quits.
 
 The standard prompt asks Copilot to read the work item with your Azure DevOps tools, branch the way the
 repository does, build and test what it changed, then push and open the pull request. A work item's
@@ -368,8 +369,9 @@ The Copilot CLI refuses what an action shouldn't do, whatever a comment asks: on
 and a review can't change files or commit. Each works in a worktree detached at the pull request's latest
 commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
-session, in its worktree, unless you start a new one. The pull request's row shows how its task is going,
-and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, the comments its
+session, in its worktree, unless you start a new one. As with a work item, a notification says Copilot is
+on it, and the task is listed with your Copilot sessions. The pull request's row shows how its task is
+going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, the comments its
 prompt quotes are off **Needs You**; one that comes while you check the prompt, in a thread you take out
 of it, or in one reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go
 to an agent that may run any command: send only what you'd hand to Copilot yourself.
@@ -389,6 +391,13 @@ to an agent that may run any command: send only what you'd hand to Copilot yours
 them after you open or view them in Copilot; turning it off shows recent viewed completions again,
 but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
+
+The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
+"Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the
+app doesn't list them. Each is in **Running** while it gets ready and works, then in **Done** or
+**Stopped**, as a session is; one you stopped yourself goes straight to **Idle**. Click one to open its
+pull request, or its work item; right-click it for the task's own menu. The same **Move Viewed Sessions
+to Idle** setting controls whether opening a finished task dismisses it.
 
 ### GitHub
 

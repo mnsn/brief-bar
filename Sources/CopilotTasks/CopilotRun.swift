@@ -40,11 +40,14 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     public var ended: RunPhase?
     /// The pull request it opened, once found.
     public var pullRequest: URL?
+    /// You stopped it, so it's nothing to look at, nor to hear about, even after BriefBar restarts. Nil otherwise, as
+    /// runs that BriefBar kept before it had this were.
+    public var stoppedByYou: Bool?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
-        ended: RunPhase? = nil, pullRequest: URL? = nil
+        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -57,6 +60,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.process = process
         self.ended = ended
         self.pullRequest = pullRequest
+        self.stoppedByYou = stoppedByYou
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a

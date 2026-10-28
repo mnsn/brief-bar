@@ -5,7 +5,8 @@ import BriefBarUI
 import CopilotCore
 import Foundation
 
-/// Main-thread view model: turns engine snapshots into the sorted, resolved session list.
+/// Main-thread view model: turns engine snapshots into the sorted, resolved session list, with the tasks BriefBar sent to
+/// the Copilot CLI, which the app doesn't list.
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [SessionSnapshot] = []
@@ -14,11 +15,15 @@ final class SessionStore: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var problem: String?
     @Published private(set) var hasLoaded = false
+    /// The tasks in `sessions`, by their sessions' IDs: what their rows open, and their menus.
+    @Published private(set) var tasks: [String: SentTask] = [:]
 
     private let settings: AppSettings
     private let openSession: @MainActor (String) -> Void
     /// Where the Copilot app's files are; nil for the demo without made-up data, which reads nothing.
     let paths: CopilotPaths?
+    /// The tasks BriefBar sent to the Copilot CLI, as the source that sent them says.
+    private let sentTasks: SentTasks?
     private var engine: SessionEngine?
     private var state = EngineSnapshot()
     private var ticker: Timer?
@@ -26,10 +31,14 @@ final class SessionStore: ObservableObject {
     /// Show Links: the engine reads where each session's work goes too.
     private var readsLinks = false
 
-    init(settings: AppSettings, paths: CopilotPaths?, openSession: @escaping @MainActor (String) -> Void = CopilotApp.open) {
+    init(
+        settings: AppSettings, paths: CopilotPaths?, sentTasks: SentTasks? = nil,
+        openSession: @escaping @MainActor (String) -> Void = CopilotApp.open
+    ) {
         self.settings = settings
         self.paths = paths
         self.openSession = openSession
+        self.sentTasks = sentTasks
     }
 
     var activeSessions: [SessionSnapshot] { sessions.filter { $0.phase != .idle } }
@@ -63,6 +72,12 @@ final class SessionStore: ObservableObject {
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
 
+        // After the change: a @Published value emits before it's set.
+        sentTasks?.$tasks.dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
+            .store(in: &cancellables)
+
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .receive(on: DispatchQueue.main)
@@ -86,6 +101,7 @@ final class SessionStore: ObservableObject {
         cancellables.removeAll()
         state = EngineSnapshot()
         sessions = []
+        tasks = [:]
         counts = PhaseCounts()
         problem = nil
         hasLoaded = false
@@ -101,13 +117,22 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session; only the opt-in setting dismisses its recent completion.
+    /// Opens the session or task; only the opt-in setting dismisses its recent completion.
     func open(_ session: SessionSnapshot) {
         if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
             settings.markViewed([session.id])
             recompute()
         }
-        openSession(session.id)
+        if let task = tasks[session.id] {
+            task.open()
+        } else {
+            openSession(session.id)
+        }
+    }
+
+    /// The task BriefBar sent that a row shows, rather than a session of the app's.
+    func task(for id: String) -> SentTask? {
+        tasks[id]
     }
 
     func clear(_ phase: DisplayPhase) {
@@ -147,10 +172,48 @@ final class SessionStore: ObservableObject {
             )
         }
 
+        // The tasks BriefBar sent. Once you open one's session in the app, its database lists it, and then it's the app's;
+        // without the database, every recent session folder is listed, the tasks' too, and those are the tasks'.
+        let sent = sentTasks?.tasks ?? []
+        if !state.listedByApp {
+            let ids = Set(sent.map(\.id))
+            resolved.removeAll { ids.contains($0.id) }
+        }
+        var shown: [String: SentTask] = [:]
+        let listed = Set(resolved.map(\.id))
+        for task in sent where !listed.contains(task.id) && shown[task.id] == nil {
+            shown[task.id] = task
+            resolved.append(Self.snapshot(
+                of: task, now: now, options: options, clearedAt: settings.cleared[task.id], viewedAt: settings.viewed[task.id]
+            ))
+        }
+
         let sorted = SessionOrdering.sorted(resolved)
         self.now = now
+        // Before the sessions, which Show Links reads them with.
+        if shown != tasks { tasks = shown }
         if sorted != sessions { sessions = sorted }
         let newCounts = PhaseCounts(sorted)
         if newCounts != counts { counts = newCounts }
+    }
+
+    /// A task BriefBar sent, as the list shows it with the sessions: running while it gets ready and works; once it ends,
+    /// highlighted until dismissed or Keep Finished Sessions For passes, as a session is. One you stopped yourself
+    /// is idle at once.
+    static func snapshot(of task: SentTask, now: Date, options: ResolverOptions, clearedAt: Date?, viewedAt: Date?) -> SessionSnapshot {
+        let reason: StatusReason
+        switch task.stage {
+        case .starting: reason = .starting
+        case .working: reason = .working
+        case .finished: reason = .finished
+        case .failed: reason = .failed
+        case .stopped: reason = .interrupted
+        }
+        let isCleared = clearedAt.map { $0 >= (task.since ?? .distantPast) } == true
+        let isViewed = options.moveViewedToIdle && viewedAt.map { $0 >= (task.since ?? .distantPast) } == true
+        return StatusResolver.snapshot(
+            unlisted: task.id, name: task.name, place: task.place, reason: reason, detail: task.detail, since: task.since,
+            now: now, options: options, isSeen: task.stoppedByYou || isCleared || isViewed
+        )
     }
 }

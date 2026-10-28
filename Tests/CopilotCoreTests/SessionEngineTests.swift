@@ -27,6 +27,7 @@ import Testing
 
             let snapshot = SessionEngine.loadOnce(paths: paths)
             #expect(snapshot.problem == nil)
+            #expect(snapshot.listedByApp)
             let records = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)
@@ -65,6 +66,8 @@ import Testing
             #expect(names == ["recent": "Fix the build", "unnamed-session": "Session unnamed-"])
             #expect(snapshot.records.allSatisfy { $0.log?.phase == .running && $0.meta.isRunning == nil })
             #expect(snapshot.problem?.contains("Could not open Copilot database") == true)
+            // Every recent folder, not the app's own list.
+            #expect(!snapshot.listedByApp)
         }
     }
 
@@ -91,6 +94,8 @@ import Testing
         engine.refresh()
         let stale = try await collector.wait("the failed reload") { $0.problem != nil }
         #expect(stale.records.map(\.meta.name) == ["Live session"])
+        // Still the app's own list, as it last read it.
+        #expect(stale.listedByApp)
         // The last known running flag may be out of date by now.
         #expect(stale.records.first?.meta.isRunning == nil)
         #expect(stale.problem?.hasSuffix("The list may be out of date.") == true)

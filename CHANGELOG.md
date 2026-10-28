@@ -7,6 +7,14 @@
   Sessions to Idle**, off by default, to hide them after opening or viewing them instead. Turning it
   off brings back recent viewed results, without undoing explicit clears. Running the same session
   again brings its next completion back.
+- **See Copilot take a task as you send it.** Sending a pull request's comments, build, conflicts or
+  review to Copilot, or a work item, no longer looks like nothing happened. Copilot works on its own, in
+  the Copilot CLI rather than the Copilot app, so a notification now says it's on it, what it does and
+  what it won't; clicking it shows the task. With GitHub Copilot on, every task you sent is also listed
+  with your Copilot sessions, marked ✈︎: running while it works, with its current step, then finished or
+  stopped, highlighted until **Clear** or the retention time expires, as a session is, with optional
+  dismissal after viewing. Click one to open its pull request or work item, or right-click it for the
+  task's own menu.
 
 ## 0.8.0 - 2026-10-26
 

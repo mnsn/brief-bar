@@ -117,6 +117,13 @@ package final class Notifier: NSObject, ObservableObject {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
         }
     }
+
+    /// Takes notifications off Notification Center by their IDs, such as one that no longer says what's going on.
+    package func remove(_ ids: [String]) {
+        guard let center, !ids.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {

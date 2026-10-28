@@ -335,4 +335,31 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         #expect(reasons.filter { item("s", .idle, since: nil, reason: $0).isEnded }
             == [.finished, .interrupted, .failed, .unresponsive])
     }
+
+    /// A session the app doesn't list, such as a task BriefBar sent to the Copilot CLI: what follows it says how it
+    /// stands, and it's highlighted as long as the app's are.
+    @Test func sessionsTheAppDoesNotListShowLikeItsOwn() {
+        func unlisted(_ reason: StatusReason, detail: String? = nil, since: Date? = t(3), now: Date = t(60), isSeen: Bool = false) -> SessionSnapshot {
+            StatusResolver.snapshot(
+                unlisted: "task", name: " Fix Comments:\n!4071  Fix totals ", place: "shop-web", reason: reason, detail: detail,
+                since: since, now: now, isSeen: isSeen
+            )
+        }
+        let working = unlisted(.working, detail: "Run the **cart** tests")
+        verify(working, .running, .working, since: t(3), detail: "Run the cart tests")
+        #expect(working.name == "Fix Comments: !4071 Fix totals")
+        #expect(working.projectName == "shop-web")
+        #expect(working.branch == nil)
+        #expect(!working.isChat)
+        verify(unlisted(.starting), .running, .starting, since: t(3))
+
+        verify(unlisted(.finished, detail: "Changes ready:\n- fixed it"), .done, .finished, since: t(3), detail: "Changes ready: fixed it")
+        verify(unlisted(.failed, detail: "git failed"), .stopped, .failed, since: t(3), detail: "git failed")
+        verify(unlisted(.interrupted), .stopped, .interrupted, since: t(3))
+        // Seen, or ended over an hour ago: idle, as it ended.
+        verify(unlisted(.finished, isSeen: true), .idle, .finished, since: t(3))
+        verify(unlisted(.finished, now: t(3_604)), .idle, .finished, since: t(3))
+        verify(unlisted(.failed, since: nil), .idle, .failed, since: nil)
+        verify(unlisted(.finished, detail: "  "), .done, .finished, since: t(3))
+    }
 }
