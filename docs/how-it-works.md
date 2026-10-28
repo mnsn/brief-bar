@@ -19,7 +19,8 @@ the version of that description (`SourceChoices` in `Sources/BriefBarCore`):
   Teams' own data, saved chats or keychain item for Teams, no `az` or Notification Center for Azure
   DevOps, no `~/.copilot` for Copilot, and no `gh` or GitHub for GitHub.
 - Turning a source off stops it, takes its sections out of the menu bar, widgets and windows, removes
-  its notifications, and deletes
+  its notifications, from Notification Center and the [Notifications page](#the-notifications-page),
+  and deletes
   what it saved: Teams' encrypted unread chats, their key and its state; which Azure DevOps pull
   requests each account has seen or taken off Needs You; which Copilot sessions you've cleared. GitHub saves nothing but its
   settings. The links you added or hid to its things, with [Show Links](#links), go too. Its settings
@@ -39,7 +40,12 @@ consent comes first.
   opens the window. When you turn off the last one, BriefBar offers to open the list, so you can
   remove it.
 - **Notifications.** Azure DevOps asks when you turn it on. The one answer covers every source that
-  posts notifications (`Notifier`), and a click goes to the source that posted it.
+  posts notifications (`Notifier`), and a click goes to the source that posted it. macOS brings
+  BriefBar to the front for a click, as when you open it again, usually just after the click itself
+  arrives: opened at once, what the notification is about would open in your browser, say, and
+  BriefBar would then come in front of it. So it opens once BriefBar is in front
+  (`Notifier.handleReopen`, from `applicationShouldHandleReopen`), or half a second after the click at
+  most, and BriefBar doesn't open its own list for that reopen.
 
 ### Programs BriefBar runs
 
@@ -210,7 +216,8 @@ their settings and positions (`WidgetMigration`).
 
 **Windows** (`WindowHost`) have a page for each of their sections, with a sidebar of them by source,
 each with its count, and ⌘1 to ⌘9. A window with several pages starts with an Overview
-([below](#the-overview)). A section's page is its list, filling the window (`PanelStyle.page`), the
+([below](#the-overview)), and the first of them has the [Notifications page](#the-notifications-page)
+after it, while that's on and lists something. A section's page is its list, filling the window (`PanelStyle.page`), the
 whole width included: a wide window, such as full screen, gets longer lines, not empty sides, and the
 Sprint more columns of cards. A source can draw a page of its own instead. A window opens at the page
 of the list or widget you opened it from, or at its Overview when no page is asked for, and remembers
@@ -329,6 +336,31 @@ thing. It isn't one of the layout's widgets, which show sections: it has options
 (`OverviewWidgetOptions`, saved as `overviewWidget`), and starts hidden, like Teams' widgets, since it
 can show your chats. Being always on screen, it never asks the model for words: it shows the brief as
 a list or the window last had it worded.
+
+### The Notifications page
+
+**Notifications Page**, in Settings › General (`RecentNotifications` in `Sources/BriefBarUI`, saved as
+`notifications.page`), is off until you turn it on. It lists what the sources posted
+(`NotificationHistory` in `Sources/BriefBarCore`), the newest first, by day, in the window that has the
+Overview, right after it (`WindowPages.notifications`), without a ⌘ number, so the sections' numbers stay
+put as it comes and goes. `Notifier` lists each notification it posts, even one macOS doesn't show,
+during a Focus or with notifications off for BriefBar. One posted again under the same ID takes its
+entry's place, as a Copilot task's does, from saying it started to saying how it ended, and one that
+BriefBar takes back because it no longer says what's going on (`Notifier.remove`), such as a task you
+stopped, leaves the page too. Azure DevOps
+posts at most four for a refresh, the last saying how many more updates there are
+(`NotificationPlanner.collapse`), and lists every update: clicking that last one opens the page. An
+entry keeps what its notification would open, and opens it the same way, which also takes the
+notification out of Notification Center. A dot marks what you haven't seen: what the page showed is
+seen once nothing shows it anymore, and clicking a notification, there or in Notification Center, sees
+it too.
+
+The entries stay in memory only, never in the preferences or on disk, for **Keep Notifications For**:
+4 hours, a day or 3 days (`notifications.keepHours`), at most 200 of them, and go with their source
+when you turn it off. The page lists what was posted while it was off too, but shows only while it's
+on and lists something: once the last entry expires, or you clear them, it goes, and the window goes
+back to its Overview. The demo lists what its made-up pull requests would have notified you of
+(`DemoData.notifications`), and `--render` draws the page from them.
 
 ## Links
 
@@ -978,6 +1010,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
 | `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |
 | `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
+| `{project}/_apis/build/builds?repositoryId=…&branchName=refs/pull/{id}/merge` | every refresh while pipelines are visible: one per active PR you authored | its latest validation runs, up to 200 |
 | `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
 | `{project}/_apis/build/definitions?definitionIds=…` | when you search for a number in **Add Pipeline**, alongside the name search | the pipeline with that number, first |
@@ -1032,6 +1065,19 @@ go first, then the ones read longest ago; one that fails is tried again on the n
 less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
 the run changes. Stages are kept by organization, project and run, since run IDs are unique only
 within an organization.
+
+Below pinned pipelines, **Your Pull Requests** groups validation runs into one expandable card per
+active pull request you authored, including drafts and inactive PRs. Each card names the repository
+and PR number and summarizes the latest run of each pipeline; expanding it shows those runs' stages
+and failure details. Runs are scoped to the PR's repository and `refs/pull/{id}/merge`, not the latest
+run of that shared pipeline on another PR. Results from older commits are marked **Outdated** and
+excluded from the current pass/fail summary. If Azure DevOps doesn't provide enough commit information,
+the result says **Commit not verified**, rather than assuming it validates your latest changes.
+Cards disappear when the PR is merged or abandoned. This does not pin those pipelines, change pinned
+pipeline counts or widgets, or affect **After Your Merges**.
+The authored PR list carries the account that supplied it. When the pipeline reader detects another
+sign-in, it clears the old runs and suspends PR cards and validation requests until the pull request
+reader supplies a list for that account, even when both accounts can read the same repository.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines

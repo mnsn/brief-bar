@@ -40,6 +40,26 @@ public enum DemoData {
         )
     }
 
+    public static func pullRequestPipelines(_ pullRequests: [PullRequest], now: Date = Date()) -> [PullRequestPipelines] {
+        pullRequests.enumerated().map { index, pr in
+            let statuses: [PipelineStatus] = index < 3 ? pipelines(now: now).prefix(3).map { status in
+                var status = status
+                status.runs = status.runs.prefix(1).map { run in
+                    var run = run
+                    run.id = pr.key.number * 1_000 + status.pipeline.definitionId
+                    run.branch = "!\(pr.key.number)"
+                    run.trigger = .pullRequest
+                    return run
+                }
+                return status
+            } : []
+            let revisions: [Int: PullRequestPipelines.Revision] = Dictionary(uniqueKeysWithValues: statuses.compactMap { status in
+                status.latest.map { ($0.id, index == 2 ? .outdated : .current) }
+            })
+            return PullRequestPipelines(pullRequest: pr, pipelines: statuses, revisions: revisions)
+        }
+    }
+
     /// The demo a little later: Priya asks for a test on the pull request that was ready, which needs you
     /// again. The app shows it a few seconds after starting, to show a notification.
     public static func update(_ snapshot: PulseSnapshot, at date: Date) -> PulseSnapshot {
@@ -335,5 +355,20 @@ extension DemoData {
                                      branch: "gift-card-codes", hoursAgo: 9),
             ]
         )
+    }
+}
+
+extension DemoData {
+    /// What the demo notified you of, for the Notifications page: the made-up pull requests' news, each as of when it
+    /// happened, as if BriefBar had been running all along.
+    public static func notifications(for items: [PRSnapshot]) -> [PulseNotification] {
+        let before = items.map { item in
+            var item = item
+            item.group = .waiting
+            item.events = []
+            item.merge = nil
+            return item
+        }
+        return NotificationPlanner.news(previous: before, current: items) { _ in .distantPast }
     }
 }

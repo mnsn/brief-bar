@@ -13,8 +13,9 @@ import SwiftUI
 @MainActor
 package final class AzureDevOpsSource: BriefBarSource {
     /// 2: the Sprint and Pipelines sections. 3: Send Work to Copilot. 4: the pipelines after your merges, the pull
-    /// requests you watch, and pull requests sent to Copilot. 5: Show Links. 6: a work item's details, when you open one.
-    nonisolated package static let descriptionVersion = 6
+    /// requests you watch, and pull requests sent to Copilot. 5: Show Links. 6: active PR validation runs.
+    /// 7: a work item's details, when you open one.
+    nonisolated package static let descriptionVersion = 7
 
     package let id = SourceID.azureDevOps
     package let name = "Azure DevOps"
@@ -22,7 +23,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     package let description = SourceDescription(
         version: AzureDevOpsSource.descriptionVersion,
         summary: "Your pull requests: which need you, which are failing and which are ready to complete; and your team's sprint and your pipelines",
-        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin. When you open one of its work items: its fields, description and other text, the work items it links to, its attachments' names and its latest comments, which BriefBar keeps in memory only, and forgets a quarter of an hour after reading them unless they're still on screen. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts, until it ends; for a pull request's failed build, the run's timeline, for its errors. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended. Only if you turn on Show Links: the work items linked to each of your pull requests, the pull requests linked to the sprint's work items while the sprint is on screen, and what the linked work items and pull requests that your lists don't show are; BriefBar keeps the links you add or hide, as references only, never titles.",
+        reads: "Your pull requests and the ones you review, in the organizations you choose, and the ones you watch, by their links, with their builds, policies and comment threads, from Azure DevOps; and, after you merge one, while Done keeps it, the runs of the pipelines that build its merge and of the ones those start, unless you turn Follow Pipelines After You Merge off. While its Sprint or Pipelines section is on screen: your team's current sprint, with its stories, bugs and tasks and who has them, and the recent runs of the pipelines you pin; for Pipelines, also the latest validation runs of each active pull request you authored, including their stages, failure details and commit information. When you open one of its work items: its fields, description and other text, the work items it links to, its attachments' names and its latest comments, which BriefBar keeps in memory only, and forgets a quarter of an hour after reading them unless they're still on screen. BriefBar keeps which pull requests you've seen, your organizations, the pull requests you watch, your team and your pipelines. When Apple Intelligence is on, a brief of what needs you is written on your Mac by Apple's on-device model. Only if you turn on Pull Requests Sent in Chats: the notifications every app posts to Notification Center, for links to pull requests, of which BriefBar keeps only the links, with who sent them, in which app and when, never the messages, and only in memory. Only if you turn on Send Work to Copilot, and send a work item or a pull request: the git repository you choose, and Copilot's log of the session it starts, until it ends; for a pull request's failed build, the run's timeline, for its errors. BriefBar keeps which work items and pull requests you sent, what for, where, with which model, and the pull request Copilot opened; and, in a file only you can read, what Copilot printed when it ended. Only if you turn on Show Links: the work items linked to each of your pull requests, the pull requests linked to the sprint's work items while the sprint is on screen, and what the linked work items and pull requests that your lists don't show are; BriefBar keeps the links you add or hide, as references only, never titles.",
         network: "Azure DevOps only: dev.azure.com, and app.vssps.visualstudio.com to find your organizations, with your Azure CLI sign-in. Every request is a GET, so it never changes anything there: about 10 to 25 small requests a minute, a few more while the Sprint or Pipelines section is on screen, two or three when you open a work item's details and when it changes while they show, a few more after you merge a pull request, while its pipelines run, and, with Show Links on, one for each pull request's work items every quarter of an hour, and a few for the sprint's links while it's on screen. When you send a work item or a pull request to Copilot, BriefBar itself still connects nowhere, but the programs it starts for you do: git fetches the repository, and the Copilot CLI uses GitHub Copilot and your MCP servers, pushes a branch, opens a pull request or replies on one, as you.",
         needs: "The Azure CLI, signed in with az login: BriefBar gets its tokens from it, so there's no personal access token, and runs it without any of BriefBar's own permissions. And permission to post notifications, which macOS asks for when you turn it on. Pull Requests Sent in Chats also needs Full Disk Access, which macOS grants once, to all of BriefBar. Send Work to Copilot needs the Copilot CLI, signed in, which BriefBar runs with your shell's environment and without any of BriefBar's own permissions.",
         requirements: [.azureCLI, .notifications]
@@ -105,7 +106,13 @@ package final class AzureDevOpsSource: BriefBarSource {
         self.store = store
         let sprint = SprintStore(settings: settings, mode: store.mode, client: store.client)
         self.sprint = sprint
-        pipelines = PipelinesStore(settings: settings, mode: store.mode, client: store.client)
+        let pipelines = PipelinesStore(settings: settings, mode: store.mode, client: store.client)
+        self.pipelines = pipelines
+        store.$authoredPullRequestList.removeDuplicates()
+            .sink { [weak pipelines] list in
+                MainActor.assumeIsolated { pipelines?.setPullRequests(list.pullRequests, account: list.account) }
+            }
+            .store(in: &cancellables)
         let copilot = CopilotTasksStore(settings: settings, mode: store.mode, notifier: notifier)
         copilot.title = { [weak sprint] reference in sprint?.title(of: reference) }
         copilot.pullRequestTitle = { [weak store] reference in
@@ -189,6 +196,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .store(in: &cancellables)
         }
         publishSentTasks()
+        listDemoNotifications(from: store)
         changes.send()
     }
 
@@ -199,6 +207,18 @@ package final class AzureDevOpsSource: BriefBarSource {
             return
         }
         services.sentTasks.publish(.azureDevOps, tasks: copilot.sentTasks())
+    }
+
+    /// The demo's made-up news on the Notifications page, as if BriefBar had been running for a while: what came over
+    /// the last hour is new, the rest seen.
+    private func listDemoNotifications(from store: PRStore) {
+        guard services.isDemo else { return }
+        let recent = services.recentNotifications
+        let hourAgo = Date().addingTimeInterval(-3600)
+        for (notification, date) in store.demoNotifications {
+            recent.record([notification], at: date)
+            if date < hourAgo { recent.markSeen(notification.id) }
+        }
     }
 
     package func didTurnOn() {
@@ -509,6 +529,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
+        listDemoNotifications(from: store)
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }

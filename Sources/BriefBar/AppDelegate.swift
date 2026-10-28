@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opening the app again (Finder, Spotlight, `open`) shows the first list, or Settings. With a window or Settings
     /// open, clicking the Dock icon brings it forward, as for any app.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A click on a notification brings BriefBar to the front this way too: what it's about opens instead, in front.
+        if model.services.notifier.handleReopen() {
+            return false
+        }
         if model.hasOpenWindow {
             return true
         }

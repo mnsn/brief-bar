@@ -189,6 +189,18 @@ enum Renderer {
                     write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
                 }
             }
+            // The Notifications page, in the window that has it, while it lists something, as the demo's does.
+            if let window = model.overviewLink.window, model.hasNotificationsPage(window: window.id) {
+                let content = WindowContent(id: window.id, model: model)
+                content.update(sections: window.sections)
+                content.select(WindowContent.notifications, notify: false)
+                let view = WindowView(content: content)
+                    .environment(\.isRendering, true)
+                    .environmentObject(model.services)
+                    .environmentObject(model.services.loginItem)
+                    .frame(width: 980, height: 680)
+                write(Snapshot.render(view, appearance: appearance), "window-notifications-\(suffix)")
+            }
 
             for source in sources {
                 for rendering in source.extraRenderings() {
@@ -212,6 +224,12 @@ enum Renderer {
             for (name, destination) in pages {
                 page(destination, name: name)
             }
+            // The Notifications page's setting, below what the picture of General shows.
+            let notificationsSetting = NotificationsSetting(recent: model.services.recentNotifications)
+                .padding(24)
+                .frame(width: 600, alignment: .leading)
+                .background(Color(nsColor: .windowBackgroundColor))
+            write(Snapshot.render(notificationsSetting, appearance: appearance), "settings-notifications-\(suffix)")
             let saved = model.layout(.menuBar)
             let savedOptions = model.menuBarItemOptions
             model.useForRendering(example)
