@@ -23,9 +23,10 @@ public enum RunPhase: String, Sendable, Codable, Equatable {
 /// the preferences, so the files BriefBar reads for a run aren't kept there: they follow from its session's ID, which is
 /// checked to be one (`CopilotRun.isValid`).
 public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
-    /// The ID of Copilot's session, a UUID that BriefBar chooses.
+    /// The ID of Copilot's session, a UUID: one that BriefBar chose, or the Copilot app's session's that it went on with.
     public var id: String
-    /// The work item it's for, or nil for a pull request's.
+    /// The work item it's for; for a task on a pull request, the work item whose task opened that pull request, when it
+    /// went on with that task's session; nil otherwise.
     public var workItem: WorkItemReference?
     /// The pull request it works on, and what for; nil for a work item's.
     public var onPullRequest: PullRequestReference?
@@ -43,11 +44,15 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// You stopped it, so it's nothing to look at, nor to hear about, even after BriefBar restarts. Nil otherwise, as
     /// runs that BriefBar kept before it had this were.
     public var stoppedByYou: Bool?
+    /// It went on with one of the Copilot app's sessions, in the folder that session works in, rather than in a worktree
+    /// of BriefBar's: BriefBar never removes that folder, and goes on with it in the app rather than in Terminal. Nil
+    /// otherwise, as runs that BriefBar kept before it had this were.
+    public var isAppSession: Bool?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
-        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil
+        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -61,6 +66,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.ended = ended
         self.pullRequest = pullRequest
         self.stoppedByYou = stoppedByYou
+        self.isAppSession = isAppSession
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -69,10 +75,11 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         UUID(uuidString: id)?.uuidString.lowercased() == id && (workItem != nil || onPullRequest != nil)
     }
 
-    /// "work item 4217" or "pull request 4071", for messages.
+    /// "work item 4217" or "pull request 4071", for messages: the pull request, for a task on the one its work item's
+    /// task opened.
     public var subjectName: String {
-        if let workItem { return "work item \(workItem.id)" }
         if let onPullRequest { return "pull request \(onPullRequest.id)" }
+        if let workItem { return "work item \(workItem.id)" }
         return "this task"
     }
 

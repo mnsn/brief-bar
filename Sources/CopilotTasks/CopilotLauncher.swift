@@ -5,30 +5,36 @@ public enum LaunchError: Error, Sendable, Equatable, CustomStringConvertible {
     case copilotNotFound
     case git(GitError)
     case couldntStart(String)
+    /// The Copilot app has the session open: a turn the CLI ran in it now is one the app would never see.
+    case openInApp
 
     public var description: String {
         switch self {
         case .copilotNotFound: return "The Copilot CLI isn't installed. Install it with brew install copilot-cli."
         case .git(let error): return error.description
         case .couldntStart(let message): return "Copilot couldn't start: \(message)"
+        case .openInApp:
+            return "The Copilot app has this session open, and wouldn't see what Copilot did in it from here. Open it in Copilot, and send it there."
         }
     }
 }
 
 /// Sends a task to Copilot: a new worktree of the repository, at the latest base branch for a work item or at a pull
 /// request's latest commit for a pull request, and the Copilot CLI working in it on its own, with your environment, your
-/// sign-in, your MCP servers and your instructions, until it calls the task done. Or the same session again, in its
-/// worktree, to go on with it. Nothing opens: BriefBar follows the run from its session log.
+/// sign-in, your MCP servers and your instructions, until it calls the task done. Or a session that's already there, to
+/// go on with it: an earlier task's, in its worktree, or one of the Copilot app's, in the folder it works in, unless the
+/// app has it open. Nothing opens: BriefBar follows the run from its session log.
 public struct CopilotLauncher: Sendable {
     public struct Request: Sendable {
         public var subject: TaskSubject
         public var prompt: String
         public var options: CopilotRunOptions
-        /// A folder in the repository's main checkout.
+        /// A folder in the repository's main checkout; for one of the Copilot app's sessions, the folder it works in.
         public var repository: URL
         /// Where worktrees go; next to the repository when nil.
         public var worktreesFolder: URL?
-        /// An earlier run to go on with: its session, in its worktree, rather than a new one.
+        /// A session to go on with, rather than a new one: an earlier run's, in its worktree, or one of the Copilot app's
+        /// (`CopilotRun.isAppSession`), in the folder it works in.
         public var continuing: CopilotRun?
 
         public init(
@@ -74,7 +80,8 @@ public struct CopilotLauncher: Sendable {
     }
 
     /// Gets the worktree ready and starts Copilot in it. `onExit` hears how its process ended, if BriefBar is still
-    /// running then. Going on with an earlier run, its session's ID is the run's, and its worktree is kept.
+    /// running then. Going on with a session, its ID is the run's, and its worktree or folder is kept; it doesn't start
+    /// while the Copilot app has that session open (`LaunchError.openInApp`).
     public func launch(
         _ request: Request, id: String = UUID().uuidString.lowercased(), now: Date = Date(),
         onExit: @escaping @Sendable (Int32) -> Void
@@ -85,6 +92,14 @@ public struct CopilotLauncher: Sendable {
         }
         let environment = await environment()
         guard let copilot = locate(environment) else { throw LaunchError.copilotNotFound }
+        if let continuing = request.continuing {
+            let home = CopilotCLI.home(environment: environment)
+            // While the app has it open, its history is in the app's memory: a turn run here would fork it.
+            if AppSessions.isOpen(id, home: home) { throw LaunchError.openInApp }
+            if continuing.isAppSession == true, !FileManager.default.fileExists(atPath: continuing.events(in: home).path) {
+                throw LaunchError.couldntStart("the Copilot CLI has no session \(id) in \(UserPath.abbreviate(home.path))")
+            }
+        }
         let git = Git(
             executable: LoginEnvironment.which("git", in: environment) ?? URL(fileURLWithPath: "/usr/bin/git"),
             environment: environment, runner: runner
@@ -98,7 +113,8 @@ public struct CopilotLauncher: Sendable {
                 try await git.validate(repository, for: pullRequest)
             }
             if let continuing = request.continuing {
-                // Its worktree, as the earlier run left it: what it changed is what this one goes on with.
+                // Its worktree, or the app's session's folder, as the session left it: what it changed is what this run
+                // goes on with.
                 guard FileManager.default.fileExists(atPath: continuing.worktree.path) else {
                     throw LaunchError.couldntStart("its worktree, \(continuing.worktree.path), isn't there anymore")
                 }
@@ -139,13 +155,16 @@ public struct CopilotLauncher: Sendable {
         case .workItem(let item):
             run = CopilotRun(
                 id: id, workItem: item.reference, options: request.options, repository: repository.root, worktree: worktree,
-                startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: request.continuing?.pullRequest
+                startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: request.continuing?.pullRequest,
+                isAppSession: request.continuing?.isAppSession
             )
         case .pullRequest(let pullRequest, let action):
+            // Going on with the session of the work item's task that opened it, the run stays that work item's too.
             run = CopilotRun(
-                id: id, workItem: nil, onPullRequest: pullRequest.reference, action: action, options: request.options,
-                repository: repository.root, worktree: worktree, startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil),
-                pullRequest: pullRequest.url
+                id: id, workItem: request.continuing?.workItem, onPullRequest: pullRequest.reference, action: action,
+                options: request.options, repository: repository.root, worktree: worktree, startedAt: now,
+                process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url,
+                isAppSession: request.continuing?.isAppSession
             )
         }
         do {

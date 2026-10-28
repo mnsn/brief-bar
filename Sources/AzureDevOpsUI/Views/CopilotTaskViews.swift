@@ -149,7 +149,8 @@ struct CopilotRunMenuItems: View {
 }
 
 /// A send's menu without what it says and what it opens, for a row that says and opens it, such as one with your Copilot
-/// sessions: go on with it in Terminal, look at its worktree, stop it, or clear it.
+/// sessions: go on with it in Terminal, or in the Copilot app for one of its sessions, look at its worktree, stop it, or
+/// clear it.
 struct CopilotRunActions: View {
     let entry: CopilotTaskEntry
 
@@ -157,11 +158,17 @@ struct CopilotRunActions: View {
 
     var body: some View {
         let phase = entry.status.phase
+        let isAppSession = entry.run?.isAppSession == true
         if entry.run != nil {
             Divider()
-            Button("Continue in Terminal") { copilot.continueInTerminal(entry) }
-                .disabled(phase.isActive)
-            Button("Show Worktree in Finder") { copilot.showWorktree(entry) }
+            if isAppSession {
+                Button("Open in Copilot") { copilot.openSessionInApp(entry) }
+                    .disabled(phase.isActive)
+            } else {
+                Button("Continue in Terminal") { copilot.continueInTerminal(entry) }
+                    .disabled(phase.isActive)
+            }
+            Button(isAppSession ? "Show Folder in Finder" : "Show Worktree in Finder") { copilot.showWorktree(entry) }
             Button("Show What Copilot Printed") { copilot.showOutput(entry) }
                 .disabled(phase.isActive)
         }
@@ -169,7 +176,7 @@ struct CopilotRunActions: View {
         if phase == .working {
             Button("Stop") { copilot.stop(entry) }
         } else if !phase.isActive {
-            if entry.run != nil {
+            if entry.run != nil, !isAppSession {
                 Button("Remove Worktree…") { copilot.removeWorktree(entry) }
             }
             Button("Clear") { copilot.clear(entry) }

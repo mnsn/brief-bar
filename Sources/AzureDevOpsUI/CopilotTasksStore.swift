@@ -70,6 +70,13 @@ extension WorkItem {
     }
 }
 
+/// A session Show Links links to a work item or a pull request: by its ID, why, and whether only through a pull request.
+struct LinkedSession: Equatable {
+    var id: String
+    var origins: [LinkOrigin]
+    var isThrough: Bool
+}
+
 /// Main-thread view model for Send Work to Copilot: sends a work item to the Copilot CLI when you ask, then follows the
 /// run from Copilot's own log of its session, until Copilot opens a pull request, and says how it went. Nothing runs
 /// unless you send something, nothing is read while the feature is off, and a run goes on when BriefBar quits.
@@ -88,8 +95,17 @@ final class CopilotTasksStore: ObservableObject {
     /// A task that takes care of a pull request's comments started, with what its prompt handed off and the prompt you sent:
     /// for the list, to take those comments off Needs You.
     var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
+    /// The sessions Show Links links to a work item or a pull request, and why: nothing while it's off.
+    var linkedSessions: (ItemRef) -> [LinkedSession] = { _ in [] }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
+    /// Stands in for copying a prompt and opening a session in the Copilot app, in tests.
+    var openForTests: ((_ sessionId: String, _ prompt: String) -> Void)?
+    /// Where the Copilot app's files are, in tests; `AppSessions.home()` otherwise.
+    var appHomeForTests: URL?
+
+    /// Where the Copilot app keeps its sessions.
+    var appHome: URL { appHomeForTests ?? AppSessions.home() }
 
     private let notifier: Notifier?
     private let monitor = RunMonitor()
@@ -253,7 +269,7 @@ final class CopilotTasksStore: ObservableObject {
 
     // MARK: Sending
 
-    /// Opens the composer, to check the prompt, the model and the repository before sending.
+    /// Opens the composer, to check the prompt, the model and the repository, or a session to go on with, before sending.
     func compose(_ item: WorkItem, options: CopilotRunOptions? = nil) {
         CopilotComposer.shared.show(item: item.copilotTask, options: options ?? settings.copilotOptions, store: self)
     }
@@ -273,27 +289,38 @@ final class CopilotTasksStore: ObservableObject {
         send(.workItem(item), prompt: prompt, options: options, repository: repository)
     }
 
-    /// Opens the composer for a pull request, with its prompt for what to do, going on with its last task's session by
-    /// default.
-    /// - Parameter handOff: what the prompt takes off Needs You once it's sent, as it was written.
-    func compose(_ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String, handOff: CommentHandOff? = nil) {
+    /// Opens the composer for a pull request, with its prompts for what to do, going on with its last task's session by
+    /// default, or else with the session that likely opened it (`suggestedChoice`).
+    /// - Parameters:
+    ///   - prompt: for a task in a worktree of BriefBar's, detached at the pull request's latest commit.
+    ///   - sessionPrompt: for a session that works wherever it is, such as one of the Copilot app's.
+    ///   - createdAt: when the pull request was created, to tell which sessions were there before.
+    ///   - handOff: what the prompt takes off Needs You once it's sent, as it was written.
+    func compose(
+        _ pullRequest: TaskPullRequest, action: PullRequestAction, prompt: String, sessionPrompt: String? = nil, createdAt: Date? = nil,
+        handOff: CommentHandOff? = nil
+    ) {
         let key = PRKey(pullRequest.organization, pullRequest.id)
         CopilotComposer.shared.show(
-            subject: .pullRequest(pullRequest, action), prompt: prompt, options: settings.copilotOptions,
-            continuing: continuable(forPullRequest: key), handOff: handOff, store: self
+            subject: .pullRequest(pullRequest, action), prompt: prompt, sessionPrompt: sessionPrompt, createdAt: createdAt,
+            options: settings.copilotOptions, continuing: continuable(forPullRequest: key), handOff: handOff, store: self
         )
     }
 
-    /// Starts Copilot on a work item or a pull request; or goes on with an earlier run's session, in its worktree. Once it
+    /// Starts Copilot on a work item or a pull request; or goes on with a session that's there already: an earlier run's,
+    /// in its worktree, or one of the Copilot app's (`appRun(for:subject:options:)`), in the folder it works in. Once it
     /// has started, what `handOff` says its prompt took care of leaves Needs You.
     func send(
         _ subject: TaskSubject, prompt: String, options: CopilotRunOptions, repository: URL, continuing: CopilotRun? = nil,
         handOff: CommentHandOff? = nil
     ) {
         guard canSend, isOn else { return }
-        switch subject {
-        case .workItem(let item): settings.copilotRepositories[item.reference.projectKey] = repository.path
-        case .pullRequest(let pullRequest, _): settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.path
+        // An app's session's folder is no repository to start new work in.
+        if continuing?.isAppSession != true {
+            switch subject {
+            case .workItem(let item): settings.copilotRepositories[item.reference.projectKey] = repository.path
+            case .pullRequest(let pullRequest, _): settings.copilotRepositories[pullRequest.reference.repositoryKey] = repository.path
+            }
         }
         let id = continuing?.id ?? UUID().uuidString.lowercased()
         let now = Date()
@@ -372,6 +399,7 @@ final class CopilotTasksStore: ObservableObject {
         case .git(.wrongRepository)?: return "wrong local clone"
         case .git(.failed)?: return "git failed"
         case .couldntStart?: return "Copilot couldn't start"
+        case .openInApp?: return "the Copilot app has the session open"
         case nil: return "unexpected error"
         }
     }
@@ -477,13 +505,14 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// "4217: Show the order total in the cart", "!4071 Fix the checkout total".
+    /// "4217: Show the order total in the cart", "!4071 Fix the checkout total": the pull request, for a task on the one
+    /// its work item's task opened.
     func subject(of entry: CopilotTaskEntry) -> String {
-        if let workItem = entry.workItem {
-            return title(workItem).map { "\(workItem.id): \($0)" } ?? "Work item \(workItem.id)"
-        }
         if let pullRequest = entry.onPullRequest {
             return "!\(pullRequest.id)" + (pullRequestTitle(pullRequest).map { " \($0)" } ?? "")
+        }
+        if let workItem = entry.workItem {
+            return title(workItem).map { "\(workItem.id): \($0)" } ?? "Work item \(workItem.id)"
         }
         return "A task"
     }
@@ -639,11 +668,18 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     /// Goes on with Copilot's session in Terminal, in its worktree, to ask for more or see what it did. `copilot` is
-    /// found again, rather than taken from the preferences, which any program running as you can change.
+    /// found again, rather than taken from the preferences, which any program running as you can change. A session the
+    /// Copilot app has open, or one of its own, goes on there instead, where its history is.
     func continueInTerminal(_ entry: CopilotTaskEntry) {
         guard let run = entry.run, run.isValid else { return }
         Task {
-            guard let copilot = CopilotCLI.locate(environment: await environment()) else {
+            let environment = await environment()
+            let isOpen = AppSessions.isOpen(run.id, home: CopilotCLI.home(environment: environment)) || AppSessions.isOpen(run.id, home: appHome)
+            if run.isAppSession == true || isOpen {
+                Self.openInApp(run.id)
+                return
+            }
+            guard let copilot = CopilotCLI.locate(environment: environment) else {
                 NSAlert(error: LaunchError.copilotNotFound).runModal()
                 return
             }
@@ -652,7 +688,7 @@ final class CopilotTasksStore: ObservableObject {
                 let directory = UserHome.url.appendingPathComponent("Library/Caches", isDirectory: true)
                     .appendingPathComponent(AppIdentity.bundleIdentifier, isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let file = directory.appendingPathComponent("Copilot \(run.workItem.map { String($0.id) } ?? run.onPullRequest.map { "PR \($0.id)" } ?? "task").command")
+                let file = directory.appendingPathComponent("Copilot \(run.onPullRequest.map { "PR \($0.id)" } ?? run.workItem.map { String($0.id) } ?? "task").command")
                 try script.write(to: file, atomically: true, encoding: .utf8)
                 try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
                 NSWorkspace.shared.open(file)
@@ -662,9 +698,16 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// Deletes the worktree's folder, after asking, and forgets the task. Its branch and pull request stay.
+    /// Opens a task's session in the Copilot app: one of the app's own, that a task went on with.
+    func openSessionInApp(_ entry: CopilotTaskEntry) {
+        guard let run = entry.run, run.isValid else { return }
+        Self.openInApp(run.id)
+    }
+
+    /// Deletes the worktree's folder, after asking, and forgets the task. Its branch and pull request stay. Never the
+    /// folder of one of the Copilot app's sessions, which is the app's.
     func removeWorktree(_ entry: CopilotTaskEntry) {
-        guard let run = entry.run, !entry.status.phase.isActive else { return }
+        guard let run = entry.run, run.isAppSession != true, !entry.status.phase.isActive else { return }
         let alert = NSAlert()
         alert.messageText = "Remove the worktree for \(run.subjectName)?"
         alert.informativeText = "BriefBar deletes \(run.worktree.path). Its branch, its pull request and Copilot's session stay."

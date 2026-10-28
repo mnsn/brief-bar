@@ -114,6 +114,89 @@ import Testing
         await #expect(throws: LaunchError.self) { try await launcher.launch(request) { _ in } }
     }
 
+    /// One of the Copilot app's sessions, such as the one that opened the pull request, goes on in the folder it works in,
+    /// under its own name: never while the app has it open, which keeps its history in memory and wouldn't see the turn.
+    @Test(.timeLimit(.minutes(1)))
+    func goesOnWithACopilotAppSessionInItsFolderOnlyWhileTheAppDoesntHaveItOpen() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let id = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"
+        let state = fixture.folder.appendingPathComponent("copilot-home/session-state/\(id)")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data((Line.userMessage("Open the pull request") + "\n").utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        let session = CopilotRun(
+            id: id, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: fixture.checkout, worktree: fixture.checkout, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url, isAppSession: true
+        )
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix the comments", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: session
+        )
+
+        // This test's own process stands in for the app's.
+        let lock = state.appendingPathComponent("inuse.\(getpid()).lock")
+        try Data().write(to: lock)
+        await #expect(throws: LaunchError.openInApp) { try await launcher.launch(request) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+
+        try FileManager.default.removeItem(at: lock)
+        let run = try await launch(launcher, request, id: "7b2f1e3d-4c9e-4e0f-9c5a-3f4e5d6c7b8a")
+        #expect(run.id == id)
+        #expect(run.isAppSession == true)
+        #expect(run.worktree.path == fixture.checkout.path)
+        #expect(run.onPullRequest == pullRequest.reference)
+        let arguments = try String(contentsOf: argumentsFile, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(arguments.contains(id))
+        #expect(arguments.suffix(3) == ["-C", fixture.checkout.path, "--silent"])
+        #expect(!arguments.contains("--name"))
+        // Whatever the session could do in the app, here it can't commit or push.
+        #expect(arguments.joined(separator: " ").contains("--deny-tool shell(git commit) --deny-tool shell(git push)"))
+        #expect(!FileManager.default.fileExists(atPath: fixture.folder.appendingPathComponent("copilot-worktrees").path))
+    }
+
+    /// The CLI keeps its sessions in its own folder: one of the app's that isn't there can't be gone on with.
+    @Test func doesNotStartAnAppSessionTheCLIDoesntHave() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, argumentsFile) = try launcher(fixture)
+        let session = CopilotRun(
+            id: "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01", workItem: nil, onPullRequest: pullRequest.reference, action: .review,
+            options: CopilotModel.standard, repository: fixture.checkout, worktree: fixture.checkout, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), isAppSession: true
+        )
+        let request = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .review), prompt: "Review it", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: session
+        )
+        await #expect(throws: LaunchError.self) { try await launcher.launch(request) { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: argumentsFile.path))
+    }
+
+    /// Going on with the session of the work item's task that opened the pull request, the task stays that work item's.
+    @Test(.timeLimit(.minutes(1)))
+    func aTaskOnThePullRequestAWorkItemsTaskOpenedStaysTheWorkItems() async throws {
+        let fixture = try await repositoryWithBranch()
+        defer { fixture.remove() }
+        let (launcher, _) = try launcher(fixture)
+        let opened = CopilotRun(
+            id: "6a1f0e2c-3b8d-4d9e-8b4f-2e3d4c5b6a7f", workItem: sampleItem.reference, options: CopilotModel.standard,
+            repository: fixture.checkout, worktree: fixture.checkout, startedAt: Date(), process: DetachedProgram.Handle(pid: 0, startedAt: nil),
+            ended: .finished, pullRequest: pullRequest.url
+        )
+        let run = try await launch(launcher, CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix the comments", options: CopilotModel.standard,
+            repository: fixture.checkout, worktreesFolder: nil, continuing: opened
+        ), id: "7b2f1e3d-4c9e-4e0f-9c5a-3f4e5d6c7b8a")
+        #expect(run.id == opened.id)
+        #expect(run.workItem == sampleItem.reference)
+        #expect(run.onPullRequest == pullRequest.reference)
+        #expect(run.action == .fixComments)
+        #expect(run.isAppSession == nil)
+        #expect(run.subjectName == "pull request 4071")
+    }
+
     @Test func onlyPushAndReplyMayPushAndAReviewWritesNothing() {
         #expect(PullRequestAction.review.deniedTools == ["write", "shell(git commit)", "shell(git push)"])
         #expect(PullRequestAction.allCases.filter { !$0.deniedTools.contains("shell(git push)") } == [.pushAndReply])
