@@ -85,6 +85,12 @@ import Testing
 
         var current: State { state.mutex.withLock { $0 } }
 
+        /// Runs a command of the made-up CLI's own, as the user would in Terminal.
+        @discardableResult
+        func run(_ arguments: [String]) -> ProcessResult {
+            state.mutex.withLock { CLI.answer(arguments, &$0) }
+        }
+
         func registration(marketplace: URL? = CopilotPluginRegistrationTests.here) -> CopilotPluginRegistration {
             CopilotPluginRegistration(
                 cli: URL(fileURLWithPath: "/opt/homebrew/bin/copilot"), environment: [:], marketplace: marketplace, runner: runner
@@ -154,14 +160,16 @@ import Testing
                 guard state.marketplaces["briefbar"] != nil else { return failed("install", "Marketplace \"briefbar\" not found") }
                 state.plugins["briefbar@briefbar"] = true
                 return .ok("Plugin \"briefbar\" installed successfully. Installed 1 skill.\n")
-            case ["plugin", "uninstall", "briefbar@briefbar"]:
+            case _ where arguments.prefix(2) == ["plugin", "uninstall"] && arguments.count == 3:
                 // A plugin loaded in place is only turned off; one it copied is uninstalled.
-                if state.copied.remove("briefbar@briefbar") != nil {
-                    state.plugins["briefbar@briefbar"] = nil
-                    return .ok("Plugin \"briefbar@briefbar\" uninstalled successfully.\n")
+                let id = arguments[2]
+                if state.copied.remove(id) != nil {
+                    state.plugins[id] = nil
+                    return .ok("Plugin \"\(id)\" uninstalled successfully.\n")
                 }
-                state.plugins["briefbar@briefbar"] = false
-                return .ok("Plugin \"briefbar@briefbar\" disabled. It is still on disk — nothing was removed.\n")
+                guard state.plugins[id] != nil else { return failed("uninstall", "Plugin \"\(id)\" is not installed") }
+                state.plugins[id] = false
+                return .ok("Plugin \"\(id)\" disabled. It is still on disk — nothing was removed.\n")
             default:
                 return .failure("unexpected: \(arguments.joined(separator: " "))", status: 2)
             }
@@ -208,10 +216,42 @@ import Testing
         // Whatever it printed before its answer.
         #expect(Registration.rows(in: Data("A newer version is out.\n[{\"name\":\"briefbar\"}]".utf8))?.count == 1)
         #expect(Registration.rows(in: Data("nope".utf8)) == nil)
+    }
 
-        #expect(Registration.firstLine(Data("Failed to add marketplace: Error: Request plugins.marketplaces.add failed with message: Marketplace \"briefbar\" already registered\n".utf8))
+    /// What the page shows when the CLI fails: the message of a request that failed, or what it explains in its first
+    /// lines, such as which plugins keep a marketplace there, within bounds and without what a terminal would act on.
+    @Test func saysWhatTheCLISaidWithinBounds() throws {
+        typealias Registration = CopilotPluginRegistration
+        #expect(Registration.message(Data("Failed to add marketplace: Error: Request plugins.marketplaces.add failed with message: Marketplace \"briefbar\" already registered\n".utf8))
             == "Marketplace \"briefbar\" already registered")
-        #expect(Registration.firstLine(Data("\nError: Not signed in.\n".utf8)) == "Not signed in.")
+        #expect(Registration.message(Data("\nError: Not signed in.\n".utf8)) == "Not signed in.")
+        #expect(Registration.message(Data(" \n\n".utf8)) == nil)
+        #expect(Registration.message(Data()) == nil)
+
+        // Copilot CLI 1.0.105, when a plugin it copied keeps a marketplace: which plugins, not only that it can't.
+        let refusal = Registration.message(Data("""
+            Cannot remove marketplace "briefbar".
+            Installed plugins from this marketplace: helper, notes
+            Use --force to remove the marketplace and uninstall all its plugins.
+
+            """.utf8))
+        #expect(refusal == """
+            Cannot remove marketplace "briefbar". Installed plugins from this marketplace: helper, notes. Use --force to \
+            remove the marketplace and uninstall all its plugins.
+            """)
+
+        // Without colors, other terminal escapes or control characters, and with its spaces collapsed.
+        #expect(Registration.message(Data("\u{1B}[31;1mCannot\u{07} remove\tmarketplace \"briefbar\".\u{1B}[0m\r\nInstalled plugins from this marketplace:\u{1B}[2K helper\n".utf8))
+            == "Cannot remove marketplace \"briefbar\". Installed plugins from this marketplace: helper")
+
+        // A few lines at most, and a few hundred characters.
+        let lines = (1...20).map { "Line \($0) " + String(repeating: "x", count: 40) }
+        let long = try #require(Registration.message(Data(lines.joined(separator: "\n").utf8)))
+        #expect(long.count <= Registration.longest)
+        #expect(long.contains("Line 1 ") && !long.contains("Line \(Registration.mostLines + 1) "))
+        let wide = try #require(Registration.message(Data(String(repeating: "y", count: 5_000).utf8)))
+        #expect(wide.count == Registration.longest)
+        #expect(wide.hasSuffix("…"))
     }
 
     @Test func readsWhatTheCLISays() async throws {
@@ -297,7 +337,11 @@ import Testing
     @Test func neverForcesARemoval() async throws {
         let folders = try Folders()
         defer { folders.remove() }
-        let refusal = "Cannot remove marketplace \"briefbar\"."
+        let refusal = """
+            Cannot remove marketplace "briefbar". Installed plugins from this marketplace: helper. Use --force to remove \
+            the marketplace and uninstall all its plugins.
+            """
+        #expect(refusal.contains("helper"))
         for folder in [Self.here.path, folders.otherCopy] {
             var state = Self.installed(at: folder)
             state.plugins["helper@briefbar"] = true
@@ -324,7 +368,7 @@ import Testing
         let before = state
         let refused = CLI.answer(["plugin", "marketplace", "remove", "briefbar"], &state)
         #expect(refused.status == 1)
-        #expect(CopilotPluginRegistration.firstLine(refused.stderr) == "Cannot remove marketplace \"briefbar\".")
+        #expect(CopilotPluginRegistration.message(refused.stderr)?.hasPrefix("Cannot remove marketplace \"briefbar\". Installed plugins from this marketplace: helper.") == true)
         #expect(state == before)
         #expect(CLI.answer(["plugin", "marketplace", "remove", "briefbar", "--force"], &state).status == 0)
         #expect(state == State())

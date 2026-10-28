@@ -1460,7 +1460,8 @@ is, without copying it, so the plugin is the one in the app: an update to BriefB
 sessions that start afterwards. The build adds BriefBar's version to it, and `scripts/check-app.sh`
 checks that. Removing it turns the plugin off first, with `copilot plugin uninstall`, so that it doesn't
 come back on with its marketplace, then removes the marketplace, without `--force`: that would uninstall
-whatever else the marketplace has, so the CLI refuses instead if it has anything. What the page says
+whatever else the marketplace has, so the CLI refuses instead if it has a plugin it copied, and says
+which. What the page says
 comes from `copilot plugin list --json`, whose `installedFrom` is the folder the plugin loads from, and
 `copilot plugin marketplace list --json`. A marketplace's name, and its folder's, prove nothing, as
 anyone can choose them, so BriefBar changes one named `briefbar` only if it's this copy's, or the
@@ -1472,8 +1473,10 @@ doesn't install the plugin from there.
 
 **Turning agents off.** BriefBar removes its MCP server and its plugin from the CLI. Agents are off
 then, so the page shows only what's still going on: removing them, and what the CLI couldn't remove,
-such as when it timed out, with **Try Again**, which removes it again (`AgentCleanup`). It keeps that only
-until BriefBar quits: either way, BriefBar answers agents that they're off.
+with **Try Again**, which removes it again (`AgentCleanup`). It shows why in the CLI's own words, such
+as which plugins keep a marketplace there, which you may have to remove first: its first three lines,
+at most 300 characters, without terminal escapes or other control characters. It keeps that only until
+BriefBar quits: either way, BriefBar answers agents that they're off.
 
 **What the skill does.** **/briefbar** on its own calls `needs_me`, and in the app shows what it lists
 in the app's inbox widget, by BriefBar's groups, with the links BriefBar gives, and

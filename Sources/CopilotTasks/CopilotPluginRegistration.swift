@@ -268,22 +268,50 @@ public struct CopilotPluginRegistration: Sendable {
         return try? JSONSerialization.jsonObject(with: output[start...]) as? [[String: Any]]
     }
 
-    /// Why the CLI failed, from the first line it printed.
+    /// Why the CLI failed, in what it printed.
     private static func failure(_ result: ProcessResult) -> Status {
-        .failed(firstLine(result.stderr) ?? "It ended with status \(result.status).")
+        .failed(message(result.stderr) ?? "It ended with status \(result.status).")
     }
 
-    /// What went wrong, from what the CLI printed, such as `Failed to add marketplace: Error: Request
-    /// plugins.marketplaces.add failed with message: …`: the message alone, when there's one.
-    static func firstLine(_ data: Data) -> String? {
-        guard let line = String(decoding: data, as: UTF8.self)
+    /// The most lines of what the CLI printed that the page shows, and the most characters.
+    static let mostLines = 3
+    static let longest = 300
+
+    /// What went wrong, from what the CLI printed, for the page to show: the message of a request that failed, such as
+    /// `Failed to add marketplace: Error: Request plugins.marketplaces.add failed with message: …`, or else its first
+    /// lines, such as why it can't remove a marketplace and which plugins keep it there. Without terminal escapes or
+    /// other control characters, and shortened when it's long, as the CLI can print anything.
+    static func message(_ data: Data) -> String? {
+        var lines = String(decoding: data, as: UTF8.self)
             .split(whereSeparator: \.isNewline)
-            .map({ $0.trimmingCharacters(in: .whitespaces) })
-            .first(where: { !$0.isEmpty })
-        else { return nil }
-        if let message = line.range(of: "failed with message: "), !line[message.upperBound...].isEmpty {
-            return String(line[message.upperBound...])
+            .map(displayable)
+            .filter { !$0.isEmpty }
+        guard let first = lines.first else { return nil }
+        if let marker = first.range(of: "failed with message: "), !first[marker.upperBound...].isEmpty {
+            lines[0] = String(first[marker.upperBound...])
+        } else if first.hasPrefix("Error: ") {
+            lines[0] = String(first.dropFirst("Error: ".count))
         }
-        return line.hasPrefix("Error: ") ? String(line.dropFirst("Error: ".count)) : line
+        let shown = Array(lines.prefix(mostLines))
+        // One after the other, each ending as a sentence, but the last as the CLI ended it.
+        let sentences = shown.dropLast().map { endsSentence($0) ? $0 : $0 + "." } + [shown[shown.count - 1]]
+        var text = sentences.joined(separator: " ")
+        if text.count > longest { text = String(text.prefix(longest - 1)) + "…" }
+        return text
+    }
+
+    private static func endsSentence(_ line: String) -> Bool {
+        guard let last = line.last else { return true }
+        return ".:!?".contains(last)
+    }
+
+    /// A line of what the CLI printed, without terminal escapes, such as colors, or other control characters, and with
+    /// its spaces collapsed.
+    static func displayable(_ line: Substring) -> String {
+        let plain = String(line).replacing(/\u{1B}\[[0-?]*[ -\/]*[@-~]/, with: "")
+        let visible = String(String.UnicodeScalarView(plain.unicodeScalars.map {
+            CharacterSet.controlCharacters.contains($0) ? " " : $0
+        }))
+        return visible.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

@@ -45,4 +45,25 @@ import Testing
         #expect(AgentCleanup(server: .absent, plugin: again).isDone)
         #expect(cli.current == CopilotPluginRegistrationTests.State(plugins: ["briefbar@briefbar": false]))
     }
+
+    /// When a plugin the CLI copied keeps the marketplace there, what's left says which, as the CLI does, since Try Again
+    /// can't remove it until the user deals with that plugin; then it does.
+    @Test func theLeftoverNamesWhatKeepsItThere() async throws {
+        var state = CopilotPluginRegistrationTests.installed()
+        state.plugins["helper@briefbar"] = true
+        state.copied = ["helper@briefbar"]
+        let cli = CopilotPluginRegistrationTests.CLI(state)
+
+        let turnedOff = await cli.registration().remove()
+        let left = AgentCleanup(server: .absent, plugin: turnedOff)
+        let why = try #require(left.plugin)
+        #expect(why.hasPrefix("Cannot remove marketplace \"briefbar\"."))
+        #expect(why.contains("Installed plugins from this marketplace: helper"))
+        #expect(await cli.registration().remove() == turnedOff)
+
+        cli.run(["plugin", "uninstall", "helper@briefbar"])
+        let again = await cli.registration().remove()
+        #expect(again == .absent)
+        #expect(AgentCleanup(server: .absent, plugin: again).isDone)
+    }
 }
