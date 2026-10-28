@@ -484,7 +484,12 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     private func notify(_ entry: CopilotTaskEntry, status: RunStatus) {
-        guard settings.notifications, let notifier, !wasStoppedByYou(entry.id) else { return }
+        guard !status.phase.isActive, let notifier else { return }
+        guard settings.notifications, !wasStoppedByYou(entry.id) else {
+            // Nothing says how it ended, so the notification that says it's working goes.
+            notifier.remove([Self.notificationID(entry.id)])
+            return
+        }
         let subject = subject(of: entry)
         let heading: String
         let body: String
