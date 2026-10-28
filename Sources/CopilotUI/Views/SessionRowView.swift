@@ -4,7 +4,8 @@ import CopilotCore
 import SwiftUI
 
 /// One session: status icon, name, state line, optional detail, how long it's been in that state, and,
-/// if turned on, how full its context window is.
+/// if turned on, how full its context window is. A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens
+/// what it's for, and has its own menu.
 struct SessionRowView: View {
     let session: SessionSnapshot
     let now: Date
@@ -12,10 +13,12 @@ struct SessionRowView: View {
     var action: () -> Void
 
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: SessionStore
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
+        let task = store.task(for: session.id)
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: session.rowSymbol)
@@ -26,6 +29,12 @@ struct SessionRowView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if task != nil {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
                         Text(session.displayName)
                             .font(.system(size: 13, weight: session.phase == .idle ? .regular : .semibold))
                             .foregroundStyle(session.phase == .idle ? .secondary : .primary)
@@ -77,17 +86,25 @@ struct SessionRowView: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .contextMenu {
-            Button("Open in GitHub Copilot", action: action)
+            if let task {
+                Button(task.openTitle, action: action)
+                task.menu()
+            } else {
+                Button("Open in GitHub Copilot", action: action)
+            }
             if let ref = ItemRef.session(session.id) {
                 LinkMenuItems(ref)
             }
         }
-        .help(helpText)
+        .help(helpText(task))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint("Opens the session in GitHub Copilot")
-        .rowActions(for: session.displayName, openTitle: "Open in Copilot", open: action) {
+        .accessibilityHint(task.map { "Opens its \($0.opens.lowercased())" } ?? "Opens the session in GitHub Copilot")
+        .rowActions(for: session.displayName, openTitle: task?.openTitle ?? "Open in Copilot", open: action) {
+            if let task {
+                task.menu()
+            }
             if let ref = ItemRef.session(session.id) {
                 LinkMenuItems(ref)
             }
@@ -104,12 +121,17 @@ struct SessionRowView: View {
         return "\(session.headline) · \(detail)"
     }
 
-    private var helpText: String {
+    private func helpText(_ task: SentTask?) -> String {
         var lines = [session.displayName, session.subtitle]
         if let detail = session.detail { lines.append(detail) }
         if !session.choices.isEmpty { lines.append("Options: " + session.choices.joined(separator: " | ")) }
         if let contextUsage { lines.append(ContextUsageView.description(contextUsage)) }
-        lines.append("Click to open in GitHub Copilot")
+        if let task {
+            lines.append("Sent from BriefBar: the Copilot CLI works on it on its own, outside the Copilot app")
+            lines.append("Click to open its \(task.opens.lowercased()), or right-click for its menu")
+        } else {
+            lines.append("Click to open in GitHub Copilot")
+        }
         return lines.joined(separator: "\n")
     }
 }

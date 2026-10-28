@@ -287,4 +287,186 @@ import Testing
         #expect(store.pending.isEmpty)
         #expect(settings.copilotRepositories.isEmpty)
     }
+
+    /// Copilot works on its own and nothing opens, so a notification says it's on it as you send it: what it does, on
+    /// what, and what it won't do. The one that says how it ended takes its place, and clicking it shows the task with
+    /// your Copilot sessions.
+    @Test func saysCopilotIsOnItAsYouSendIt() throws {
+        var entry = CopilotTaskEntry(
+            id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            startedAt: now, status: RunStatus(phase: .preparing, since: now), pullRequest: pullRequest.url
+        )
+        let note = CopilotTasksStore.startedNotification(entry, subject: "!4071 Fix totals")
+        #expect(note.id == "copilot.\(first)")
+        // The one that says how it ended takes its place, and stopping it takes it away.
+        #expect(note.id == CopilotTasksStore.notificationID(first))
+        #expect(note.source == .azureDevOps)
+        #expect(note.title == "Copilot is fixing the comments")
+        #expect(note.subtitle == "!4071 Fix totals")
+        #expect(note.body == "It works on its own in a worktree, and doesn't push or reply. You'll hear when it's done.")
+        #expect(note.userInfo == [CopilotTasksStore.taskKey: first, "url": pullRequest.url.absoluteString])
+
+        let expected: [(PullRequestAction, String, String)] = [
+            (.fixBuild, "Copilot is fixing the build", "doesn't push."),
+            (.resolveConflicts, "Copilot is resolving the conflicts", "doesn't push."),
+            (.review, "Copilot is reviewing the pull request", "changes or posts nothing."),
+            (.pushAndReply, "Copilot is pushing and replying", "as you."),
+        ]
+        for (action, title, ending) in expected {
+            entry.action = action
+            let note = CopilotTasksStore.startedNotification(entry, subject: "!4071 Fix totals")
+            #expect(note.title == title)
+            #expect(note.body.hasSuffix("\(ending) You'll hear when it's done."))
+        }
+
+        let workItem = CopilotTaskEntry(
+            id: second, workItem: item.copilotTask.reference, options: CopilotModel.quick, startedAt: now,
+            status: RunStatus(phase: .preparing, since: now)
+        )
+        let sent = CopilotTasksStore.startedNotification(workItem, subject: "4217: Show the order total in the cart")
+        #expect(sent.title == "Copilot is working on it")
+        #expect(sent.body.hasPrefix("It works on its own in a new worktree, then opens a pull request."))
+        #expect(sent.userInfo[CopilotTasksStore.taskKey] == second)
+        #expect(try #require(sent.userInfo["url"]).hasSuffix("4217"))
+    }
+
+    /// Copilot's list shows each task with your sessions: what it's for, where it works, how it stands and what clicking
+    /// it opens. Titles come from the lists, and aren't kept.
+    @Test func describesEachTaskForCopilotsList() throws {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.copilotEnabled = true
+        let fixing = CopilotRun(
+            id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: URL(fileURLWithPath: "/Users/robin/dev/shop-web"),
+            worktree: URL(fileURLWithPath: "/Users/robin/dev/copilot-worktrees/shop-web/pr-4071"), startedAt: now,
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url
+        )
+        settings.copilotRuns = [fixing, run(second, startedAt: now.addingTimeInterval(-60), ended: .finished)]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        store.pullRequestTitle = { _ in "Fix totals" }
+
+        let tasks = store.sentTasks()
+        #expect(tasks.map(\.id) == [first, second])
+        let fix = try #require(tasks.first)
+        #expect(fix.name == "Fix Comments: !4071 Fix totals")
+        #expect(fix.place == "shop-web")
+        #expect(fix.stage == .working)
+        #expect(fix.detail == nil)
+        #expect(fix.since == now)
+        #expect(!fix.stoppedByYou)
+        #expect(fix.openTitle == "Open Pull Request")
+
+        let sent = try #require(tasks.last)
+        #expect(sent.name == "Work Item 4217")
+        #expect(sent.place == "Storefront")
+        #expect(sent.stage == .finished)
+        #expect(sent.detail == "Finished, without a pull request")
+        #expect(sent.openTitle == "Open Work Item")
+        store.title = { _ in "Show the order total in the cart" }
+        #expect(store.sentTasks().last?.name == "Work Item 4217: Show the order total in the cart")
+        #expect(!readable(defaults).contains("Fix totals"))
+        #expect(!readable(defaults).contains("Show the order total"))
+    }
+
+    @Test func saysHowEachTaskStands() {
+        var entry = CopilotTaskEntry(
+            id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            startedAt: now, status: RunStatus(phase: .preparing, since: now), pullRequest: pullRequest.url
+        )
+        func detail(_ status: RunStatus, stoppedByYou: Bool = false) -> String? {
+            entry.status = status
+            return CopilotTasksStore.detail(of: entry, stoppedByYou: stoppedByYou)
+        }
+        #expect(detail(RunStatus(phase: .preparing)) == "Getting its worktree ready")
+        #expect(detail(RunStatus(phase: .working, detail: "Run the cart tests")) == "Run the cart tests")
+        #expect(detail(RunStatus(phase: .finished)) == "Changes ready to check, then Push & Reply")
+        #expect(detail(RunStatus(phase: .finished, detail: "Fixed both comments.")) == "Changes ready to check, then Push & Reply: Fixed both comments.")
+        #expect(detail(RunStatus(phase: .failed, detail: "git failed")) == "git failed")
+        #expect(detail(RunStatus(phase: .failed)) == "It reported an error.")
+        #expect(detail(RunStatus(phase: .stopped)) == "It stopped before it finished.")
+        #expect(detail(RunStatus(phase: .stopped), stoppedByYou: true) == "You stopped it.")
+    }
+
+    /// A task you stopped is nothing to look at, nor to hear about, after BriefBar restarts too; going on with it
+    /// means you're not stopping it anymore.
+    @Test func remembersThatYouStoppedATaskUntilYouGoOnWithIt() async throws {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.copilotEnabled = true
+        let fixing = CopilotRun(
+            id: first, workItem: nil, onPullRequest: pullRequest.reference, action: .fixComments, options: CopilotModel.standard,
+            repository: URL(fileURLWithPath: "/tmp/shop-web"), worktree: URL(fileURLWithPath: "/tmp/copilot-worktrees/shop-web/pr-4071"),
+            startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url
+        )
+        settings.copilotRuns = [fixing]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        defer { store.stop() }
+        store.useEnvironment(["COPILOT_HOME": "/nonexistent"])
+        #expect(!store.wasStoppedByYou(first))
+        // Its process is gone already: there's nothing to signal.
+        store.stop(try #require(store.entries.first))
+        #expect(store.wasStoppedByYou(first))
+        #expect(settings.copilotRuns.first?.stoppedByYou == true)
+
+        let restarted = CopilotTasksStore(settings: AppSettings(defaults: defaults), mode: .live, notifier: nil)
+        #expect(restarted.wasStoppedByYou(first))
+        #expect(restarted.sentTasks().first?.stoppedByYou == true)
+
+        // Push & Reply goes on with its session; this send can't start, and that's something to look at.
+        store.launchForTests = { _, _, _ in throw LaunchError.couldntStart("its worktree isn't there anymore") }
+        store.send(
+            .pullRequest(pullRequest, .pushAndReply), prompt: "Push it", options: CopilotModel.standard,
+            repository: URL(fileURLWithPath: "/tmp/shop-web"), continuing: fixing
+        )
+        #expect(!store.wasStoppedByYou(first))
+        try await settle { store.statuses[first]?.phase == .failed }
+        let failed = try #require(store.sentTasks().first)
+        #expect(failed.stage == .failed)
+        #expect(!failed.stoppedByYou)
+    }
+
+    /// While Azure DevOps runs, with Send Work to Copilot on, Copilot's list has the tasks it sent; they go when you turn
+    /// it off, or Azure DevOps stops.
+    @Test func tellsCopilotsListTheTasksWhileItRuns() async throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        let source = AzureDevOpsSource(services: services)
+        source.start()
+        defer { source.stop() }
+        #expect(services.sentTasks.tasks.map(\.stage) == [.working, .working, .finished])
+        #expect(services.sentTasks.tasks.map(\.opens) == ["Work Item", "Pull Request", "Pull Request"])
+
+        source.settings.copilotEnabled = false
+        for _ in 0..<150 where !services.sentTasks.tasks.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(services.sentTasks.tasks.isEmpty)
+
+        source.settings.copilotEnabled = true
+        for _ in 0..<150 where services.sentTasks.tasks.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(services.sentTasks.tasks.count == 3)
+        source.stop()
+        #expect(services.sentTasks.tasks.isEmpty)
+    }
+
+    /// Clicking the notification that says a task started shows it with your Copilot sessions: in the menu bar, or else a
+    /// window.
+    @Test func theStartedNotificationShowsTheTaskWithYourSessions() {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        var panels: [SectionID] = []
+        var windows: [SectionID?] = []
+        services.showPanel = { panels.append($0); return true }
+        services.hasPage = { _ in true }
+        services.openWindow = { windows.append($0) }
+        let source = AzureDevOpsSource(services: services)
+        source.openNotification([CopilotTasksStore.taskKey: first, "url": pullRequest.url.absoluteString])
+        #expect(panels == [.copilotSessions])
+        #expect(windows.isEmpty)
+
+        services.showPanel = { panels.append($0); return false }
+        source.openNotification([CopilotTasksStore.taskKey: first])
+        #expect(windows == [.copilotSessions])
+    }
 }

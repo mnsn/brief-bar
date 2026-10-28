@@ -115,10 +115,8 @@ public enum StatusResolver {
 
         func ended(_ reason: StatusReason, at date: Date?, detail: String?) {
             let endedAt = date ?? meta.updatedAt
-            let isRecent = endedAt.map { now.timeIntervalSince($0) <= options.recentWindow } ?? false
             let isSeen = hasBeenSeen(meta: meta, endedAt: endedAt, view: view, acknowledgedAt: acknowledgedAt)
-            let phase: DisplayPhase = reason == .finished ? .done : .stopped
-            set(isRecent && !isSeen ? phase : .idle, reason, since: endedAt, detail: detail)
+            set(endedPhase(reason, at: endedAt, now: now, options: options, isSeen: isSeen), reason, since: endedAt, detail: detail)
         }
 
         guard let log = record.log, log.phase != .unknown else {
@@ -166,6 +164,40 @@ public enum StatusResolver {
             break
         }
         return snapshot
+    }
+
+    /// Where something that ended shows: done or stopped, highlighted, if it ended within `recentWindow` and you
+    /// haven't seen it since; idle otherwise.
+    static func endedPhase(
+        _ reason: StatusReason, at endedAt: Date?, now: Date, options: ResolverOptions, isSeen: Bool
+    ) -> DisplayPhase {
+        let isRecent = endedAt.map { now.timeIntervalSince($0) <= options.recentWindow } ?? false
+        guard isRecent, !isSeen else { return .idle }
+        return reason == .finished ? .done : .stopped
+    }
+
+    /// A session the Copilot app doesn't list, such as one BriefBar started for a task you sent, as the list shows it,
+    /// from what follows it: running while it starts or works; once it ended, highlighted until you've seen it or
+    /// `recentWindow` passes, as the app's sessions are.
+    /// - Parameters:
+    ///   - since: when it got to its state.
+    ///   - isSeen: you've looked at it since it ended, or have nothing to look at.
+    public static func snapshot(
+        unlisted id: String, name: String, place: String?, reason: StatusReason, detail: String?, since: Date?, now: Date,
+        options: ResolverOptions = ResolverOptions(), isSeen: Bool
+    ) -> SessionSnapshot {
+        let phase: DisplayPhase
+        switch reason {
+        case .question, .planApproval, .permission: phase = .needsYou
+        case .working, .starting: phase = .running
+        case .finished, .interrupted, .failed, .unresponsive: phase = endedPhase(reason, at: since, now: now, options: options, isSeen: isSeen)
+        case .idle: phase = .idle
+        }
+        return SessionSnapshot(
+            id: id, name: PlainText.singleLine(name), projectName: place, branch: nil, isChat: false, mode: nil, phase: phase,
+            reason: reason, headline: reason.headline, detail: detail.map(PlainText.fromMarkdown).flatMap { $0.isEmpty ? nil : $0 },
+            choices: [], since: since
+        )
     }
 
     /// Whether the user has already looked at a session since it ended: they opened it from

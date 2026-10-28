@@ -143,7 +143,7 @@ struct MenuPanelView: View {
 }
 
 /// A session in a list: Copilot's own, and a list by state that mixes every source's. It opens the session in the
-/// Copilot app.
+/// Copilot app, or what a task BriefBar sent is for.
 struct SessionRow: View {
     let session: SessionSnapshot
 
