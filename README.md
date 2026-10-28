@@ -97,7 +97,9 @@ shows them in three places, each arranged in Settings:
   by state, with the brief, then has a page for every section, and a sidebar with their counts. Open
   it from the top of any list: **Overview** opens it on the Overview, with how many things need you
   there, and the list's title, such as **Pull Requests ›**, at the list's page. A widget's menu has
-  **Open in Window** too. BriefBar shows a Dock icon while a window or Settings is open.
+  **Open in Window** too. BriefBar shows a Dock icon while a window or Settings is open. With
+  **Notifications Page** on, it also lists what BriefBar notified you of, after the Overview (see
+  [Notifications](#notifications)).
 
 Everywhere, you can put sections together, such as Azure DevOps with Copilot, or all of them in one
 item, widget or window, then give each its own again: in Settings, each item is a card with a chip for
@@ -221,6 +223,23 @@ that requires linked work items still sees only Azure DevOps' own. Unlinking wha
 Copilot links hides it in BriefBar, until you choose **Show Hidden Links**. While it's on, Azure DevOps
 reads the links of your pull requests and, while the sprint is on screen, of its work items, and the
 Copilot source reads which pull request each session started from or opened.
+
+## Notifications
+
+Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
+Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
+such as the comment or the run, in front of BriefBar.
+
+**Notifications Page**, in **Settings › General**, lists what BriefBar notified you of on a page of
+its own in BriefBar's window, right after the Overview, so you can see what you missed: a banner that
+went away, a notification macOS didn't show, during a Focus or with notifications off for BriefBar,
+and each update of a refresh that had more than its notifications show ("3 more pull request
+updates", which opens the page). It's off until you turn it on. Each entry says what it means for
+you, ✋, ✕ or ✓, when it came, and with a dot, that you haven't seen it yet. Click one to open what
+it's about, as its notification would, or right-click it to remove it; **Clear All** empties the
+page. The page shows only while it lists something. BriefBar keeps the entries for a day, or for 4
+hours or 3 days (**Keep Notifications For**), in memory only: the page starts empty when BriefBar
+restarts or updates.
 
 ## What each source shows
 
@@ -551,7 +570,9 @@ has the details.
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
 right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
 **BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
-**Check for Updates Automatically**, and **Show Links**, off by default (see [Links](#links)).
+**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)), and
+**Notifications Page**, off by default, with how long it keeps what it lists: 4 hours, 1 day (default)
+or 3 days (see [Notifications](#notifications)).
 
 | Source | Setting | Options |
 |---|---|---|
@@ -635,6 +656,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Summaries and the brief are made on your Mac**, by Apple's on-device model, never Private Cloud
   Compute or any other model, and are kept in memory only: the brief's, for ten minutes after its
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
+- **The Notifications page** keeps what BriefBar notified you of in memory only, for as long as you
+  choose, a day unless you change it: never in its preferences or on disk. Turning a source off takes
+  its notifications off the page.
 - **On disk**, it keeps Teams' unread chats (each chat's name, and its unread messages' sender and
   text), encrypted with a key in your login keychain, in a file only you can read, until they're
   read; which of your Azure DevOps pull requests you've seen or taken off Needs You, with each account,

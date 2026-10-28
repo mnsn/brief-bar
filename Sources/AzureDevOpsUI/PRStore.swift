@@ -603,26 +603,39 @@ final class PRStore: ObservableObject {
             if announce, !state.isRefreshing, let announced, settings.notifications, let notifier {
                 let firstLoaded = state.firstLoaded
                 let startedAt = self.startedAt
-                let notes = NotificationPlanner.plan(previous: announced, current: sorted) { item in
+                let news = NotificationPlanner.news(previous: announced, current: sorted) { item in
                     // An organization added later starts from when it was first read.
                     max(startedAt, firstLoaded[item.key.organization] ?? .distantFuture)
                 }
                 .filter { delivered.insert($0.id).inserted }
-                if !notes.isEmpty {
-                    Log.app.info("Announcing \(notes.count) update(s)")
-                    notifier.post(notes.map { note in
-                        var info: [String: String] = [:]
-                        if let url = note.url { info["url"] = url.absoluteString }
-                        if let key = note.key { info["pullRequest"] = key.description }
-                        return BriefBarNotification(
-                            id: note.id, source: .azureDevOps, title: note.title, subtitle: note.subtitle, body: note.body,
-                            thread: note.url?.absoluteString ?? "azure-devops", userInfo: info
-                        )
-                    })
+                if !news.isEmpty {
+                    Log.app.info("Announcing \(news.count) update(s)")
+                    // A few notifications at most, but the Notifications page lists every update, the newest first.
+                    let plan = NotificationPlanner.collapse(news)
+                    let summary = plan.summary.map { [Self.notification($0, sumsUp: true)] } ?? []
+                    let more = plan.summarized.map { Self.notification($0) }
+                    notifier.post(plan.shown.map { Self.notification($0) } + summary, more: more)
                 }
             }
             announced = sorted
         }
+    }
+
+    /// A pull request's news, as a notification that opens it.
+    private static func notification(_ note: PulseNotification, sumsUp: Bool = false) -> BriefBarNotification {
+        var info: [String: String] = [:]
+        if let url = note.url { info["url"] = url.absoluteString }
+        if let key = note.key { info["pullRequest"] = key.description }
+        return BriefBarNotification(
+            id: note.id, source: .azureDevOps, state: note.state, title: note.title, subtitle: note.subtitle, body: note.body,
+            thread: note.url?.absoluteString ?? "azure-devops", userInfo: info, sumsUp: sumsUp
+        )
+    }
+
+    /// The demo's news so far, for the Notifications page, each as of when it happened. None outside the demo.
+    var demoNotifications: [(notification: BriefBarNotification, date: Date)] {
+        guard mode == .demo else { return [] }
+        return DemoData.notifications(for: items).map { (Self.notification($0), $0.at) }
     }
 
     // MARK: Summaries

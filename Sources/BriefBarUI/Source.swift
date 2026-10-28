@@ -361,6 +361,8 @@ package final class AppServices: ObservableObject {
     @Published package private(set) var interfaceOptions: InterfaceOptions
     package let loginItem: LoginItem
     package let notifier: Notifier
+    /// What BriefBar notified you of lately, from every source: the Notifications page, which the notifier lists them on.
+    package let recentNotifications: RecentNotifications
     package let fullDiskAccess: FullDiskAccess
     /// In-app updates, which the app's updater reports here.
     package let updates = UpdateStatus()
@@ -384,7 +386,8 @@ package final class AppServices: ObservableObject {
         self.isDemo = isDemo
         interfaceOptions = InterfaceOptions.load(from: defaults)
         loginItem = LoginItem()
-        notifier = Notifier()
+        recentNotifications = RecentNotifications(defaults: defaults, isDemo: isDemo)
+        notifier = Notifier(recent: recentNotifications)
         fullDiskAccess = FullDiskAccess(defaults: defaults)
         links = Links(defaults: defaults, isDemo: isDemo)
     }
