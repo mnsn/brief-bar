@@ -34,8 +34,9 @@ public enum PullRequestPrompt {
     public enum Workplace: Sendable {
         /// The worktree BriefBar makes for the task, detached at the pull request's latest commit.
         case worktree
-        /// Wherever the agent that asked for the prompt through `--mcp` works, which may be another branch, with
-        /// changes of its own, or not this repository at all.
+        /// Wherever the agent works: one that asked for the prompt through `--mcp`, or a session that was there already,
+        /// such as the Copilot app's session that opened the pull request. That may be another branch, with changes of its
+        /// own, or not this repository at all.
         case agent
 
         /// Where the work is, in a sentence's middle.

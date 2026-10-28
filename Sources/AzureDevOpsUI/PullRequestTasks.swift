@@ -39,9 +39,24 @@ enum PullRequestTasks {
     static func prompt(
         _ action: PullRequestAction, for record: PRRecord, client: ADOClient?, workplace: PullRequestPrompt.Workplace = .worktree
     ) async -> String {
+        let failures = action == .fixBuild ? await reports(for: record, client: client) : []
+        return prompt(action, for: record, failures: failures, workplace: workplace)
+    }
+
+    /// The prompts for an action, for both places Copilot may work: a worktree of BriefBar's, for a new session or an
+    /// earlier task's; and wherever a session that's there already works, such as one of the Copilot app's. A failed
+    /// build's errors are read once, for both.
+    static func prompts(_ action: PullRequestAction, for record: PRRecord, client: ADOClient?) async -> (worktree: String, session: String) {
+        let failures = action == .fixBuild ? await reports(for: record, client: client) : []
+        return (prompt(action, for: record, failures: failures, workplace: .worktree), prompt(action, for: record, failures: failures, workplace: .agent))
+    }
+
+    private static func prompt(
+        _ action: PullRequestAction, for record: PRRecord, failures: [FailedBuildReport], workplace: PullRequestPrompt.Workplace
+    ) -> String {
         switch action {
         case .fixComments: return PullRequestPrompt.fixComments(record, workplace: workplace)
-        case .fixBuild: return PullRequestPrompt.fixBuild(record, failures: await reports(for: record, client: client), workplace: workplace)
+        case .fixBuild: return PullRequestPrompt.fixBuild(record, failures: failures, workplace: workplace)
         case .resolveConflicts: return PullRequestPrompt.resolveConflicts(record, workplace: workplace)
         case .review: return PullRequestPrompt.review(record, workplace: workplace)
         case .pushAndReply: return PullRequestPrompt.pushAndReply(record, workplace: workplace)

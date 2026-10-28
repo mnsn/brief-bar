@@ -677,7 +677,7 @@ final class PRStore: ObservableObject {
         return PullRequestTasks.actions(for: record, canShip: canShip)
     }
 
-    /// Writes the prompt for what Copilot should do with a pull request, then opens the composer with it: for a failed
+    /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
     /// build, once each failed build's errors have been read.
     func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
         guard let record = record(for: item.key) else { return }
@@ -690,8 +690,10 @@ final class PRStore: ObservableObject {
         let client = mode == .live ? client : nil
         let handOff = commentHandOff(action, for: record)
         Task {
-            let prompt = await PullRequestTasks.prompt(action, for: record, client: client)
-            copilot.compose(task, action: action, prompt: prompt, handOff: handOff)
+            let prompts = await PullRequestTasks.prompts(action, for: record, client: client)
+            copilot.compose(
+                task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff
+            )
         }
     }
 

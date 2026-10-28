@@ -23,9 +23,10 @@ public enum RunPhase: String, Sendable, Codable, Equatable {
 /// the preferences, so the files BriefBar reads for a run aren't kept there: they follow from its session's ID, which is
 /// checked to be one (`CopilotRun.isValid`).
 public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
-    /// The ID of Copilot's session, a UUID that BriefBar chooses.
+    /// The ID of Copilot's session, a UUID: one that BriefBar chose, or the Copilot app's session's that it went on with.
     public var id: String
-    /// The work item it's for, or nil for a pull request's.
+    /// The work item it's for; for a task on a pull request, the work item whose task opened that pull request, when it
+    /// went on with that task's session; nil otherwise.
     public var workItem: WorkItemReference?
     /// The pull request it works on, and what for; nil for a work item's.
     public var onPullRequest: PullRequestReference?
@@ -43,11 +44,15 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// You stopped it, so it's nothing to look at, nor to hear about, even after BriefBar restarts. Nil otherwise, as
     /// runs that BriefBar kept before it had this were.
     public var stoppedByYou: Bool?
+    /// It went on with one of the Copilot app's sessions, in the folder that session works in, rather than in a worktree
+    /// of BriefBar's: BriefBar never removes that folder, and goes on with it in the app rather than in Terminal. Nil
+    /// otherwise, as runs that BriefBar kept before it had this were.
+    public var isAppSession: Bool?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
-        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil
+        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -61,6 +66,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.ended = ended
         self.pullRequest = pullRequest
         self.stoppedByYou = stoppedByYou
+        self.isAppSession = isAppSession
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -69,11 +75,18 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         UUID(uuidString: id)?.uuidString.lowercased() == id && (workItem != nil || onPullRequest != nil)
     }
 
-    /// "work item 4217" or "pull request 4071", for messages.
+    /// "work item 4217" or "pull request 4071", for messages: the pull request, for a task on the one its work item's
+    /// task opened.
     public var subjectName: String {
-        if let workItem { return "work item \(workItem.id)" }
         if let onPullRequest { return "pull request \(onPullRequest.id)" }
+        if let workItem { return "work item \(workItem.id)" }
         return "this task"
+    }
+
+    /// It works in a worktree BriefBar made for a pull request, detached at its latest commit: a pull request's task, not
+    /// one that went on with a work item's task, which kept its own checkout, nor with one of the Copilot app's sessions.
+    public var worksInPullRequestWorktree: Bool {
+        onPullRequest != nil && workItem == nil && isAppSession != true
     }
 
     /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).
@@ -162,7 +175,34 @@ public struct RunStatus: Sendable, Equatable {
 public enum LocalFile {
     /// The end of a regular file, up to `maxBytes`; nil for a link, a folder, or a file that isn't there.
     public static func tail(of url: URL, maxBytes: Int) -> Data? {
-        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        tail(descriptor: open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK), maxBytes: maxBytes)
+    }
+
+    /// The end of a file below a folder, opened without following a symbolic link below it (`openFile(below:_:)`): at
+    /// most `maxBytes`; nil unless it's a regular file.
+    public static func tail(below root: URL, _ components: [String], maxBytes: Int) -> Data? {
+        tail(descriptor: openFile(below: root, components), maxBytes: maxBytes)
+    }
+
+    /// Opens a file below a folder, read-only, without following a symbolic link below it: neither the file nor any
+    /// folder on the way to it may be one, so it can't lead out of the folder, which may be one itself, as `~/.copilot`
+    /// can. Each component is a single name, never `..`. -1 when it can't be opened so.
+    public static func openFile(below root: URL, _ components: [String]) -> Int32 {
+        guard let name = components.last,
+              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") })
+        else { return -1 }
+        var folder = open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        for component in components.dropLast() where folder >= 0 {
+            let next = openat(folder, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            close(folder)
+            folder = next
+        }
+        guard folder >= 0 else { return -1 }
+        defer { close(folder) }
+        return openat(folder, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+    }
+
+    private static func tail(descriptor: Int32, maxBytes: Int) -> Data? {
         guard descriptor >= 0 else { return nil }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         var info = stat()
