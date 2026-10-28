@@ -170,7 +170,26 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.start()
         copilot?.start()
         workLinks?.start()
+        // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
+        // read.
+        if let copilot, let sprint {
+            copilot.objectWillChange.map { _ in () }
+                .merge(with: store.$items.map { _ in () }, sprint.$board.map { _ in () })
+                .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
+                .sink { [weak self] in MainActor.assumeIsolated { self?.publishSentTasks() } }
+                .store(in: &cancellables)
+        }
+        publishSentTasks()
         changes.send()
+    }
+
+    /// Tells Copilot's list the tasks sent to Copilot, while Send Work to Copilot is on.
+    private func publishSentTasks() {
+        guard let copilot, copilot.isOn else {
+            services.sentTasks.withdraw(.azureDevOps)
+            return
+        }
+        services.sentTasks.publish(.azureDevOps, tasks: copilot.sentTasks())
     }
 
     package func didTurnOn() {
@@ -192,6 +211,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.stop()
         copilot?.stop()
         workLinks?.stop()
+        services.sentTasks.withdraw(.azureDevOps)
         store = nil
         sprint = nil
         pipelines = nil
@@ -436,6 +456,14 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func openNotification(_ userInfo: [String: String]) {
+        // A task that just started: with your Copilot sessions, in the menu bar or a window, when they show.
+        if userInfo[CopilotTasksStore.taskKey] != nil {
+            if services.showPanel(.copilotSessions) { return }
+            if services.hasPage(.copilotSessions) {
+                services.openWindow(.copilotSessions)
+                return
+            }
+        }
         if let link = userInfo["url"].flatMap(URL.init(string:)) {
             store?.openFromNotification(key: userInfo["pullRequest"], url: link)
         } else if !services.showPanel(.azureDevOpsPullRequests) {
@@ -463,6 +491,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         await sprint?.loadOnce()
         await pipelines?.loadOnce()
         await workLinks?.loadOnce()
+        // Before Copilot's list loads, which shows them with the sessions.
+        publishSentTasks()
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }

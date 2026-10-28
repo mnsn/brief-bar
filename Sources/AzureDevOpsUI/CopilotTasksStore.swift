@@ -99,7 +99,6 @@ final class CopilotTasksStore: ObservableObject {
     /// without BriefBar having heard yet.
     private var startedHere: Set<String> = []
     private var goneSince: [String: Date] = [:]
-    private var stoppedByYou: Set<String> = []
     private var timer: Timer?
     private var isRefreshing = false
     private var cancellables: Set<AnyCancellable> = []
@@ -306,10 +305,15 @@ final class CopilotTasksStore: ObservableObject {
         pending.append(entry)
         if continuing != nil {
             statuses[id] = entry.status
-            stoppedByYou.remove(id)
+            // Going on with it: you're not stopping this one.
+            if let index = settings.copilotRuns.firstIndex(where: { $0.id == id }) {
+                settings.copilotRuns[index].stoppedByYou = nil
+            }
             exitStatuses[id] = nil
             goneSince[id] = nil
         }
+        // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready.
+        notifyStarted(entry)
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing
@@ -415,7 +419,7 @@ final class CopilotTasksStore: ObservableObject {
                     return (printed, link)
                 }.value
                 let status = RunStatus.derive(
-                    log: log, isRunning: false, exitStatus: exitStatuses[run.id], stoppedByYou: stoppedByYou.contains(run.id),
+                    log: log, isRunning: false, exitStatus: exitStatuses[run.id], stoppedByYou: wasStoppedByYou(run.id),
                     output: found.0
                 )
                 results.append((run, status, found.1))
@@ -480,7 +484,7 @@ final class CopilotTasksStore: ObservableObject {
     }
 
     private func notify(_ entry: CopilotTaskEntry, status: RunStatus) {
-        guard settings.notifications, let notifier, !stoppedByYou.contains(entry.id) else { return }
+        guard settings.notifications, let notifier, !wasStoppedByYou(entry.id) else { return }
         let subject = subject(of: entry)
         let heading: String
         let body: String
@@ -515,13 +519,63 @@ final class CopilotTasksStore: ObservableObject {
         text?.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }
 
+    /// Says Copilot is on it as you send it: it works on its own, and nothing opens. The notification that says how it
+    /// ended takes this one's place.
+    private func notifyStarted(_ entry: CopilotTaskEntry) {
+        guard settings.notifications, let notifier else { return }
+        notifier.post([Self.startedNotification(entry, subject: subject(of: entry))])
+    }
+
+    /// What Copilot does now, on what, and what it won't do. Clicking it shows the task with your Copilot sessions.
+    static func startedNotification(_ entry: CopilotTaskEntry, subject: String) -> BriefBarNotification {
+        let heading: String
+        let body: String
+        switch entry.action {
+        case .fixComments?:
+            heading = "Copilot is fixing the comments"
+            body = "It works on its own in a worktree, and doesn't push or reply."
+        case .fixBuild?:
+            heading = "Copilot is fixing the build"
+            body = "It works on its own in a worktree, and doesn't push."
+        case .resolveConflicts?:
+            heading = "Copilot is resolving the conflicts"
+            body = "It merges the target branch in a worktree, and doesn't push."
+        case .review?:
+            heading = "Copilot is reviewing the pull request"
+            body = "It drafts your review, and changes or posts nothing."
+        case .pushAndReply?:
+            heading = "Copilot is pushing and replying"
+            body = "It commits, pushes the branch and replies on the threads it addressed, as you."
+        case nil:
+            heading = "Copilot is working on it"
+            body = "It works on its own in a new worktree, then opens a pull request."
+        }
+        var info = [taskKey: entry.id]
+        if let url = entry.pullRequest ?? entry.workItemURL { info["url"] = url.absoluteString }
+        return BriefBarNotification(
+            id: "copilot.\(entry.id)", source: .azureDevOps, title: heading, subtitle: subject,
+            body: body + " You'll hear when it's done.", thread: "copilot", userInfo: info
+        )
+    }
+
+    /// A notification's key for the task it's about, as it starts.
+    nonisolated static let taskKey = "copilotTask"
+
     // MARK: A run's actions
 
     func stop(_ entry: CopilotTaskEntry) {
         guard let run = entry.run else { return }
-        stoppedByYou.insert(run.id)
+        // Kept with the run: after BriefBar restarts, it's still nothing to look at, nor to hear about.
+        if let index = settings.copilotRuns.firstIndex(where: { $0.id == run.id }) {
+            settings.copilotRuns[index].stoppedByYou = true
+        }
         DetachedProgram.stop(run.process)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refresh() }
+    }
+
+    /// You stopped it, as its run keeps.
+    func wasStoppedByYou(_ id: String) -> Bool {
+        settings.copilotRuns.contains { $0.id == id && $0.stoppedByYou == true }
     }
 
     /// Forgets it here, and deletes what it printed. Its worktree, branch and session stay.

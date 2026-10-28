@@ -366,6 +366,8 @@ package final class AppServices: ObservableObject {
     package let updates = UpdateStatus()
     /// Show Links: what goes together across sources, which each source tells it while it's on.
     package let links: Links
+    /// The tasks Azure DevOps sent to the Copilot CLI, for Copilot's list to show with the app's sessions.
+    package let sentTasks = SentTasks()
 
     package var openSettings: (SettingsDestination) -> Void = { _ in }
     /// Opens the list that shows a section: false when it's hidden from the menu bar.

@@ -137,7 +137,6 @@ struct CopilotRunMenuItems: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
 
     var body: some View {
-        let phase = entry.status.phase
         Text("\(entry.action.map { "\($0.title): " } ?? "")\(entry.sentence(now: Date())) · \(entry.options.title)")
         if entry.pullRequest != nil {
             Button("Open Pull Request") { copilot.openPullRequest(entry) }
@@ -145,6 +144,19 @@ struct CopilotRunMenuItems: View {
         if entry.workItem != nil {
             Button("Open Work Item") { copilot.openWorkItem(entry) }
         }
+        CopilotRunActions(entry: entry)
+    }
+}
+
+/// A send's menu without what it says and what it opens, for a row that says and opens it, such as one with your Copilot
+/// sessions: go on with it in Terminal, look at its worktree, stop it, or clear it.
+struct CopilotRunActions: View {
+    let entry: CopilotTaskEntry
+
+    @EnvironmentObject private var copilot: CopilotTasksStore
+
+    var body: some View {
+        let phase = entry.status.phase
         if entry.run != nil {
             Divider()
             Button("Continue in Terminal") { copilot.continueInTerminal(entry) }
@@ -230,6 +242,74 @@ struct CopilotRunsMenu: View {
 extension CopilotTaskEntry {
     /// A work item's task that opened its pull request.
     var opensPullRequest: Bool { status.phase == .finished && pullRequest != nil && action == nil }
+}
+
+extension RunPhase {
+    /// The same, for the list that shows the tasks with your Copilot sessions.
+    var sentTaskStage: SentTask.Stage {
+        switch self {
+        case .preparing: return .starting
+        case .working: return .working
+        case .finished: return .finished
+        case .failed: return .failed
+        case .stopped: return .stopped
+        }
+    }
+}
+
+extension CopilotTasksStore {
+    /// Every task, as the GitHub Copilot list shows it with your sessions: what it's for, where, how it stands, and what
+    /// clicking it and its menu do, with the task as it is then.
+    func sentTasks() -> [SentTask] {
+        entries.map { entry in
+            let id = entry.id
+            let current = { [weak self] in self?.entries.first { $0.id == id } ?? entry }
+            return SentTask(
+                id: id, name: name(of: entry), place: entry.onPullRequest?.repository ?? entry.run?.repository.lastPathComponent,
+                stage: entry.status.phase.sentTaskStage, detail: Self.detail(of: entry, stoppedByYou: wasStoppedByYou(id)),
+                since: entry.status.since ?? entry.startedAt, stoppedByYou: wasStoppedByYou(id),
+                opens: entry.pullRequest != nil ? "Pull Request" : "Work Item",
+                open: { [weak self] in
+                    let entry = current()
+                    if entry.pullRequest != nil { self?.openPullRequest(entry) } else { self?.openWorkItem(entry) }
+                },
+                menu: { [weak self] in
+                    guard let self else { return AnyView(EmptyView()) }
+                    let entry = current()
+                    return AnyView(Group {
+                        // Clicking it opens the pull request it opened.
+                        if entry.pullRequest != nil, entry.workItem != nil {
+                            Button("Open Work Item") { self.openWorkItem(entry) }
+                        }
+                        CopilotRunActions(entry: entry)
+                    }.environmentObject(self))
+                }
+            )
+        }
+    }
+
+    /// "Fix Comments: !4071 Fix the checkout total", "Work Item 4217: Show the order total in the cart".
+    func name(of entry: CopilotTaskEntry) -> String {
+        if let action = entry.action {
+            return "\(action.title): \(subject(of: entry))"
+        }
+        if let workItem = entry.workItem {
+            return "Work Item \(workItem.id)" + (title(workItem).map { ": \($0)" } ?? "")
+        }
+        return subject(of: entry)
+    }
+
+    /// Its current step while it works; how it ended, with what Copilot said; or why it failed.
+    static func detail(of entry: CopilotTaskEntry, stoppedByYou: Bool) -> String? {
+        let status = entry.status
+        switch status.phase {
+        case .preparing: return "Getting its worktree ready"
+        case .working: return status.detail
+        case .finished: return entry.sentence(now: Date()) + (status.detail.map { ": \($0)" } ?? "")
+        case .failed: return status.detail ?? "It reported an error."
+        case .stopped: return stoppedByYou ? "You stopped it." : "It stopped before it finished."
+        }
+    }
 }
 
 /// A pull request's Copilot tasks, in its Actions and context menus.

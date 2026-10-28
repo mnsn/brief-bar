@@ -44,7 +44,9 @@ package final class CopilotSource: BriefBarSource {
         self.services = services
         settings = AppSettings(defaults: services.defaults)
         // The demo reads only made-up data, never your own.
-        store = SessionStore(settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default())
+        store = SessionStore(
+            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks
+        )
     }
 
     private func environment<V: View>(_ view: V) -> some View {
@@ -90,7 +92,7 @@ package final class CopilotSource: BriefBarSource {
     // MARK: Show Links
 
     /// Tells Show Links about the sessions: what each one is, the branch and repository it works in, and the pull requests
-    /// the app recorded it started from or opened.
+    /// the app recorded it started from or opened. The tasks BriefBar sent are the source's that sent them to tell.
     private func publishLinks(_ sessions: [SessionSnapshot]? = nil) {
         let links = services.links
         guard links.isOn else {
@@ -99,7 +101,7 @@ package final class CopilotSource: BriefBarSource {
         }
         var facts: [ItemLink] = []
         var items: [LinkedItem] = []
-        for session in sessions ?? store.sessions {
+        for session in sessions ?? store.sessions where store.task(for: session.id) == nil {
             guard let ref = ItemRef.session(session.id) else { continue }
             let recorded = session.links
             for pullRequest in recorded?.pullRequests ?? [] {
