@@ -2,6 +2,13 @@
 
 ## 0.8.3 - 2026-10-28
 
+- **Follow pipeline runs by pull request.** Below pinned pipelines, **Your Pull Requests** shows one
+  expandable card for each active Azure DevOps pull request you authored, including drafts. See its
+  pipeline status at a glance, or expand it for the latest runs, stages and failure details, without
+  mixing up the same pipeline's runs on different pull requests. Results from older commits are
+  marked **Outdated**, and results whose commit cannot be verified say so rather than counting as
+  current passes. A card disappears when its pull request is merged or abandoned. Pinned pipelines,
+  their counts and widgets stay unchanged.
 - **Send comments to the session that opened the pull request.** Fixing a pull request's comments, build
   or conflicts, reviewing it, or sending a sprint's work item to Copilot no longer always starts a new
   session. The window's new **Session** menu lists where the task can go instead: BriefBar's earlier tasks

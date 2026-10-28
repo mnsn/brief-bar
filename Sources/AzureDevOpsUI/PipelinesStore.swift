@@ -3,11 +3,12 @@ import AzureDevOpsCore
 import BriefBarCore
 import Combine
 
-/// Main-thread view model for the Pipelines section, in windows, widgets and popovers: the pipelines you pinned,
-/// with their recent runs and the latest one's stages. It reads Azure DevOps only while one of them is on screen.
+/// Pipelines in windows, widgets and popovers: pinned runs, and your active PRs' validation runs for the page.
+/// It reads Azure DevOps only while something shows the section.
 @MainActor
 final class PipelinesStore: ObservableObject {
     @Published private(set) var statuses: [PipelineStatus] = []
+    @Published private(set) var pullRequests: [PullRequestPipelines] = []
     @Published private(set) var problem: PulseProblem?
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
@@ -19,6 +20,8 @@ final class PipelinesStore: ObservableObject {
     private var engine: PipelinesEngine?
     private var viewers: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
+    private var authoredPullRequests: [PullRequest] = []
+    private var authoredAccount: String?
 
     init(settings: AppSettings, mode: PRStore.Mode, client: ADOClient) {
         self.settings = settings
@@ -29,7 +32,29 @@ final class PipelinesStore: ObservableObject {
     var counts: PipelineCounts { PipelineCounts(statuses) }
 
     private var configuration: PipelinesEngine.Configuration {
-        PipelinesEngine.Configuration(pipelines: settings.pinnedPipelines, interval: TimeInterval(settings.refreshSeconds))
+        PipelinesEngine.Configuration(
+            pipelines: settings.pinnedPipelines, interval: TimeInterval(settings.refreshSeconds), pullRequests: authoredPullRequests,
+            pullRequestAccount: authoredAccount
+        )
+    }
+
+    func setPullRequests(_ pullRequests: [PullRequest], account: String? = nil) {
+        guard pullRequests != authoredPullRequests || account != authoredAccount else { return }
+        if account != authoredAccount { self.pullRequests = [] }
+        authoredAccount = account
+        authoredPullRequests = pullRequests
+        if mode == .demo {
+            self.pullRequests = DemoData.pullRequestPipelines(pullRequests)
+            return
+        }
+        self.pullRequests = pullRequests.map { pr in
+            self.pullRequests.first { $0.pullRequest == pr }
+                ?? PullRequestPipelines(pullRequest: pr, pipelines: [], revisions: [:], hasLoaded: false)
+        }
+        if let engine {
+            let configuration = configuration
+            Task { await engine.setConfiguration(configuration) }
+        }
     }
 
     func start() {
@@ -70,6 +95,7 @@ final class PipelinesStore: ObservableObject {
 
     private func load(demo now: Date) {
         statuses = DemoData.pipelines(now: now)
+        pullRequests = DemoData.pullRequestPipelines(authoredPullRequests, now: now)
         if settings.pinnedPipelines.isEmpty {
             settings.pinnedPipelines = statuses.map(\.pipeline)
         }
@@ -93,6 +119,13 @@ final class PipelinesStore: ObservableObject {
 
     private func receive(_ snapshot: PipelinesSnapshot) {
         if statuses != snapshot.statuses { statuses = snapshot.statuses }
+        // A refresh queued before a PR closed must not bring its card back.
+        let pullRequests = snapshot.account == authoredAccount ? authoredPullRequests.map { pr in
+            snapshot.pullRequests.first { $0.pullRequest == pr }
+                ?? self.pullRequests.first { $0.pullRequest == pr }
+                ?? PullRequestPipelines(pullRequest: pr, pipelines: [], revisions: [:], hasLoaded: false)
+        } : []
+        if self.pullRequests != pullRequests { self.pullRequests = pullRequests }
         if problem != snapshot.problem {
             problem = snapshot.problem
             if let problem = snapshot.problem { Log.app.error("Pipelines: \(problem.message, privacy: .public)") }

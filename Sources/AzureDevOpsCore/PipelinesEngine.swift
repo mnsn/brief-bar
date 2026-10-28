@@ -4,6 +4,8 @@ import Foundation
 public struct PipelinesSnapshot: Sendable, Equatable {
     /// In the order the pipelines were pinned.
     public var statuses: [PipelineStatus]
+    public var pullRequests: [PullRequestPipelines]
+    public var account: String?
     public var problem: PulseProblem?
     public var refreshedAt: Date?
     public var isRefreshing: Bool
@@ -11,9 +13,11 @@ public struct PipelinesSnapshot: Sendable, Equatable {
 
     public init(
         statuses: [PipelineStatus] = [], problem: PulseProblem? = nil, refreshedAt: Date? = nil, isRefreshing: Bool = false,
-        hasLoaded: Bool = false
+        hasLoaded: Bool = false, pullRequests: [PullRequestPipelines] = [], account: String? = nil
     ) {
         self.statuses = statuses
+        self.pullRequests = pullRequests
+        self.account = account
         self.problem = problem
         self.refreshedAt = refreshedAt
         self.isRefreshing = isRefreshing
@@ -21,8 +25,8 @@ public struct PipelinesSnapshot: Sendable, Equatable {
     }
 }
 
-/// Reads the pipelines you pinned: every refresh, their recent runs (one request per project, for all its pinned
-/// pipelines), and the stages of each one's latest run while it runs (one request each; a finished run's are read
+/// Reads pinned pipelines and your active PRs' validation runs: every refresh, their recent runs (one request per
+/// pinned project/branch and per PR), and the stages of each latest run while it runs (a finished run's are read
 /// once). It polls only while something shows them, stops reading when they're hidden mid-refresh, and backs off
 /// when Azure DevOps can't be read. Every request is a GET.
 public actor PipelinesEngine {
@@ -30,12 +34,19 @@ public actor PipelinesEngine {
 
     public struct Configuration: Sendable, Equatable {
         public var pipelines: [PipelineRef]
+        public var pullRequests: [PullRequest]
+        public var pullRequestAccount: String?
         public var interval: TimeInterval
         /// Runs listed for each pipeline.
         public var runs: Int
 
-        public init(pipelines: [PipelineRef], interval: TimeInterval = 60, runs: Int = 12) {
+        public init(
+            pipelines: [PipelineRef], interval: TimeInterval = 60, runs: Int = 12, pullRequests: [PullRequest] = [],
+            pullRequestAccount: String? = nil
+        ) {
             self.pipelines = pipelines
+            self.pullRequests = pullRequests.filter { $0.status == .active }
+            self.pullRequestAccount = pullRequestAccount
             self.interval = interval
             self.runs = runs
         }
@@ -100,6 +111,7 @@ public actor PipelinesEngine {
     /// Whose sign-in the runs and stages were read with.
     private var account: String?
     private var runs: [String: [PipelineRun]] = [:]
+    private var pullRequestBuilds: [PRKey: [ADOBuild]] = [:]
     private var stages: [RunKey: Stages] = [:]
     private var attempts: [RunKey: Attempts] = [:]
     private var problem: PulseProblem?
@@ -157,11 +169,16 @@ public actor PipelinesEngine {
     public func setConfiguration(_ configuration: Configuration) {
         guard configuration != self.configuration else { return }
         let added = !Set(configuration.pipelines).subtracting(self.configuration.pipelines).isEmpty
+        let changedAccount = configuration.pullRequestAccount != self.configuration.pullRequestAccount
+        let changedPRs = configuration.pullRequests != self.configuration.pullRequests || changedAccount
+        if changedAccount { pullRequestBuilds = [:] }
         self.configuration = configuration
         let kept = Set(configuration.pipelines.map(\.id))
         runs = runs.filter { kept.contains($0.key) }
+        let keptPRs = Set(configuration.pullRequests.map(\.key))
+        pullRequestBuilds = pullRequestBuilds.filter { keptPRs.contains($0.key) }
         publish()
-        if added {
+        if added || changedPRs {
             forced = true
             waker.wake()
         }
@@ -193,7 +210,7 @@ public actor PipelinesEngine {
     /// How long to sleep: until the next refresh is due while active, and until woken while not, or while
     /// nothing is pinned (pinning one wakes it).
     func sleepTime() -> TimeInterval {
-        guard isActive, !configuration.pipelines.isEmpty else { return 3_600 }
+        guard isActive, !configuration.pipelines.isEmpty || !configuration.pullRequests.isEmpty else { return 3_600 }
         guard let refreshedAt else { return 1 }
         return max(1, nextDelay() - now().timeIntervalSince(refreshedAt))
     }
@@ -225,7 +242,7 @@ public actor PipelinesEngine {
         isPolling = polling
         defer { isPolling = false }
         let configuration = self.configuration
-        guard !configuration.pipelines.isEmpty else {
+        guard !configuration.pipelines.isEmpty || !configuration.pullRequests.isEmpty else {
             problem = nil
             failures = 0
             hasLoaded = true
@@ -271,13 +288,16 @@ public actor PipelinesEngine {
         } catch let error as AuthError {
             throw ADOError.auth(error)
         }
-        if let signedIn = token.account {
-            if let account, account != signedIn {
-                runs = [:]
-                stages = [:]
-                attempts = [:]
-            }
-            account = signedIn
+        if account != token.account {
+            runs = [:]
+            pullRequestBuilds = [:]
+            stages = [:]
+            attempts = [:]
+        }
+        account = token.account
+        if configuration.pullRequestAccount != account {
+            pullRequestBuilds = [:]
+            publish()
         }
 
         // One request per project and branch filter, for all of its pinned pipelines.
@@ -287,9 +307,11 @@ public actor PipelinesEngine {
         }
         // Errors reading the lists, which say whether the page is up to date; a run's stages are extra.
         var errors: [ADOError] = []
+        var attemptedLists = 0
         var throttled: ADOError?
         for key in groups.keys.sorted() {
             guard let pipelines = groups[key], let first = pipelines.first else { continue }
+            attemptedLists += 1
             do {
                 let url = ADOEndpoint.builds(
                     organization: first.organization, projectId: first.projectId, definitionIds: pipelines.map(\.definitionId),
@@ -311,10 +333,33 @@ public actor PipelinesEngine {
             }
         }
 
+        for pr in configuration.pullRequests where throttled == nil {
+            guard configuration.pullRequestAccount == account,
+                  self.configuration.pullRequestAccount == account else { break }
+            guard self.configuration.pullRequests.contains(where: { $0.key == pr.key }) else { continue }
+            attemptedLists += 1
+            do {
+                let builds = try await get(ADOEndpoint.pullRequestBuilds(pr), as: ADOList<ADOBuild>.self).value
+                // Configuration can change while a request is in flight, including a PR closing.
+                if self.configuration.pullRequestAccount == account,
+                   self.configuration.pullRequests.contains(where: { $0.key == pr.key }) {
+                    pullRequestBuilds[pr.key] = builds
+                }
+            } catch let error as ADOError {
+                errors.append(error)
+                if case .throttled = error { throttled = error }
+            }
+        }
+
         // The latest runs' stages: while a run runs, and once more each time it finishes (again, when it's retried).
-        let latest = configuration.pipelines.compactMap { pipeline in
+        let pinned = configuration.pipelines.compactMap { pipeline in
             runs[pipeline.id]?.first.map { (pipeline: pipeline, run: $0, key: RunKey(pipeline, $0)) }
         }
+        let prRuns = pullRequests().flatMap(\.pipelines).compactMap { status in
+            status.latest.map { (pipeline: status.pipeline, run: $0, key: RunKey(status.pipeline, $0)) }
+        }
+        var seen: Set<RunKey> = []
+        let latest = (pinned + prRuns).filter { seen.insert($0.key).inserted }
         let interval = configuration.interval
         let due = latest
             .filter { item in
@@ -368,7 +413,7 @@ public actor PipelinesEngine {
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
-        } else if let error = errors.first, errors.count >= groups.count {
+        } else if let error = errors.first, errors.count == attemptedLists {
             problem = PulseProblem.from(error)
             failures += 1
         } else if let error = errors.first {
@@ -393,8 +438,21 @@ public actor PipelinesEngine {
             return PipelineStatus(pipeline: pipeline, runs: runs, stages: latest?.stages ?? [], failure: latest?.failure)
         }
         return PipelinesSnapshot(
-            statuses: statuses, problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
+            statuses: statuses, problem: problem, refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded,
+            pullRequests: pullRequests(), account: account
         )
+    }
+
+    private func pullRequests() -> [PullRequestPipelines] {
+        guard configuration.pullRequestAccount == account else { return [] }
+        return configuration.pullRequests.map { pr in
+            PullRequestPipelines(pullRequest: pr, builds: pullRequestBuilds[pr.key]) { pipeline, runs in
+                let latest = runs.first.flatMap { run in
+                    stages[RunKey(pipeline, run)].flatMap { $0.readFor == RunState(run) ? $0 : nil }
+                }
+                return PipelineStatus(pipeline: pipeline, runs: runs, stages: latest?.stages ?? [], failure: latest?.failure)
+            }
+        }
     }
 
     private func publish() {

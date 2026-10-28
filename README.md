@@ -645,9 +645,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
   choose, with git, and Copilot's log of that session; and, as the window that sends one opens, the
-  Copilot app's sessions it could go to instead, read-only: their names, projects, branches and the pull
-  requests the app records with them, from its database, which ones the app has open, and which of those
-  active lately link to it in their logs. It reads nothing of Copilot's while the feature is off.
+  Copilot app's sessions it could go to instead, read-only: their names, projects, branches, the pull
+  requests the app records with them and which run a turn now, from its database; the folder each works
+  in, from its session state; which ones the app has open; and which of those active lately link to it in
+  their logs. It reads nothing of Copilot's while the feature is off.
   **Open in Copilot** puts the prompt on the clipboard. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
