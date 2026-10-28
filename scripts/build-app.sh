@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds "BriefBar.app" into ./build, for Apple silicon only, with its updater inside it
-# (Contents/Helpers/BriefBar Updater.app, which holds Sparkle), signed ad hoc: macOS ties Full Disk Access to
-# that exact build, so each new one needs the access again (see the note at the end). If you made the optional
+# (Contents/Helpers/BriefBar Updater.app, which holds Sparkle) and its plugin for Copilot
+# (Contents/Resources/CopilotPlugin), signed ad hoc: macOS ties Full Disk Access to that exact build, so each new one
+# needs the access again (see the note at the end). If you made the optional
 # "BriefBar Signing" certificate (scripts/make-signing-identity.sh), it's signed with exactly that certificate
 # instead, by its SHA-1 (scripts/signing.sh), and keeps the access across rebuilds; never with one whose key some
 # app may use without asking, or that can be exported. Every check that fails stops the build.
@@ -119,6 +120,13 @@ done
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/AppIcon.icns "$UPDATER/Contents/Resources/AppIcon.icns"
 cp Resources/Sparkle-LICENSE.txt "$UPDATER/Contents/Resources/Sparkle-LICENSE.txt"
+# BriefBar's plugin for Copilot: a marketplace that the Copilot CLI loads in place, from here, once you install it in
+# Settings › Agents, so it updates with the app. It's at BriefBar's version.
+PLUGIN="$APP/Contents/Resources/CopilotPlugin"
+cp -R Resources/CopilotPlugin "$PLUGIN"
+find "$PLUGIN" -name .DS_Store -delete
+plutil -replace version -string "$VERSION" "$PLUGIN/briefbar/plugin.json"
+plutil -replace plugins.0.version -string "$VERSION" "$PLUGIN/marketplace.json"
 
 # ditto keeps the framework's symlinks. An app outside the sandbox doesn't use Sparkle's XPC services, so leave
 # them out: less code shipped, and less to attack.

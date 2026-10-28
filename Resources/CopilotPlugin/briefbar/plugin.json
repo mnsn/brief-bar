@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "briefbar",
+  "description": "What needs you, from BriefBar, in the GitHub Copilot app and the Copilot CLI: /briefbar shows it, and hands a pull request's comments, build, conflicts or review to a session you can follow. It comes with BriefBar.app, which installs it when you ask and updates it with itself.",
+  "author": {
+    "name": "BriefBar"
+  },
+  "homepage": "https://github.com/mnsn/brief-bar",
+  "repository": "https://github.com/mnsn/brief-bar",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["briefbar", "azure-devops", "pull-requests", "copilot-sessions"]
+}

@@ -181,7 +181,7 @@ enum CLI {
                 let version = commandLine.descriptionVersion
                 source = source.available(
                     while: { isOnInTheApp(id, version: version) },
-                    refusal: "\(source.name) is off in BriefBar. Turn it on in BriefBar's Settings to use it here."
+                    refusal: AgentAccess.refusal(source: source.name)
                 )
             }
             sources.append(source)
