@@ -111,7 +111,7 @@ public enum DetachedProgram {
     }
 
     /// When a process started, as macOS records it.
-    static func startTime(of pid: pid_t) -> Date? {
+    public static func startTime(of pid: pid_t) -> Date? {
         bsdInfo(of: pid).map(startTime)
     }
 
