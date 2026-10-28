@@ -975,6 +975,7 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
 | `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
+| `{project}/_apis/build/builds?repositoryId=…&branchName=refs/pull/{id}/merge` | every refresh while pipelines are visible: one per active PR you authored | its latest validation runs, up to 200 |
 | `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
 | `{project}/_apis/build/definitions?definitionIds=…` | when you search for a number in **Add Pipeline**, alongside the name search | the pipeline with that number, first |
@@ -1008,6 +1009,16 @@ go first, then the ones read longest ago; one that fails is tried again on the n
 less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
 the run changes. Stages are kept by organization, project and run, since run IDs are unique only
 within an organization.
+
+Below pinned pipelines, **Your Pull Requests** groups validation runs into one expandable card per
+active pull request you authored, including drafts and inactive PRs. Each card names the repository
+and PR number and summarizes the latest run of each pipeline; expanding it shows those runs' stages
+and failure details. Runs are scoped to the PR's repository and `refs/pull/{id}/merge`, not the latest
+run of that shared pipeline on another PR. Results from older commits are marked **Outdated** and
+excluded from the current pass/fail summary. If Azure DevOps doesn't provide enough commit information,
+the result says **Commit not verified**, rather than assuming it validates your latest changes.
+Cards disappear when the PR is merged or abandoned. This does not pin those pipelines, change pinned
+pipeline counts or widgets, or affect **After Your Merges**.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines

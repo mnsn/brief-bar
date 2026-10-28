@@ -121,7 +121,7 @@ public struct PullRequest: Sendable, Codable, Equatable, Identifiable {
     public var autoComplete: Bool
     public var sourceCommit: String?
     public var targetCommit: String?
-    /// The commit that merged it, once it's completed: its target branch's pipelines run on it.
+    /// The synthetic validation merge while active; once completed, the commit that merged into the target branch.
     public var mergeCommit: String?
 
     public var id: PRKey { key }
