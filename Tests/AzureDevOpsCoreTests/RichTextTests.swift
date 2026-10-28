@@ -110,6 +110,18 @@ private typealias Run = RichText.Run
         #expect(RichText(html: "<ol start=\"-3\"><li>A</li></ol>").blocks == [.listItem(.number(-3), depth: 0, [Run("A")])])
     }
 
+    @Test func readsATagThatNeverEndsOnce() {
+        // Every "<a " would otherwise be read to the end again: a long description would take minutes.
+        let html = "Start " + String(repeating: "<a ", count: 50_000) + "end"
+        var text = RichText()
+        let elapsed = ContinuousClock().measure { text = RichText(html: html) }
+        #expect(text.plainText == html)
+        #expect(elapsed < .seconds(3))
+        // What follows it is its text too, even what would be a tag in a value that never ends.
+        #expect(RichText(html: "Hi <a title=\"x <b>bold</b>").plainText == "Hi <a title=\"x <b>bold</b>")
+        #expect(RichText(html: "<b>Bold</b> <i").blocks == [.paragraph([Run("Bold", style: .bold), Run(" <i")])])
+    }
+
     @Test func keepsTheLookOfPastedText() {
         let text = RichText(html: """
             <span style="font-weight: 700">B</span><span style="text-decoration: line-through">S</span>\
@@ -185,6 +197,25 @@ private typealias Run = RichText.Run
         #expect(RichText(markdown: "- One\n    - Nested").blocks == [
             .listItem(.bullet, depth: 0, [Run("One")]), .listItem(.bullet, depth: 1, [Run("Nested")]),
         ])
+    }
+
+    @Test func keepsTabsInCode() {
+        // A Makefile's recipe needs its tab.
+        #expect(RichText(markdown: "```\nall:\n\tcc -o app main.c\n```").blocks == [.code("all:\n\tcc -o app main.c")])
+        #expect(RichText(markdown: "\tcode\twith a tab").blocks == [.code("code\twith a tab")])
+        #expect(RichText(markdown: "Run `a\tb` here").blocks == [.paragraph([Run("Run "), Run("a\tb", style: .code), Run(" here")])])
+        // A tab still indents as four spaces: a list in a list.
+        #expect(RichText(markdown: "- One\n\t- Nested").blocks == [
+            .listItem(.bullet, depth: 0, [Run("One")]), .listItem(.bullet, depth: 1, [Run("Nested")]),
+        ])
+    }
+
+    @Test func onlyAWholeFenceLineEndsCode() {
+        #expect(RichText(markdown: "~~~\n~~~not-a-close\ncode\n~~~~\nAfter").blocks == [
+            .code("~~~not-a-close\ncode"), .paragraph([Run("After")]),
+        ])
+        // A shorter fence doesn't end it either.
+        #expect(RichText(markdown: "````\n```\n````").blocks == [.code("```")])
     }
 
     @Test func readsQuotesInQuotesToADepth() {

@@ -270,9 +270,12 @@ struct Chip: View {
     let text: String
     var color: Color = .secondary
     var symbol: String? = nil
+    /// Takes no more than the width it's offered, cutting its text short, with all of it in its tooltip: for a chip that
+    /// may be long, such as a tag.
+    var fitsWidth = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        let chip = HStack(spacing: 3) {
             if let symbol {
                 Image(systemName: symbol)
                     .font(.system(size: 9, weight: .bold))
@@ -285,7 +288,12 @@ struct Chip: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 2.5)
         .background(Capsule().fill(color.opacity(0.14)))
-        .fixedSize()
+        .fixedSize(horizontal: !fitsWidth, vertical: true)
+        if fitsWidth {
+            chip.help(text)
+        } else {
+            chip
+        }
     }
 }
 

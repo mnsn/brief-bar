@@ -230,6 +230,12 @@ private struct HTMLReader {
         var index = html.startIndex
         while index < html.endIndex {
             if html[index] == "<", let tag = Tag.parse(html, at: index) {
+                if tag.kind == .unterminated {
+                    // A tag that never ends: what follows can't be told apart from its attributes, so the rest is text,
+                    // read once rather than again from every "<" in it.
+                    text(HTMLEntities.decode(html[index...]))
+                    break
+                }
                 index = tag.end
                 handle(tag)
             } else {
@@ -259,7 +265,7 @@ private struct HTMLReader {
             return
         }
         switch tag.kind {
-        case .ignored:
+        case .ignored, .unterminated:
             return
         case .open:
             if Self.skippedElements.contains(tag.name) {
@@ -570,7 +576,9 @@ private struct HTMLReader {
 
 /// An HTML tag, read leniently: names and attributes in any case, values quoted or not.
 private struct Tag {
-    enum Kind { case open, close, ignored }
+    /// An element's opening or closing tag; a comment, doctype or the like, which says nothing; or a tag whose ">" never
+    /// comes, which isn't one.
+    enum Kind { case open, close, ignored, unterminated }
 
     var kind: Kind
     var name: String
@@ -648,8 +656,8 @@ private struct Tag {
                 tag.attributes[attribute] = HTMLEntities.decode(html[valueStart..<index])
             }
         }
-        // No ">": not a tag after all.
-        return nil
+        // No ">", to the end: not a tag after all, nor is anything after it.
+        return Tag(kind: .unterminated, name: tag.name, end: html.endIndex)
     }
 }
 
@@ -732,8 +740,11 @@ private enum MarkdownReader {
     private static let quoteDepth = 8
 
     static func read(_ markdown: String, depth: Int = 0) -> [RichText.Block] {
-        let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false).map { String($0).replacingOccurrences(of: "\t", with: "    ") }
+        let raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
+        // structure. What's after the indentation, and code, keep their tabs.
+        let lines = raw.map(Self.expandingIndentation)
         var blocks: [RichText.Block] = []
         var pending: [String] = []
         var pendingKind = Pending.paragraph
@@ -783,7 +794,7 @@ private enum MarkdownReader {
                     let next = lines[index]
                     let nextIndent = next.prefix { $0 == " " }.count
                     guard next.trimmingCharacters(in: .whitespaces).isEmpty || nextIndent >= 4 else { break }
-                    code.append(String(next.dropFirst(min(4, nextIndent))))
+                    code.append(Self.droppingIndentation(raw[index], columns: 4))
                     index += 1
                 }
                 let text = code.joined(separator: "\n").trimmingCharacters(in: .newlines)
@@ -795,8 +806,8 @@ private enum MarkdownReader {
                 endList()
                 var code: [String] = []
                 index += 1
-                while index < lines.count, !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix(fence) {
-                    code.append(String(lines[index].dropFirst(min(indent, lines[index].prefix { $0 == " " }.count))))
+                while index < lines.count, !Self.closes(fence, lines[index]) {
+                    code.append(Self.droppingIndentation(raw[index], columns: indent))
                     index += 1
                 }
                 index += 1
@@ -906,6 +917,45 @@ private enum MarkdownReader {
         }
         flush()
         return blocks
+    }
+
+    /// A line that closes a code block: nothing but the fence's character, at least as many times.
+    private static func closes(_ fence: String, _ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.count >= fence.count && trimmed.allSatisfy { $0 == fence.first }
+    }
+
+    /// A line with its indentation in spaces, tabs going to the next multiple of four columns, and the rest as it is.
+    static func expandingIndentation(_ line: String) -> String {
+        var columns = 0
+        var index = line.startIndex
+        while index < line.endIndex, line[index] == " " || line[index] == "\t" {
+            columns = line[index] == "\t" ? (columns / 4 + 1) * 4 : columns + 1
+            index = line.index(after: index)
+        }
+        return String(repeating: " ", count: columns) + line[index...]
+    }
+
+    /// A line without up to `columns` columns of its indentation; a tab that goes past them leaves the rest of its width
+    /// in spaces.
+    static func droppingIndentation(_ line: String, columns: Int) -> String {
+        var column = 0
+        var index = line.startIndex
+        while index < line.endIndex, column < columns {
+            if line[index] == " " {
+                column += 1
+            } else if line[index] == "\t" {
+                let next = (column / 4 + 1) * 4
+                if next > columns {
+                    return String(repeating: " ", count: next - columns) + line[line.index(after: index)...]
+                }
+                column = next
+            } else {
+                break
+            }
+            index = line.index(after: index)
+        }
+        return String(line[index...])
     }
 
     /// The fence that opens a code block, such as "```".

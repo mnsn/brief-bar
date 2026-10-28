@@ -166,7 +166,7 @@ struct WorkItemDetailsPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
-                Chip(text: item.state, color: item.stateColor, symbol: item.stateSymbol)
+                Chip(text: item.state, color: item.stateColor, symbol: item.stateSymbol, fitsWidth: true)
                 if let reason = details.details?.reason, reason.caseInsensitiveCompare(item.state) != .orderedSame {
                     Text(reason)
                         .font(.system(size: 11.5))
@@ -267,7 +267,7 @@ struct WorkItemDetailsPanel: View {
                 property("Tags") {
                     FlowLayout(spacing: 5) {
                         ForEach(Array(read.item.tags.enumerated()), id: \.offset) { _, tag in
-                            Chip(text: tag, color: .secondary)
+                            Chip(text: tag, color: .secondary, fitsWidth: true)
                         }
                     }
                 }
