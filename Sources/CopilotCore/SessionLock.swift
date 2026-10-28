@@ -6,14 +6,27 @@ import Foundation
 /// the session meanwhile is one the app never sees, and the session's history forks. The CLI doesn't check for it.
 public enum SessionLock {
     /// Whether a program that's still running holds the session in `folder`. A lock left by one that's gone, as after the
-    /// app quits, doesn't count.
-    public static func isHeld(sessionFolder folder: URL, isRunning: (pid_t) -> Bool = SessionLock.isRunning) -> Bool {
-        holders(in: folder).contains(where: isRunning)
+    /// app quits, doesn't count; nor does one whose process ID a program that started after it was written has now, since
+    /// macOS reuses them.
+    public static func isHeld(
+        sessionFolder folder: URL, isRunning: (pid_t) -> Bool = SessionLock.isRunning,
+        startTime: (pid_t) -> Date? = DetachedProgram.startTime(of:)
+    ) -> Bool {
+        holders(in: folder).contains { lock in
+            guard isRunning(lock.pid) else { return false }
+            guard let written = lock.written, let started = startTime(lock.pid) else { return true }
+            // Start times and modification dates are both precise to well under a second.
+            return started <= written.addingTimeInterval(1)
+        }
     }
 
-    /// The programs that left a lock in the folder, by their process IDs.
-    static func holders(in folder: URL) -> [pid_t] {
-        ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).compactMap(pid(inLockNamed:))
+    /// The programs that left a lock in the folder, by their process IDs, with when each lock was written.
+    static func holders(in folder: URL) -> [(pid: pid_t, written: Date?)] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).compactMap { name in
+            guard let pid = pid(inLockNamed: name) else { return nil }
+            let attributes = try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(name).path)
+            return (pid, attributes?[.modificationDate] as? Date)
+        }
     }
 
     /// 123, from `inuse.123.lock`; nil for any other name.

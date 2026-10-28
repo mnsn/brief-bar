@@ -336,7 +336,7 @@ struct CopilotComposerView: View {
         } label: {
             menuLabel(choice.name, detail: detail(of: choice), selected: target?.id == choice.id)
         }
-        .disabled(choice.isBusy)
+        .disabled(choice.isUnavailable)
     }
 
     @ViewBuilder private func menuLabel(_ title: String, detail: String?, selected: Bool) -> some View {
@@ -358,7 +358,7 @@ struct CopilotComposerView: View {
     /// "on its branch · Spectre · users/robin/fix · 7m ago", "Fix Comments, done · 3h ago".
     private func detail(of choice: SessionChoice) -> String {
         var parts: [String] = []
-        if choice.isBusy { parts.append("working") }
+        if choice.isBusy { parts.append("working") } else if choice.isFolderBusy { parts.append("its folder is busy") }
         if let run = choice.run {
             if !choice.isBusy, let entry = store.entries.first(where: { $0.id == run.id }) {
                 parts.append(entry.status.phase.title.lowercased())
@@ -382,6 +382,7 @@ struct CopilotComposerView: View {
                 : "Copilot starts a new session, in a new worktree at the pull request's latest commit."
         }
         if target.isBusy { return "Copilot is still working in it." }
+        if target.isFolderBusy { return "Copilot is working in its folder for another task BriefBar sent." }
         switch target.kind {
         case .task(let run):
             let what = run.isAppSession == true ? "The Copilot app's session"
@@ -405,7 +406,7 @@ struct CopilotComposerView: View {
             .labelsHidden()
             .pickerStyle(.segmented)
             .fixedSize()
-            .disabled(cliProblem != nil || appProblem != nil || checkingSession != nil || target?.isBusy == true)
+            .disabled(cliProblem != nil || appProblem != nil || checkingSession != nil || target?.isUnavailable == true)
             .help("Open in Copilot copies the prompt and opens the session in the Copilot app, to paste and send. Run with the CLI goes on with it now, on its own.")
             ForEach([cliProblem, appProblem].compactMap { $0 }, id: \.self) { problem in
                 Text(problem)
@@ -520,7 +521,7 @@ struct CopilotComposerView: View {
         guard let target else {
             return !mustContinue && !isBusy && repository != nil && !isChecking && hasModel
         }
-        guard !target.isBusy else { return false }
+        guard !target.isUnavailable else { return false }
         switch delivery {
         case .app: return appProblem == nil
         case .cli: return !isBusy && hasModel && cliProblem == nil && checkingSession == nil
@@ -624,20 +625,23 @@ struct CopilotComposerView: View {
         if delivery == .app, appProblem != nil, cliProblem == nil { delivery = .cli }
     }
 
-    /// Whether the CLI can go on with the chosen session from here: not while Copilot works in it or the Copilot app has it
-    /// open, and for one of the app's, only in a repository, the pull request's clone for one.
+    /// Whether the CLI can go on with the chosen session from here: not while Copilot works in it or in its folder, or the
+    /// Copilot app has it open; and for one of the app's, not while another of its sessions runs in the same folder, and
+    /// only in a repository, the pull request's clone for one.
     private func checkSession() {
         cliProblem = nil
         checkingSession = nil
         guard let choice = target else { return }
         if choice.isBusy {
             cliProblem = "Copilot is still working in it."
+        } else if choice.isFolderBusy {
+            cliProblem = "Copilot is working in its folder for another task BriefBar sent."
         } else if choice.isOpenInApp {
             cliProblem = "The Copilot app has it open: Copilot can go on with it only there, where its history is."
         } else if let session = choice.appSession {
             checkingSession = session.id
             Task {
-                let problem = await store.cliProblem(for: session, subject: subject)
+                let problem = await store.cliProblem(for: session, subject: subject, others: choices.compactMap(\.appSession))
                 guard checkingSession == session.id, target?.id == session.id else { return }
                 checkingSession = nil
                 cliProblem = problem
@@ -699,9 +703,10 @@ struct CopilotComposerView: View {
             close()
             return
         }
-        // Copilot started working in it since the window opened.
-        if store.isWorking(inSession: target.id) {
-            self.target?.isBusy = true
+        // Copilot started working in it, or in its folder, since the window opened.
+        if store.busyReason(for: target) != nil {
+            self.target?.isBusy = store.isWorking(inSession: target.id)
+            self.target?.isFolderBusy = !(self.target?.isBusy ?? false)
             checkSession()
             return
         }

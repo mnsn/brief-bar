@@ -340,6 +340,94 @@ private struct DatabaseError: Error {
         store.stop()
     }
 
+    /// Two of the app's sessions can share a checkout. While a task of BriefBar's works in one, the other is unavailable
+    /// too: it isn't suggested or offered, isn't opened in the app, and no run starts in it, or their work would mix.
+    @Test func keepsOutOfAFolderThatATaskWorksInForAnotherSession() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, sessions: [
+            (onBranch, "Fix the totals", "project", "fix-totals", "shop", nil, "2026-10-27T10:00:00.000Z"),
+            (recorded, "Totals follow-up", "project", "fix-totals", "shop", pullRequest.url.absoluteString, "2026-10-26T10:00:00.000Z"),
+        ])
+        let checkout = home.appendingPathComponent("checkouts/shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        for id in [onBranch, recorded] {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("cwd: \(checkout.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+            try Data().write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        let store = store(home: home)
+        defer { store.stop() }
+        // Working on pull request 5000 in one of them, in a process that runs: this test's own stands in for it.
+        var working = run(onBranch, worktree: checkout, onPullRequest: 5000, ended: nil)
+        working.isAppSession = true
+        working.process = DetachedProgram.Handle(pid: getpid(), startedAt: nil)
+        store.settings.copilotRuns = [working]
+        #expect(store.isWorking(inFolder: checkout))
+        #expect(!store.isWorking(inFolder: home))
+
+        let choices = await store.sessionChoices(for: subject)
+        let other = try #require(choices.first { $0.id == recorded })
+        #expect(!other.isBusy)
+        #expect(other.isFolderBusy)
+        #expect(other.isUnavailable)
+        // Sharing the checkout, both are on the pull request's branch.
+        #expect(other.reasons == [.recordedByCopilot, .onItsBranch])
+        #expect(choices.first { $0.id == onBranch }?.isBusy == true)
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil, createdAt: nil) == nil)
+        #expect(store.busyReason(for: other)?.hasPrefix("Copilot is working in its folder") == true)
+
+        var opened = 0
+        store.openForTests = { _, _ in opened += 1; return true }
+        #expect(store.openInCopilot(other, prompt: "Fix the comments", handOff: nil) != nil)
+        #expect(opened == 0)
+        let session = try #require(other.appSession)
+        #expect(await store.cliProblem(for: session, subject: subject) == "Copilot is working in the same folder for another task BriefBar sent.")
+
+        let launched = Mutex(0)
+        store.launchForTests = { request, _, _ in
+            launched.withLock { $0 += 1 }
+            guard let run = request.continuing else { throw LaunchError.couldntStart("no session") }
+            return run
+        }
+        let appRun = try #require(store.appRun(for: session, subject: subject, options: CopilotModel.standard))
+        store.send(subject, prompt: "Fix the comments", options: CopilotModel.standard, repository: checkout, continuing: appRun)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(launched.withLock { $0 } == 0)
+        #expect(store.pending.isEmpty)
+
+        // Once that task is done, the folder is free again.
+        store.settings.copilotRuns[0].process = DetachedProgram.Handle(pid: 0, startedAt: nil)
+        #expect(!store.isWorking(inFolder: checkout))
+        #expect(store.busyReason(for: other) == nil)
+    }
+
+    /// Another of the app's sessions that works in the same folder and runs a turn now keeps the CLI out of it: only you
+    /// decide, in the app, whether both work there.
+    @Test func doesNotRunWhereAnotherAppSessionRunsATurn() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checkout = home.appendingPathComponent("checkouts/shop-web", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        for id in [onBranch, recorded] {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("cwd: \(checkout.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+            try Data().write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        let store = store(home: home)
+        let session = AppSession(id: onBranch, name: "Fix the totals")
+        let busy = AppSession(id: recorded, name: "Totals follow-up", isRunning: true)
+        #expect(await store.cliProblem(for: session, subject: subject, others: [session, busy])
+            == "Another Copilot session is working in the same folder now, so Copilot won't work there on its own.")
+        // Idle, it doesn't: the checks go on, to whether the folder is a clone of the pull request's repository.
+        var idle = busy
+        idle.isRunning = false
+        let problem = await store.cliProblem(for: session, subject: subject, others: [session, idle])
+        #expect(problem?.contains("isn't a git repository") == true)
+    }
+
     // MARK: Prompts
 
     /// Where Copilot works decides the prompt: BriefBar's worktree at the pull request's latest commit, for a new session
@@ -506,6 +594,7 @@ private struct DatabaseError: Error {
         #expect(store.latest(for: item)?.id == opener)
         #expect(store.entries.count == 1)
         #expect(store.isWorking(inSession: opener))
+        #expect(store.isWorking(inFolder: worktree))
         #expect(store.taskChoices(for: subject).first?.isBusy == true)
         #expect(store.continuable(forPullRequest: key) == nil)
 
@@ -519,6 +608,7 @@ private struct DatabaseError: Error {
         #expect(failed.run == opened)
         #expect(store.settings.copilotRuns == [opened])
         #expect(!store.isWorking(inSession: opener))
+        #expect(!store.isWorking(inFolder: worktree))
         let retry = try #require(store.continuable(forPullRequest: key))
         #expect(retry == opened)
 

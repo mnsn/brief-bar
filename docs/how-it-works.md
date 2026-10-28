@@ -1095,7 +1095,9 @@ one. What BriefBar finds while the composer is open changes where a task goes on
 session or change the prompt (`CopilotComposerView.followsSuggestions`). A session that a task of
 BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
 its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
-suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it.
+suggested, can't be chosen, and BriefBar neither opens it in the app nor starts another run in it. So
+is one that works in the same folder as such a task (`CopilotTasksStore.busyFolders`), since two of the
+app's sessions can share a checkout, and their work would mix.
 
 The prompt is for where Copilot works (`CopilotComposerView.writtenPrompt`). A pull request's is for a
 worktree of BriefBar's, detached at its latest commit, for a new session and a pull request task's
@@ -1121,7 +1123,8 @@ there:
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
-  following a link, which for a pull request has to be a clone of its repository. A run in one of the
+  following a link, which for a pull request has to be a clone of its repository, and in which no other
+  of the app's sessions runs a turn now, by the app's own flag. A run in one of the
   app's sessions keeps `isAppSession`, so **Remove Worktree…** never deletes that folder and its menu
   opens the session in the app rather than in Terminal. Going on with the work item's task that opened
   a pull request, the task stays that work item's too, and shows on the pull request's row as soon as you
@@ -1134,7 +1137,8 @@ app never sees: tried with the Copilot CLI 1.0.105, the app answered its next me
 and the session's log then held both, forked. The CLI doesn't check for the lock, so BriefBar does, for
 every session it goes on with: while a running program holds one, **Run with the CLI** isn't offered,
 the launcher refuses (`LaunchError.openInApp`), looking again after its git commands, right before it
-starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count. Nothing keeps the app
+starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count, nor does one whose
+process ID belongs to a program that started after the lock was written, since macOS reuses them. Nothing keeps the app
 from opening a session while the CLI works in it, so the composer asks you not to until Copilot is done.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in

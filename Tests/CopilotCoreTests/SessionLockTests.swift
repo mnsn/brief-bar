@@ -20,13 +20,39 @@ import Testing
             // The app leaves a lock behind when it quits: that one doesn't count.
             try Data().write(to: folder.appendingPathComponent("inuse.4242.lock"))
             try Data().write(to: folder.appendingPathComponent("inuse.4242.hold"))
-            #expect(!SessionLock.isHeld(sessionFolder: folder) { _ in false })
-            #expect(SessionLock.isHeld(sessionFolder: folder) { $0 == 4242 })
+            #expect(!SessionLock.isHeld(sessionFolder: folder, isRunning: { _ in false }))
+            #expect(SessionLock.isHeld(sessionFolder: folder, isRunning: { $0 == 4242 }, startTime: { _ in nil }))
             // This test's own process stands in for the app's.
             try Data("\(getpid())\n".utf8).write(to: folder.appendingPathComponent("inuse.\(getpid()).lock"))
             #expect(SessionLock.isHeld(sessionFolder: folder))
         }
         #expect(!SessionLock.isHeld(sessionFolder: URL(fileURLWithPath: "/nonexistent")))
+    }
+
+    /// macOS reuses process IDs: a lock whose process ID belongs to a program that started after the lock was written was
+    /// left by one that's gone, and doesn't count.
+    @Test func doesNotTakeAReusedProcessIDForTheLocksProgram() throws {
+        try withTemporaryDirectory { folder in
+            let lock = folder.appendingPathComponent("inuse.4242.lock")
+            try Data("4242\n".utf8).write(to: lock)
+            let written = Date(timeIntervalSince1970: 1_792_000_000)
+            try FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: lock.path)
+            let running: (pid_t) -> Bool = { $0 == 4242 }
+            // Started before the lock was written: it's the program that wrote it.
+            #expect(SessionLock.isHeld(sessionFolder: folder, isRunning: running, startTime: { _ in written.addingTimeInterval(-60) }))
+            // Started after: another program has its ID now.
+            #expect(!SessionLock.isHeld(sessionFolder: folder, isRunning: running, startTime: { _ in written.addingTimeInterval(60) }))
+            // Without its start time, it counts.
+            #expect(SessionLock.isHeld(sessionFolder: folder, isRunning: running, startTime: { _ in nil }))
+        }
+        // This test's own process, which started before a lock it writes now, and after one written long ago.
+        try withTemporaryDirectory { folder in
+            let lock = folder.appendingPathComponent("inuse.\(getpid()).lock")
+            try Data().write(to: lock)
+            #expect(SessionLock.isHeld(sessionFolder: folder))
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 0)], ofItemAtPath: lock.path)
+            #expect(!SessionLock.isHeld(sessionFolder: folder))
+        }
     }
 
     @Test func readsAValueFromASessionsWorkspace() {

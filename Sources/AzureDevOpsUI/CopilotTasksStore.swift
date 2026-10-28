@@ -122,6 +122,9 @@ final class CopilotTasksStore: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     /// Your login shell's environment, asked for again with each send.
     private var loginEnvironment: [String: String]?
+    /// Where each send that goes on with a session works, by the session's ID, while it gets ready: no other task goes there
+    /// meanwhile.
+    private var continuingFolders: [String: URL] = [:]
 
     /// Where what each run prints goes: its last words, or why it couldn't start.
     nonisolated static let outputFolder = UserHome.url.appendingPathComponent("Library/Application Support/BriefBar/Copilot", isDirectory: true)
@@ -327,9 +330,10 @@ final class CopilotTasksStore: ObservableObject {
         handOff: CommentHandOff? = nil
     ) {
         guard canSend, isOn else { return }
-        // A second run in a session Copilot still works in would fork its history.
-        if let continuing, isWorking(inSession: continuing.id) {
-            Log.app.error("Didn't send a task to Copilot: it still works in that session")
+        // A second run in a session Copilot still works in would fork its history; one in a folder it works in, for another
+        // session, would mix their work up, as when two of the Copilot app's sessions share a checkout.
+        if let continuing, isWorking(inSession: continuing.id) || isWorking(inFolder: continuing.worktree) {
+            Log.app.error("Didn't send a task to Copilot: it still works in that session or its folder")
             return
         }
         // An app's session's folder is no repository to start new work in.
@@ -352,7 +356,8 @@ final class CopilotTasksStore: ObservableObject {
         }
         pending.removeAll { $0.id == id }
         pending.append(entry)
-        if continuing != nil {
+        if let continuing {
+            continuingFolders[id] = continuing.worktree
             statuses[id] = entry.status
             // Going on with it: you're not stopping this one.
             if let index = settings.copilotRuns.firstIndex(where: { $0.id == id }) {
@@ -382,6 +387,7 @@ final class CopilotTasksStore: ObservableObject {
                 }
                 startedHere.insert(id)
                 pending.removeAll { $0.id == id }
+                continuingFolders[id] = nil
                 statuses[id] = nil
                 if let index = settings.copilotRuns.firstIndex(where: { $0.id == id }) {
                     settings.copilotRuns[index] = run
@@ -393,6 +399,7 @@ final class CopilotTasksStore: ObservableObject {
                 refresh()
             } catch {
                 Log.app.error("Couldn't send a task to Copilot: \(Self.kind(of: error), privacy: .public)")
+                continuingFolders[id] = nil
                 let status = RunStatus(phase: .failed, since: Date(), detail: String(describing: error))
                 if let index = pending.firstIndex(where: { $0.id == id }) {
                     pending[index].status = status
@@ -404,6 +411,29 @@ final class CopilotTasksStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// The folders that tasks of BriefBar's work in now: those of sends that go on with a session, while they get ready,
+    /// and those of runs whose Copilot process still runs. A new task's worktree is its own.
+    func busyFolders() -> Set<String> {
+        var folders = Set<String>()
+        for entry in pending where entry.status.phase.isActive {
+            if let folder = continuingFolders[entry.id] { folders.insert(Self.folderKey(folder)) }
+        }
+        for run in settings.copilotRuns where run.ended == nil && DetachedProgram.isRunning(run.process) {
+            folders.insert(Self.folderKey(run.worktree))
+        }
+        return folders
+    }
+
+    /// Whether a task of BriefBar's works in the folder now, in any session (`busyFolders`).
+    func isWorking(inFolder folder: URL) -> Bool {
+        busyFolders().contains(Self.folderKey(folder))
+    }
+
+    /// A folder's path, to compare it with another's however each is written.
+    nonisolated static func folderKey(_ folder: URL) -> String {
+        folder.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// What went wrong, without paths or names, for the log.
