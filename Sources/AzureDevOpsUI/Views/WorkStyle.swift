@@ -111,14 +111,14 @@ extension WorkItem {
     /// "3h", "1.5h".
     var remainingText: String? {
         guard let hours = remainingWork, hours > 0, !isDone else { return nil }
-        return hours.rounded() == hours ? "\(Int(hours))h" : String(format: "%.1fh", hours)
+        return Int(exactly: hours).map { "\($0)h" } ?? String(format: "%.1fh", hours)
     }
 }
 
 /// Hours of work: "22 h", "1.5 h".
 enum Hours {
     static func text(_ value: Double) -> String {
-        value.rounded() == value ? "\(Int(value)) h" : String(format: "%.1f h", value)
+        Int(exactly: value).map { "\($0) h" } ?? String(format: "%.1f h", value)
     }
 }
 

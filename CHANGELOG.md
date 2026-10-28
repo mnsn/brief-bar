@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **See a work item's details without leaving BriefBar.** Click a story, bug or task on the Sprint
+  page and its details open beside the board: its state, who has it and its reason, its description,
+  acceptance criteria or repro steps, its fields, its tasks and related work items, its attachments
+  and its discussion. Click its parent, a task or a related work item to go to it, and **‹** to come
+  back. **Open in Azure DevOps** opens it there, to change it, as right-clicking it on the board still
+  does. In a narrow window the details cover the board; **✕** or Esc closes them. Clicking one of your
+  work items in the Sprint list or widget now opens its details in BriefBar's window too. BriefBar
+  reads a work item's details only when you open them, and again when it changes while they show, and
+  keeps them in memory only. It draws their text itself, so nothing they link to or embed, such as
+  images, is loaded until you click it, in your browser. Since Azure DevOps now reads this, it asks you
+  to look at what it reads once more after the update.
+
 ## 0.8.2 - 2026-10-28
 
 - **Choose when Copilot completions move to Idle.** Finished and stopped sessions stay in their

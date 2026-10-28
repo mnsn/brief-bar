@@ -183,3 +183,176 @@ extension DemoData {
         return [shopWeb, payments, release, nightly]
     }
 }
+
+// MARK: - Work item details
+
+extension DemoData {
+    /// A made-up sprint work item's details: what it's about, as HTML or Markdown, its links and its discussion. Nil for a
+    /// work item the made-up sprint doesn't have.
+    public static func workItemDetails(
+        organization: String, id: Int, now: Date = Date(), calendar: Calendar = .current
+    ) -> WorkItemDetails? {
+        let board = sprintBoard(now: now, calendar: calendar)
+        let items = board.rows.flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+        guard organization.caseInsensitiveCompare(self.organization) == .orderedSame,
+              var item = items.first(where: { $0.id == id })
+        else { return nil }
+        func ago(hours: Double) -> Date { now.addingTimeInterval(-hours * 3_600) }
+        let made = demoDetails(id)
+        item.tags = made.tags
+
+        var links: [WorkItemDetails.Link] = []
+        if let parent = items.first(where: { $0.id == item.parentId }) {
+            links.append(WorkItemDetails.Link(kind: .parent, name: "Parent", workItemId: parent.id, item: parent))
+        }
+        for child in items where child.parentId == id {
+            links.append(WorkItemDetails.Link(kind: .child, name: "Child", workItemId: child.id, item: child))
+        }
+        for related in made.related {
+            links.append(WorkItemDetails.Link(kind: .other, name: "Related", workItemId: related, item: items.first { $0.id == related }))
+        }
+        var texts: [WorkItemDetails.LongText] = []
+        for (field, title, text) in [
+            ("System.Description", "Description", made.description),
+            ("Microsoft.VSTS.TCM.ReproSteps", "Repro Steps", made.reproSteps),
+            ("Microsoft.VSTS.TCM.SystemInfo", "System Info", made.systemInfo),
+            ("Microsoft.VSTS.Common.AcceptanceCriteria", "Acceptance Criteria", made.acceptanceCriteria),
+        ] {
+            guard let text else { continue }
+            let rich = field == "System.Description" && made.isMarkdown ? RichText(markdown: text) : RichText(html: text)
+            texts.append(WorkItemDetails.LongText(id: field, title: title, text: rich))
+        }
+        let comments = made.comments.enumerated().map { index, comment in
+            WorkItemDetails.Comment(
+                id: id * 10 + made.comments.count - index, author: comment.author, createdAt: ago(hours: comment.hoursAgo),
+                text: RichText(html: comment.html)
+            )
+        }
+        let reason: String? = switch item.category {
+        case .proposed: "New"
+        case .inProgress, .resolved: "Work started"
+        case .completed: "Work finished"
+        case .removed: nil
+        }
+        return WorkItemDetails(
+            item: item, reason: reason, areaPath: made.area, iterationPath: sprint(now: now, calendar: calendar).path,
+            priority: made.priority, severity: made.severity, size: made.size, sizeTitle: "Story Points", originalEstimate: made.estimate,
+            completedWork: made.completed, activity: made.activity, createdBy: made.createdBy ?? item.assignedTo ?? sam,
+            createdAt: ago(hours: made.createdDaysAgo * 24), changedBy: item.assignedTo ?? sam, texts: texts, links: links,
+            resources: made.resources, comments: comments, readAt: now
+        )
+    }
+
+    private struct DemoDetails {
+        var description: String?
+        var isMarkdown = false
+        var reproSteps: String?
+        var systemInfo: String?
+        var acceptanceCriteria: String?
+        /// Newest first.
+        var comments: [(author: Person, hoursAgo: Double, html: String)] = []
+        var related: [Int] = []
+        var resources: [WorkItemDetails.Resource] = []
+        var size: Double?
+        var priority: Int? = 2
+        var severity: String?
+        var estimate: Double?
+        var completed: Double?
+        var activity: String?
+        var area = "Storefront\\Checkout"
+        var tags: [String] = []
+        var createdBy: Person?
+        var createdDaysAgo: Double = 6
+    }
+
+    private static func demoDetails(_ id: Int) -> DemoDetails {
+        switch id {
+        case 5101:
+            return DemoDetails(
+                description: """
+                    <div>As a shopper, I want to <b>save items for later</b> from my cart, so I can buy them another time without \
+                    looking for them again.</div><div><br></div><div>Saved items belong to the account, not the device:</div>\
+                    <ul><li>They show under the cart, newest first</li><li>One click moves an item back to the cart</li>\
+                    <li>An account keeps up to <b>50</b>; saving more drops the oldest</li></ul>\
+                    <div>Design: <a href="https://www.figma.com/">Cart › Saved for later</a></div>
+                    """,
+                acceptanceCriteria: """
+                    <ol><li>A signed-in shopper can save any item in the cart</li><li>Saved items are still there after signing \
+                    in on another device</li><li>An item that's out of stock says so, and can't be moved back</li></ol>
+                    """,
+                comments: [
+                    (me, 3, "<div>Only signed-in shoppers for now. Guests get a prompt to sign in when they try.</div>"),
+                    (priya, 20, "<div>Do we keep saved items for guests too, or only for signed-in shoppers?</div>"),
+                    (sam, 50, """
+                        <div>The design is in Figma, under <i>Cart › Saved for later</i>. \
+                        <a href="#" data-vss-mention="version:2.0,a001">@Robin Diaz</a> ping me if anything's unclear.</div>
+                        """),
+                ],
+                size: 5, area: "Storefront\\Cart", tags: ["cart", "web"], createdBy: sam, createdDaysAgo: 9
+            )
+        case 5103:
+            return DemoDetails(
+                description: """
+                    Show the **Saved for later** list under the cart's items.
+
+                    - Reuse `CartItemRow`, without the quantity stepper
+                    - Say *Nothing saved yet* when there's nothing
+                    - [x] Read saved items from the cart service
+                    - [ ] Move an item back with **Move to Cart**
+
+                    Spacing is in the [design](https://www.figma.com/).
+                    """,
+                isMarkdown: true,
+                comments: [(alex, 5, "<div>Use the cart's 48 pt thumbnails, so both lists line up.</div>")],
+                estimate: 5, completed: 2, activity: "Development", area: "Storefront\\Cart", tags: ["web"], createdDaysAgo: 6
+            )
+        case 5110:
+            return DemoDetails(
+                reproSteps: """
+                    <ol><li>Add a <b>$19.99</b> item to the cart</li><li>Apply the coupon <code>SAVE15</code></li>\
+                    <li>Look at the total</li></ol><div><b>Expected:</b> $16.99</div><div><b>Actual:</b> $16.98</div>
+                    """,
+                systemInfo: "<div>Storefront web 3.42.0 · Safari 26 · macOS 26.1</div>",
+                comments: [
+                    (me, 2, "<div>I'll round half up in the coupon service, and add tests for every currency.</div>"),
+                    (priya, 26, """
+                        <div>Only totals with half a cent are off: <code>CouponService.Apply</code> truncates instead of \
+                        rounding.</div>
+                        """),
+                ],
+                related: [5120],
+                resources: [WorkItemDetails.Resource(
+                    kind: .attachment, name: "coupon-total.png",
+                    url: URL(string: "https://dev.azure.com/contoso/Storefront/_apis/wit/attachments/0a1b2c3d?fileName=coupon-total.png")!
+                )],
+                size: 3, priority: 1, severity: "2 - High", tags: ["coupons"], createdBy: priya, createdDaysAgo: 4
+            )
+        case 5112:
+            return DemoDetails(
+                description: """
+                    <div>Round discounted totals <b>half up</b> to the cent, as finance asked, instead of truncating them.</div>\
+                    <pre>var total = Math.Round(amount, 2, MidpointRounding.AwayFromZero);</pre>
+                    """,
+                estimate: 3, completed: 1, activity: "Development", tags: ["coupons"], createdDaysAgo: 3
+            )
+        case 5120:
+            return DemoDetails(
+                description: "<div>Shoppers can pay with a gift card, on its own or with a card for the rest.</div>",
+                acceptanceCriteria: """
+                    <div>What the shopper's card is charged:</div><table><tr><th>Gift card balance</th><th>Order total</th>\
+                    <th>Charged to the card</th></tr><tr><td>$50.00</td><td>$30.00</td><td>$0.00</td></tr><tr><td>$20.00</td>\
+                    <td>$30.00</td><td>$10.00</td></tr></table>
+                    """,
+                comments: [(maria, 30, "<div>The field's design is done: it goes under the payment methods.</div>")],
+                size: 8, area: "Storefront\\Payments", tags: ["payments"], createdBy: alex, createdDaysAgo: 12
+            )
+        case 5150:
+            return DemoDetails(
+                description: "<div>Walk through saving for later and paying with a gift card, on staging.</div>",
+                estimate: 1, activity: "Documentation", createdDaysAgo: 2
+            )
+        default:
+            return DemoDetails()
+        }
+    }
+}

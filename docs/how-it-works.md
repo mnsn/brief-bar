@@ -974,6 +974,9 @@ that account can read. They start in windows only, hidden in the menu bar and in
 | `{project}/{team}/_apis/work/backlogconfiguration` | once per team | which work item types are tasks, and each state's category |
 | `{project}/{team}/_apis/work/teamsettings/iterations/{id}/workitems` | every refresh | the sprint's work items, and which task is under which story or bug |
 | `_apis/wit/workitems?ids=…&fields=…` | every refresh, 200 work items a request | their type, title, state, who has them, hours left and backlog order |
+| `_apis/wit/workitems/{id}?$expand=relations` | when you open a work item's details, unless they were read less than a minute ago; and again when the sprint shows it changed while they show | all its fields, its links, attachments and web pages, and which of its long text fields are Markdown |
+| `{project}/_apis/wit/workItems/{id}/comments?$top=50&order=desc&$expand=renderedText` | with it | its latest 50 comments, as written and as HTML, and how many it has |
+| `_apis/wit/workitems?ids=…&fields=…` | with it, for a work item that links to others: one request, for up to 200 | what the work items it links to are, and where they stand |
 | `{project}/_apis/build/builds?definitions=…&maxBuildsPerDefinition=12` | every refresh: one per project (and branch) for all its pinned pipelines | their recent runs |
 | `{project}/_apis/build/builds/{id}/timeline` | every refresh for a latest run in progress, once when it finishes (again if it's retried); up to six a refresh | its stages, and where it failed |
 | `{project}/_apis/build/definitions?name=*…*` | when you search in **Add Pipeline** | pipelines to pin |
@@ -999,6 +1002,27 @@ isn't in the sprint are together in a card of their own. **Just Mine** keeps you
 with all their tasks, and your tasks under anyone else's. Your work, in the summary, the sidebar, the
 widget and the menu bar, is your tasks, and your stories and bugs without tasks, that aren't done.
 
+**A work item's details.** A click on a story, bug or task shows its details beside the board, or over
+it when the page is narrower than 700 points (`WorkItemDetailsStore`, `WorkItemDetailsPanel`): what
+the sprint knows of it at once, then what's read of it (`WorkItemDetailsReader`). The work item comes
+with all its fields and its links, and its comments at the same time, through its project: when the
+sprint doesn't know its project, its comments are read after it, and when it moved to another
+project, they're read again through that one. Then one request reads what the work items it links to
+are. A work item that can't be read says why, with **Sign In…** when that's the reason; comments that
+can't be read leave the rest. Its long text fields come as HTML, or as Markdown for those switched to
+it (`multilineFieldsFormat`), and its comments as HTML too (`renderedText`). BriefBar draws them
+itself (`RichText`, `RichTextView`), without a web view: headings, lists and task lists, quotes, code,
+tables, links and their styles. Scripts and styles are left out, only links to web pages and email
+addresses open (in your browser), and an image is a link to it, never loaded. What's read stays in
+memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but for
+the details on screen, which stay while they show; it shows again without being read for a minute.
+The sprint's refresh tells when a work item changed (`System.ChangedDate`), which reads its details
+again while they show. Another team's sprint closes them. Its parent, its tasks and related work items
+open in the details too, and **‹** goes back. A link to a work item in another organization, such as a
+remote link, opens there, in your browser: its ID names another work item in this organization. A click on one of your work items in a
+menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no
+window shows that page: then it opens in Azure DevOps.
+
 **Pipelines.** A pinned pipeline shows its twelve latest runs, or its latest runs of one branch. Its
 latest run's stages come from the run's timeline: its stages in order or, for a pipeline without
 stages, its jobs. A stage waiting for an approval or a check is shown as waiting. When the run
@@ -1011,8 +1035,8 @@ within an organization.
 
 In a window, each section has a page of its own, in the translucent look of BriefBar's windows; in a
 menu-bar item's list and in a widget, the Sprint section lists your own work, and the Pipelines
-section each pinned pipeline's latest run. In a list, each one's title opens its page, and the
-sprint's footer its task board in Azure DevOps.
+section each pinned pipeline's latest run. In a list, each one's title opens its page, one of your
+work items its details on the Sprint page, and the sprint's footer its task board in Azure DevOps.
 
 ### Send work to Copilot
 

@@ -3,10 +3,12 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// The Sprint section's part of a desktop widget: your work in the current sprint, what's in progress first.
+/// The Sprint section's part of a desktop widget: your work in the current sprint, what's in progress first. A click on one
+/// shows its details on the Sprint page, in BriefBar's window.
 struct SprintWidgetSection: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var details: WorkItemDetailsStore
     let rows: Int
     @Environment(\.interfaceOptions) private var options
     /// In a widget, its header moves it; in a popover, it doesn't, and its title opens the Sprint page.
@@ -96,7 +98,7 @@ struct SprintWidgetSection: View {
             VStack(spacing: 0) {
                 ForEach(visible) { item in
                     WidgetWorkRow(item: item, parent: sprint.board?.rows.first { $0.tasks.contains(item) }?.parent) {
-                        sprint.open(item)
+                        details.reveal(item)
                     }
                     .frame(height: options.compactRowHeight)
                 }
@@ -217,13 +219,16 @@ private struct WorkWidgetPlaceholder: View {
 }
 
 /// One of your tasks in the widget: its state, title and hours left, and the story it's for; and how its send to
-/// Copilot stands, if you sent it.
+/// Copilot stands, if you sent it. A click shows its details in BriefBar's window; in Azure DevOps when no window shows the
+/// Sprint page.
 private struct WidgetWorkRow: View {
     let item: WorkItem
     let parent: WorkItem?
     let action: () -> Void
 
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var sprint: SprintStore
+    @EnvironmentObject private var services: AppServices
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
 
@@ -271,17 +276,26 @@ private struct WidgetWorkRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help("\(item.type) \(item.id): \(item.title)\nClick to open in Azure DevOps")
+        .help("\(item.type) \(item.id): \(item.title)\n" + (opensDetails ? "Click to see its details in BriefBar" : "Click to open in Azure DevOps"))
         .contextMenu {
-            Button("Open in Azure DevOps", action: action)
+            if opensDetails {
+                Button("Show Details", action: action)
+            }
+            Button("Open in Azure DevOps") { sprint.open(item) }
             CopilotSendMenuItems(item: item)
             LinkMenuItems(item.linkRef)
         }
-        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) {
+        .rowActions(for: item.title, openTitle: opensDetails ? "Show Details" : "Open in Azure DevOps", open: action) {
+            if opensDetails {
+                Button("Open in Azure DevOps") { sprint.open(item) }
+            }
             CopilotSendMenuItems(item: item)
             LinkMenuItems(item.linkRef)
         }
     }
+
+    /// A click shows its details in a window, which has the Sprint page.
+    private var opensDetails: Bool { services.hasPage(.azureDevOpsSprint) }
 }
 
 /// A pinned pipeline in the widget, and in a list by state: how its latest run went, and its stages as dots.
