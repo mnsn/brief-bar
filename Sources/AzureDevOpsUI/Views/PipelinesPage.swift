@@ -3,8 +3,7 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// The Pipelines section's page, in a window or a popover: the pipelines that ran after your merges, and the pipelines
-/// you pinned, with their latest run's stages and their recent runs.
+/// The Pipelines page: runs after your merges, pinned pipelines, and validation runs grouped by your active PRs.
 struct PipelinesPage: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @EnvironmentObject private var store: PRStore
@@ -25,10 +24,10 @@ struct PipelinesPage: View {
                 .glassButtonStyle()
                 .help("Pin pipelines to follow here and in widgets")
             }
-            if pipelines.statuses.isEmpty && pipelines.problem == nil && store.merges.isEmpty {
+            if pipelines.statuses.isEmpty && pipelines.pullRequests.isEmpty && pipelines.problem == nil && store.merges.isEmpty {
                 if pipelines.hasLoaded || pipelines.settings.pinnedPipelines.isEmpty {
                     EmptyPage(symbol: "point.3.connected.trianglepath.dotted", title: "Follow your pipelines",
-                              message: "Pin the pipelines you care about to see their latest runs, and each run's stages, here and in widgets.") {
+                              message: "Pin pipelines to follow their runs here and in widgets. Your active pull requests' pipelines also appear here, grouped by pull request.") {
                         Button("Add Pipeline…") { add() }
                             .buttonStyle(.borderedProminent)
                     }
@@ -50,13 +49,20 @@ struct PipelinesPage: View {
                             ForEach(store.merges) { merge in
                                 MergeCard(merge: merge, now: store.now)
                             }
-                            if !pipelines.statuses.isEmpty {
-                                PipelinesTitle(symbol: "pin.fill", title: "Pinned", count: pipelines.statuses.count)
-                                    .padding(.top, 6)
-                            }
+                        }
+                        if !pipelines.statuses.isEmpty && (!store.merges.isEmpty || !pipelines.pullRequests.isEmpty) {
+                            PipelinesTitle(symbol: "pin.fill", title: "Pinned", count: pipelines.statuses.count)
+                                .padding(.top, 6)
                         }
                         ForEach(pipelines.statuses) { status in
                             PipelineCard(status: status, now: store.now)
+                        }
+                        if !pipelines.pullRequests.isEmpty {
+                            PipelinesTitle(symbol: "arrow.triangle.pull", title: "Your Pull Requests", count: pipelines.pullRequests.count)
+                                .padding(.top, 6)
+                            ForEach(pipelines.pullRequests) { pr in
+                                PullRequestPipelinesCard(pullRequest: pr, now: store.now)
+                            }
                         }
                     }
                 }
@@ -79,14 +85,78 @@ struct PipelinesPage: View {
     private var subtitle: String {
         let statuses = pipelines.statuses
         let merges = store.merges.count
-        guard !statuses.isEmpty || merges > 0 else { return "Pipelines you pin, at a glance" }
+        let prs = pipelines.pullRequests.count
+        guard !statuses.isEmpty || merges > 0 || prs > 0 else { return "Pinned pipelines and your pull requests" }
         let counts = pipelines.counts
         var parts: [String] = []
         if merges > 0 { parts.append(merges == 1 ? "1 merge" : "\(merges) merges") }
         if !statuses.isEmpty { parts.append("\(statuses.count) pinned") }
+        if prs > 0 { parts.append(prs == 1 ? "1 pull request" : "\(prs) pull requests") }
         if counts.failed > 0 { parts.append("\(counts.failed) failed") }
         if counts.running > 0 { parts.append("\(counts.running) running") }
         return parts.joined(separator: " · ")
+    }
+}
+
+private struct PullRequestPipelinesCard: View {
+    let pullRequest: PullRequestPipelines
+    let now: Date
+
+    @LocalState private var isExpanded = false
+    @LocalState private var isHovered = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                if pullRequest.pipelines.isEmpty {
+                    Text(pullRequest.headline)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(pullRequest.pipelines) { status in
+                    VStack(alignment: .leading, spacing: 4) {
+                        switch pullRequest.revision(of: status) {
+                        case .outdated:
+                            Label("Outdated - built an earlier commit", systemImage: "clock.arrow.circlepath")
+                                .foregroundStyle(.orange)
+                        case .unknown:
+                            Label("Commit not verified", systemImage: "questionmark.circle")
+                                .foregroundStyle(.secondary)
+                        case .current:
+                            EmptyView()
+                        }
+                        MergeRunRow(status: status, now: now)
+                        if !status.stages.isEmpty {
+                            StageFlow(stages: status.stages, now: now)
+                        }
+                    }
+                    .font(.system(size: 11))
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Button {
+                    AzureDevOps.open(pullRequest.url)
+                } label: {
+                    Text(pullRequest.pullRequest.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help("Open pull request in Azure DevOps")
+                Text("\(pullRequest.pullRequest.repositoryName) · !\(pullRequest.id.number) · \(pullRequest.headline)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(14)
+        .background(GlassCard(cornerRadius: 20, isHovered: isHovered))
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open Pull Request") { AzureDevOps.open(pullRequest.url) }
+        }
     }
 }
 

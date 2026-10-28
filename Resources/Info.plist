@@ -24,7 +24,7 @@
 	<string>APPL</string>
 	<!-- The build sets CFBundleVersion to this version too: Sparkle compares it to find updates. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.8.2</string>
+	<string>0.8.3</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>

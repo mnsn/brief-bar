@@ -297,6 +297,15 @@ public enum ADOEndpoint {
         return url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds"], query)
     }
 
+    /// Recent validation runs scoped to one repository and pull request, newest first.
+    public static func pullRequestBuilds(_ pr: PullRequest) -> URL {
+        url("https://dev.azure.com", [pr.key.organization, pr.projectId, "_apis", "build", "builds"], [
+            ("repositoryId", pr.repositoryId), ("repositoryType", "TfsGit"),
+            ("branchName", "refs/pull/\(pr.key.number)/merge"), ("queryOrder", "queueTimeDescending"),
+            ("maxBuildsPerDefinition", "1"), ("$top", "200"), ("api-version", apiVersion),
+        ])
+    }
+
     /// A run's stages, jobs and tasks.
     public static func timeline(organization: String, projectId: String, buildId: Int) -> URL {
         url("https://dev.azure.com", [organization, projectId, "_apis", "build", "builds", String(buildId), "timeline"],
