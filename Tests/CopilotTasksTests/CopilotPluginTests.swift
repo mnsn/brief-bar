@@ -67,17 +67,48 @@ import Testing
         #expect(!description.isEmpty && description.count <= 1024)
     }
 
-    /// The skill's points, each a line starting with "- " and the indented lines after it.
+    /// The skill's points, each a line starting with "- " and the indented lines right after it.
     static func points(in text: String) -> [String] {
         var points: [String] = []
+        var inPoint = false
         for line in text.components(separatedBy: "\n") {
             if line.hasPrefix("- ") {
                 points.append(String(line.dropFirst(2)))
-            } else if line.hasPrefix("  "), !points.isEmpty {
+                inPoint = true
+            } else if inPoint, line.hasPrefix("  "), !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 points[points.count - 1] += " " + line.trimmingCharacters(in: .whitespaces)
+            } else {
+                inPoint = false
             }
         }
         return points
+    }
+
+    /// A section of the skill, from its heading to the next.
+    static func section(_ title: String, in text: String) -> String? {
+        let lines = text.components(separatedBy: "\n")
+        guard let start = lines.firstIndex(of: "## \(title)") else { return nil }
+        let end = lines[(start + 1)...].firstIndex { $0.hasPrefix("## ") } ?? lines.endIndex
+        return lines[start..<end].joined(separator: "\n")
+    }
+
+    /// The agent asks BriefBar about a pull request before it starts a session for it or sends one a message, so that a
+    /// refusal, such as agents being off, stops it before the app makes a session and a worktree for nothing.
+    @Test func skillChecksThePullRequestBeforeAnySession() throws {
+        let text = try String(contentsOf: Self.skill, encoding: .utf8)
+        let section = try #require(Self.section("Working on a pull request", in: text))
+        let check = try #require(
+            section.components(separatedBy: "\n\n").first { $0.contains("call `pull_request` with it") },
+            "The skill doesn't check the pull request first"
+        )
+        #expect(check.contains("refuses") && check.contains("start nothing"))
+        let checked = try #require(section.range(of: "call `pull_request` with it"))
+        for tool in ["`create_session`", "`send_session_message`", "`list_repositories`"] {
+            let first = try #require(section.range(of: tool), "\(tool) isn't in the section")
+            #expect(
+                checked.lowerBound < first.lowerBound, "The skill reaches \(tool) before it checks the pull request"
+            )
+        }
     }
 
     /// When agents are off or paused, no tool of BriefBar's answers, so the agent stops. When only a source is off,

@@ -1581,8 +1581,10 @@ in the app's inbox widget, by BriefBar's groups, with the links BriefBar gives, 
 `ghapp://sessions/<id>` for a Copilot session. When agents are off, every tool says so, and the agent
 stops there; when only a source is off, `needs_me` says so under its heading and has the others, which
 the agent still shows. Asked to fix a pull request's comments, its build or its
-conflicts, or to review it, the agent in the app starts a session for it with the app's own tools, in a
-worktree of a repository the app knows whose `origin` is the pull request's repository: it asks you
+conflicts, or to review it, the agent first asks BriefBar about it with `pull_request`, even given its link,
+and stops there if BriefBar refuses, as when agents or Azure DevOps are off, before any session or worktree
+is made; that also says which actions apply. In the app, it then starts a session for it with the app's own
+tools, in a worktree of a repository the app knows whose `origin` is the pull request's repository: it asks you
 when none or several are, never clones, and never works in a folder that is your own checkout. That
 session's first prompt holds only the pull request's link and the action, and has it call
 `pull_request_prompt` itself, so what the pull request's authors wrote reaches it as a tool's answer,
@@ -1593,8 +1595,9 @@ open the session, with the app's `navigate_to`.
 
 `CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
-BriefBar has; and that it stops only for what BriefBar answers when agents are off
-(`AgentAccess.refusal`), not when a source is.
+BriefBar has; that it stops only for what BriefBar answers when agents are off
+(`AgentAccess.refusal`), not when a source is; and that it checks a pull request with `pull_request`
+before it starts a session for it or sends one a message.
 
 ## Desktop widgets
 
