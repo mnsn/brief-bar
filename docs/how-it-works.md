@@ -1088,12 +1088,12 @@ went; clicking it opens the pull request, or the work item.
 **Showing it.** Nothing opens: Copilot works in a session of its own, which the Copilot app doesn't list.
 So as you send a task, while its worktree is still getting ready, a notification says Copilot is on it,
 what it does and what it won't (`CopilotTasksStore.startedNotification`); the one that says how it ended
-takes its place, or, when none will because you stopped the task or turned notifications off, it's taken
-away. Clicking it shows the task with your Copilot sessions, in the menu bar or a window. The work item's
-card or pull request's row shows how it's going. And while the GitHub Copilot source is on, Azure DevOps
-tells it every task, as it stands, through `AppServices.sentTasks` (`SentTasks`, in memory only), and its
-list shows each one with the app's sessions ([below](#how-a-status-is-decided)). Neither source reads
-anything more for it.
+takes its place, or, when none will because you stopped the task or turned notifications or Send Work to
+Copilot off, it's taken away. Clicking it shows the task with your Copilot sessions, in the menu bar or a
+window. The work item's card or pull request's row shows how it's going. And while the GitHub Copilot
+source is on, Azure DevOps tells it every task, as it stands, through `AppServices.sentTasks` (`SentTasks`,
+in memory only), and its list shows each one with the app's sessions ([below](#how-a-status-is-decided)).
+Neither source reads anything more for it.
 
 **What's kept.** Which work items and pull requests you sent, what for, with which model, in which
 repository and worktree, whether you stopped it, and the pull request's link go to the preferences (`ado.copilot.runs`),

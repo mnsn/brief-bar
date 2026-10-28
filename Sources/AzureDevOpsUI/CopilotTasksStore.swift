@@ -234,8 +234,13 @@ final class CopilotTasksStore: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // Off, nothing will say how the tasks still working end: the notifications that say they're working go.
+                    if !self.isOn {
+                        self.notifier?.remove(self.entries.filter(\.status.phase.isActive).map { Self.notificationID($0.id) })
+                    }
                     // Copilot's logs are read only while the feature is on; turned back on, its runs are followed again.
-                    self?.refresh()
+                    self.refresh()
                 }
             }
             .store(in: &cancellables)
