@@ -1,0 +1,16 @@
+{
+  "name": "briefbar",
+  "owner": {
+    "name": "BriefBar"
+  },
+  "metadata": {
+    "description": "BriefBar's plugin, in BriefBar.app on this Mac, which installs it when you ask and updates it with itself."
+  },
+  "plugins": [
+    {
+      "name": "briefbar",
+      "description": "/briefbar shows what needs you, from BriefBar, and hands pull requests to sessions you can follow.",
+      "source": "./briefbar"
+    }
+  ]
+}

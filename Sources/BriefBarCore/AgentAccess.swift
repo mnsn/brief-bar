@@ -51,4 +51,10 @@ public enum AgentAccess {
                 """
         }
     }
+
+    /// What a source's tools, and its part of `needs_me`, answer in `--mcp` while it's off in the app. The other
+    /// sources still answer.
+    public static func refusal(source name: String) -> String {
+        "\(name) is off in BriefBar. Turn it on in BriefBar's Settings to use it here."
+    }
 }

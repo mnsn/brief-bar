@@ -92,7 +92,8 @@ Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, the client (
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
                                the Copilot CLI, the git worktree, starting a run and following it from
-                               its session log; and BriefBar among the CLI's MCP servers
+                               its session log; and BriefBar, and its plugin, among the CLI's MCP servers
+                               and plugins
 Sources/BriefBarUI/            shared app code: the source protocol, menu-bar drawing, desktop widgets,
                                the windows' look, the notifier, Full Disk Access, the on-device model,
                                Launch at Login, and the agents' server (--mcp)
@@ -104,6 +105,8 @@ Sources/BriefBar/              the app: sources and consent, menu-bar items, wid
                                starting the updater, the command line and --render
 Sources/BriefBarUpdater/       the updater: Sparkle, in a helper app inside BriefBar.app, with library
                                validation off and none of BriefBar's permissions
+Resources/CopilotPlugin/       BriefBar's plugin for Copilot, which the app installs only when you ask: a
+                               marketplace on this Mac with one plugin, whose skill is /briefbar
 Tests/                         Swift Testing suites for the shared code, each source's core and some of
                                its app code, with made-up data
 Tests/Fixtures/                made-up data that other programs wrote, such as an IndexedDB that
@@ -192,9 +195,14 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   gives no Teams data, and never writes to a source. A tool that changes something changes only
   BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
   running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
-  configuration changes only through its own commands (`CopilotMCPRegistration`), when you turn agents
-  on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
-  links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings.
+  configuration changes only through its own commands (`CopilotMCPRegistration`, and
+  `CopilotPluginRegistration` for BriefBar's plugin, which only **Install** installs), when you turn
+  agents on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
+  links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings. It changes a
+  plugin marketplace only once it knows it's its own, in an app with BriefBar's bundle identifier, never
+  by its name or its folder's name alone, and never with `--force`. The plugin's
+  skill (`Resources/CopilotPlugin`) only says how to use the tools: what it names must be what `--mcp`
+  lists, which `CopilotPluginTests` checks.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller
