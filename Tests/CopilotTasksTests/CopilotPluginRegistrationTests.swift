@@ -5,7 +5,8 @@ import Testing
 @testable import CopilotTasks
 
 /// BriefBar's plugin among the Copilot CLI's, through `copilot plugin marketplace` and `copilot plugin`, against a
-/// made-up CLI that behaves as Copilot CLI 1.0.105 does with a marketplace in a folder.
+/// made-up CLI that behaves as Copilot CLI 1.0.105 does: it loads a plugin from a marketplace in a folder in place, and
+/// copies one from elsewhere, which then keeps its marketplace from being removed without `--force`.
 @Suite struct CopilotPluginRegistrationTests {
     private static let here = URL(fileURLWithPath: "/Applications/BriefBar.app/Contents/Resources/CopilotPlugin")
 
@@ -52,10 +53,12 @@ import Testing
     }
 
     /// What the made-up CLI keeps: its marketplaces' sources by name, whether each plugin is turned on, by
-    /// plugin@marketplace, as its settings keep them, and the commands that fail once, by their first arguments.
+    /// plugin@marketplace, as its settings keep them, the plugins it copied rather than loads in place, and the
+    /// commands that fail once, by their first arguments.
     struct State: Sendable, Equatable {
         var marketplaces: [String: String] = [:]
         var plugins: [String: Bool] = [:]
+        var copied: Set<String> = []
         var failures: [[String]: String] = [:]
     }
 
@@ -110,6 +113,9 @@ import Testing
                 let rows: [[String: Any]] = state.plugins.keys.sorted().compactMap { id in
                     let parts = id.split(separator: "@").map(String.init)
                     guard let source = state.marketplaces[parts[1]] else { return nil }
+                    if state.copied.contains(id) {
+                        return ["name": parts[0], "marketplace": parts[1], "version": "1.0.0", "enabled": state.plugins[id]!, "source": "installed"]
+                    }
                     var row: [String: Any] = ["name": parts[0], "marketplace": parts[1], "enabled": state.plugins[id]!, "source": "live"]
                     if source.hasPrefix("Local: ") { row["installedFrom"] = String(source.dropFirst("Local: ".count)) }
                     return row
@@ -124,20 +130,36 @@ import Testing
                 return .ok("Marketplace \"briefbar\" added successfully.\n")
             case _ where arguments.prefix(3) == ["plugin", "marketplace", "remove"]:
                 let name = arguments[3]
-                guard state.marketplaces.removeValue(forKey: name) != nil else {
+                guard state.marketplaces[name] != nil else {
                     return failed("marketplaces.remove", "Marketplace \"\(name)\" is not registered")
                 }
-                // With --force, it uninstalls whatever plugins came from it, whoever's they are.
+                let fromIt = { (id: String) in id.hasSuffix("@\(name)") }
+                // A plugin it copied from the marketplace, turned on or not, keeps it, unless --force uninstalls them all,
+                // whoever's they are. One it loads in place doesn't.
+                let copied = state.copied.filter(fromIt).map { String($0.prefix { $0 != "@" }) }.sorted()
                 if arguments.contains("--force") {
-                    state.plugins = state.plugins.filter { !$0.key.hasSuffix("@\(name)") }
+                    state.plugins = state.plugins.filter { !fromIt($0.key) }
+                    state.copied = state.copied.filter { !fromIt($0) }
+                } else if !copied.isEmpty {
+                    return .failure(
+                        "Cannot remove marketplace \"\(name)\".\nInstalled plugins from this marketplace: "
+                            + copied.joined(separator: ", ")
+                            + "\nUse --force to remove the marketplace and uninstall all its plugins.\n",
+                        status: 1
+                    )
                 }
+                state.marketplaces[name] = nil
                 return .ok("Marketplace \"\(name)\" removed successfully.\n")
             case ["plugin", "install", "briefbar@briefbar"]:
                 guard state.marketplaces["briefbar"] != nil else { return failed("install", "Marketplace \"briefbar\" not found") }
                 state.plugins["briefbar@briefbar"] = true
                 return .ok("Plugin \"briefbar\" installed successfully. Installed 1 skill.\n")
             case ["plugin", "uninstall", "briefbar@briefbar"]:
-                // A plugin loaded in place is only turned off.
+                // A plugin loaded in place is only turned off; one it copied is uninstalled.
+                if state.copied.remove("briefbar@briefbar") != nil {
+                    state.plugins["briefbar@briefbar"] = nil
+                    return .ok("Plugin \"briefbar@briefbar\" uninstalled successfully.\n")
+                }
                 state.plugins["briefbar@briefbar"] = false
                 return .ok("Plugin \"briefbar@briefbar\" disabled. It is still on disk — nothing was removed.\n")
             default:
@@ -269,18 +291,47 @@ import Testing
         #expect(Self.changes(cli) == [["plugin", "marketplace", "remove", "briefbar"]])
     }
 
-    /// `--force` would uninstall whatever else a marketplace had: BriefBar's has only its plugin, and BriefBar never
-    /// passes it, so that the CLI refuses instead if it's wrong about that.
+    /// `--force` would uninstall whatever else a marketplace had. BriefBar's has only its own plugin, which the CLI loads
+    /// in place, but if one of its marketplaces had a plugin the CLI copied too, the CLI refuses to remove it without
+    /// `--force`: BriefBar says so, never forces it, and the marketplace and that plugin stay as they were.
     @Test func neverForcesARemoval() async throws {
         let folders = try Folders()
         defer { folders.remove() }
-        var state = Self.installed(at: folders.otherCopy)
-        state.plugins["helper@briefbar"] = true
-        let cli = CLI(state)
-        #expect(await cli.registration().install() == .installed(enabled: true))
-        #expect(await cli.registration().remove() == .absent)
-        #expect(!cli.runner.arguments.contains { $0.contains("--force") })
-        #expect(cli.current.plugins["helper@briefbar"] == true)
+        let refusal = "Cannot remove marketplace \"briefbar\"."
+        for folder in [Self.here.path, folders.otherCopy] {
+            var state = Self.installed(at: folder)
+            state.plugins["helper@briefbar"] = true
+            state.copied = ["helper@briefbar"]
+            let cli = CLI(state)
+            if folder == folders.otherCopy {
+                #expect(await cli.registration().install() == .failed(refusal))
+                #expect(await cli.registration(marketplace: nil).remove() == .failed(refusal))
+            }
+            #expect(await cli.registration().remove() == .failed(refusal))
+            #expect(!cli.runner.arguments.contains { $0.contains("--force") })
+            // Only BriefBar's own plugin there is turned off, as before any removal; the marketplace and the other stay.
+            var expected = state
+            expected.plugins["briefbar@briefbar"] = false
+            #expect(cli.current == expected)
+            let listed = try #require(CopilotPluginRegistration.rows(in: CLI.answer(["plugin", "list", "--json"], &expected).stdout))
+            #expect(listed.contains { $0["name"] as? String == "helper" && $0["marketplace"] as? String == "briefbar" && $0["enabled"] as? Bool == true })
+        }
+    }
+
+    /// The made-up CLI refuses as the real one does, so that the test above means something.
+    @Test func refusesToRemoveAMarketplaceWithACopiedPluginUnlessForced() {
+        var state = State(marketplaces: ["briefbar": "GitHub: someone/briefbar"], plugins: ["helper@briefbar": false], copied: ["helper@briefbar"])
+        let before = state
+        let refused = CLI.answer(["plugin", "marketplace", "remove", "briefbar"], &state)
+        #expect(refused.status == 1)
+        #expect(CopilotPluginRegistration.firstLine(refused.stderr) == "Cannot remove marketplace \"briefbar\".")
+        #expect(state == before)
+        #expect(CLI.answer(["plugin", "marketplace", "remove", "briefbar", "--force"], &state).status == 0)
+        #expect(state == State())
+        // One it loads in place doesn't keep its marketplace.
+        var live = Self.installed()
+        #expect(CLI.answer(["plugin", "marketplace", "remove", "briefbar"], &live).status == 0)
+        #expect(live == State(plugins: ["briefbar@briefbar": true]))
     }
 
     @Test func installsOnlyAPluginItHas() async throws {
