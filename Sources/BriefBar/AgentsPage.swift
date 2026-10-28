@@ -19,11 +19,6 @@ final class AgentsModel: ObservableObject {
         /// Asking the CLI, or changing what it has.
         case working
         case known(CopilotMCPRegistration.Status)
-
-        var status: CopilotMCPRegistration.Status? {
-            if case .known(let status) = self { return status }
-            return nil
-        }
     }
 
     /// BriefBar's plugin among the Copilot CLI's, as the CLI last said.
@@ -32,16 +27,23 @@ final class AgentsModel: ObservableObject {
         /// Asking the CLI, or changing what it has.
         case working
         case known(CopilotPluginRegistration.Status)
-
-        var status: CopilotPluginRegistration.Status? {
-            if case .known(let status) = self { return status }
-            return nil
-        }
     }
 
     @Published private(set) var state: SourceState
-    @Published private(set) var registration: Registration = .unknown
-    @Published private(set) var plugin: Plugin = .unknown
+    /// BriefBar's server and plugin in the CLI: working until the last check or change asked for is done, so that an
+    /// earlier one's answer isn't shown while a later one is still to come (`CopilotCLIProgress`).
+    @Published private var serverProgress = CopilotCLIProgress<CopilotMCPRegistration.Status>()
+    @Published private var pluginProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+
+    var registration: Registration {
+        if serverProgress.isWorking { return .working }
+        return serverProgress.status.map(Registration.known) ?? .unknown
+    }
+
+    var plugin: Plugin {
+        if pluginProgress.isWorking { return .working }
+        return pluginProgress.status.map(Plugin.known) ?? .unknown
+    }
 
     private let defaults: UserDefaults
     private let isLive: Bool
@@ -163,9 +165,8 @@ final class AgentsModel: ObservableObject {
     /// While agents are off, what turning them off couldn't remove from the Copilot CLI; nil while BriefBar is still
     /// removing it, once it has, or when agents are on.
     var leftovers: AgentCleanup? {
-        guard state == .off, !isLeaving else { return nil }
-        let cleanup = AgentCleanup(server: registration.status, plugin: plugin.status)
-        return cleanup.isDone ? nil : cleanup
+        guard state == .off else { return nil }
+        return AgentCleanup.left(server: serverProgress, plugin: pluginProgress)
     }
 
     /// While agents are off, BriefBar is removing itself, or its plugin, from the Copilot CLI.
@@ -210,10 +211,10 @@ final class AgentsModel: ObservableObject {
         demo: CopilotMCPRegistration.Status, _ action: @escaping @Sendable (CopilotMCPRegistration) async -> CopilotMCPRegistration.Status
     ) {
         guard isLive else {
-            registration = .known(demo)
+            serverProgress = CopilotCLIProgress(status: demo)
             return
         }
-        registration = .working
+        let request = serverProgress.ask()
         withCLI { [weak self] cli in
             let status: CopilotMCPRegistration.Status
             if let cli {
@@ -222,7 +223,7 @@ final class AgentsModel: ObservableObject {
                 status = .noCLI
             }
             guard let self else { return }
-            registration = .known(status)
+            serverProgress.answer(request, with: status)
             checkedAt = Date()
             Log.app.info("Agents in the Copilot CLI: \(status.kind, privacy: .public)")
         }
@@ -233,10 +234,10 @@ final class AgentsModel: ObservableObject {
         _ action: @escaping @Sendable (CopilotPluginRegistration) async -> CopilotPluginRegistration.Status
     ) {
         guard isLive else {
-            plugin = .known(demo)
+            pluginProgress = CopilotCLIProgress(status: demo)
             return
         }
-        plugin = .working
+        let request = pluginProgress.ask()
         let marketplace = pluginMarketplace
         withCLI { [weak self] cli in
             let status: CopilotPluginRegistration.Status
@@ -248,7 +249,7 @@ final class AgentsModel: ObservableObject {
                 status = .noCLI
             }
             guard let self else { return }
-            plugin = .known(status)
+            pluginProgress.answer(request, with: status)
             pluginCheckedAt = Date()
             Log.app.info("BriefBar's plugin in the Copilot CLI: \(status.kind, privacy: .public)")
         }
@@ -271,15 +272,17 @@ final class AgentsModel: ObservableObject {
     /// without saving any of it.
     func useForRendering(on: Bool) {
         state = on ? .on : AgentAccess.state(in: defaults)
-        registration = on ? .known(.added(enabled: true)) : .unknown
-        plugin = on ? .known(.absent) : .unknown
+        serverProgress = CopilotCLIProgress(status: on ? .added(enabled: true) : nil)
+        pluginProgress = CopilotCLIProgress(status: on ? .absent : nil)
     }
 
     /// For `--render`: agents just turned off, and the Copilot CLI couldn't remove the plugin, without saving either.
     func useForRenderingLeftovers() {
         state = .off
-        registration = .known(.absent)
-        plugin = .known(.failed("Couldn't save the settings: another Copilot process is writing them."))
+        serverProgress = CopilotCLIProgress(status: .absent)
+        pluginProgress = CopilotCLIProgress(
+            status: .failed("Couldn't save the settings: another Copilot process is writing them.")
+        )
     }
 
     /// A path as a shell reads it.

@@ -17,6 +17,17 @@ public struct AgentCleanup: Sendable, Equatable {
     /// Nothing of BriefBar's is left, as far as BriefBar knows.
     public var isDone: Bool { server == nil && plugin == nil }
 
+    /// What turning agents off left, once every check and change BriefBar asked the CLI for is done; nil before, or if
+    /// nothing's left.
+    public static func left(
+        server: CopilotCLIProgress<CopilotMCPRegistration.Status>,
+        plugin: CopilotCLIProgress<CopilotPluginRegistration.Status>
+    ) -> AgentCleanup? {
+        guard !server.isWorking, !plugin.isWorking else { return nil }
+        let cleanup = AgentCleanup(server: server.status, plugin: plugin.status)
+        return cleanup.isDone ? nil : cleanup
+    }
+
     /// Why BriefBar's server is still there. A server by its name that isn't BriefBar was never BriefBar's to remove,
     /// and without a Copilot CLI, there's nothing to remove.
     static func leftover(_ status: CopilotMCPRegistration.Status) -> String? {

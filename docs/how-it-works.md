@@ -1473,7 +1473,10 @@ doesn't install the plugin from there.
 
 **Turning agents off.** BriefBar removes its MCP server and its plugin from the CLI. Agents are off
 then, so the page shows only what's still going on: removing them, and what the CLI couldn't remove,
-with **Try Again**, which removes it again (`AgentCleanup`). It shows why in the CLI's own words, such
+with **Try Again**, which removes it again (`AgentCleanup`). BriefBar's checks and changes reach the
+CLI one at a time, in the order they were asked for, and the page shows what the last one found only
+once it's done (`CopilotCLIProgress`): a check that ends while a removal is still to come, as when you
+turn agents off just as the page opens, isn't taken for what's left. It shows why in the CLI's own words, such
 as which plugins keep a marketplace there, which you may have to remove first: its first three lines,
 at most 300 characters, without terminal escapes or other control characters. It keeps that only until
 BriefBar quits: either way, BriefBar answers agents that they're off.
