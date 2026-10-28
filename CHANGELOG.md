@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 - 2026-10-28
 
 - **Choose when Copilot completions move to Idle.** Finished and stopped sessions stay in their
   groups until you click **Clear** or **Keep Finished Sessions For** expires. Turn on **Move Viewed
