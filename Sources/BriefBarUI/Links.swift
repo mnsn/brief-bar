@@ -72,10 +72,15 @@ package struct LinkedItem {
 package struct SentToCopilot: Equatable, Sendable {
     package var action: String?
     package var from: ItemRef?
+    /// What it was sent from, by its number and its title, when known: "5112", "Round half up in the coupon service".
+    package var label: String?
+    package var title: String?
 
-    package init(action: String? = nil, from: ItemRef?) {
+    package init(action: String? = nil, from: ItemRef?, label: String? = nil, title: String? = nil) {
         self.action = action
         self.from = from
+        self.label = label
+        self.title = title
     }
 }
 

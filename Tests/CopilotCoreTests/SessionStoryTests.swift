@@ -81,10 +81,10 @@ import Testing
         #expect(finished.sentence == "Finished")
         #expect(finished.date == t(30))
         #expect(finished.account == account)
-        #expect(SessionStory.make(snapshot: session(.finished), account: ItemStory.Account(source: "Copilot's summary"))?.account == nil)
+        #expect(SessionStory.make(snapshot: session(.finished), account: ItemStory.Account(source: "Copilot's report"))?.account == nil)
 
         #expect(SessionStory.make(snapshot: nil, account: nil) == nil)
-        #expect(SessionStory.make(snapshot: nil, account: ItemStory.Account(source: "Copilot's summary")) == nil)
+        #expect(SessionStory.make(snapshot: nil, account: ItemStory.Account(source: "Copilot's report")) == nil)
         let recorded = try #require(SessionStory.make(snapshot: nil, account: account))
         #expect(recorded == ItemStory(sentence: "", account: account))
 

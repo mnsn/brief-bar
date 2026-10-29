@@ -51,7 +51,7 @@ public enum SessionAccount {
         let message = words.message.flatMap { nonEmpty(plain($0.text, limit: 700)) }
         let date = [words.summary?.date, words.message?.date].compactMap { $0 }.max()
         if let summary {
-            var account = ItemStory.Account(source: "Copilot's summary", date: date, overview: summary)
+            var account = ItemStory.Account(source: "Copilot's report", date: date, overview: summary)
             if let message, message != summary,
                (words.message?.date ?? .distantPast) > (words.summary?.date ?? .distantPast) {
                 account.lastMessage = words.message.flatMap { nonEmpty(plain($0.text, limit: 600)) }

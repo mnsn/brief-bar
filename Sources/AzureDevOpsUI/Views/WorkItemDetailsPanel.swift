@@ -232,8 +232,8 @@ struct WorkItemDetailsPanel: View {
             .help("Open it in Azure DevOps, to change it there")
             if copilot.isOn {
                 if let entry = copilot.latest(for: item) {
-                    // With Show Links, Where It Stands lists the task, with its actions.
-                    UnlessShowingLinks(links: services.links) {
+                    // Where It Stands lists the task, with its actions, unless its link is hidden.
+                    UnlessListed(links: services.links, ref: ItemRef.session(entry.id), subject: item.linkRef) {
                         CopilotRunBadge(entry: entry)
                     }
                 } else {
@@ -542,13 +542,20 @@ struct WorkItemDetailsPanel: View {
     }
 }
 
-/// What shows only while Show Links is off.
-private struct UnlessShowingLinks<Content: View>: View {
+/// What shows unless Where It Stands lists it among what's linked to the subject.
+private struct UnlessListed<Content: View>: View {
     @ObservedObject var links: Links
+    let ref: ItemRef?
+    let subject: ItemRef
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if !links.isOn { content() }
+        if !isListed { content() }
+    }
+
+    private var isListed: Bool {
+        guard links.isOn, let ref else { return false }
+        return links.connections(of: subject).contains { $0.item.ref == ref }
     }
 }
 

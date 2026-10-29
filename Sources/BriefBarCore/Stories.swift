@@ -76,7 +76,7 @@ public struct ItemStory: Sendable, Equatable {
     /// What's been done so far, as the thing recorded it, in plain text: a Copilot session's checkpoints, which Copilot
     /// writes as its work goes on, and what it said last.
     public struct Account: Sendable, Equatable {
-        /// Where it comes from, for its caption: "Copilot's checkpoints", "Copilot's summary".
+        /// Where it comes from, for its caption: "Copilot's checkpoints", "Copilot's report".
         public var source: String
         /// When it was written.
         public var date: Date?

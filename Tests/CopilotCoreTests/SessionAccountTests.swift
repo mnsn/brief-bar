@@ -231,7 +231,7 @@ private let sample = """
 
             try session.log([Line.userMessage(at: t(1)), Line.taskComplete("Replaced all four `README` screenshots.", at: t(10))])
             #expect(session.read() == ItemStory.Account(
-                source: "Copilot's summary", date: t(10), overview: "Replaced all four README screenshots."
+                source: "Copilot's report", date: t(10), overview: "Replaced all four README screenshots."
             ))
 
             // Its last message, when it came after the summary and says something else.
@@ -242,7 +242,7 @@ private let sample = """
                 Line.message("Replaced all four README screenshots.", at: t(11)),
             ])
             #expect(session.read() == ItemStory.Account(
-                source: "Copilot's summary", date: t(11), overview: "Replaced all four README screenshots."
+                source: "Copilot's report", date: t(11), overview: "Replaced all four README screenshots."
             ))
             try session.log([
                 Line.userMessage(at: t(1)),
@@ -250,7 +250,7 @@ private let sample = """
                 Line.message("The dark ones are new too.", at: t(12)),
             ])
             #expect(session.read() == ItemStory.Account(
-                source: "Copilot's summary", date: t(12), overview: "Replaced all four README screenshots.",
+                source: "Copilot's report", date: t(12), overview: "Replaced all four README screenshots.",
                 lastMessage: "The dark ones are new too."
             ))
 

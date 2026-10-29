@@ -29,7 +29,7 @@ private struct PageContent: View {
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
             StoryDetails(
-                item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), reason: nil, mode: .page
+                item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page
             )
             WhereItStandsSection(subject: ref)
         }

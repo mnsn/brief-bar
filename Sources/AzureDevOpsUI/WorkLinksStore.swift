@@ -211,12 +211,18 @@ final class WorkLinksStore {
                 let copilot = self.copilot
                 let from = entry.onPullRequest.map { ItemRef.pullRequest(organization: $0.organization, number: $0.id) }
                     ?? entry.workItem.map { ItemRef.workItem(organization: $0.organization, id: $0.id) }
+                let fromLabel = entry.onPullRequest.map { "!\($0.id)" } ?? entry.workItem.map { String($0.id) }
+                let fromTitle: String? = if let pullRequest = entry.onPullRequest {
+                    copilot.pullRequestTitle(pullRequest)
+                } else {
+                    entry.workItem.flatMap { copilot.title($0) }
+                }
                 items.append(LinkedItem(
                     ref: session, label: copilot.subject(of: entry), title: "Copilot: \(copilot.subject(of: entry))",
                     symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: now),
                     date: entry.status.since ?? entry.startedAt,
                     menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) },
-                    sent: SentToCopilot(action: entry.action?.title, from: from)
+                    sent: SentToCopilot(action: entry.action?.title, from: from, label: fromLabel, title: fromTitle)
                 ))
             }
         }
@@ -285,7 +291,7 @@ final class WorkLinksStore {
         var account: ItemStory.Account?
         if !entry.status.phase.isActive, let detail = entry.status.detail, !detail.isEmpty {
             account = ItemStory.Account(
-                source: "Copilot's summary", date: entry.status.since, overview: StoryText.paragraph(detail, limit: 700)
+                source: "Copilot's report", date: entry.status.since, overview: StoryText.paragraph(detail, limit: 700)
             )
         }
         return ItemStory(

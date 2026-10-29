@@ -79,7 +79,14 @@ package struct WhereItStandsSection: View {
     static func name(of item: LinkedItem, subject: ItemRef, parent: ItemRef? = nil) -> String {
         guard let sent = item.sent else { return item.ref.kind == .session ? item.label : item.title }
         let what = sent.action.map { "\($0) with Copilot" } ?? "Sent to Copilot"
-        return sent.from == subject || (parent != nil && sent.from == parent) ? what : "\(what): \(item.label)"
+        // Sent from something else, which its marker numbers: that thing's title.
+        guard !isSentFromHere(sent, subject: subject, parent: parent), let title = sent.title else { return what }
+        return sent.action.map { "\($0): \(title)" } ?? title
+    }
+
+    /// Whether a task was sent from the subject, or from the pull request it shows under.
+    static func isSentFromHere(_ sent: SentToCopilot, subject: ItemRef, parent: ItemRef?) -> Bool {
+        sent.from == subject || (parent != nil && sent.from == parent)
     }
 
     /// Why it's here, in a few words.
@@ -231,9 +238,9 @@ private struct StandingContent: View {
             Button("Turn On…") { showsSetting = true }
                 .buttonStyle(.borderless)
                 .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
-                    LinksSetting(links: links)
+                    LinksSetting(links: links, isBrief: true)
                         .padding(16)
-                        .frame(width: 380)
+                        .frame(width: 320)
                 }
             Spacer(minLength: 4)
             Button {
@@ -390,9 +397,23 @@ private struct StoryRow: View {
         }
     }
 
-    private var kindName: String {
-        item.sent != nil ? "Task sent to Copilot" : item.ref.kind.title
+    /// What a task you sent was sent from, by its number, when that isn't the subject or the pull request it shows under.
+    private var sentFrom: String? {
+        guard let sent = item.sent, !WhereItStandsSection.isSentFromHere(sent, subject: subject, parent: parent) else { return nil }
+        return sent.label
     }
+
+    private var kindName: String {
+        guard item.sent != nil else { return item.ref.kind.title }
+        return "Task sent to Copilot" + (sentFrom.map { " from \($0)" } ?? "")
+    }
+
+    /// Whether it opens where it lives from its row; a task you sent opens from its actions instead.
+    private var canOpen: Bool { item.menu == nil && item.open != nil }
+    /// Needing you or gone wrong, it opens in one click from a button before its time.
+    private var opensAtOnce: Bool { canOpen && (item.state == .needsYou || item.state == .failing) }
+    /// Otherwise the button shows in its time's place while you point at it.
+    private var opensOnHover: Bool { canOpen && !opensAtOnce && isHovered }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -420,11 +441,22 @@ private struct StoryRow: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    if opensAtOnce {
+                        Color.clear
+                            .frame(width: 22, height: 14)
+                            .anchorPreference(key: QuickOpenSpot.self, value: .bounds) { $0 }
+                    }
                     if let date = item.date {
                         Text(Self.ago(date))
                             .font(.system(size: 11, weight: .medium).monospacedDigit())
                             .foregroundStyle(.secondary)
+                            .opacity(opensOnHover ? 0 : 1)
+                            .anchorPreference(key: QuickOpenSpot.self, value: .bounds) { opensOnHover ? $0 : nil }
                             .help(date.formatted(date: .abbreviated, time: .shortened))
+                    } else if opensOnHover {
+                        Color.clear
+                            .frame(width: 22, height: 14)
+                            .anchorPreference(key: QuickOpenSpot.self, value: .bounds) { $0 }
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
@@ -442,18 +474,23 @@ private struct StoryRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .overlay(alignment: .trailing) { quickOpen }
+            .overlayPreferenceValue(QuickOpenSpot.self) { spot in
+                if let spot {
+                    GeometryReader { proxy in
+                        quickOpen.position(x: proxy[spot].midX, y: proxy[spot].midY)
+                    }
+                }
+            }
             .onHover { isHovered = $0 }
             .help(help)
             .accessibilityLabel("\(kindName), \(name). \(sentence)")
-            .accessibilityValue(navigates ? "" : isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityValue(accessibilityValue)
             .accessibilityHint(navigates ? "Shows its page" : isExpanded ? "Hides what's known of it" : "Shows what's known of it")
             .accessibilityAction(named: "Open") { open() }
             .accessibilityAction(named: connection.isKnownElsewhere ? "Hide Link" : "Unlink") { links.unlink(subject, item.ref) }
             if isExpanded {
                 StoryDetails(
-                    item: item, story: story, isTelling: isTelling, reason: WhereItStandsSection.reason(connection, subject: subject),
-                    mode: .preview
+                    item: item, story: story, isTelling: isTelling, mode: .preview
                 )
                     .padding(.leading, 34)
                     .padding(.trailing, 12)
@@ -475,11 +512,27 @@ private struct StoryRow: View {
                 .foregroundStyle(.secondary)
                 .fixedSize()
         case .session:
-            Image(systemName: item.sent != nil ? "paperplane" : "waveform.path.ecg")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: item.sent != nil ? "paperplane" : "waveform.path.ecg")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                if let sentFrom {
+                    Text(sentFrom)
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+            }
         }
+    }
+
+    /// Whether its details show, where they show in place, and since when it says what it says.
+    private var accessibilityValue: String {
+        var parts: [String] = []
+        if !navigates { parts.append(isExpanded ? "Expanded" : "Collapsed") }
+        if let date = item.date { parts.append("Updated " + date.formatted(.relative(presentation: .named))) }
+        return parts.joined(separator: ", ")
     }
 
     /// The sentence, its opening phrase in its state's color.
@@ -490,24 +543,18 @@ private struct StoryRow: View {
         return rest.isEmpty ? opening : opening + Text(" " + rest).foregroundStyle(.secondary)
     }
 
-    /// Opens it in one click, where it needs you or went wrong, or while you point at it; a task you sent opens from its
-    /// actions instead.
-    @ViewBuilder
+    /// Opens it where it lives in one click: in the spot its row keeps for it (`QuickOpenSpot`).
     private var quickOpen: some View {
-        if item.menu == nil, item.open != nil, isHovered || item.state == .needsYou || item.state == .failing {
-            Button(action: open) {
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(item.state.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor).opacity(0.85)))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, item.date == nil ? 26 : 62)
-            .help(StoryDetails.openTitle(for: item.ref.kind))
-            .accessibilityLabel(StoryDetails.openTitle(for: item.ref.kind))
+        Button(action: open) {
+            Image(systemName: "arrow.up.forward.app")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(item.state.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help(StoryDetails.openTitle(for: item.ref.kind))
+        .accessibilityLabel(StoryDetails.openTitle(for: item.ref.kind))
     }
 
     private func open() {
@@ -567,7 +614,6 @@ struct StoryDetails: View {
     let story: ItemStory?
     let isTelling: Bool
     /// Why it's here, beside its actions in a preview.
-    let reason: String?
     let mode: Mode
 
     @LocalState private var showsMore = false
@@ -632,19 +678,10 @@ struct StoryDetails: View {
         }
     }
 
-    /// Opening it, or its own actions, and why it's here.
+    /// Opening it, or its own actions; why it's here is in its row's tooltip.
     private var actions: some View {
-        HStack(spacing: 10) {
-            StoryActions(item: item)
-            Spacer(minLength: 8)
-            if let reason {
-                Text(reason)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .controlSize(.small)
+        StoryActions(item: item)
+            .controlSize(.small)
     }
 
     /// Copilot's notes, as it wrote them: its overview, what's next, and, when you ask, what it did, the story so far a
@@ -708,7 +745,17 @@ struct StoryActions: View {
             .fixedSize()
         } else if let open = item.open {
             Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
+                .fixedSize()
         }
+    }
+}
+
+/// Where a row keeps its open button: before its time, or in its time's place while you point at it.
+private struct QuickOpenSpot: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
     }
 }
 

@@ -55,7 +55,7 @@ import Testing
         stories.register(.azureDevOps, kinds: [.pullRequest, .session]) { ref in
             ref.kind == .session
                 ? ItemStory(sentence: "Opened a pull request", facts: [ItemStory.Fact("Sent", "12m ago")],
-                            account: ItemStory.Account(source: "Copilot's summary", overview: "Coupons round half up."))
+                            account: ItemStory.Account(source: "Copilot's report", overview: "Coupons round half up."))
                 : nil
         }
         await stories.tell([item(session), item(pullRequest)])
@@ -233,8 +233,13 @@ import Testing
                        color: .blue, sent: sent)
         }
         #expect(WhereItStandsSection.name(of: task(SentToCopilot(from: workItem)), subject: workItem) == "Sent to Copilot")
-        #expect(WhereItStandsSection.name(of: task(SentToCopilot(from: workItem)), subject: .workItem(organization: "contoso", id: 5110))
-            == "Sent to Copilot: 5112: Round half up")
+        // From something else, which its marker numbers: that thing's title, as Azure DevOps has it.
+        let bug = ItemRef.workItem(organization: "contoso", id: 5110)
+        let elsewhere = SentToCopilot(from: workItem, label: "5112", title: "Round half up in the coupon service")
+        #expect(WhereItStandsSection.name(of: task(elsewhere), subject: bug) == "Round half up in the coupon service")
+        #expect(WhereItStandsSection.name(of: task(SentToCopilot(from: workItem, label: "5112")), subject: bug) == "Sent to Copilot")
+        let fixElsewhere = SentToCopilot(action: "Fix the Build", from: fix, label: "!4088", title: "Show delivery estimates")
+        #expect(WhereItStandsSection.name(of: task(fixElsewhere), subject: bug) == "Fix the Build: Show delivery estimates")
         #expect(WhereItStandsSection.name(of: task(SentToCopilot(action: "Fix the Build", from: fix)), subject: workItem, parent: fix)
             == "Fix the Build with Copilot")
         // A session of the app's is called by its name, a pull request by its title.
