@@ -482,10 +482,12 @@ sent to Copilot says how it went, and Copilot what it recorded.
 on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that, **Writes**: **As
 you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
 line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
-model can do, with the model, each with what it costs (`StorySummariesSetting.choiceTitle`): Apple Intelligence (on
-this Mac, free), the default when no model was chosen, then, through Copilot, from the cheapest to the most capable,
-Claude Haiku 5.5 (cheapest), Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs
-the most) (`CopilotModel.forSummaries`), so you choose what a summary is worth; never Auto, which may choose any. While
+model can do, with the model, under what it costs (`StorySummariesSetting.onDeviceSection`, `copilotSection` and
+`choiceTitle`): "On this Mac, free", Apple Intelligence, the default when no model was chosen; then "Through Copilot: a
+request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5 (cheapest), Claude Sonnet
+5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs most) (`CopilotModel.forSummaries`), so you
+choose what a summary is worth; never Auto, which may choose any. The picker is as wide as the model chosen needs, up
+to 280 points, so it fits in a popover. While
 Apple Intelligence is chosen, a line under it says it's a small model, which can get details wrong with long histories,
 and that Copilot's models read more of each and are more accurate. Existing model choices and the on/off setting stay
 as they were, under the same `summaries.copilot.*` preferences. Apple Intelligence runs through `OnDeviceModel` and
@@ -533,18 +535,29 @@ Intelligence, each thing gets 1,800 characters in all, so long discussions leave
 read for it shares what its story leaves of them, the same way. The on-device session receives the instructions
 separately, reserves up to 500 tokens for the answer and has a 45-second timeout. Character limits aren't token
 guarantees: if the model's context window is exceeded, the summary says so and offers a model change, never a cloud
-retry. Data cut short says details were left out, and the instructions require the summary to say it's incomplete
-rather than treat missing data as no blockers or votes. The data starts with your name, as your pull requests have it
-in Azure DevOps, when that's known, and the model is told that's who reads it, to call you "you"; then, for a work item,
-after `SHOWN`, who it all waits on, as Where It Stands says it above the summary, which pages and rows don't say. The model is told that you see each item's title and status line and what's after
-`SHOWN`, so it never repeats them, nor lists tasks' states or hours or says that a build passed, but says what you'd
-otherwise open Azure DevOps or a session to learn: what reviewers asked and whether that's answered, what Copilot
-changed and what it said is left or risky, why a build failed, what blocks the work and on whom; and to check what was
-built, from pull requests' descriptions and Copilot's answers, against the work item's description and acceptance
-criteria, saying where they differ first. It asks for a headline of at most 14 words, the one thing to know, whom the
-step that unblocks the most is for (you, a person or Copilot) and what it is, and 3 to 5 sentences, about 100 words and
-at most 160, the most important first, which `StorySummary` reads, whatever Markdown is around them, and a next step
-that names whom it's for first, as in "Sam Rivera: get !4120 reviewed". A teammate's pull request says who wrote it as
+retry. Data cut short says details were left out, and only then are the summaries told to say they may be incomplete;
+missing data never means there are no blockers, votes or work left. Pipeline runs that passed are left out of the data,
+so the model can't say a build passed; failed, running and waiting ones stay, a failed one with its first error. The
+data starts with your name, as your pull requests have it in Azure DevOps, when that's known, and the model is told
+that's who reads it, to call you "you"; then, for a work item, after `SHOWN`, who it all waits on, as Where It Stands
+says it above the summary, which pages and rows don't say. The model is told that you see each item's title and status
+line and what's after `SHOWN`, so it never repeats them, nor lists tasks' states or hours, but says what you'd otherwise
+open Azure DevOps or a session to learn: what reviewers asked and whether that's answered, what Copilot changed and what
+it said is left or risky, why a build failed, what blocks the work and on whom; and to check what was built, from pull
+requests' descriptions and Copilot's answers, against the work item's description and acceptance criteria, where a pull
+request that does only part of the work, the rest being other tasks' or not done yet, is work left, not a difference. It
+answers in a form `StorySummary` reads, whatever Markdown is around its labels: first `CHECK:`, each way what was built
+differs from what the work item asks, or None, which is never shown, and which keeps even the model on this Mac to the
+form; a headline of at most 14 words, the one thing to know, the first difference found when there's one; whom the step
+that unblocks the most is for, you, a person or Copilot, and what it is; and `SUMMARY:`, 2 to 5 short points, the most
+important first, at most 160 words in all, each on a line of its own after "- ", with a bold lead of a word or two, such
+as **Differs:**, **Review:** or **Left:**, and `code` for commit IDs, paths and endpoints. `StorySummary.parse` keeps the
+points as Markdown of those few kinds, each point after "- ", however the model marked it, its bold and code closed even
+where it's cut short, a link as its text, without headings, quotes, rules or code blocks; a point is never read as a
+label, as "- **Next:** …" might be; an answer run into one line is read apart at its labels; your name for whom the next
+step is reads as "you"; and "PR !4120" reads "!4120", "the PR" "the pull request" and "PRs" "pull requests", leaving
+names such as "PR-Validation" as they are. A next step may name whom it's for first, as in "Sam Rivera: get !4120 reviewed". A
+teammate's pull request says who wrote it as
 one of its facts. Nothing from Teams goes in it, nor anything from the notifications that sent you a pull request: when
 a pull request's row says who sent it to you in a chat, or that you answered them, the prompt says where it stands by
 its votes instead (`ItemStory.sharedSentence`), and its status as active or a draft (`LinkedItem.sharedStatus`); who it
@@ -607,8 +620,9 @@ is off or once the summary is taken back:
   what its template asks its author in HTML comments, from a GET of it; and its comment threads, your pull requests'
   as already read and others' read where the pull request says it is (`PullRequestContext`): the unresolved ones a line
   each, the open ones first, the newest first, with who started it and where, what they said and the latest reply,
-  then how many are resolved, with the latest two in brief; each part at most 3,000 characters. A work item's texts,
-  its description, repro steps and acceptance criteria, and its latest comments, up to ten, from its details on
+  and whether anyone else replied, "(replied, not resolved)" or "(no reply yet)", then how many are resolved, with the
+  latest two in brief; each part at most 3,000 characters. A work item's texts, its description, repro steps and
+  acceptance criteria, and its latest comments, up to ten, oldest first, so an answer follows its question, from its details on
   screen, or read as when you open it (`WorkItemStory.context`), under its story's notes' labels, so they take those
   notes' places. A read that fails leaves its part out; once Azure DevOps asks to slow down, nothing more is read; and
   what's read as someone other than who the pull requests' refresh saw signed in is left out. That's up to two GETs a
