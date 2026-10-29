@@ -28,6 +28,7 @@ import Testing
             let snapshot = SessionEngine.loadOnce(paths: paths)
             #expect(snapshot.problem == nil)
             #expect(snapshot.listedByApp)
+            #expect(!snapshot.databaseMissing)
             let records = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)
@@ -43,6 +44,7 @@ import Testing
             let snapshot = SessionEngine.loadOnce(paths: paths)
             #expect(snapshot.records.isEmpty)
             #expect(snapshot.problem == "No Copilot data found at \(paths.root.path)")
+            #expect(!snapshot.databaseMissing)
         }
     }
 
@@ -68,7 +70,64 @@ import Testing
             #expect(snapshot.problem?.contains("Could not open Copilot database") == true)
             // Every recent folder, not the app's own list.
             #expect(!snapshot.listedByApp)
+            // As on a Mac with only the Copilot CLI, which keeps no database.
+            #expect(snapshot.databaseMissing)
         }
+    }
+
+    /// A database that's there but can't be read is a problem whether or not the app is installed.
+    @Test func tellsAnUnreadableDatabaseFromAMissingOne() throws {
+        try withTemporaryDirectory { root in
+            let paths = CopilotPaths(root: root)
+            try Data("not a database".utf8).write(to: paths.database)
+            let snapshot = SessionEngine.loadOnce(paths: paths)
+            #expect(snapshot.problem != nil)
+            #expect(!snapshot.listedByApp)
+            #expect(!snapshot.databaseMissing)
+        }
+    }
+
+    /// Nor is one that can't be reached missing, though `FileManager.fileExists` says it isn't there.
+    @Test func tellsAnUnreachableDatabaseFromAMissingOne() throws {
+        try withTemporaryDirectory { directory in
+            let paths = CopilotPaths(root: directory.appendingPathComponent("copilot", isDirectory: true))
+            try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
+            try Data().write(to: paths.database)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: paths.root.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: paths.root.path) }
+            #expect(!FileManager.default.fileExists(atPath: paths.database.path))
+            let snapshot = SessionEngine.loadOnce(paths: paths)
+            #expect(snapshot.problem?.contains("Could not open Copilot database") == true)
+            #expect(!snapshot.databaseMissing)
+        }
+    }
+
+    /// A database that goes away after a good read, as when the app's data is removed, is missing too.
+    @Test(.timeLimit(.minutes(1)))
+    func saysTheDatabaseIsMissingOnceItsGone() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = CopilotPaths(root: root)
+        let db = try TestDatabase(at: paths.database)
+        try db.createAppSchema()
+        try db.addProject("p1", name: "Pulse")
+        try db.addSession("live", title: "Live", updatedAt: Date())
+        try db.addWorkspace("w-live", session: "live", name: "Live session")
+        db.close()
+
+        let collector = SnapshotCollector()
+        let engine = SessionEngine(paths: paths, metadataThrottle: 0.05, safetyInterval: 3_600) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        let first = try await collector.wait("the initial load") { $0.records.first?.meta.name == "Live session" }
+        #expect(!first.databaseMissing)
+
+        try FileManager.default.removeItem(at: paths.database)
+        engine.refresh()
+        let gone = try await collector.wait("the failed reload") { $0.problem != nil }
+        #expect(gone.databaseMissing)
+        // Still the app's own list, as it last read it.
+        #expect(gone.listedByApp)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -179,6 +238,10 @@ import Testing
         ("name:", nil),
         ("  name: nested", nil),
         ("branch: main", nil),
+        // As the CLI writes a prompt that it names a session by: its line breaks, escaped, on one line.
+        (#"name: "I tried \"make\"\n\nand it failed""#, #"I tried "make" and it failed"#),
+        ("name: 'Robin''s fix'", "Robin's fix"),
+        (#"name: "\n""#, nil),
     ] as [(String, String?)])
     func readsWorkspaceNames(_ yaml: String, _ expected: String?) throws {
         try withTemporaryDirectory { directory in

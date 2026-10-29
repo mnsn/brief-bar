@@ -132,7 +132,7 @@ struct SessionRowView: View {
                 Button(openTitle(task), action: action)
                 Button("Open This Session") { store.openItself(session) }
             } else {
-                Button("Open in GitHub Copilot", action: action)
+                Button(store.appInstalled ? "Open in GitHub Copilot" : "Open in Terminal", action: action)
             }
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
@@ -151,7 +151,7 @@ struct SessionRowView: View {
         .accessibilityHint(
             task.map { "Opens its \($0.opens.lowercased())" }
                 ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
-                ?? "Opens the session in GitHub Copilot"
+                ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal")
         )
         .accessibilityActions {
             if let parent = otherParent {
@@ -222,7 +222,7 @@ struct SessionRowView: View {
     private func openTitle(_ task: SentTask?) -> String {
         if let task { return task.openTitle }
         if let answerIn = session.answerIn { return "Answer in “\(answerIn.name)”" }
-        return "Open in Copilot"
+        return store.appInstalled ? "Open in Copilot" : "Open in Terminal"
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.
@@ -254,7 +254,11 @@ struct SessionRowView: View {
                 let names = ListFormatter.localizedString(byJoining: session.asksFor.map { "“\($0.name)”" })
                 lines.append("Asks you for \(names), which it coordinates")
             }
-            lines.append("Click to open in GitHub Copilot")
+            lines.append(
+                store.appInstalled
+                    ? "Click to open in GitHub Copilot"
+                    : "Click to open in Terminal with the Copilot CLI, or bring up the terminal that has it open"
+            )
         }
         return lines.joined(separator: "\n")
     }

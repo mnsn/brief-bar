@@ -118,12 +118,14 @@ struct MenuPanelView: View {
 
     private var footer: some View {
         HStack {
-            Button {
-                CopilotApp.activate()
-            } label: {
-                Label("Open Copilot", systemImage: "arrow.up.forward.app")
+            if store.appInstalled {
+                Button {
+                    CopilotApp.activate()
+                } label: {
+                    Label("Open Copilot", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
             Spacer()
             Menu {
                 SettingsMenuContent()
