@@ -249,4 +249,74 @@ private final class Output: Sendable {
             Sign in with az login.
             """)
     }
+
+    // MARK: What the sources know of each other's things
+
+    private static let pullRequest = ItemRef.pullRequest(organization: "contoso", number: 4120)
+
+    /// A tool that asks the other sources about a pull request, and says what each told, or why it couldn't.
+    private var asking: MCPTool {
+        MCPTool(name: "work_item", title: "Work Item", description: "Asks about a pull request") { _ in
+            let query = MCPRelated.Query(
+                items: [Self.pullRequest],
+                branches: [Self.pullRequest: BranchHint(branch: "saved-items", target: "main", repositories: ["shop-web"])]
+            )
+            let parts = await MCPRelated.ask(query)
+            return parts.map { part in
+                "\(part.title): " + (part.problem ?? part.items.map { "\($0.title) (\($0.links.map(\.reason).joined()))" }.joined(separator: ", "))
+            }.joined(separator: "\n")
+        }
+    }
+
+    /// Tells of a session on the pull request's branch, as the Copilot source does.
+    private static let sessions = MCPRelated.Teller(title: "Copilot sessions") { query in
+        query.branches.keys.map { ref in
+            MCPRelated.Item(
+                ref: ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11")!, title: "Save items for later", status: "finished 2h ago",
+                links: [MCPRelated.Link(item: ref, reason: "on !\(ref.id)'s branch")]
+            )
+        }
+    }
+
+    @Test func aToolAsksTheOtherSourcesWhatTheyKnowOfWhatItNames() async throws {
+        let sources = [
+            MCPSource(name: "Azure DevOps", tools: [asking]) { nil },
+            MCPSource(name: "GitHub Copilot", tools: [], related: Self.sessions) { nil },
+        ]
+        let tools = MCPSource.tools(sources)
+        #expect(try await tools[1].run(.object([:])) == "Copilot sessions: Save items for later (on !4120's branch)")
+        // Run on its own, a tool has no source to ask.
+        #expect(try await asking.run(.object([:])) == "")
+        // Nor does one whose sources tell nothing.
+        #expect(try await MCPSource.tools([MCPSource(name: "Azure DevOps", tools: [asking]) { nil }])[1].run(.object([:])) == "")
+    }
+
+    /// A source that's off in the app tells nothing, and says so: that's no reason for the tool that asks to fail.
+    @Test func aSourceThatsOffTellsNothingAndSaysSo() async throws {
+        let isOn = Mutex(false)
+        let sources = [
+            MCPSource(name: "Azure DevOps", tools: [asking]) { nil },
+            MCPSource(name: "GitHub Copilot", tools: [], related: Self.sessions) { nil }
+                .available(while: { isOn.withLock { $0 } }, refusal: AgentAccess.refusal(source: "GitHub Copilot")),
+        ]
+        let tool = MCPSource.tools(sources)[1]
+        #expect(try await tool.run(.object([:])) == """
+            Copilot sessions: GitHub Copilot is off in BriefBar. Turn it on in BriefBar's Settings to use it here.
+            """)
+        isOn.withLock { $0 = true }
+        #expect(try await tool.run(.object([:])) == "Copilot sessions: Save items for later (on !4120's branch)")
+    }
+
+    @Test func asksEverySourceInTheirOrder() async {
+        let slow = MCPRelated.Teller(title: "Slow") { _ in
+            try await Task.sleep(for: .milliseconds(50))
+            return []
+        }
+        let broken = MCPRelated.Teller(title: "Broken") { _ in throw MCPToolError("Couldn't read the sessions.") }
+        let parts = await MCPRelated.ask([slow, broken, Self.sessions], MCPRelated.Query(items: [Self.pullRequest]))
+        #expect(parts.map(\.title) == ["Slow", "Broken", "Copilot sessions"])
+        #expect(parts[0] == MCPRelated.Part(title: "Slow"))
+        #expect(parts[1].problem == "Couldn't read the sessions.")
+        #expect(await MCPRelated.ask([], MCPRelated.Query(items: [Self.pullRequest])).isEmpty)
+    }
 }

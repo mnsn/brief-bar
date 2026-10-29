@@ -105,18 +105,13 @@ package final class CopilotSource: BriefBarSource {
         var items: [LinkedItem] = []
         for session in sessions ?? store.sessions where store.task(for: session.id) == nil {
             guard let ref = ItemRef.session(session.id) else { continue }
-            let recorded = session.links
-            for pullRequest in recorded?.pullRequests ?? [] {
-                if let target = pullRequest.ref, let link = ItemLink(ref, target, origin: .copilot) { facts.append(link) }
-            }
-            let hint = session.isChat ? nil : session.branch.map {
-                BranchHint(branch: $0, repositories: BranchHint.repositories([session.projectName, recorded?.folder], gitHub: recorded?.gitHubRepository))
-            }
+            facts += session.recordedLinks
             let store = self.store
             items.append(LinkedItem(
                 ref: ref, label: session.displayName, title: session.displayName, symbol: session.rowSymbol,
                 color: session.phase == .idle ? .secondary : session.rowColor, state: session.phase.state, status: session.headline,
-                place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: hint, date: session.since,
+                place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: session.branchHint,
+                date: session.since,
                 open: {
                     // As it is when you click it.
                     store.open(store.sessions.first { $0.id == session.id } ?? session)
