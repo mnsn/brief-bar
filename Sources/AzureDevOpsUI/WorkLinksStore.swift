@@ -204,7 +204,6 @@ final class WorkLinksStore {
             items.append(Self.item(workItem))
         }
         if copilot.isOn {
-            let now = Date()
             for entry in copilot.entries {
                 guard let session = ItemRef.session(entry.id) else { continue }
                 facts += Self.links(of: entry, session: session)
@@ -212,9 +211,10 @@ final class WorkLinksStore {
                 let copilot = self.copilot
                 let from = entry.onPullRequest.map { ItemRef.pullRequest(organization: $0.organization, number: $0.id) }
                     ?? entry.workItem.map { ItemRef.workItem(organization: $0.organization, id: $0.id) }
+                // Without how long it's been at it, which its date says: its row stays the same while it works.
                 items.append(LinkedItem(
                     ref: session, label: copilot.subject(of: entry), title: "Copilot: \(copilot.subject(of: entry))",
-                    symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: now),
+                    symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: nil),
                     date: entry.status.since ?? entry.startedAt,
                     menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) },
                     sent: SentToCopilot(action: entry.action?.title, from: from)
@@ -269,16 +269,17 @@ final class WorkLinksStore {
             return pullRequest.map { PullRequestStory.others($0, me: me) }
         case .session:
             guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
-            return Self.story(of: entry, now: Date())
+            return Self.story(of: entry)
         case .gitHubPullRequest:
             return nil
         }
     }
 
-    /// A task sent to Copilot: how it went, the pull request it opened, the model it works with, and the summary it ended
-    /// with. What Copilot recorded of its work, its notes, comes from Copilot's own files, when that source is on.
-    static func story(of entry: CopilotTaskEntry, now: Date) -> ItemStory {
-        var sentence = entry.sentence(now: now)
+    /// A task sent to Copilot: how it went, without how long it's been at it, which its date says, the pull request it
+    /// opened, the model it works with, and the summary it ended with. What Copilot recorded of its work, its notes, comes
+    /// from Copilot's own files, when that source is on.
+    static func story(of entry: CopilotTaskEntry) -> ItemStory {
+        var sentence = entry.sentence(now: nil)
         if entry.status.phase == .finished, entry.action == nil, let url = entry.pullRequest,
            let opened = ItemRef.from(link: url.absoluteString), let number = opened.number {
             sentence = "Opened " + (opened.kind == .gitHubPullRequest ? "#\(number)" : "!\(number)")

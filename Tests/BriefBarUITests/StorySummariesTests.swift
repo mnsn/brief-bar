@@ -281,6 +281,92 @@ import Testing
         return false
     }
 
+    /// What the stories say, which a test changes.
+    private final class Said {
+        var reviewers = "Waiting on Sam Rivera (required)"
+    }
+
+    @Test func outOfDateIsWhatTheRowsSayNotHowLongAgo() async throws {
+        let (links, stories, summaries) = hub()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        stories.now = { clock }
+        let teammates = ItemRef.pullRequest(organization: "contoso", number: 4120)
+        let task = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02")!
+        func publish(task date: Date, more: [LinkedItem] = []) {
+            let items = [
+                LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+                // A teammate's: its row says it's active, whatever the votes.
+                LinkedItem(ref: teammates, label: "!4120", title: "Save items for later", symbol: "arrow.triangle.pull", color: .blue,
+                           status: "Active", date: Date(timeIntervalSince1970: 900_000)),
+                LinkedItem(ref: task, label: "5112: Round half up", title: "Copilot: 5112: Round half up", symbol: "paperplane.fill",
+                           color: .blue, state: .running, status: "Working: Run the cart tests", date: date, sent: SentToCopilot(from: workItem)),
+            ] + more
+            links.publish(.azureDevOps, links: items.dropFirst().compactMap { ItemLink(workItem, $0.ref, origin: .azureDevOps) }, items: items)
+        }
+        let said = Said()
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { ref in
+            switch ref.kind {
+            case .pullRequest:
+                ItemStory(sentence: "Waiting for reviewers: Sam Rivera", date: clock, facts: [ItemStory.Fact("Reviewers", said.reviewers)])
+            case .session:
+                ItemStory(sentence: "Working: Run the cart tests", date: clock, facts: [ItemStory.Fact("Model", "Claude Sonnet 5.5 · Medium")])
+            default:
+                ItemStory(sentence: "Active", facts: [ItemStory.Fact("Tasks", "1 of 3 done")])
+            }
+        }
+        publish(task: clock.addingTimeInterval(-6 * 60))
+        summaries.write = writer(Asked())
+        await summaries.summarizeAndWait(workItem)
+        #expect(!summaries.isOutOfDate(workItem))
+
+        // A minute on, the task has been working for 7 minutes rather than 6, and each is told again.
+        clock += 61
+        publish(task: clock.addingTimeInterval(-7 * 60))
+        await stories.tell([links.describe(workItem)] + links.connections(of: workItem).map(\.item))
+        #expect(!summaries.isOutOfDate(workItem))
+        #expect(summaries.whatChanged(workItem) == nil)
+
+        // The teammate's pull request is approved: its row stays the same, and its story says so.
+        said.reviewers = "Approved by Sam Rivera"
+        clock += 61
+        await stories.tell(links.connections(of: workItem).map(\.item))
+        #expect(summaries.isOutOfDate(workItem))
+        #expect(summaries.whatChanged(workItem) == "!4120 changed")
+
+        // What's linked since, or not anymore.
+        publish(task: clock, more: [LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error",
+                                               symbol: "arrow.triangle.pull", color: .green, state: .done, status: "Ready to complete")])
+        #expect(summaries.whatChanged(workItem) == "!4120 changed; !4091 was linked")
+        links.publish(.azureDevOps, links: [ItemLink(workItem, teammates, origin: .azureDevOps)!], items: [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+            LinkedItem(ref: teammates, label: "!4120", title: "Save items for later", symbol: "arrow.triangle.pull", color: .blue, status: "Active"),
+        ])
+        #expect(summaries.whatChanged(workItem) == "!4120 changed; “5112: Round half up” was unlinked")
+    }
+
+    @Test func aStoryForgottenSinceDoesntMakeItOutOfDate() async throws {
+        let (links, stories, summaries) = hub()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        stories.now = { clock }
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in
+            ItemStory(sentence: "Ready to complete: Approved by Priya Shah", facts: [ItemStory.Fact("Comments", "No open threads")])
+        }
+        summaries.write = writer(Asked())
+        await summaries.summarizeAndWait(workItem)
+        // A quarter of an hour on, what was told is forgotten, until it's told again.
+        clock += 16 * 60
+        #expect(stories.story(for: pullRequest) == nil)
+        #expect(!summaries.isOutOfDate(workItem))
+        // Its row changed, though: that it can tell.
+        links.publish(.azureDevOps, links: [ItemLink(workItem, pullRequest, origin: .azureDevOps)!], items: [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .red, state: .failing, status: "Failing"),
+        ])
+        #expect(summaries.whatChanged(workItem) == "!4091 changed")
+    }
+
     /// Holds the writer until it's let go.
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()

@@ -34,8 +34,8 @@ public enum PullRequestStory {
         // Who sent it to you in a chat, and in which app, stays on this Mac: what's shared says what the pull request says.
         let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me) } ?? sharedStatus(snapshot) : nil
         return ItemStory(
-            sentence: sentence(snapshot.headline, snapshot.detail), sharedSentence: shared, date: snapshot.since, facts: facts,
-            more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst)
+            sentence: sentence(of: snapshot), sharedSentence: shared, date: snapshot.since, facts: facts, more: more,
+            runs: runs.sorted(by: ItemStory.Run.showsFirst)
         )
     }
 
@@ -63,6 +63,12 @@ public enum PullRequestStory {
     }
 
     // MARK: Where it stands
+
+    /// Where one of your pull requests stands, as its row says it, without how long it's been so, which its date says:
+    /// "No activity for 15 days" says a day more each day.
+    static func sentence(of snapshot: PRSnapshot) -> String {
+        snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, snapshot.detail)
+    }
 
     /// "Sam Rivera replied: Could we cap it?": a row's headline and its detail, in a line.
     static func sentence(_ headline: String, _ detail: String?) -> String {

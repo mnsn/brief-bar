@@ -154,6 +154,31 @@ import Testing
         #expect(try #require(workLinks.tell(coupon.ref)).sharedSentence == nil)
     }
 
+    /// A task's row and story say how it works, not for how long, which its date says: a minute later, they're the same.
+    @Test func aTaskAtWorkSaysTheSameAsTimePasses() async throws {
+        let start = Date(timeIntervalSince1970: 1_792_000_000)
+        let working = try #require(CopilotTaskEntry.demo(now: start).first { $0.status.phase == .working && $0.workItem?.id == 5103 })
+        // The lists say for how long.
+        #expect(working.sentence(now: start) == "Working for 6m: Run the cart tests")
+        #expect(working.sentence(now: start.addingTimeInterval(60)) == "Working for 7m: Run the cart tests")
+        #expect(working.sentence(now: nil) == "Working: Run the cart tests")
+        #expect(WorkLinksStore.story(of: working).sentence == "Working: Run the cart tests")
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+        let row = links.describe(try #require(ItemRef.session(working.id)))
+        #expect(row.status == "Working: Run the cart tests")
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

@@ -456,9 +456,13 @@ The summary is kept in memory only, until BriefBar quits, you close it, Show Lin
 a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
 doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
 stop being read, unless the details asked for them too, and a story the details are reading already is waited for
-rather than left out. Once what it summed up changes, each row's state, status, title or date, it says it's out of date,
-with **Summarize Again**. The demo makes summaries up (`DemoSummaries`) and never runs Copilot, and `--render` of your
-own data writes none.
+rather than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state,
+title or status, or what its story says, where it stands, its facts, how its runs stand and how many checkpoints Copilot
+recorded and what it said last (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and
+story say "Working" rather than for how long, which its date says, and a pull request without recent activity says
+just that; and a story that's been forgotten since, a quarter of an hour on, makes no difference until it's told again.
+**Summarize Again** writes a new one. The demo makes summaries up (`DemoSummaries`) and never runs Copilot, and
+`--render` of your own data writes none.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.

@@ -36,12 +36,16 @@ extension RunPhase {
 }
 
 extension CopilotTaskEntry {
-    /// "Opened a pull request", "Working for 12 min: Build the solution", "Failed: …".
-    func sentence(now: Date) -> String {
+    /// "Opened a pull request", "Working for 12 min: Build the solution", "Failed: …". Without `now`, it leaves out how
+    /// long it's been at it, "Working: Build the solution", for what says since when beside it: that stays the same as
+    /// time passes.
+    func sentence(now: Date?) -> String {
         let since = status.since ?? startedAt
         switch status.phase {
         case .preparing: return "Getting its worktree ready"
-        case .working: return "Working for \(Elapsed.short(since: since, now: now))" + (status.detail.map { ": \($0)" } ?? "")
+        case .working:
+            let elapsed = now.map { " for \(Elapsed.short(since: since, now: $0))" } ?? ""
+            return "Working\(elapsed)" + (status.detail.map { ": \($0)" } ?? "")
         case .finished where action != nil:
             switch action {
             case .review?: return "Wrote its review"

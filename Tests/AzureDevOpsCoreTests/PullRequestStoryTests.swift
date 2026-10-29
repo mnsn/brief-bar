@@ -80,6 +80,11 @@ import BriefBarCore
         // A headline without a detail is all it says.
         let draft = makePR(draft: true)
         #expect(try story(record(draft, details: makeDetails(for: draft))).sentence == "Draft")
+        // Not for how long, which its date says: "No activity for 20 days" says a day more each day.
+        let quiet = makePR(created: t(-20 * day))
+        let quietStory = try story(record(quiet, details: makeDetails(for: quiet, lastActivity: t(-20 * day))))
+        #expect(quietStory.sentence == "No recent activity")
+        #expect(quietStory.date == t(-20 * day))
         // What a row says of the pull request itself can be shared as it is.
         #expect(readyStory.sharedSentence == nil)
         #expect(failingStory.sharedSentence == nil)
