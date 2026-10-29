@@ -1,16 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 - 2026-10-29
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
   details on the Sprint page start with **Where It Stands**: the pull requests, their pipelines and the
-  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence,
-  and **Waiting on** says who it all waits on, you first; fold it to just that line. Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
+  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence, and
+  **Waiting on** says who it all waits on, you first; click its title to fold it to just that line.
+  Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
   ones waiting on you, conflicts, and each build or check that ran on it, with where a failed one
   failed; a Copilot session's question or plan, and what Copilot recorded of its work as it went, its
   notes, what it did, what's next and what it said last. It's all from what BriefBar already reads,
-  shown as it was written, with no more requests to Azure DevOps. The GitHub Copilot source asks you to look at
-  what it reads again, since it now reads a linked session's checkpoints, in memory only.
+  shown as it was written, with no more requests to Azure DevOps. The GitHub Copilot source asks you to
+  look at what it reads again, since it now reads a linked session's checkpoints, in memory only.
 - **Ask Copilot to sum it up.** Turn on **Summarize with Copilot** in **Settings › General**, and **✨
   Summarize** in Where It Stands asks the Copilot CLI for a short summary of the work item and everything
   linked to it: where it stands, what's next and who for, and what's been done. It runs only when you
