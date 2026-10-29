@@ -200,8 +200,11 @@ final class WorkLinksStore {
         for pullRequest in read.pullRequests.values {
             items.append(Self.item(pullRequest))
         }
+        let rows = sprint.board?.rows ?? []
         for workItem in sprintItems + read.workItems.values {
-            items.append(Self.item(workItem))
+            // A story's or a bug's tasks, in the sprint.
+            let tasks = rows.first { $0.parent?.key == workItem.key }?.tasks.count ?? 0
+            items.append(Self.item(workItem, tasks: tasks))
         }
         if copilot.isOn {
             for entry in copilot.entries {
@@ -317,11 +320,12 @@ final class WorkLinksStore {
         )
     }
 
-    static func item(_ workItem: WorkItem) -> LinkedItem {
+    /// A work item, with how many tasks it has in the sprint, for a story or a bug.
+    static func item(_ workItem: WorkItem, tasks: Int = 0) -> LinkedItem {
         LinkedItem(
             ref: .workItem(organization: workItem.organization, id: workItem.id), label: String(workItem.id), title: workItem.title,
             symbol: workItem.typeSymbol, color: workItem.typeColor, status: workItem.state, place: workItem.project,
-            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }
+            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }, parts: tasks
         )
     }
 }

@@ -67,6 +67,9 @@ import Testing
         let bug = links.connections(of: .workItem(organization: organization, id: 5110))
         #expect(bug.first { $0.item.ref == session }?.via?.ref == .pullRequest(organization: organization, number: 4091))
         #expect(links.unknown([.workItem, .pullRequest]).isEmpty)
+        // A story's tasks, in the sprint, are something to sum up besides what's linked; a task has none.
+        #expect(links.describe(.workItem(organization: organization, id: 5101)).parts == 4)
+        #expect(links.describe(.workItem(organization: organization, id: 5103)).parts == 0)
 
         // What's linked that the lists and the sprint don't show stays looked up once it's been read, so the engine keeps
         // it rather than forgetting it and reading it again.

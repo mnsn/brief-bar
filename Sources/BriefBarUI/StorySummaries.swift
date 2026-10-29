@@ -99,10 +99,14 @@ package final class StorySummaries: ObservableObject {
     @Published package private(set) var isOn: Bool
     @Published package private(set) var model: String
     @Published private var states: [ItemRef: State] = [:]
+    /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
+    @Published package private(set) var hasCLI: Bool?
     /// The models Settings offers; the app fills it in.
     package var models: [Model] = [Model(id: StorySummaries.defaultModel, name: "Claude Haiku 5.5")]
     /// Asks Copilot; nil until the app sets it, and then summaries can't be written.
     package var write: Writer?
+    /// Looks for the Copilot CLI, nil when it couldn't tell; nil where nothing's looked for, as in the demo.
+    package var findCLI: (@Sendable () async -> Bool?)?
     /// Your name as a source knows it, for a summary to call you "you": Azure DevOps sets it, once it read your pull
     /// requests, while it's on.
     package var yourName: (@MainActor () -> String?)?
@@ -165,10 +169,29 @@ package final class StorySummaries: ObservableObject {
         models.first { $0.id == model }?.name ?? model
     }
 
+    /// Looks for the Copilot CLI while this is on, for Settings to say when it isn't there.
+    package func lookForCLI() async {
+        guard isOn, let findCLI, let found = await findCLI() else { return }
+        hasCLI = found
+    }
+
     // MARK: Summaries
 
     package func state(for subject: ItemRef) -> State? {
         states[subject]
+    }
+
+    /// Whether there's something to sum up: two things linked to it or more, or one and parts of its own, such as a story's
+    /// tasks. Nothing while this or Show Links is off.
+    package func hasSomethingToSum(_ subject: ItemRef) -> Bool {
+        guard isAvailable else { return false }
+        let linked = links.connections(of: subject).count
+        return linked >= 2 || (linked == 1 && links.describe(subject).parts > 0)
+    }
+
+    /// For `--render`: a summary as it would stand, without asking Copilot.
+    package func useForRendering(_ subject: ItemRef, state: State?) {
+        states[subject] = state
     }
 
     /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
@@ -321,6 +344,14 @@ package final class StorySummaries: ObservableObject {
     /// What a sentence calls it: a work item's or a pull request's number, a session's name in quotes.
     static func name(_ input: Input) -> String {
         input.ref.kind == .session ? "“\(input.label)”" : input.label
+    }
+
+    /// What a summary was written from, as a sentence says it: the thing's and its pull requests' numbers, then how many
+    /// Copilot sessions: "5101, !4120 and 1 Copilot session".
+    package static func source(of inputs: [Input]) -> String {
+        let sessions = inputs.filter { $0.ref.kind == .session }.count
+        let counted = sessions == 0 ? [] : [sessions == 1 ? "1 Copilot session" : "\(sessions) Copilot sessions"]
+        return list(inputs.filter { $0.ref.kind != .session }.map(\.label) + counted)
     }
 
     /// "!4120", "!4120 and 5103", "!4120, 5103 and #12".

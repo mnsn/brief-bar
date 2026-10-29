@@ -31,11 +31,14 @@ package struct LinkedItem {
     package var menu: (() -> AnyView)?
     /// A task you sent to Copilot: what for, and where from.
     package var sent: SentToCopilot?
+    /// How many parts it has that aren't linked to it, such as a story's or a bug's tasks: something to sum up besides
+    /// what's linked to it.
+    package var parts: Int
 
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
         sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
-        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil
+        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, parts: Int = 0
     ) {
         self.ref = ref
         self.label = label
@@ -51,6 +54,7 @@ package struct LinkedItem {
         self.open = open
         self.menu = menu
         self.sent = sent
+        self.parts = parts
     }
 
     /// "Work Item 5101 · Save items for later", "Pull Request !4071 · Add retry…", or a session's name, for menus.
@@ -94,7 +98,7 @@ extension LinkedItem: Equatable {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
             && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
             && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent
+            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent && lhs.parts == rhs.parts
     }
 }
 

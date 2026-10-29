@@ -50,6 +50,14 @@ import Testing
         #expect(summary?.paragraph == "Done, apart from the review.")
     }
 
+    @Test func itReadsAsPlainTextToo() {
+        let summary = StorySummary(headline: "Approved.", nextFor: "you", next: "Complete !4091.", paragraph: "Priya approved it.")
+        #expect(summary.nextLabel == "Next for you:")
+        #expect(summary.plainText == "Approved.\nNext for you: Complete !4091.\n\nPriya approved it.")
+        #expect(StorySummary(headline: "Merged.", next: "Close 5110.").nextLabel == "Next:")
+        #expect(StorySummary(headline: "Merged.").plainText == "Merged.")
+    }
+
     @Test func anAnswerWithoutLabelsIsAHeadlineThenAParagraph() {
         let summary = StorySummary.parse("The build failed at Run tests. Copilot is fixing it, and nothing else waits.")
         #expect(summary?.headline == "The build failed at Run tests.")

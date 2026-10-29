@@ -19,6 +19,19 @@ public struct StorySummary: Sendable, Equatable {
         self.paragraph = paragraph
     }
 
+    /// What the next step starts with: "Next for you:", "Next for Sam Rivera:", or "Next:" when it doesn't say whose.
+    public var nextLabel: String {
+        nextFor.map { "Next for \($0):" } ?? "Next:"
+    }
+
+    /// It in plain text, for the pasteboard: the headline, the next step and for whom, then the paragraph.
+    public var plainText: String {
+        var text = headline
+        if let next { text += "\n\(nextLabel) \(next)" }
+        if let paragraph { text += "\n\n" + paragraph }
+        return text
+    }
+
     /// What the model answered, in the form the prompt asks for: `HEADLINE:`, `NEXT FOR:`, `NEXT:` and `SUMMARY:`, each
     /// starting a line, whatever their case, with or without Markdown around them; a summary goes on until the next label or
     /// the end. A next step without whom it's for may name them first, as in "Sam Rivera: get !4120 reviewed". An answer

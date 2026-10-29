@@ -369,6 +369,77 @@ import Testing
         #expect(summaries.whatChanged(workItem) == "!4091 changed")
     }
 
+    /// What the Copilot CLI was looked for with.
+    private final class Looks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _count = 0
+        var count: Int { lock.withLock { _count } }
+        func add() { lock.withLock { _count += 1 } }
+    }
+
+    @Test func itsOfferedOnlyWithSomethingToSumUp() {
+        let (links, _, summaries) = hub()
+        let session = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02")!
+        func publish(tasks: Int, linked: [LinkedItem]) {
+            let subject = LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red,
+                                     status: "Active", parts: tasks)
+            links.publish(.azureDevOps, links: linked.compactMap { ItemLink(workItem, $0.ref, origin: .azureDevOps) }, items: [subject] + linked)
+        }
+        let fix = LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                             color: .green, state: .done, status: "Ready to complete")
+        let task = LinkedItem(ref: session, label: "5112: Round half up", title: "Copilot: 5112: Round half up", symbol: "paperplane.fill",
+                              color: .blue, state: .running, status: "Working: Run the cart tests")
+        // One thing linked, and nothing of its own: its row says it all.
+        publish(tasks: 0, linked: [fix])
+        #expect(!summaries.hasSomethingToSum(workItem))
+        // With its tasks, or another linked, there's something to sum up.
+        publish(tasks: 3, linked: [fix])
+        #expect(summaries.hasSomethingToSum(workItem))
+        publish(tasks: 0, linked: [fix, task])
+        #expect(summaries.hasSomethingToSum(workItem))
+        // Nothing linked, or Show Links off: nothing.
+        publish(tasks: 3, linked: [])
+        #expect(!summaries.hasSomethingToSum(workItem))
+        publish(tasks: 0, linked: [fix, task])
+        links.setOn(false)
+        #expect(!summaries.hasSomethingToSum(workItem))
+    }
+
+    @Test func itSaysWhatItWasWrittenFrom() {
+        func input(_ ref: ItemRef, _ label: String) -> StorySummaries.Input {
+            StorySummaries.Input(ref: ref, label: label, row: "", story: nil)
+        }
+        let first = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01")!
+        let second = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02")!
+        #expect(StorySummaries.source(of: [input(workItem, "5110"), input(pullRequest, "!4091"), input(first, "Round half up")])
+            == "5110, !4091 and 1 Copilot session")
+        #expect(StorySummaries.source(of: [input(workItem, "5110"), input(first, "One"), input(second, "Two")])
+            == "5110 and 2 Copilot sessions")
+        #expect(SummarizeButton.help(for: workItem, model: "Claude Haiku 5.5")
+            == "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5). Uses your Copilot plan.")
+    }
+
+    @Test func settingsSaysWhenTheCLIIsntThere() async {
+        let (_, _, summaries) = hub(on: false)
+        let looks = Looks()
+        summaries.findCLI = {
+            looks.add()
+            return false
+        }
+        // Not while it's off.
+        await summaries.lookForCLI()
+        #expect(looks.count == 0)
+        #expect(summaries.hasCLI == nil)
+        summaries.setOn(true)
+        await summaries.lookForCLI()
+        #expect(looks.count == 1)
+        #expect(summaries.hasCLI == false)
+        // When it can't tell, what it knew stays.
+        summaries.findCLI = { nil }
+        await summaries.lookForCLI()
+        #expect(summaries.hasCLI == false)
+    }
+
     /// Holds the writer until it's let go.
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()
