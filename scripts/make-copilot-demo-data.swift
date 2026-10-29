@@ -234,14 +234,22 @@ session("e81b5c63-2d9f-4a7e-9c34-1f6a8b2d0c05", "When to use an actor instead of
     log.tool("web_fetch", ["url": "https://docs.swift.org/swift-book/"], title: "Reading the Swift book",
              at: ago(10), finished: false)
 }
-// A chat that started "Add dark mode to settings" and relays its question to you: running, or with Show Relayed
-// Questions Once, where you answer it.
+// A chat that started "Add dark mode to settings" and "Add dark mode to emails", and relays the first one's question to
+// you: running, or with Show Relayed Questions Once, where you answer it.
 session(rollout, "Roll out dark mode", project: nil, running: true, started: ago(11 * minute), context: (72_000, 200_000)) { log in
     log.tool("create_session", ["name": "Add dark mode to settings"], title: "Starting a session", at: ago(9 * minute + 30))
+    log.tool("create_session", ["name": "Add dark mode to emails"], title: "Starting a session", at: ago(4 * minute + 30))
     log.tool("relay_session_input", [
         "project_session_id": "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01", "request_id": "demo-request",
         "context": "From the session adding dark mode to the settings page.",
     ], at: ago(4 * minute - 12), finished: false)
+}
+// The other session the chat started, still working: with Nest Sessions Under Their Parents, it's under the chat.
+session("f2c6b8d4-0e3a-4d71-b9a5-7e1c3d5f9a12", "Add dark mode to emails", project: "shop-web", branch: "dark-mode-emails",
+        running: true, started: ago(4 * minute + 20), context: (38_000, 200_000), coordinator: rollout) { log in
+    log.tool("view", ["path": "emails/templates/layout.html"], at: ago(4 * minute))
+    log.tool("bash", ["command": "npm run build:emails", "description": "Build the email templates"],
+             at: ago(1 * minute), finished: false)
 }
 
 // Done and stopped, recently enough to be highlighted.

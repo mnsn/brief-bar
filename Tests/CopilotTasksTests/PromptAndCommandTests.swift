@@ -79,6 +79,18 @@ import Testing
         )
         #expect(script.hasPrefix("#!/bin/zsh -l\n"))
         #expect(script.hasSuffix("cd '/Users/robin/Robin'\\''s Repos/wi-1' && exec '/opt/homebrew/bin/copilot' --resume 'abc'"))
+        #expect(script.contains("# Opened by BriefBar: Copilot's session for work item 1, to go on with it.\n"))
+
+        let own = CopilotCommand.resumeScript(
+            copilot: URL(fileURLWithPath: "/opt/homebrew/bin/copilot"), sessionId: "abc", directory: URL(fileURLWithPath: "/Users/robin/shop"),
+            home: URL(fileURLWithPath: "/Users/robin/.copilot"), file: URL(fileURLWithPath: "/Users/robin/Library/Caches/x/Copilot session abc.command")
+        )
+        #expect(own == """
+            #!/bin/zsh -l
+            # Opened by BriefBar: a Copilot CLI session, to go on with it.
+            /bin/rm -f -- '/Users/robin/Library/Caches/x/Copilot session abc.command'
+            cd '/Users/robin/shop' && COPILOT_HOME='/Users/robin/.copilot' exec '/opt/homebrew/bin/copilot' --resume 'abc'
+            """)
     }
 
     @Test func titlesOptionsByTheirNames() {

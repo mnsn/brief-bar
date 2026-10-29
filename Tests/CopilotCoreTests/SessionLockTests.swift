@@ -29,6 +29,19 @@ import Testing
         #expect(!SessionLock.isHeld(sessionFolder: URL(fileURLWithPath: "/nonexistent")))
     }
 
+    /// Which program holds it, to bring up the terminal a Copilot CLI has it open in: only one that's still running.
+    @Test func namesTheProgramThatHoldsIt() throws {
+        try withTemporaryDirectory { folder in
+            #expect(SessionLock.holder(sessionFolder: folder) == nil)
+            try Data().write(to: folder.appendingPathComponent("inuse.4242.lock"))
+            #expect(SessionLock.holder(sessionFolder: folder, isRunning: { _ in false }) == nil)
+            #expect(SessionLock.holder(sessionFolder: folder, isRunning: { $0 == 4242 }, startTime: { _ in nil }) == 4242)
+            try FileManager.default.removeItem(at: folder.appendingPathComponent("inuse.4242.lock"))
+            try Data().write(to: folder.appendingPathComponent("inuse.\(getpid()).lock"))
+            #expect(SessionLock.holder(sessionFolder: folder) == getpid())
+        }
+    }
+
     /// macOS reuses process IDs: a lock whose process ID belongs to a program that started after the lock was written was
     /// left by one that's gone, and doesn't count.
     @Test func doesNotTakeAReusedProcessIDForTheLocksProgram() throws {
@@ -68,5 +81,10 @@ import Testing
         #expect(SessionStateScanner.value("name", inWorkspace: text) == "Fix the checkout total")
         #expect(SessionStateScanner.value("branch", inWorkspace: text) == nil)
         #expect(SessionStateScanner.value("cwd", inWorkspace: "cwd:\n") == nil)
+        // Quoted as YAML quotes them: `''` in single quotes, and escapes in double quotes.
+        #expect(SessionStateScanner.value("cwd", inWorkspace: "cwd: '/Users/robin/Robin''s repo: demo'") == "/Users/robin/Robin's repo: demo")
+        #expect(SessionStateScanner.value("cwd", inWorkspace: #"cwd: "/Users/robin/a \"b\" c\\d \u00e9\x21\/""#)
+            == "/Users/robin/a \"b\" c\\d é!/")
+        #expect(SessionStateScanner.value("name", inWorkspace: #"name: "Two\nlines\t\q \u12""#) == "Two\nlines\t\\q \\u12")
     }
 }

@@ -198,6 +198,66 @@ import BriefBarCore
         }
     }
 
+    /// The session each one is nested under, as the app's sidebar nests it: a project session under its parent
+    /// workspace's session, or else the chat that started it; a chat under the session that coordinates it, or else the
+    /// one that started it.
+    @Test func readsWhichSessionEachOneIsNestedUnder() throws {
+        try withTemporaryDirectory { directory in
+            let url = directory.appendingPathComponent("data.db")
+            let db = try TestDatabase(at: url)
+            defer { db.close() }
+            try db.createAppSchema()
+            try db.addProject("p1", name: "acme-web")
+            try db.addProject("p2", name: "acme-docs")
+            try db.addSession("plan", title: "Release 2.5", type: "general_chat")
+            try db.addSession("lead", title: "Ship the API")
+            try db.addWorkspace("w-lead", session: "lead", name: "Ship the API")
+            // Started by a session in its project: its workspace's parent.
+            try db.addSession("linked", title: "Write the changelog")
+            try db.addWorkspace("w-linked", session: "linked", name: "Write the changelog", creator: "lead", coordinator: "lead")
+            try db.addWorkspaceParent(child: "w-linked", parent: "w-lead")
+            // Started by a chat, which has no workspace: whether or not the chat coordinates it.
+            try db.addSession("coordinated", title: "Pick colors")
+            try db.addWorkspace("w-coordinated", session: "coordinated", name: "Pick colors", creator: "plan", coordinator: "plan")
+            try db.addSession("uncoordinated", title: "Pick fonts")
+            try db.addWorkspace("w-uncoordinated", session: "uncoordinated", name: "Pick fonts", creator: "plan")
+            // A fork links to the session it was forked from, which the sidebar doesn't nest it under.
+            try db.addSession("fork", title: "Ship the API, again", forkedFrom: "lead")
+            try db.addWorkspace("w-fork", session: "fork", name: "Ship the API, again", creator: "lead")
+            try db.addWorkspaceParent(child: "w-fork", parent: "w-lead")
+            // Started by a session in another project, which links no workspace, and one that was detached.
+            try db.addSession("elsewhere", title: "Document the API")
+            try db.addWorkspace("w-elsewhere", session: "elsewhere", project: "p2", name: "Document the API", creator: "lead")
+            try db.addSession("detached", title: "Pick sizes")
+            try db.addWorkspace("w-detached", session: "detached", name: "Pick sizes")
+            // Only the workspace the app shows counts, not an archived one that had a parent.
+            try db.addSession("moved", title: "Pick icons")
+            try db.addWorkspace("w-moved-old", session: "moved", name: "Pick icons", archived: true)
+            try db.addWorkspaceParent(child: "w-moved-old", parent: "w-lead")
+            try db.addWorkspace("w-moved", session: "moved", name: "Pick icons", updatedAt: t(-10))
+            // Chats: under the session that coordinates them, or else the one that started them.
+            try db.addSession("asked", title: "Ask about icons", type: "general_chat")
+            try db.addChatParent(session: "asked", parent: "lead", coordinator: nil)
+            try db.addSession("handed-over", title: "Ask about logos", type: "general_chat")
+            try db.addChatParent(session: "handed-over", parent: "lead", coordinator: "plan")
+
+            let sessions = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url).sessions.map { ($0.id, $0) })
+            #expect(sessions.mapValues(\.parentSessionId) == [
+                "plan": nil, "lead": nil, "linked": "lead", "coordinated": "plan", "uncoordinated": "plan", "fork": nil,
+                "elsewhere": nil, "detached": nil, "moved": nil, "asked": "lead", "handed-over": "plan",
+            ])
+
+            // Older app versions record no links: only the chats that started sessions are known.
+            try db.exec("""
+                DROP TABLE workspace_parent_links; DROP TABLE chat_parent_links;
+                ALTER TABLE sessions DROP COLUMN forked_from_session_id;
+                """)
+            let older = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url).sessions.map { ($0.id, $0) })
+            #expect(older.count == 11)
+            #expect(older.compactMapValues(\.parentSessionId) == ["coordinated": "plan", "uncoordinated": "plan"])
+        }
+    }
+
     /// Older app versions don't record context usage.
     @Test func loadsSessionsWithoutContextUsage() throws {
         try withTemporaryDirectory { directory in

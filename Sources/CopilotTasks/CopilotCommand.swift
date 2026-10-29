@@ -62,8 +62,21 @@ public enum CopilotCommand {
         """
     }
 
+    /// A script for Terminal that goes on with one of the Copilot CLI's own sessions, rather than one BriefBar sent: in the
+    /// folder it works in, and in the Copilot `home` it was found in, whatever `COPILOT_HOME` your shell sets. It removes
+    /// itself, at `file`, as it starts, so that the session's ID and folder don't stay behind in it. The session's name,
+    /// which anyone's prompt can make, is never in it.
+    public static func resumeScript(copilot: URL, sessionId: String, directory: URL, home: URL, file: URL) -> String {
+        """
+        #!/bin/zsh -l
+        # Opened by BriefBar: a Copilot CLI session, to go on with it.
+        /bin/rm -f -- \(quoted(file.path))
+        cd \(quoted(directory.path)) && COPILOT_HOME=\(quoted(home.path)) exec \(quoted(copilot.path)) --resume \(quoted(sessionId))
+        """
+    }
+
     /// A word for the shell, in single quotes.
-    static func quoted(_ text: String) -> String {
+    public static func quoted(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

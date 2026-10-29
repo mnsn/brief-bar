@@ -20,19 +20,19 @@ within() {
 JSON="$("$BIN" --demo --json)"
 
 # Each source's counts, by group.
-EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":4,"needsYou":3,"running":3,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
+EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":4,"needsYou":3,"running":4,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
 COUNTS="$(jq -cS 'with_entries(.value |= .counts)' <<<"$JSON")"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 
 # Each section's counts by state, the same for every source: unread chats, pull requests and Copilot sessions
 # that need you; failing pull requests and stopped sessions; running sessions; pull requests ready to complete
 # or merge and finished sessions. GitHub's pull requests to review and with changes requested both need you. To Review doesn't need you here: the demo doesn't show it in the menu bar.
-EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":3},"github.pullRequests":{"done":1,"failing":2,"needsYou":3,"running":0},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
+EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":4},"github.pullRequests":{"done":1,"failing":2,"needsYou":3,"running":0},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
 STATES="$(jq -cS '[.[].states] | add' <<<"$JSON")"
 [[ "$STATES" == "$EXPECTED_STATES" ]] || fail "expected the counts by state $EXPECTED_STATES, got $STATES"
 
 # And added up, as one menu-bar item that shows every section by meaning would count them.
-EXPECTED_TOTALS='{"done":4,"failing":5,"needsYou":14,"running":3}'
+EXPECTED_TOTALS='{"done":4,"failing":5,"needsYou":14,"running":4}'
 TOTALS="$(jq -cS '[.[].states[] | to_entries[]] | group_by(.key) | map({(.[0].key): (map(.value) | add)}) | add' <<<"$JSON")"
 [[ "$TOTALS" == "$EXPECTED_TOTALS" ]] || fail "expected the sum by state $EXPECTED_TOTALS, got $TOTALS"
 

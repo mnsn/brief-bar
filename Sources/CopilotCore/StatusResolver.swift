@@ -67,6 +67,10 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
     public var answerIn: RelatedSession? = nil
     /// The sessions whose questions or plans this one asks you for, the longest-waiting first.
     public var asksFor: [RelatedSession] = []
+    /// The listed session that started this one, which the app's sidebar nests it under (`SessionNesting`).
+    public var parent: RelatedSession? = nil
+    /// How far it's nested under the session that started it, within its group: 0 when it isn't.
+    public var depth = 0
 
     public var displayName: String {
         if !name.isEmpty { return name }

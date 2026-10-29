@@ -1377,7 +1377,8 @@ there:
 The Copilot app's runtime keeps each session it has open in memory, and marks it with `inuse.<pid>.lock`
 in its `session-state` folder (`SessionLock`). A turn another program runs in such a session is one the
 app never sees: tried with the Copilot CLI 1.0.105, the app answered its next message without that turn,
-and the session's log then held both, forked. The CLI doesn't check for the lock, so BriefBar does, for
+and the session's log then held both, forked. An interactive Copilot CLI keeps the same lock, from when it
+opens a session until it quits, but doesn't check for one, so BriefBar does, for
 every session it goes on with: while a running program holds one, **Run with the CLI** isn't offered,
 the launcher refuses (`LaunchError.openInApp`), looking again after its git commands, right before it
 starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count, nor does one whose
@@ -1477,7 +1478,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
 | `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
@@ -1539,11 +1540,49 @@ it applies. A few more details:
   the session that asks you in the end. Until the coordinator asks, the session needs you on its own.
   Permission prompts are never asked for: only the session itself can answer one. With the setting off,
   a relay shows as **Working**, as it did before, and the session it relays for needs you on its own.
+- **Nest Sessions Under Their Parents**, off by default, nests sessions under the sessions that started
+  them, as the Copilot app's sidebar does (`SessionNesting`), but within each group. A session's parent
+  is the one the sidebar nests it under. For a project session, that's the session of the parent
+  workspace (`workspace_parent_links`) of the workspace it's listed with, the one in its project that
+  started it, but not the one it was forked from (`forked_from_session_id`). Without a parent workspace,
+  it's the chat that started it (`coordinating_creator_session_id`, else `creator_session_id`, on that
+  workspace), whether or not the chat coordinates it. For a chat, it's the session that coordinates it,
+  else the one that started it (`chat_parent_links`). Detaching a session in the app forgets all of
+  these, so it stands on its own, and a session that started one in another project gets no parent
+  workspace, so the sidebar doesn't nest that one either. Each is read apart from the main query, so an
+  older schema only loses nesting. Without the Copilot app, there's no database to read them from, so
+  nothing nests.
+  Within a group, a session whose parent is in the same group sits right under it, indented, its own
+  children under it in turn. A family takes the place of the member that sorts first, so **Needs you**
+  still starts with the longest wait; in it, the parent comes first, then its children in the group's
+  order. A session whose parent is in another group keeps its place, with a **↳** tag naming the parent,
+  which opens it, as clicking it would, except when its **Answer in “…”** names that session already. The
+  row, itself a button, would take the click from a button in it, so the tag's button lies over the tag,
+  outside the row's (`ParentTag.Target`). A parent BriefBar doesn't
+  list, such as an archived one, nests nothing and gets no tag. Counts don't change. **Everything by
+  State** sorts every section's items together, so it doesn't nest sessions, and tags each one with a
+  listed parent. The command line and agents follow the same setting: `--dump` indents nested sessions
+  and tags the others, and `--mcp` indents nested sessions under their parents and says which session
+  started each of the others.
 - **Show Context Usage** shows the app's latest measurement of each session's context window
   (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
   limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns
   orange from 70%. Sessions the app hasn't measured show nothing.
-- Clicking a session opens it through the Copilot app's `ghapp://sessions/<id>` link.
+- Clicking a session opens it through the Copilot app's `ghapp://sessions/<id>` link. Without the app
+  (`CopilotApp.isInstalled`: nothing on the Mac opens `ghapp://` links), the sessions are the Copilot
+  CLI's, and one opens with the CLI instead (`CLISession`), looked at again on each click. A session a
+  CLI still holds (`SessionLock`) brings the app macOS holds responsible for that CLI to the front, such
+  as Terminal, iTerm or VS Code: resuming it in a second terminal would fork its history. BriefBar can't
+  pick the exact window or tab, which would take AppleScript. Any other session opens in Terminal with
+  `copilot --resume <id>`, in the `cwd` its `workspace.yaml` names, as **Continue in Terminal** does for
+  a task, with `COPILOT_HOME` set to the folder BriefBar read the session from, whatever your shell
+  sets. A new Terminal window takes a moment to start the CLI, which holds the session only once it
+  starts, so for 30 seconds another click on that session starts nothing more (`CLISession.Starting`):
+  two CLIs in it would fork its history. Turning Copilot off, or quitting, stops one that's still being
+  opened before it reads more of its session. The script, in BriefBar's caches and named by the
+  session's whole ID, removes itself as it starts, and turning Copilot off removes any that never ran.
+  The **Open Copilot** button and menu item are hidden then. The demo's made-up sessions always open in
+  the app.
 - The tasks you sent to Copilot from Azure DevOps ([above](#send-work-to-copilot)) are in the list too,
   with ✈︎ before their names, unless the app's database lists their sessions itself, as it does once you
   open one there. (Without the database, the list is every recent session folder, and a task's folder is
@@ -1585,7 +1624,11 @@ log format, and the `ghapp://` link. An app update could change them.
 - If the main database query fails, the app uses a simpler one: session names only, without the
   running flag, projects or branches.
 - If the database can't be read at all, sessions are listed from their log folders, and the
-  problem is shown in the panel and the widget.
+  problem is shown in the panel and the widget. On a Mac without the Copilot app, a database that
+  isn't there at all (`EngineSnapshot.databaseMissing`: no such file, not one that can't be reached,
+  looked at on every read that fails) is no problem: the Copilot CLI keeps none, so the list is its
+  session folders, and nothing is shown, in the panel, the widget, the command line or to agents
+  (`CopilotApp.problem(of:)`). With the app installed, it's shown as before.
 
 ## GitHub
 

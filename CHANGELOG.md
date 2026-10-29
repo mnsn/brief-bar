@@ -33,6 +33,20 @@
   requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its
   description and latest comments. In the GitHub Copilot app, try **/briefbar 5101**: it answers in four
   short lines. Since agents get more, they wait until you've seen what they get now.
+- **See which Copilot sessions another one started.** Turn on **Nest Sessions Under Their Parents** in
+  Copilot's settings, and a session that another session started shows under it, indented, as in the
+  Copilot app's sidebar, when both are in the same group, such as **Running**. One in another group
+  stays where it was, with a **↳** tag that names the session that started it; click the tag to open
+  that session. The counts stay the same.
+
+## 0.8.6 - 2026-10-29
+
+- **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the
+  Sessions list said "Could not open Copilot database", and clicking a session failed, since nothing
+  could open it. It now lists the CLI's recent sessions without that warning, and clicking one opens it
+  in a terminal: one the CLI still has open brings up the app it runs in, such as Terminal, and any
+  other opens in Terminal with `copilot --resume`, in the folder it worked in. With the Copilot app
+  installed, nothing changes.
 
 ## 0.8.5 - 2026-10-29
 

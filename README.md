@@ -492,6 +492,11 @@ them after you open or view them in Copilot; turning it off shows recent viewed 
 but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
 
+Without the Copilot app, as on a Mac with only the Copilot CLI, the list has the CLI's sessions that
+changed in the last day, and there's no app database to miss. Click one to open it in a terminal: one
+the CLI still has open brings up the app it runs in, such as Terminal, and any other opens in Terminal
+with `copilot --resume`, in the folder it worked in. With the app installed, nothing changes.
+
 When a session that another session started and coordinates has a question or a plan for you, the app
 tells the coordinating session, which then asks you too. Answer where it asks: it passes your answer
 on, while a plan you approve in the session itself leaves the coordinating session's question waiting,
@@ -501,6 +506,14 @@ session it's for moves to **Running** as **Answer in “…”**, naming the coo
 clicking it opens that session; right-click it to open the session itself. Until the coordinating
 session asks, the session needs you on its own. Off, both need you once both ask, and a session
 passing on a question shows as **Working**.
+
+The Copilot app's sidebar shows the sessions that a session started under it. **Nest Sessions Under
+Their Parents**, off by default, does the same within each group: a session in the same group as the
+session that started it shows right under it, indented, and the two move together to where the one
+waiting longest, or the most recent, would be. A session whose parent is in another group stays in its
+place, with a **↳** tag that names the session that started it; click the tag to open that session.
+Counts don't change. **Everything by State** mixes every section's items, so it doesn't nest sessions,
+and shows the tag on each one that another session started.
 
 The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
 "Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the
@@ -715,6 +728,7 @@ or 3 days (see [Notifications](#notifications)).
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
 | | Show Relayed Questions Once | off by default: a question or plan that a coordinating session asks you for another session shows once, on the coordinating session (see [GitHub Copilot](#github-copilot)) |
+| | Nest Sessions Under Their Parents | off by default: a session that another session started shows under it, as in the Copilot app's sidebar, or with a ↳ tag when it's in another group (see [GitHub Copilot](#github-copilot)) |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
 

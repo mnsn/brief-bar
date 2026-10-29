@@ -84,7 +84,7 @@ import Testing
     @Test func openingOnlyDismissesWhileTheOptionIsOn() throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         var opened: [String] = []
-        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) })
+        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) }, isAppInstalled: { true })
         let records = [
             ended("finished", at: Date().addingTimeInterval(-120)),
             ended("stopped", at: Date().addingTimeInterval(-120), failed: true),
@@ -111,6 +111,119 @@ import Testing
         #expect(store.counts.done == 0)
     }
 
+    /// With the Copilot app on this Mac, sessions open in it, as they always have; without it, with the Copilot CLI. It's
+    /// looked at again on each click, in case you installed or removed it since.
+    @Test func opensInTheAppWhenItsInstalledAndWithTheCLIWithout() throws {
+        let app = InstalledApp()
+        var inApp: [String] = []
+        var withCLI: [String] = []
+        let store = SessionStore(
+            settings: AppSettings(defaults: MemoryDefaults()), paths: nil,
+            openSession: { inApp.append($0) }, openCLISession: { withCLI.append($0) }, isAppInstalled: { app.isInstalled }
+        )
+        store.receive(EngineSnapshot(records: [ended("finished", at: Date().addingTimeInterval(-120))]))
+        let session = try #require(store.sessions.first)
+        #expect(store.appInstalled)
+        store.open(session)
+        #expect(inApp == ["finished"])
+        #expect(withCLI.isEmpty)
+
+        app.isInstalled = false
+        store.open(session)
+        #expect(!store.appInstalled)
+        #expect(inApp == ["finished"])
+        #expect(withCLI == ["finished"])
+    }
+
+    /// Whether the Copilot app is on this Mac, as a test installs or removes it.
+    @MainActor private final class InstalledApp {
+        var isInstalled = true
+    }
+
+    /// A Mac with only the Copilot CLI has no app database, which is no problem there. With the app, it's one, as before;
+    /// and a database that's there but can't be read is one either way.
+    @Test func saysNothingOfAMissingDatabaseOnlyWithoutTheApp() {
+        let missing = EngineSnapshot(
+            problem: "Could not open Copilot database: unable to open database file", listedByApp: false, databaseMissing: true
+        )
+        let cliOnly = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: nil, isAppInstalled: { false })
+        cliOnly.receive(missing)
+        #expect(cliOnly.problem == nil)
+
+        let withApp = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: nil, isAppInstalled: { true })
+        withApp.receive(missing)
+        #expect(withApp.problem == missing.problem)
+
+        var unreadable = missing
+        unreadable.databaseMissing = false
+        cliOnly.receive(unreadable)
+        #expect(cliOnly.problem == unreadable.problem)
+    }
+
+    /// Without the app, a session a Copilot CLI still has open is in that CLI's terminal; any other is resumed.
+    @Test func showsACLISessionWhereItsOpenOrResumesIt() {
+        let paths = CopilotPaths(root: URL(fileURLWithPath: "/Users/robin/.copilot"))
+        let id = "5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02"
+        var asked: [URL] = []
+        #expect(CLISession.way(for: id, paths: paths, holder: { asked.append($0); return 4242 }) == .show(4242))
+        #expect(asked == [paths.sessionDirectory(id)])
+        #expect(CLISession.way(for: id, paths: paths, holder: { _ in nil }) == .resume)
+    }
+
+    /// A session that's starting in Terminal isn't held by its CLI yet: clicking it again meanwhile starts nothing more,
+    /// which would fork its history, until it's open, it couldn't be, or long enough has passed.
+    @Test func opensASessionInTerminalOnceWhileItStarts() {
+        var starting = CLISession.Starting()
+        let now = Date()
+        let window = CLISession.Starting.window
+        let first = starting.begin("a", now: now)
+        let again = starting.begin("a", now: now.addingTimeInterval(1))
+        let another = starting.begin("b", now: now.addingTimeInterval(1))
+        let stillStarting = starting.begin("a", now: now.addingTimeInterval(window - 1))
+        let afterTheWindow = starting.begin("a", now: now.addingTimeInterval(window))
+        starting.end("b")
+        let afterItOpened = starting.begin("b", now: now.addingTimeInterval(2))
+        #expect(first)
+        #expect(!again)
+        #expect(another)
+        #expect(!stillStarting)
+        #expect(afterTheWindow)
+        #expect(afterItOpened)
+    }
+
+    /// Turning Copilot off stops every session being opened: one that began before opens nothing (its round is over),
+    /// and the next click opens it again.
+    @Test func stopsOpeningSessionsWhenCopilotIsTurnedOff() {
+        var starting = CLISession.Starting()
+        let began = starting.begin("a")
+        let round = starting.round
+        starting.stopAll()
+        let afterStopping = starting.begin("a")
+        #expect(began)
+        #expect(starting.round != round)
+        #expect(afterStopping)
+    }
+
+    /// Turning Copilot off removes the scripts that would have opened its sessions in Terminal but never ran, and
+    /// nothing else. Each is named by its session's whole ID, so two sessions never share one.
+    @Test func forgetsOnlyItsOwnScripts() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = "5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02"
+        let sameStart = "5d2e8a90-0000-4000-8000-000000000000"
+        #expect(CLISession.script(for: id, in: folder).lastPathComponent == "Copilot session \(id).command")
+        #expect(CLISession.script(for: id, in: folder) != CLISession.script(for: sameStart, in: folder))
+        try Data().write(to: CLISession.script(for: id, in: folder))
+        for name in ["Copilot PR 4071.command", "Copilot session notes.txt"] {
+            try Data().write(to: folder.appendingPathComponent(name))
+        }
+        CLISession.forgetScripts(in: folder)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == [
+            "Copilot PR 4071.command", "Copilot session notes.txt",
+        ])
+    }
+
     /// A session's question, which the session coordinating it asks you for it: with Show Relayed Questions Once, once,
     /// where you answer it; without it, as before.
     @Test func aRelayedQuestionShowsOnceOnlyWhenTurnedOn() throws {
@@ -132,7 +245,7 @@ import Testing
 
         let settings = AppSettings(defaults: MemoryDefaults())
         var opened: [String] = []
-        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) })
+        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) }, isAppInstalled: { true })
         store.receive(state)
         #expect(!settings.showRelayedQuestionsOnce)
         #expect(store.sessions(in: .needsYou).map(\.id) == ["child"])
@@ -168,6 +281,69 @@ import Testing
         #expect(!AppSettings(defaults: defaults).showRelayedQuestionsOnce)
         AppSettings(defaults: defaults).showRelayedQuestionsOnce = true
         #expect(AppSettings(defaults: defaults).showRelayedQuestionsOnce)
+    }
+
+    /// Sessions under the sessions that started them, in their own groups, only with Nest Sessions Under Their Parents on;
+    /// counts stay the same.
+    @Test func nestsSessionsUnderTheirParentsOnlyWhenTurnedOn() throws {
+        let now = Date()
+        func running(_ id: String, _ name: String, since seconds: TimeInterval, parent: String? = nil) -> SessionRecord {
+            SessionRecord(
+                meta: SessionMeta(id: id, name: name, isRunning: true, updatedAt: now.addingTimeInterval(-seconds), parentSessionId: parent),
+                log: nil
+            )
+        }
+        var notes = ended("notes", at: now.addingTimeInterval(-120))
+        notes.meta.parentSessionId = "lead"
+        let state = EngineSnapshot(records: [
+            running("lead", "Release 2.5", since: 60), running("other", "Fix the build", since: 30),
+            running("child", "Pick colors", since: 10, parent: "lead"), notes,
+        ])
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let app = InstalledApp()
+        var opened: [String] = []
+        var withCLI: [String] = []
+        let store = SessionStore(
+            settings: settings, paths: nil, openSession: { opened.append($0) }, openCLISession: { withCLI.append($0) },
+            isAppInstalled: { app.isInstalled }
+        )
+        store.receive(state)
+        #expect(!settings.nestSessions)
+        #expect(store.sessions.map(\.id) == ["child", "other", "lead", "notes"])
+        #expect(store.sessions.allSatisfy { $0.parent == nil && $0.depth == 0 })
+        let counts = store.counts
+
+        settings.nestSessions = true
+        store.receive(state)
+        #expect(store.sessions.map(\.id) == ["lead", "child", "other", "notes"])
+        #expect(store.sessions.map(\.depth) == [0, 1, 0, 0])
+        #expect(store.counts == counts)
+        // Finished, it's in another group than the session that started it, which its tag opens: in the app, or without
+        // it, with the Copilot CLI.
+        let finished = try #require(store.sessions(in: .done).first)
+        #expect(finished.parent == RelatedSession(id: "lead", name: "Release 2.5"))
+        store.openParent(of: finished)
+        #expect(opened == ["lead"])
+        app.isInstalled = false
+        store.openParent(of: finished)
+        #expect(opened == ["lead"])
+        #expect(withCLI == ["lead"])
+
+        // The command line and agents see the same, as the setting says.
+        let defaults = MemoryDefaults()
+        #expect(CopilotCommandLine.resolve(state, now: now, defaults: defaults).map(\.id) == ["child", "other", "lead", "notes"])
+        defaults.set(true, forKey: "copilot.nestSessions")
+        let resolved = CopilotCommandLine.resolve(state, now: now, defaults: defaults)
+        #expect(resolved.map(\.id) == ["lead", "child", "other", "notes"])
+        #expect(resolved.map(\.depth) == [0, 1, 0, 0])
+    }
+
+    @Test func nestingSessionsIsOptInAndPersists() {
+        let defaults = MemoryDefaults()
+        #expect(!AppSettings(defaults: defaults).nestSessions)
+        AppSettings(defaults: defaults).nestSessions = true
+        #expect(AppSettings(defaults: defaults).nestSessions)
     }
 
     @Test func theOptionIsOptInAndPersists() {

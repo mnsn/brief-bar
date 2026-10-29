@@ -240,11 +240,15 @@ final class TestDatabase {
         CREATE TABLE sessions (
             id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL DEFAULT 'workspace', mode TEXT,
             is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0,
-            interruption_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+            interruption_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT,
+            forked_from_session_id TEXT);
         CREATE TABLE workspaces (
             id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
             name TEXT NOT NULL, creator_session_id TEXT, coordinating_creator_session_id TEXT, archived_at TEXT,
             updated_at TEXT NOT NULL);
+        CREATE TABLE workspace_parent_links (
+            child_workspace_id TEXT PRIMARY KEY NOT NULL, parent_workspace_id TEXT NOT NULL,
+            creator_session_id TEXT NOT NULL DEFAULT '');
         CREATE TABLE chat_parent_links (
             session_id TEXT PRIMARY KEY NOT NULL, parent_session_id TEXT, coordinating_creator_session_id TEXT);
         CREATE TABLE activity_items (
@@ -266,13 +270,15 @@ final class TestDatabase {
 
     func addSession(
         _ id: String, title: String?, type: String = "project", mode: String? = nil, running: Bool = false,
-        interrupted: Bool = false, reason: String? = nil, updatedAt: Date = t(0), archived: Bool = false
+        interrupted: Bool = false, reason: String? = nil, updatedAt: Date = t(0), archived: Bool = false,
+        forkedFrom: String? = nil
     ) throws {
         try exec("""
             INSERT INTO sessions (id, title, session_type, mode, is_running, was_interrupted, interruption_reason,
-                                  created_at, updated_at, archived_at)
+                                  created_at, updated_at, archived_at, forked_from_session_id)
             VALUES (\(sql(id)), \(sql(title)), \(sql(type)), \(sql(mode)), \(running ? 1 : 0), \(interrupted ? 1 : 0),
-                    \(sql(reason)), \(sql(iso(t(-86_400)))), \(sql(iso(updatedAt))), \(archived ? sql(iso(updatedAt)) : "NULL"));
+                    \(sql(reason)), \(sql(iso(t(-86_400)))), \(sql(iso(updatedAt))), \(archived ? sql(iso(updatedAt)) : "NULL"),
+                    \(sql(forkedFrom)));
             """)
     }
 
@@ -293,6 +299,14 @@ final class TestDatabase {
         try exec("""
             INSERT INTO chat_parent_links (session_id, parent_session_id, coordinating_creator_session_id)
             VALUES (\(sql(session)), \(sql(parent)), \(sql(coordinator)));
+            """)
+    }
+
+    /// A workspace that a session in another workspace of its project started.
+    func addWorkspaceParent(child: String, parent: String) throws {
+        try exec("""
+            INSERT INTO workspace_parent_links (child_workspace_id, parent_workspace_id)
+            VALUES (\(sql(child)), \(sql(parent)));
             """)
     }
 

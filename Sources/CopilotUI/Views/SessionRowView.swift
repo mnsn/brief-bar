@@ -5,12 +5,19 @@ import SwiftUI
 
 /// One session: status icon, name, state line, optional detail, how long it's been in that state, and,
 /// if turned on, how full its context window is. A task BriefBar sent to the Copilot CLI has ✈︎ before its name, opens
-/// what it's for, and has its own menu.
+/// what it's for, and has its own menu. With Nest Sessions Under Their Parents, a session is indented under the one
+/// that started it, or, where it isn't, has a ↳ tag that names that session and opens it.
 struct SessionRowView: View {
     let session: SessionSnapshot
     let now: Date
     var compact = false
+    /// Whether the list shows sessions nested under the sessions that started them: not one that mixes sources.
+    var nests = true
     var action: () -> Void
+
+    /// How far each level of nesting indents a row, and how many levels it goes at most.
+    static let indentStep: CGFloat = 16
+    static let maxIndentLevels = 3
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: SessionStore
@@ -26,11 +33,12 @@ struct SessionRowView: View {
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
-        // The row and its summary, together.
+        // The row and its summary, together, indented under the session that started it.
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
         )
+        .padding(.leading, indent)
         .onHover { isHovered = $0 }
         .contextMenu {
             if let task {
@@ -40,7 +48,10 @@ struct SessionRowView: View {
                 Button(openTitle(task), action: action)
                 Button("Open This Session") { store.openItself(session) }
             } else {
-                Button("Open in GitHub Copilot", action: action)
+                Button(store.appInstalled ? "Open in GitHub Copilot" : "Open in Terminal", action: action)
+            }
+            if let parent = otherParent {
+                Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
             SummarizeMenuItems(ref)
             if let ref {
@@ -81,18 +92,43 @@ struct SessionRowView: View {
                         RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isHovered: isHovered)
                     }
                     if compact {
-                        Text(compactLine)
-                            .font(.system(size: options.rowDetailSize))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        if let taggedParent {
+                            // With the detail if both fit, or else instead of it, the tag's name cut short if need be.
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 6) {
+                                    compactText(compactLine)
+                                    parentTag(taggedParent)
+                                }
+                                HStack(spacing: 6) {
+                                    compactText(session.headline)
+                                        .layoutPriority(1)
+                                    parentTag(taggedParent, truncates: true)
+                                }
+                            }
+                        } else {
+                            compactText(compactLine)
+                        }
                     } else {
-                        HStack(spacing: 6) {
-                            Text(session.subtitle)
-                                .font(.system(size: options.rowReasonSize, weight: .medium))
-                                .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
-                                .lineLimit(1)
-                            if let ref = ItemRef.session(session.id) {
-                                LinkCapsules(ref)
+                        if let taggedParent {
+                            // On the status line if it fits there in full, or else on a line of its own.
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 6) {
+                                    subtitle
+                                    parentTag(taggedParent)
+                                    links
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        subtitle
+                                        links
+                                    }
+                                    parentTag(taggedParent)
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 6) {
+                                subtitle
+                                links
                             }
                         }
                         if let detail = session.detail {
@@ -111,21 +147,38 @@ struct SessionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The ↳ tag's click, outside the row's button, which takes every click on its label.
+        .overlayPreferenceValue(ParentTag.Bounds.self) { bounds in
+            if let bounds, let parent = taggedParent {
+                ParentTag.Target(parent: parent, bounds: bounds) { store.openParent(of: session) }
+            }
+        }
         .help(helpText(task))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
-        .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue(
+            [session.detail, contextUsage.map(ContextUsageView.description), otherParent.map { "Started by “\($0.name)”" }]
+                .compactMap { $0 }.joined(separator: ", ")
+        )
         .accessibilityHint(
             task.map { "Opens its \($0.opens.lowercased())" }
                 ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
-                ?? "Opens the session in GitHub Copilot"
+                ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal")
         )
-        .accessibilityActions { SummarizeMenuItems(ref, divided: false) }
+        .accessibilityActions {
+            if let parent = otherParent {
+                Button("Open “\(parent.name)”") { store.openParent(of: session) }
+            }
+            SummarizeMenuItems(ref, divided: false)
+        }
         .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
             if let task {
                 task.menu()
             } else if session.answerIn != nil {
                 Button("Open This Session") { store.openItself(session) }
+            }
+            if let parent = otherParent {
+                Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
             SummarizeMenuItems(ref)
             if let ref {
@@ -135,11 +188,56 @@ struct SessionRowView: View {
         .rowSummarizeButton(ref)
     }
 
+    /// How far it's indented under the session that started it, where the list nests it.
+    private var indent: CGFloat {
+        nests ? CGFloat(min(session.depth, Self.maxIndentLevels)) * Self.indentStep : 0
+    }
+
+    /// What it's doing and where, colored by its state.
+    private var subtitle: some View {
+        Text(session.subtitle)
+            .font(.system(size: options.rowReasonSize, weight: .medium))
+            .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
+            .lineLimit(1)
+    }
+
+    /// What Show Links links it to.
+    @ViewBuilder
+    private var links: some View {
+        if let ref = ItemRef.session(session.id) {
+            LinkCapsules(ref)
+        }
+    }
+
+    private func compactText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: options.rowDetailSize))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    private func parentTag(_ parent: RelatedSession, truncates: Bool = false) -> some View {
+        ParentTag(parent: parent, truncates: truncates)
+    }
+
+    /// The session that started it, unless that's where you answer its question, which the row names and opens already.
+    private var otherParent: RelatedSession? {
+        guard let parent = session.parent, parent.id != session.answerIn?.id else { return nil }
+        return parent
+    }
+
+    /// The session that started it, as a ↳ tag, where the list doesn't show the row under it: in another group, or in a
+    /// list that mixes sources.
+    private var taggedParent: RelatedSession? {
+        guard let parent = otherParent, !nests || session.depth == 0 else { return nil }
+        return parent
+    }
+
     /// What clicking the row does: open the task's page, or the session where you answer what it waits on.
     private func openTitle(_ task: SentTask?) -> String {
         if let task { return task.openTitle }
         if let answerIn = session.answerIn { return "Answer in “\(answerIn.name)”" }
-        return "Open in Copilot"
+        return store.appInstalled ? "Open in Copilot" : "Open in Terminal"
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.
@@ -157,6 +255,9 @@ struct SessionRowView: View {
         if let detail = session.detail { lines.append(detail) }
         if !session.choices.isEmpty { lines.append("Options: " + session.choices.joined(separator: " | ")) }
         if let contextUsage { lines.append(ContextUsageView.description(contextUsage)) }
+        if let parent = otherParent {
+            lines.append("Started by “\(parent.name)”" + (taggedParent == nil ? "" : ", which its ↳ tag opens"))
+        }
         if let task {
             lines.append("Sent from BriefBar: the Copilot CLI works on it on its own, outside the Copilot app")
             lines.append("Click to open its \(task.opens.lowercased()), or right-click for its menu")
@@ -168,9 +269,72 @@ struct SessionRowView: View {
                 let names = ListFormatter.localizedString(byJoining: session.asksFor.map { "“\($0.name)”" })
                 lines.append("Asks you for \(names), which it coordinates")
             }
-            lines.append("Click to open in GitHub Copilot")
+            lines.append(
+                store.appInstalled
+                    ? "Click to open in GitHub Copilot"
+                    : "Click to open in Terminal with the Copilot CLI, or bring up the terminal that has it open"
+            )
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// The session that started a session, as a small tag on the session's row: ↳ and its name. Clicking it opens that
+/// session. The row, itself a button, would take the click from a button in it, so it puts the tag's own over the tag,
+/// outside its button, where the tag says it is (`Bounds`).
+struct ParentTag: View {
+    let parent: RelatedSession
+    /// Whether its name is cut short to fit, as far as needed, rather than kept to its full width.
+    var truncates = false
+
+    /// The longest name it shows in full; its tooltip has all of it.
+    static let nameLimit = 24
+
+    var body: some View {
+        Text(verbatim: "↳ " + Self.shortName(parent.name))
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(Color.secondary.opacity(0.14)))
+            .fixedSize(horizontal: !truncates, vertical: true)
+            .anchorPreference(key: Bounds.self, value: .bounds) { $0 }
+    }
+
+    static func shortName(_ name: String) -> String {
+        guard name.count > nameLimit else { return name }
+        return String(name.prefix(nameLimit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Where the tag is on its row.
+    struct Bounds: PreferenceKey {
+        static var defaultValue: Anchor<CGRect>? { nil }
+
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+            value = value ?? nextValue()
+        }
+    }
+
+    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip.
+    struct Target: View {
+        let parent: RelatedSession
+        let bounds: Anchor<CGRect>
+        let open: () -> Void
+
+        var body: some View {
+            GeometryReader { proxy in
+                let frame = proxy[bounds]
+                Button(action: open) {
+                    Color.clear.contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+                .help("Started by “\(parent.name)”: click to open it")
+            }
+        }
     }
 }
 

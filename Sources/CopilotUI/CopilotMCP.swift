@@ -45,7 +45,7 @@ struct CopilotAgent: Sendable {
                 continuation.resume(returning: SessionEngine.loadOnce(paths: paths, links: links))
             }
         }
-        return (CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil), state.problem)
+        return (CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil), CopilotApp.problem(of: state))
     }
 
     func sessions(phase: JSONValue?, now: Date = Date()) async throws -> String {
@@ -84,7 +84,9 @@ struct CopilotAgent: Sendable {
         return sections.joined(separator: "\n\n")
     }
 
-    /// A session in a list: what it is, where, what it's doing or asks and since when, and its ID.
+    /// A session in a list: what it is, where, what it's doing or asks and since when, and its ID. With Nest Sessions Under
+    /// Their Parents, one nested under the session that started it is indented under it, and one that isn't says which
+    /// session started it.
     static func line(_ session: SessionSnapshot, now: Date) -> String {
         var place = [session.projectName, session.branch].compactMap { $0 }.joined(separator: ", ")
         if session.isChat { place = place.isEmpty ? "a chat" : "a chat, \(place)" }
@@ -101,7 +103,13 @@ struct CopilotAgent: Sendable {
         if let answerIn = session.answerIn {
             text += "\n  Its coordinator asks it: answer in session \(answerIn.id)"
         }
-        return text + "\n  session \(session.id)"
+        if let parent = session.parent, session.depth == 0, parent.id != session.answerIn?.id {
+            text += "\n  Started by “\(parent.name)” (session \(parent.id))"
+        }
+        text += "\n  session \(session.id)"
+        guard session.depth > 0 else { return text }
+        let indent = String(repeating: "  ", count: session.depth)
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { indent + $0 }.joined(separator: "\n")
     }
 
     // MARK: What the other sources' tools name
