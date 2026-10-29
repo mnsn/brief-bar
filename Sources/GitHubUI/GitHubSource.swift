@@ -262,7 +262,7 @@ struct SignInStatusView: View {
                 .foregroundStyle(ok ? .green : .orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

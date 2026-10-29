@@ -1,6 +1,7 @@
 import AppKit
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import SwiftUI
 
 // Colors and symbols for the Sprint and Pipelines pages, and the small pieces they share with the Pull
@@ -213,6 +214,7 @@ struct Avatar: View {
     var size: CGFloat = 20
     /// Rings the avatar in the accent color: it's you.
     var isMe = false
+    @Environment(\.textScale) private var textScale
 
     private static let palette: [Color] = [
         Color(red: 0.36, green: 0.55, blue: 0.98), Color(red: 0.62, green: 0.42, blue: 0.95), Color(red: 0.93, green: 0.40, blue: 0.62),
@@ -225,17 +227,18 @@ struct Avatar: View {
             if let name, !name.isEmpty {
                 Circle().fill(Self.color(for: name).gradient)
                 Text(Self.initials(name))
-                    .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+                    .font(size: size * 0.42, weight: .semibold, design: .rounded)
                     .foregroundStyle(.white)
             } else {
                 Circle()
                     .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
                 Image(systemName: "person.fill")
-                    .font(.system(size: size * 0.45))
+                    .font(size: size * 0.45)
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: size, height: size)
+        // As big as its initials, which follow the text size.
+        .frame(width: size * textScale, height: size * textScale)
         .overlay {
             if isMe {
                 Circle().strokeBorder(Color.accentColor, lineWidth: 1.5).padding(-2.5)
@@ -278,10 +281,10 @@ struct Chip: View {
         let chip = HStack(spacing: 3) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(size: 9, weight: .bold)
             }
             Text(text)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(size: 10.5, weight: .semibold)
                 .lineLimit(1)
         }
         .foregroundStyle(color)
@@ -352,21 +355,23 @@ struct ProgressRing<Label: View>: View {
     var size: CGFloat = 58
     var lineWidth: CGFloat = 7
     @ViewBuilder var label: () -> Label
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.09), lineWidth: lineWidth)
+                .stroke(Color.primary.opacity(0.09), lineWidth: lineWidth * textScale)
             Circle()
                 .trim(from: 0, to: min(max(value, 0.001), 1))
                 .stroke(
                     AngularGradient(colors: colors, center: .center, startAngle: .degrees(0), endAngle: .degrees(360 * max(value, 0.05))),
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                    style: StrokeStyle(lineWidth: lineWidth * textScale, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
             label()
         }
-        .frame(width: size, height: size)
+        // Around its label, which follows the text size.
+        .frame(width: size * textScale, height: size * textScale)
     }
 }
 
@@ -374,15 +379,16 @@ struct ProgressRing<Label: View>: View {
 struct TypeBadge: View {
     let item: WorkItem
     var size: CGFloat = 20
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         ZStack {
             Circle().fill(item.typeColor.gradient)
             Image(systemName: item.typeSymbol)
-                .font(.system(size: size * 0.5, weight: .semibold))
+                .font(size: size * 0.5, weight: .semibold)
                 .foregroundStyle(.white)
         }
-        .frame(width: size, height: size)
+        .frame(width: size * textScale, height: size * textScale)
         .help(item.type)
         .accessibilityLabel(item.type)
     }

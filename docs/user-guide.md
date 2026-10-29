@@ -135,6 +135,11 @@ switch them.
 **Settings › Appearance** has seven independent options. **All start off**, including after an
 update. Turn on only the changes you want; none enables a source, grants permissions or starts an agent.
 
+**Text Size in Windows**, at the top of the page, makes the text on the pages of BriefBar's windows
+bigger, from its usual size up to 150%, for reading long descriptions and comments. In a window, hold
+**⌘** and scroll up to make it bigger, or down to make it smaller. The menu bar's lists, the widgets
+and Settings keep their size.
+
 | Option | When you turn it on |
 |---|---|
 | **Compact Briefs** | Moves the brief below the first group and shows two highlights, with **Show All** for the rest. A completed chat summary replaces the duplicate message preview, without hiding unread counts or changing preview permissions. |

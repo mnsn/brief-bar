@@ -42,7 +42,7 @@ struct MenuPanelView: View {
                     Image(systemName: group.symbol)
                         .foregroundStyle(options.quietAppearance ? Color.secondary : group.color)
                     Text(group.title)
-                        .font(.headline)
+                        .font(style: .headline)
                     if !unread.isEmpty {
                         CountBadge(count: unread.count, color: group.color)
                             .help(group.unreadDescription(unread.count))
@@ -53,7 +53,7 @@ struct MenuPanelView: View {
             if !unread.isEmpty {
                 Button("Mark All Read") { store.markAllRead(group) }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .help("Mark every \(group == .chats ? "chat" : "group chat") here as read")
             }
         }
@@ -89,7 +89,7 @@ struct MenuPanelView: View {
                     }
                 } label: {
                     Text("Recent (\(recent.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -121,7 +121,7 @@ struct MenuPanelView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -163,10 +163,10 @@ struct ProblemView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(problem.title, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(.orange)
             Text(message)
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -199,13 +199,13 @@ struct EmptyListView: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: "checkmark.bubble")
-                .font(.system(size: 22))
+                .font(size: 22)
                 .foregroundStyle(.secondary)
             Text(group.unreadDescription(0))
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if !hasTeamsNotifications {
                 Text("Teams hasn't posted any notifications yet. Check that it may: System Settings › Notifications › Microsoft Teams.")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

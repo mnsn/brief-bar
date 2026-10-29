@@ -22,10 +22,14 @@ links sent in chats, sprint, pipelines and tasks sent to Copilot, and never runs
 screenshots without showing your own chats, pull requests or sessions. `make demo ARGS=--window` also
 opens the window.
 
-Settings › Appearance offers independent presentation options, all off by default. `--demo --render`
-also draws each option separately and all of them together (`interface-*`), plus the Appearance page
-with its switches off and on. These examples use in-memory preferences and never create live menu-bar
-items or widgets, change your layout, or enable optional features in the installed app.
+Settings › Appearance offers independent presentation options, all off by default, and the size of the
+text on windows' pages. `--demo --render` also draws each option separately and all of them together
+(`interface-*`), the window with its largest text (`interface-textSize-window`), plus the Appearance
+page with its switches off and on. These examples use in-memory preferences and never create live
+menu-bar items or widgets, change your layout, or enable optional features in the installed app.
+Views set fonts with `.font(size:)` and `.font(style:)` from `BriefBarUI`, never `.font(.system(size:))`
+or `.font(.headline)`, so their text follows the text size on windows' pages (`TextSizeTests` checks);
+size anything that must fit that text, such as a label's column, by the `textScale` environment value.
 
 Other targets:
 
@@ -135,6 +139,7 @@ other data:
 | `BRIEFBAR_COPILOT_CLI` | Another `copilot`, for Send Work to Copilot |
 | `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
 | `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model |
+| `BRIEFBAR_RENDER_TEXT_SIZE=150` | `--render` draws windows' pages with that text size, as **Text Size in Windows** does (100 to 150) |
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from
 Notification Center's own database are only ever saved by the installed app, with the key in the

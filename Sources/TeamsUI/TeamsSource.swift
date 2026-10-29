@@ -310,7 +310,7 @@ struct AccessStatusView: View {
                 .foregroundStyle(granted ? .green : .orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(granted ? "Full Disk Access is on" : "BriefBar can't read Notification Center yet")
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(granted
                      ? "BriefBar reads Teams' notifications as they arrive."
                      : "It needs Full Disk Access, which you give it in System Settings, once.")

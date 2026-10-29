@@ -120,7 +120,8 @@ Pre-review changes and posts nothing.
 
 Keep a small menu-bar view, put a widget on your desktop, or open the full window. Group sources
 together or keep them separate. The **Overview** brings them together by state: what needs you,
-what's failing, what's running and what's ready.
+what's failing, what's running and what's ready. For long descriptions and comments, hold **⌘** and
+scroll in a window to make its text bigger.
 
 <p align="center">
   <picture>

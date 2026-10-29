@@ -27,7 +27,7 @@ package struct PageLink<Title: View>: View {
                 HStack(spacing: 5) {
                     title
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(size: 10, weight: .bold)
                         .foregroundStyle(isHovered ? HierarchicalShapeStyle.secondary : .tertiary)
                 }
                 // The highlight reaches a little past the title, which stays where it was.

@@ -16,6 +16,7 @@ struct ConversationRowView: View {
 
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     private var showsSummaryOnly: Bool {
         guard options.compactBriefs, showPreview, case .done = summary else { return false }
@@ -26,19 +27,19 @@ struct ConversationRowView: View {
         Button(action: open) {
             HStack(alignment: .top, spacing: 10) {
                 AvatarView(conversation: conversation)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 30 * textScale, height: 30 * textScale)
                     .opacity(conversation.isUnread ? 1 : 0.6)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(conversation.name)
-                            .font(.system(size: 13, weight: conversation.isUnread ? .semibold : .regular))
+                            .font(size: 13, weight: conversation.isUnread ? .semibold : .regular)
                             .foregroundStyle(conversation.isUnread ? .primary : .secondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
                         Text(RelativeTime.short(lastMessageDate, now: now))
-                            .font(.system(size: 11).monospacedDigit())
+                            .font(size: 11).monospacedDigit()
                             .foregroundStyle(.secondary)
                             .fixedSize()
                             .opacity(showsSummarizeButton ? 0 : 1)
@@ -49,7 +50,7 @@ struct ConversationRowView: View {
                     if !showsSummaryOnly {
                         HStack(alignment: .top, spacing: 6) {
                             Text(previewText)
-                                .font(.system(size: options.readableRows ? 13 : 12))
+                                .font(size: options.readableRows ? 13 : 12)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +80,7 @@ struct ConversationRowView: View {
             if showsSummarizeButton, let summarize {
                 Button(action: summarize) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(.purple)
                 }
                 .buttonStyle(.borderless)
@@ -187,6 +188,6 @@ struct SummaryLine: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.system(size: options.rowDetailSize))
+        .font(size: options.rowDetailSize)
     }
 }

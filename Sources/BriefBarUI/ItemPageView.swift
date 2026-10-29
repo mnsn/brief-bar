@@ -113,12 +113,12 @@ private struct PageContent: View {
                         .lineLimit(1)
                 }
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(size: 12, weight: .medium)
             .foregroundStyle(.secondary)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.description(of: item))
             Text(item.ref.kind == .session ? item.label : item.title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(size: 17, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
@@ -126,7 +126,7 @@ private struct PageContent: View {
             if !sentence.isEmpty || date != nil {
                 (WhereItStandsSection.sentenceText(sentence, state: item.state)
                     + Text(date.map { (sentence.isEmpty ? "" : " · ") + StoryTime.ago($0) } ?? "").foregroundStyle(.secondary))
-                    .font(.system(size: 12.5))
+                    .font(size: 12.5)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {

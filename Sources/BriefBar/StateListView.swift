@@ -129,10 +129,10 @@ struct StateListView: View {
             if list.groups.isEmpty {
                 VStack(spacing: 4) {
                     Image(systemName: "checkmark.circle")
-                        .font(.system(size: 22))
+                        .font(size: 22)
                         .foregroundStyle(.green)
                     Text("Nothing needs you")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -140,7 +140,7 @@ struct StateListView: View {
             ForEach(list.groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(group.title) (\(group.entries.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(options.quietAppearance ? Color.primary : group.state.color)
                         .padding(.horizontal, 8)
                     ForEach(group.entries) { entry in
@@ -177,7 +177,7 @@ struct StateListView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -202,10 +202,10 @@ struct OverviewPage: View {
                     if list.groups.isEmpty {
                         VStack(spacing: 6) {
                             Image(systemName: "checkmark.circle")
-                                .font(.system(size: 30, weight: .light))
+                                .font(size: 30, weight: .light)
                                 .foregroundStyle(.green)
                             Text("Nothing needs you")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(size: 15, weight: .semibold)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
@@ -239,7 +239,7 @@ struct OverviewPage: View {
                     .monospacedDigit()
                 Spacer()
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(size: 12, weight: .semibold)
             .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
@@ -273,7 +273,7 @@ struct SourceMark: View {
             source.sections.count > 1 ? "\(source.name): \(info?.title ?? "")" : source.name
         } ?? ""
         Image(systemName: info?.symbol ?? "circle")
-            .font(.system(size: 10, weight: .semibold))
+            .font(size: 10, weight: .semibold)
             .foregroundStyle(options.quietAppearance ? .secondary : info?.tint ?? .secondary)
             .frame(width: 14)
             .padding(.top, 12)
@@ -295,7 +295,7 @@ struct StateListProblems: View {
                 }
             } label: {
                 Label(problem, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .symbolRenderingMode(.multicolor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -329,7 +329,7 @@ struct BriefPanel: View {
                             .frame(width: 6, height: 6)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                         Text(text.text)
-                            .font(.system(size: 12))
+                            .font(size: 12)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(collapsed ? 2 : nil)
