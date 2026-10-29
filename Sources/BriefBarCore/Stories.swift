@@ -103,9 +103,10 @@ public struct ItemStory: Sendable, Equatable {
                 }
         }
 
-        /// As they're said on a thing, once they're `ordered`: what's on that thing itself as it's said there, and the
-        /// same words for several things once, with how many, such as two Copilot sessions of the same name, "you, to answer
-        /// in session “Fix the tests” (2 sessions)".
+        /// As they're said on a thing, once they're `ordered`: what's on that thing itself as it's said there; the same
+        /// words for things in different places each with its place, such as two pull requests numbered 4091 in two
+        /// organizations, "you, to complete !4091 (fabrikam)"; and otherwise once, with how many, such as two Copilot
+        /// sessions of the same name, "you, to answer in session “Fix the tests” (2 sessions)".
         public static func said(_ waits: [Wait], on subject: ItemRef? = nil) -> [Wait] {
             let waits = waits.map { wait in
                 guard let itself = wait.onItself, itself.ref == subject else { return wait }
@@ -119,8 +120,14 @@ public struct ItemStory: Sendable, Equatable {
             }
             var said: Set<String> = []
             return waits.compactMap { wait in
+                let told = things[wait.text] ?? []
+                if told.count > 1, let about = wait.about, !about.scope.isEmpty, Set(told.map(\.scope)).count == told.count {
+                    var placed = wait
+                    placed.text += " (\(about.scope))"
+                    return said.insert(placed.text).inserted ? placed : nil
+                }
                 guard said.insert(wait.text).inserted else { return nil }
-                guard let told = things[wait.text], told.count > 1 else { return wait }
+                guard told.count > 1 else { return wait }
                 var counted = wait
                 counted.text += " (\(told.count) \(plural(of: wait.about?.kind)))"
                 return counted

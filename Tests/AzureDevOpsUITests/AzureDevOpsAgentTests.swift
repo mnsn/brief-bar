@@ -298,13 +298,21 @@ import Testing
         #expect(asked.withLock { $0.isEmpty })
     }
 
+    /// What a wait says, without which pull request it's about.
+    private func said(_ wait: ItemStory.Wait?) -> ItemStory.Wait? {
+        wait.map { ItemStory.Wait($0.who, $0.text) }
+    }
+
     /// Who each of your lists' pull requests waits on, by why it's where it is, and one that isn't in your lists, by its
     /// votes.
     @Test func saysWhoAPullRequestWaitsOn() async throws {
         let read = await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).pullRequests()
         var waits: [Int: ItemStory.Wait] = [:]
         for item in read.items {
-            waits[item.key.number] = PullRequestWait.waiting(on: item, record: read.records.first { $0.id == item.key })
+            let wait = PullRequestWait.waiting(on: item, record: read.records.first { $0.id == item.key })
+            // Each says which pull request it is about, in its organization.
+            #expect(wait == nil || wait?.about == .pullRequest(organization: item.key.organization, number: item.key.number))
+            waits[item.key.number] = said(wait)
         }
         #expect(waits == [
             4113: .you("you, to look at !4113"),
@@ -330,19 +338,20 @@ import Testing
                 reviewers: reviewers
             )
         }
-        #expect(PullRequestWait.waiting(on: pullRequest(), me: "me") == .people("reviewers of Sam Rivera's !4120"))
-        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .none)]), me: "me")
+        #expect(said(PullRequestWait.waiting(on: pullRequest(), me: "me")) == .people("reviewers of Sam Rivera's !4120"))
+        #expect(said(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .none)]), me: "me"))
             == .people("Priya Shah, to review Sam Rivera's !4120"))
-        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: me, vote: .none)]), me: "me") == .you("you, to review Sam Rivera's !4120"))
-        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .approved)]), me: "me")
+        #expect(said(PullRequestWait.waiting(on: pullRequest([Reviewer(person: me, vote: .none)]), me: "me")) == .you("you, to review Sam Rivera's !4120"))
+        #expect(said(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .approved)]), me: "me"))
             == .people("Sam Rivera, author of !4120 (approved; its checks aren't read)"))
-        #expect(PullRequestWait.waiting(on: pullRequest(by: me, [Reviewer(person: priya, vote: .waitingForAuthor)]), me: "me")
+        #expect(said(PullRequestWait.waiting(on: pullRequest(by: me, [Reviewer(person: priya, vote: .waitingForAuthor)]), me: "me"))
             == .you("you, to make the changes asked for on !4120"))
-        #expect(PullRequestWait.waiting(on: pullRequest(draft: true), me: "me") == .people("Sam Rivera, to publish !4120, a draft"))
-        #expect(PullRequestWait.waiting(on: pullRequest(merge: "conflicts"), me: "me") == .people("Sam Rivera, to resolve !4120's conflicts"))
+        #expect(said(PullRequestWait.waiting(on: pullRequest(draft: true), me: "me")) == .people("Sam Rivera, to publish !4120, a draft"))
+        #expect(said(PullRequestWait.waiting(on: pullRequest(merge: "conflicts"), me: "me")) == .people("Sam Rivera, to resolve !4120's conflicts"))
+        #expect(PullRequestWait.waiting(on: pullRequest(), me: "me")?.about == .pullRequest(organization: "contoso", number: 4120))
         var merged = pullRequest()
         merged.status = .completed
-        #expect(PullRequestWait.waiting(on: merged, me: "me") == nil)
+        #expect(said(PullRequestWait.waiting(on: merged, me: "me")) == nil)
     }
 
     /// The demo's work item 5101, whose teammate's pull request, !4120, isn't in your lists, with these reviewers.
@@ -469,7 +478,7 @@ import Testing
         // Read by its votes alone, as one that isn't in your lists is, it's only approved.
         let pullRequest = try #require(read.pullRequest(snapshot.key))
         let me = read.lists.records.first { $0.id == snapshot.key }?.me
-        #expect(PullRequestWait.waiting(on: pullRequest, me: me) == .you("you, to complete !4091 once its checks pass"))
+        #expect(said(PullRequestWait.waiting(on: pullRequest, me: me)) == .you("you, to complete !4091 once its checks pass"))
     }
 
     @Test func saysWhenItsSprintEnds() throws {

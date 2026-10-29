@@ -7,6 +7,17 @@ public enum PullRequestWait {
     /// "you, to complete !4091", "you, to fix !4088's build", "Priya Shah, to review your !4093": what waits on you
     /// always says what to do. Nil when it waits on nobody, such as once it's merged.
     public static func waiting(on snapshot: PRSnapshot, record: PRRecord?) -> ItemStory.Wait? {
+        about(wait(on: snapshot, record: record), snapshot.key)
+    }
+
+    /// Each says which pull request it is about, so that two with the same number, in two organizations, are both said.
+    private static func about(_ wait: ItemStory.Wait?, _ key: PRKey) -> ItemStory.Wait? {
+        guard var wait else { return nil }
+        wait.about = .pullRequest(organization: key.organization, number: key.number)
+        return wait
+    }
+
+    private static func wait(on snapshot: PRSnapshot, record: PRRecord?) -> ItemStory.Wait? {
         let number = "!\(snapshot.key.number)"
         let yours = snapshot.role == .author
         let whose = yours ? "your \(number)" : "\(snapshot.author)'s \(number)"
@@ -44,6 +55,10 @@ public enum PullRequestWait {
     /// it's closed.
     /// - Parameter me: your identity in its organization, to say "you".
     public static func waiting(on pullRequest: PullRequest, me: String?) -> ItemStory.Wait? {
+        about(wait(on: pullRequest, me: me), pullRequest.key)
+    }
+
+    private static func wait(on pullRequest: PullRequest, me: String?) -> ItemStory.Wait? {
         guard pullRequest.status == .active else { return nil }
         let number = "!\(pullRequest.key.number)"
         let yours = PullRequestStory.isMe(pullRequest.author, me)

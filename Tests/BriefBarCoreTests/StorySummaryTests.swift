@@ -174,6 +174,18 @@ import Testing
         #expect(ItemStory.Wait.said([working]).map(\.text) == ["Copilot, on task 5103"])
     }
 
+    /// The same words for things in different places are each said with its place: two pull requests numbered 4091, in two
+    /// organizations.
+    @Test func theSameWordsForThingsInTwoPlacesAreSaidWithEachPlace() {
+        let contoso = ItemStory.Wait(.you, "you, to complete !4091", about: .pullRequest(organization: "contoso", number: 4091))
+        let fabrikam = ItemStory.Wait(.you, "you, to complete !4091", about: .pullRequest(organization: "fabrikam", number: 4091))
+        let ordered = ItemStory.Wait.ordered([contoso, fabrikam])
+        #expect(ordered == [contoso, fabrikam])
+        #expect(ItemStory.Wait.said(ordered).map(\.text) == ["you, to complete !4091 (contoso)", "you, to complete !4091 (fabrikam)"])
+        // Alone, it says no place.
+        #expect(ItemStory.Wait.said([contoso]).map(\.text) == ["you, to complete !4091"])
+    }
+
     /// Whether a work item's notes were read stays with it when two sources tell about it.
     @Test func notesReadByEitherSourceAreRead() {
         let read = ItemStory(sentence: "Active", notesRead: true)

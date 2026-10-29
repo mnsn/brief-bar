@@ -218,7 +218,10 @@ import BriefBarCore
     @Test func aPullRequestsStorySaysWhoItWaitsOn() throws {
         // A teammate's, without a vote yet from the reviewer it waits on.
         let waiting = makePR(author: People.sam, reviewers: [Reviewer(person: People.priya, vote: .none)])
-        #expect(PullRequestStory.others(waiting).waits == [ItemStory.Wait(.people, "Priya Shah, to review Sam Rivera's !\(waiting.key.number)")])
+        #expect(PullRequestStory.others(waiting).waits == [ItemStory.Wait(
+            .people, "Priya Shah, to review Sam Rivera's !\(waiting.key.number)",
+            about: .pullRequest(organization: waiting.key.organization, number: waiting.key.number)
+        )])
         // Merged: nothing waits.
         #expect(PullRequestStory.others(makePR(status: .completed, closed: t(-hour))).waits.isEmpty)
         // One of yours, as its row says it.

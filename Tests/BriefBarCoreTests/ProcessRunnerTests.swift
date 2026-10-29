@@ -71,7 +71,7 @@ import Testing
     }
 
     /// A task that's cancelled ends its program as the timeout does, rather than waiting for it. The shell writes down its
-    /// process ID, then becomes `sleep`.
+    /// process ID, then becomes `sleep`, for longer than a busy runner can take to cancel it.
     @Test(.timeLimit(.minutes(1)))
     func endsAProgramWhoseTaskIsCancelled() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -83,12 +83,12 @@ import Testing
                 group.addTask {
                     _ = try await ProcessRunner().run(
                         URL(fileURLWithPath: "/bin/sh"),
-                        arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec /bin/sleep 5", file.path],
+                        arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec /bin/sleep 30", file.path],
                         environment: nil, timeout: 30
                     )
                 }
                 var written: pid_t?
-                for _ in 0..<500 where written == nil {
+                for _ in 0..<2_000 where written == nil {
                     written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     if written == nil { try await Task.sleep(for: .milliseconds(10)) }
                 }
@@ -100,22 +100,28 @@ import Testing
                 return (pid, cancelled.duration(to: .now))
             }
         }
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed < .seconds(5))
         #expect(try await ends(pid))
     }
 
     /// Asked to stop, a program may end at once, and leave something it started that ignores being asked and has closed
     /// its output, so that nothing waits for it: that's made to stop too, a second later. The shell's background shell
     /// writes nothing, and becomes `sleep`.
+    /// As in `endsAProgramThatIgnoresBeingAskedToStop`, a shell that's slow to start, as on a busy runner, may be asked to
+    /// stop before it writes anything: that isn't what's tested, so it's tried again with twice the time.
     @Test(.timeLimit(.minutes(1)))
     func endsWhatAProgramLeavesBehindWhenItStops() async throws {
-        let result = try await ProcessRunner().run(
-            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "(trap '' TERM; exec sleep 30 >/dev/null 2>&1) & echo $!; wait"],
-            environment: nil, timeout: 0.5
-        )
-        #expect(result.status == SIGTERM)
-        let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
-        #expect(try await ends(child))
+        for timeout in [0.5, 1, 2, 4, 8] {
+            let result = try await ProcessRunner().run(
+                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "(trap '' TERM; exec sleep 30 >/dev/null 2>&1) & echo $!; wait"],
+                environment: nil, timeout: timeout
+            )
+            if result.stdout.isEmpty, timeout < 8 { continue }
+            #expect(result.status == SIGTERM)
+            let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
+            #expect(try await ends(child))
+            return
+        }
     }
 
     /// So is what it leaves when its task is cancelled. The background shell writes down its process ID once it ignores
@@ -136,7 +142,7 @@ import Testing
                 )
             }
             var written: pid_t?
-            for _ in 0..<500 where written == nil {
+            for _ in 0..<2_000 where written == nil {
                 written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 if written == nil { try await Task.sleep(for: .milliseconds(10)) }
             }

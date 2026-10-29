@@ -22,6 +22,13 @@ extension GitHubPRSnapshot {
     /// Who it waits on, and for what, by why it's where it is in the list, as Azure DevOps' do (`PullRequestWait`): "you,
     /// to review priya's #12", "you, to merge #12", "the checks on #12". What waits on you always says what to do.
     public var wait: ItemStory.Wait? {
+        var wait = reasonsWait
+        // Which it is, so that two with the same number, in two repositories, are both said.
+        wait.about = .gitHubPullRequest(repository: pullRequest.repository, number: pullRequest.number)
+        return wait
+    }
+
+    private var reasonsWait: ItemStory.Wait {
         let number = "#\(pullRequest.number)"
         let yours = role == .author
         let author = pullRequest.author ?? "its author"

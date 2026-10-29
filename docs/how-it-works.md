@@ -413,31 +413,33 @@ it's at work; the work sent to Copilot, on Copilot while it goes, and on you onc
 pull request failed, among all that was sent, such as on a pull request a task's work went on to, unless that's done or
 closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said once, and a
 session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
-things in the same words, such as two sessions of the same name, are said once with how many, "(2 sessions)". While it
-shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't said twice, or by other
-names, unless it's yours and the line doesn't say anything waits on you (`SummaryCard.foldsNext`). A short one doesn't
-break: the line breaks after a "·". Its title, chevron and count fold Where It Stands to that line; to VoiceOver, the
-chevron is the disclosure button, "Where It Stands, expanded", and the title stays a heading, and BriefBar remembers it
-(`links.whereItStandsFolded`); folded, with nothing waiting, it says "Waiting on: no one", but only once the work item
-and all that's linked to it have said where they stand, and never while one can't. Pages don't show it. Each row shows
-its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
-color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
-item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
-its actions, with **✨ Summarize with Copilot** and its summary under them; then what Copilot said after its last
-checkpoint, while it's at work or waits for you, or how it ended once it stopped; then all its source knows of it
-(`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you opened it from first, in a card as the work item's
-fields are, and the pipelines that ran on it; then **Also Linked**, what else is linked to it, without the work item and
-the pages you came through (the `trail` of `itemNavigation`), so it never leads back; and last what Copilot wrote of a
-session's work, its overview and what's next, the rest behind **Show All Notes**, set apart by a thin rule, since those
-are Copilot's words, not BriefBar's. Once it stopped, its last checkpoint's next steps are what it planned then, behind
-Show All Notes too. A task's report, what Copilot printed when it ended, is what it said last when it came after its
-checkpoints (`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going
-back to it, and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the
-work items you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page
-that shows already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure
-DevOps when the sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages
-(no `itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is
-off it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
+pull requests in the same words, numbered alike in two organizations or repositories, are each said with its place, such
+as "(fabrikam)"; and other things in the same words, such as two sessions of the same name, are said once with how many,
+"(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't
+said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
+(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
+Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
+title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
+"Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
+while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
+stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
+a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
+and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
+to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
+Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
+`itemNavigation`), so it never leads back; and last what Copilot wrote of a session's work, its overview and what's
+next, the rest behind **Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's.
+Once it stopped, its last checkpoint's next steps are what it planned then, behind Show All Notes too. A task's report,
+what Copilot printed when it ended, is what it said last when it came after its checkpoints
+(`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it,
+and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the work items
+you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page that shows
+already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure DevOps when the
+sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages (no
+`itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is off
+it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
 
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while Show
 Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
