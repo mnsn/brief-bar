@@ -513,10 +513,12 @@ One that's there already shows again, as it was, while it's current, once what i
 of date, it's written again as it opens only once it's ten minutes old (`rewriteAfter`), since a session at work changes
 what it says every few minutes, and ↻ writes it sooner. Then, and for one that couldn't be written ten minutes ago or
 more, its card says so as it opens, as for a new one (`StorySummaries.isDue`): "Since then: !4120 changed. Updating in a
-moment · 1 request", or "Trying again in a moment", with **Not Now** in place of ↻ and ✕, or of **Try Again**. **Not
+moment · 1 request", or "Trying again in a moment", with **Not Now** in place of ↻ and ✕, or of **Try Again**; and one
+found out of date only once what it summed up is read again, as it opens, says so then, for as long
+(`StorySummaries.noticeFor`). **Not
 Now** keeps it from being written as it opened, this time, and ✨, or ↻, shows. While its setting shows from **Turn
-On…**, nothing's written as it opens (`StorySummaries.isChoosing`): turning summaries on there writes one once you're
-done choosing how. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
+On…**, nothing's written as it opens (`StorySummaries.isChoosing`, which each Turn On… claims for itself, so another
+going away doesn't end it): turning summaries on there writes one once you're done choosing how. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
 Stands, or its getting something linked while it shows, such as links read after it opened, asks again. With **Only when
 you ask**, it's written when you click ✨. The card's coming, filling and going moves what's under it smoothly.
 
@@ -568,8 +570,9 @@ details' text: the headline, the next step, "Next for you: Cap the backoff, then
 behind **Show More**, since that's what explains where things stand: a bullet each, with its bold and `code` as the model
 wrote them, and a link only as its words, since what a model writes may come from anyone's comment (`SummaryMarkdown`,
 `SummaryPoints`); an answer without points shows as the text it is. A next step that only says again what Waiting On
-says above it, for whom that line says it waits on, in a few words, naming only what that line names, as "Complete
-!4091." under "you, to complete !4091", doesn't show (`SummaryCard.repeats`). Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
+says above it, for whom that line says it waits on, naming what it names and nothing else, every word of it being the
+line's, as "Complete !4091." under "you, to complete !4091", doesn't show (`SummaryCard.repeats`); one that says more,
+as "Complete !4091 after fixing authentication.", does. Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
 Copilot", the time each minute and never cut short, and its tooltip, which model wrote it, when, from what, "from 5101,
 !4120 and 1 Copilot session", and, for a Copilot model, that it was 1 request. Each action has one control: **Not Now** before it's written, **Stop** while it is; then **↻**,
 which writes it again, and **✕**, each in a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long
@@ -622,7 +625,8 @@ is off or once the summary is taken back:
   each, the open ones first, the newest first, with who started it and where, what they said and the latest reply,
   and whether anyone else replied, "(replied, not resolved)" or "(no reply yet)", then how many are resolved, with the
   latest two in brief; each part at most 3,000 characters. A work item's texts, its description, repro steps and
-  acceptance criteria, and its latest comments, up to ten, oldest first, so an answer follows its question, from its details on
+  acceptance criteria, and its latest comments, up to ten, oldest first, so an answer follows its question, and, cut to
+  fit, the newest stay (`ItemStory.Fact.keepsEnd`), from its details on
   screen, or read as when you open it (`WorkItemStory.context`), under its story's notes' labels, so they take those
   notes' places. A read that fails leaves its part out; once Azure DevOps asks to slow down, nothing more is read; and
   what's read as someone other than who the pull requests' refresh saw signed in is left out. That's up to two GETs a

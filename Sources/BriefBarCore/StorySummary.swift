@@ -31,10 +31,17 @@ public struct StorySummary: Sendable, Equatable {
     public var plainParagraph: String? {
         paragraph.map { paragraph in
             paragraph.components(separatedBy: "\n").map { line in
-                let bare = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+                let bare = Self.unmarked(line)
                 return bare.hasPrefix("- ") ? "• " + bare.dropFirst(2) : bare
             }.joined(separator: "\n")
         }
+    }
+
+    /// A line without the marks of bold and code, but code's text as it is, even a path's "**".
+    static func unmarked(_ line: String) -> String {
+        line.components(separatedBy: "`").enumerated().map { index, part in
+            index.isMultiple(of: 2) ? part.replacingOccurrences(of: "**", with: "") : part
+        }.joined()
     }
 
     /// It in plain text, for the pasteboard: the headline, the next step and for whom, then the paragraph.
@@ -242,13 +249,21 @@ public struct StorySummary: Sendable, Equatable {
             .replacing(/<(https?:\/\/[^>\s]+)>/) { String($0.output.1) }
     }
 
-    /// A line whose bold and code are closed: one that was cut short loses the mark it left open.
-    private static func closed(_ line: String) -> String {
+    /// A line whose bold and code are closed: one that was cut short loses the mark it left open. Code first, since what's
+    /// between two backticks is text, even a path's "**".
+    static func closed(_ line: String) -> String {
         var line = line
-        for mark in ["**", "`"] where line.components(separatedBy: mark).count.isMultiple(of: 2) {
-            if let last = line.range(of: mark, options: .backwards) { line.removeSubrange(last) }
+        if !line.filter({ $0 == "`" }).count.isMultiple(of: 2), let last = line.lastIndex(of: "`") {
+            line.remove(at: last)
         }
-        return line
+        var parts = line.components(separatedBy: "`")
+        let outside = parts.indices.filter { $0.isMultiple(of: 2) }
+        let marks = outside.reduce(0) { $0 + parts[$1].components(separatedBy: "**").count - 1 }
+        if !marks.isMultiple(of: 2), let index = outside.last(where: { parts[$0].contains("**") }),
+           let last = parts[index].range(of: "**", options: .backwards) {
+            parts[index].removeSubrange(last)
+        }
+        return parts.joined(separator: "`")
     }
 
     /// "pull request" for "PR", as the prompt asks, where that's safe: "PR !4120" and "the PR !4120" are "!4120"; "the PR",
@@ -512,12 +527,31 @@ public enum StorySummaryPrompt {
         }
         let room = Self.room(for: item.context.map(\.value), in: space)
         for (part, room) in zip(item.context, room) {
-            let text = StoryText.paragraph(part.value, limit: room)
+            let text = part.keepsEnd ? ending(part.value, limit: room) : StoryText.paragraph(part.value, limit: room)
             // Cut to almost nothing, it would say nothing.
             guard !text.isEmpty, room >= min(ContextLimit.smallest, part.value.count) else { continue }
             lines.append("\(StoryText.line(part.label, limit: 80)):\n\(text)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The last lines of a text that fit in `limit` characters, after a line "…" when some are left out: the newest of
+    /// what's said oldest first. A last line too long for it is cut short, as `StoryText.paragraph` cuts it.
+    static func ending(_ text: String, limit: Int) -> String {
+        let whole = StoryText.paragraph(text, limit: .max)
+        guard whole.count > limit else { return whole }
+        let lines = whole.components(separatedBy: "\n")
+        var kept: [String] = []
+        // "…" and its line break first, then each line and the break before it.
+        var used = 2
+        for line in lines.reversed() {
+            let more = line.count + (kept.isEmpty ? 0 : 1)
+            guard used + more <= limit else { break }
+            kept.insert(line, at: 0)
+            used += more
+        }
+        guard !kept.isEmpty else { return StoryText.paragraph(lines.last ?? "", limit: limit) }
+        return "…\n" + kept.joined(separator: "\n")
     }
 
     /// How much room each part gets: an even share of `room`, at most `ContextLimit.part`, and what a short one doesn't

@@ -130,19 +130,26 @@ package struct SummaryCard: View {
     }
 
     /// Whether a next step only says again what Waiting On says above it: it's for whom that line says something waits on,
-    /// in a few words, and names only what that wait names, as "Complete !4091." under "you, to complete !4091".
+    /// names what that wait names, and says nothing else, every word of it being the wait's, as "Complete !4091." under
+    /// "you, to complete !4091"; not "Complete !4091 after fixing authentication.", which says more.
     static func repeats(_ next: String, for nextFor: String?, among waits: [ItemStory.Wait]) -> Bool {
-        guard let nextFor, next.split(separator: " ").count <= 6 else { return false }
-        let named = Set(next.matches(of: /[!#]?\d{2,}/).map { String($0.output) })
-        guard !named.isEmpty else { return false }
+        guard let nextFor else { return false }
+        let said = words(next)
+        guard said.contains(where: { $0.contains(where: \.isNumber) }) else { return false }
         return waits.contains { wait in
             let isFor = switch wait.who {
             case .you: nextFor.caseInsensitiveCompare("you") == .orderedSame
             case .copilot: nextFor.caseInsensitiveCompare("Copilot") == .orderedSame
             case .people: wait.text.hasPrefix(nextFor + ",")
             }
-            return isFor && named.allSatisfy { wait.text.contains($0) }
+            return isFor && said.isSubset(of: words(wait.text))
         }
+    }
+
+    /// A sentence's words, without case or punctuation but for what numbers a thing: "!4091", "#12".
+    private static func words(_ text: String) -> Set<String> {
+        let kept = text.lowercased().map { $0.isLetter || $0.isNumber || $0 == "!" || $0 == "#" ? $0 : " " }
+        return Set(String(kept).split(separator: " ").map(String.init))
     }
 
     static func title(for model: String) -> String {
@@ -538,6 +545,8 @@ package struct SummaryOffer: View {
 
     @LocalState private var hidden: Bool?
     @LocalState private var showsSetting = false
+    /// Which Turn On… this is, to say when its setting shows.
+    @LocalState private var chooser = UUID()
     @Environment(\.interfaceOptions) private var options
 
     /// The preferences' key for the line, once you dismissed it.
@@ -596,8 +605,8 @@ package struct SummaryOffer: View {
             .accessibilityElement(children: .contain)
             // Turned on in its setting, nothing's written until you're done choosing how: it goes as the setting does, or
             // as this line does, which turning them on takes away once the setting's gone.
-            .onChange(of: showsSetting) { summaries.setChoosing(showsSetting) }
-            .onDisappear { summaries.setChoosing(false) }
+            .onChange(of: showsSetting) { summaries.setChoosing(showsSetting, by: chooser) }
+            .onDisappear { summaries.setChoosing(false, by: chooser) }
         }
     }
 

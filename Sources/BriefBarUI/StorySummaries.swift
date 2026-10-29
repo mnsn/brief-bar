@@ -149,6 +149,9 @@ package final class StorySummaries: ObservableObject {
     private var yourNames: [SourceID: @MainActor () -> String?] = [:]
     /// For tests: what "now" is.
     var now: () -> Date = Date.init
+    /// How long one found due only once what it summed up was read again says it's about to be written, with Not Now: as
+    /// long as opening one does (`openedFor`). Tests shorten it.
+    var noticeFor: Duration = StorySummaries.openedFor
 
     private let defaults: UserDefaults
     private let links: Links
@@ -225,10 +228,14 @@ package final class StorySummaries: ObservableObject {
 
     /// Whether its setting shows where a summary would be, from Turn On…: nothing's written as it opens meanwhile.
     @Published package private(set) var isChoosing = false
+    /// Each Turn On… whose setting shows.
+    private var choosers: Set<UUID> = []
 
-    package func setChoosing(_ on: Bool) {
-        guard on != isChoosing else { return }
-        isChoosing = on
+    /// One Turn On…'s setting shows, or stops showing: each says so of itself, so one going away, as another turns
+    /// summaries on, doesn't end another's.
+    package func setChoosing(_ on: Bool, by chooser: UUID) {
+        if on { choosers.insert(chooser) } else { choosers.remove(chooser) }
+        if isChoosing != !choosers.isEmpty { isChoosing = !choosers.isEmpty }
     }
 
     package func setWritesWhenOpened(_ on: Bool) {
@@ -301,6 +308,13 @@ package final class StorySummaries: ObservableObject {
             guard now().timeIntervalSince(at) >= Self.rewriteAfter else { return }
             await stories.tell([links.describe(subject)] + links.connections(of: subject).map(\.item))
             guard mayWrite(subject, unlessActedSince: acted), isOutOfDate(subject) else { return }
+            // Found out of date only now, so its card didn't say so as it opened: it does now, with Not Now, as long.
+            if !isPending(subject) {
+                let wait = expect(subject, unlessActedSince: acted)
+                defer { stopExpecting(subject, wait) }
+                try? await Task.sleep(for: noticeFor)
+                guard !Task.isCancelled, mayWrite(subject, unlessActedSince: acted) else { return }
+            }
         }
         guard !Task.isCancelled, canWrite(subject) else { return }
         write(subject)

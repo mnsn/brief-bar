@@ -27,6 +27,7 @@ import Testing
         let stories = ItemStories(links: links)
         let summaries = StorySummaries(defaults: defaults, links: links, stories: stories, isDemo: false)
         summaries.setOn(on)
+        summaries.noticeFor = .zero
         return (links, stories, summaries)
     }
 
@@ -913,17 +914,67 @@ import Testing
         #expect(summaries.expect(workItem, unlessActedSince: nil) != nil)
     }
 
+    /// One found out of date only once what it summed up is read again, as it opens, says so first too, with Not Now,
+    /// which keeps it as it is; without Not Now, it's written once that's shown a moment.
+    @Test func aRewriteFoundOnlyOnReadingAgainIsAnnouncedToo() async throws {
+        let (links, stories, summaries) = hub()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        stories.now = { clock }
+        publish(links)
+        let told = Told()
+        told.stories = [pullRequest: ItemStory(sentence: "Approved by Priya Shah")]
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in told.stories[ref] }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        await summaries.summarizeAndWait(workItem)
+        #expect(asked.prompts.count == 1)
+        // Opened a while later, it says it's about to be written again, once it's found to be, and waits as long.
+        func opening(_ status: String, laterBy times: Double, keeps: Bool) async throws {
+            told.stories = [pullRequest: ItemStory(sentence: status)]
+            clock += 61
+            summaries.now = { Date().addingTimeInterval(times * (StorySummaries.rewriteAfter + 60)) }
+            let acted = summaries.timesActed(on: workItem)
+            // Not known yet: nothing's about to be written as it opens.
+            #expect(summaries.expect(workItem, unlessActedSince: acted) == nil)
+            let opened = Task { await summaries.opened(workItem, unlessActedSince: acted) }
+            for _ in 0..<200 where !summaries.isPending(workItem) {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(summaries.isPending(workItem))
+            if keeps { summaries.notNow(workItem) }
+            await opened.value
+            await waitForWriting(summaries, workItem)
+            #expect(!summaries.isPending(workItem))
+        }
+        summaries.noticeFor = .milliseconds(300)
+        // Not Now keeps it as it is.
+        try await opening("Rejected by Sam Rivera", laterBy: 1, keeps: true)
+        #expect(asked.prompts.count == 1)
+        // Written again, it's current; then, found out of date as it opens much later, it's written once it said so.
+        await summaries.summarizeAndWait(workItem)
+        #expect(asked.prompts.count == 2)
+        try await opening("Abandoned by Sam Rivera", laterBy: 2, keeps: false)
+        #expect(asked.prompts.count == 3)
+    }
+
     /// While its setting shows from Turn On…, nothing's written as it opens: once it's gone, it is.
     @Test func nothingsWrittenAsItOpensWhileItsSettingIsChosen() async {
         let (links, _, summaries) = hub()
         publishWithTasks(links)
         let asked = Asked()
         summaries.write = writer(asked)
-        summaries.setChoosing(true)
+        let (one, other) = (UUID(), UUID())
+        summaries.setChoosing(true, by: one)
         #expect(summaries.expect(workItem, unlessActedSince: nil) == nil)
         await summaries.opened(workItem)
         #expect(asked.prompts.isEmpty)
-        summaries.setChoosing(false)
+        // Another going away, as it does once summaries are on, doesn't end it.
+        summaries.setChoosing(false, by: other)
+        #expect(summaries.isChoosing)
+        await summaries.opened(workItem)
+        #expect(asked.prompts.isEmpty)
+        summaries.setChoosing(false, by: one)
+        #expect(!summaries.isChoosing)
         await summaries.opened(workItem)
         await waitForWriting(summaries, workItem)
         #expect(asked.prompts.count == 1)
@@ -937,8 +988,11 @@ import Testing
         ]
         #expect(SummaryCard.repeats("Complete !4091.", for: "you", among: waits))
         #expect(SummaryCard.repeats("Answer on !4102.", for: "Sam Rivera", among: waits))
-        #expect(SummaryCard.repeats("Finish task 5103.", for: "Copilot", among: waits))
+        #expect(SummaryCard.repeats("On task 5103.", for: "Copilot", among: waits))
+        // Saying more, or something else, it shows.
+        #expect(!SummaryCard.repeats("Complete !4091 after fixing authentication.", for: "you", among: waits))
         #expect(!SummaryCard.repeats("Complete !4091 once the build on main passes again.", for: "you", among: waits))
+        #expect(!SummaryCard.repeats("Finish task 5103.", for: "Copilot", among: waits))
         #expect(!SummaryCard.repeats("Complete !4091.", for: "Sam Rivera", among: waits))
         #expect(!SummaryCard.repeats("Complete !4120.", for: "you", among: waits))
         #expect(!SummaryCard.repeats("Ask Priya Shah to review it.", for: "you", among: waits))

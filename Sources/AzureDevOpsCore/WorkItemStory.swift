@@ -101,7 +101,8 @@ public enum WorkItemStory {
             comments.append(said)
             used += said.count + 1
         }
-        if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.reversed().joined(separator: "\n"))) }
+        // Cut to fit a summary, the newest stay.
+        if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.reversed().joined(separator: "\n"), keepsEnd: true)) }
         return parts
     }
 }

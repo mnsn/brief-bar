@@ -553,6 +553,36 @@ import Testing
         #expect(StorySummaryPrompt.describe(item, isSubject: true).count > 9_000)
     }
 
+    /// Bold and code are closed where they're left open, but what's in code is its text, even a path's "**"; and copied,
+    /// code keeps it too.
+    @Test func codeKeepsItsTextWhenMarksAreClosedAndCopied() {
+        #expect(StorySummary.closed("- **Changed:** `/src/**/Config.swift`") == "- **Changed:** `/src/**/Config.swift`")
+        #expect(StorySummary.closed("- **Changed:** the con…") == "- **Changed:** the con…")
+        #expect(StorySummary.closed("- **Changed:** the `Con…") == "- **Changed:** the Con…")
+        #expect(StorySummary.closed("- **Changed the con…") == "- Changed the con…")
+        let summary = StorySummary(headline: "Moved.", paragraph: "- **Changed:** `/src/**/Config.swift`")
+        #expect(summary.plainParagraph == "• Changed: /src/**/Config.swift")
+    }
+
+    /// Comments, oldest first, cut to fit, keep their newest: an answer isn't lost to its question.
+    @Test func whatsSaidOldestFirstKeepsItsNewestWhenCut() {
+        let comments = (1...10).map { "Comment \($0): " + String(repeating: "word ", count: 20) }.joined(separator: "\n")
+        let cut = StorySummaryPrompt.ending(comments, limit: 400)
+        #expect(cut.count <= 400)
+        #expect(cut.hasPrefix("…\n"))
+        #expect(cut.contains("Comment 10:"))
+        #expect(!cut.contains("Comment 1:"))
+        #expect(StorySummaryPrompt.ending("Short.", limit: 400) == "Short.")
+        let item = StorySummaryPrompt.Item(
+            kind: "Work item", label: "5101", title: "Save items", status: "Active",
+            context: [ItemStory.Fact("Description", String(repeating: "Save. ", count: 300)),
+                      ItemStory.Fact("Latest comments", comments, keepsEnd: true)]
+        )
+        let described = StorySummaryPrompt.describe(item, isSubject: true, limit: 1_000)
+        #expect(described.contains("Comment 10:"))
+        #expect(described.count <= 1_000)
+    }
+
     @Test func aLocalPromptKeepsLinkedFactsDespiteLongDiscussions() {
         var longSubject = subject
         longSubject.story?.notes = (0..<20).map {
