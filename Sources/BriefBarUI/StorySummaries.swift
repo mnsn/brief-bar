@@ -430,7 +430,8 @@ package final class StorySummaries: ObservableObject {
         writing[subject] = nil
         switch answer {
         case .success(let text):
-            if let summary = StorySummary.parse(text) {
+            // Your name, where the model wrote it for whom the next step is, as "you".
+            if let summary = StorySummary.parse(text, reader: yourName) {
                 states[subject] = .written(summary, at: now(), inputs: inputs, model: model)
                 previous[subject] = nil
                 lastFailed[subject] = nil

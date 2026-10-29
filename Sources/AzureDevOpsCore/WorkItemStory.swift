@@ -86,8 +86,8 @@ public enum WorkItemStory {
     static let contextCommentLimit = 600
 
     /// What a work item's details add to a summary of it, for a summary: each of its texts, and up to ten of its
-    /// latest comments, newest first, each on a line: more than its story's notes say, by their labels, so they take the
-    /// notes' places.
+    /// latest comments, each on a line, the oldest of them first, so that an answer follows its question: more than its
+    /// story's notes say, by their labels, so they take the notes' places.
     public static func context(_ details: WorkItemDetails) -> [ItemStory.Fact] {
         var parts: [ItemStory.Fact] = []
         for text in details.texts {
@@ -101,7 +101,7 @@ public enum WorkItemStory {
             comments.append(said)
             used += said.count + 1
         }
-        if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.joined(separator: "\n"))) }
+        if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.reversed().joined(separator: "\n"))) }
         return parts
     }
 }

@@ -949,10 +949,25 @@ import Testing
     /// A summary's points show a bullet each, with their bold and code; a link only as its words, since what a model
     /// writes may come from anyone's comment.
     @Test func aSummarysPointsShowWithTheirBoldAndCodeButNoLinks() {
-        let text = "- **Done:** Added `SavedItemsList`.\n* **Left:** [the docs](https://example.com/x)\nThen more\nand more."
+        let text = "- **Done:** Added `SavedItemsList`.\n* **Left:** [the docs](https://example.com/x)\nand more.\n\nThen more\nand more."
         #expect(SummaryMarkdown.blocks(text) == [
-            .point("**Done:** Added `SavedItemsList`."), .point("**Left:** [the docs](https://example.com/x)"),
+            .point("**Done:** Added `SavedItemsList`."), .point("**Left:** [the docs](https://example.com/x) and more."),
             .text("Then more and more."),
+        ])
+        // As the model's answer is read: its points, each a line, and its lines as written.
+        let answer = StorySummary.parse("""
+            CHECK: Guests see nothing, but the work item asks for a sign-in prompt.
+            HEADLINE: Copilot's button hides from guests instead of asking them to sign in.
+            NEXT FOR: you
+            NEXT: Ask Copilot to show guests a sign-in prompt.
+            SUMMARY:
+            - **Differs:** Guests see nothing, but the work item asks for a sign-in prompt.
+
+            - **Review:** Priya's DELETE comment is answered but unresolved, in `SavedItemsController.cs`.
+            """)
+        #expect(SummaryMarkdown.blocks(answer?.paragraph ?? "") == [
+            .point("**Differs:** Guests see nothing, but the work item asks for a sign-in prompt."),
+            .point("**Review:** Priya's DELETE comment is answered but unresolved, in `SavedItemsController.cs`."),
         ])
         let left = SummaryMarkdown.inline("**Left:** [the docs](https://example.com/x)")
         #expect(String(left.characters) == "Left: the docs")
@@ -961,7 +976,7 @@ import Testing
         #expect(String(done.characters) == "Done: Added SavedItemsList.")
         #expect(done.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
         #expect(done.runs.contains { $0.inlinePresentationIntent?.contains(.code) == true })
-        #expect(String(SummaryMarkdown.joined("- One\n- Two\nThree").characters) == "•  One\n•  Two\nThree")
+        #expect(String(SummaryMarkdown.joined("- One\n- Two\nstill two\n\nThree").characters) == "•  One\n•  Two still two\nThree")
         // Without points, it's text, as it was.
         #expect(SummaryMarkdown.blocks("Approved by Priya Shah.") == [.text("Approved by Priya Shah.")])
     }

@@ -10,15 +10,23 @@ enum SummaryMarkdown {
         case text(String)
     }
 
-    /// Its points, a line each, and the text between them, its lines together, in order.
+    /// Its points, and the text between them, in order: a line right after a point goes on with it; after a blank line,
+    /// it's text of its own, its lines together.
     static func blocks(_ text: String) -> [Block] {
         var blocks: [Block] = []
+        var isAfterBlank = false
         for line in text.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
+            guard !trimmed.isEmpty else {
+                isAfterBlank = true
+                continue
+            }
+            defer { isAfterBlank = false }
             if let point = point(trimmed) {
                 blocks.append(.point(point))
-            } else if case .text(let before)? = blocks.last {
+            } else if !isAfterBlank, case .point(let before)? = blocks.last {
+                blocks[blocks.count - 1] = .point(before + " " + trimmed)
+            } else if !isAfterBlank, case .text(let before)? = blocks.last {
                 blocks[blocks.count - 1] = .text(before + " " + trimmed)
             } else {
                 blocks.append(.text(trimmed))

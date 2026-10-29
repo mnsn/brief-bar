@@ -98,9 +98,9 @@ public enum PullRequestContext {
     }
 
     /// How its comment threads go: how many aren't resolved, then each of them on a line, the open ones first, the newest
-    /// first, with who started it and where, what they said and the latest reply; then how many are resolved, with the
-    /// latest in brief. "No comments." without any. Cut to about `limit` characters: when all of them don't fit, each says
-    /// less, and then the last ones are left out.
+    /// first, with who started it and where, what they said, the latest reply, and whether anyone replied; then how many
+    /// are resolved, with the latest in brief. "No comments." without any. Cut to about `limit` characters: when all of
+    /// them don't fit, each says less, and then the last ones are left out.
     /// - Parameter me: your identity ID, to say "you".
     public static func digest(_ threads: [ReviewThread], me: String? = nil, limit: Int = threadsLimit) -> String {
         guard !threads.isEmpty else { return "No comments." }
@@ -129,14 +129,21 @@ public enum PullRequestContext {
         return StoryText.paragraph(lines.joined(separator: "\n"), limit: limit)
     }
 
-    /// "Sam Rivera on src/Cart.swift:42: Round half up? — Priya Shah: Done.": who started a thread and where, what they
-    /// said, and the latest reply, each cut to its length.
+    /// "Sam Rivera on src/Cart.swift:42: Round half up? — Priya Shah: Done. (replied, not resolved)": who started a thread
+    /// that isn't resolved and where, what they said, and the latest reply, each cut to its length; then whether someone
+    /// else replied, or "(no reply yet)", so that a model doesn't take a reply for an answer missing, or the other way.
     static func entry(_ thread: ReviewThread, me: String?, said: Int, reply: Int) -> String {
         var line = "\(opening(thread, me: me)): \(StoryText.line(thread.comments.first?.text ?? "", limit: said))"
         if thread.comments.count > 1, let last = thread.comments.last {
             line += " — \(who(last.author, me: me)): \(StoryText.line(last.text, limit: reply))"
         }
-        return line
+        return line + (isReplied(thread) ? " (replied, not resolved)" : " (no reply yet)")
+    }
+
+    /// Whether someone other than who started a thread said something in it.
+    static func isReplied(_ thread: ReviewThread) -> Bool {
+        guard let first = thread.comments.first else { return false }
+        return thread.comments.dropFirst().contains { $0.author.id != first.author.id }
     }
 
     /// "Resolved (3), the latest: Sam Rivera on src/Cart.swift:42: Round half up? (fixed); …": how many are resolved, and
