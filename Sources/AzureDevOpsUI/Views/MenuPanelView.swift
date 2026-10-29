@@ -44,7 +44,7 @@ struct MenuPanelView: View {
                     Image(systemName: AzureDevOpsPage.pullRequests.symbol)
                         .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text(AzureDevOpsPage.pullRequests.title)
-                        .font(.headline)
+                        .font(style: .headline)
                 }
             }
             Spacer()
@@ -71,11 +71,11 @@ struct MenuPanelView: View {
                         .buttonStyle(.borderless)
                     Spacer()
                 }
-                .font(.system(size: 11))
+                .font(size: 11)
                 .padding(.horizontal, 8)
             } else if settings.chatLinksEnabled, let problem = store.chatProblem {
                 Label(problem, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -91,7 +91,7 @@ struct MenuPanelView: View {
                         .buttonStyle(.borderless)
                     Spacer()
                 }
-                .font(.system(size: 11))
+                .font(size: 11)
                 .padding(.horizontal, 8)
                 .help("Allow notifications for BriefBar in System Settings › Notifications, or turn Notifications off in Azure DevOps' settings")
             }
@@ -104,7 +104,7 @@ struct MenuPanelView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Loading your pull requests…")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -139,7 +139,7 @@ struct MenuPanelView: View {
                     }
                 } label: {
                     Text("Idle (\(idle.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -155,14 +155,14 @@ struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("\(group.title) (\(items.count))")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
                     .help(group == .answered ? "You took care of these in Azure DevOps. Once you've seen them here, they go back to their usual group." : "")
                 Spacer()
                 if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .help(group == .needsYou ? Self.markAsSeenHelp : "Remove these from the list")
                 }
             }
@@ -203,7 +203,7 @@ struct MenuPanelView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -255,7 +255,7 @@ struct RefreshStatus: View {
             } else if let refreshedAt = store.refreshedAt, store.mode == .live {
                 Text(Elapsed.short(since: refreshedAt, now: store.now) == "now" ? "Updated now" : "Updated \(Elapsed.short(since: refreshedAt, now: store.now)) ago")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 11))
+                    .font(size: 11)
             }
             if store.mode == .live {
                 Button {
@@ -287,7 +287,7 @@ struct BriefView: View {
                             .frame(width: 6, height: 6)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                         Text(store.briefText(item))
-                            .font(.system(size: 12))
+                            .font(size: 12)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(collapsed ? 2 : nil)
@@ -314,13 +314,13 @@ struct ProblemView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label {
                     Text(problem.message)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(size: 12, weight: .semibold)
                 } icon: {
                     Image(systemName: "person.crop.circle.badge.exclamationmark")
                         .foregroundStyle(.orange)
                 }
                 Text(explanation)
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…", action: signIn)
@@ -333,7 +333,7 @@ struct ProblemView: View {
             .padding(.horizontal, 4)
         } else {
             Label(problem.message, systemImage: "exclamationmark.triangle")
-                .font(.callout)
+                .font(style: .callout)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .fixedSize(horizontal: false, vertical: true)
@@ -360,19 +360,19 @@ struct OrganizationsPlaceholder: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Finding your Azure DevOps organizations…")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
                 Text("Once, the first time: it looks for the ones where you have pull requests.")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             } else if settings.hasDiscovered {
                 Image(systemName: "building.2")
-                    .font(.system(size: 22))
+                    .font(size: 22)
                     .foregroundStyle(.secondary)
                 Text("No organizations to watch")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
                 Text("None of your organizations has an active pull request of yours or for you to review.")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -395,12 +395,12 @@ struct QuietView: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: "checkmark.seal")
-                .font(.system(size: 22))
+                .font(size: 22)
                 .foregroundStyle(.secondary)
             Text("All clear")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             Text(idleCount == 0 ? "No open pull requests" : idleCount == 1 ? "1 idle pull request" : "\(idleCount) idle pull requests")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
         }
     }

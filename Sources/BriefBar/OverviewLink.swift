@@ -60,18 +60,18 @@ struct OverviewLinkView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: AppSymbols.app)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(size: 12, weight: .semibold)
                             .foregroundStyle(.tint)
                         Text("Overview")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(size: 12, weight: .semibold)
                         Spacer(minLength: 8)
                         if let count {
                             Text(count)
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(size: 11).monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(size: 10, weight: .bold)
                             .foregroundStyle(isHovered ? HierarchicalShapeStyle.secondary : .tertiary)
                     }
                     .padding(.horizontal, 14)
