@@ -143,7 +143,7 @@ private struct PageContent: View {
                 } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
                     // Just "Summarize" where the whole of it doesn't fit.
                     ViewThatFits(in: .horizontal) {
-                        summarize("Summarize with Copilot")
+                        summarize(summaries.actionTitle)
                         summarize("Summarize")
                     }
                 }
@@ -161,8 +161,8 @@ private struct PageContent: View {
                 .fixedSize()
         }
         .glassButtonStyle()
-        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
-        .accessibilityLabel("Summarize with Copilot")
+        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+        .accessibilityLabel(summaries.actionTitle)
     }
 
     /// "Pull Request", "Copilot Session", "Sent to Copilot".

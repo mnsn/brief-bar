@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Copilot wrote of where a thing stands, from what BriefBar knows of it and of what's linked to it
+/// A model's summary of where a thing stands, from what BriefBar knows of it and of what's linked to it
 /// (`StorySummaryPrompt`): a line, what's next and for whom, and a short paragraph. Only ever in memory.
 public struct StorySummary: Sendable, Equatable {
     /// Where it stands, in a sentence.
@@ -237,26 +237,52 @@ public enum StorySummaryPrompt {
         NEXT: that step, in one short sentence; or Nothing, when nothing waits.
         SUMMARY: what's been done and what's left, in at most 120 words.
         Use only what the data says, and the names and numbers as they're given there. When something is unknown, say \
-        less rather than guess.
+        less rather than guess. If details or linked items were left out for length, say the summary is incomplete. \
+        Missing data never means there are no blockers, votes, or remaining work.
         """
 
     /// The prompt: the instructions, then who reads it, when that's known, the thing, and what's linked to it, the most
     /// pressing first, as many as fit in `limit` characters.
-    /// - Parameter reader: your name, as the data has it, for the model to call you "you".
-    public static func make(subject: Item, linked: [Item], reader: String? = nil, limit: Int = 14_000) -> String {
+    /// - Parameters:
+    ///   - reader: your name, as the data has it, for the model to call you "you".
+    ///   - itemLimit: caps each item's details so one long discussion doesn't crowd out its linked items.
+    ///   - includeInstructions: false when the provider takes instructions separately from the prompt.
+    public static func make(
+        subject: Item, linked: [Item], reader: String? = nil, limit: Int = 14_000,
+        itemLimit: Int? = nil, includeInstructions: Bool = true
+    ) -> String {
+        func description(_ item: Item, isSubject: Bool) -> String {
+            let text = scrub(describe(item, isSubject: isSubject))
+            return itemLimit.map { bounded(text, limit: $0) } ?? text
+        }
         var data = reader.map { StoryText.line($0, limit: 80) }.flatMap { $0.isEmpty ? nil : "READER: \($0)\n\n" } ?? ""
-        data += describe(subject, isSubject: true)
+        data += description(subject, isSubject: true)
+        data = scrub(data)
+        let budget = max(0, limit)
+        let omissionReserve = linked.isEmpty ? 0 : "\n\n(\(linked.count) more linked, left out for length.)".count
+        let contentBudget = max(0, budget - omissionReserve)
+        // The subject alone can exceed the budget; keep its data boundary and the omission notices intact.
+        data = bounded(data, limit: contentBudget)
         var left = 0
         for item in linked {
-            let described = describe(item, isSubject: false)
-            if data.count + described.count + 2 > limit {
+            let described = description(item, isSubject: false)
+            if data.count + described.count + 2 > contentBudget {
                 left += 1
                 continue
             }
             data += "\n\n" + described
         }
-        if left > 0 { data += "\n\n(\(left) more linked, left out for length.)" }
-        return instructions + "\n\n<data>\n" + scrub(data) + "\n</data>"
+        if left > 0 {
+            data += "\n\n(\(left) more linked, left out for length.)".prefix(max(0, budget - data.count))
+        }
+        return (includeInstructions ? instructions + "\n\n" : "") + "<data>\n" + data + "\n</data>"
+    }
+
+    private static func bounded(_ text: String, limit: Int) -> String {
+        let budget = max(0, limit)
+        guard text.count > budget else { return text }
+        let omitted = "\n\n(Details left out for length.)"
+        return String(text.prefix(max(0, budget - omitted.count))) + String(omitted.prefix(budget))
     }
 
     /// A thing, a line or a few for each part of its story.
