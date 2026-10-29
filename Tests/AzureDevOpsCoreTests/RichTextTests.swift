@@ -346,6 +346,17 @@ private typealias Run = RichText.Run
         #expect(RichText(markdown: "- a\n    ```\n    x\n       ```\n    ```").blocks == [
             .listItem(.bullet, depth: 0, [Run("a")]), .code("x\n   ```"),
         ])
+        // So does an underline: "---" there is a rule, which ends the list, and "===" more of the paragraph. In the item,
+        // it makes the paragraph a heading.
+        #expect(RichText(markdown: "1. One\n\n   Para\n---\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .paragraph([Run("Para")]), .rule, .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n\n   Para\n===\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .paragraph([Run("Para\n===")]), .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n\n   Para\n   ---\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .heading(level: 2, [Run("Para")]), .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
         // A table whose separator is outside the item isn't one: its lines go on with the item's text.
         #expect(RichText(markdown: "1. a\n   | H |\n| - |").blocks == [.listItem(.number(1), depth: 0, [Run("a\n| H |\n| - |")])])
         // After a block, a paragraph is in the item when it's indented into it. A line that goes on with a paragraph, or

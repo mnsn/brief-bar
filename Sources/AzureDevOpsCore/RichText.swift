@@ -861,9 +861,10 @@ private enum MarkdownReader {
                 if !text.isEmpty { blocks.append(.code(text)) }
                 continue
             }
-            if case .paragraph = pendingKind, !pending.isEmpty, !trimmed.isEmpty,
+            if case .paragraph = pendingKind, !pending.isEmpty, !trimmed.isEmpty, indent >= itemIndents.last ?? 0,
                trimmed.allSatisfy({ $0 == "=" }) || (trimmed.count >= 2 && trimmed.allSatisfy { $0 == "-" }) {
-                // A setext heading: the paragraph above, underlined.
+                // A setext heading: the paragraph above, underlined in what it's in. A line that leaves the list item the
+                // paragraph is in doesn't underline it: it's a rule, or more of the paragraph.
                 let runs = inline(joined(pending))
                 pending = []
                 if !runs.isEmpty { blocks.append(.heading(level: trimmed.first == "=" ? 1 : 2, runs)) }
