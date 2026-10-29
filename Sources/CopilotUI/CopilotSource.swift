@@ -88,6 +88,8 @@ package final class CopilotSource: BriefBarSource {
         settings.forgetDismissed()
         // The links you added or hid to Copilot sessions.
         services.links.forget(.copilot)
+        // Scripts that would have opened sessions in Terminal, but never ran. The demo never writes any.
+        if !services.isDemo { CLISession.forgetScripts() }
     }
 
     // MARK: Show Links

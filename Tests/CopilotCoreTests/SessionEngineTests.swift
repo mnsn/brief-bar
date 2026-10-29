@@ -87,6 +87,49 @@ import Testing
         }
     }
 
+    /// Nor is one that can't be reached missing, though `FileManager.fileExists` says it isn't there.
+    @Test func tellsAnUnreachableDatabaseFromAMissingOne() throws {
+        try withTemporaryDirectory { directory in
+            let paths = CopilotPaths(root: directory.appendingPathComponent("copilot", isDirectory: true))
+            try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
+            try Data().write(to: paths.database)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: paths.root.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: paths.root.path) }
+            #expect(!FileManager.default.fileExists(atPath: paths.database.path))
+            let snapshot = SessionEngine.loadOnce(paths: paths)
+            #expect(snapshot.problem?.contains("Could not open Copilot database") == true)
+            #expect(!snapshot.databaseMissing)
+        }
+    }
+
+    /// A database that goes away after a good read, as when the app's data is removed, is missing too.
+    @Test(.timeLimit(.minutes(1)))
+    func saysTheDatabaseIsMissingOnceItsGone() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = CopilotPaths(root: root)
+        let db = try TestDatabase(at: paths.database)
+        try db.createAppSchema()
+        try db.addProject("p1", name: "Pulse")
+        try db.addSession("live", title: "Live", updatedAt: Date())
+        try db.addWorkspace("w-live", session: "live", name: "Live session")
+        db.close()
+
+        let collector = SnapshotCollector()
+        let engine = SessionEngine(paths: paths, metadataThrottle: 0.05, safetyInterval: 3_600) { collector.add($0) }
+        engine.start()
+        defer { engine.stop() }
+        let first = try await collector.wait("the initial load") { $0.records.first?.meta.name == "Live session" }
+        #expect(!first.databaseMissing)
+
+        try FileManager.default.removeItem(at: paths.database)
+        engine.refresh()
+        let gone = try await collector.wait("the failed reload") { $0.problem != nil }
+        #expect(gone.databaseMissing)
+        // Still the app's own list, as it last read it.
+        #expect(gone.listedByApp)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func keepsTheLastListWhileTheDatabaseCannotBeRead() async throws {
         let root = try makeTemporaryDirectory()

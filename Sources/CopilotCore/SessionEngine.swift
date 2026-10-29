@@ -23,8 +23,8 @@ public struct EngineSnapshot: Sendable, Equatable {
     /// The sessions are the ones the app's database lists, rather than every recent session folder, which is all there
     /// is to go on while the database has never been readable (`SessionStateScanner`).
     public var listedByApp: Bool
-    /// There's a Copilot folder, but no app database in it at all, as on a Mac with only the Copilot CLI, which keeps
-    /// none: the sessions are every recent session folder's.
+    /// There's a Copilot folder, but nothing at all where the app's database goes, as on a Mac with only the Copilot CLI,
+    /// which keeps none; not a database that's there but can't be reached. Looked at on every read that fails.
     public var databaseMissing: Bool
 
     public init(
@@ -242,6 +242,8 @@ public final class SessionEngine: @unchecked Sendable {
             databaseMissing = false
             problem = nil
         } catch {
+            let hasFolder = FileManager.default.fileExists(atPath: paths.root.path)
+            databaseMissing = hasFolder && Self.isMissing(paths.database)
             if metadataFromDatabase {
                 // Keep the last good list, but its running flags may be out of date, so the
                 // logs decide until the database can be read again.
@@ -251,14 +253,19 @@ public final class SessionEngine: @unchecked Sendable {
                 problem = "\(error). The list may be out of date."
             } else {
                 metas = SessionStateScanner.recentSessions(paths: paths)
-                let hasFolder = FileManager.default.fileExists(atPath: paths.root.path)
-                databaseMissing = hasFolder && !FileManager.default.fileExists(atPath: paths.database.path)
                 problem = hasFolder
                     ? String(describing: error)
                     : "No Copilot data found at \(paths.root.path)"
             }
         }
         syncReaders()
+    }
+
+    /// Whether there's nothing at all at `url`, rather than something that can't be reached, which
+    /// `FileManager.fileExists` doesn't tell apart.
+    static func isMissing(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) != 0 && errno == ENOENT
     }
 
     private func syncReaders() {

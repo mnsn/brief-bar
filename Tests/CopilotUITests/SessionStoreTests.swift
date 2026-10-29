@@ -170,6 +170,42 @@ import Testing
         #expect(CLISession.way(for: id, paths: paths, holder: { _ in nil }) == .resume)
     }
 
+    /// A session that's starting in Terminal isn't held by its CLI yet: clicking it again meanwhile starts nothing more,
+    /// which would fork its history, until it's open, it couldn't be, or long enough has passed.
+    @Test func opensASessionInTerminalOnceWhileItStarts() {
+        var starting = CLISession.Starting()
+        let now = Date()
+        let window = CLISession.Starting.window
+        let first = starting.begin("a", now: now)
+        let again = starting.begin("a", now: now.addingTimeInterval(1))
+        let another = starting.begin("b", now: now.addingTimeInterval(1))
+        let stillStarting = starting.begin("a", now: now.addingTimeInterval(window - 1))
+        let afterTheWindow = starting.begin("a", now: now.addingTimeInterval(window))
+        starting.end("b")
+        let afterItOpened = starting.begin("b", now: now.addingTimeInterval(2))
+        #expect(first)
+        #expect(!again)
+        #expect(another)
+        #expect(!stillStarting)
+        #expect(afterTheWindow)
+        #expect(afterItOpened)
+    }
+
+    /// Turning Copilot off removes the scripts that would have opened its sessions in Terminal but never ran, and
+    /// nothing else.
+    @Test func forgetsOnlyItsOwnScripts() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for name in ["Copilot session 5d2e8a90.command", "Copilot PR 4071.command", "Copilot session notes.txt"] {
+            try Data().write(to: folder.appendingPathComponent(name))
+        }
+        CLISession.forgetScripts(in: folder)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == [
+            "Copilot PR 4071.command", "Copilot session notes.txt",
+        ])
+    }
+
     @Test func theOptionIsOptInAndPersists() {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)

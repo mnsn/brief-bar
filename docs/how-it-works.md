@@ -1370,8 +1370,12 @@ it applies. A few more details:
   as Terminal, iTerm or VS Code: resuming it in a second terminal would fork its history. BriefBar can't
   pick the exact window or tab, which would take AppleScript. Any other session opens in Terminal with
   `copilot --resume <id>`, in the `cwd` its `workspace.yaml` names, as **Continue in Terminal** does for
-  a task. The **Open Copilot** button and menu item are hidden then. The demo's made-up sessions always
-  open in the app.
+  a task, with `COPILOT_HOME` set to the folder BriefBar read the session from, whatever your shell
+  sets. A new Terminal window takes a moment to start the CLI, which holds the session only once it
+  starts, so for 30 seconds another click on that session starts nothing more (`CLISession.Starting`):
+  two CLIs in it would fork its history. The script, in BriefBar's caches, removes itself as it starts,
+  and turning Copilot off removes any that never ran. The **Open Copilot** button and menu item are
+  hidden then. The demo's made-up sessions always open in the app.
 - The tasks you sent to Copilot from Azure DevOps ([above](#send-work-to-copilot)) are in the list too,
   with ✈︎ before their names, unless the app's database lists their sessions itself, as it does once you
   open one there. (Without the database, the list is every recent session folder, and a task's folder is
@@ -1414,9 +1418,10 @@ log format, and the `ghapp://` link. An app update could change them.
   running flag, projects or branches.
 - If the database can't be read at all, sessions are listed from their log folders, and the
   problem is shown in the panel and the widget. On a Mac without the Copilot app, a database that
-  isn't there at all (`EngineSnapshot.databaseMissing`) is no problem: the Copilot CLI keeps none, so
-  the list is its session folders, and nothing is shown, in the panel, the widget, the command line or
-  to agents (`CopilotApp.problem(of:)`). With the app installed, it's shown as before.
+  isn't there at all (`EngineSnapshot.databaseMissing`: no such file, not one that can't be reached,
+  looked at on every read that fails) is no problem: the Copilot CLI keeps none, so the list is its
+  session folders, and nothing is shown, in the panel, the widget, the command line or to agents
+  (`CopilotApp.problem(of:)`). With the app installed, it's shown as before.
 
 ## GitHub
 
