@@ -798,9 +798,9 @@ import Testing
     }
 
     /// Where Apple Intelligence isn't there, as on macOS before 26, on a Mac that can't run it, or with it off, asking
-    /// it is a failure that says why, never a crash. Where it is there, nothing is asked: that would run the model.
-    @Test func askingAppleIntelligenceWhereItIsNotAvailableSaysWhy() async {
-        guard OnDeviceModel.unavailableReason != nil else { return }
+    /// it is a failure that says why, never a crash. Where it is there, the test is skipped: asking would run the model.
+    @Test(.enabled(if: OnDeviceModel.unavailableReason != nil, "Apple Intelligence is available here, and asking would run it."))
+    func askingAppleIntelligenceWhereItIsNotAvailableSaysWhy() async {
         let answer = await StorySummaries.writeOnDevice(
             "<data>\nWORK ITEM 5110: Coupon totals round down\n</data>", .init(model: StorySummaries.appleIntelligenceModel)
         )
