@@ -983,10 +983,11 @@ import Testing
 
     /// The picker says what each model costs: Apple Intelligence nothing, Haiku the least and Opus the most.
     @Test func thePickerSaysWhatEachModelCosts() {
-        #expect(StorySummariesSetting.choiceTitle(StorySummaries.appleIntelligence) == "Apple Intelligence (on this Mac, free)")
+        #expect(StorySummariesSetting.onDeviceSection == "On this Mac, free")
+        #expect(StorySummariesSetting.choiceTitle(StorySummaries.appleIntelligence) == "Apple Intelligence")
         #expect(StorySummariesSetting.choiceTitle(.init(id: "claude-haiku-5.5", name: "Claude Haiku 5.5")) == "Claude Haiku 5.5 (cheapest)")
         #expect(StorySummariesSetting.choiceTitle(.init(id: "claude-opus-5.5", name: "Claude Opus 5.5"))
-                == "Claude Opus 5.5 (most capable, costs the most)")
+                == "Claude Opus 5.5 (most capable, costs most)")
         #expect(StorySummariesSetting.choiceTitle(.init(id: "gpt-6.1-sol", name: "GPT-6.1 Sol")) == "GPT-6.1 Sol")
     }
 

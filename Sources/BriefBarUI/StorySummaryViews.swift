@@ -378,7 +378,7 @@ package struct SummaryCard: View {
                     .popover(isPresented: $choosesModel, arrowEdge: .bottom) {
                         StorySummariesSetting(summaries: summaries, links: services.links, isNested: false)
                             .padding(16)
-                            .frame(width: 420)
+                            .frame(width: 460)
                     }
             }
             Button("Try Again") { summaries.summarize(subject) }
@@ -610,7 +610,7 @@ package struct SummaryOffer: View {
             .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
                 StorySummariesSetting(summaries: summaries, links: links, isNested: false)
                     .padding(16)
-                    .frame(width: 420)
+                    .frame(width: 460)
             }
     }
 }
@@ -700,14 +700,23 @@ package struct StorySummariesSetting: View {
                 }
                 labeled("Model", symbol: "cpu") {
                     VStack(alignment: .leading, spacing: 4) {
+                        // On this Mac, then through Copilot, each with what it costs.
                         Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
-                            ForEach(choices) { model in
-                                Text(Self.choiceTitle(model)).tag(model.id)
+                            Section(Self.onDeviceSection) {
+                                ForEach(choices.filter { $0.id == StorySummaries.appleIntelligenceModel }) { model in
+                                    Text(Self.choiceTitle(model)).tag(model.id)
+                                }
+                            }
+                            Section(Self.copilotSection) {
+                                ForEach(choices.filter { $0.id != StorySummaries.appleIntelligenceModel }) { model in
+                                    Text(Self.choiceTitle(model)).tag(model.id)
+                                }
                             }
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .fixedSize()
+                        // As wide as the model chosen needs, but never its menu's longest line, which a popover hasn't room for.
+                        .frame(maxWidth: 280, alignment: .leading)
                         if summaries.usesOnDeviceModel {
                             Text(Self.onDeviceAccuracy)
                                 .foregroundStyle(.secondary)
@@ -769,13 +778,16 @@ package struct StorySummariesSetting: View {
     package static let onDeviceAccuracy = "A small model: with long histories it can get details wrong. Copilot's models read "
         + "more of each, and are more accurate."
 
-    /// A model as the picker offers it, with what it costs: "Apple Intelligence (on this Mac, free)", "Claude Haiku 5.5
-    /// (cheapest)", "Claude Opus 5.5 (most capable, costs the most)".
+    /// The picker's sections: what each costs, and where it runs.
+    package static let onDeviceSection = "On this Mac, free"
+    package static let copilotSection = "Through Copilot: a request each, at the model's rate"
+
+    /// A model as the picker offers it, under what it costs: "Claude Haiku 5.5 (cheapest)", "Claude Opus 5.5 (most
+    /// capable, costs most)".
     package static func choiceTitle(_ model: StorySummaries.Model) -> String {
         switch model.id {
-        case StorySummaries.appleIntelligenceModel: "\(model.name) (on this Mac, free)"
         case "claude-haiku-5.5": "\(model.name) (cheapest)"
-        case "claude-opus-5.5": "\(model.name) (most capable, costs the most)"
+        case "claude-opus-5.5": "\(model.name) (most capable, costs most)"
         default: model.name
         }
     }

@@ -318,7 +318,7 @@ enum Renderer {
                 write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-asked-\(suffix)")
                 let turnOn = StorySummariesSetting(summaries: model.services.summaries, links: model.services.links, isNested: false)
                     .padding(16)
-                    .frame(width: 420, alignment: .leading)
+                    .frame(width: 460, alignment: .leading)
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(turnOn, appearance: appearance), "summary-turn-on-\(suffix)")
             }
