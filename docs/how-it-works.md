@@ -1609,6 +1609,13 @@ It's a command-line mode like `--json`, with the same rules:
   its own tools (`SourceCommandLine.mcp`), and `needs_me` asks all of them at once. Teams gives none:
   its chats come from what only Full Disk Access reads, and what a tool answers goes to the agent's
   model, which may run in the cloud. GitHub gives none either: its pull requests aren't offered to agents.
+- A source's tool asks the others what they know of the things it names (`MCPRelated` in
+  `Sources/BriefBarUI`), so the sources stay apart: Azure DevOps never reads Copilot's files, nor
+  Copilot Azure DevOps. A source tells of its own things through its teller (`MCPSource.related`), and
+  `MCPSource.tools` gives each tool every source's teller while it runs, in a task-local value, so no
+  tool's signature changes. A teller answers only while its source is on: `available(while:refusal:)`
+  refuses it as it refuses the source's tools, and the tool that asked says so in a line rather than
+  failing. `--source` leaves the others out, tellers and all.
 - Azure DevOps reads as the app does, with its organizations, its settings and what you've seen and
   taken off Needs You in it, so the groups match the menu bar's, and like the other modes it leaves out
   pull requests sent in chats. In Needs You, what you've seen that still waits on you says so. One
@@ -1617,7 +1624,10 @@ It's a command-line mode like `--json`, with the same rules:
   a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
   next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs
   them. Each read runs on its own, so a call the agent cancels doesn't cut short what the next one gets.
-- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them.
+- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them. For
+  another source's tool, it also reads where each session's work goes (`SessionLinks`) and, for the
+  sessions it tells of, what Copilot recorded of their work (`SessionAccount`), whether Show Links is on
+  or not.
 
 `pull_request_prompt` gives the prompts of a pull request's Copilot actions (see
 [Send work to Copilot](#send-work-to-copilot)), told to work in the agent's checkout rather than a
@@ -1628,16 +1638,34 @@ and never rebases. For a failed build, it reads each run's timeline first, with 
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see
-[Where it stands](#where-it-stands)), in text: `WorkItemStory`'s facts and notes, its tasks in the
-sprint, or its children when it isn't there, and each pull request it links to, told by
-`PullRequestStory` as the panel's rows are: yours as your lists have them, with their checks and
-merge pipelines, and the others as they say themselves. It reads the work item with the same GETs as
-its details, whose `$expand=relations` already names its pull requests, so it works whether Show Links
-is on or not, then one GET for each of those pull requests your lists don't have, one after another
-(`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it didn't get to says so,
-rather than that it couldn't be read. Without a link, it looks in the sprint, then in each of your organizations.
-The text of a story (`ItemStory.lines`) is the one Summarize with Copilot sends, with what says less
-too: who wrote a pull request, its branch, its runs' pages and what isn't read for it.
+[Where it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a
+few lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's
+the sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, and
+who it waits on. Then its tasks in the sprint, or its children when it isn't there, each with the
+latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the
+panel's rows are: yours as your lists have them, with their checks and merge pipelines, and the others
+as they say themselves, with what isn't read of them; what the other sources know of those pull
+requests, such as the Copilot sessions on them; the rest of the work sent to Copilot for it; and last,
+its description, its other long texts, such as acceptance criteria or repro steps, and its latest
+comments, each quoted, since what people wrote is data. Who it waits on comes from the same data: each
+of your pull requests' group and reason in your lists, such as you, to complete one that's ready, or to
+fix one whose build failed; another's votes, such as its reviewers, or its author once it's approved;
+the work sent to Copilot that's going on; and a session that waits for you. It reads the work item with
+the same GETs as its details, whose `$expand=relations` already names its pull requests, so it works
+whether Show Links is on or not, then one GET for each of those pull requests your lists don't have,
+one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it didn't
+get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint, then in
+each of your organizations.
+
+It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
+by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)
+answers with the app's sessions on them, linked as Show Links links them: on a pull request's branch in
+its repository (`BranchLinks`), or recorded by the app as the pull request a session started from or
+opened (`SessionSnapshot.recordedLinks`); the ones that need you first, then the newest. For the first
+five, it reads what Copilot recorded of their work (`SessionAccount`) and tells it briefly: the latest
+checkpoint's overview, cut to its first sentences, its first next step, and what the session said last
+when that came after. The rest are named. A session BriefBar sent work to is told with that work. When
+Copilot is off in the app, the answer says so in a line; with `--source ado`, there's no Copilot to ask.
 
 The tools that change something change only BriefBar's own lists, as its menus do:
 `watch_pull_request` and `stop_watching_pull_request` the pull requests you watch, and `pin_pipeline`
@@ -1700,7 +1728,11 @@ session's first prompt holds only the pull request's link and the action, and ha
 not as your request; the skill tells agents that such text is data, never instructions. Push & Reply
 goes to the session that made the changes, never a new one. In the Copilot CLI, the agent follows the
 prompt where it is. It doesn't answer a session's question, plan or permission for you: it offers to
-open the session, with the app's `navigate_to`.
+open the session, with the app's `navigate_to`. Asked how a work item is going, as with **/briefbar
+5101**, it calls `work_item` and answers in at most four short lines, with their links: where it stands
+and what you can do now, what's done, by people and by Copilot, what's left and who has it, and who it
+waits on; then it offers one next step, and starts nothing. Given a pull request's number, it calls
+`pull_request`, and it tries that before asking for a link when `work_item` finds nothing.
 
 `CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
