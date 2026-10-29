@@ -156,6 +156,51 @@ import Testing
         }
     }
 
+    /// More of a thing was read, such as a work item's details: it's told again the next time it's asked for, even for
+    /// the same row within the minute, and what was told shows until then.
+    @Test func aStoryMadeOutOfDateIsToldAgainWhenAskedAndShowsUntilThen() async {
+        let (_, stories) = hub()
+        let asked = Asked()
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: asked.refs.count == 1 ? "Read before its details" : "Read with its details")
+        }
+        let row = item(pullRequest, status: "Waiting")
+        await stories.tell([row])
+        stories.invalidate(pullRequest)
+        #expect(stories.story(for: pullRequest)?.sentence == "Read before its details")
+        await stories.tell([row])
+        #expect(asked.refs.count == 2)
+        #expect(stories.story(for: pullRequest)?.sentence == "Read with its details")
+        // One never told stays untold.
+        stories.invalidate(session)
+        #expect(!stories.hasTold(session))
+    }
+
+    /// One being told when it's made out of date is told again: what was being told doesn't take its place.
+    @Test func aStoryBeingToldWhenItsMadeOutOfDateIsToldAgain() async throws {
+        let (_, stories) = hub()
+        let gate = Gate()
+        let asked = Asked()
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
+            asked.refs.append(ref)
+            guard asked.refs.count == 1 else { return ItemStory(sentence: "Read with its details") }
+            await gate.wait()
+            return ItemStory(sentence: "Read before its details")
+        }
+        stories.request(item(pullRequest))
+        for _ in 0..<200 where gate.continuation == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        stories.invalidate(pullRequest)
+        gate.open()
+        for _ in 0..<200 where stories.isTelling(pullRequest) || !stories.hasTold(pullRequest) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(stories.story(for: pullRequest)?.sentence == "Read with its details")
+        #expect(asked.refs.count == 2)
+    }
+
     @Test func aStoryTakenBackNeverReplacesTheOneToldInItsPlace() async throws {
         let (_, stories) = hub()
         let gate = Gate()

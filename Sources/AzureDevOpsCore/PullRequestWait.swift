@@ -56,7 +56,10 @@ public enum PullRequestWait {
         let reviewers = pullRequest.reviewers.filter { !$0.hasDeclined }
         let people = reviewers.filter { !$0.isGroup }
         if people.contains(where: \.vote.wantsChanges) { return author("to make the changes asked for on \(number)") }
-        if people.contains(where: \.vote.isApproval), reviewers.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
+        // Every required reviewer, even one who declined, as `PullRequestStory.standing` has it.
+        if people.contains(where: \.vote.isApproval), pullRequest.reviewers.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
+            // Set to complete by itself, it waits on nobody, as in your lists.
+            if pullRequest.autoComplete { return nil }
             return yours
                 ? ItemStory.Wait(.you, "you, to complete \(number) once its checks pass")
                 : ItemStory.Wait(.people, "\(pullRequest.author.name), author of \(number) (approved; its checks aren't read)")

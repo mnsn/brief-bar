@@ -223,6 +223,32 @@ import Testing
         #expect(CopilotTaskEntry.waits(of: [wentOn], among: [again, wentOn], isDone: { _ in false }).isEmpty)
     }
 
+    /// A work item's story told before its details were read, as Where It Stands asks for it as it shows, is told again
+    /// once they are, so a summary asked for then has its description and comments.
+    @Test func aWorkItemsStoryIsToldAgainOnceItsDetailsAreRead() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        links.setOn(true)
+        let stories = ItemStories(links: links)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(links: links, stories: stories, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        let details = WorkItemDetailsStore(mode: .demo, client: store.client, board: sprint.$board.eraseToAnyPublisher())
+        workLinks.details = details
+        await workLinks.loadOnce()
+        let item = try #require(sprint.board?.rows.compactMap(\.parent).first { $0.id == 5101 })
+        let row = links.describe(item.linkRef)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef)?.notesRead == false)
+        await details.loadOnce(item)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef)?.notesRead == true)
+        #expect(stories.story(for: item.linkRef)?.notes.isEmpty == false)
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

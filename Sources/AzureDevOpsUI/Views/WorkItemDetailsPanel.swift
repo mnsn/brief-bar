@@ -104,18 +104,24 @@ struct WorkItemDetailsPanel: View {
                 withAnimation(.easeOut(duration: 0.15)) { details.follow(item) }
                 return true
             }
-            guard let id = Int(ref.id) else { return false }
-            let linked = services.links.describe(ref)
-            let item = WorkItem(
-                id: id, organization: ref.scope, project: linked.place ?? "", type: "Work Item", title: linked.title,
-                state: linked.status ?? "", category: .proposed
-            )
+            guard let item = Self.linkedItem(ref, as: services.links.describe(ref)) else { return false }
             withAnimation(.easeOut(duration: 0.15)) { details.follow(item) }
             return true
         case .pullRequest, .gitHubPullRequest, .session:
             withAnimation(.easeOut(duration: 0.15)) { details.open(page: ref) }
             return true
         }
+    }
+
+    /// A work item outside the sprint, as its link says it until its details are read: its state's category from its name,
+    /// such as Closed's, done; to do while its state isn't known.
+    nonisolated static func linkedItem(_ ref: ItemRef, as linked: LinkedItem) -> WorkItem? {
+        guard ref.kind == .workItem, let id = Int(ref.id) else { return nil }
+        let state = linked.status ?? ""
+        return WorkItem(
+            id: id, organization: ref.scope, project: linked.place ?? "", type: "Work Item", title: linked.title, state: state,
+            category: state.isEmpty ? .proposed : WorkItem.Category(category: nil, state: state)
+        )
     }
 
     // MARK: Top

@@ -26,6 +26,20 @@ import Testing
         #expect(!sentence.contains("\n"))
     }
 
+    /// Who it waits on, by why it's in the list: you, saying what to do, or others.
+    @Test func itSaysWhoItWaitsOn() {
+        #expect(classify(Fixture.make(12), role: .reviewer).wait == ItemStory.Wait(.you, "you, to review priya's #12"))
+        #expect(classify(Fixture.make(12, decision: .changesRequested)).wait == ItemStory.Wait(.you, "you, to make the changes asked for on #12"))
+        #expect(classify(Fixture.make(12, checks: .failing)).wait == ItemStory.Wait(.you, "you, to fix #12's checks"))
+        #expect(classify(Fixture.make(12, conflicts: true)).wait == ItemStory.Wait(.you, "you, to resolve #12's conflicts"))
+        #expect(classify(Fixture.make(12, decision: .approved)).wait == ItemStory.Wait(.you, "you, to merge #12"))
+        #expect(classify(Fixture.make(12, isDraft: true)).wait == ItemStory.Wait(.you, "you, to mark #12 ready for review"))
+        #expect(classify(Fixture.make(12, checks: .running)).wait?.who == .people)
+        #expect(classify(Fixture.make(12)).wait == ItemStory.Wait(.people, "reviewers of your #12"))
+        // Its story says so.
+        #expect(classify(Fixture.make(12), role: .reviewer).story.waits == [ItemStory.Wait(.you, "you, to review priya's #12")])
+    }
+
     @Test func factsSayItsReviewsAndMergeThenWhoWroteItAndItsBranch() {
         var pullRequest = Fixture.make(isDraft: true, conflicts: true, reviews: [
             .init(reviewer: "alice", state: .changesRequested),

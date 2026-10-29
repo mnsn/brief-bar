@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import Combine
 import Foundation
 import Testing
@@ -45,6 +46,25 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 /// made-up sprint, whose details are read at once, or with reads the tests answer.
 @MainActor
 @Suite struct WorkItemDetailsStoreTests {
+    /// A work item outside the sprint opens as its link says it: a Closed one is done, an Active one in progress, and one
+    /// whose state isn't known is to do, until its details are read.
+    @Test func aLinkedWorkItemOpensInItsStatesCategory() throws {
+        let ref = ItemRef.workItem(organization: "contoso", id: 5160)
+        func opened(_ status: String?) throws -> WorkItem {
+            let linked = LinkedItem(ref: ref, label: "5160", title: "Retry payments", symbol: "doc.text", color: .blue, status: status)
+            return try #require(WorkItemDetailsPanel.linkedItem(ref, as: linked))
+        }
+        #expect(try opened("Closed").category == .completed)
+        #expect(try opened("Closed").isDone)
+        #expect(try opened("Active").category == .inProgress)
+        #expect(try opened("New").category == .proposed)
+        #expect(try opened(nil).category == .proposed)
+        #expect(WorkItemDetailsPanel.linkedItem(.pullRequest(organization: "contoso", number: 4120), as: LinkedItem(
+            ref: .pullRequest(organization: "contoso", number: 4120), label: "!4120", title: "Save items", symbol: "arrow.triangle.pull",
+            color: .blue
+        )) == nil)
+    }
+
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
         func token() async throws -> AccessToken { throw Unused() }

@@ -366,6 +366,26 @@ import Testing
         #expect(AgentText.workItem(read, tasks: [], now: Date()).contains("\n- Waiting on: reviewers of Sam Rivera's !4120\n"))
     }
 
+    /// Approved and set to complete by itself, it waits on nobody, as in your lists.
+    @Test func anApprovedPullRequestThatCompletesByItselfWaitsOnNobody() async throws {
+        var read = try await readWithTeammatesReviewers([
+            Reviewer(person: Person(id: "priya", name: "Priya Shah"), vote: .approved, isRequired: true),
+        ])
+        let key = try #require(read.others.read.keys.first { $0.number == 4120 })
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me) == ["Sam Rivera, author of !4120 (approved; its checks aren't read)"])
+        read.others.read[key]?.autoComplete = true
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me).isEmpty)
+    }
+
+    /// A required reviewer who declined hasn't approved: it isn't said to be approved, whoever else did.
+    @Test func aRequiredReviewerWhoDeclinedHoldsUpATeammatesPullRequest() async throws {
+        let read = try await readWithTeammatesReviewers([
+            Reviewer(person: Person(id: "priya", name: "Priya Shah"), vote: .approved),
+            Reviewer(person: Person(id: "chen", name: "Chen Wei"), vote: .none, isRequired: true, hasDeclined: true),
+        ])
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me) == ["reviewers of Sam Rivera's !4120"])
+    }
+
     /// Once every required reviewer approved one, it waits on its author, but whether it's ready to complete is up to its
     /// policies and checks, which BriefBar doesn't read for a pull request that isn't in your lists.
     @Test func aTeammatesPullRequestThatsApprovedIsntSaidToBeReady() async throws {

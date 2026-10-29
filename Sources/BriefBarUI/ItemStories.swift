@@ -91,6 +91,13 @@ package final class ItemStories: ObservableObject {
         return told.story
     }
 
+    /// Tells a thing's story again the next time it's asked for, as when more of it was read, such as a work item's
+    /// details: what was told shows until then, and one being told now is told again.
+    package func invalidate(_ ref: ItemRef) {
+        told[ref]?.version = ""
+        if let current = telling[ref] { start(ref, version: current.version) }
+    }
+
     /// Whether its story is being told now, for the first time or again.
     package func isTelling(_ ref: ItemRef) -> Bool {
         telling[ref] != nil

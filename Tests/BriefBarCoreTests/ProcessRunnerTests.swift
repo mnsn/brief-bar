@@ -70,6 +70,97 @@ import Testing
         return false
     }
 
+    /// A task that's cancelled ends its program as the timeout does, rather than waiting for it. The shell writes down its
+    /// process ID, then becomes `sleep`.
+    @Test(.timeLimit(.minutes(1)))
+    func endsAProgramWhoseTaskIsCancelled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("pid")
+        let ((pid, elapsed), _) = try await measured {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    _ = try await ProcessRunner().run(
+                        URL(fileURLWithPath: "/bin/sh"),
+                        arguments: ["-c", "echo $$ > \"$0.new\" && mv \"$0.new\" \"$0\" && exec /bin/sleep 5", file.path],
+                        environment: nil, timeout: 30
+                    )
+                }
+                var written: pid_t?
+                for _ in 0..<500 where written == nil {
+                    written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    if written == nil { try await Task.sleep(for: .milliseconds(10)) }
+                }
+                let pid = try #require(written, "the shell didn't write down its process ID")
+                try await Task.sleep(for: .milliseconds(100))
+                let cancelled = ContinuousClock.now
+                group.cancelAll()
+                await #expect(throws: CancellationError.self) { try await group.next() }
+                return (pid, cancelled.duration(to: .now))
+            }
+        }
+        #expect(elapsed < .seconds(2))
+        #expect(try await ends(pid))
+    }
+
+    /// Asked to stop, a program may end at once, and leave something it started that ignores being asked and has closed
+    /// its output, so that nothing waits for it: that's made to stop too, a second later. The shell's background shell
+    /// writes nothing, and becomes `sleep`.
+    @Test(.timeLimit(.minutes(1)))
+    func endsWhatAProgramLeavesBehindWhenItStops() async throws {
+        let result = try await ProcessRunner().run(
+            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "(trap '' TERM; exec sleep 30 >/dev/null 2>&1) & echo $!; wait"],
+            environment: nil, timeout: 0.5
+        )
+        #expect(result.status == SIGTERM)
+        let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
+        #expect(try await ends(child))
+    }
+
+    /// So is what it leaves when its task is cancelled. The background shell writes down its process ID once it ignores
+    /// being asked to stop, then becomes `sleep`.
+    @Test(.timeLimit(.minutes(1)))
+    func endsWhatAProgramLeavesBehindWhenItsTaskIsCancelled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("pid")
+        let script = """
+            (trap '' TERM; exec sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 30' "$0" >/dev/null 2>&1) & wait
+            """
+        let child = try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                _ = try await ProcessRunner().run(
+                    URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script, file.path], environment: nil, timeout: 30
+                )
+            }
+            var written: pid_t?
+            for _ in 0..<500 where written == nil {
+                written = (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                if written == nil { try await Task.sleep(for: .milliseconds(10)) }
+            }
+            let child = try #require(written, "the background shell didn't write down its process ID")
+            group.cancelAll()
+            await #expect(throws: CancellationError.self) { try await group.next() }
+            return child
+        }
+        #expect(try await ends(child))
+    }
+
+    @Test func doesntStartAProgramForATaskThatsCancelled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ran = directory.appendingPathComponent("ran")
+        let run = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/touch"), arguments: [ran.path], environment: nil, timeout: 10)
+        }
+        await #expect(throws: CancellationError.self) { try await run.value }
+        #expect(!FileManager.default.fileExists(atPath: ran.path))
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func noticesEveryExitRightAway() async throws {
         // Many at once: an exit can be reported a moment before its status can be collected, and isn't reported again.

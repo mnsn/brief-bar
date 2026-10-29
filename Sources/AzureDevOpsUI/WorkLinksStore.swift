@@ -23,8 +23,15 @@ final class WorkLinksStore {
     private var read = WorkLinks()
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
-    /// The details on screen, for what's known of the work item they show.
-    weak var details: WorkItemDetailsStore?
+    /// The details on screen, for what's known of the work item they show: whenever they're read, its story is told
+    /// again with them, rather than as it was before they came.
+    weak var details: WorkItemDetailsStore? {
+        didSet {
+            detailsRead = details?.$details.compactMap { $0?.item.linkRef }
+                .sink { [weak self] ref in MainActor.assumeIsolated { self?.stories.invalidate(ref) } }
+        }
+    }
+    private var detailsRead: AnyCancellable?
 
     init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
         self.links = links

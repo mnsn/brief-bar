@@ -406,44 +406,45 @@ as its subtitle, **Waiting on:** says who the work item and what's linked to it 
 (`ItemStory.waits`): you first, in bold rather than a color, which could clash with the state of what it's about, such
 as a ready pull request's green, saying what to do, such as "you, to complete !4091"; then other people, such as
 "reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on task 5103", or, on that task itself, "Copilot,
-working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. A pull request's come from
-`PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do; a session waits on you while it asks, and on
-Copilot while it's at work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a
-work item or a pull request failed, among all that was sent, such as on a pull request a task's work went on to, unless
-that's done or closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said
-once, and a session once, whether the work sent to Copilot in it or the session itself tells of it
-(`ItemStory.Wait.about`); two things in the same words, such as two sessions of the same name, are said once with how
-many, "(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it
-isn't said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
-(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
-Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
-title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
-"Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
-while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
-stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
-a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
-`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
-and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
-how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
-to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
-Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
-`itemNavigation`), so it never leads back; and last what Copilot wrote of a session's work, its overview and what's
-next, the rest behind **Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's.
-Once it stopped, its last checkpoint's next steps are what it planned then, behind Show All Notes too. A task's report,
-what Copilot printed when it ended, is what it said last when it came after its checkpoints
-(`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it,
-and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the work items
-you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page that shows
-already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure DevOps when the
-sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages (no
-`itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is off
-it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
+working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. An Azure DevOps pull request's
+come from `PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do, and a GitHub one's from why it's in its
+list (`GitHubPRSnapshot.wait`), such as "you, to merge #12"; a session waits on you while it asks, and on Copilot while
+it's at work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a work item or a
+pull request failed, among all that was sent, such as on a pull request a task's work went on to, unless that's done or
+closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said once, and a
+session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
+things in the same words, such as two sessions of the same name, are said once with how many, "(2 sessions)". While it
+shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't said twice, or by other
+names, unless it's yours and the line doesn't say anything waits on you (`SummaryCard.foldsNext`). A short one doesn't
+break: the line breaks after a "·". Its title, chevron and count fold Where It Stands to that line; to VoiceOver, the
+chevron is the disclosure button, "Where It Stands, expanded", and the title stays a heading, and BriefBar remembers it
+(`links.whereItStandsFolded`); folded, with nothing waiting, it says "Waiting on: no one", but only once the work item
+and all that's linked to it have said where they stand, and never while one can't. Pages don't show it. Each row shows
+its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
+color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
+item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
+its actions, with **✨ Summarize with Copilot** and its summary under them; then what Copilot said after its last
+checkpoint, while it's at work or waits for you, or how it ended once it stopped; then all its source knows of it
+(`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you opened it from first, in a card as the work item's
+fields are, and the pipelines that ran on it; then **Also Linked**, what else is linked to it, without the work item and
+the pages you came through (the `trail` of `itemNavigation`), so it never leads back; and last what Copilot wrote of a
+session's work, its overview and what's next, the rest behind **Show All Notes**, set apart by a thin rule, since those
+are Copilot's words, not BriefBar's. Once it stopped, its last checkpoint's next steps are what it planned then, behind
+Show All Notes too. A task's report, what Copilot printed when it ended, is what it said last when it came after its
+checkpoints (`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going
+back to it, and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the
+work items you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page
+that shows already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure
+DevOps when the sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages
+(no `itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is
+off it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
 
-Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
-Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again
-when its row changes, or a minute later, and forgotten a quarter of an hour after it was told, when its source stops,
-or when Show Links goes off. When two sources know the same thing, what they tell is put together in the sources'
-order: a task Azure DevOps sent to Copilot says how it went, and Copilot what it recorded.
+Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while Show
+Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
+row changes, a minute later, or once more of it is read, such as a work item's details as they show
+(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops, or when Show
+Links goes off. When two sources know the same thing, what they tell is put together in the sources' order: a task Azure
+DevOps sent to Copilot says how it went, and Copilot what it recorded.
 
 - **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
   each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,
@@ -1724,30 +1725,27 @@ the pull request's branch and that everything it would push was made for it, sto
 and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
-`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see
-[Where it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a
-few lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's
-the sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who
-it waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
-started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
-on you. Then its tasks in the sprint, or its children when it isn't there, each with the
-latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the
-panel's rows are: yours as your lists have them, with their checks and merge pipelines, and with
-`pull_request` to call for their threads while one is open, and the others as they say themselves, with
-what isn't read of them; what the other sources know of those pull
-requests, such as the Copilot sessions on them; the rest of the work sent to Copilot for it; and last,
-its description, its other long texts, such as acceptance criteria or repro steps, and its latest
-comments, each quoted, since what people wrote is data. Who it waits on comes from the same data: each
-of your pull requests' group and reason in your lists, such as you, to complete one that's ready, or to
-fix one whose build failed; another's votes, such as its reviewers until every required one approved,
-people and groups alike, then its author, without saying it's ready to complete, since its policies and
-checks aren't read; the work sent to Copilot, as the details have it: going on, or the one sent last
-for something that's not done failed; and a session that waits for you. It
-reads the work item with the same GETs as its details, whose `$expand=relations` already names its pull
-requests, so it works whether Show Links is on or not, then one GET for each of those pull requests your
-lists don't have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow
-down: one it didn't get to says so, rather than that it couldn't be read. Without a link, it looks in
-the sprint, then in each of your organizations.
+`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where it
+stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few lines: its state and
+why, who has it, its sprint, with the day it ends and the days left when it's the sprint going on, whose dates the
+sprint has, how many of its tasks are done, the hours left, who it waits on, and what you can do now: what waits on you,
+without "you, to", and your tasks that aren't started, unless Copilot works on one, such as "complete !4091 · start task
+5104", or that nothing waits on you. Then its tasks in the sprint, or its children when it isn't there, each with the
+latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows are:
+yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to call for their threads
+while one is open, and the others as they say themselves, with what isn't read of them; what the other sources know of
+those pull requests, such as the Copilot sessions on them; the rest of the work sent to Copilot for it; and last, its
+description, its other long texts, such as acceptance criteria or repro steps, and its latest comments, each quoted,
+since what people wrote is data. Who it waits on comes from the same data: each of your pull requests' group and reason
+in your lists, such as you, to complete one that's ready, or to fix one whose build failed; another's votes, such as its
+reviewers until every required one approved, people and groups alike, even one who declined, then its author, unless
+it's set to complete by itself, without saying it's ready to complete, since its policies and checks aren't read; the
+work sent to Copilot, as the details have it: going on, or the one sent last for something that's not done failed; and a
+session that waits for you. It reads the work item with the same GETs as its details, whose `$expand=relations` already
+names its pull requests, so it works whether Show Links is on or not, then one GET for each of those pull requests your
+lists don't have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
+didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint, then in each of
+your organizations.
 
 It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
 by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)

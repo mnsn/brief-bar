@@ -750,8 +750,9 @@ private struct StoryRow: View {
         return lines.joined(separator: "\n")
     }
 
-    /// "now", "41m", "20h", "3d": since when, in one unit.
-    static func ago(_ date: Date, now: Date = Date()) -> String {
+    /// "now", "41m", "20h", "3d": since when, in one unit. Nonisolated, for `StoryTime`: with the macOS 15 SDK, a view's
+    /// members are the main actor's.
+    nonisolated static func ago(_ date: Date, now: Date = Date()) -> String {
         let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
         switch minutes {
         case 0: return "now"
