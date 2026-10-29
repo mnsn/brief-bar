@@ -21,12 +21,24 @@ let card = CGRect(x: 20, y: captionHeight, width: 920, height: 638)
 func flipped(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x, y: CGFloat(height) - point.y) }
 func flipped(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: CGFloat(height) - rect.maxY, width: rect.width, height: rect.height) }
 
+/// A picture at 2×, which every position in this script assumes. Pictures rendered on a 1× display are scaled up.
 func loadImage(_ name: String) -> CGImage {
     let url = screenshots.appendingPathComponent("\(name).png")
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
           let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
     else { fatalError("Missing \(url.path): run make screenshots first.") }
-    return image
+    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    let dpi = (properties?[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 144
+    let factor = 144 / dpi
+    guard abs(factor - 1) > 0.01 else { return image }
+    let width = Int((Double(image.width) * factor).rounded()), height = Int((Double(image.height) * factor).rounded())
+    guard let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { fatalError("Can't scale \(url.path)") }
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage()!
 }
 
 struct Scene {
