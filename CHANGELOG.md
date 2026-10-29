@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.5 - 2026-10-29
 
 - **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the
   Sessions list said "Could not open Copilot database", and clicking a session failed, since nothing
