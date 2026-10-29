@@ -804,10 +804,14 @@ import Testing
         let answer = await StorySummaries.writeOnDevice(
             "<data>\nWORK ITEM 5110: Coupon totals round down\n</data>", .init(model: StorySummaries.appleIntelligenceModel)
         )
-        if case .failure(let problem) = answer {
-            #expect(!problem.message.isEmpty)
-            #expect(problem.fix == .chooseModel)
+        // It can become available while the test runs, and then asking is allowed to work.
+        guard OnDeviceModel.unavailableReason != nil else { return }
+        guard case .failure(let problem) = answer else {
+            Issue.record("Asking succeeded where Apple Intelligence isn't available.")
+            return
         }
+        #expect(!problem.message.isEmpty)
+        #expect(problem.fix == .chooseModel)
     }
 
     /// Holds the writer until it's let go.
