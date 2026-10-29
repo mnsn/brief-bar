@@ -33,6 +33,14 @@
   description and latest comments. In the GitHub Copilot app, try **/briefbar 5101**: it answers in four
   short lines. Since agents get more, they wait until you've seen what they get now.
 
+## 0.8.4 - 2026-10-29
+
+- **A work item's details show its text as written.** In fields written in Markdown, a numbered list
+  with code, a quote, a heading or a table in an item started counting again after it, and nested
+  lists lost their levels; they now go on, and end, as written. A backslash that ends a line, such
+  as in `C:\`, no longer disappears, text in many layers of formatting no longer slows BriefBar
+  down, and details that couldn't be read are read again when the work item changes while they show.
+
 ## 0.8.3 - 2026-10-28
 
 - **Follow pipeline runs by pull request.** Below pinned pipelines, **Your Pull Requests** shows one
