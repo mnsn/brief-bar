@@ -27,12 +27,13 @@ import Testing
             ReviewThread(id: 5, status: "wontFix", comments: [comment(1, People.sam, "Rename the enum?", at: t(-day))]),
             ReviewThread(id: 6, status: "closed", filePath: "/README.md", comments: [comment(1, People.alex, "A typo.", at: t(-2 * day))]),
         ]
-        // The open ones first, then the one without a status, each the newest first; then the latest resolved, in brief.
+        // The open ones first, then the one without a status, each the newest first and saying whether anyone replied; then
+        // the latest resolved, in brief.
         #expect(PullRequestContext.digest(threads, me: me) == """
             Unresolved (3):
-            Sam Rivera on src/Cart.swift:42: Could we cap the backoff at 30 seconds? — You: Capped it.
-            Priya Shah: Do any partners still call the v1 endpoint?
-            Shop Build Service: Code coverage is 82%.
+            Sam Rivera on src/Cart.swift:42: Could we cap the backoff at 30 seconds? — You: Capped it. (replied, not resolved)
+            Priya Shah: Do any partners still call the v1 endpoint? (no reply yet)
+            Shop Build Service: Code coverage is 82%. (no reply yet)
             Resolved (3), the latest: Alex Kim on src/Coupon.swift:12: Round half up? (fixed); Sam Rivera: Rename the enum? (won't fix)
             """)
         // Without knowing who you are, you're named as anyone is.
@@ -44,9 +45,32 @@ import Testing
             """)
         #expect(PullRequestContext.digest([threads[3]], me: me) == """
             Unresolved (1):
-            Priya Shah: Do any partners still call the v1 endpoint?
+            Priya Shah: Do any partners still call the v1 endpoint? (no reply yet)
             Resolved: none
             """)
+    }
+
+    /// An open thread says whether someone other than who started it said something in it: a reply that isn't an answer
+    /// yet, such as "I'll change it", is still one. What its starter adds isn't.
+    @Test func anOpenThreadSaysWhetherAnyoneReplied() {
+        let added = ReviewThread(id: 1, filePath: "/src/Cart.swift", line: 7, comments: [
+            comment(1, People.priya, "Should DELETE return 404?", at: t(-2 * hour)),
+            comment(2, People.priya, "Clients can't tell a typo from success.", at: t(-hour)),
+        ])
+        let promised = ReviewThread(id: 2, comments: [
+            comment(1, People.priya, "Run the prune at 10:00 UTC?", at: t(-2 * hour)),
+            comment(2, People.sam, "Fair, I'll change it.", at: t(-hour)),
+            comment(3, People.priya, "Thanks.", at: t(-30 * minute)),
+        ])
+        #expect(!PullRequestContext.isReplied(added))
+        #expect(PullRequestContext.isReplied(promised))
+        #expect(!PullRequestContext.isReplied(ReviewThread(id: 3, comments: [])))
+        #expect(PullRequestContext.entry(added, me: me, said: 400, reply: 300) == """
+            Priya Shah on src/Cart.swift:7: Should DELETE return 404? — Priya Shah: Clients can't tell a typo from success. \
+            (no reply yet)
+            """)
+        #expect(PullRequestContext.entry(promised, me: me, said: 400, reply: 300)
+            == "Priya Shah: Run the prune at 10:00 UTC? — Priya Shah: Thanks. (replied, not resolved)")
     }
 
     @Test func aThreadSaysWhichFileItsOnFromTheRepositorysRoot() {
@@ -154,7 +178,7 @@ import Testing
         #expect(read.hasSuffix("…"))
         #expect(parts[1].value == """
             Unresolved (1):
-            Priya Shah on src/SavedItems.cs:12: Should saved items expire? — Sam Rivera: After 90 days.
+            Priya Shah on src/SavedItems.cs:12: Should saved items expire? — Sam Rivera: After 90 days. (replied, not resolved)
             Resolved: none
             """)
         #expect(server.requests.count == 2)
@@ -169,7 +193,7 @@ import Testing
         let parts = await PullRequestContext.read(makePR(7), threads: threads, me: me, client: server.client())
         #expect(parts == [
             ItemStory.Fact("Description", "Fix the total."),
-            ItemStory.Fact("Comment threads", "Unresolved (1):\nSam Rivera: Could we cap it?\nResolved: none"),
+            ItemStory.Fact("Comment threads", "Unresolved (1):\nSam Rivera: Could we cap it? (no reply yet)\nResolved: none"),
         ])
         #expect(server.requests.map { $0.url?.path } == ["/contoso/_apis/git/pullrequests/7"])
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
@@ -183,7 +207,7 @@ import Testing
             Fixture.thread(1, comments: [Fixture.comment(1, People.sam, "Could we cap it?", at: t(-hour))], published: t(-hour)),
         ]))
         #expect(await PullRequestContext.read(makePR(7), client: unread.client()) == [
-            ItemStory.Fact("Comment threads", "Unresolved (1):\nSam Rivera: Could we cap it?\nResolved: none"),
+            ItemStory.Fact("Comment threads", "Unresolved (1):\nSam Rivera: Could we cap it? (no reply yet)\nResolved: none"),
         ])
         // Its threads can't be read.
         let forbidden = StubServer()

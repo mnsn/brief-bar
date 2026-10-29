@@ -111,9 +111,9 @@ import Testing
         #expect(description.count <= WorkItemStory.contextLimit)
         #expect(description.count > note.count)
         #expect(context[1].value == "1. Saved items show under the cart\n2. Newest first")
-        // Ten of its comments, the newest first, a line each.
+        // Its latest ten comments, a line each, the oldest of them first, so that an answer follows its question.
         let said = (1...10).map { "\($0.isMultiple(of: 2) ? "Sam Rivera" : "Someone"): Comment \($0)." }
-        #expect(context[2].value == said.joined(separator: "\n"))
+        #expect(context[2].value == said.reversed().joined(separator: "\n"))
 
         // As many long ones as fit, each cut to its length.
         var talkative = details

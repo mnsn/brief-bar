@@ -316,7 +316,9 @@ import Testing
         let details = await workLinks.context(story)
         #expect(details.map(\.label) == ["Description", "Acceptance Criteria", "Latest comments"])
         #expect(details[0].value.hasPrefix("As a shopper, I want to save items for later from my cart"))
-        #expect(details[2].value.hasPrefix("Robin Diaz: Only signed-in shoppers for now."))
+        // Its comments, the oldest first, so that the answer follows Priya's question.
+        #expect(details[2].value.hasPrefix("Sam Rivera: The design is in Figma"))
+        #expect(details[2].value.hasSuffix("\nRobin Diaz: Only signed-in shoppers for now. Guests get a prompt to sign in when they try."))
         #expect(details[2].value.components(separatedBy: "\n").count == 3)
         // And the same from its details on screen.
         let shown = WorkItemDetailsStore(mode: .demo, client: store.client, board: sprint.$board.eraseToAnyPublisher())
