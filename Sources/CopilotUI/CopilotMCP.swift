@@ -93,6 +93,12 @@ struct CopilotAgent: Sendable {
         }
         if let detail = session.detail, !detail.isEmpty { text += ". \(detail)" }
         if !session.choices.isEmpty { text += "\n  Choices: " + session.choices.joined(separator: " · ") }
+        if !session.asksFor.isEmpty {
+            text += "\n  Asks this for " + session.asksFor.map { "“\($0.name)” (session \($0.id))" }.joined(separator: ", ")
+        }
+        if let answerIn = session.answerIn {
+            text += "\n  Its coordinator asks it: answer in session \(answerIn.id)"
+        }
         return text + "\n  session \(session.id)"
     }
 }

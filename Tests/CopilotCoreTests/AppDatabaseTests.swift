@@ -156,6 +156,48 @@ import BriefBarCore
         }
     }
 
+    /// The session that coordinates each one: a project session's workspace records it, and a chat's own link.
+    @Test func readsWhichSessionCoordinatesEachOne() throws {
+        try withTemporaryDirectory { directory in
+            let url = directory.appendingPathComponent("data.db")
+            let db = try TestDatabase(at: url)
+            defer { db.close() }
+            try db.createAppSchema()
+            try db.addProject("p1", name: "acme-web")
+            try db.addSession("coordinator", title: "Release 2.5", type: "general_chat")
+            try db.addSession("child", title: "Pick colors")
+            try db.addWorkspace("w-child", session: "child", name: "Pick colors", creator: "coordinator", coordinator: "coordinator")
+            try db.addSession("detached", title: "Pick fonts")
+            try db.addWorkspace("w-detached", session: "detached", name: "Pick fonts", creator: "coordinator")
+            try db.addSession("chat-child", title: "Ask about icons", type: "general_chat")
+            try db.addChatParent(session: "chat-child", parent: "coordinator", coordinator: "coordinator")
+            try db.addSession("chat-detached", title: "Ask about sizes", type: "general_chat")
+            try db.addChatParent(session: "chat-detached", parent: "coordinator", coordinator: nil)
+            // A session with two live workspaces is listed with the newer one, and only its coordinator counts.
+            try db.addSession("moved", title: "Pick sizes")
+            try db.addWorkspace("w-moved-old", session: "moved", name: "Pick sizes", creator: "coordinator", coordinator: "coordinator", updatedAt: t(1))
+            try db.addWorkspace("w-moved-new", session: "moved", name: "Pick sizes", updatedAt: t(2))
+            try db.addSession("adopted", title: "Pick icons")
+            try db.addWorkspace("w-adopted-old", session: "adopted", name: "Pick icons", updatedAt: t(1))
+            try db.addWorkspace("w-adopted-new", session: "adopted", name: "Pick icons", coordinator: "coordinator", updatedAt: t(2))
+
+            let sessions = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url).sessions.map { ($0.id, $0) })
+            #expect(sessions.mapValues(\.coordinatorSessionId) == [
+                "coordinator": nil, "child": "coordinator", "detached": nil, "chat-child": "coordinator", "chat-detached": nil,
+                "moved": nil, "adopted": "coordinator",
+            ])
+            #expect(sessions["detached"]?.creatorSessionId == "coordinator")
+            #expect(sessions["moved"]?.workspaceId == "w-moved-new")
+
+            // Older app versions record neither.
+            try db.exec("ALTER TABLE workspaces DROP COLUMN coordinating_creator_session_id; DROP TABLE chat_parent_links;")
+            let older = try AppDatabase.load(at: url).sessions
+            #expect(older.count == 7)
+            #expect(older.allSatisfy { $0.coordinatorSessionId == nil })
+            #expect(older.first { $0.id == "child" }?.projectName == "acme-web")
+        }
+    }
+
     /// Older app versions don't record context usage.
     @Test func loadsSessionsWithoutContextUsage() throws {
         try withTemporaryDirectory { directory in

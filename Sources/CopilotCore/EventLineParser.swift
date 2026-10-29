@@ -78,6 +78,7 @@ public enum EventLineParser {
             guard let callId = nonEmpty(data["toolCallId"]) else { kind = .other; break }
             let name = data["toolName"] as? String ?? ""
             let arguments = data["arguments"] as? [String: Any] ?? [:]
+            let relays = name == "relay_session_input"
             kind = .toolStart(LogEvent.ToolStart(
                 callId: callId,
                 name: name,
@@ -86,7 +87,9 @@ public enum EventLineParser {
                 description: nonEmpty(arguments["description"]),
                 question: name == "ask_user" ? nonEmpty(arguments["question"]) : nil,
                 choices: name == "ask_user" ? stringArray(arguments["choices"]) : [],
-                planSummary: name == "exit_plan_mode" ? nonEmpty(arguments["summary"]) : nil
+                planSummary: name == "exit_plan_mode" ? nonEmpty(arguments["summary"]) : nil,
+                relayedSession: relays ? nonEmpty(arguments["project_session_id"]) : nil,
+                relayContext: relays ? nonEmpty(arguments["context"]) : nil
             ))
         case "tool.execution_complete":
             guard let callId = nonEmpty(data["toolCallId"]) else { kind = .other; break }

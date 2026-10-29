@@ -44,11 +44,15 @@ public struct LogEvent: Sendable, Equatable {
         public var choices: [String]
         /// `exit_plan_mode` summary.
         public var planSummary: String?
+        /// `relay_session_input`: the session whose question it asks you, by its session or workspace ID.
+        public var relayedSession: String?
+        /// `relay_session_input`: what it says before the question, which it doesn't repeat.
+        public var relayContext: String?
 
         public init(
             callId: String, name: String, isSubagent: Bool = false, title: String? = nil,
             description: String? = nil, question: String? = nil, choices: [String] = [],
-            planSummary: String? = nil
+            planSummary: String? = nil, relayedSession: String? = nil, relayContext: String? = nil
         ) {
             self.callId = callId
             self.name = name
@@ -58,6 +62,8 @@ public struct LogEvent: Sendable, Equatable {
             self.question = question
             self.choices = choices
             self.planSummary = planSummary
+            self.relayedSession = relayedSession
+            self.relayContext = relayContext
         }
     }
 

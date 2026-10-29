@@ -38,6 +38,9 @@ struct CopilotSettings: View {
         Toggle("Move Viewed Sessions to Idle", isOn: $settings.moveViewedToIdle)
             .help("Hide finished and stopped sessions after you open them or view them in Copilot. Off keeps them until Clear or the retention time expires.")
 
+        Toggle("Show Relayed Questions Once", isOn: $settings.showRelayedQuestionsOnce)
+            .help("When a session that coordinates another asks you that session's question or plan, show it once, on the coordinating session, where you answer it. Off shows both.")
+
         Toggle("Show Context Usage", isOn: $settings.showContextUsage)
     }
 }

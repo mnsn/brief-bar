@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.5 - 2026-10-29
+## Unreleased
 
 - **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the
   Sessions list said "Could not open Copilot database", and clicking a session failed, since nothing
@@ -8,6 +8,16 @@
   in a terminal: one the CLI still has open brings up the app it runs in, such as Terminal, and any
   other opens in Terminal with `copilot --resume`, in the folder it worked in. With the Copilot app
   installed, nothing changes.
+
+## 0.8.5 - 2026-10-29
+
+- **Answer a Copilot question once, where it's passed on.** When a session that another session
+  coordinates asks a question or has a plan for you, the coordinating session asks you too, and a plan
+  you approved in the session itself made the coordinating session's approval fail. Turn on **Show
+  Relayed Questions Once** in Copilot's settings, and once the coordinating session asks, **Needs You**
+  lists it only there, and clicking it opens it, so you answer where it's passed on. The session it's
+  for moves to **Running** as **Answer in “…”**, which opens the coordinating session too; right-click
+  it to open the session itself. Until the coordinating session asks, the session needs you on its own.
 
 ## 0.8.4 - 2026-10-29
 
