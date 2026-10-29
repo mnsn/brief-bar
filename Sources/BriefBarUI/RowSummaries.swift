@@ -186,8 +186,8 @@ private struct RowSummaryContent: View {
                     .offset(y: -3)
                 }
             }
-            // Show More at the end of the rest, while there's more of it: what's been done and what's left, three lines of
-            // it at first; Show Less once it's all there.
+            // Show More at the end of the rest, while there's more of it: its points, three lines of them at first; Show
+            // Less once they're all there.
             let hasMore = showsMore || paragraphHeight.full > paragraphHeight.shown + 1
             let more = summary.paragraph == nil || !hasMore ? nil : Button(showsMore ? "Show Less" : "Show More") {
                 withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
@@ -208,7 +208,7 @@ private struct RowSummaryContent: View {
             if let paragraph = summary.paragraph {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     // Quieter than what's next, and than the row: it's what explains the rest.
-                    Text(paragraph)
+                    Text(SummaryMarkdown.joined(paragraph))
                         .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
                         .lineLimit(showsMore ? nil : Self.paragraphLines)
@@ -217,7 +217,7 @@ private struct RowSummaryContent: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.shown = $0 }
                         // All of it, unseen, to tell whether three lines cut it short.
                         .background(alignment: .topLeading) {
-                            Text(paragraph)
+                            Text(SummaryMarkdown.joined(paragraph))
                                 .font(size: options.rowDetailSize)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .hidden()
@@ -245,9 +245,9 @@ private struct RowSummaryContent: View {
                 .padding(.leading, indent)
             } else if let changed {
                 HStack(spacing: 12) {
-                    Text("Out of date")
-                        .fontWeight(.semibold)
+                    (Text("Out of date").fontWeight(.semibold) + Text(": \(changed)"))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                         .help("Since it was written: \(changed).")
                     Button("Summarize Again") { summaries.summarize(subject) }
                         .foregroundStyle(.tint)

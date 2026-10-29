@@ -227,16 +227,26 @@ enum Renderer {
                 for (ref, state) in rowSummaries { summaries.useForRendering(ref, state: state) }
                 let content = WindowContent(id: "render-rows", model: model)
                 content.update(sections: windowSections)
-                for (section, name) in [(SectionID.azureDevOpsPullRequests, "pull-requests"), (.copilotSessions, "sessions")]
-                where windowSections.contains(section) {
-                    content.select(section, notify: false)
-                    let view = WindowView(content: content)
-                        .environment(\.isRendering, true)
-                        .environmentObject(model.services)
-                        .environmentObject(model.services.loginItem)
-                        .frame(width: 980, height: 680)
-                    write(Snapshot.render(view, appearance: appearance), "rows-summary-\(name)-\(suffix)")
+                func rows(_ pictures: [(SectionID, String)]) {
+                    for (section, name) in pictures where windowSections.contains(section) {
+                        content.select(section, notify: false)
+                        let view = WindowView(content: content)
+                            .environment(\.isRendering, true)
+                            .environmentObject(model.services)
+                            .environmentObject(model.services.loginItem)
+                            .frame(width: 980, height: 680)
+                        write(Snapshot.render(view, appearance: appearance), "rows-summary-\(name)-\(suffix)")
+                    }
                 }
+                rows([(.azureDevOpsPullRequests, "pull-requests"), (.copilotSessions, "sessions")])
+                // Written again, with the one before meanwhile, under a pull request's row; and under a session's, the one
+                // before when that couldn't be.
+                for (ref, state) in rowSummaries {
+                    let again: StorySummaries.State = ref.kind == .pullRequest
+                        ? .writing(since: Date()) : .failed(StorySummaries.onDeviceProblem(.busy), at: Date())
+                    summaries.useForRendering(ref, state: again, previous: state)
+                }
+                rows([(.azureDevOpsPullRequests, "updating-pull-requests"), (.copilotSessions, "not-updated-sessions")])
                 for (ref, _) in rowSummaries { summaries.useForRendering(ref, state: nil) }
             }
             // The Notifications page, in the window that has it, while it lists something, as the demo's does.
@@ -303,6 +313,14 @@ enum Renderer {
                     .frame(width: 600, alignment: .leading)
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-\(suffix)")
+                // What it costs when it's written only when you ask; and the setting as Turn On… shows it, on its own.
+                cloudSummaries.setWritesWhenOpened(false)
+                write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-asked-\(suffix)")
+                let turnOn = StorySummariesSetting(summaries: model.services.summaries, links: model.services.links, isNested: false)
+                    .padding(16)
+                    .frame(width: 420, alignment: .leading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(turnOn, appearance: appearance), "summary-turn-on-\(suffix)")
             }
             // And with Show Links off, when Summaries can't be changed.
             let linksOff = Links(defaults: MemoryDefaults(), isDemo: false)
@@ -357,6 +375,7 @@ enum Renderer {
                 card("out-of-date-narrow", width: 330)
                 summaries.useForRendering(subject, state: nil)
                 let standing = WhereItStandsSection(subject: subject)
+                    .environment(\.isRendering, true)
                     .interfaceOptions(from: model.services)
                     .environmentObject(model.services)
                     .padding(16)

@@ -24,7 +24,8 @@ enum DemoSummaries {
             HEADLINE: Work on it is under way across its linked pull requests and sessions, and nothing blocks it.
             NEXT FOR: Nobody
             NEXT: Nothing
-            SUMMARY: Its linked pull requests and Copilot sessions are moving along, and nothing waits on you yet.
+            SUMMARY:
+            - **Status:** Its linked pull requests and Copilot sessions are moving along, and nothing waits on you yet.
             """
     }
 
@@ -33,64 +34,71 @@ enum DemoSummaries {
             HEADLINE: Guests should get a sign-in prompt, but Copilot hid Save for later from them.
             NEXT FOR: you
             NEXT: Ask Copilot to show guests a prompt to sign in instead of hiding the button.
-            SUMMARY: You told Priya Shah that only signed-in shoppers save items and that guests get a prompt to sign in, \
-            but Copilot's session on the saved-items branch hides the button from guests. Sam's !4120 adds the saved_items \
-            table and an API to the cart service, and nobody has picked it up for review. Showing saved items under the \
-            cart, 5103, is with Copilot now; moving one back to the cart, 5104, hasn't started.
+            SUMMARY:
+            - **Differs:** You told Priya Shah that guests get a prompt to sign in, but Copilot's session on the \
+            saved-items branch hides the button from them.
+            - **Built:** Sam's !4120 adds the `saved_items` table and its API to the cart service; showing saved items \
+            and moving one back to the cart are tasks of their own.
             """),
         ("WORK ITEM 5110:", """
-            HEADLINE: Completing !4091 is all that's left: the rounding fix is approved.
+            HEADLINE: Copilot's fix rounds half up, so $19.99 with SAVE15 now comes to $16.99.
             NEXT FOR: you
             NEXT: Complete !4091.
-            SUMMARY: Totals with a coupon came out a cent low, because CouponService cut discounted amounts short instead \
-            of rounding them. Copilot made it round half up to each currency's minor units, so a $19.99 item with SAVE15 \
-            now comes to $16.99, with a test for every currency. Priya Shah and Chen Wei approved !4091; once it's \
-            completed, the bug and its task, 5112, can be closed.
+            SUMMARY:
+            - **Cause:** Totals with a coupon came out a cent low: `CouponService` cut discounted amounts short instead of \
+            rounding them.
+            - **Fix:** It now rounds half up to each currency's minor units, with a test for every currency.
+            - **Then:** Once !4091 is completed, the bug and its task, 5112, can be closed.
             """),
         ("WORK ITEM 5112:", """
-            HEADLINE: Done in code; the task closes once !4091 is completed.
+            HEADLINE: Done in code: the task closes once !4091 is completed.
             NEXT FOR: you
             NEXT: Complete !4091.
-            SUMMARY: Copilot changed CouponService to round half up and added a test for every currency. Priya Shah and \
-            Chen Wei approved its pull request, !4091, so completing it is all that's left.
+            SUMMARY:
+            - **Done:** Copilot changed `CouponService` to round discounted totals half up, with a test for every currency.
+            - **Then:** Bug 5110 can be closed with it.
             """),
         ("WORK ITEM 5103:", """
-            HEADLINE: Saved items show under the cart; Copilot opens a pull request once tests pass.
+            HEADLINE: Copilot built the saved-items list; nothing's committed until the cart tests pass.
             NEXT FOR: Copilot
-            NEXT: Finish the cart tests, then open a pull request for 5103.
-            SUMMARY: Copilot added SavedItemsList, which reads saved items from the cart service and shows each with \
-            CartItemRow, without the quantity stepper, and says Nothing saved yet when there are none. Nothing is \
-            committed yet: it commits and opens a pull request once the cart tests pass.
+            NEXT: Finish the cart tests, then open a pull request.
+            SUMMARY:
+            - **Done:** `SavedItemsList` reads saved items from the cart service and shows each with `CartItemRow`, \
+            without the quantity stepper, and says "Nothing saved yet" when there are none.
+            - **Needs:** The cart service's saved-items API from Sam's !4120, which isn't completed yet.
             """),
         ("PULL REQUEST !4102:", """
-            HEADLINE: Sam's required vote waits on capping the backoff at 30 seconds.
+            HEADLINE: Sam Rivera's required vote waits on a cap for the backoff.
             NEXT FOR: you
-            NEXT: Cap the backoff at 30 seconds, then reply to Sam on PaymentsClient.cs.
-            SUMMARY: !4102 adds exponential backoff to the payments client, starting at 200 ms and doubling. Priya Shah \
-            approved it. Sam Rivera, who's required, asks for a 30-second cap, since the load balancer gives up after 60 \
-            seconds anyway, and hasn't voted.
+            NEXT: Cap the backoff, then reply to Sam on PaymentsClient.cs.
+            SUMMARY:
+            - **Change:** Exponential backoff for the payments client: 200 ms at first, doubling, with no cap yet.
+            - **Review:** Sam Rivera is required and hasn't voted; Priya Shah approved.
             """),
         ("PULL REQUEST !4091:", """
-            HEADLINE: Approved by both reviewers; completing it closes bug 5110 and task 5112.
+            HEADLINE: Completing it closes bug 5110 and task 5112.
             NEXT FOR: you
             NEXT: Complete !4091.
-            SUMMARY: Copilot opened !4091 from task 5112: CouponService now rounds discounted totals half up to each \
-            currency's minor units, with a test for every currency. Priya Shah and Chen Wei approved it.
+            SUMMARY:
+            - **Change:** `CouponService` now rounds discounted totals half up to each currency's minor units, with a test \
+            for every currency.
+            - **From:** Copilot opened it from task 5112.
             """),
         ("COPILOT SESSION: Save items for later", """
-            HEADLINE: Save for later works, but it hides the button from guests instead of prompting.
+            HEADLINE: Save for later works, but it hides the button from guests instead of asking them to sign in.
             NEXT FOR: you
             NEXT: Ask Copilot to show guests a prompt to sign in, as you told Priya.
-            SUMMARY: On !4120's branch, Copilot added a Save for later button to each cart item and hid it from guests, \
-            and the cart and cart service tests pass. Story 5101's comments say guests should get a prompt to sign in \
-            instead.
+            SUMMARY:
+            - **Done:** A Save for later button on each cart item, next to Remove, pushed to !4120's branch; all 112 tests \
+            pass.
+            - **Then:** Copilot says showing saved items under the cart, 5103, comes next.
             """),
         ("COPILOT SESSION: Add dark mode to settings", """
-            HEADLINE: It's waiting for you to choose how dark mode is picked; nothing's changed yet.
+            HEADLINE: Nothing's changed yet: it needs your answer before it edits the settings page.
             NEXT FOR: you
-            NEXT: Answer it in the session: follow the system, add a switch, or both.
-            SUMMARY: The session on shop-web's dark-mode branch read the settings page and stopped to ask whether dark \
-            mode should follow the system, have a switch of its own, or both. It goes on once you answer.
+            NEXT: Answer its question in the session.
+            SUMMARY:
+            - **Read:** shop-web's settings page and its theme code, on the dark-mode branch.
             """),
     ]
 }

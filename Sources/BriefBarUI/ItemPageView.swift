@@ -64,11 +64,12 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
-            // Its summary, of it and what's linked to it, under what it is; while summaries are off, what one would do.
-            SummaryCard(subject: ref, summaries: summaries, rows: [])
+            // Its summary, of it and what's linked to it, under what it is; while summaries are off, what one would do,
+            // first, so turning them on there doesn't move it.
             if links.isDescribed(ref) {
                 SummaryOffer(subject: ref, summaries: summaries, links: links, defaults: defaults)
             }
+            SummaryCard(subject: ref, summaries: summaries, rows: [])
             StoryDetails(
                 item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page,
                 linkFact: linkFact
@@ -91,7 +92,7 @@ private struct PageContent: View {
         }
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details: as it
         // opens, as summaries are turned on, and as a source says what it is; never once you acted on it since it opened.
-        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.canSummarize(ref))") {
+        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.canSummarize(ref))") {
             guard links.isOn, !isRendering else { return }
             let acted = visit(ref)
             // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.

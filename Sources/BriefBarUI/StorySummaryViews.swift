@@ -71,17 +71,21 @@ package struct SummaryCard: View {
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
     var style: Style = .section
+    /// Who it all waits on, as Waiting On says it above it, in a work item's details: a next step that only says that
+    /// again doesn't show.
+    var waits: [ItemStory.Wait] = []
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
     @Environment(\.textScale) private var textScale
     @LocalState private var choosesModel = false
 
-    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section) {
+    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section, waits: [ItemStory.Wait] = []) {
         self.subject = subject
         self.summaries = summaries
         self.rows = rows
         self.style = style
+        self.waits = waits
     }
 
     private var isRow: Bool { style == .row }
@@ -123,6 +127,22 @@ package struct SummaryCard: View {
         case updating
         /// As written, when another couldn't be written in its place.
         case notUpdated(StorySummaries.Problem)
+    }
+
+    /// Whether a next step only says again what Waiting On says above it: it's for whom that line says something waits on,
+    /// in a few words, and names only what that wait names, as "Complete !4091." under "you, to complete !4091".
+    static func repeats(_ next: String, for nextFor: String?, among waits: [ItemStory.Wait]) -> Bool {
+        guard let nextFor, next.split(separator: " ").count <= 6 else { return false }
+        let named = Set(next.matches(of: /[!#]?\d{2,}/).map { String($0.output) })
+        guard !named.isEmpty else { return false }
+        return waits.contains { wait in
+            let isFor = switch wait.who {
+            case .you: nextFor.caseInsensitiveCompare("you") == .orderedSame
+            case .copilot: nextFor.caseInsensitiveCompare("Copilot") == .orderedSame
+            case .people: wait.text.hasPrefix(nextFor + ",")
+            }
+            return isFor && named.allSatisfy { wait.text.contains($0) }
+        }
     }
 
     static func title(for model: String) -> String {
@@ -189,10 +209,11 @@ package struct SummaryCard: View {
         }
     }
 
-    /// Gray bars where its headline, next step and the rest will be, as big as the text.
+    /// Gray bars where its headline, next step and points will be, about as many lines as a summary takes, as big as the
+    /// text.
     private var lines: some View {
         let widths: [(fraction: CGFloat, height: CGFloat)] = [
-            (0.82, 11), (0.58, 8), (1, 8), (0.97, 8), (0.93, 8), (0.98, 8), (0.52, 8),
+            (0.88, 12), (0.46, 12), (0.68, 9), (1, 9), (0.94, 9), (0.58, 9), (0.97, 9), (0.9, 9), (0.42, 9), (0.95, 9), (0.7, 9),
         ]
         let scale = textScale
         return GeometryReader { proxy in
@@ -216,8 +237,10 @@ package struct SummaryCard: View {
         let isUpdating = if case .updating = showing { true } else { false }
         let changed = isUpdating ? nil : summaries.whatChanged(subject)
         let failure: StorySummaries.Problem? = if case .notUpdated(let problem) = showing { problem } else { nil }
+        // About to be written again as it opened: it says so, with Not Now in place of what would write it.
+        let isDue = !isUpdating && summaries.isPending(subject)
         // Out of date reads gray but plain; being replaced, grayer.
-        let isStale = changed != nil || failure != nil
+        let isStale = changed != nil
         let strong: AnyShapeStyle = isUpdating ? AnyShapeStyle(.secondary) : isStale ? AnyShapeStyle(.primary.opacity(0.75)) : AnyShapeStyle(.primary)
         let rest: AnyShapeStyle = isUpdating ? AnyShapeStyle(.secondary) : isStale ? AnyShapeStyle(.primary.opacity(0.7)) : AnyShapeStyle(.primary.opacity(0.85))
         let cost = model == StorySummaries.appleIntelligenceModel ? "." : ": 1 request."
@@ -243,43 +266,50 @@ package struct SummaryCard: View {
             } else {
                 // Narrower, it says less, but always when it was written and whether it's out of date.
                 ViewThatFits(in: .horizontal) {
-                    header { caption(Self.title(for: model), at: at, changed: changed, written: written) } trailing: { refreshAndClose }
-                    header { caption("Summary", at: at, changed: changed, written: written) } trailing: { refreshAndClose }
+                    header { caption(Self.title(for: model), at: at, changed: changed, written: written) } trailing: {
+                        if isDue { notNowButton } else { refreshAndClose }
+                    }
+                    header { caption("Summary", at: at, changed: changed, written: written) } trailing: {
+                        if isDue { notNowButton } else { refreshAndClose }
+                    }
                 }
             }
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
-                    .font(size: isRow ? 12.5 : 13, weight: .semibold)
+                    .font(size: isRow ? 12.5 : 14, weight: .semibold)
                     .foregroundStyle(strong)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                if let next = summary.next {
+                if let next = summary.next, !Self.repeats(next, for: summary.nextFor, among: waits) {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(size: isRow ? 11.5 : 12)
+                        .font(size: isRow ? 11.5 : 12.5)
                         .foregroundStyle(strong)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                // All of it: it's what explains where things stand, so it never hides behind Show More.
+                // All of it, a point a line: it's what explains where things stand, so it never hides behind Show More.
                 if let paragraph = summary.paragraph {
-                    Text(paragraph)
-                        .font(size: 12.5)
-                        .lineSpacing(2)
+                    SummaryPoints(text: paragraph)
+                        .font(size: isRow ? 12 : 13)
                         .foregroundStyle(rest)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
                         .padding(.top, 2)
                 }
                 if let failure {
-                    notUpdated(failure)
+                    notUpdated(failure, isDue: isDue)
                 } else if let changed {
-                    // What changed since, and a new one.
+                    // What changed since, and a new one, or that it's about to be written.
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text("Since then: \(changed).")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        againButton
+                        if isDue {
+                            Text("Updating in a moment · \(summaries.requestDescription)")
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            againButton
+                        }
                     }
                     .font(size: 11.5)
                     .padding(.top, 2)
@@ -287,7 +317,7 @@ package struct SummaryCard: View {
             }
         }
         .contextMenu {
-            if !isUpdating {
+            if !isUpdating, !isDue {
                 Button("Summarize Again") { summaries.summarize(subject) }
             }
             Button("Copy Summary") {
@@ -300,18 +330,43 @@ package struct SummaryCard: View {
         }
     }
 
-    /// Why another couldn't be written in its place, and what would help, at its foot.
-    private func notUpdated(_ problem: StorySummaries.Problem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label("Couldn't update: \(problem.message)", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.secondary)
+    /// Why another couldn't be written in its place, and what would help, or that it's about to be tried again, at its
+    /// foot.
+    private func notUpdated(_ problem: StorySummaries.Problem, isDue: Bool) -> some View {
+        problemLabel("Couldn't update: \(problem.message)", problem, isDue: isDue)
+            .font(size: 11.5)
+            .padding(.top, 2)
+    }
+
+    /// Why one couldn't be written, ⚠ first, and under it, what would help, or, as it opened, that it's about to be
+    /// tried again.
+    private func problemLabel(_ text: String, _ problem: StorySummaries.Problem, isDue: Bool) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(text)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(problem.detail ?? "")
+                if isDue {
+                    Text("Trying again in a moment · \(summaries.requestDescription)")
+                        .foregroundStyle(.secondary)
+                } else {
+                    fixes(for: problem)
+                }
+            }
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)
-                .fixedSize(horizontal: false, vertical: true)
-                .help(problem.detail ?? "")
-            fixes(for: problem)
         }
-        .font(size: 11.5)
-        .padding(.top, 2)
+    }
+
+    /// Not Now, while opening it is about to write it again: it isn't, this time.
+    private var notNowButton: some View {
+        Button("Not Now") { summaries.notNow(subject) }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.tint)
+            .font(size: 11.5)
+            .help("Don't write it again this time")
     }
 
     /// What would help when one couldn't be written: choosing another model, when the one chosen isn't on your plan;
@@ -321,7 +376,7 @@ package struct SummaryCard: View {
             if problem.fix == .chooseModel {
                 Button("Choose Model…") { choosesModel = true }
                     .popover(isPresented: $choosesModel, arrowEdge: .bottom) {
-                        StorySummariesSetting(summaries: summaries, links: services.links)
+                        StorySummariesSetting(summaries: summaries, links: services.links, isNested: false)
                             .padding(16)
                             .frame(width: 420)
                     }
@@ -333,19 +388,16 @@ package struct SummaryCard: View {
         .foregroundStyle(.tint)
     }
 
+    /// One that couldn't be written, with nothing before it to keep: ✕ forgets it.
     private func failed(_ problem: StorySummaries.Problem) -> some View {
-        card {
-            header { Text("Summary") } trailing: { closeButton }
-        } content: {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Couldn't summarize: \(problem.message)", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.secondary)
-                    .symbolRenderingMode(.multicolor)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .help(problem.detail ?? "")
-                fixes(for: problem)
+        let isDue = summaries.isPending(subject)
+        return card {
+            header { Text("Summary") } trailing: {
+                if isDue { notNowButton } else { closeButton(keeps: false) }
             }
-            .font(size: 12)
+        } content: {
+            problemLabel("Couldn't summarize: \(problem.message)", problem, isDue: isDue)
+                .font(size: 12)
         }
     }
 
@@ -357,29 +409,29 @@ package struct SummaryCard: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(size: 10, weight: .semibold)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 22 * textScale, height: 22 * textScale)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
             .accessibilityLabel("Summarize Again")
-            closeButton
+            closeButton(keeps: true)
         }
     }
 
-    /// ✕, which closes it, kept to show again for nothing; or one that couldn't be written, forgotten.
-    private var closeButton: some View {
+    /// ✕, which closes it, kept to show again for nothing; or one that couldn't be written, with nothing to keep, forgotten.
+    private func closeButton(keeps: Bool) -> some View {
         Button {
             summaries.hide(subject)
         } label: {
             Image(systemName: "xmark")
                 .font(size: 10, weight: .semibold)
-                .frame(width: 22, height: 22)
+                .frame(width: 22 * textScale, height: 22 * textScale)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help("Hide Summary: Show Summary brings it back")
-        .accessibilityLabel("Hide Summary")
+        .help(keeps ? "Hide Summary: Show Summary brings it back" : "Close")
+        .accessibilityLabel(keeps ? "Hide Summary" : "Close")
     }
 
     /// "Summary by Copilot · 2m ago · Out of date": the time each minute, never cut short, and what changed in a tooltip;
@@ -510,19 +562,21 @@ package struct SummaryOffer: View {
                     .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                     .accessibilityHidden(true)
-                Text(Self.text(summaries))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Turn On…") { showsSetting = true }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.tint)
-                    .fixedSize()
-                    .help("Shows the setting for summaries: what they use, where, and what they cost")
-                    .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
-                        StorySummariesSetting(summaries: summaries, links: links)
-                            .padding(16)
-                            .frame(width: 420)
+                // Turn On… after the sentence while it fits; or else on a line of its own, rather than a word or two.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(Self.text(summaries))
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
+                        turnOn
                     }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Self.text(summaries))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        turnOn
+                    }
+                }
                 Spacer(minLength: 4)
                 Button {
                     defaults.set(true, forKey: Self.hiddenKey)
@@ -540,7 +594,24 @@ package struct SummaryOffer: View {
             }
             .font(size: 12)
             .accessibilityElement(children: .contain)
+            // Turned on in its setting, nothing's written until you're done choosing how: it goes as the setting does, or
+            // as this line does, which turning them on takes away once the setting's gone.
+            .onChange(of: showsSetting) { summaries.setChoosing(showsSetting) }
+            .onDisappear { summaries.setChoosing(false) }
         }
+    }
+
+    private var turnOn: some View {
+        Button("Turn On…") { showsSetting = true }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.tint)
+            .fixedSize()
+            .help("Shows the setting for summaries: what they use, where, and what they cost")
+            .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
+                StorySummariesSetting(summaries: summaries, links: links, isNested: false)
+                    .padding(16)
+                    .frame(width: 420)
+            }
     }
 }
 
@@ -550,11 +621,14 @@ package struct SummaryOffer: View {
 package struct StorySummariesSetting: View {
     @ObservedObject private var summaries: StorySummaries
     @ObservedObject private var links: Links
+    private let isNested: Bool
     @LocalState private var unavailableReason: String?
 
-    package init(summaries: StorySummaries, links: Links) {
+    /// - Parameter isNested: under Show Links, in Settings, it's set in; in a popover of its own, it isn't.
+    package init(summaries: StorySummaries, links: Links, isNested: Bool = true) {
         self.summaries = summaries
         self.links = links
+        self.isNested = isNested
     }
 
     package static let title = "Summaries"
@@ -569,7 +643,7 @@ package struct StorySummariesSetting: View {
     /// line each.
     package static func lines(onDevice: Bool, writesWhenOpened: Bool) -> [(label: String, symbol: String, text: String)] {
         let when = writesWhenOpened
-            ? "each time one's written: as you open one that has none, or one that's out of date and ten minutes old, or when you ask."
+            ? "each time one's written: as you open one that has none, or one that's out of date and at least ten minutes old, or when you ask."
             : "each time you ask."
         return [
             (onDevice ? "Uses" : "Sends", "arrow.up.doc", """
@@ -625,15 +699,21 @@ package struct StorySummariesSetting: View {
                     }
                 }
                 labeled("Model", symbol: "cpu") {
-                    Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
-                        ForEach(choices) { model in
-                            Text(model.id == StorySummaries.appleIntelligenceModel
-                                 ? "\(model.name) (on this Mac)" : model.name).tag(model.id)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
+                            ForEach(choices) { model in
+                                Text(Self.choiceTitle(model)).tag(model.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .fixedSize()
+                        if summaries.usesOnDeviceModel {
+                            Text(Self.onDeviceAccuracy)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
                 }
             }
             .font(style: .callout)
@@ -653,7 +733,7 @@ package struct StorySummariesSetting: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, 20)
+        .padding(.leading, isNested ? 20 : 0)
         .disabled(!links.isOn)
         .opacity(links.isOn ? 1 : 0.45)
         .task(id: [summaries.isAvailable ? "on" : "off", summaries.model]) {
@@ -685,6 +765,21 @@ package struct StorySummariesSetting: View {
     }
 
     /// The models to choose from, with the one chosen even when it isn't among them.
+    /// What Apple Intelligence can and can't do well, under the model, while it's chosen.
+    package static let onDeviceAccuracy = "A small model: with long histories it can get details wrong. Copilot's models read "
+        + "more of each, and are more accurate."
+
+    /// A model as the picker offers it, with what it costs: "Apple Intelligence (on this Mac, free)", "Claude Haiku 5.5
+    /// (cheapest)", "Claude Opus 5.5 (most capable, costs the most)".
+    package static func choiceTitle(_ model: StorySummaries.Model) -> String {
+        switch model.id {
+        case StorySummaries.appleIntelligenceModel: "\(model.name) (on this Mac, free)"
+        case "claude-haiku-5.5": "\(model.name) (cheapest)"
+        case "claude-opus-5.5": "\(model.name) (most capable, costs the most)"
+        default: model.name
+        }
+    }
+
     private var choices: [StorySummaries.Model] {
         var choices = summaries.models
         if !choices.contains(where: { $0.id == summaries.model }) {

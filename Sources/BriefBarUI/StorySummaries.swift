@@ -223,6 +223,14 @@ package final class StorySummaries: ObservableObject {
         defaults.set(model, forKey: Self.modelKey)
     }
 
+    /// Whether its setting shows where a summary would be, from Turn On…: nothing's written as it opens meanwhile.
+    @Published package private(set) var isChoosing = false
+
+    package func setChoosing(_ on: Bool) {
+        guard on != isChoosing else { return }
+        isChoosing = on
+    }
+
     package func setWritesWhenOpened(_ on: Bool) {
         guard on != writesWhenOpened else { return }
         writesWhenOpened = on
@@ -300,7 +308,7 @@ package final class StorySummaries: ObservableObject {
 
     /// Whether opening it may write its summary, as `opened` says.
     private func mayWrite(_ subject: ItemRef, unlessActedSince acted: Int?) -> Bool {
-        isAvailable && writesWhenOpened && writing[subject] == nil && !hidden.contains(subject)
+        isAvailable && writesWhenOpened && !isChoosing && writing[subject] == nil && !hidden.contains(subject)
             && acted.map { $0 == timesActed(on: subject) } ?? true
             && lastFailed[subject].map { now().timeIntervalSince($0) >= Self.retryAfter } ?? true
     }
@@ -311,14 +319,26 @@ package final class StorySummaries: ObservableObject {
         subject.kind == .workItem ? hasSomethingToSum(subject) : canSummarize(subject)
     }
 
-    /// The details or a page just opened it: when they'll write its summary in a moment, there being none yet, its card
-    /// shows as it will be, with Not Now, until they do or stop waiting (`stopExpecting(_:_:)`, with what this returns).
+    /// The details or a page just opened it: when they'll write its summary in a moment, its card says so, with Not Now,
+    /// until they do or stop waiting (`stopExpecting(_:_:)`, with what this returns): as it will be, there being none yet;
+    /// or the one there, out of date and `rewriteAfter` old, or that couldn't be written `retryAfter` ago, about to be
+    /// written again.
     @discardableResult
     package func expect(_ subject: ItemRef, unlessActedSince acted: Int?) -> Int? {
-        guard states[subject] == nil, mayWrite(subject, unlessActedSince: acted), canWrite(subject) else { return nil }
+        guard isDue(subject), mayWrite(subject, unlessActedSince: acted), canWrite(subject) else { return nil }
         nextWait += 1
         pending[subject] = nextWait
         return nextWait
+    }
+
+    /// Whether opening it would write its summary, as far as what's known of it now says: there's none, the one there is
+    /// out of date and `rewriteAfter` old, or the last couldn't be written, as `mayWrite` says when.
+    private func isDue(_ subject: ItemRef) -> Bool {
+        switch states[subject] {
+        case nil, .failed?: true
+        case .written(_, let at, _, _)?: now().timeIntervalSince(at) >= Self.rewriteAfter && isOutOfDate(subject)
+        case .writing?: false
+        }
     }
 
     /// The details or the page stopped waiting to write it: they did, or they closed. A wait that another took the place
@@ -523,8 +543,8 @@ package final class StorySummaries: ObservableObject {
                 story: self.stories.story(for: linked.ref), context: context[linked.ref] ?? []
             )
         }
-        // Who it all waits on, as Where It Stands says it above the summary.
-        let waits = WhereItStandsSection.waits(
+        // Who it all waits on, as Where It Stands says it above a work item's summary; pages and rows don't say it.
+        let waits = subject.kind != .workItem ? [] : WhereItStandsSection.waits(
             of: stories.story(for: subject), connections.map { stories.story(for: $0.item.ref) }, on: subject
         )
         let prompt = StorySummaryPrompt.make(
