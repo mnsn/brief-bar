@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **Know where things stand in a few lines, as you open them.** With **Summarize with Copilot** on,
+  opening a work item's details, or a pull request's or a Copilot session's page, has Copilot write a
+  few sentences at the top of Where It Stands: what's been done, what's under way and with whom, what
+  reviewers asked, what's open or blocking, and what's left, with the next step and whose it is. It
+  reads more than the rows show, so you don't have to open Azure DevOps or the session: the work item's
+  description and comments, each pull request's description and comment threads, and what you asked in
+  each Copilot session and what Copilot answered. A summary that's still current shows again for
+  nothing; once something changes, opening it again or **↻** writes another, while the old one stays
+  on screen. Rows in the lists show three lines of theirs, with **Show More**. Choose **Only when you
+  ask** in the setting's **When** to keep it to **✨ Summarize with Copilot**, and, while it's off, Where
+  It Stands offers it with **Turn On…**. Azure DevOps and GitHub Copilot each say what they read for it,
+  so they ask you to look again once.
+
 ## 0.9.0 - 2026-10-29
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
