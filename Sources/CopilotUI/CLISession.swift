@@ -38,8 +38,15 @@ enum CLISession {
         case .resume:
             // Its CLI may not hold it yet: a second one would fork its history.
             guard starting.begin(id) else { return }
-            Task { await resume(id, paths: paths) }
+            let round = starting.round
+            Task { await resume(id, paths: paths, round: round) }
         }
+    }
+
+    /// Stops opening sessions in Terminal, when Copilot is turned off or BriefBar quits: one that's still finding
+    /// `copilot` reads nothing more of its session, and opens nothing.
+    static func stop() {
+        starting.stopAll()
     }
 
     /// Brings the app the CLI runs in to the front, such as Terminal: the one macOS holds responsible for it.
@@ -58,9 +65,11 @@ enum CLISession {
     }
 
     /// Goes on with it in a new Terminal window: `copilot`, as your login shell finds it, resumes it in its folder, from
-    /// the Copilot folder BriefBar found it in.
-    private static func resume(_ id: String, paths: CopilotPaths) async {
+    /// the Copilot folder BriefBar found it in. Only while opening hasn't stopped since `round` (`stop()`).
+    private static func resume(_ id: String, paths: CopilotPaths, round: Int) async {
         let environment = await LoginEnvironment.load()
+        // Copilot was turned off meanwhile.
+        guard starting.round == round else { return }
         // A CLI may have opened it meanwhile.
         if case .show(let pid) = way(for: id, paths: paths) {
             starting.end(id)
@@ -78,11 +87,11 @@ enum CLISession {
                 "Copilot worked on it in a folder that's gone, such as a worktree that was removed. To go on with it anyway, run \(command) in Terminal."
             )
         }
-        let file = scriptsFolder.appendingPathComponent("\(scriptPrefix)\(id.prefix(8)).command")
-        let script = CopilotCommand.resumeScript(copilot: copilot, sessionId: id, directory: folder, home: paths.root, file: file)
+        let file = script(for: id)
+        let contents = CopilotCommand.resumeScript(copilot: copilot, sessionId: id, directory: folder, home: paths.root, file: file)
         do {
             try FileManager.default.createDirectory(at: scriptsFolder, withIntermediateDirectories: true)
-            try script.write(to: file, atomically: true, encoding: .utf8)
+            try contents.write(to: file, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
             NSWorkspace.shared.open(file)
         } catch {
@@ -100,6 +109,11 @@ enum CLISession {
     }
 
     nonisolated static let scriptPrefix = "Copilot session "
+
+    /// The script that opens a session in Terminal, by its whole ID, so that no two sessions' scripts are the same file.
+    nonisolated static func script(for id: String, in folder: URL = scriptsFolder) -> URL {
+        folder.appendingPathComponent("\(scriptPrefix)\(id).command")
+    }
 
     /// Removes the scripts that would have opened sessions in Terminal but never ran: each removes itself as it starts,
     /// and names a session and its folder. When you turn Copilot off (`CopilotSource.deleteSavedData()`).
@@ -125,6 +139,8 @@ enum CLISession {
         /// Long enough for Terminal to start a login shell and the CLI.
         static let window: TimeInterval = 30
         private var since: [String: Date] = [:]
+        /// How many times opening stopped (`stopAll()`): a session that began opening before then opens nothing.
+        private(set) var round = 0
 
         /// Starts opening the session, unless it's being opened already: false then.
         mutating func begin(_ id: String, now: Date = Date()) -> Bool {
@@ -136,6 +152,12 @@ enum CLISession {
         /// It's open, or couldn't be opened: the next click opens it again.
         mutating func end(_ id: String) {
             since[id] = nil
+        }
+
+        /// Stops opening every session, as when Copilot is turned off.
+        mutating func stopAll() {
+            since = [:]
+            round += 1
         }
     }
 }

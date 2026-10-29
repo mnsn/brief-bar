@@ -1373,9 +1373,11 @@ it applies. A few more details:
   a task, with `COPILOT_HOME` set to the folder BriefBar read the session from, whatever your shell
   sets. A new Terminal window takes a moment to start the CLI, which holds the session only once it
   starts, so for 30 seconds another click on that session starts nothing more (`CLISession.Starting`):
-  two CLIs in it would fork its history. The script, in BriefBar's caches, removes itself as it starts,
-  and turning Copilot off removes any that never ran. The **Open Copilot** button and menu item are
-  hidden then. The demo's made-up sessions always open in the app.
+  two CLIs in it would fork its history. Turning Copilot off, or quitting, stops one that's still being
+  opened before it reads more of its session. The script, in BriefBar's caches and named by the
+  session's whole ID, removes itself as it starts, and turning Copilot off removes any that never ran.
+  The **Open Copilot** button and menu item are hidden then. The demo's made-up sessions always open in
+  the app.
 - The tasks you sent to Copilot from Azure DevOps ([above](#send-work-to-copilot)) are in the list too,
   with ✈︎ before their names, unless the app's database lists their sessions itself, as it does once you
   open one there. (Without the database, the list is every recent session folder, and a task's folder is

@@ -191,13 +191,31 @@ import Testing
         #expect(afterItOpened)
     }
 
+    /// Turning Copilot off stops every session being opened: one that began before opens nothing (its round is over),
+    /// and the next click opens it again.
+    @Test func stopsOpeningSessionsWhenCopilotIsTurnedOff() {
+        var starting = CLISession.Starting()
+        let began = starting.begin("a")
+        let round = starting.round
+        starting.stopAll()
+        let afterStopping = starting.begin("a")
+        #expect(began)
+        #expect(starting.round != round)
+        #expect(afterStopping)
+    }
+
     /// Turning Copilot off removes the scripts that would have opened its sessions in Terminal but never ran, and
-    /// nothing else.
+    /// nothing else. Each is named by its session's whole ID, so two sessions never share one.
     @Test func forgetsOnlyItsOwnScripts() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        for name in ["Copilot session 5d2e8a90.command", "Copilot PR 4071.command", "Copilot session notes.txt"] {
+        let id = "5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02"
+        let sameStart = "5d2e8a90-0000-4000-8000-000000000000"
+        #expect(CLISession.script(for: id, in: folder).lastPathComponent == "Copilot session \(id).command")
+        #expect(CLISession.script(for: id, in: folder) != CLISession.script(for: sameStart, in: folder))
+        try Data().write(to: CLISession.script(for: id, in: folder))
+        for name in ["Copilot PR 4071.command", "Copilot session notes.txt"] {
             try Data().write(to: folder.appendingPathComponent(name))
         }
         CLISession.forgetScripts(in: folder)
