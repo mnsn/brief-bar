@@ -15,7 +15,7 @@ package struct ItemPageView: View {
     }
 
     package var body: some View {
-        PageContent(ref: ref, links: services.links, stories: services.stories, summaries: services.summaries)
+        PageContent(ref: ref, links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults)
     }
 
     /// What a page is called where it's named, for VoiceOver: "Pull request 4091", "Copilot session Save items for later".
@@ -45,6 +45,7 @@ private struct PageContent: View {
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
     @ObservedObject var summaries: StorySummaries
+    let defaults: UserDefaults
 
     @Environment(\.itemNavigation) private var navigation
     @AccessibilityFocusState private var isTitleFocused: Bool
@@ -60,8 +61,11 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
-            // Its summary, of it and what's linked to it, under what it is.
+            // Its summary, of it and what's linked to it, under what it is; while summaries are off, what one would do.
             SummaryCard(subject: ref, summaries: summaries, rows: [])
+            if links.isDescribed(ref) {
+                SummaryOffer(subject: ref, summaries: summaries, links: links, defaults: defaults)
+            }
             StoryDetails(
                 item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page,
                 linkFact: linkFact

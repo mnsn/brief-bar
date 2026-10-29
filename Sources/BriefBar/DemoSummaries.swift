@@ -30,18 +30,21 @@ enum DemoSummaries {
             HEADLINE: Saving items works end to end, but nothing shows them yet: !4120 still needs a reviewer.
             NEXT FOR: Sam Rivera
             NEXT: Get !4120 reviewed and merged.
-            SUMMARY: Sam's pull request !4120 adds a saved_items table and an API to the cart service. Copilot's session on \
-            its branch added a Save for later button to each cart item, hidden from guests, with the cart and cart service \
-            tests passing. Showing saved items under the cart, 5103, is in progress with Copilot, and moving one back to the \
-            cart, 5104, hasn't started.
+            SUMMARY: The story lets shoppers save cart items for later and move them back. Sam's pull request !4120 adds a \
+            saved_items table and an API to the cart service; its build passed, but nobody has reviewed it yet. Copilot's \
+            session on its branch added a Save for later button to each cart item, hidden from guests, and the cart and \
+            cart service tests pass. Showing saved items under the cart, 5103, is in progress with Copilot, and moving one \
+            back to the cart, 5104, hasn't started.
             """),
         ("WORK ITEM 5110:", """
             HEADLINE: The fix is approved and its build passed; only completing !4091 is left.
             NEXT FOR: you
             NEXT: Complete !4091.
-            SUMMARY: Copilot traced the bug to totals being truncated, and made CouponService round discounted totals half up \
-            to each currency's minor units, so a $19.99 item with SAVE15 now comes to $16.99. It added tests for every \
-            currency, which pass, and opened !4091. Priya Shah and Chen Wei approved it, and its payments-api CI build passed.
+            SUMMARY: Totals with a coupon came out a cent low, because CouponService cut discounted amounts short instead \
+            of rounding them. Copilot made it round half up to each currency's minor units, so a $19.99 item with SAVE15 \
+            now comes to $16.99, and added tests for every currency, which pass. It opened !4091, which Priya Shah and \
+            Chen Wei approved, and its payments-api CI build passed. Once !4091 is completed, the bug and its task, 5112, \
+            can be closed.
             """),
         ("WORK ITEM 5112:", """
             HEADLINE: Done in code, but !4091 isn't merged yet, so the task isn't closed.

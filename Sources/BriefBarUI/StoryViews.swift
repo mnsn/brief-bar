@@ -269,6 +269,9 @@ private struct StandingContent: View {
                 }
                 if links.isOn, showsSummary, !isFolded {
                     SummaryCard(subject: subject, summaries: summaries, rows: rows, waitsAbove: waits)
+                    if !groups.isEmpty {
+                        SummaryOffer(subject: subject, summaries: summaries, links: links, defaults: defaults)
+                    }
                 }
                 if !links.isOn {
                     off

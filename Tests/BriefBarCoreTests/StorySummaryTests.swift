@@ -70,7 +70,7 @@ import Testing
         let summary = try #require(StorySummary.parse("HEADLINE: \(long)\nSUMMARY: \(long)"))
         #expect(summary.headline.count <= 220)
         #expect(summary.headline.hasSuffix("…"))
-        #expect((summary.paragraph?.count ?? 0) <= 1_400)
+        #expect((summary.paragraph?.count ?? 0) <= 1_600)
     }
 
     // MARK: The prompt

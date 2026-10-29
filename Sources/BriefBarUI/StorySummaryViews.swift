@@ -67,13 +67,12 @@ package struct SummaryCard: View {
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
     var style: Style = .section
-    /// Who it waits on, as the line above it says: then what's next shows only with the rest, unless it's yours and the
-    /// line doesn't say anything waits on you.
+    /// Who it waits on, as the line above it says: then what's next is left out, unless it's yours and the line doesn't
+    /// say anything waits on you.
     var waitsAbove: [ItemStory.Wait] = []
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
-    @LocalState private var showsAll = false
     @LocalState private var choosesModel = false
 
     package init(
@@ -86,7 +85,7 @@ package struct SummaryCard: View {
         self.waitsAbove = waitsAbove
     }
 
-    /// Whether its next step shows only with the rest: another's, or yours, under a line that says what waits on you.
+    /// Whether its next step is left out: another's, or yours, under a line that says what waits on you.
     static func foldsNext(_ summary: StorySummary, under waits: [ItemStory.Wait]) -> Bool {
         guard !waits.isEmpty, summary.next != nil else { return false }
         let isYours = summary.nextFor?.caseInsensitiveCompare("you") == .orderedSame
@@ -97,11 +96,6 @@ package struct SummaryCard: View {
 
     package var body: some View {
         content
-            .onChange(of: writtenAt) { _, written in
-                guard written != nil else { return }
-                // A new one starts short.
-                showsAll = false
-            }
     }
 
     @ViewBuilder
@@ -128,11 +122,6 @@ package struct SummaryCard: View {
         case .failed(let problem, _):
             failed(problem)
         }
-    }
-
-    private var writtenAt: Date? {
-        if case .written(_, let at, _, _)? = summaries.state(for: subject) { return at }
-        return nil
     }
 
     static let title = "Summary by Copilot"
@@ -172,35 +161,27 @@ package struct SummaryCard: View {
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                let foldsNext = Self.foldsNext(summary, under: waitsAbove)
-                if let next = summary.next, !foldsNext || showsAll {
+                if let next = summary.next, !Self.foldsNext(summary, under: waitsAbove) {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                         .font(.system(size: isRow ? 11.5 : 12))
                         .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                if let paragraph = summary.paragraph, showsAll {
+                // All of it: it's what explains where things stand, so it never hides behind Show More.
+                if let paragraph = summary.paragraph {
                     Text(paragraph)
                         .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        .lineSpacing(1.5)
+                        .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                // Its way on: the rest of it, and, once it's out of date, a new one.
-                let hasMore = summary.paragraph != nil || (foldsNext && summary.next != nil)
-                if hasMore || isStale {
-                    HStack(spacing: 14) {
-                        if hasMore {
-                            Button(showsAll ? "Show Less" : "Show More") {
-                                withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
-                            }
-                            .accessibilityHint(showsAll ? "Hides the rest of the summary" : "Shows the rest of the summary")
-                        }
-                        if isStale { againButton }
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11.5))
+                // Once it's out of date, a new one.
+                if isStale {
+                    againButton
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11.5))
                 }
             }
         }
@@ -339,6 +320,70 @@ package struct SummaryCard: View {
 
 // MARK: - The setting
 
+/// Where a summary could be, while Summarize with Copilot is off: a line that says what it would do, **Turn On…**, which
+/// shows its setting, what it sends and what it costs, to turn it on there, and ✕, which hides the line for good. Nothing
+/// while Show Links is off: Where It Stands says how to turn that on first.
+package struct SummaryOffer: View {
+    private let subject: ItemRef
+    @ObservedObject private var summaries: StorySummaries
+    @ObservedObject private var links: Links
+    private let defaults: UserDefaults
+
+    @LocalState private var hidden: Bool?
+    @LocalState private var showsSetting = false
+    @Environment(\.interfaceOptions) private var options
+
+    /// The preferences' key for the line, once you dismissed it.
+    package static let hiddenKey = "summaries.copilot.offerHidden"
+    package static let text = "Copilot can sum this up in a few lines."
+
+    package init(subject: ItemRef, summaries: StorySummaries, links: Links, defaults: UserDefaults) {
+        self.subject = subject
+        self.summaries = summaries
+        self.links = links
+        self.defaults = defaults
+    }
+
+    package var body: some View {
+        if links.isOn, !summaries.isOn, !(hidden ?? defaults.bool(forKey: Self.hiddenKey)) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
+                    .accessibilityHidden(true)
+                Text(Self.text)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Turn On…") { showsSetting = true }
+                    .buttonStyle(.borderless)
+                    .fixedSize()
+                    .help("Shows Summarize with Copilot's setting: what it sends, where, and what it costs")
+                    .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
+                        StorySummariesSetting(summaries: summaries, links: links)
+                            .padding(16)
+                            .frame(width: 420)
+                    }
+                Spacer(minLength: 4)
+                Button {
+                    defaults.set(true, forKey: Self.hiddenKey)
+                    hidden = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Don't show this again: Summarize with Copilot is in Settings › General")
+                .accessibilityLabel("Dismiss")
+            }
+            .font(.system(size: 12))
+            .accessibilityElement(children: .contain)
+        }
+    }
+}
+
 /// Summarize with Copilot, off by default: in Settings, under Show Links, with what it sends, where, what it costs and
 /// what Copilot can do with it, and the model it asks. While Show Links is off, it can't be changed.
 package struct StorySummariesSetting: View {
@@ -358,8 +403,9 @@ package struct StorySummariesSetting: View {
     /// What it sends, where, what it costs and what Copilot can do with it, a line each.
     package static let lines: [(label: String, symbol: String, text: String)] = [
         ("Sends", "arrow.up.doc", """
-            what's known of the work item, pull request or session and what's linked to it: descriptions and latest \
-            comments, reviews, builds and their errors, and Copilot's notes. Never anything from Teams.
+            what's known of the work item, pull request or session and what's linked to it: descriptions, comments and \
+            review threads, builds and their errors, Copilot's notes, and what you asked in each session and what Copilot \
+            answered. Never anything from Teams.
             """),
         ("To", "network", """
             GitHub Copilot, through the Copilot CLI, which keeps a copy in its session history as “BriefBar summary”. \

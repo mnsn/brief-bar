@@ -3,7 +3,7 @@ import BriefBarCore
 import SwiftUI
 
 // Summarize with Copilot on a pull request's or a Copilot session's row in the lists, on demand: ✨ in its time's place
-// while you point at it, Summarize with Copilot in its menus, and the summary in two lines under it, as a chat's summary
+// while you point at it, Summarize with Copilot in its menus, and the summary in a few lines under it, as a chat's summary
 // shows, until you hide it. Only while Summarize with Copilot and Show Links are on; never in a widget.
 
 private struct OffersSummariesKey: EnvironmentKey {
@@ -18,8 +18,9 @@ extension EnvironmentValues {
     }
 }
 
-/// The summary under a row, in the row's own sizes: ✨ and its headline, then what's next and for whom, the rest on
-/// request; while it's written, that it is, with Stop; when it couldn't be, why, with Try Again.
+/// The summary under a row, in the row's own sizes: ✨ and its headline, then what's next and for whom, then the first
+/// lines of the rest, all of it on request; while it's written, that it is, with Stop; when it couldn't be, why, with Try
+/// Again.
 package struct RowSummary: View {
     private let subject: ItemRef?
 
@@ -46,9 +47,13 @@ private struct RowSummaryContent: View {
     @Environment(\.interfaceOptions) private var options
     @LocalState private var showsMore = false
     @LocalState private var isHovered = false
+    /// How tall its paragraph is as it shows, and all of it.
+    @LocalState private var paragraphHeight: (shown: CGFloat, full: CGFloat) = (0, 0)
 
     /// Under the sparkles, where the headline starts.
     private static let indent: CGFloat = 17
+    /// How many lines of what's been done and what's left show at first.
+    static let paragraphLines = 3
 
     var body: some View {
         if summaries.isAvailable, let state = summaries.shownState(for: subject) {
@@ -141,8 +146,10 @@ private struct RowSummaryContent: View {
                     .offset(y: -3)
                 }
             }
-            // Show More at the end of what's next, while there's more; Show Less at the end of the rest.
-            let more = summary.paragraph == nil ? nil : Button(showsMore ? "Show Less" : "Show More") {
+            // Show More at the end of the rest, while there's more of it: what's been done and what's left, three lines of
+            // it at first; Show Less once it's all there.
+            let hasMore = showsMore || paragraphHeight.full > paragraphHeight.shown + 1
+            let more = summary.paragraph == nil || !hasMore ? nil : Button(showsMore ? "Show Less" : "Show More") {
                 withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
             }
             .buttonStyle(.borderless)
@@ -151,40 +158,44 @@ private struct RowSummaryContent: View {
             .foregroundStyle(.tint)
             .fixedSize()
             if let next = summary.next {
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(.system(size: options.rowDetailSize))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(showsMore ? nil : 2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                    if !showsMore, let more { more }
-                }
-                .padding(.leading, Self.indent)
+                (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                    .font(.system(size: options.rowDetailSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(showsMore ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, Self.indent)
             }
-            if showsMore, let paragraph = summary.paragraph {
+            if let paragraph = summary.paragraph {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     Text(paragraph)
                         .font(.system(size: options.rowDetailSize))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        .foregroundStyle(changed == nil ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .lineLimit(showsMore ? nil : Self.paragraphLines)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.shown = $0 }
+                        // All of it, unseen, to tell whether three lines cut it short.
+                        .background(alignment: .topLeading) {
+                            Text(paragraph)
+                                .font(.system(size: options.rowDetailSize))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .hidden()
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.full = $0 }
+                        }
                     if let more { more }
                 }
                 .padding(.leading, Self.indent)
                 .padding(.top, 2)
             }
-            if (summary.next == nil && !showsMore && more != nil) || changed != nil {
+            if let changed {
                 HStack(spacing: 12) {
-                    if summary.next == nil, !showsMore, let more { more }
-                    if let changed {
-                        Text("Out of date")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .help("Since it was written: \(changed).")
-                        Button("Summarize Again") { summaries.summarize(subject) }
-                            .help("Asks Copilot again: 1 request")
-                    }
+                    Text("Out of date")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .help("Since it was written: \(changed).")
+                    Button("Summarize Again") { summaries.summarize(subject) }
+                        .help("Asks Copilot again: 1 request")
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 11))

@@ -330,6 +330,15 @@ enum Renderer {
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(standing, appearance: appearance), "summary-none-\(suffix)")
                 summaries.useForRendering(subject, state: written)
+                // While Summarize with Copilot is off, the line that offers it, where its card would be.
+                let off = StorySummaries(defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: false)
+                let offer = SummaryOffer(subject: subject, summaries: off, links: model.services.links, defaults: MemoryDefaults())
+                    .interfaceOptions(from: model.services)
+                    .environmentObject(model.services)
+                    .padding(16)
+                    .frame(width: 420, alignment: .leading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(offer, appearance: appearance), "summary-offer-\(suffix)")
             }
             let saved = model.layout(.menuBar)
             let savedOptions = model.menuBarItemOptions
