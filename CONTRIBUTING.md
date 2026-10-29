@@ -316,6 +316,11 @@ and when started by hand. A new run cancels the one in progress on the same pull
   the updater check too. Pull requests skip macOS 15, so each waits for one runner instead of three.
 - Intel builds and checks aren't supported.
 
+`.github/workflows/codeql.yml` scans the Swift code and the workflows with CodeQL on the same pushes
+to `main`, weekly, and when started by hand, never on pull requests, since the Swift scan holds a
+macOS runner for twenty to thirty minutes. A new scan cancels the one in progress. Its alerts are
+under **Security**, so check them before you approve a release.
+
 ## Releasing
 
 Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
