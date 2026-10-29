@@ -405,6 +405,51 @@ import Testing
         #expect(!summaries.hasSomethingToSum(workItem))
     }
 
+    @Test func aPullRequestsOrASessionsRowIsSummedUpFromWhatsKnownOfIt() async throws {
+        let (links, stories, summaries) = hub()
+        let session = ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")!
+        // A pull request with nothing linked, and a session.
+        links.publish(.azureDevOps, links: [], items: [
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .green, state: .done, status: "Ready to complete"),
+        ])
+        links.publish(.copilot, links: [], items: [
+            LinkedItem(ref: session, label: "Add dark mode to settings", title: "Add dark mode to settings", symbol: "questionmark.bubble",
+                       color: .orange, state: .needsYou, status: "Waiting for your answer"),
+        ])
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { _ in
+            ItemStory(sentence: "Ready to complete: Approved by Priya Shah", facts: [ItemStory.Fact("Comments", "No open threads")])
+        }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        // Rows offer it for what a source says what it is; a work item has Where It Stands for it.
+        #expect(summaries.canSummarize(pullRequest))
+        #expect(summaries.canSummarize(session))
+        #expect(!summaries.canSummarize(workItem))
+        #expect(!summaries.canSummarize(.pullRequest(organization: "contoso", number: 1)))
+
+        // With nothing linked, what's known of it is what's summed up.
+        await summaries.summarizeAndWait(pullRequest)
+        let prompt = try #require(asked.prompts.first)
+        #expect(prompt.contains("PULL REQUEST !4091: Fix the coupon rounding error\nStatus: Ready to complete: Approved by Priya Shah"))
+        #expect(prompt.contains("- Comments: No open threads"))
+        guard case .written? = summaries.state(for: pullRequest) else {
+            Issue.record("Not written")
+            return
+        }
+        // Nothing's known of the session, and nothing's linked to it: nothing to sum up, and nothing asked.
+        await summaries.summarizeAndWait(session)
+        #expect(asked.prompts.count == 1)
+        #expect(summaries.state(for: session) == nil)
+
+        // Without Show Links, or with it off, no row offers it.
+        links.setOn(false)
+        #expect(!summaries.canSummarize(pullRequest))
+        links.setOn(true)
+        summaries.setOn(false)
+        #expect(!summaries.canSummarize(pullRequest))
+    }
+
     @Test func itSaysWhatItWasWrittenFrom() {
         func input(_ ref: ItemRef, _ label: String) -> StorySummaries.Input {
             StorySummaries.Input(ref: ref, label: label, row: "", story: nil)

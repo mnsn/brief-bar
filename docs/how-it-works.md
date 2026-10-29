@@ -469,6 +469,14 @@ short, and its tooltip, which model wrote it, when, and from what: "from 5101, !
 has one control: **Cancel** while it's written, then **✕** only, in a 22-point target; **Summarize Again** and **Copy
 Summary** in its right-click menu. VoiceOver says "Summary ready" once it's written.
 
+The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
+(`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
+(`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and its right-click and
+Actions menus have **Summarize with Copilot**, then **Summarize Again** and **Close Summary** (`SummarizeMenuItems`). Its
+summary shows under its row (`RowSummary`), in a smaller card, and on its page, being the same one. With nothing linked
+to it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
+Desktop widgets show none (`offersSummaries`).
+
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
 --no-ask-user --no-color --silent --name "BriefBar summary" -C <folder>`, through `ProcessRunner`, with your login
@@ -494,7 +502,8 @@ just that; and a story that's been forgotten since, a quarter of an hour on, mak
 Its caption then says **Out of date**, in orange, with what changed in its tooltip, "!4120 changed", and **Summarize
 Again** on its right; the headline and the next step turn gray. The demo makes summaries up (`DemoSummaries`) and never
 runs Copilot, and `--render` of your own data writes none; the demo's pictures show a summary as it's written, once it
-is, out of date and failed (`summary-*`), and the setting with Show Links off.
+is, out of date and failed (`summary-*`), and the setting with Show Links off; and a pull request's and a session's
+summary under its row (`rows-summary-*`), which the other pictures of the lists don't show.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.

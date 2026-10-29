@@ -46,21 +46,31 @@ struct SummarizeButton: View {
 /// colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it couldn't, why, and
 /// what would help. One whose rows changed since says it's out of date, and what changed.
 package struct SummaryCard: View {
+    /// Where it shows: at the top of Where It Stands, or under a pull request's or a session's row in a list, where it's
+    /// smaller and quieter.
+    package enum Style {
+        case section, row
+    }
+
     let subject: ItemRef
     @ObservedObject var summaries: StorySummaries
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
+    var style: Style = .section
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
     @LocalState private var showsAll = false
     @LocalState private var choosesModel = false
 
-    package init(subject: ItemRef, summaries: StorySummaries, rows: [String]) {
+    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section) {
         self.subject = subject
         self.summaries = summaries
         self.rows = rows
+        self.style = style
     }
+
+    private var isRow: Bool { style == .row }
 
     package var body: some View {
         content
@@ -130,13 +140,13 @@ package struct SummaryCard: View {
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: isRow ? 12.5 : 13, weight: .medium))
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let next = summary.next {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(.system(size: 12))
+                        .font(.system(size: isRow ? 11.5 : 12))
                         .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -261,21 +271,22 @@ package struct SummaryCard: View {
         @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content
     ) -> some View {
         let colorful = !options.quietAppearance
-        return VStack(alignment: .leading, spacing: 7) {
+        let radius: CGFloat = isRow ? 10 : 12
+        return VStack(alignment: .leading, spacing: isRow ? 5 : 7) {
             header()
             content()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, isRow ? 10 : 12)
+        .padding(.vertical, isRow ? 7 : 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(0.09)) : AnyShapeStyle(Color.primary.opacity(0.04)))
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(isRow ? 0.07 : 0.09)) : AnyShapeStyle(Color.primary.opacity(0.04)))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .strokeBorder(
-                    colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(0.35)) : AnyShapeStyle(Color.primary.opacity(0.1)),
+                    colorful ? AnyShapeStyle(BriefContainer<EmptyView>.gradient.opacity(isRow ? 0.28 : 0.35)) : AnyShapeStyle(Color.primary.opacity(0.1)),
                     lineWidth: 1
                 )
         )
@@ -304,12 +315,15 @@ package struct StorySummariesSetting: View {
     }
 
     package static let title = "Summarize with Copilot"
-    package static let explanation = "Adds ✨ Summarize with Copilot to Where It Stands. Nothing is sent until you click it."
+    package static let explanation = """
+        Adds ✨ Summarize with Copilot to Where It Stands, and to pull requests' and Copilot sessions' rows. Nothing is \
+        sent until you click it.
+        """
     /// What it sends, where, what it costs and what Copilot can do with it, a line each.
     package static let lines: [(label: String, symbol: String, text: String)] = [
         ("Sends", "arrow.up.doc", """
-            the work item's description and latest comments, its pull requests' reviews, builds and errors, and Copilot's \
-            notes. Never anything from Teams.
+            what's known of the work item, pull request or session and what's linked to it: descriptions and latest \
+            comments, reviews, builds and their errors, and Copilot's notes. Never anything from Teams.
             """),
         ("To", "network", """
             GitHub Copilot, through the Copilot CLI, which keeps a copy in its session history as “BriefBar summary”. \

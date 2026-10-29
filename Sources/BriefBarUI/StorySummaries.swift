@@ -189,15 +189,22 @@ package final class StorySummaries: ObservableObject {
         return linked >= 2 || (linked == 1 && links.describe(subject).parts > 0)
     }
 
+    /// Whether a pull request's or a session's row offers ✨ Summarize with Copilot: this and Show Links are on, and a
+    /// source says what it is. With nothing linked, its own story is what's summed up.
+    package func canSummarize(_ subject: ItemRef) -> Bool {
+        isAvailable && subject.kind != .workItem && links.isDescribed(subject)
+    }
+
     /// For `--render`: a summary as it would stand, without asking Copilot.
     package func useForRendering(_ subject: ItemRef, state: State?) {
         states[subject] = state
     }
 
     /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
-    /// it has. Nothing unless this and Show Links are on.
+    /// it has; of a pull request or a session with nothing linked, of what's known of it. Nothing unless this and Show
+    /// Links are on.
     package func summarize(_ subject: ItemRef) {
-        guard isAvailable, !links.connections(of: subject).isEmpty else { return }
+        guard isAvailable else { return }
         writing[subject]?.task.cancel()
         nextToken += 1
         let token = nextToken
@@ -296,12 +303,13 @@ package final class StorySummaries: ObservableObject {
     // MARK: What's summed up
 
     /// The prompt for a thing and what's linked to it, as the details show them, the most pressing first; and what tells
-    /// when that changes: what each one says. Nil when nothing's linked to it.
+    /// when that changes: what each one says. Nil when there's nothing to sum up: nothing linked to it, and nothing a
+    /// source knows of it.
     func input(for subject: ItemRef) -> (prompt: String, inputs: [Input])? {
         let connections = links.connections(of: subject).sorted { lhs, rhs in
             ItemState.rank(lhs.item.state) < ItemState.rank(rhs.item.state)
         }
-        guard !connections.isEmpty else { return nil }
+        guard !connections.isEmpty || (links.isDescribed(subject) && stories.story(for: subject) != nil) else { return nil }
         let described = links.describe(subject)
         let item = { (linked: LinkedItem, link: String?) in
             StorySummaryPrompt.Item(

@@ -24,6 +24,8 @@ enum Renderer {
         model.placeSections()
         let sources = model.onSources
         var loaded = false
+        // In the demo, a summary under a pull request's row and under a session's, kept aside for their own pictures.
+        var rowSummaries: [(ItemRef, StorySummaries.State)] = []
         Task {
             for source in sources { await source.loadForRendering() }
             // What's known of everything linked, for the details' pictures; and, in the demo, a made-up summary of each work
@@ -34,6 +36,15 @@ enum Renderer {
                 let summaries = model.services.summaries
                 for workItem in links.linked([.workItem]).sorted() where summaries.hasSomethingToSum(workItem) {
                     await summaries.summarizeAndWait(workItem)
+                }
+                // The demo's pull request that Sam replied on, and its session that waits for your answer: at the top of their
+                // pages.
+                let replied = ItemRef.pullRequest(organization: "contoso", number: 4102)
+                let asking = ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")
+                for ref in [replied, asking].compactMap({ $0 }) where summaries.canSummarize(ref) {
+                    await summaries.summarizeAndWait(ref)
+                    if let state = summaries.state(for: ref) { rowSummaries.append((ref, state)) }
+                    summaries.useForRendering(ref, state: nil)
                 }
             }
             loaded = true
@@ -198,6 +209,24 @@ enum Renderer {
                         .frame(width: 980, height: 680)
                     write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
                 }
+            }
+            // A pull request's and a session's summary under its row, on their pages.
+            if !rowSummaries.isEmpty {
+                let summaries = model.services.summaries
+                for (ref, state) in rowSummaries { summaries.useForRendering(ref, state: state) }
+                let content = WindowContent(id: "render-rows", model: model)
+                content.update(sections: windowSections)
+                for (section, name) in [(SectionID.azureDevOpsPullRequests, "pull-requests"), (.copilotSessions, "sessions")]
+                where windowSections.contains(section) {
+                    content.select(section, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "rows-summary-\(name)-\(suffix)")
+                }
+                for (ref, _) in rowSummaries { summaries.useForRendering(ref, state: nil) }
             }
             // The Notifications page, in the window that has it, while it lists something, as the demo's does.
             if let window = model.overviewLink.window, model.hasNotificationsPage(window: window.id) {

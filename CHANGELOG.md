@@ -17,6 +17,10 @@
   click it, with a small model unless you choose another, and without any tools, so Copilot can only
   write. What the details show goes to GitHub Copilot for it, never anything from Teams, and the summary
   stays in memory, saying when something changed since.
+- **See where a pull request or a session stands, on demand.** With **Summarize with Copilot** on,
+  point at a pull request or a Copilot session in a list, Azure DevOps', GitHub's or Copilot's, and
+  click **✨** where its time was, or right-click it, for a short summary under its row: where it
+  stands, what's next and for whom, from what BriefBar knows of it and what's linked to it.
 - **Open a pull request or a session on a page of its own.** In Where It Stands, click a pull request
   or a Copilot session to see all that's known of it in the details, with what else is linked to it,
   such as a pull request's sessions. The header shows the way back, such as **Bug 5110 › !4091**, and

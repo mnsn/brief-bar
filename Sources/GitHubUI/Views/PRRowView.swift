@@ -14,6 +14,16 @@ struct PRRowView: View {
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row
+            RowSummary(subject: linkRef)
+                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
+        }
+    }
+
+    private var row: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.reason.symbol)
@@ -29,10 +39,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        Text(Elapsed.short(since: item.since, now: now))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: isHovered)
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
@@ -68,6 +75,7 @@ struct PRRowView: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             Button("Open on GitHub", action: action)
+            SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)
         }
         .help(helpText)
@@ -75,7 +83,11 @@ struct PRRowView: View {
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
-        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) { LinkMenuItems(linkRef) }
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
+            SummarizeMenuItems(linkRef)
+            LinkMenuItems(linkRef)
+        }
+        .rowSummarizeButton(linkRef)
     }
 
     private var subtitle: String {

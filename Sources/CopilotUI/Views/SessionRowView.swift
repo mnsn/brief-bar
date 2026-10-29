@@ -18,7 +18,19 @@ struct SessionRowView: View {
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
-        let task = store.task(for: session.id)
+        VStack(alignment: .leading, spacing: 0) {
+            row(store.task(for: session.id))
+            RowSummary(subject: ref)
+                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
+        }
+    }
+
+    /// What it's linked and summed up by.
+    private var ref: ItemRef? { ItemRef.session(session.id) }
+
+    private func row(_ task: SentTask?) -> some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: session.rowSymbol)
@@ -44,10 +56,7 @@ struct SessionRowView: View {
                         if let contextUsage {
                             ContextUsageView(usage: contextUsage)
                         }
-                        Text(Elapsed.short(since: session.since, now: now))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isHovered: isHovered)
                     }
                     if compact {
                         Text(compactLine)
@@ -92,7 +101,8 @@ struct SessionRowView: View {
             } else {
                 Button("Open in GitHub Copilot", action: action)
             }
-            if let ref = ItemRef.session(session.id) {
+            SummarizeMenuItems(ref)
+            if let ref {
                 LinkMenuItems(ref)
             }
         }
@@ -105,10 +115,12 @@ struct SessionRowView: View {
             if let task {
                 task.menu()
             }
-            if let ref = ItemRef.session(session.id) {
+            SummarizeMenuItems(ref)
+            if let ref {
                 LinkMenuItems(ref)
             }
         }
+        .rowSummarizeButton(ref)
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.

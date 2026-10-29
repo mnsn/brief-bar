@@ -293,6 +293,11 @@ package final class Links: ObservableObject {
         return Self.fallback(ref)
     }
 
+    /// Whether a source says what it is, rather than only its reference.
+    package func isDescribed(_ ref: ItemRef) -> Bool {
+        SourceID.allCases.contains { described[$0]?[ref] != nil }
+    }
+
     /// Things in links that no source describes, of these kinds.
     package func unknown(_ kinds: Set<ItemRef.Kind>) -> Set<ItemRef> {
         guard isOn else { return [] }

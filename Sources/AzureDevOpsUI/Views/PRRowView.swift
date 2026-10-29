@@ -25,6 +25,24 @@ struct PRRowView: View {
     private var isNew: Bool { item.group == .needsYou && item.hasNews }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row
+            RowSummary(subject: item.key.linkRef)
+                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu { menuItems }
+        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
+    }
+
+    private var row: some View {
         HStack(alignment: .top, spacing: 0) {
             Button(action: action) {
                 content
@@ -55,13 +73,7 @@ struct PRRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-        )
-        .onHover { isHovered = $0 }
-        .contextMenu { menuItems }
-        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
+        .rowSummarizeButton(item.key.linkRef)
     }
 
     private var content: some View {
@@ -84,10 +96,7 @@ struct PRRowView: View {
                             .frame(width: 7, height: 7)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     }
-                    Text(Elapsed.short(since: item.since, now: now))
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
+                    RowTime(Elapsed.short(since: item.since, now: now), subject: item.key.linkRef, isHovered: isHovered)
                 }
                 if compact {
                     Text(compactLine)
@@ -131,6 +140,7 @@ struct PRRowView: View {
             Button("Remove from Needs You", action: dismiss)
         }
         PullRequestCopilotMenuItems(item: item)
+        SummarizeMenuItems(item.key.linkRef)
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
             Divider()
