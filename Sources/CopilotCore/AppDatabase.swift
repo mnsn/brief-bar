@@ -228,11 +228,12 @@ public enum AppDatabase {
         SELECT key, value, updated_at FROM app_state WHERE key IN ('workspace-unread', 'lastRoutePath')
         """
 
-    /// Which session coordinates each project session: the one that created it, while it coordinates it.
+    /// Which session coordinates each project session's workspace: the one that created it, while it coordinates it.
+    /// By workspace, as a session can have more than one: its own is the one `visibleSessionsQuery` shows.
     static let coordinatorsQuery = """
-        SELECT session_id, coordinating_creator_session_id
+        SELECT id, coordinating_creator_session_id
         FROM workspaces
-        WHERE session_id IS NOT NULL AND archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
+        WHERE archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
         """
 
     /// Which session coordinates each chat that another session started.
@@ -319,10 +320,7 @@ public enum AppDatabase {
             }
         }
 
-        let coordinators = readCoordinators(connection)
-        for index in sessions.indices {
-            sessions[index].coordinatorSessionId = coordinators[sessions[index].id]
-        }
+        readCoordinators(connection, into: &sessions)
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -405,18 +403,21 @@ public enum AppDatabase {
         return bySession
     }
 
-    /// Each session's coordinator, best effort: an app without these tables or columns records none.
-    static func readCoordinators(_ connection: SQLiteConnection) -> [String: String] {
-        var bySession: [String: String] = [:]
-        for query in [coordinatorsQuery, chatCoordinatorsQuery] {
-            guard let rows = try? connection.rows(query, { row in (row.string(0) ?? "", row.string(1) ?? "") }) else {
-                continue
-            }
-            for (session, coordinator) in rows where !session.isEmpty && !coordinator.isEmpty && session != coordinator {
-                bySession[session] = bySession[session] ?? coordinator
-            }
+    /// Each session's coordinator, best effort: an app without these tables or columns records none. A chat's is its
+    /// own link's; a project session's is that of the workspace it's listed with, so a newer workspace without one has
+    /// none, whatever an older one has.
+    static func readCoordinators(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
         }
-        return bySession
+        let byWorkspace = read(coordinatorsQuery)
+        let byChat = read(chatCoordinatorsQuery)
+        for index in sessions.indices {
+            let session = sessions[index]
+            let coordinator = session.isChat ? byChat[session.id] : session.workspaceId.flatMap { byWorkspace[$0] }
+            sessions[index].coordinatorSessionId = coordinator == session.id ? nil : coordinator
+        }
     }
 
     static func parseStringArray(_ json: String) -> [String]? {
