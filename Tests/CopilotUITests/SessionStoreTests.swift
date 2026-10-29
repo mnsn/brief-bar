@@ -111,6 +111,65 @@ import Testing
         #expect(store.counts.done == 0)
     }
 
+    /// A session's question, which the session coordinating it asks you for it: with Show Relayed Questions Once, once,
+    /// where you answer it; without it, as before.
+    @Test func aRelayedQuestionShowsOnceOnlyWhenTurnedOn() throws {
+        let at = Date().addingTimeInterval(-60)
+        var child = SessionLogState()
+        child.apply(LogEvent(timestamp: at, kind: .userMessage))
+        child.apply(LogEvent(timestamp: at.addingTimeInterval(1), kind: .toolStart(.init(
+            callId: "q", name: "ask_user", question: "Which color?"
+        ))))
+        var coordinator = SessionLogState()
+        coordinator.apply(LogEvent(timestamp: at, kind: .userMessage))
+        coordinator.apply(LogEvent(timestamp: at.addingTimeInterval(2), kind: .toolStart(.init(
+            callId: "r", name: "relay_session_input", relayedSession: "w-child"
+        ))))
+        let state = EngineSnapshot(records: [
+            SessionRecord(meta: SessionMeta(id: "child", name: "Pick colors", isRunning: true, workspaceId: "w-child"), log: child),
+            SessionRecord(meta: SessionMeta(id: "coordinator", name: "Release 2.5", isRunning: true), log: coordinator),
+        ])
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        var opened: [String] = []
+        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) })
+        store.receive(state)
+        #expect(!settings.showRelayedQuestionsOnce)
+        #expect(store.sessions(in: .needsYou).map(\.id) == ["child"])
+        #expect(store.sessions(in: .running).map(\.id) == ["coordinator"])
+        #expect(store.sessions.allSatisfy { $0.answerIn == nil && $0.asksFor.isEmpty })
+
+        settings.showRelayedQuestionsOnce = true
+        store.receive(state)
+        #expect(store.counts.needsYou == 1)
+        #expect(store.counts.running == 1)
+        let asking = try #require(store.sessions(in: .needsYou).first)
+        #expect(asking.id == "coordinator")
+        #expect(asking.detail == "Which color?")
+        let waiting = try #require(store.sessions(in: .running).first)
+        #expect(waiting.headline == "Answer in “Release 2.5”")
+
+        store.open(waiting)
+        store.open(asking)
+        store.openItself(waiting)
+        #expect(opened == ["coordinator", "coordinator", "child"])
+
+        // The command line and agents see the same, as the setting says.
+        let defaults = MemoryDefaults()
+        #expect(CopilotCommandLine.resolve(state, now: Date(), defaults: defaults).map(\.id) == ["child", "coordinator"])
+        defaults.set(true, forKey: "copilot.showRelayedQuestionsOnce")
+        let resolved = CopilotCommandLine.resolve(state, now: Date(), defaults: defaults)
+        #expect(resolved.map(\.id) == ["coordinator", "child"])
+        #expect(resolved.map(\.phase) == [.needsYou, .running])
+    }
+
+    @Test func showingRelayedQuestionsOnceIsOptInAndPersists() {
+        let defaults = MemoryDefaults()
+        #expect(!AppSettings(defaults: defaults).showRelayedQuestionsOnce)
+        AppSettings(defaults: defaults).showRelayedQuestionsOnce = true
+        #expect(AppSettings(defaults: defaults).showRelayedQuestionsOnce)
+    }
+
     @Test func theOptionIsOptInAndPersists() {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)

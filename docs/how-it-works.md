@@ -408,9 +408,10 @@ as a ready pull request's green, saying what to do, such as "you, to complete !4
 "reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on task 5103", or, on that task itself, "Copilot,
 working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. An Azure DevOps pull request's
 come from `PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do, and a GitHub one's from why it's in its
-list (`GitHubPRSnapshot.wait`), such as "you, to merge #12"; a session waits on you while it asks, and on Copilot while
-it's at work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a work item or a
-pull request failed, among all that was sent, such as on a pull request a task's work went on to, unless that's done or
+list (`GitHubPRSnapshot.wait`), such as "you, to merge #12"; a session waits on you while it asks, or, for a question it
+relays, in the session that asks it for it, said once with that session's own question; and on Copilot while it's at
+work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a work item or a pull
+request failed, among all that was sent, such as on a pull request a task's work went on to, unless that's done or
 closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said once, and a
 session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
 pull requests in the same words, numbered alike in two organizations or repositories, are each said with its place, such
@@ -1475,7 +1476,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
 | `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
@@ -1518,6 +1519,25 @@ it applies. A few more details:
 - Detailed states (questions, plans, permissions, the current step) come from the agent's log on
   this Mac. A session without a local log only shows Running, Interrupted or Idle, based on the
   app's own flags.
+- **Show Relayed Questions Once**, off by default, shows a question asked for another session once
+  (`RelayedQuestions`). When a session waits on a question or a plan, the app tells the session that
+  coordinates it (`coordinating_creator_session_id`, on its workspace, or for a chat in
+  `chat_parent_links`), which asks you for it. It relays a question with `relay_session_input`, which
+  names the session, by its workspace or its own ID, but doesn't repeat the question, and it can relay
+  several at once. A plan can't be relayed, so it asks about the plan with its own `ask_user`. Either
+  way, it's one decision, best made in the coordinator: answered there, it's passed on. A relayed
+  question answered in the session ends the relay too, but a plan approved in the session itself leaves
+  the coordinator's question waiting, and its approval then fails. With the setting on, a relay counts
+  as waiting for your answer, with the words of the question it relays, after any question or plan of
+  the coordinator's own, which comes first. Once the coordinator asks, by a relay that names the
+  session or by a question of its own that started after the session began waiting, the session moves
+  to **Running** as **Answer in “…”**, and clicking it opens the coordinator. Every other session it
+  coordinates that had been waiting since before moves with it, since the coordinator brings them up
+  next. The coordinator stays in **Needs you**, timed from the longest wait among them. When a
+  coordinator's own question is asked for in turn, by the session coordinating it, they all point to
+  the session that asks you in the end. Until the coordinator asks, the session needs you on its own.
+  Permission prompts are never asked for: only the session itself can answer one. With the setting off,
+  a relay shows as **Working**, as it did before, and the session it relays for needs you on its own.
 - **Show Context Usage** shows the app's latest measurement of each session's context window
   (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
   limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns

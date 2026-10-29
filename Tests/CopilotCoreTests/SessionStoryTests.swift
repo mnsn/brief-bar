@@ -58,6 +58,14 @@ import Testing
         #expect(SessionStory.waits(of: working) == [ItemStory.Wait(.copilot, "Copilot, in session “Add dark mode to settings”", about: ref)])
         // Once it's done, stopped or idle, nothing waits on it.
         #expect(SessionStory.waits(of: session(.finished)).isEmpty)
+        // A question it relays waits on you in the session that asks it for it, which tells of the same question.
+        var relayed = session(.relayed)
+        relayed.phase = .running
+        let coordinator = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a09"
+        relayed.answerIn = RelatedSession(id: coordinator, name: "Plan the release")
+        #expect(SessionStory.waits(of: relayed)
+            == [ItemStory.Wait(.you, "you, to answer in session “Plan the release”", about: ItemRef.session(coordinator))])
+        #expect(relayed.storySentence == "Waits for your answer in “Plan the release”")
     }
 
     @Test func listsWhatsKnownOfASessionInOrder() throws {

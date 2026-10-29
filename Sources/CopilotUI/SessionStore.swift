@@ -66,8 +66,9 @@ final class SessionStore: ObservableObject {
         settings.$keepEndedMinutes.map { _ in () }
             .merge(with: settings.$cleared.map { _ in () },
                    settings.$viewed.map { _ in () },
-                   settings.$moveViewedToIdle.map { _ in () })
-            .dropFirst(4)
+                   settings.$moveViewedToIdle.map { _ in () },
+                   settings.$showRelayedQuestionsOnce.map { _ in () })
+            .dropFirst(5)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -117,7 +118,8 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session or task; only the opt-in setting dismisses its recent completion.
+    /// Opens the session or task; only the opt-in setting dismisses its recent completion. A session whose question
+    /// another session asks you for opens that one, where you answer it.
     func open(_ session: SessionSnapshot) {
         if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
             settings.markViewed([session.id])
@@ -126,8 +128,13 @@ final class SessionStore: ObservableObject {
         if let task = tasks[session.id] {
             task.open()
         } else {
-            openSession(session.id)
+            openSession(session.answerIn?.id ?? session.id)
         }
+    }
+
+    /// Opens a session in the app itself, even when its question is asked in another session.
+    func openItself(_ session: SessionSnapshot) {
+        openSession(session.id)
     }
 
     /// The task BriefBar sent that a row shows, rather than a session of the app's.
@@ -153,7 +160,8 @@ final class SessionStore: ObservableObject {
     private func recompute() {
         let now = Date()
         let options = ResolverOptions(
-            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle
+            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle,
+            showRelayedQuestionsOnce: settings.showRelayedQuestionsOnce
         )
         var resolved = state.records.map {
             StatusResolver.snapshot(
@@ -170,6 +178,9 @@ final class SessionStore: ObservableObject {
                 for: state.records[index], now: now, options: options, view: state.view,
                 clearedAt: settings.cleared[viewed], viewedAt: now
             )
+        }
+        if options.showRelayedQuestionsOnce {
+            resolved = RelayedQuestions.merge(resolved, records: state.records)
         }
 
         // The tasks BriefBar sent. Once you open one's session in the app, its database lists it, and then it's the app's;

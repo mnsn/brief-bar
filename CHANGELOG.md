@@ -34,6 +34,16 @@
   description and latest comments. In the GitHub Copilot app, try **/briefbar 5101**: it answers in four
   short lines. Since agents get more, they wait until you've seen what they get now.
 
+## 0.8.5 - 2026-10-29
+
+- **Answer a Copilot question once, where it's passed on.** When a session that another session
+  coordinates asks a question or has a plan for you, the coordinating session asks you too, and a plan
+  you approved in the session itself made the coordinating session's approval fail. Turn on **Show
+  Relayed Questions Once** in Copilot's settings, and once the coordinating session asks, **Needs You**
+  lists it only there, and clicking it opens it, so you answer where it's passed on. The session it's
+  for moves to **Running** as **Answer in “…”**, which opens the coordinating session too; right-click
+  it to open the session itself. Until the coordinating session asks, the session needs you on its own.
+
 ## 0.8.4 - 2026-10-29
 
 - **A work item's details show its text as written.** In fields written in Markdown, a numbered list

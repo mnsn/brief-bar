@@ -16,8 +16,16 @@ public enum SessionStory {
         )
     }
 
-    /// You, while it waits for you; Copilot, while it works.
+    /// You, while it waits for you, here or, for a question it relays, in the session that asks it for it, which tells of
+    /// the same question, so it's said once; Copilot, while it works.
     static func waits(of snapshot: SessionSnapshot) -> [ItemStory.Wait] {
+        if snapshot.reason == .relayed {
+            let asking = snapshot.answerIn
+            return [ItemStory.Wait(
+                .you, "you, to answer in " + (asking.map { "session “\($0.name)”" } ?? "another session"),
+                about: ItemRef.session(asking?.id ?? snapshot.id)
+            )]
+        }
         switch snapshot.phase {
         case .needsYou:
             let what = switch snapshot.reason {
@@ -57,7 +65,7 @@ public enum SessionStory {
     /// Whether it's at work, or waits for you: not once it ended.
     static func isGoingOn(_ reason: StatusReason) -> Bool {
         switch reason {
-        case .question, .planApproval, .permission, .working, .starting: return true
+        case .question, .planApproval, .permission, .working, .starting, .relayed: return true
         case .finished, .interrupted, .failed, .unresponsive, .idle: return false
         }
     }
@@ -73,6 +81,7 @@ extension SessionSnapshot {
         case .planApproval: return "Has a plan for you to review" + (detail.map { ": \($0)" } ?? "")
         case .permission: return "Needs your permission" + (detail.map { " to run \($0)" } ?? "")
         case .working, .starting: return "Working" + (detail.map { ": \($0)" } ?? "")
+        case .relayed: return "Waits for your answer in " + (answerIn.map { "“\($0.name)”" } ?? "another session")
         case .finished: return "Finished"
         case .interrupted: return "Interrupted"
         case .failed: return "Stopped with an error" + (detail.map { ": \($0)" } ?? "")

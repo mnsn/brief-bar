@@ -95,6 +95,12 @@ struct CopilotAgent: Sendable {
         }
         if let detail = session.detail, !detail.isEmpty { text += ". \(detail)" }
         if !session.choices.isEmpty { text += "\n  Choices: " + session.choices.joined(separator: " · ") }
+        if !session.asksFor.isEmpty {
+            text += "\n  Asks this for " + session.asksFor.map { "“\($0.name)” (session \($0.id))" }.joined(separator: ", ")
+        }
+        if let answerIn = session.answerIn {
+            text += "\n  Its coordinator asks it: answer in session \(answerIn.id)"
+        }
         return text + "\n  session \(session.id)"
     }
 
@@ -210,6 +216,7 @@ struct CopilotAgent: Sendable {
         case .permission: return going("waiting for your permission")
         case .working: return going("working")
         case .starting: return going("starting")
+        case .relayed: return going("waiting for your answer in " + (session.answerIn.map { "“\($0.name)”" } ?? "another session"))
         case .finished: return ended("finished")
         case .interrupted: return ended("interrupted")
         case .failed: return ended("stopped with an error")

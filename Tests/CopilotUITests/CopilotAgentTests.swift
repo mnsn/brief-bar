@@ -30,6 +30,25 @@ import Testing
         #expect(CopilotAgent.line(chat, now: now) == "- “Untitled chat” (a chat): Working, just now\n  session c1")
     }
 
+    @Test func saysWhereAQuestionAskedForAnotherSessionIsAnswered() {
+        let now = Date()
+        var coordinator = session("p1", name: "Release 2.5", project: nil, branch: nil, isChat: true, detail: "Which color?", since: now)
+        coordinator.asksFor = [RelatedSession(id: "abc", name: "Add dark mode")]
+        #expect(CopilotAgent.line(coordinator, now: now) == """
+            - “Release 2.5” (a chat): Waiting for your answer, just now. Which color?
+              Asks this for “Add dark mode” (session abc)
+              session p1
+            """)
+        var waiting = session("abc", phase: .running, reason: .relayed, detail: "Which color?", since: now)
+        waiting.headline = "Answer in “Release 2.5”"
+        waiting.answerIn = RelatedSession(id: "p1", name: "Release 2.5")
+        #expect(CopilotAgent.line(waiting, now: now) == """
+            - “Add dark mode” (shop-web, dark-mode): Answer in “Release 2.5”, just now. Which color?
+              Its coordinator asks it: answer in session p1
+              session abc
+            """)
+    }
+
     @Test func namesPhasesTheWayAgentsCallThem() {
         #expect(DisplayPhase.allCases.map(\.agentName) == ["needs_you", "running", "done", "stopped", "idle"])
         #expect(DisplayPhase.named("needsYou") == .needsYou)

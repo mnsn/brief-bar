@@ -243,7 +243,10 @@ final class TestDatabase {
             interruption_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
         CREATE TABLE workspaces (
             id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
-            name TEXT NOT NULL, creator_session_id TEXT, archived_at TEXT, updated_at TEXT NOT NULL);
+            name TEXT NOT NULL, creator_session_id TEXT, coordinating_creator_session_id TEXT, archived_at TEXT,
+            updated_at TEXT NOT NULL);
+        CREATE TABLE chat_parent_links (
+            session_id TEXT PRIMARY KEY NOT NULL, parent_session_id TEXT, coordinating_creator_session_id TEXT);
         CREATE TABLE activity_items (
             id TEXT PRIMARY KEY NOT NULL, session_id TEXT, activity_type TEXT NOT NULL,
             preview TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
@@ -275,12 +278,21 @@ final class TestDatabase {
 
     func addWorkspace(
         _ id: String, session: String, project: String = "p1", name: String, branch: String = "main",
-        creator: String? = nil, archived: Bool = false, updatedAt: Date = t(0)
+        creator: String? = nil, coordinator: String? = nil, archived: Bool = false, updatedAt: Date = t(0)
     ) throws {
         try exec("""
-            INSERT INTO workspaces (id, project_id, session_id, branch, name, creator_session_id, archived_at, updated_at)
+            INSERT INTO workspaces (id, project_id, session_id, branch, name, creator_session_id,
+                                    coordinating_creator_session_id, archived_at, updated_at)
             VALUES (\(sql(id)), \(sql(project)), \(sql(session)), \(sql(branch)), \(sql(name)), \(sql(creator)),
-                    \(archived ? sql(iso(updatedAt)) : "NULL"), \(sql(iso(updatedAt))));
+                    \(sql(coordinator)), \(archived ? sql(iso(updatedAt)) : "NULL"), \(sql(iso(updatedAt))));
+            """)
+    }
+
+    /// A chat that another session started, and the session that coordinates it, if any.
+    func addChatParent(session: String, parent: String, coordinator: String?) throws {
+        try exec("""
+            INSERT INTO chat_parent_links (session_id, parent_session_id, coordinating_creator_session_id)
+            VALUES (\(sql(session)), \(sql(parent)), \(sql(coordinator)));
             """)
     }
 

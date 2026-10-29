@@ -140,6 +140,8 @@ struct Session {
     var updatedAt: Date
     /// Context-window tokens in use, and the model's limit.
     var context: (tokens: Int, limit: Int)
+    /// The session that started it and coordinates it.
+    var coordinator: String?
     var log: Log
 }
 
@@ -147,13 +149,15 @@ var sessions: [Session] = []
 
 func session(
     _ id: String, _ name: String, project: String?, branch: String = "main", mode: String = "interactive",
-    running: Bool = false, started: Date, updated: Date? = nil, context: (Int, Int), _ build: (inout Log) -> Void
+    running: Bool = false, started: Date, updated: Date? = nil, context: (Int, Int), coordinator: String? = nil,
+    _ build: (inout Log) -> Void
 ) {
     var log = Log()
     log.start(name, at: started)
     build(&log)
     sessions.append(Session(id: id, name: name, project: project, branch: branch, mode: mode, running: running,
-                            createdAt: started, updatedAt: updated ?? started, context: context, log: log))
+                            createdAt: started, updatedAt: updated ?? started, context: context, coordinator: coordinator,
+                            log: log))
 }
 
 /// The checkpoints Copilot writes as it compacts a long session's conversation, by session: each one's title, when it
@@ -191,9 +195,11 @@ func taskPrompt(_ id: Int, _ type: String, _ title: String) -> String {
     """
 }
 
+let rollout = "a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11"
+
 // Needs you: a question, a plan to approve and a permission prompt.
 session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01", "Add dark mode to settings", project: "shop-web", branch: "dark-mode",
-        running: true, started: ago(9 * minute), context: (46_000, 200_000)) { log in
+        running: true, started: ago(9 * minute), context: (46_000, 200_000), coordinator: rollout) { log in
     log.tool("view", ["path": "src/settings/SettingsPage.tsx"], at: ago(8 * minute))
     log.tool("ask_user", [
         "question": "Should dark mode follow the system appearance?",
@@ -227,6 +233,15 @@ session("e81b5c63-2d9f-4a7e-9c34-1f6a8b2d0c05", "When to use an actor instead of
         running: true, started: ago(25), context: (9_000, 200_000)) { log in
     log.tool("web_fetch", ["url": "https://docs.swift.org/swift-book/"], title: "Reading the Swift book",
              at: ago(10), finished: false)
+}
+// A chat that started "Add dark mode to settings" and relays its question to you: running, or with Show Relayed
+// Questions Once, where you answer it.
+session(rollout, "Roll out dark mode", project: nil, running: true, started: ago(11 * minute), context: (72_000, 200_000)) { log in
+    log.tool("create_session", ["name": "Add dark mode to settings"], title: "Starting a session", at: ago(9 * minute + 30))
+    log.tool("relay_session_input", [
+        "project_session_id": "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01", "request_id": "demo-request",
+        "context": "From the session adding dark mode to the settings page.",
+    ], at: ago(4 * minute - 12), finished: false)
 }
 
 // Done and stopped, recently enough to be highlighted.
@@ -628,7 +643,8 @@ var statements = """
         interruption_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
     CREATE TABLE workspaces (
         id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
-        name TEXT NOT NULL, creator_session_id TEXT, archived_at TEXT, updated_at TEXT NOT NULL);
+        name TEXT NOT NULL, creator_session_id TEXT, coordinating_creator_session_id TEXT, archived_at TEXT,
+        updated_at TEXT NOT NULL);
     CREATE TABLE activity_items (
         id TEXT PRIMARY KEY NOT NULL, session_id TEXT, activity_type TEXT NOT NULL,
         preview TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
@@ -653,9 +669,11 @@ for (index, session) in sessions.enumerated() {
         """
     if let project = session.project {
         statements += """
-            INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+            INSERT INTO workspaces (id, project_id, session_id, branch, name, creator_session_id,
+                                    coordinating_creator_session_id, updated_at)
             VALUES (\(sql("workspace-\(index + 1)")), \(sql("project-\(project)")), \(sql(session.id)),
-                    \(sql(session.branch)), \(sql(session.name)), \(sql(iso(session.updatedAt))));
+                    \(sql(session.branch)), \(sql(session.name)), \(sql(session.coordinator)), \(sql(session.coordinator)),
+                    \(sql(iso(session.updatedAt))));
 
             """
     }

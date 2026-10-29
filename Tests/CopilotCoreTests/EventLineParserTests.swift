@@ -47,9 +47,22 @@ import Testing
         let plan = Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "1. Add tests"], at: t(3))
         #expect(parse(plan)?.kind == .toolStart(.init(callId: "p", name: "exit_plan_mode", planSummary: "1. Add tests")))
 
+        // A coordinator relays a question that a session it coordinates waits on, which it doesn't repeat.
+        let relay = Line.toolStart("relay_session_input", id: "r", arguments: [
+            "project_session_id": "w-child", "request_id": "request", "context": " From the checkout session. ",
+        ], at: t(3))
+        #expect(parse(relay)?.kind == .toolStart(.init(
+            callId: "r", name: "relay_session_input", relayedSession: "w-child", relayContext: "From the checkout session."
+        )))
+        #expect(parse(Line.toolStart("relay_session_input", id: "r2", at: t(3)))?.kind
+            == .toolStart(.init(callId: "r2", name: "relay_session_input")))
+
         // Only ask_user's arguments are a question for the user.
         let notAQuestion = Line.toolStart("bash", id: "c2", arguments: ["question": "rhetorical"], at: t(4))
         #expect(parse(notAQuestion)?.kind == .toolStart(.init(callId: "c2", name: "bash")))
+        // And only a relay's name a session.
+        let notARelay = Line.toolStart("get_session", id: "c4", arguments: ["project_session_id": "w-child"], at: t(4))
+        #expect(parse(notARelay)?.kind == .toolStart(.init(callId: "c4", name: "get_session")))
 
         #expect(parse(Line.toolStart("view", id: "c3", at: t(5), subagent: true))?.kind
             == .toolStart(.init(callId: "c3", name: "view", isSubagent: true)))

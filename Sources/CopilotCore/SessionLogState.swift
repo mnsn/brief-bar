@@ -11,6 +11,13 @@ public struct PendingTool: Sendable, Equatable {
     public var question: String?
     public var choices: [String]
     public var planSummary: String?
+    /// The session whose question a coordinating session asks you (`relay_session_input`), by its session or
+    /// workspace ID.
+    public var relayedSession: String?
+    public var relayContext: String?
+
+    /// Asks you a question that a session it coordinates waits on.
+    public var relaysQuestion: Bool { name == "relay_session_input" }
 }
 
 public struct PendingPermission: Sendable, Equatable {
@@ -86,7 +93,8 @@ public struct SessionLogState: Sendable, Equatable {
             guard !tool.isSubagent else { return }
             pendingTools[tool.callId] = PendingTool(
                 callId: tool.callId, name: tool.name, startedAt: at,
-                question: tool.question, choices: tool.choices, planSummary: tool.planSummary
+                question: tool.question, choices: tool.choices, planSummary: tool.planSummary,
+                relayedSession: tool.relayedSession, relayContext: tool.relayContext
             )
             if !Self.interactionTools.contains(tool.name) {
                 currentStep = tool.description ?? tool.title
@@ -166,6 +174,10 @@ public struct SessionLogState: Sendable, Equatable {
             }
             if let plan = tools.first(where: { $0.name == "exit_plan_mode" }) {
                 return .needsPlanApproval(plan)
+            }
+            // Only then a question it relays for a session it coordinates, which may show as work instead.
+            if let relay = tools.first(where: \.relaysQuestion) {
+                return .needsAnswer(relay)
             }
         }
         switch phase {
