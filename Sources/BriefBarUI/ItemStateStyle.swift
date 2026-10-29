@@ -64,6 +64,21 @@ extension ItemState {
     }
 
     package var color: Color { Color(nsColor: nsColor) }
+
+    /// Its color for words, such as a sentence's opening phrase: `color` is for symbols, and too light for text on a
+    /// light background, so in light mode it's darker, and in dark mode red and blue are lighter, to read on a raised
+    /// card too.
+    package var textColor: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            switch self {
+            case .needsYou: return isDark ? .systemOrange : NSColor(srgbRed: 0.71, green: 0.28, blue: 0.03, alpha: 1)
+            case .failing: return isDark ? NSColor(srgbRed: 1, green: 0.54, blue: 0.5, alpha: 1) : NSColor(srgbRed: 0.77, green: 0.09, blue: 0.11, alpha: 1)
+            case .running: return isDark ? NSColor(srgbRed: 0.42, green: 0.71, blue: 1, alpha: 1) : NSColor(srgbRed: 0.04, green: 0.35, blue: 0.79, alpha: 1)
+            case .done: return isDark ? .systemGreen : NSColor(srgbRed: 0.12, green: 0.48, blue: 0.21, alpha: 1)
+            }
+        })
+    }
 }
 
 /// BriefBar's own symbols.

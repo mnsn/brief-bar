@@ -9,8 +9,8 @@ import SwiftUI
 /// finished or stopped. It reads the Copilot app's own files, and needs no permission.
 @MainActor
 package final class CopilotSource: BriefBarSource {
-    /// 2: Show Links.
-    nonisolated package static let descriptionVersion = 2
+    /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details.
+    nonisolated package static let descriptionVersion = 3
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
@@ -18,7 +18,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask Summarize with Copilot for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
         network: "None. Copilot's list makes no network requests.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -65,6 +65,7 @@ package final class CopilotSource: BriefBarSource {
 
     package func start() {
         store.start()
+        tellStories()
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -84,6 +85,7 @@ package final class CopilotSource: BriefBarSource {
         linkObservers.removeAll()
         store.stop()
         services.links.withdraw(.copilot)
+        services.stories.withdraw(.copilot)
         // A session still being opened in Terminal opens nothing now.
         CLISession.stop()
     }
@@ -110,18 +112,13 @@ package final class CopilotSource: BriefBarSource {
         var items: [LinkedItem] = []
         for session in sessions ?? store.sessions where store.task(for: session.id) == nil {
             guard let ref = ItemRef.session(session.id) else { continue }
-            let recorded = session.links
-            for pullRequest in recorded?.pullRequests ?? [] {
-                if let target = pullRequest.ref, let link = ItemLink(ref, target, origin: .copilot) { facts.append(link) }
-            }
-            let hint = session.isChat ? nil : session.branch.map {
-                BranchHint(branch: $0, repositories: BranchHint.repositories([session.projectName, recorded?.folder], gitHub: recorded?.gitHubRepository))
-            }
+            facts += session.recordedLinks
             let store = self.store
             items.append(LinkedItem(
                 ref: ref, label: session.displayName, title: session.displayName, symbol: session.rowSymbol,
                 color: session.phase == .idle ? .secondary : session.rowColor, state: session.phase.state, status: session.headline,
-                place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: hint, date: session.since,
+                place: [session.projectName, session.branch].compactMap { $0 }.joined(separator: " · "), hint: session.branchHint,
+                date: session.since,
                 open: {
                     // As it is when you click it.
                     store.open(store.sessions.first { $0.id == session.id } ?? session)
@@ -129,6 +126,24 @@ package final class CopilotSource: BriefBarSource {
             ))
         }
         links.publish(.copilot, links: facts, items: items)
+    }
+
+    /// Tells the details what's known of its sessions, when they ask.
+    private func tellStories() {
+        services.stories.register(.copilot, kinds: [.session]) { [weak self] ref in await self?.tell(ref) }
+    }
+
+    /// What Copilot knows of a session beyond its row: where it stands, if it's one of the app's, and what Copilot recorded
+    /// of its work, the app's or a task's that Azure DevOps sent, read from its folder off the main thread.
+    private func tell(_ ref: ItemRef) async -> ItemStory? {
+        let snapshot = store.sessions.first { ItemRef.session($0.id) == ref }
+        // Nothing's read once Show Links is off, or the details stopped asking.
+        guard let paths = store.paths, services.links.isOn, !Task.isCancelled else {
+            return SessionStory.make(snapshot: snapshot, account: nil)
+        }
+        let id = ref.id
+        let account = await Task.detached(priority: .utility) { SessionAccount.read(paths: paths, id: id) }.value
+        return SessionStory.make(snapshot: snapshot, account: account)
     }
 
     // MARK: Menu bar
@@ -158,11 +173,15 @@ package final class CopilotSource: BriefBarSource {
         store.$counts.removeDuplicates().map { _ in () }.eraseToAnyPublisher()
     }
 
-    /// Sessions that need you, are running, finished or stopped. Idle ones aren't in any state.
+    /// Sessions that need you, are running, finished or stopped. Idle ones aren't in any state. That list mixes every
+    /// source's, newest first, so it doesn't nest them: one that another started has its ↳ tag there.
     package func stateRows(for section: SectionID) -> [StateRow] {
         store.sessions.compactMap { session in
             session.phase.state.map { state in
-                StateRow(id: session.id, state: state, date: session.since, view: AnyView(environment(SessionRow(session: session))))
+                StateRow(
+                    id: session.id, state: state, date: session.since,
+                    view: AnyView(environment(SessionRow(session: session, nests: false)))
+                )
             }
         }
     }
@@ -220,6 +239,7 @@ package final class CopilotSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        tellStories()
         guard let paths = store.paths else {
             store.start()
             return
@@ -231,26 +251,40 @@ package final class CopilotSource: BriefBarSource {
     }
 
     /// The list again with each option that changes what it shows turned on, unless it's on already: Show Relayed
-    /// Questions Once.
+    /// Questions Once, Nest Sessions Under Their Parents, and both.
     package func extraRenderings() -> [(name: String, view: AnyView)] {
-        guard let rendered, !settings.showRelayedQuestionsOnce else { return [] }
-        let relayed = AppSettings(defaults: MemoryDefaults())
-        relayed.keepEndedMinutes = settings.keepEndedMinutes
-        relayed.moveViewedToIdle = settings.moveViewedToIdle
-        relayed.showContextUsage = settings.showContextUsage
-        relayed.showRelayedQuestionsOnce = true
+        guard let rendered else { return [] }
+        let relayed = settings.showRelayedQuestionsOnce
+        let nested = settings.nestSessions
+        var options: [(name: String, relayed: Bool, nested: Bool)] = []
+        if !relayed { options.append(("sessions-relayed-questions-once", true, nested)) }
+        if !nested { options.append(("sessions-nested", relayed, true)) }
+        if !relayed, !nested { options.append(("sessions-nested-relayed-questions-once", true, true)) }
+        return options.map { option in
+            (name: option.name, view: panel(rendering: rendered, relayed: option.relayed, nested: option.nested))
+        }
+    }
+
+    /// The list from what `--render` read, with these options, and the others as they are.
+    private func panel(rendering state: EngineSnapshot, relayed: Bool, nested: Bool) -> AnyView {
+        let options = AppSettings(defaults: MemoryDefaults())
+        options.keepEndedMinutes = settings.keepEndedMinutes
+        options.moveViewedToIdle = settings.moveViewedToIdle
+        options.showContextUsage = settings.showContextUsage
+        options.showRelayedQuestionsOnce = relayed
+        options.nestSessions = nested
         let store = SessionStore(
-            settings: relayed, paths: nil, sentTasks: services.sentTasks,
+            settings: options, paths: nil, sentTasks: services.sentTasks,
             isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
         )
-        store.receive(rendered)
+        store.receive(state)
         let panel = MenuPanelView()
             .interfaceOptions(from: services)
             .environmentObject(store)
-            .environmentObject(relayed)
+            .environmentObject(options)
             .environmentObject(services)
             .environmentObject(services.loginItem)
             .background(Color(nsColor: .windowBackgroundColor))
-        return [(name: "sessions-relayed-questions-once", view: AnyView(panel))]
+        return AnyView(panel)
     }
 }

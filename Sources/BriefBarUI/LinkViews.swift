@@ -388,9 +388,12 @@ private struct LinkPickerRow: View {
 /// Show Links, off by default: in Settings, with what it does and reads.
 package struct LinksSetting: View {
     @ObservedObject private var links: Links
+    /// In a popover, where it says only what it's for.
+    private let isBrief: Bool
 
-    package init(links: Links) {
+    package init(links: Links, isBrief: Bool = false) {
         self.links = links
+        self.isBrief = isBrief
     }
 
     package static let title = "Show Links"
@@ -402,11 +405,15 @@ package struct LinksSetting: View {
         BriefBar: Azure DevOps, GitHub and Copilot don't see it. For this, Azure DevOps reads the links of your pull \
         requests and of the sprint's work items, and Copilot reads which pull request each session started from or opened.
         """
+    package static let brief = """
+        Shows the pull requests, pipelines and Copilot sessions that go with a work item, from their links in Azure DevOps \
+        and Copilot. Links you add stay in BriefBar. It's in Settings › General.
+        """
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle(Self.title, isOn: Binding(get: { links.isOn }, set: { links.setOn($0) }))
-            Text(Self.explanation)
+            Text(isBrief ? Self.brief : Self.explanation)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

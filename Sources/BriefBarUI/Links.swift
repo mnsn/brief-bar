@@ -16,6 +16,9 @@ package struct LinkedItem {
     package var state: ItemState?
     /// Where it stands, briefly: "Active", "Failing", "Waiting for your answer".
     package var status: String?
+    /// Where it stands, briefly, to share outside this Mac, such as with Copilot for a summary, when `status` says what only
+    /// this Mac knows, such as that it needs you because someone sent it to you in a chat. Nil when `status` can be shared.
+    package var sharedStatus: String?
     /// Where it is: a repository or a project.
     package var place: String?
     /// What links it by branch, and helps suggest what goes with it.
@@ -26,10 +29,18 @@ package struct LinkedItem {
     package var open: (() -> Void)?
     /// Its own menu instead of opening it, such as a task's that you sent to Copilot.
     package var menu: (() -> AnyView)?
+    /// A task you sent to Copilot: what for, and where from.
+    package var sent: SentToCopilot?
+    /// Its page on the web, for Copy Link, where its reference doesn't say it: an Azure DevOps pull request's or work item's.
+    package var url: URL?
+    /// How many parts it has that aren't linked to it, such as a story's or a bug's tasks: something to sum up besides
+    /// what's linked to it.
+    package var parts: Int
 
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
-        place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil, menu: (() -> AnyView)? = nil
+        sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
+        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil, url: URL? = nil, parts: Int = 0
     ) {
         self.ref = ref
         self.label = label
@@ -38,17 +49,37 @@ package struct LinkedItem {
         self.color = color
         self.state = state
         self.status = status
+        self.sharedStatus = sharedStatus
         self.place = place
         self.hint = hint
         self.date = date
         self.open = open
         self.menu = menu
+        self.sent = sent
+        self.url = url
+        self.parts = parts
+    }
+
+    /// Its link, for Copy Link: its page, or what its reference says, a GitHub pull request's page or a session's link in
+    /// the GitHub Copilot app.
+    package var link: URL? {
+        if let url { return url }
+        switch ref.kind {
+        case .gitHubPullRequest: return URL(string: "https://github.com/\(ref.scope)/pull/\(ref.id)")
+        case .session: return sent == nil ? URL(string: "ghapp://sessions/\(ref.id)") : nil
+        case .workItem, .pullRequest: return nil
+        }
     }
 
     /// "Work Item 5101 · Save items for later", "Pull Request !4071 · Add retry…", or a session's name, for menus.
     package var menuTitle: String {
         let name = label == title ? title : "\(label) · \(title)"
         return ref.kind == .session ? name : "\(ref.kind.title) \(name)"
+    }
+
+    /// Where it stands, briefly, to share outside this Mac: `sharedStatus`, or else `status`.
+    package var statusToShare: String? {
+        sharedStatus ?? status
     }
 
     /// What a session needs from you, in a word or two, for its capsule.
@@ -63,13 +94,30 @@ package struct LinkedItem {
     }
 }
 
+/// A task you sent to Copilot, as its row says it: what for, such as "Fix the Build", or nil for a work item's; and the
+/// work item or pull request you sent it from.
+package struct SentToCopilot: Equatable, Sendable {
+    package var action: String?
+    package var from: ItemRef?
+    /// What it was sent from, by its number and its title, when known: "5112", "Round half up in the coupon service".
+    package var label: String?
+    package var title: String?
+
+    package init(action: String? = nil, from: ItemRef?, label: String? = nil, title: String? = nil) {
+        self.action = action
+        self.from = from
+        self.label = label
+        self.title = title
+    }
+}
+
 /// What the views compare to tell whether a thing changed: everything but what clicking it does.
 extension LinkedItem: Equatable {
     package static func == (lhs: LinkedItem, rhs: LinkedItem) -> Bool {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
-            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.place == rhs.place
-            && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil)
+            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
+            && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
+            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent && lhs.url == rhs.url && lhs.parts == rhs.parts
     }
 }
 
@@ -133,6 +181,8 @@ package final class Links: ObservableObject {
     /// Show Links. Sources read what links need only while it's on.
     @Published package private(set) var isOn: Bool
     @Published package private(set) var graph = LinkGraph()
+    /// The sources that stop, as each does, once what they said is gone: what was made of it, such as a summary, goes too.
+    package let withdrawn = PassthroughSubject<SourceID, Never>()
 
     private let defaults: UserDefaults
     private var edits: LinkEdits
@@ -179,6 +229,7 @@ package final class Links: ObservableObject {
         facts[source] = nil
         described[source] = nil
         rebuild()
+        withdrawn.send(source)
     }
 
     /// Forgets the links you added or hid that involve a source's things, when you turn it off.
@@ -187,9 +238,11 @@ package final class Links: ObservableObject {
         guard !kinds.isEmpty else { return }
         edits.forget(kinds)
         save()
+        let said = facts[source] != nil || described[source] != nil
         facts[source] = nil
         described[source] = nil
         rebuild()
+        if said { withdrawn.send(source) }
     }
 
     private func rebuild() {
@@ -238,6 +291,11 @@ package final class Links: ObservableObject {
             if let item = described[source]?[ref] { return item }
         }
         return Self.fallback(ref)
+    }
+
+    /// Whether a source says what it is, rather than only its reference.
+    package func isDescribed(_ ref: ItemRef) -> Bool {
+        SourceID.allCases.contains { described[$0]?[ref] != nil }
     }
 
     /// Things in links that no source describes, of these kinds.

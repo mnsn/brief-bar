@@ -368,6 +368,10 @@ package final class AppServices: ObservableObject {
     package let updates = UpdateStatus()
     /// Show Links: what goes together across sources, which each source tells it while it's on.
     package let links: Links
+    /// What each source tells about its things beyond their rows, for the details, while Show Links is on.
+    package let stories: ItemStories
+    /// Summarize with Copilot: summaries of what the details show, when you ask, once you turn it on.
+    package let summaries: StorySummaries
     /// The tasks Azure DevOps sent to the Copilot CLI, for Copilot's list to show with the app's sessions.
     package let sentTasks = SentTasks()
 
@@ -390,6 +394,8 @@ package final class AppServices: ObservableObject {
         notifier = Notifier(recent: recentNotifications)
         fullDiskAccess = FullDiskAccess(defaults: defaults)
         links = Links(defaults: defaults, isDemo: isDemo)
+        stories = ItemStories(links: links)
+        summaries = StorySummaries(defaults: defaults, links: links, stories: stories, isDemo: isDemo)
     }
 
     package func setInterfaceOption(_ option: InterfaceOption, enabled: Bool) {

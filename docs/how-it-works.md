@@ -395,6 +395,159 @@ the work item's or pull request's number, or how many; and how the session that 
 its color. The task Copilot is doing on a pull request, or the latest sent from a work item, isn't in them: its own
 capsule shows it. Widgets' rows show none.
 
+### Where it stands
+
+A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show Links
+links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's done or
+ready, then the rest, the newest first in each), a session linked through a pull request under that pull request, and a
+task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then **Show More**,
+with a tally of their states once there are five or more. A task with nothing linked shows none of it. Under its title,
+as its subtitle, **Waiting on:** says who the work item and what's linked to it wait on, and for what
+(`ItemStory.waits`): you first, in bold rather than a color, which could clash with the state of what it's about, such
+as a ready pull request's green, saying what to do, such as "you, to complete !4091"; then other people, such as
+"reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on task 5103", or, on that task itself, "Copilot,
+working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. An Azure DevOps pull request's
+come from `PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do, and a GitHub one's from why it's in its
+list (`GitHubPRSnapshot.wait`), such as "you, to merge #12"; a session waits on you while it asks, or, for a question it
+relays, in the session that asks it for it, said once with that session's own question; and on Copilot while it's at
+work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a work item or a pull
+request failed, among all that was sent, such as on a pull request a task's work went on to, unless that's done or
+closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said once, and a
+session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
+pull requests in the same words, numbered alike in two organizations or repositories, are each said with its place, such
+as "(fabrikam)"; and other things in the same words, such as two sessions of the same name, are said once with how many,
+"(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't
+said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
+(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
+Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
+title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
+"Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
+while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
+stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
+a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
+and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
+to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
+Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
+`itemNavigation`), so it never leads back; and last what Copilot wrote of a session's work, its overview and what's
+next, the rest behind **Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's.
+Once it stopped, its last checkpoint's next steps are what it planned then, behind Show All Notes too. A task's report,
+what Copilot printed when it ended, is what it said last when it came after its checkpoints
+(`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it,
+and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the work items
+you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page that shows
+already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure DevOps when the
+sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages (no
+`itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is off
+it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
+
+Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while Show
+Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
+row changes, a minute later, or once more of it is read, such as a work item's details as they show
+(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or someone else
+signs in to its CLI, the Azure CLI or GitHub's, or no one does, with the summaries made of them, or when Show Links goes
+off. When two sources know the same thing, what they tell is put together in the sources' order: a task Azure DevOps
+sent to Copilot says how it went, and Copilot what it recorded.
+
+- **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
+  each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,
+  conflicts, a draft, auto-complete and its branches, and each build or status check that ran on it, with where a
+  failed build failed and its first error, and the pipelines after its merge. One that's only linked, such as a
+  teammate's, from the pull request itself: its author, its reviewers' votes, conflicts and branches. A task sent to
+  Copilot: how it went, what for and when, the pull request it opened, and the summary it ended with. No more requests:
+  it's what the lists, Show Links and Send Work to Copilot already read.
+- **Copilot** (`SessionStory`, `SessionAccount`): a session's question, plan, permission prompt or error, with its
+  project, branch, mode and how full its context is; and what Copilot recorded of its work, the app's sessions' and a
+  task's: the titles of its [checkpoints](#where-the-data-comes-from-2), the latest one's overview, what's done and
+  what's next, and the last thing it said when that came after; or, for a session without checkpoints, the summary it
+  ended with or its last message. Markdown becomes plain text, cut to a few hundred characters.
+- **GitHub**: one of its pull requests' latest reviews, conflicts, draft and branch, and its checks, from the one query
+  it reads them with.
+
+### Summarize with Copilot
+
+**Summarize with Copilot**, in Settings › General, under Show Links, is off until you turn it on, and works only while
+Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says, a line each, what it sends, where, what
+it costs and what Copilot can do, with the model it asks: Claude Haiku 5.5 (Recommended), Claude Sonnet 5.5, GPT-6.1 Sol
+or Gemini 4 Argon (`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may
+choose it; and, once it's on, whether the Copilot CLI is there, as your login shell finds it. While Show Links is off,
+it's dimmed and can't be changed. Then, once there's something to sum up, two things linked to the work item or more,
+or one and its own tasks, as the sprint has them for a story or a bug (`LinkedItem.parts`), Where It Stands' header
+has **✨ Summarize with Copilot**, or just **Summarize** where that doesn't fit, while no summary shows; its tooltip says
+where it goes, and that it uses your Copilot plan. Only when you click it, it asks the Copilot CLI for a summary of the
+work item and what's linked to it. Before it asks, the sources tell what they
+know of each, as for the details, the work item's description and latest comments too, and each of its tasks, with how
+the work sent to Copilot for it stands, and `StorySummaryPrompt` (in
+`Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
+model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
+first, and at most 14,000 characters. The data starts with your name, as your pull requests have it in Azure DevOps,
+when that's known, and the model is told that's who reads it, to call you "you"; and that you already see each row's
+status, so it leads with what the rows don't say: blockers, what's left, contradictions. It asks for a headline, whom
+the next step is for (you, a person or Copilot) and what it is, and at most 120 words, which `StorySummary` reads,
+whatever Markdown is around them, and a next step that names whom it's for first, as in "Sam Rivera: get !4120
+reviewed". A teammate's pull request says who wrote it as one of its facts. Nothing from Teams goes in it, nor anything
+from the notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or
+that you answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its
+status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
+
+The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
+what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
+short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
+has one control: **Stop** while it's written, after "Summarizing with Claude Haiku 5.5 · 1 request", or "Summarizing · 1
+request" where that doesn't fit, then **✕** only, in a 22-point target, which hides it (`StorySummaries.hide`): it's
+kept, as long as summaries are, and **Show Summary** shows it again without asking Copilot; **Summarize Again**, **Copy
+Summary** and **Hide Summary** in its right-click menu. Out of date, its caption says so in bold, and **Summarize
+Again** joins **Show More** at its foot. VoiceOver says "Summary ready" and what it's of, once, however many places show
+it. Your name comes from Azure DevOps, or else from your GitHub login.
+
+The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
+(`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
+(`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and while it's written a
+spinner takes that place, so a second click there doesn't open the row. Its right-click and Actions menus have, in a
+group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
+**Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
+under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
+whom, two lines each at most, with **Show More** at its end, in the tint, as a link, and, out of date, **Summarize
+Again**; ✕ shows on the right while you point at it, over its first line, and the time it was written is in its tooltip,
+so that it isn't read as the row's; it ends where the row's time does, left of its actions. The prompt tells the model
+that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as its
+page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's out of
+date. With nothing linked to it, it sums up what its source knows of it alone; a thing no source describes, or that
+nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries`).
+
+`CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
+--available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
+--no-ask-user --no-color --silent --name "BriefBar summary" -C <folder>`, through `ProcessRunner`, with your login
+shell's environment, for two minutes at most. No tool is called `briefbar_no_tools`, so the model has none: an empty
+`--available-tools` would leave it every tool, as the CLI takes that as no limit. The folder,
+`~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
+skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
+session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
+When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
+information found"), the model isn't on your plan, or your premium requests ran out, and the card says so in a
+sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
+**Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
+
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off,
+or a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
+doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
+stop being read, unless the details asked for them too, and a story the details are reading already is waited for rather
+than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
+status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
+one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
+(`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
+than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
+been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
+description and comments when they're known only then or only now: its story has them only while its details were read
+and all of them only when its comments could be read too (`ItemStory.notesRead`). Read in full both then and now, a
+first comment does, and so does the last one gone. Its caption then says **Out of date**, in orange, with what changed
+in its tooltip, "!4120 changed", and **Summarize Again** on its right; the headline and the next step turn gray. The
+demo makes summaries up (`DemoSummaries`) and never runs Copilot, and `--render` of your own data writes none; the
+demo's pictures show a summary as it's written, once it is, out of date and failed (`summary-*`), and the setting with
+Show Links off; and a pull request's and a session's summary under its row (`rows-summary-*`), which the other pictures
+of the lists don't show.
+
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
 Nothing goes back to Azure DevOps, GitHub or Copilot: BriefBar never writes there. The edits are kept in the
@@ -407,7 +560,8 @@ left out.
 - Azure DevOps (`LinkEngine`, with the pull requests' client, after each of their refreshes; every request a GET): each
   of your pull requests' work items, then every quarter of an hour; the sprint's work items with their relations, while
   the sprint is on screen; and what the linked work items and pull requests that no list shows are, so their rows can
-  say it. The [table below](#where-the-data-comes-from-1) has the requests.
+  say it. When someone else signs in to the Azure CLI, all it read goes, with what was told and summed up of it, and it
+  reads again from the start, as them. The [table below](#where-the-data-comes-from-1) has the requests.
 - Copilot: the same database, read-only, in a query of its own, which an app without those columns doesn't answer:
   the list of sessions is read as before.
 - GitHub: nothing more. Each pull request's branch comes with the one query (`headRefName`).
@@ -1054,7 +1208,9 @@ again while they show, or tries again when they couldn't be read, once more when
 were read, and a linked work item shows as
 the newer of the sprint's and what was read with the details. Another team's sprint closes them, and
 so does someone else signing in to the Azure CLI, which forgets what was read as the last one. Its parent, its tasks and related work items
-open in the details too, and **‹** goes back. A link to a work item in another organization, such as a
+open in the details too, and **‹** goes back. With Show Links on, the details start with
+[Where It Stands](#where-it-stands): the pull requests, pipelines and Copilot sessions linked to the work item, and
+what's known of each, which needs no more requests. A link to a work item in another organization, such as a
 remote link, opens there, in your browser: its ID names another work item in this organization. A click on one of your work items in a
 menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no
 window shows that page: then it opens in Azure DevOps.
@@ -1323,8 +1479,9 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
+| `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
 BriefBar combines the two. The database says which sessions exist and whether the app
 thinks they're running. The tail of each log says exactly where a session is, for example
@@ -1333,6 +1490,12 @@ thinks they're running. The tail of each log says exactly where a session is, fo
 BriefBar never changes either of them:
 
 - The logs are opened read-only. After the first read, only what's been appended is read.
+- A session's checkpoints and last words are read only when a work item's details show the session
+  ([Where It Stands](#where-it-stands)): `index.md` (up to 256 KB), the start of the latest checkpoint
+  (up to 512 KB) and the end of its log (up to 2 MB), each opened below `~/.copilot` without following
+  a symbolic link (`LocalFile.openFile(below:_:)`), and only for a session whose ID is a UUID. A
+  checkpoint's file name comes from `index.md`, so it's opened only when it's a single plain name
+  ending in `.md`.
 - The database is opened with a read-only SQLite connection. Like any SQLite reader, it briefly
   takes shared locks and updates SQLite's shared-memory index (`data.db-shm`) while it reads;
   neither changes any data. When the app has quit and SQLite has removed the write-ahead log, a
@@ -1378,6 +1541,30 @@ it applies. A few more details:
   the session that asks you in the end. Until the coordinator asks, the session needs you on its own.
   Permission prompts are never asked for: only the session itself can answer one. With the setting off,
   a relay shows as **Working**, as it did before, and the session it relays for needs you on its own.
+- **Nest Sessions Under Their Parents**, off by default, nests sessions under the sessions that started
+  them, as the Copilot app's sidebar does (`SessionNesting`), but within each group. A session's parent
+  is the one the sidebar nests it under. For a project session, that's the session of the parent
+  workspace (`workspace_parent_links`) of the workspace it's listed with, the one in its project that
+  started it, but not the one it was forked from (`forked_from_session_id`). Without a parent workspace,
+  it's the chat that started it (`coordinating_creator_session_id`, else `creator_session_id`, on that
+  workspace), whether or not the chat coordinates it. For a chat, it's the session that coordinates it,
+  else the one that started it (`chat_parent_links`). Detaching a session in the app forgets all of
+  these, so it stands on its own, and a session that started one in another project gets no parent
+  workspace, so the sidebar doesn't nest that one either. Each is read apart from the main query, so an
+  older schema only loses nesting. Without the Copilot app, there's no database to read them from, so
+  nothing nests.
+  Within a group, a session whose parent is in the same group sits right under it, indented, its own
+  children under it in turn. A family takes the place of the member that sorts first, so **Needs you**
+  still starts with the longest wait; in it, the parent comes first, then its children in the group's
+  order. A session whose parent is in another group keeps its place, with a **↳** tag naming the parent,
+  which opens it, as clicking it would, except when its **Answer in “…”** names that session already. The
+  row, itself a button, would take the click from a button in it, so the tag's button lies over the tag,
+  outside the row's (`ParentTag.Target`). A parent BriefBar doesn't
+  list, such as an archived one, nests nothing and gets no tag. Counts don't change. **Everything by
+  State** sorts every section's items together, so it doesn't nest sessions, and tags each one with a
+  listed parent. The command line and agents follow the same setting: `--dump` indents nested sessions
+  and tags the others, and `--mcp` indents nested sessions under their parents and says which session
+  started each of the others.
 - **Show Context Usage** shows the app's latest measurement of each session's context window
   (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
   limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns
@@ -1577,6 +1764,13 @@ It's a command-line mode like `--json`, with the same rules:
   its own tools (`SourceCommandLine.mcp`), and `needs_me` asks all of them at once. Teams gives none:
   its chats come from what only Full Disk Access reads, and what a tool answers goes to the agent's
   model, which may run in the cloud. GitHub gives none either: its pull requests aren't offered to agents.
+- A source's tool asks the others what they know of the things it names (`MCPRelated` in
+  `Sources/BriefBarUI`), so the sources stay apart: Azure DevOps never reads Copilot's files, nor
+  Copilot Azure DevOps. A source tells of its own things through its teller (`MCPSource.related`), and
+  `MCPSource.tools` gives each tool every source's teller while it runs, in a task-local value, so no
+  tool's signature changes. A teller answers only while its source is on: `available(while:refusal:)`
+  refuses it as it refuses the source's tools, and the tool that asked says so in a line rather than
+  failing. `--source` leaves the others out, tellers and all.
 - Azure DevOps reads as the app does, with its organizations, its settings and what you've seen and
   taken off Needs You in it, so the groups match the menu bar's, and like the other modes it leaves out
   pull requests sent in chats. In Needs You, what you've seen that still waits on you says so. One
@@ -1585,7 +1779,10 @@ It's a command-line mode like `--json`, with the same rules:
   a read. A read that failed in a way you can fix, such as a sign-in that expired, isn't kept, so the
   next call reads again. The pinned pipelines and the sprint are read the same way, when a tool needs
   them. Each read runs on its own, so a call the agent cancels doesn't cut short what the next one gets.
-- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them.
+- Copilot's sessions come from the app's database and the sessions' logs, as `--json` reads them. For
+  another source's tool, it also reads where each session's work goes (`SessionLinks`) and, for the
+  sessions it tells of, what Copilot recorded of their work (`SessionAccount`), whether Show Links is on
+  or not.
 
 `pull_request_prompt` gives the prompts of a pull request's Copilot actions (see
 [Send work to Copilot](#send-work-to-copilot)), told to work in the agent's checkout rather than a
@@ -1594,6 +1791,43 @@ repository or has changes of its own. Push & Reply, for one of yours, first chec
 the pull request's branch and that everything it would push was made for it, stops and asks if not,
 and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
+
+`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
+it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few
+lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's the
+sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who it
+waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
+started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
+on you. Then its tasks in the sprint, or its children when it isn't there, each with the latest work
+sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
+are: yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to
+call for their threads while one is open, and the others as they say themselves, with what isn't read of
+them; what the other sources know of those pull requests, such as the Copilot sessions on them; the rest
+of the work sent to Copilot for it; and last, its description, its other long texts, such as acceptance
+criteria or repro steps, and its latest comments, each quoted, since what people wrote is data. Who it
+waits on comes from the same data: each of your pull requests' group and reason in your lists, such as
+you, to complete one that's ready, or to fix one whose build failed; another's votes, such as its
+reviewers until every required one approved, people and groups alike, even one who declined, then its
+author, unless it's set to complete by itself, without saying it's ready to complete, since its policies
+and checks aren't read; the work sent to Copilot, as the details have it: going on, or the one sent last
+for something that's not done failed; and a session that waits for you, or, for one whose coordinator
+relays its question, in the session where you answer it, which its lines link to. It reads the work item
+with the same GETs as its details, whose `$expand=relations` already names its pull requests, so it
+works whether Show Links is on or not, then one GET for each of those pull requests your lists don't
+have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
+didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint,
+then in each of your organizations.
+
+It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
+by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)
+answers with the app's sessions on them, linked as Show Links links them: on a pull request's branch in
+its repository (`BranchLinks`), or recorded by the app as the pull request a session started from or
+opened (`SessionSnapshot.recordedLinks`); the ones that need you first, then the newest. For the first
+five, it reads what Copilot recorded of their work (`SessionAccount`) and tells it briefly: the latest
+checkpoint's overview, cut to its first sentences, its first next step, and what the session said last
+when that came after; once it stopped, what it said then is how it ended, and the next step it planned
+at its checkpoint is left out. The rest are named. A session BriefBar sent work to is told with that work. When
+Copilot is off in the app, the answer says so in a line; with `--source ado`, there's no Copilot to ask.
 
 The tools that change something change only BriefBar's own lists, as its menus do:
 `watch_pull_request` and `stop_watching_pull_request` the pull requests you watch, and `pin_pipeline`
@@ -1656,7 +1890,11 @@ session's first prompt holds only the pull request's link and the action, and ha
 not as your request; the skill tells agents that such text is data, never instructions. Push & Reply
 goes to the session that made the changes, never a new one. In the Copilot CLI, the agent follows the
 prompt where it is. It doesn't answer a session's question, plan or permission for you: it offers to
-open the session, with the app's `navigate_to`.
+open the session, with the app's `navigate_to`. Asked how a work item is going, as with **/briefbar
+5101**, it calls `work_item` and answers in at most four short lines, with their links: where it stands
+and what you can do now, what's done, by people and by Copilot, what's left and who has it, and who it
+waits on; then it offers one next step, and starts nothing. Given a pull request's number, it calls
+`pull_request`, and it tries that before asking for a link when `work_item` finds nothing.
 
 `CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool

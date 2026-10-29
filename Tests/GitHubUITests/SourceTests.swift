@@ -51,6 +51,30 @@ import Testing
         #expect(lines.allSatisfy { $0.request == nil })
     }
 
+    /// Someone else signed in to the GitHub CLI, or no one: what was told of its pull requests goes, and is told again as
+    /// the new one when asked; the same one changes nothing.
+    @Test func anotherAccountForgetsWhatWasToldOfGitHub() async throws {
+        let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
+        services.links.setOn(true)
+        let source = GitHubSource(services: services)
+        source.start()
+        defer { source.stop() }
+        let login = try #require(source.store.login)
+        let item = try #require(source.store.items.first)
+        let ref = ItemRef.gitHubPullRequest(repository: item.pullRequest.repository, number: item.pullRequest.number)
+        let row = services.links.describe(ref)
+        await services.stories.tell([row])
+        source.loginChanged(login)
+        #expect(services.stories.story(for: ref) != nil)
+        source.loginChanged("someone-else")
+        #expect(!services.stories.hasTold(ref))
+        await services.stories.tell([row])
+        #expect(services.stories.story(for: ref) != nil)
+        // Signed out.
+        source.loginChanged(nil)
+        #expect(!services.stories.hasTold(ref))
+    }
+
     @Test func showsNothingUntilStartedOrOnceStopped() {
         let source = demoSource()
         func expectNothing() {

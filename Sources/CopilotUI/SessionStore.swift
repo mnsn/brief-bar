@@ -82,8 +82,9 @@ final class SessionStore: ObservableObject {
             .merge(with: settings.$cleared.map { _ in () },
                    settings.$viewed.map { _ in () },
                    settings.$moveViewedToIdle.map { _ in () },
-                   settings.$showRelayedQuestionsOnce.map { _ in () })
-            .dropFirst(5)
+                   settings.$showRelayedQuestionsOnce.map { _ in () },
+                   settings.$nestSessions.map { _ in () })
+            .dropFirst(6)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -145,10 +146,7 @@ final class SessionStore: ObservableObject {
     /// dismisses its recent completion. A session whose question another session asks you for opens that one, where you
     /// answer it.
     func open(_ session: SessionSnapshot) {
-        if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
-            settings.markViewed([session.id])
-            recompute()
-        }
+        markViewedIfEnded(session)
         if let task = tasks[session.id] {
             task.open()
         } else {
@@ -168,6 +166,24 @@ final class SessionStore: ObservableObject {
             openSession(id)
         } else {
             openCLISession(id)
+        }
+    }
+
+    /// Opens the session that started this one, which its ↳ tag names: that session itself, even when another session
+    /// asks you its question, in the Copilot app or without it, in a terminal.
+    func openParent(of session: SessionSnapshot) {
+        guard let parent = session.parent else { return }
+        if let listed = sessions.first(where: { $0.id == parent.id }) {
+            markViewedIfEnded(listed)
+        }
+        open(sessionId: parent.id)
+    }
+
+    /// With Move Viewed Sessions to Idle, opening a finished or stopped session dismisses it.
+    private func markViewedIfEnded(_ session: SessionSnapshot) {
+        if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
+            settings.markViewed([session.id])
+            recompute()
         }
     }
 
@@ -247,11 +263,12 @@ final class SessionStore: ObservableObject {
         }
 
         let sorted = SessionOrdering.sorted(resolved)
+        let shownSessions = settings.nestSessions ? SessionNesting.nest(sorted, records: state.records) : sorted
         self.now = now
         // Before the sessions, which Show Links reads them with.
         if shown != tasks { tasks = shown }
-        if sorted != sessions { sessions = sorted }
-        let newCounts = PhaseCounts(sorted)
+        if shownSessions != sessions { sessions = shownSessions }
+        let newCounts = PhaseCounts(shownSessions)
         if newCounts != counts { counts = newCounts }
     }
 

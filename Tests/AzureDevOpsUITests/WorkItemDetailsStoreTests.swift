@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import Combine
 import Foundation
 import Testing
@@ -45,6 +46,25 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 /// made-up sprint, whose details are read at once, or with reads the tests answer.
 @MainActor
 @Suite struct WorkItemDetailsStoreTests {
+    /// A work item outside the sprint opens as its link says it: a Closed one is done, an Active one in progress, and one
+    /// whose state isn't known is to do, until its details are read.
+    @Test func aLinkedWorkItemOpensInItsStatesCategory() throws {
+        let ref = ItemRef.workItem(organization: "contoso", id: 5160)
+        func opened(_ status: String?) throws -> WorkItem {
+            let linked = LinkedItem(ref: ref, label: "5160", title: "Retry payments", symbol: "doc.text", color: .blue, status: status)
+            return try #require(WorkItemDetailsPanel.linkedItem(ref, as: linked))
+        }
+        #expect(try opened("Closed").category == .completed)
+        #expect(try opened("Closed").isDone)
+        #expect(try opened("Active").category == .inProgress)
+        #expect(try opened("New").category == .proposed)
+        #expect(try opened(nil).category == .proposed)
+        #expect(WorkItemDetailsPanel.linkedItem(.pullRequest(organization: "contoso", number: 4120), as: LinkedItem(
+            ref: .pullRequest(organization: "contoso", number: 4120), label: "!4120", title: "Save items", symbol: "arrow.triangle.pull",
+            color: .blue
+        )) == nil)
+    }
+
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
         func token() async throws -> AccessToken { throw Unused() }
@@ -120,10 +140,10 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.show(story)
         store.follow(task)
         #expect(store.selected?.id == 5103)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
         // The one that shows already: nothing to go back to.
         store.follow(task)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
         store.back()
         #expect(store.selected?.id == 5101)
         #expect(store.details?.item.id == 5101)
@@ -134,6 +154,80 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.history.isEmpty)
         store.close()
         #expect(store.selected == nil && store.details == nil)
+    }
+
+    @Test func opensPagesOverTheDetailsAndGoesBackThroughThem() throws {
+        let store = makeStore()
+        let story = try item(5101)
+        let pullRequest = ItemRef.pullRequest(organization: DemoData.organization, number: 4120)
+        let session = try #require(ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"))
+        // Nothing shows to open it over.
+        store.open(page: pullRequest)
+        #expect(store.pages.isEmpty)
+        store.show(story)
+        #expect(!store.canGoBack)
+        store.open(page: pullRequest)
+        // The one that shows, once.
+        store.open(page: pullRequest)
+        store.open(page: session)
+        #expect(store.pages == [pullRequest, session])
+        #expect(store.canGoBack)
+        // A work item is followed, not opened as a page.
+        store.open(page: .workItem(organization: DemoData.organization, id: 5103))
+        #expect(store.pages == [pullRequest, session])
+        // One that shows under the one on top: back to it, rather than once more.
+        store.open(page: pullRequest)
+        #expect(store.pages == [pullRequest])
+        store.open(page: session)
+        store.back()
+        #expect(store.pages == [pullRequest])
+        #expect(store.selected?.id == 5101)
+        store.back()
+        #expect(store.pages.isEmpty)
+        #expect(store.selected?.id == 5101)
+        #expect(!store.canGoBack)
+
+        // By its crumbs: to a page, or to the work item under them.
+        store.open(page: pullRequest)
+        store.open(page: session)
+        store.back(toPage: 0)
+        #expect(store.pages == [pullRequest])
+        store.back(toPage: 3)
+        #expect(store.pages == [pullRequest])
+        store.back(toPage: nil)
+        #expect(store.pages.isEmpty)
+
+        // A work item followed from a page: back goes to the page it was followed from.
+        store.open(page: pullRequest)
+        store.follow(try item(5103))
+        #expect(store.pages.isEmpty)
+        #expect(store.history == [WorkItemDetailsStore.Visit(item: try #require(store.history.first?.item), pages: [pullRequest])])
+        #expect(store.history.map(\.item.id) == [5101])
+        store.back()
+        #expect(store.selected?.id == 5101)
+        #expect(store.pages == [pullRequest])
+        // The work item that shows, from a page over it: back to it, with nothing to come back from.
+        store.follow(story)
+        #expect(store.pages.isEmpty)
+        #expect(store.history.isEmpty)
+
+        // Without Show Links, the pages go, those to go back to too.
+        store.open(page: pullRequest)
+        store.follow(try item(5103))
+        store.open(page: session)
+        store.closePages()
+        #expect(store.pages.isEmpty)
+        store.back()
+        #expect(store.selected?.id == 5101)
+        #expect(store.pages.isEmpty)
+
+        // From the sprint, or closed, the pages go.
+        store.open(page: session)
+        store.show(try item(5110))
+        #expect(store.pages.isEmpty)
+        store.open(page: session)
+        store.close()
+        #expect(store.pages.isEmpty)
     }
 
     @Test func aLinkedWorkItemShowsAsTheSprintKnowsIt() throws {
@@ -305,7 +399,7 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         try await until("the story's details") { store.details?.item.id == 5101 }
         store.follow(try item(5103))
         #expect(store.keptWorkItems.count == 2)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
 
         // The same account, or none the refresh can tell: nothing changes.
         store.accountChanged("tenant/robin")

@@ -21,6 +21,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var creatorSessionId: String?
     /// The session that coordinates this one: the app tells it when this one waits for you, and it can ask you for it.
     public var coordinatorSessionId: String?
+    /// The session the app's sidebar nests this one under, which started it (`AppDatabase.readParents`).
+    public var parentSessionId: String?
     /// The app's workspace for project sessions (its unread markers are keyed by this).
     public var workspaceId: String?
     /// Latest entry in the app's activity feed for this session.
@@ -35,8 +37,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
         branch: String? = nil, creatorSessionId: String? = nil, coordinatorSessionId: String? = nil,
-        workspaceId: String? = nil, lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil,
-        links: SessionLinks? = nil
+        parentSessionId: String? = nil, workspaceId: String? = nil, lastActivity: ActivityPreview? = nil,
+        contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
     ) {
         self.id = id
         self.name = name
@@ -51,6 +53,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.branch = branch
         self.creatorSessionId = creatorSessionId
         self.coordinatorSessionId = coordinatorSessionId
+        self.parentSessionId = parentSessionId
         self.workspaceId = workspaceId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
@@ -79,14 +82,25 @@ public struct SessionLinks: Sendable, Equatable, Codable {
 
 /// A pull request the app recorded for a session: by its repository and number, its link, or both.
 public struct RecordedPullRequest: Sendable, Equatable, Codable {
+    /// What the session did with it, as the app records it.
+    public enum Role: String, Sendable, Equatable, Codable {
+        /// The session started from it, such as to review it or fix its comments.
+        case startedFrom
+        /// The session opened it.
+        case opened
+    }
+
     public var repository: String?
     public var number: Int?
     public var url: String?
+    /// Nil when the app doesn't say, as for a link one of its providers records.
+    public var role: Role?
 
-    public init(repository: String?, number: Int?, url: String?) {
+    public init(repository: String?, number: Int?, url: String?, role: Role? = nil) {
         self.repository = repository
         self.number = number
         self.url = url
+        self.role = role
     }
 
     /// Which pull request it is: what its link names, or a GitHub pull request by its repository and number.
@@ -94,6 +108,23 @@ public struct RecordedPullRequest: Sendable, Equatable, Codable {
         if let url, let ref = ItemRef.from(link: url), ref.kind.isPullRequest { return ref }
         guard let repository, let number, number > 0 else { return nil }
         return ItemRef.from(link: "https://github.com/\(repository)/pull/\(number)")
+    }
+}
+
+extension SessionSnapshot {
+    /// What links it to a pull request by its branch (`BranchLinks`): its branch, in its project's repository, which its
+    /// project, its folder or its GitHub repository names. Nil for a chat.
+    public var branchHint: BranchHint? {
+        guard !isChat, let branch else { return nil }
+        return BranchHint(
+            branch: branch, repositories: BranchHint.repositories([projectName, links?.folder], gitHub: links?.gitHubRepository)
+        )
+    }
+
+    /// Its links to the pull requests the app records it started from or opened, when those were read (`SessionLinks`).
+    public var recordedLinks: [ItemLink] {
+        guard let ref = ItemRef.session(id) else { return [] }
+        return (links?.pullRequests ?? []).compactMap { recorded in recorded.ref.flatMap { ItemLink(ref, $0, origin: .copilot) } }
     }
 }
 
@@ -243,6 +274,28 @@ public enum AppDatabase {
         WHERE coordinating_creator_session_id IS NOT NULL
         """
 
+    /// The session of each workspace's parent workspace: the one in its project that started it.
+    static let parentWorkspacesQuery = """
+        SELECT link.child_workspace_id, parent.session_id
+        FROM workspace_parent_links link
+        JOIN workspaces parent ON parent.id = link.parent_workspace_id
+        WHERE parent.session_id IS NOT NULL
+        """
+
+    /// The session each forked session was forked from.
+    static let forksQuery = """
+        SELECT id, forked_from_session_id
+        FROM sessions
+        WHERE forked_from_session_id IS NOT NULL
+        """
+
+    /// The session that started each chat that another session started.
+    static let chatParentsQuery = """
+        SELECT session_id, parent_session_id
+        FROM chat_parent_links
+        WHERE parent_session_id IS NOT NULL
+        """
+
     /// Each session's latest context-window measurement. SQLite takes the bare columns from the row
     /// with the largest `ts_ms`.
     static let contextUsageQuery = """
@@ -321,6 +374,7 @@ public enum AppDatabase {
         }
 
         readCoordinators(connection, into: &sessions)
+        readParents(connection, into: &sessions)
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -378,8 +432,8 @@ public enum AppDatabase {
         var bySession: [String: SessionLinks] = [:]
         if let rows = try? connection.rows(linksQuery, { row in
             (row.string(0) ?? "", row.string(1), row.string(2), row.string(3),
-             RecordedPullRequest(repository: row.string(4), number: row.int64(5).map { Int($0) }, url: row.string(6)),
-             RecordedPullRequest(repository: row.string(7), number: row.int64(8).map { Int($0) }, url: row.string(9)))
+             RecordedPullRequest(repository: row.string(4), number: row.int64(5).map { Int($0) }, url: row.string(6), role: .startedFrom),
+             RecordedPullRequest(repository: row.string(7), number: row.int64(8).map { Int($0) }, url: row.string(9), role: .opened))
         }) {
             for (session, owner, repository, path, source, created) in rows where !session.isEmpty {
                 var links = bySession[session] ?? SessionLinks()
@@ -417,6 +471,38 @@ public enum AppDatabase {
             let session = sessions[index]
             let coordinator = session.isChat ? byChat[session.id] : session.workspaceId.flatMap { byWorkspace[$0] }
             sessions[index].coordinatorSessionId = coordinator == session.id ? nil : coordinator
+        }
+    }
+
+    /// The session the app's sidebar nests each one under, best effort: an app without these tables or columns records
+    /// none, and a session it records none for stands on its own.
+    ///
+    /// A project session is nested under the session of the parent workspace of the workspace it's listed with, the one
+    /// in its project that started it, but not under the one it was forked from. Without a parent workspace, it's under
+    /// the chat that started it, whether or not that chat coordinates it. A chat is under the session that coordinates
+    /// it, or else the one that started it. Detaching a session in the app forgets all of these.
+    /// - Parameter sessions: with their workspaces and coordinators, as the app lists them.
+    static func readParents(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
+        }
+        let forkedFrom = read(forksQuery)
+        let byWorkspace = read(parentWorkspacesQuery)
+        let byChat = read(chatParentsQuery)
+        let chats = Set(sessions.filter(\.isChat).map(\.id))
+        for index in sessions.indices {
+            let session = sessions[index]
+            let parent: String?
+            if session.isChat {
+                parent = session.coordinatorSessionId ?? byChat[session.id]
+            } else {
+                var linked = session.workspaceId.flatMap { byWorkspace[$0] }
+                if linked == forkedFrom[session.id] { linked = nil }
+                let creator = session.coordinatorSessionId ?? session.creatorSessionId
+                parent = linked ?? creator.flatMap { chats.contains($0) ? $0 : nil }
+            }
+            sessions[index].parentSessionId = parent == session.id ? nil : parent
         }
     }
 

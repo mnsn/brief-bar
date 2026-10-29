@@ -136,6 +136,17 @@ package struct MCPTool: Sendable {
         return tool
     }
 
+    /// The same tool, which can ask these sources what they know of the things it names while it runs (`MCPRelated`).
+    package func telling(_ tellers: [MCPRelated.Teller]) -> MCPTool {
+        guard !tellers.isEmpty else { return self }
+        var tool = self
+        let run = self.run
+        tool.run = { arguments in
+            try await MCPRelated.$tellers.withValue(tellers) { try await run(arguments) }
+        }
+        return tool
+    }
+
     /// How `tools/list` describes it.
     var listing: JSONValue {
         .object([
@@ -162,25 +173,39 @@ package struct MCPToolError: Error, CustomStringConvertible, Equatable {
     }
 }
 
-/// What a source gives agents through `--mcp`: its tools, and its part of `needs_me`.
+/// What a source gives agents through `--mcp`: its tools, its part of `needs_me`, and what it knows of the other sources'
+/// things, for their tools.
 package struct MCPSource: Sendable {
     /// Its name in `needs_me`, such as “Azure DevOps”.
     package var name: String
     package var tools: [MCPTool]
+    /// What it tells of the things the other sources' tools name, such as the Copilot sessions on a pull request's branch;
+    /// nil when it tells nothing.
+    package var related: MCPRelated.Teller?
     /// What needs you in it now, in Markdown; nil when nothing does.
     package var needsYou: @Sendable () async throws -> String?
 
-    package init(name: String, tools: [MCPTool], needsYou: @escaping @Sendable () async throws -> String?) {
+    package init(
+        name: String, tools: [MCPTool], related: MCPRelated.Teller? = nil,
+        needsYou: @escaping @Sendable () async throws -> String?
+    ) {
         self.name = name
         self.tools = tools
+        self.related = related
         self.needsYou = needsYou
     }
 
-    /// The same source, whose tools and part of `needs_me` are refused when `isAvailable` says no, such as once it's
-    /// turned off in the app.
+    /// The same source, whose tools, part of `needs_me` and what it tells the others' tools are refused when
+    /// `isAvailable` says no, such as once it's turned off in the app.
     package func available(while isAvailable: @escaping @Sendable () -> Bool, refusal: String) -> MCPSource {
         let needsYou = self.needsYou
-        return MCPSource(name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }) {
+        let related = self.related.map { teller in
+            MCPRelated.Teller(title: teller.title) { query in
+                guard isAvailable() else { throw MCPToolError(refusal) }
+                return try await teller.tell(query)
+            }
+        }
+        return MCPSource(name: name, tools: tools.map { $0.available(while: isAvailable, refusal: refusal) }, related: related) {
             guard isAvailable() else { throw MCPToolError(refusal) }
             return try await needsYou()
         }
@@ -193,9 +218,11 @@ package struct MCPSource: Sendable {
     }
 
     /// Every tool agents get from the sources: `needs_me`, then each source's own, each refused whenever `refusal` gives
-    /// an answer instead, such as while agents are off in BriefBar.
+    /// an answer instead, such as while agents are off in BriefBar. While one runs, it can ask every source what it knows
+    /// of the things it names (`MCPRelated.ask`).
     package static func tools(_ sources: [MCPSource], refusal: @escaping @Sendable () -> String? = { nil }) -> [MCPTool] {
-        ([needsYouTool(sources)] + sources.flatMap(\.tools)).map { $0.guarded(by: refusal) }
+        let tellers = sources.compactMap(\.related)
+        return ([needsYouTool(sources)] + sources.flatMap(\.tools)).map { $0.guarded(by: refusal).telling(tellers) }
     }
 
     /// `needs_me`: what needs you in every source, each under its name, read at the same time.

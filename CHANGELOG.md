@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.9.0 - 2026-10-29
+
+- **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
+  details on the Sprint page start with **Where It Stands**: the pull requests, their pipelines and the
+  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence, and
+  **Waiting on** says who it all waits on, you first; click its title to fold it to just that line.
+  Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
+  ones waiting on you, conflicts, and each build or check that ran on it, with where a failed one
+  failed; a Copilot session's question or plan, and what Copilot recorded of its work as it went, its
+  notes, what it did, what's next and what it said last. It's all from what BriefBar already reads,
+  shown as it was written, with no more requests to Azure DevOps. The GitHub Copilot source asks you to
+  look at what it reads again, since it now reads a linked session's checkpoints, in memory only.
+- **Ask Copilot to sum it up.** Turn on **Summarize with Copilot** in **Settings › General**, and **✨
+  Summarize** in Where It Stands asks the Copilot CLI for a short summary of the work item and everything
+  linked to it: where it stands, what's next and who for, and what's been done. It runs only when you
+  click it, with a small model unless you choose another, and without any tools, so Copilot can only
+  write. What the details show goes to GitHub Copilot for it, never anything from Teams, and the summary
+  stays in memory, saying when something changed since.
+- **See where a pull request or a session stands, on demand.** With **Summarize with Copilot** on,
+  point at a pull request or a Copilot session in a list, Azure DevOps', GitHub's or Copilot's, and
+  click **✨** where its time was, or right-click it, for a two-line summary under its row: what its
+  row doesn't say, and what's next and for whom, from what BriefBar knows of it and what's linked to
+  it. **✕** hides it, and **Show Summary** brings it back without asking Copilot again.
+- **Open a pull request or a session on a page of its own.** In Where It Stands, click a pull request
+  or a Copilot session to see all that's known of it in the details, with what else is linked to it,
+  such as a pull request's sessions. The header shows the way back, such as **Bug 5110 › !4091**, and
+  **‹**, **⌘[** or **Esc** goes back.
+- **Ask an agent how a work item is going.** BriefBar's agent tools have `work_item`: a work item by its
+  number or link, with who it waits on, such as reviewers or you, its tasks, each pull request linked to
+  it, your teammates' too, with its votes, comments and pipelines, the Copilot sessions on those pull
+  requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its
+  description and latest comments. In the GitHub Copilot app, try **/briefbar 5101**: it answers in four
+  short lines. Since agents get more, they wait until you've seen what they get now.
+- **See which Copilot sessions another one started.** Turn on **Nest Sessions Under Their Parents** in
+  Copilot's settings, and a session that another session started shows under it, indented, as in the
+  Copilot app's sidebar, when both are in the same group, such as **Running**. One in another group
+  stays where it was, with a **↳** tag that names the session that started it; click the tag to open
+  that session. The counts stay the same.
+
 ## 0.8.6 - 2026-10-29
 
 - **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the

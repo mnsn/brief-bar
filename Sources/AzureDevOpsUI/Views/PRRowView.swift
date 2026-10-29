@@ -26,18 +26,27 @@ struct PRRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: action) {
-                content
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, compact ? 5 : 6)
-                    .contentShape(Rectangle())
+            // The row, and its summary under it, which ends where its time does, left of its actions.
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: action) {
+                    content
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, compact ? 5 : 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(helpText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(item.title), \(item.headline)")
+                .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
+                .accessibilityHint("Opens the pull request in Azure DevOps")
+                .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
+                RowSummary(subject: item.key.linkRef)
+                    .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 6)
             }
-            .buttonStyle(.plain)
-            .help(helpText)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(item.title), \(item.headline)")
-            .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
-            .accessibilityHint("Opens the pull request in Azure DevOps")
+            .rowSummarizeButton(item.key.linkRef)
 
             if showsActions, !options.visibleActions {
                 Menu {
@@ -84,10 +93,7 @@ struct PRRowView: View {
                             .frame(width: 7, height: 7)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     }
-                    Text(Elapsed.short(since: item.since, now: now))
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
+                    RowTime(Elapsed.short(since: item.since, now: now), subject: item.key.linkRef, isHovered: isHovered)
                 }
                 if compact {
                     Text(compactLine)
@@ -124,6 +130,8 @@ struct PRRowView: View {
 
     @ViewBuilder
     private var additionalMenuItems: some View {
+        // Right after opening it, a group of its own.
+        SummarizeMenuItems(item.key.linkRef)
         if let source = item.chatSource, let openSource {
             Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }

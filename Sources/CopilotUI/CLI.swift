@@ -61,7 +61,12 @@ package enum CopilotCommandLine: SourceCommandLine {
         print("needs you \(counts.needsYou) · running \(counts.running) · done \(counts.done) · stopped \(counts.stopped) · idle \(counts.idle)")
         print(row("PHASE", "STATUS", "SINCE", "SESSION", "DETAIL"))
         for session in sessions {
-            let name = session.projectName.map { "\(session.displayName) [\($0)]" } ?? session.displayName
+            // As the list shows it: nested under the session that started it, or with a ↳ tag naming that session.
+            var name = String(repeating: "  ", count: session.depth) + session.displayName
+            if let parent = session.parent, session.depth == 0, parent.id != session.answerIn?.id {
+                name += " ↳ \(parent.name)"
+            }
+            if let project = session.projectName { name += " [\(project)]" }
             print(row(
                 session.phase.rawValue, session.headline, Elapsed.short(since: session.since, now: now),
                 name, session.detail ?? ""

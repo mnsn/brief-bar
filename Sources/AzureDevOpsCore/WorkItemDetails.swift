@@ -107,6 +107,8 @@ public struct WorkItemDetails: Sendable, Equatable {
     public var links: [Link]
     /// Its attachments, then the web pages it links to.
     public var resources: [Resource]
+    /// The pull requests it links to, in its organization, by number.
+    public var pullRequests: [PRKey]
     /// Its latest comments, newest first.
     public var comments: [Comment]
     /// How many comments it has: more than `comments` once it has more than BriefBar reads.
@@ -119,8 +121,8 @@ public struct WorkItemDetails: Sendable, Equatable {
         item: WorkItem, reason: String? = nil, areaPath: String? = nil, iterationPath: String? = nil, priority: Int? = nil,
         severity: String? = nil, size: Double? = nil, sizeTitle: String? = nil, originalEstimate: Double? = nil,
         completedWork: Double? = nil, activity: String? = nil, createdBy: Person? = nil, createdAt: Date? = nil,
-        changedBy: Person? = nil, texts: [LongText] = [], links: [Link] = [], resources: [Resource] = [], comments: [Comment] = [],
-        commentCount: Int? = nil, commentsProblem: String? = nil, readAt: Date
+        changedBy: Person? = nil, texts: [LongText] = [], links: [Link] = [], resources: [Resource] = [], pullRequests: [PRKey] = [],
+        comments: [Comment] = [], commentCount: Int? = nil, commentsProblem: String? = nil, readAt: Date
     ) {
         self.item = item
         self.reason = reason
@@ -139,6 +141,7 @@ public struct WorkItemDetails: Sendable, Equatable {
         self.texts = texts
         self.links = links.sorted(by: Self.order)
         self.resources = resources.filter { $0.kind == .attachment } + resources.filter { $0.kind == .webPage }
+        self.pullRequests = Array(Set(pullRequests)).sorted()
         self.comments = comments
         self.commentCount = max(commentCount ?? 0, comments.count)
         self.commentsProblem = commentsProblem
@@ -193,6 +196,10 @@ public struct WorkItemDetails: Sendable, Equatable {
         }
         var seen: Set<URL> = []
         let resources = dto.relations.compactMap { $0.resource(in: organization) }.filter { seen.insert($0.url).inserted }
+        let pullRequests = dto.relations.compactMap { relation -> PRKey? in
+            guard relation.rel == "ArtifactLink", let url = relation.url, let id = ArtifactLink.pullRequest(url)?.id else { return nil }
+            return PRKey(organization.lowercased(), id)
+        }
         let size = fields.storyPoints.map { ($0, "Story Points") } ?? fields.effort.map { ($0, "Effort") } ?? fields.size.map { ($0, "Size") }
         var read: [Comment] = []
         var problem: String?
@@ -216,7 +223,7 @@ public struct WorkItemDetails: Sendable, Equatable {
             severity: text(fields.severity), size: size?.0, sizeTitle: size?.1, originalEstimate: fields.originalEstimate,
             completedWork: fields.completedWork, activity: text(fields.activity), createdBy: fields.createdBy.map(Person.init),
             createdAt: fields.createdDate, changedBy: fields.changedBy.map(Person.init), texts: texts, links: links,
-            resources: resources, comments: read, commentCount: total, commentsProblem: problem, readAt: readAt
+            resources: resources, pullRequests: pullRequests, comments: read, commentCount: total, commentsProblem: problem, readAt: readAt
         )
     }
 

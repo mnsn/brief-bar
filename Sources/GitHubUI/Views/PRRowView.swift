@@ -14,6 +14,27 @@ struct PRRowView: View {
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row
+            RowSummary(subject: linkRef)
+                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
+        }
+        // The row and its summary, together.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open on GitHub", action: action)
+            SummarizeMenuItems(linkRef)
+            LinkMenuItems(linkRef)
+        }
+    }
+
+    private var row: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.reason.symbol)
@@ -29,10 +50,7 @@ struct PRRowView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
-                        Text(Elapsed.short(since: item.since, now: now))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        RowTime(Elapsed.short(since: item.since, now: now), subject: linkRef, isHovered: isHovered)
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
@@ -58,24 +76,20 @@ struct PRRowView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, compact ? 5 : 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            Button("Open on GitHub", action: action)
-            LinkMenuItems(linkRef)
-        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
-        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) { LinkMenuItems(linkRef) }
+        .accessibilityActions { SummarizeMenuItems(linkRef, divided: false) }
+        .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
+            SummarizeMenuItems(linkRef)
+            LinkMenuItems(linkRef)
+        }
+        .rowSummarizeButton(linkRef)
     }
 
     private var subtitle: String {

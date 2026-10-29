@@ -44,7 +44,9 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
         await store.loadOnce()
         await sprint.loadOnce()
-        let workLinks = WorkLinksStore(links: links, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
         await workLinks.loadOnce()
 
         // The coupon pull request: its bug and task in Azure DevOps, and the task Copilot opened it from.
@@ -65,6 +67,9 @@ import Testing
         let bug = links.connections(of: .workItem(organization: organization, id: 5110))
         #expect(bug.first { $0.item.ref == session }?.via?.ref == .pullRequest(organization: organization, number: 4091))
         #expect(links.unknown([.workItem, .pullRequest]).isEmpty)
+        // A story's tasks, in the sprint, are something to sum up besides what's linked; a task has none.
+        #expect(links.describe(.workItem(organization: organization, id: 5101)).parts == 4)
+        #expect(links.describe(.workItem(organization: organization, id: 5103)).parts == 0)
 
         // What's linked that the lists and the sprint don't show stays looked up once it's been read, so the engine keeps
         // it rather than forgetting it and reading it again.
@@ -79,6 +84,246 @@ import Testing
         #expect(workLinks.inputs().workItemLookups.isEmpty)
     }
 
+    @Test func itTellsWhatItKnowsOfItsPullRequestsAndTasksWithoutReadingMore() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+
+        // One of your pull requests: all that's read of it, with the build that ran on it.
+        let coupon = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4091)))
+        #expect(coupon.sentence.hasPrefix("Ready to complete: Approved by"))
+        // Which its sentence says, once.
+        #expect(!coupon.facts.contains { $0.label == "Reviewers" })
+        #expect(coupon.facts.first?.label == "Comments")
+        #expect(coupon.runs.map(\.name) == ["payments-api CI"])
+        #expect(coupon.runs.first?.state == .done)
+        // A teammate's, which the lists don't show: what the pull request says itself.
+        let saved = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4120)))
+        #expect(saved.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(saved.runs.isEmpty)
+        #expect(saved.footnote != nil)
+        // A task sent to Copilot: how it went, what it opened, and the summary it ended with.
+        let task = try #require(workLinks.tell(session))
+        #expect(task.sentence == "Opened !4091")
+        #expect(task.facts == [ItemStory.Fact("Model", "Claude Opus 5.5 · Max")])
+        #expect(task.account?.overview == "Coupon totals now round half up, with tests for every currency. Opened pull request 4091.")
+        // Azure DevOps doesn't tell about the app's own sessions.
+        #expect(workLinks.tell(.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")!) == nil)
+        // A sprint's work item: who has it and how its tasks stand.
+        let story = try #require(workLinks.tell(.workItem(organization: organization, id: 5101)))
+        #expect(story.sentence == "Active")
+        #expect(story.facts.prefix(2) == [ItemStory.Fact("Assigned to", "Robin Diaz"), ItemStory.Fact("Tasks", "1 of 4 done")])
+        #expect(story.more == [ItemStory.Fact("Type", "User Story")])
+        #expect(story.facts.contains(ItemStory.Fact("Work", "6 h left")))
+        #expect(workLinks.tell(.workItem(organization: organization, id: 9999)) == nil)
+    }
+
+    @Test func whoSentAPullRequestInAChatIsntShared() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+
+        // Dana sent it in Teams, and it needs you; Priya sent the other, and you approved it.
+        for (number, status) in [(4113, "Needs You"), (4108, "Answered")] {
+            let ref = ItemRef.pullRequest(organization: organization, number: number)
+            let row = links.describe(ref)
+            #expect(row.status == status)
+            #expect(row.statusToShare == "Active")
+            let story = try #require(workLinks.tell(ref))
+            #expect(story.sentence.contains("sent this in Teams"))
+            let shared = try #require(story.sharedSentence)
+            #expect(!shared.isEmpty)
+            for said in ["Dana", "Priya", "Teams", "sent this"] {
+                #expect(!shared.contains(said))
+            }
+        }
+        // One that's there for itself says so as it is.
+        let coupon = links.describe(.pullRequest(organization: organization, number: 4091))
+        #expect(coupon.sharedStatus == nil)
+        #expect(try #require(workLinks.tell(coupon.ref)).sharedSentence == nil)
+    }
+
+    /// A task's row and story say how it works, not for how long, which its date says: a minute later, they're the same.
+    @Test func aTaskAtWorkSaysTheSameAsTimePasses() async throws {
+        let start = Date(timeIntervalSince1970: 1_792_000_000)
+        let working = try #require(CopilotTaskEntry.demo(now: start).first { $0.status.phase == .working && $0.workItem?.id == 5103 })
+        // The lists say for how long.
+        #expect(working.sentence(now: start) == "Working for 6m: Run the cart tests")
+        #expect(working.sentence(now: start.addingTimeInterval(60)) == "Working for 7m: Run the cart tests")
+        #expect(working.sentence(now: nil) == "Working: Run the cart tests")
+        #expect(WorkLinksStore.story(of: working).sentence == "Working: Run the cart tests")
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+        let row = links.describe(try #require(ItemRef.session(working.id)))
+        #expect(row.status == "Working: Run the cart tests")
+    }
+
+    /// The work sent to Copilot waits on Copilot while it goes on, and on you once the one sent last for something failed,
+    /// unless that's done since.
+    @Test func workSentToCopilotWaitsOnYouOnceTheOneSentLastFailed() {
+        func sent(_ phase: RunPhase, minutesAgo: Double, session: Int) -> CopilotTaskEntry {
+            CopilotTaskEntry(
+                id: String(format: "1d6b2c7e-4f0a-4b8e-9c31-%012d", session),
+                workItem: WorkItemReference(organization: "Contoso", project: "Storefront", id: 5103), options: CopilotModel.standard,
+                startedAt: Date(timeIntervalSince1970: 1_792_000_000 - minutesAgo * 60), status: RunStatus(phase: phase)
+            )
+        }
+        let task = ItemRef.workItem(organization: "contoso", id: 5103)
+        let failed = sent(.failed, minutesAgo: 10, session: 1)
+        #expect(failed.target == task)
+        // A work item, by its type when it's known, and "it" on itself.
+        #expect(CopilotTaskEntry.waits(of: [failed], isDone: { _ in false }) { _ in "Task" } == [ItemStory.Wait(
+            .you, "you, to look at Copilot's work on task 5103, which failed", about: ItemRef.session(failed.id),
+            onItself: .init(task, "you, to look at Copilot's work on it, which failed")
+        )])
+        #expect(CopilotTaskEntry.waits(of: [failed], isDone: { _ in false }).map(\.text)
+            == ["you, to look at Copilot's work on work item 5103, which failed"])
+        // Sent again since: Copilot's at it, whichever order they come in.
+        let working = sent(.working, minutesAgo: 1, session: 2)
+        #expect(CopilotTaskEntry.waits(of: [failed, working], isDone: { _ in false }) { _ in "Task" }.map(\.text) == ["Copilot, on task 5103"])
+        // Or the task is done since.
+        #expect(CopilotTaskEntry.waits(of: [failed]) { $0 == task }.isEmpty)
+        // A task's work that went on to a pull request and failed there, sent again on that pull request since: among all
+        // that was sent, it's not the latest, though it's the task's.
+        let pullRequest = PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 4120,
+                                               sourceBranch: "saved-items")
+        var wentOn = sent(.failed, minutesAgo: 10, session: 3)
+        wentOn.onPullRequest = pullRequest
+        var again = sent(.finished, minutesAgo: 2, session: 4)
+        again.workItem = nil
+        again.onPullRequest = pullRequest
+        #expect(CopilotTaskEntry.waits(of: [wentOn], isDone: { _ in false }).map(\.text)
+            == ["you, to look at Copilot's work on !4120, which failed"])
+        #expect(CopilotTaskEntry.waits(of: [wentOn], among: [again, wentOn], isDone: { _ in false }).isEmpty)
+    }
+
+    /// A work item's story told before its details were read, as Where It Stands asks for it as it shows, is told again
+    /// once they are, so a summary asked for then has its description and comments.
+    @Test func aWorkItemsStoryIsToldAgainOnceItsDetailsAreRead() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        links.setOn(true)
+        let stories = ItemStories(links: links)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(links: links, stories: stories, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        let details = WorkItemDetailsStore(mode: .demo, client: store.client, board: sprint.$board.eraseToAnyPublisher())
+        workLinks.details = details
+        await workLinks.loadOnce()
+        let item = try #require(sprint.board?.rows.compactMap(\.parent).first { $0.id == 5101 })
+        let row = links.describe(item.linkRef)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef)?.notesRead == false)
+        await details.loadOnce(item)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef)?.notesRead == true)
+        #expect(stories.story(for: item.linkRef)?.notes.isEmpty == false)
+    }
+
+    /// Someone else signed in to the Azure CLI: what was told of Azure DevOps' things goes, and is told again as the new
+    /// one when asked; the first sign-in, or the same one, changes nothing.
+    @Test func anotherAccountForgetsWhatWasToldOfAzureDevOps() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        links.setOn(true)
+        let stories = ItemStories(links: links)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(links: links, stories: stories, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        await workLinks.loadOnce()
+        let item = try #require(sprint.board?.rows.compactMap(\.parent).first { $0.id == 5101 })
+        let row = links.describe(item.linkRef)
+        await stories.tell([row])
+        workLinks.accountChanged("robin")
+        workLinks.accountChanged("robin")
+        #expect(stories.story(for: item.linkRef) != nil)
+        workLinks.accountChanged("sam")
+        #expect(!stories.hasTold(item.linkRef))
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef) != nil)
+        // Signed in as another while Show Links is off: once it's on again, stories are told as the new one.
+        links.setOn(false)
+        workLinks.accountChanged("alex")
+        links.setOn(true)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef) != nil)
+    }
+
+    /// Someone else signed in while Show Links reads: what was read as the last one goes at once, before it's told of
+    /// again, and what the engine that read as them still brings is left out; what's read as the new one is taken.
+    @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        // Engines with nothing to read, and no way to: the test tells what each one read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens()), onChange: onChange)
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        // A teammate's pull request on a sprint's story, which the lists don't show.
+        let key = PRKey(organization, 4120)
+        let ref = ItemRef.pullRequest(organization: organization, number: 4120)
+        let read = WorkLinks(pullRequests: [key: try #require(DemoData.workLinks(now: Date()).pullRequests[key])])
+        engines.told[0](read)
+        try await until("what's read as Robin") { workLinks.tell(ref) != nil }
+        #expect(links.describe(ref).title == "Save items for later in the cart service")
+
+        workLinks.accountChanged("robin")
+        workLinks.accountChanged("sam")
+        #expect(workLinks.tell(ref) == nil)
+        #expect(links.describe(ref).title == "Pull request 4120")
+        #expect(engines.told.count == 2)
+        // What the engine reading as Robin still brings is left out.
+        engines.told[0](read)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(workLinks.tell(ref) == nil)
+        // What's read as Sam is taken.
+        engines.told[1](read)
+        try await until("what's read as Sam") { workLinks.tell(ref) != nil }
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([
@@ -88,5 +333,30 @@ import Testing
         let lookups = WorkLinksStore.lookups(linked, listed: listed)
         #expect(lookups.workItems == [WorkItemKey("contoso", 5160)])
         #expect(lookups.pullRequests == [PRKey("contoso", 4120)])
+    }
+
+    /// What each engine tells the store, for the tests to tell it.
+    private final class Engines {
+        var told: [LinkEngine.ChangeHandler] = []
+    }
+
+    private struct NoTokens: AccessTokenProvider {
+        struct Unused: Error {}
+        func token() async throws -> AccessToken { throw Unused() }
+        func invalidate() async {}
+    }
+}
+
+private struct Timeout: Error, CustomStringConvertible {
+    let description: String
+}
+
+/// Lets the store take what it's told until `condition` holds.
+@MainActor
+private func until(_ what: String, _ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    while !condition() {
+        guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
+        try await Task.sleep(for: .milliseconds(2))
     }
 }

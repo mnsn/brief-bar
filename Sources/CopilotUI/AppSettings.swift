@@ -17,6 +17,7 @@ final class AppSettings: ObservableObject {
         static let showContextUsage = "copilot.showContextUsage"
         static let moveViewedToIdle = "copilot.moveViewedToIdle"
         static let showRelayedQuestionsOnce = "copilot.showRelayedQuestionsOnce"
+        static let nestSessions = "copilot.nestSessions"
         static let cleared = "copilot.clearedSessions"
         static let viewed = "copilot.acknowledgedSessions"
     }
@@ -40,6 +41,11 @@ final class AppSettings: ObservableObject {
     @Published var showRelayedQuestionsOnce: Bool {
         didSet { defaults.set(showRelayedQuestionsOnce, forKey: Key.showRelayedQuestionsOnce) }
     }
+    /// Opt-in: a session that another one started shows under it, as the Copilot app's sidebar nests it, when both are
+    /// in the same group (`SessionNesting`).
+    @Published var nestSessions: Bool {
+        didSet { defaults.set(nestSessions, forKey: Key.nestSessions) }
+    }
     /// Session ID → when the user last clicked Clear for its finished/stopped state.
     @Published private(set) var cleared: [String: Date]
     @Published private(set) var viewed: [String: Date]
@@ -51,6 +57,7 @@ final class AppSettings: ObservableObject {
         showContextUsage = defaults.bool(forKey: Key.showContextUsage)
         moveViewedToIdle = defaults.bool(forKey: Key.moveViewedToIdle)
         showRelayedQuestionsOnce = defaults.bool(forKey: Key.showRelayedQuestionsOnce)
+        nestSessions = defaults.bool(forKey: Key.nestSessions)
 
         // Old acknowledgments include automatic dismissals just from viewing a session.
         // Keep them only as viewed markers, used while the option is on, never as explicit clears.
@@ -59,7 +66,7 @@ final class AppSettings: ObservableObject {
         viewed = Self.dates(in: defaults, key: Key.viewed, after: cutoff)
     }
 
-    /// Command-line and agent reads honor the same retention, dismissal and relayed-question settings as the UI.
+    /// Command-line and agent reads honor the same retention, dismissal, relayed-question and nesting settings as the UI.
     nonisolated static func resolve(_ state: EngineSnapshot, now: Date, defaults: UserDefaults) -> [SessionSnapshot] {
         let minutes = defaults.integer(forKey: Key.keepEndedMinutes)
         let options = ResolverOptions(
@@ -76,9 +83,10 @@ final class AppSettings: ObservableObject {
                 clearedAt: cleared[$0.id], viewedAt: viewed[$0.id]
             )
         }
-        return SessionOrdering.sorted(
+        let sorted = SessionOrdering.sorted(
             options.showRelayedQuestionsOnce ? RelayedQuestions.merge(resolved, records: state.records) : resolved
         )
+        return defaults.bool(forKey: Key.nestSessions) ? SessionNesting.nest(sorted, records: state.records) : sorted
     }
 
     nonisolated private static func dates(in defaults: UserDefaults, key: String, after cutoff: Date) -> [String: Date] {

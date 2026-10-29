@@ -239,7 +239,8 @@ extension DemoData {
             priority: made.priority, severity: made.severity, size: made.size, sizeTitle: "Story Points", originalEstimate: made.estimate,
             completedWork: made.completed, activity: made.activity, createdBy: made.createdBy ?? item.assignedTo ?? sam,
             createdAt: ago(hours: made.createdDaysAgo * 24), changedBy: item.assignedTo ?? sam, texts: texts, links: links,
-            resources: made.resources, comments: comments, readAt: now
+            resources: made.resources, pullRequests: workLinks(now: now).pullRequestsOfWorkItems[item.key] ?? [], comments: comments,
+            readAt: now
         )
     }
 

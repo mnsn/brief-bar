@@ -20,19 +20,19 @@ within() {
 JSON="$("$BIN" --demo --json)"
 
 # Each source's counts, by group.
-EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":3,"needsYou":3,"running":3,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
+EXPECTED='{"azureDevOps":{"answered":1,"done":1,"failing":2,"idle":2,"needsYou":4,"ready":2,"toReview":1,"waiting":2},"copilot":{"done":1,"idle":4,"needsYou":3,"running":4,"stopped":1},"github":{"changesRequested":1,"failing":2,"ready":1,"toReview":2,"waiting":2},"teams":{"chats":2,"groups":2}}'
 COUNTS="$(jq -cS 'with_entries(.value |= .counts)' <<<"$JSON")"
 [[ "$COUNTS" == "$EXPECTED" ]] || fail "expected $EXPECTED, got $COUNTS"
 
 # Each section's counts by state, the same for every source: unread chats, pull requests and Copilot sessions
 # that need you; failing pull requests and stopped sessions; running sessions; pull requests ready to complete
 # or merge and finished sessions. GitHub's pull requests to review and with changes requested both need you. To Review doesn't need you here: the demo doesn't show it in the menu bar.
-EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":3},"github.pullRequests":{"done":1,"failing":2,"needsYou":3,"running":0},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
+EXPECTED_STATES='{"azureDevOps.pullRequests":{"done":2,"failing":2,"needsYou":4,"running":0},"copilot.sessions":{"done":1,"failing":1,"needsYou":3,"running":4},"github.pullRequests":{"done":1,"failing":2,"needsYou":3,"running":0},"teams.chats":{"done":0,"failing":0,"needsYou":2,"running":0},"teams.groupChats":{"done":0,"failing":0,"needsYou":2,"running":0}}'
 STATES="$(jq -cS '[.[].states] | add' <<<"$JSON")"
 [[ "$STATES" == "$EXPECTED_STATES" ]] || fail "expected the counts by state $EXPECTED_STATES, got $STATES"
 
 # And added up, as one menu-bar item that shows every section by meaning would count them.
-EXPECTED_TOTALS='{"done":4,"failing":5,"needsYou":14,"running":3}'
+EXPECTED_TOTALS='{"done":4,"failing":5,"needsYou":14,"running":4}'
 TOTALS="$(jq -cS '[.[].states[] | to_entries[]] | group_by(.key) | map({(.[0].key): (map(.value) | add)}) | add' <<<"$JSON")"
 [[ "$TOTALS" == "$EXPECTED_TOTALS" ]] || fail "expected the sum by state $EXPECTED_TOTALS, got $TOTALS"
 
@@ -68,11 +68,13 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
     '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"needs_me","arguments":{}}}' \
-    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' |
+    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' \
+    '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5112"}}}' \
+    '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5101"}}}' |
     within 60 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
-EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions"]'
+EXPECTED_TOOLS='["needs_me","pull_requests","pull_request","pull_request_prompt","pipelines","sprint","work_item","copilot_tasks","watch_pull_request","stop_watching_pull_request","pin_pipeline","unpin_pipeline","copilot_sessions"]'
 TOOLS="$(jq -sc 'map(select(.id == 2))[0].result.tools | map(.name)' <<<"$MCP")"
 [[ "$TOOLS" == "$EXPECTED_TOOLS" ]] || fail "--demo --mcp lists the tools $TOOLS"
 NEEDS_ME="$(jq -sr 'map(select(.id == 3))[0].result.content[0].text' <<<"$MCP")"
@@ -85,6 +87,12 @@ if grep 'Add dark mode to the checkout page' <<<"$NEEDS_ME" >/dev/null; then
 fi
 jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tests failed in DeliveryEstimateTests' >/dev/null ||
     fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
+jq -sr 'map(select(.id == 5))[0].result.content[0].text' <<<"$MCP" | grep '^### !4091 “Fix the coupon rounding error”$' >/dev/null ||
+    fail "--demo --mcp's work_item doesn't have the task's pull request"
+# Azure DevOps' work_item asks Copilot, the other source, for the sessions on the story's pull request's branch.
+jq -sr 'map(select(.id == 6))[0].result.content[0].text' <<<"$MCP" |
+    grep "^### “Save items for later”: .*, on !4120's branch$" >/dev/null ||
+    fail "--demo --mcp's work_item doesn't have the Copilot session on its pull request's branch"
 for source in teams github; do
     if within 60 "$BIN" --demo --source "$source" --mcp </dev/null >/dev/null 2>&1; then
         fail "--demo --source $source --mcp serves $source"
