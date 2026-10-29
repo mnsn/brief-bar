@@ -195,7 +195,8 @@ extension ItemStory {
 
 /// The prompt that asks for a summary of a thing and what's linked to it: instructions, then what BriefBar knows, as
 /// data between `<data>` and `</data>`, which the model is told never to take instructions from. What's said there comes
-/// from what the sources read, as the details show it, in plain text, cut to fit.
+/// from what the sources read, as the details show it, and what they read for the summary as it's written, such as a
+/// session's conversation, in plain text, cut to fit.
 public enum StorySummaryPrompt {
     /// A thing, as the prompt describes it.
     public struct Item: Sendable, Equatable {
@@ -211,14 +212,21 @@ public enum StorySummaryPrompt {
         public var link: String?
         /// What's known of it.
         public var story: ItemStory?
+        /// More of it than its story says, read for the summary only: a description, comments, a session's conversation.
+        /// A part takes the place of a note of its story's with the same label, such as a description cut shorter.
+        public var context: [ItemStory.Fact]
 
-        public init(kind: String, label: String, title: String, status: String? = nil, link: String? = nil, story: ItemStory? = nil) {
+        public init(
+            kind: String, label: String, title: String, status: String? = nil, link: String? = nil, story: ItemStory? = nil,
+            context: [ItemStory.Fact] = []
+        ) {
             self.kind = kind
             self.label = label
             self.title = title
             self.status = status
             self.link = link
             self.story = story
+            self.context = context
         }
     }
 
@@ -243,7 +251,7 @@ public enum StorySummaryPrompt {
     /// The prompt: the instructions, then who reads it, when that's known, the thing, and what's linked to it, the most
     /// pressing first, as many as fit in `limit` characters.
     /// - Parameter reader: your name, as the data has it, for the model to call you "you".
-    public static func make(subject: Item, linked: [Item], reader: String? = nil, limit: Int = 14_000) -> String {
+    public static func make(subject: Item, linked: [Item], reader: String? = nil, limit: Int = 36_000) -> String {
         var data = reader.map { StoryText.line($0, limit: 80) }.flatMap { $0.isEmpty ? nil : "READER: \($0)\n\n" } ?? ""
         data += describe(subject, isSubject: true)
         var left = 0
@@ -259,7 +267,16 @@ public enum StorySummaryPrompt {
         return instructions + "\n\n<data>\n" + scrub(data) + "\n</data>"
     }
 
-    /// A thing, a line or a few for each part of its story.
+    /// How much of what was read for the summary goes in, at most: for the thing itself, for each one linked, and for each
+    /// part of it; and the least room worth starting a part in.
+    enum ContextLimit {
+        static let subject = 10_000
+        static let linked = 5_000
+        static let part = 4_000
+        static let smallest = 200
+    }
+
+    /// A thing, a line or a few for each part of its story, then what was read of it for the summary, cut to fit.
     static func describe(_ item: Item, isSubject: Bool) -> String {
         let title = StoryText.line(item.title, limit: 200)
         // A session's label is its name, its title.
@@ -269,8 +286,18 @@ public enum StorySummaryPrompt {
         let shared = item.story?.sentenceToShare
         let sentence = shared?.isEmpty == false ? shared : item.status
         if let sentence, !sentence.isEmpty { lines.append("Status: \(sentence)") }
-        guard let story = item.story else { return lines.joined(separator: "\n") }
-        lines += story.lines()
+        if var story = item.story {
+            let read = Set(item.context.map(\.label))
+            story.notes = story.notes.filter { !read.contains($0.label) }
+            lines += story.lines()
+        }
+        var left = isSubject ? ContextLimit.subject : ContextLimit.linked
+        for part in item.context where left >= ContextLimit.smallest {
+            let text = StoryText.paragraph(part.value, limit: min(left, ContextLimit.part))
+            guard !text.isEmpty else { continue }
+            lines.append("\(StoryText.line(part.label, limit: 80)):\n\(text)")
+            left -= text.count
+        }
         return lines.joined(separator: "\n")
     }
 

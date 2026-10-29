@@ -4,10 +4,11 @@ import Foundation
 import SwiftUI
 
 /// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
-/// never by itself, from what the details show (`StorySummaryPrompt`), with no tools at all. It's off until you turn it
-/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, Show
-/// Links or this goes off, or a source stops, and says when what it summed up changed since. One being written stops then,
-/// with Copilot.
+/// never by itself, from what the details show and what the sources read of each for it as it's written, such as a
+/// session's conversation (`ItemStories.context(for:)`, `StorySummaryPrompt`), with no tools at all. It's off until you
+/// turn it on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's
+/// dismissed, Show Links or this goes off, or a source stops, and says when what it summed up changed since. One being
+/// written stops then, with Copilot.
 @MainActor
 package final class StorySummaries: ObservableObject {
     package static let enabledKey = "summaries.copilot.enabled"
@@ -237,10 +238,13 @@ package final class StorySummaries: ObservableObject {
         let options = Options(model: model, effort: "low")
         let task = Task { [weak self] in
             guard let self else { return }
-            // What's known of it and of each, as it is now.
-            await self.stories.tell([self.links.describe(subject)] + self.links.connections(of: subject).map(\.item))
+            // What's known of it and of each, as it is now, and what more the sources read of each for a summary.
+            let items = [self.links.describe(subject)] + self.links.connections(of: subject).map(\.item)
+            await self.stories.tell(items)
             guard self.isCurrent(subject, token: token) else { return }
-            guard let input = self.input(for: subject) else {
+            let context = await self.stories.context(for: items.map(\.ref))
+            guard self.isCurrent(subject, token: token) else { return }
+            guard let input = self.input(for: subject, context: context) else {
                 self.writing[subject] = nil
                 self.states[subject] = nil
                 return
@@ -352,10 +356,10 @@ package final class StorySummaries: ObservableObject {
 
     // MARK: What's summed up
 
-    /// The prompt for a thing and what's linked to it, as the details show them, the most pressing first; and what tells
-    /// when that changes: what each one says. Nil when there's nothing to sum up: nothing linked to it, and nothing a
-    /// source knows of it.
-    func input(for subject: ItemRef) -> (prompt: String, inputs: [Input])? {
+    /// The prompt for a thing and what's linked to it, as the details show them, with what was read of each for the
+    /// summary, the most pressing first; and what tells when that changes: what each one says. Nil when there's nothing to
+    /// sum up: nothing linked to it, and nothing a source knows of it.
+    func input(for subject: ItemRef, context: [ItemRef: [ItemStory.Fact]] = [:]) -> (prompt: String, inputs: [Input])? {
         let connections = links.connections(of: subject).sorted { lhs, rhs in
             ItemState.rank(lhs.item.state) < ItemState.rank(rhs.item.state)
         }
@@ -364,7 +368,7 @@ package final class StorySummaries: ObservableObject {
         let item = { (linked: LinkedItem, link: String?) in
             StorySummaryPrompt.Item(
                 kind: Self.kind(of: linked), label: linked.label, title: linked.title, status: linked.statusToShare, link: link,
-                story: self.stories.story(for: linked.ref)
+                story: self.stories.story(for: linked.ref), context: context[linked.ref] ?? []
             )
         }
         let prompt = StorySummaryPrompt.make(

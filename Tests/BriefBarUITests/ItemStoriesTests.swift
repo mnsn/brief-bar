@@ -126,6 +126,43 @@ import Testing
         #expect(!stories.hasTold(session))
     }
 
+    /// What the sources read for a summary, as it's written: each source that reads more of a kind, in the sources'
+    /// order, a part by its label once; nothing kept, nothing while Show Links is off, and nothing once the source stops.
+    @Test func whatsReadForASummaryIsReadWhenAskedFromEachSourceInOrder() async {
+        let (links, stories) = hub()
+        let asked = Asked()
+        stories.registerContext(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return [
+                ItemStory.Fact("Conversation", "You: Add the table.\nCopilot: Added it."), ItemStory.Fact("Task", "Again"),
+                ItemStory.Fact("Description", ""),
+            ]
+        }
+        stories.registerContext(.azureDevOps, kinds: [.pullRequest, .session]) { ref in
+            asked.refs.append(ref)
+            return ref.kind == .session ? [ItemStory.Fact("Task", "Sent from 5103")] : [ItemStory.Fact("Description", "Rounds half up.")]
+        }
+        let read = await stories.context(for: [pullRequest, session, pullRequest, .workItem(organization: "contoso", id: 5101)])
+        // Azure DevOps comes before Copilot, so its task is the one taken; a part with nothing in it isn't one.
+        #expect(read == [
+            pullRequest: [ItemStory.Fact("Description", "Rounds half up.")],
+            session: [ItemStory.Fact("Task", "Sent from 5103"), ItemStory.Fact("Conversation", "You: Add the table.\nCopilot: Added it.")],
+        ])
+        // Each thing is read once, by each source that reads its kind.
+        #expect(asked.refs == [pullRequest, session, session])
+        // Read again each time.
+        _ = await stories.context(for: [pullRequest])
+        #expect(asked.refs.count == 4)
+
+        links.setOn(false)
+        #expect(await stories.context(for: [pullRequest]).isEmpty)
+        links.setOn(true)
+        stories.withdraw(.azureDevOps)
+        #expect(await stories.context(for: [pullRequest]).isEmpty)
+        #expect(await stories.context(for: [session])[session]?.map(\.label) == ["Conversation", "Task"])
+        #expect(asked.refs.count == 5)
+    }
+
     @Test func turningShowLinksOffBeforeAStoryIsToldReadsNothing() async throws {
         let (links, stories) = hub()
         let asked = Asked()

@@ -106,6 +106,36 @@ import Testing
         #expect(asked.prompts.count == 1)
     }
 
+    /// As it's written, the sources read more of each thing for it: what they read goes into the prompt, with each thing.
+    @Test func itSumsUpWhatTheSourcesReadForItToo() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { ref in
+            ref.kind == .workItem
+                ? ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round…")])
+                : ItemStory(sentence: "Waiting for reviewers")
+        }
+        var read: [ItemRef] = []
+        stories.registerContext(.azureDevOps, kinds: [.workItem, .pullRequest]) { ref in
+            read.append(ref)
+            return ref.kind == .workItem
+                ? [ItemStory.Fact("Description", "Totals round down for coupons in every currency.")]
+                : [ItemStory.Fact("Open threads", "Sam Rivera on Coupon.swift:12: Round half up?")]
+        }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        // Nothing's read until a summary is written.
+        #expect(read.isEmpty)
+        await summaries.summarizeAndWait(workItem)
+        #expect(read == [workItem, pullRequest])
+        let prompt = try #require(asked.prompts.first)
+        #expect(prompt.contains("WORK ITEM 5110: Coupon totals round down\nStatus: Active\nDescription:\nTotals round down for coupons in every currency."))
+        #expect(!prompt.contains("Totals round…"))
+        #expect(prompt.contains("Status: Waiting for reviewers\nOpen threads:\nSam Rivera on Coupon.swift:12: Round half up?"))
+        // What was read says nothing about whether it's out of date: its story does.
+        #expect(!summaries.isOutOfDate(workItem))
+    }
+
     @Test func itSaysWhyThereIsNone() async {
         let (links, _, summaries) = hub()
         publish(links)

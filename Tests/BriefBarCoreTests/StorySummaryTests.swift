@@ -1,4 +1,4 @@
-import BriefBarCore
+@testable import BriefBarCore
 import Foundation
 import Testing
 
@@ -231,5 +231,48 @@ import Testing
         let other = ItemStory(sentence: "", notes: [ItemStory.Fact("Description", "Again."), ItemStory.Fact("Comments", "Sam: Looks good.")])
         #expect(azureDevOps.merged(with: other).notes == [ItemStory.Fact("Description", "Save items."), ItemStory.Fact("Comments", "Sam: Looks good.")])
         #expect(!ItemStory(sentence: "", notes: [ItemStory.Fact("Description", "Save items.")]).isEmpty)
+    }
+
+    /// What was read for the summary follows a thing's story, and takes the place of a note it has by the same label; the
+    /// thing itself gets more room than each one linked to it.
+    @Test func whatWasReadForTheSummaryFollowsTheStoryAndFitsItsRoom() throws {
+        let story = ItemStory(sentence: "Active", notes: [
+            ItemStory.Fact("Description", "Save items for…"), ItemStory.Fact("Why it's Active", "Work started"),
+        ])
+        let item = StorySummaryPrompt.Item(
+            kind: "Work item", label: "5101", title: "Save items for later from the cart", status: "Active", story: story,
+            context: [
+                ItemStory.Fact("Description", "Save items for later, and move them back to the cart."),
+                ItemStory.Fact("Conversation", "You: Add the saved items table.\nCopilot: Added it, with tests."),
+            ]
+        )
+        let described = StorySummaryPrompt.describe(item, isSubject: true)
+        #expect(described == """
+            WORK ITEM 5101: Save items for later from the cart
+            Status: Active
+            Why it's Active: Work started
+            Description:
+            Save items for later, and move them back to the cart.
+            Conversation:
+            You: Add the saved items table.
+            Copilot: Added it, with tests.
+            """)
+
+        let long = String(repeating: "Sam asked for paging. ", count: 600)
+        let reading = { (isSubject: Bool) in
+            StorySummaryPrompt.describe(StorySummaryPrompt.Item(
+                kind: "Pull request", label: "!4120", title: "Save items in the cart service",
+                context: [ItemStory.Fact("Open threads", long), ItemStory.Fact("Description", long), ItemStory.Fact("Reviews", long)]
+            ), isSubject: isSubject)
+        }
+        // Each part, and all of it, is cut to fit: the thing summed up gets twice the room of each one linked to it.
+        let subject = reading(true)
+        let linked = reading(false)
+        #expect(subject.count <= StorySummaryPrompt.ContextLimit.subject + 200)
+        #expect(subject.count > StorySummaryPrompt.ContextLimit.subject - 200)
+        #expect(linked.count <= StorySummaryPrompt.ContextLimit.linked + 200)
+        #expect(!linked.contains("Reviews:"))
+        let firstPart = try #require(subject.components(separatedBy: "Open threads:\n").last?.components(separatedBy: "\nDescription:").first)
+        #expect(firstPart.count <= StorySummaryPrompt.ContextLimit.part)
     }
 }
