@@ -29,7 +29,7 @@ package enum CopilotCommandLine: SourceCommandLine {
     package static func dump(_ options: CommandLineOptions) -> Int32 {
         guard let paths = paths(options) else { return 1 }
         let state = SessionEngine.loadOnce(paths: paths)
-        printTable(resolve(state, now: Date(), defaults: options.demo ? MemoryDefaults() : nil), problem: state.problem)
+        printTable(resolve(state, now: Date(), defaults: options.demo ? MemoryDefaults() : nil), problem: CopilotApp.problem(of: state))
         return 0
     }
 
@@ -47,7 +47,7 @@ package enum CopilotCommandLine: SourceCommandLine {
         let sessions = resolve(state, now: Date(), defaults: options.demo ? MemoryDefaults() : nil)
         let counts = PhaseCounts(sessions)
         return jsonObject(Output(sessions: sessions, counts: counts, states: [SectionID.copilotSessions.rawValue: counts.states],
-                                 problem: state.problem))
+                                 problem: CopilotApp.problem(of: state)))
     }
 
     static func resolve(_ state: EngineSnapshot, now: Date, defaults: UserDefaults? = nil) -> [SessionSnapshot] {
@@ -127,8 +127,9 @@ private final class WatchPrinter: @unchecked Sendable {
 
     private func report(_ state: EngineSnapshot) {
         let now = Date()
-        if state.problem != problem {
-            problem = state.problem
+        let shown = CopilotApp.problem(of: state)
+        if shown != problem {
+            problem = shown
             if let problem { Swift.print("\(formatter.string(from: now))  ! \(problem)") }
         }
         for session in CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil) {

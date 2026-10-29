@@ -45,9 +45,10 @@ package final class CopilotSource: BriefBarSource {
     package init(services: AppServices) {
         self.services = services
         settings = AppSettings(defaults: services.defaults)
-        // The demo reads only made-up data, never your own.
+        // The demo reads only made-up data, never your own, and its sessions are the app's, never the CLI's.
         store = SessionStore(
-            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks
+            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks,
+            isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
         )
     }
 
@@ -83,12 +84,16 @@ package final class CopilotSource: BriefBarSource {
         linkObservers.removeAll()
         store.stop()
         services.links.withdraw(.copilot)
+        // A session still being opened in Terminal opens nothing now.
+        CLISession.stop()
     }
 
     package func deleteSavedData() {
         settings.forgetDismissed()
         // The links you added or hid to Copilot sessions.
         services.links.forget(.copilot)
+        // Scripts that would have opened sessions in Terminal, but never ran. The demo never writes any.
+        if !services.isDemo { CLISession.forgetScripts() }
     }
 
     // MARK: Show Links
@@ -234,7 +239,10 @@ package final class CopilotSource: BriefBarSource {
         relayed.moveViewedToIdle = settings.moveViewedToIdle
         relayed.showContextUsage = settings.showContextUsage
         relayed.showRelayedQuestionsOnce = true
-        let store = SessionStore(settings: relayed, paths: nil, sentTasks: services.sentTasks)
+        let store = SessionStore(
+            settings: relayed, paths: nil, sentTasks: services.sentTasks,
+            isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
+        )
         store.receive(rendered)
         let panel = MenuPanelView()
             .interfaceOptions(from: services)

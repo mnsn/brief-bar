@@ -23,12 +23,19 @@ public struct EngineSnapshot: Sendable, Equatable {
     /// The sessions are the ones the app's database lists, rather than every recent session folder, which is all there
     /// is to go on while the database has never been readable (`SessionStateScanner`).
     public var listedByApp: Bool
+    /// There's a Copilot folder, but nothing at all where the app's database goes, as on a Mac with only the Copilot CLI,
+    /// which keeps none; not a database that's there but can't be reached. Looked at on every read that fails.
+    public var databaseMissing: Bool
 
-    public init(records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true) {
+    public init(
+        records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true,
+        databaseMissing: Bool = false
+    ) {
         self.records = records
         self.view = view
         self.problem = problem
         self.listedByApp = listedByApp
+        self.databaseMissing = databaseMissing
     }
 }
 
@@ -52,6 +59,7 @@ public final class SessionEngine: @unchecked Sendable {
     private var view = AppViewState()
     private var problem: String?
     private var metadataFromDatabase = false
+    private var databaseMissing = false
     private var readers: [String: EventLogReader] = [:]
     private var lastPublished: EngineSnapshot?
     private var stream: FileEventStream?
@@ -231,8 +239,11 @@ public final class SessionEngine: @unchecked Sendable {
             metas = snapshot.sessions
             view = snapshot.view
             metadataFromDatabase = true
+            databaseMissing = false
             problem = nil
         } catch {
+            let hasFolder = FileManager.default.fileExists(atPath: paths.root.path)
+            databaseMissing = hasFolder && Self.isMissing(paths.database)
             if metadataFromDatabase {
                 // Keep the last good list, but its running flags may be out of date, so the
                 // logs decide until the database can be read again.
@@ -242,12 +253,19 @@ public final class SessionEngine: @unchecked Sendable {
                 problem = "\(error). The list may be out of date."
             } else {
                 metas = SessionStateScanner.recentSessions(paths: paths)
-                problem = FileManager.default.fileExists(atPath: paths.root.path)
+                problem = hasFolder
                     ? String(describing: error)
                     : "No Copilot data found at \(paths.root.path)"
             }
         }
         syncReaders()
+    }
+
+    /// Whether there's nothing at all at `url`, rather than something that can't be reached, which
+    /// `FileManager.fileExists` doesn't tell apart.
+    static func isMissing(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) != 0 && errno == ENOENT
     }
 
     private func syncReaders() {
@@ -265,7 +283,9 @@ public final class SessionEngine: @unchecked Sendable {
             let reader = readers[meta.id]
             return SessionRecord(meta: meta, log: reader?.isLoaded == true ? reader?.state : nil)
         }
-        return EngineSnapshot(records: records, view: view, problem: problem, listedByApp: metadataFromDatabase)
+        return EngineSnapshot(
+            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing
+        )
     }
 
     private func publish(force: Bool = false) {

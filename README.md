@@ -454,6 +454,11 @@ them after you open or view them in Copilot; turning it off shows recent viewed 
 but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
 
+Without the Copilot app, as on a Mac with only the Copilot CLI, the list has the CLI's sessions that
+changed in the last day, and there's no app database to miss. Click one to open it in a terminal: one
+the CLI still has open brings up the app it runs in, such as Terminal, and any other opens in Terminal
+with `copilot --resume`, in the folder it worked in. With the app installed, nothing changes.
+
 When a session that another session started and coordinates has a question or a plan for you, the app
 tells the coordinating session, which then asks you too. Answer where it asks: it passes your answer
 on, while a plan you approve in the session itself leaves the coordinating session's question waiting,

@@ -80,7 +80,7 @@ let package = Package(
         ),
         .target(
             name: "CopilotUI",
-            dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore"]
+            dependencies: ["BriefBarCore", "BriefBarUI", "CopilotCore", "CopilotTasks"]
         ),
         .target(
             name: "GitHubUI",
