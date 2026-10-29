@@ -186,6 +186,27 @@ import Testing
         await #expect(throws: MCPToolError("The demo's sprint has no work item 1.")) { try await call("work_item", ["work_item": .int(1)]) }
     }
 
+    @Test func findsTheWorkSentForAWorkItemOrOnItsPullRequests() throws {
+        let bug = try #require(DemoData.sprintBoard().item(WorkItemKey("contoso", 5110)))
+        let tasks = try #require(DemoData.sprintBoard().rows.first { $0.parent?.id == 5110 }).tasks
+        func entry(_ id: String, workItem: Int?, on pullRequest: Int? = nil) -> CopilotTaskEntry {
+            CopilotTaskEntry(
+                id: id, workItem: workItem.map { WorkItemReference(organization: "Contoso", project: "Storefront", id: $0) },
+                onPullRequest: pullRequest.map { PullRequestReference(
+                    organization: "contoso", project: "Storefront", repository: "payments-api", id: $0, sourceBranch: "coupon-rounding"
+                ) },
+                options: CopilotModel.standard, startedAt: Date(), status: RunStatus(phase: .working)
+            )
+        }
+        let all = [
+            entry("its own", workItem: 5110), entry("its task's", workItem: 5112), entry("another's", workItem: 5101),
+            // Sent from another work item, then on to the bug's pull request.
+            entry("on its pull request", workItem: 5101, on: 4091), entry("on another", workItem: nil, on: 4088),
+        ]
+        let found = AzureDevOpsAgent.tasks(all, for: bug, tasks: tasks, pullRequests: [PRKey("contoso", 4091)])
+        #expect(found.map(\.id) == ["its own", "its task's", "on its pull request"])
+    }
+
     @Test func readsWorkItemsByNumberOrLink() throws {
         #expect(try AzureDevOpsAgent.workItemReference(.int(5101)) == (5101, nil))
         #expect(try AzureDevOpsAgent.workItemReference(.string("#5101")) == (5101, nil))

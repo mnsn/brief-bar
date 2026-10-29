@@ -38,6 +38,12 @@ private struct PageContent: View {
         .onChange(of: ItemStories.version(of: item), initial: true) {
             stories.request(item)
         }
+        // And each minute while it shows, for what changes without its row changing, such as a vote or a checkpoint.
+        .background {
+            TimelineView(.periodic(from: .distantPast, by: ItemStories.freshFor)) { context in
+                Color.clear.onChange(of: context.date) { stories.request(links.describe(ref)) }
+            }
+        }
     }
 
     private func heading(_ item: LinkedItem, story: ItemStory?) -> some View {

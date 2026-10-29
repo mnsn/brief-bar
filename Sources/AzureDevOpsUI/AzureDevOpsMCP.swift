@@ -308,8 +308,8 @@ actor AzureDevOpsReader {
         var pullRequests: [PRKey]
         /// Your lists, which have yours, the ones you review and the ones you watch.
         var lists: PullRequests
-        /// The others, read for this; one that couldn't be read isn't here.
-        var others: [PRKey: PullRequest]
+        /// The others, read for this, and those that couldn't be.
+        var others: LinkEngine.Lookups
     }
 
     /// Reads a work item by its number, in the organization its link names, or else the sprint's or one of yours, with the
@@ -324,7 +324,7 @@ actor AzureDevOpsReader {
         let parentRow = row == nil ? rows.first { $0.tasks.contains(where: isIt) } : nil
         let inSprint = row?.parent ?? parentRow?.tasks.first(where: isIt)
         let lists = await pullRequests(now: now)
-        func told(_ details: WorkItemDetails, others: [PRKey: PullRequest]) -> WorkItemRead {
+        func told(_ details: WorkItemDetails, others: LinkEngine.Lookups) -> WorkItemRead {
             let children = SprintBoard.Row(parent: nil, tasks: details.children.compactMap(\.item)).tasksInWorkOrder
             return WorkItemRead(
                 item: WorkItemDetailsStore.newest(inSprint, details.item) ?? details.item, details: details,
@@ -338,7 +338,7 @@ actor AzureDevOpsReader {
             guard let details = DemoData.workItemDetails(organization: organization, id: id, now: now) else {
                 throw MCPToolError("The demo's sprint has no work item \(id).")
             }
-            return told(details, others: DemoData.workLinks(now: now).pullRequests)
+            return told(details, others: LinkEngine.Lookups(read: DemoData.workLinks(now: now).pullRequests))
         }
         guard let client else { throw MCPToolError("BriefBar can't read Azure DevOps here.") }
         var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
@@ -362,20 +362,11 @@ actor AzureDevOpsReader {
         throw MCPToolError("None of your organizations has a work item \(id) you can see: give its link.")
     }
 
-    /// The pull requests your lists don't have, as Show Links reads them: one GET each, ten at a time.
-    private func lookUp(_ keys: [PRKey], notIn lists: PullRequests, client: ADOClient) async -> [PRKey: PullRequest] {
+    /// The pull requests your lists don't have, as Show Links reads them.
+    private func lookUp(_ keys: [PRKey], notIn lists: PullRequests, client: ADOClient) async -> LinkEngine.Lookups {
         let listed = Set(lists.records.map(\.id.linkRef))
         let others = Set(keys.filter { !listed.contains($0.linkRef) })
-        guard !others.isEmpty else { return [:] }
-        let engine = LinkEngine(client: client) { _ in }
-        await engine.update(LinkEngine.Inputs(pullRequestLookups: others))
-        var read = await engine.currentLinks().pullRequests
-        for _ in 0..<4 where read.count < others.count {
-            await engine.refresh()
-            read = await engine.currentLinks().pullRequests
-        }
-        await engine.stop()
-        return read
+        return await LinkEngine.lookUp(others.sorted(), client: client)
     }
 }
 
@@ -642,15 +633,22 @@ struct AzureDevOpsAgent: Sendable {
         let (id, organization) = try Self.workItemReference(reference)
         let read = try await reader.workItem(id, organization: organization, now: now)
         let item = read.item
-        // The work sent for it, for its tasks, and on its pull requests.
-        let ids = Set([item.id] + read.tasks.map(\.id))
-        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now).filter { task in
-            if let workItem = task.workItem {
-                return ids.contains(workItem.id) && workItem.organization.caseInsensitiveCompare(item.organization) == .orderedSame
-            }
-            return read.pullRequests.contains { task.isOn($0) }
-        } : []
+        let tasks = await reader.sendsToCopilot
+            ? Self.tasks(await reader.copilotTasks(now: now), for: item, tasks: read.tasks, pullRequests: read.pullRequests) : []
         return AgentText.workItem(read, tasks: tasks, now: now)
+    }
+
+    /// The work sent to Copilot for a work item or its tasks, and on its pull requests: a session sent from another work item
+    /// may have gone on to one of them.
+    static func tasks(_ all: [CopilotTaskEntry], for item: WorkItem, tasks: [WorkItem], pullRequests: [PRKey]) -> [CopilotTaskEntry] {
+        let ids = Set([item.id] + tasks.map(\.id))
+        return all.filter { task in
+            if let workItem = task.workItem, ids.contains(workItem.id),
+               workItem.organization.caseInsensitiveCompare(item.organization) == .orderedSame {
+                return true
+            }
+            return pullRequests.contains { task.isOn($0) }
+        }
     }
 
     func copilotTasks(now: Date = Date()) async throws -> String {
@@ -943,7 +941,7 @@ enum AgentText {
         if !tasks.isEmpty {
             lines.append("\n## Sent to Copilot (\(tasks.count))")
             var titles = Dictionary(read.lists.records.map { ($0.id, $0.pullRequest.title) }, uniquingKeysWith: { first, _ in first })
-            for (key, pullRequest) in read.others { titles[key] = pullRequest.title }
+            for (key, pullRequest) in read.others.read { titles[key] = pullRequest.title }
             let workItems = Dictionary(([item] + read.tasks).map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
             lines += tasks.map { task($0, titles: titles, workItems: workItems, now: now) }
         }
@@ -960,8 +958,11 @@ enum AgentText {
     private static func pullRequest(_ key: PRKey, in read: AzureDevOpsReader.WorkItemRead, now: Date) -> [String] {
         let record = read.lists.records.first { $0.id.linkRef == key.linkRef }
         let snapshot = read.lists.items.first { $0.key.linkRef == key.linkRef }
-        guard let pullRequest = record?.pullRequest ?? read.others.first(where: { $0.key.linkRef == key.linkRef })?.value else {
-            return ["", "### !\(key.number)", "BriefBar couldn't read it."]
+        guard let pullRequest = record?.pullRequest ?? read.others.read.first(where: { $0.key.linkRef == key.linkRef })?.value else {
+            let failed = read.others.failed.contains { $0.linkRef == key.linkRef }
+            return ["", "### !\(key.number)", failed
+                ? "BriefBar couldn't read it."
+                : "BriefBar didn't read it: Azure DevOps asked it to slow down. Ask again in a minute."]
         }
         let me = record?.me ?? read.lists.records.first { $0.id.organization.caseInsensitiveCompare(key.organization) == .orderedSame }?.me
         let story = snapshot.map { PullRequestStory.mine($0, record: record) } ?? PullRequestStory.others(pullRequest, me: me)

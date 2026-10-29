@@ -1633,8 +1633,9 @@ sprint, or its children when it isn't there, and each pull request it links to, 
 `PullRequestStory` as the panel's rows are: yours as your lists have them, with their checks and
 merge pipelines, and the others as they say themselves. It reads the work item with the same GETs as
 its details, whose `$expand=relations` already names its pull requests, so it works whether Show Links
-is on or not, then one GET for each of those pull requests your lists don't have, ten at a time,
-through a `LinkEngine` of its own. Without a link, it looks in the sprint, then in each of your organizations.
+is on or not, then one GET for each of those pull requests your lists don't have, one after another
+(`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it didn't get to says so,
+rather than that it couldn't be read. Without a link, it looks in the sprint, then in each of your organizations.
 The text of a story (`ItemStory.lines`) is the one Summarize with Copilot sends, with what says less
 too: who wrote a pull request, its branch, its runs' pages and what isn't read for it.
 

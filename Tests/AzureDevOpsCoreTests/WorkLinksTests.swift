@@ -209,6 +209,31 @@ import Testing
         #expect(count(server, "/pullrequests/4130") == 2)
     }
 
+    @Test func looksUpPullRequestsByNumberUntilAskedToSlowDown() async {
+        let server = StubServer()
+        server.on("/_apis/git/pullrequests/4130") { _ in .status(404) }
+        server.on("/_apis/git/pullrequests/4131", json: Fixture.pullRequest(4131, title: "Tidy the cart"))
+        server.on("/_apis/git/pullrequests/4132") { _ in .status(429, headers: ["Retry-After": "30"]) }
+        server.on("/_apis/git/pullrequests/4133", json: Fixture.pullRequest(4133, title: "Never asked for"))
+        let lookups = await LinkEngine.lookUp([4130, 4131, 4132, 4133].map { PRKey("contoso", $0) }, client: server.client())
+        #expect(lookups.read.keys.sorted() == [PRKey("contoso", 4131)])
+        #expect(lookups.read[PRKey("contoso", 4131)]?.title == "Tidy the cart")
+        #expect(lookups.failed == [PRKey("contoso", 4130)])
+        // Once asked to slow down, it stops: what it didn't get to is neither read nor failed.
+        #expect(count(server, "/pullrequests/4133") == 0)
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    @Test func looksUpEveryPullRequestItsGiven() async {
+        let server = StubServer()
+        for number in 1...60 {
+            server.on("/_apis/git/pullrequests/\(number)", json: Fixture.pullRequest(number, title: "Change \(number)"))
+        }
+        let lookups = await LinkEngine.lookUp((1...60).map { PRKey("contoso", $0) }, client: server.client())
+        #expect(lookups.read.count == 60)
+        #expect(lookups.failed.isEmpty)
+    }
+
     // MARK: The demo
 
     @Test func theDemosLinksJoinItsOwnPullRequestsAndSprint() {

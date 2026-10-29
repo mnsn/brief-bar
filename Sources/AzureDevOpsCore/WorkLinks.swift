@@ -424,3 +424,35 @@ public actor LinkEngine {
         onChange(links)
     }
 }
+
+extension LinkEngine {
+    /// What reading pull requests by their numbers got: the ones read, and the ones that couldn't be. One it didn't get to,
+    /// once Azure DevOps asked to slow down or the read was cancelled, is in neither.
+    public struct Lookups: Sendable, Equatable {
+        public var read: [PRKey: PullRequest] = [:]
+        public var failed: Set<PRKey> = []
+
+        public init(read: [PRKey: PullRequest] = [:], failed: Set<PRKey> = []) {
+            self.read = read
+            self.failed = failed
+        }
+    }
+
+    /// Reads pull requests by their numbers, as Show Links reads those your lists don't have: a GET each, one after another,
+    /// every one of them, unless Azure DevOps asks to slow down or the read is cancelled.
+    public static func lookUp(_ keys: [PRKey], client: ADOClient) async -> Lookups {
+        var lookups = Lookups()
+        for key in keys {
+            guard !Task.isCancelled else { break }
+            do {
+                let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
+                lookups.read[key] = PullRequest(organization: key.organization, dto)
+            } catch {
+                if error is CancellationError { break }
+                if case .throttled = error as? ADOError { break }
+                lookups.failed.insert(key)
+            }
+        }
+        return lookups
+    }
+}
