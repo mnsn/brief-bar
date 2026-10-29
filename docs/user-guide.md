@@ -372,8 +372,11 @@ linked to it, leading with what its row doesn't say; **Show More** shows the res
 page. Widgets never show one.
 
 **Open in Azure DevOps** opens the work item there, to change it; right-clicking it on the board does
-too. In a narrow window the details cover the board, until **✕** or Esc closes them. Clicking one of
-your work items in the Sprint list or widget opens its details here, in BriefBar's window.
+too. Drag the details' left edge to make them wider, to read a long description or summary, or
+narrower again: BriefBar keeps the width, as far as the window has room for it beside the board, and
+double-clicking the edge brings back the usual one. In a narrow window the details cover the board,
+until **✕** or Esc closes them. Clicking one of your work items in the Sprint list or widget opens its
+details here, in BriefBar's window.
 
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
@@ -729,7 +732,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
 | | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
-| | Sprint | on its page: **Everyone** or **Just Mine**, and which team's sprint |
+| | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |

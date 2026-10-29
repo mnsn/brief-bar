@@ -4,8 +4,8 @@ import BriefBarUI
 import SwiftUI
 
 /// The Sprint section's page, in a window: your team's current sprint at a glance, how far along it is, then its stories
-/// and bugs, each with its tasks, by where they stand. A click on one shows its details beside the board, or over it when
-/// the window is narrow.
+/// and bugs, each with its tasks, by where they stand. A click on one shows its details beside the board, as wide as you
+/// drag them, or over it when the window is narrow.
 struct SprintPage: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var settings: AppSettings
@@ -13,35 +13,64 @@ struct SprintPage: View {
     @EnvironmentObject private var details: WorkItemDetailsStore
 
     @LocalState private var showDone = false
+    /// How far you're dragging the details' edge, while you do. The width it makes is saved once you let go.
+    @GestureState private var resizing: CGFloat? = nil
 
     /// Where a work item's details go on a page this wide: beside the board, taking room from it, or over it.
     struct DetailsLayout: Equatable {
         /// The narrowest page that has room for the board beside the details.
         static let besideWidth: CGFloat = 700
+        /// The narrowest the details get beside the board.
+        static let narrowestPanel: CGFloat = 330
 
         var isBeside: Bool
         /// The details cover the board, which can't be seen, read by VoiceOver or reached with the keyboard meanwhile.
         var coversBoard: Bool
-        /// How wide the details are beside the board.
+        /// How wide the details are beside the board: as wide as you made them, where there's room, or 40% of the page,
+        /// up to 480 points.
         var panelWidth: CGFloat
+        /// How wide you can make them on this page: the board keeps the room it has on the narrowest page that shows the
+        /// details beside it.
+        var panelWidths: ClosedRange<CGFloat>
 
-        init(width: CGFloat, showsDetails: Bool) {
+        init(width: CGFloat, showsDetails: Bool, preferredWidth: CGFloat? = nil) {
             isBeside = width >= Self.besideWidth
             coversBoard = showsDetails && !isBeside
-            panelWidth = min(max(width * 0.4, 330), 480)
+            let widths = Self.narrowestPanel...max(Self.narrowestPanel, width - (Self.besideWidth - Self.narrowestPanel))
+            panelWidths = widths
+            let usual = min(max(width * 0.4, Self.narrowestPanel), 480)
+            panelWidth = Self.width(nearest: preferredWidth.flatMap { $0.isFinite ? $0 : nil } ?? usual, in: widths)
+        }
+
+        /// The width nearest to this one that the details can have on this page.
+        func panelWidth(nearest width: CGFloat) -> CGFloat {
+            Self.width(nearest: width, in: panelWidths)
+        }
+
+        /// How wide the details are with their edge dragged this far: wider to the left, as far as there's room.
+        func panelWidth(draggedBy translation: CGFloat) -> CGFloat {
+            panelWidth(nearest: panelWidth - translation)
+        }
+
+        private static func width(nearest width: CGFloat, in widths: ClosedRange<CGFloat>) -> CGFloat {
+            min(max(width, widths.lowerBound), widths.upperBound)
         }
     }
 
     var body: some View {
         // The width the window offers, whatever the board needs: what the board needs depends on where the details go.
         GeometryReader { proxy in
-            page(DetailsLayout(width: proxy.size.width, showsDetails: details.selected != nil))
+            page(DetailsLayout(
+                width: proxy.size.width, showsDetails: details.selected != nil,
+                preferredWidth: settings.sprintDetailsWidth.map { CGFloat($0) }
+            ))
         }
     }
 
     private func page(_ layout: DetailsLayout) -> some View {
         let isBeside = layout.isBeside
-        let panelWidth = layout.panelWidth
+        // As wide as you're dragging them, while you do.
+        let panelWidth = resizing.map(layout.panelWidth(draggedBy:)) ?? layout.panelWidth
         return VStack(spacing: 0) {
             PageHeader(title: sprint.board?.sprint.name ?? "Sprint", subtitle: subtitle) {
                 controls
@@ -58,6 +87,11 @@ struct SprintPage: View {
                         if isBeside {
                             detailsPanel
                                 .frame(width: panelWidth)
+                                .overlay(alignment: .leading) {
+                                    if layout.panelWidths.upperBound > layout.panelWidths.lowerBound {
+                                        detailsEdge(layout, panelWidth: panelWidth)
+                                    }
+                                }
                                 .padding(.trailing, 14)
                                 .padding(.bottom, 14)
                                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -79,6 +113,34 @@ struct SprintPage: View {
         WorkItemDetailsPanel()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .floatingPanel(cornerRadius: 18)
+    }
+
+    /// The details' left edge, beside the board: dragging it makes them wider or narrower, and a double-click brings back
+    /// their usual width.
+    private func detailsEdge(_ layout: DetailsLayout, panelWidth: CGFloat) -> some View {
+        DetailsEdge(isDragging: resizing != nil, panelWidth: panelWidth, panelWidths: layout.panelWidths)
+            .offset(x: -DetailsEdge.width / 2)
+            // In the window's coordinates, which the edge doesn't move with.
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .updating($resizing) { value, state, _ in state = value.translation.width }
+                    .onEnded { value in
+                        settings.sprintDetailsWidth = Double(layout.panelWidth(draggedBy: value.translation.width))
+                    }
+            )
+            .onTapGesture(count: 2) { resizeDetails(to: nil) }
+            .accessibilityElement()
+            .accessibilityLabel("Details Width")
+            .accessibilityValue("\(Int(panelWidth.rounded())) points")
+            .accessibilityAdjustableAction { direction in
+                resizeDetails(to: layout.panelWidth(nearest: layout.panelWidth + (direction == .increment ? 60 : -60)))
+            }
+            .accessibilityAction(named: "Usual Width") { resizeDetails(to: nil) }
+    }
+
+    /// Makes the details this wide beside the board, or as wide as usual.
+    private func resizeDetails(to width: CGFloat?) {
+        withAnimation(.easeOut(duration: 0.2)) { settings.sprintDetailsWidth = width.map { Double($0) } }
     }
 
     /// Shows a work item's details.
@@ -236,6 +298,44 @@ struct SprintPage: View {
                 }
             }
         }
+    }
+}
+
+/// The left edge of a work item's details beside the board, to drag: a grip shows while you point at it or drag it, and the
+/// pointer says which way it can go.
+private struct DetailsEdge: View {
+    /// How wide it is to point at: half over the details, half beside them.
+    static let width: CGFloat = 10
+
+    let isDragging: Bool
+    let panelWidth: CGFloat
+    let panelWidths: ClosedRange<CGFloat>
+
+    @LocalState private var isHovered = false
+
+    var body: some View {
+        Color.clear
+            .frame(width: Self.width)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .overlay {
+                Capsule()
+                    .fill(isDragging ? Color.accentColor : Color.primary.opacity(0.3))
+                    .frame(width: 4, height: 40)
+                    .opacity(isHovered || isDragging ? 1 : 0)
+                    .animation(.easeOut(duration: 0.15), value: isHovered || isDragging)
+            }
+            .onHover { isHovered = $0 }
+            .pointerStyle(.columnResize(directions: directions))
+            .help("Drag to make the details wider or narrower; double-click for their usual width")
+    }
+
+    /// Left while the details can be wider, right while they can be narrower.
+    private var directions: HorizontalDirection.Set {
+        var directions: HorizontalDirection.Set = []
+        if panelWidth < panelWidths.upperBound { directions.insert(.leading) }
+        if panelWidth > panelWidths.lowerBound { directions.insert(.trailing) }
+        return directions
     }
 }
 
