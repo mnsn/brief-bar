@@ -83,8 +83,20 @@ struct Log {
     /// A new session whose first turn starts with `prompt`.
     mutating func start(_ prompt: String, at date: Date) {
         add("session.start", ["producer": "copilot-agent", "version": 1], at: date)
-        add("user.message", ["content": prompt], at: date.addingTimeInterval(1))
-        add("assistant.turn_start", ["turnId": "0"], at: date.addingTimeInterval(2))
+        ask(prompt, at: date.addingTimeInterval(1))
+    }
+
+    /// You ask something, which starts a turn.
+    mutating func ask(_ prompt: String, at date: Date) {
+        add("user.message", ["content": prompt], at: date)
+        add("assistant.turn_start", ["turnId": "0"], at: date.addingTimeInterval(1))
+    }
+
+    /// The agent answers you, which ends its turn.
+    mutating func answer(_ message: String, at date: Date) {
+        add("assistant.message", ["messageId": UUID().uuidString, "content": message, "toolRequests": [[String: Any]]()],
+            at: date)
+        add("assistant.turn_end", ["turnId": "0"], at: date.addingTimeInterval(1))
     }
 
     /// The agent calls a tool, which is still running unless `finished`, saying `message` as it does.
@@ -147,13 +159,14 @@ struct Session {
 
 var sessions: [Session] = []
 
+/// A session whose first turn asks `prompt`, or else what its name says.
 func session(
-    _ id: String, _ name: String, project: String?, branch: String = "main", mode: String = "interactive",
+    _ id: String, _ name: String, prompt: String? = nil, project: String?, branch: String = "main", mode: String = "interactive",
     running: Bool = false, started: Date, updated: Date? = nil, context: (Int, Int), coordinator: String? = nil,
     _ build: (inout Log) -> Void
 ) {
     var log = Log()
-    log.start(name, at: started)
+    log.start(prompt ?? name, at: started)
     build(&log)
     sessions.append(Session(id: id, name: name, project: project, branch: branch, mode: mode, running: running,
                             createdAt: started, updatedAt: updated ?? started, context: context, coordinator: coordinator,
@@ -278,19 +291,40 @@ session("8b2f6c4d-7e1a-4b93-a5c8-0d9e3f1b6a10", "Bump dependencies", project: "a
     log.finish("Updated 14 packages to their latest minor versions. All tests pass.", at: ago(2 * day))
 }
 
-// A long one, with checkpoints, on the branch of the Azure DevOps demo's pull request !4120, so Show Links links them.
+// A long one, with checkpoints, on the branch of the Azure DevOps demo's pull request !4120, so Show Links links them. It
+// went back and forth with you over a few turns, which Summarize with Copilot reads.
 let savedItems = "c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"
-session(savedItems, "Save items for later", project: "shop-web", branch: "saved-items", mode: "autopilot",
+session(savedItems, "Save items for later", prompt: """
+        Shoppers want to save cart items for later: user story 5101, on the saved-items branch of Sam's pull request \
+        !4120. Read the story and the pull request, and plan it with me before you change anything.
+        """, project: "shop-web", branch: "saved-items", mode: "autopilot",
         started: ago(5 * hour), updated: ago(2 * hour + 55 * minute), context: (141_000, 200_000)) { log in
-    log.tool("view", ["path": "src/server/cart/CartService.ts"], at: ago(4 * hour + 55 * minute))
+    log.tool("view", ["path": "src/server/cart/CartService.ts"], saying: "Reading the cart service first.",
+             at: ago(4 * hour + 55 * minute))
     log.tool("grep", ["pattern": "cart_items"], at: ago(4 * hour + 50 * minute))
+    log.answer("""
+        Here's the plan: a **saved_items** table next to cart_items, an API to save a cart item and to list saved ones, \
+        and a **Save for later** button on each cart item. Only signed-in shoppers can save, as the story's comments \
+        say; guests are asked to sign in. Shall I start with the table and the API?
+        """, at: ago(4 * hour + 40 * minute))
+    log.ask("Yes, go ahead. A saved item should keep the price it had in the cart.", at: ago(4 * hour + 30 * minute))
     log.tool("bash", ["command": "npm run db:migrate", "description": "Create the saved items table"],
              at: ago(4 * hour + 15 * minute))
     log.tool("bash", ["command": "npm test -- server/cart", "description": "Run the cart service tests"],
              at: ago(4 * hour))
+    log.answer("""
+        Added the saved_items table and its migration, and two endpoints:
+
+        - `POST /api/cart/items/:id/save` moves an item from the cart to saved items, with its price and currency
+        - `GET /api/cart/saved` lists them, newest first
+
+        A guest gets a 401. All 48 cart service tests pass, 6 of them new.
+        """, at: ago(3 * hour + 55 * minute))
+    log.ask("Now add the Save for later button to each cart item, hidden from guests, and push the branch.",
+            at: ago(3 * hour + 45 * minute))
     log.tool("edit", ["path": "src/web/cart/CartItemRow.tsx"], at: ago(3 * hour + 35 * minute))
     log.tool("bash", ["command": "npm test -- cart", "description": "Run the cart tests"],
-             at: ago(3 * hour + 15 * minute))
+             saying: "The button is in. Running the cart tests.", at: ago(3 * hour + 15 * minute))
     log.tool("bash", ["command": "git push origin saved-items", "description": "Push the branch"], at: ago(3 * hour))
     log.finish("""
         Shoppers can save cart items for later: a saved items table and API in the cart service, and a Save for later \
