@@ -2,27 +2,34 @@
 
 ## Unreleased
 
-- **Summarize on your Mac with Apple Intelligence.** In **Settings › General › Summaries**, choose
-  Apple Intelligence or a model through Copilot. Apple Intelligence is the default unless you've
-  already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
-  still start off. If Apple Intelligence isn't ready or can't summarize an item, BriefBar explains why
-  and never switches to Copilot automatically.
+- **Summarize on your Mac with Apple Intelligence, or with the model you choose.** In **Settings ›
+  General › Summaries**, choose Apple Intelligence, free on your Mac, or a model through Copilot, from
+  Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: the picker
+  says what each costs. Apple Intelligence is the default unless you've already chosen a model, needs no
+  Copilot subscription, and keeps the summary on your Mac; it's a small model, so with long histories it
+  can get details wrong, and a Copilot model is more accurate. Summaries still start off. If Apple
+  Intelligence isn't ready or can't summarize an item, BriefBar explains why and never switches to
+  Copilot automatically.
 - **Know where things stand in a few lines, as you open them.** With **Summaries** on, opening a work
-  item's details, or a pull request's or a Copilot session's page, writes a few sentences at the top:
-  what reviewers asked and whether it's answered, what Copilot did and said is left, what's blocking,
-  where what was built differs from what the work item asks, and the next step and whose it is. It
-  reads more than the rows show, so you don't have to open Azure DevOps or the session: the work item's
-  description and comments, each Azure DevOps pull request's description and comment threads, and what
-  you asked in each Copilot session and what Copilot answered. Its card says what it's about to do as
-  it opens, with **Not Now**: Apple Intelligence writes it on your Mac, and a Copilot model uses one
-  request on your Copilot plan. One that's still current shows again as it was, and once something
-  changes, **↻** writes a new one, as opening it does once it's ten minutes old. If you turned summaries
-  on before, they're still written only when you click **✨**: choose **As you open one** in its
-  setting's **Writes** to change that. While they're off, Where It Stands offers them, with **Turn
+  item's details, or a pull request's or a Copilot session's page, writes a summary at the top: a
+  headline, the next step and whose it is, and a few points, a bullet each, on what reviewers asked and
+  whether it's answered, what Copilot did and said is left, what's blocking, and where what was built
+  differs from what the work item asks. It reads more than the rows show, so you don't have to open
+  Azure DevOps or the session: the work item's description and comments, each Azure DevOps pull
+  request's description and comment threads, and what you asked in each Copilot session and what
+  Copilot answered. Its card says what it's about to do as it opens, with **Not Now**: Apple
+  Intelligence writes it on your Mac, and a Copilot model uses one request on your Copilot plan. One
+  that's still current shows again as it was; once something changes, **↻** writes a new one, as
+  opening it does, saying so first, once that summary is ten minutes old. If you turned summaries on
+  before, they're still written only when you click **✨**: choose **As you open one** in its setting's
+  **Writes** to change that. While they're off, Where It Stands and pages offer them, with **Turn
   On…**. Azure DevOps and GitHub Copilot each say what they read for it, so they ask you to look again
   once.
-- **Read more of a summary under a row:** its headline, the next step and the first three lines of the
-  rest, with **Show More** for all of it; written again, the one before stays until the new one's ready.
+- **Read more of a summary under a row:** its headline, the next step and the first three lines of its
+  points, with **Show More** for all of them, and what changed once it's out of date; written again, the
+  one before stays until the new one's ready.
+- **BriefBar no longer lists the Copilot CLI's sessions that write summaries**, even when it reads
+  sessions from their folders.
 - **Make the text in BriefBar's windows bigger.** **Text Size in Windows**, in **Settings ›
   Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
   descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it

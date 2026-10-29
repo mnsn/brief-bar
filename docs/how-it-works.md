@@ -482,15 +482,19 @@ sent to Copilot says how it went, and Copilot what it recorded.
 on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that, **Writes**: **As
 you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
 line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
-model can do, with the model: Apple Intelligence (on this Mac), the default when no model was chosen, or Claude Haiku
-5.5, Claude Sonnet 5.5, GPT-6.1 Sol or Gemini 4 Argon through Copilot (`CopilotModel.forSummaries`), not Opus, which
-costs more than a summary is worth, nor Auto, which may choose it. Existing model choices and the on/off setting stay as
-they were, under the same `summaries.copilot.*` preferences. Apple Intelligence runs through `OnDeviceModel` and
+model can do, with the model, each with what it costs (`StorySummariesSetting.choiceTitle`): Apple Intelligence (on
+this Mac, free), the default when no model was chosen, then, through Copilot, from the cheapest to the most capable,
+Claude Haiku 5.5 (cheapest), Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs
+the most) (`CopilotModel.forSummaries`), so you choose what a summary is worth; never Auto, which may choose any. While
+Apple Intelligence is chosen, a line under it says it's a small model, which can get details wrong with long histories,
+and that Copilot's models read more of each and are more accurate. Existing model choices and the on/off setting stay
+as they were, under the same `summaries.copilot.*` preferences. Apple Intelligence runs through `OnDeviceModel` and
 `SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests, sign-in or subscription;
 it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the setting explains when it
 isn't available. Only a selected Copilot model checks whether the Copilot CLI is there, as your login shell finds it,
-once it's on. Local failures never fall back to Copilot. While Show Links is off, it's dimmed and can't be changed. **Writes** starts as **As you open one**, except for whoever had summaries on before it came, when
-they were written only when you asked: they keep **Only when you ask** until they choose otherwise, saved once, the
+once it's on. Local failures never fall back to Copilot. While Show Links is off, it's dimmed and can't be changed.
+**Writes** starts as **As you open one**, except for whoever had summaries on before it came, when they were written
+only when you asked: they keep **Only when you ask** until they choose otherwise, saved once, the
 first time this version starts, so an update never starts spending for them.
 
 Once something's linked to the work item (`StorySummaries.hasSomethingToSum`), and no summary shows or is about to,
@@ -505,8 +509,12 @@ place, unless one is being written, you closed it, the last couldn't be written 
 (`timesActed(on:)`, which the details remember as it opens, so what they do by themselves never undoes what you did).
 One that's there already shows again, as it was, while it's current, once what it summed up is told as it is now; out
 of date, it's written again as it opens only once it's ten minutes old (`rewriteAfter`), since a session at work changes
-what it says every few minutes, and ↻ writes it sooner. **Not Now** keeps it from being written as it opened, this time,
-and ✨ shows. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
+what it says every few minutes, and ↻ writes it sooner. Then, and for one that couldn't be written ten minutes ago or
+more, its card says so as it opens, as for a new one (`StorySummaries.isDue`): "Since then: !4120 changed. Updating in a
+moment · 1 request", or "Trying again in a moment", with **Not Now** in place of ↻ and ✕, or of **Try Again**. **Not
+Now** keeps it from being written as it opened, this time, and ✨, or ↻, shows. While its setting shows from **Turn
+On…**, nothing's written as it opens (`StorySummaries.isChoosing`): turning summaries on there writes one once you're
+done choosing how. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
 Stands, or its getting something linked while it shows, such as links read after it opened, asks again. With **Only when
 you ask**, it's written when you click ✨. The card's coming, filling and going moves what's under it smoothly.
 
@@ -526,9 +534,9 @@ read for it shares what its story leaves of them, the same way. The on-device se
 separately, reserves up to 500 tokens for the answer and has a 45-second timeout. Character limits aren't token
 guarantees: if the model's context window is exceeded, the summary says so and offers a model change, never a cloud
 retry. Data cut short says details were left out, and the instructions require the summary to say it's incomplete
-rather than treat missing data as no blockers or votes. The data starts with your name, as your pull requests have it in Azure DevOps, when that's
-known, and the model is told that's who reads it, to call you "you"; then, after `SHOWN`, who it all waits on, as Where
-It Stands says it above the summary. The model is told that you see each item's title and status line and what's after
+rather than treat missing data as no blockers or votes. The data starts with your name, as your pull requests have it
+in Azure DevOps, when that's known, and the model is told that's who reads it, to call you "you"; then, for a work item,
+after `SHOWN`, who it all waits on, as Where It Stands says it above the summary, which pages and rows don't say. The model is told that you see each item's title and status line and what's after
 `SHOWN`, so it never repeats them, nor lists tasks' states or hours or says that a build passed, but says what you'd
 otherwise open Azure DevOps or a session to learn: what reviewers asked and whether that's answered, what Copilot
 changed and what it said is left or risky, why a build failed, what blocks the work and on whom; and to check what was
@@ -542,9 +550,13 @@ a pull request's row says who sent it to you in a chat, or that you answered the
 its votes instead (`ItemStory.sharedSentence`), and its status as active or a draft (`LinkedItem.sharedStatus`); who it
 waits on says only "you, to look at !4113". The details still show who sent it.
 
-The card (`SummaryCard`), at the top of Where It Stands, under Waiting On, shows all of it: the headline, the next step,
-"Next for you: Complete !4091.", and what's been done, what's under way and what's left, never behind **Show More**,
-since that's what explains where things stand. Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
+The card (`SummaryCard`), at the top of Where It Stands, under Waiting On, shows all of it, a size bigger than the
+details' text: the headline, the next step, "Next for you: Cap the backoff, then reply to Sam.", and its points, never
+behind **Show More**, since that's what explains where things stand: a bullet each, with its bold and `code` as the model
+wrote them, and a link only as its words, since what a model writes may come from anyone's comment (`SummaryMarkdown`,
+`SummaryPoints`); an answer without points shows as the text it is. A next step that only says again what Waiting On
+says above it, for whom that line says it waits on, in a few words, naming only what that line names, as "Complete
+!4091." under "you, to complete !4091", doesn't show (`SummaryCard.repeats`). Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
 Copilot", the time each minute and never cut short, and its tooltip, which model wrote it, when, from what, "from 5101,
 !4120 and 1 Copilot session", and, for a Copilot model, that it was 1 request. Each action has one control: **Not Now** before it's written, **Stop** while it is; then **↻**,
 which writes it again, and **✕**, each in a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long
@@ -553,17 +565,18 @@ as summaries are, and **Show Summary** shows it again without writing another; *
 shows, gray, under "Updating · on this Mac", or "· 1 request", with **Stop**, which brings it back as it was
 (`StorySummaries.previous(for:)`). Out of date, its caption says so in bold, its text turns a little lighter, and its
 foot says what changed, "Since then: !4120 changed.", with **Summarize Again**, in the tint, as a link. One that
-couldn't be written again stays as it was, with why at its foot, "Couldn't update: Apple Intelligence is busy or took
-too long. Try again.",
-**Choose Model…** for a model that isn't on your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't
-be written at all says "Couldn't summarize: …", with the same. VoiceOver says "Summary ready" and what it's of, once,
+couldn't be written again stays as it was, lighter only if it's out of date too, with why at its foot, "Couldn't update:
+Apple Intelligence is busy or took too long. Try again.", and under that, **Choose Model…** for a model that isn't on
+your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't be written at all says "Couldn't summarize:
+…", with the same, and its ✕ closes it, since nothing's kept. VoiceOver says "Summary ready" and what it's of, once,
 however many places show it. Your name comes from Azure DevOps, or else from your GitHub login.
 
 While Summaries is off and Show Links is on, a line where its card would be, in Where It Stands once something's linked
 and under a page's heading, offers it (`SummaryOffer`): "Apple Intelligence can tell you where this stands, in a few
-lines.", or Copilot, as the model chosen, with **Turn On…**, in the tint, which shows its setting in a popover, what it
-uses or sends, where and what it costs, to turn it on there, the line staying while it shows; and **✕**, which hides the line for good
-(`summaries.copilot.offerHidden`).
+lines.", or Copilot, as the model chosen, with **Turn On…**, in the tint, after it while it fits, or else on a line of
+its own, which shows its setting in a popover, what it uses or sends, where and what it costs, to turn it on there, the
+line staying while it shows; and **✕**, which hides the line for good (`summaries.copilot.offerHidden`). It's above where
+the card will be, so turning summaries on there doesn't move it.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
 (`StorySummaries.canSummarize`, while a source describes it), only when you ask, never as they show: pointing at its row
@@ -573,9 +586,10 @@ right-click and Actions menus have, in a group of its own right after opening it
 Intelligence** or **Summarize with Copilot**, then
 **Stop Summarizing**, **Hide Summary** or **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do
 its accessibility actions. Its summary shows under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨
-and the headline, then the next step and for whom, in full, then, quieter, the first three lines of what's been done and
-what's left (`RowSummaryContent.paragraphLines`), with **Show More** at their end, in the tint, as a link, while there's
-more, and, out of date, **Summarize Again**; ✕ shows on the right while you point at it, over its first line, and the
+and the headline, then the next step and for whom, in full, then, quieter, the first three lines of its points, after
+"•", with their bold and code (`RowSummaryContent.paragraphLines`, `SummaryMarkdown.joined`), with **Show More** at
+their end, in the tint, as a link, while there's more, and, out of date, what changed, "Out of date: !4102 changed",
+with **Summarize Again**; ✕ shows on the right while you point at it, over its first line, and the
 time it was written is in its tooltip, so that it isn't read as the row's; it ends where the row's time does, left of
 its actions. Written again, the one before stays, gray, with a spinner and **Stop** over the end of its first line; one
 that couldn't be written again stays, with "Couldn't update: …" and **Try Again** at its foot. It's the same summary as

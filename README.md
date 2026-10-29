@@ -371,23 +371,26 @@ Azure DevOps for it.
 Turn on **Summaries** in **Settings › General**, under Show Links, or with **Turn On…** where Where It
 Stands offers them, and, once something's linked to a work item, opening its details writes a few lines on
 where it stands at the top of Where It Stands: a headline, the next step and whose it is, and a few
-sentences on what reviewers asked and whether it's answered, what Copilot did and said is left or risky,
-what's blocking, and where what was built differs from what the work item asks, never what the rows say
-already. For it, BriefBar reads more of each thing than its row shows: the work item's description and
+points, a bullet each, on what reviewers asked and whether it's answered, what Copilot did and said is
+left or risky, what's blocking, and where what was built differs from what the work item asks, never what
+the rows say already. For it, BriefBar reads more of each thing than its row shows: the work item's description and
 comments, each Azure DevOps pull request's description and comment threads, and what you asked in each
 Copilot session and what Copilot answered, so you needn't open them or ask a session what it did. As the
-details open, its card shows at once, "Summarizing in a moment", with **Not Now**; two seconds later it's
-written. One that's still current shows again as it was; once something it summed up changes, it says
-**Out of date**, and what changed, and **↻** or **Summarize Again** writes another, as opening it does
-once it's ten minutes old, while the one before stays on screen until it's ready. With **Writes** set to
+details open, its card shows at once, "Summarizing in a moment", with **Not Now**; two seconds later it
+starts writing. One that's still current shows again as it was; once something it summed up changes, it
+says **Out of date**, and what changed, and **↻** or **Summarize Again** writes another, as opening it
+does once that summary is ten minutes old, saying so first, with **Not Now**, while the one before stays
+on screen until the new one's ready. With **Writes** set to
 **Only when you ask**, it waits for **✨** instead; if you turned summaries on before **Writes** came,
 that's what you keep until you change it.
 
 Apple Intelligence writes it on your Mac unless you've already chosen a model: it needs macOS 26 or later
 and Apple Intelligence on and ready, uses no Copilot requests or subscription, and never Private Cloud
-Compute; it can take less, so it reads a shorter cut of each thing. You can instead choose a Copilot
-model, which gets those details through the Copilot CLI, one request on your Copilot plan each time
-one's written, and the card says so as it opens. Neither gets tools, so it can only write. The card says
+Compute; it can take less, so it reads a shorter cut of each thing, and, being a small model, it can get
+details wrong with long histories. You can instead choose a model through Copilot, from Claude Haiku 5.5,
+the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets those details through
+the Copilot CLI, one request on your Copilot plan, at the model's rate, each time one's written, and the
+card says so as it opens. Neither gets tools, so it can only write. The card says
 when it was written, and its tooltip by which model and from what. When one can't be written, it says
 why and what would help: Apple Intelligence isn't available or the item is too long, the Copilot CLI
 isn't signed in, the model isn't on your plan (**Choose Model…**), or your premium requests ran out; one
@@ -397,8 +400,8 @@ Copilot by itself.
 The lists have it too, when you ask: point at a pull request or a Copilot session, in Azure DevOps',
 GitHub's or Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize** with
 the model you chose. Its summary shows under its row, as a chat's does, from what's known of it and
-what's linked to it: its headline, what's next, and the first three lines of the rest; **Show More**
-shows all of it. **✕** hides it, and **Show Summary**, in its menu, shows it again without writing
+what's linked to it: its headline, what's next, and the first three lines of its points; **Show More**
+shows all of them. **✕** hides it, and **Show Summary**, in its menu, shows it again without writing
 another. A pull request's or a session's page writes the same summary as it opens, as a work item's
 details do. Widgets never show one.
 
