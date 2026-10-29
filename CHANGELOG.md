@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 - 2026-10-29
 
 - **A work item's details show its text as written.** In fields written in Markdown, a numbered list
   with code, a quote, a heading or a table in an item started counting again after it, and nested
