@@ -124,55 +124,59 @@ private struct RowSummaryContent: View {
                     .lineLimit(showsMore ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                Spacer(minLength: 4)
-                // When it was written, or, while you point at it, ✕.
-                ZStack(alignment: .trailing) {
-                    TimelineView(.periodic(from: at, by: 60)) { context in
-                        Text(Elapsed.short(since: at, now: context.date))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                // Room for ✕; its time is in its tooltip, so that it isn't read as the row's.
+                Spacer(minLength: 24)
+            }
+            // While you point at it, ✕, over the end of its first line, which it doesn't make any taller.
+            .overlay(alignment: .topTrailing) {
+                if isHovered {
+                    Button {
+                        summaries.hide(subject)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
-                    .opacity(isHovered ? 0 : 1)
-                    if isHovered {
-                        Button {
-                            summaries.hide(subject)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .frame(width: 18, height: 18)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Hide the summary: Show Summary, in its menu, shows it again")
-                    }
+                    .buttonStyle(.borderless)
+                    .help("Hide the summary: Show Summary, in its menu, shows it again")
+                    .offset(y: -3)
                 }
             }
+            // Show More at the end of what's next, while there's more; Show Less at the end of the rest.
+            let more = summary.paragraph == nil ? nil : Button(showsMore ? "Show Less" : "Show More") {
+                withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11))
+            .fixedSize()
             if let next = summary.next {
-                (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                    .font(.system(size: options.rowDetailSize))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(showsMore ? nil : 2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.leading, Self.indent)
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                        .font(.system(size: options.rowDetailSize))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(showsMore ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    if !showsMore, let more { more }
+                }
+                .padding(.leading, Self.indent)
             }
             if showsMore, let paragraph = summary.paragraph {
-                Text(paragraph)
-                    .font(.system(size: options.rowDetailSize))
-                    .foregroundStyle(.primary.opacity(0.85))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.leading, Self.indent)
-                    .padding(.top, 2)
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text(paragraph)
+                        .font(.system(size: options.rowDetailSize))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    if let more { more }
+                }
+                .padding(.leading, Self.indent)
+                .padding(.top, 2)
             }
-            if summary.paragraph != nil || changed != nil {
+            if (summary.next == nil && !showsMore && more != nil) || changed != nil {
                 HStack(spacing: 12) {
-                    if summary.paragraph != nil {
-                        Button(showsMore ? "Less" : "More") {
-                            withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
-                        }
-                    }
+                    if summary.next == nil, !showsMore, let more { more }
                     if let changed {
                         Text("Out of date")
                             .fontWeight(.semibold)

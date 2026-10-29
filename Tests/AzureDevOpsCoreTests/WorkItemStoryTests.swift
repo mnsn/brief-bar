@@ -61,9 +61,15 @@ import Testing
         #expect(told.notes[1].value.contains("Show saved items.") == true)
         #expect(told.notes[1].value.contains("Newest first") == true)
         #expect(told.notes.last == ItemStory.Fact("Latest comments", "Sam Rivera: Use the 48 pt thumbnails.\nSomeone: Started."))
+        #expect(told.notesRead)
         // Another work item's details don't count.
         let other = WorkItemStory.make(item(5104, "Task", "New"), details: details)
         #expect(other.notes.isEmpty)
+        #expect(!other.notesRead)
         #expect(other.sentence == "New")
+        // Its own details, without a text or a comment: it has no notes, as read.
+        let blank = WorkItemDetails(item: task, readAt: Date())
+        #expect(WorkItemStory.make(task, details: blank).notes.isEmpty)
+        #expect(WorkItemStory.make(task, details: blank).notesRead)
     }
 }

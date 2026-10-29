@@ -459,6 +459,17 @@ import Testing
         }
     }
 
+    /// Read both then and now, a work item's first comment, or its last one gone, changes what it says.
+    @Test func aFirstCommentOrTheLastOneGoneMakesItOutOfDate() async {
+        let none = ItemStory(sentence: "Active", notesRead: true)
+        let commented = ItemStory(
+            sentence: "Active", notes: [ItemStory.Fact("Latest comments", "Sam Rivera: This blocks the release.")], notesRead: true
+        )
+        #expect(await whatChanged(then: [workItem: none], now: [workItem: commented]) == "5110 changed")
+        #expect(await whatChanged(then: [workItem: commented], now: [workItem: none]) == "5110 changed")
+        #expect(await whatChanged(then: [workItem: none], now: [workItem: none]) == nil)
+    }
+
     /// A work item has its notes only while its details were read, which those of another may have taken the place of.
     @Test func notesKnownOnlyThenOrOnlyNowDontMakeItOutOfDate() async {
         let read = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])

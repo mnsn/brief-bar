@@ -213,8 +213,7 @@ final class WorkLinksStore {
                 facts += Self.links(of: entry, session: session)
                 let phase = entry.status.phase
                 let copilot = self.copilot
-                let from = entry.onPullRequest.map { ItemRef.pullRequest(organization: $0.organization, number: $0.id) }
-                    ?? entry.workItem.map { ItemRef.workItem(organization: $0.organization, id: $0.id) }
+                let from = entry.target
                 let fromLabel = entry.onPullRequest.map { "!\($0.id)" } ?? entry.workItem.map { String($0.id) }
                 let fromTitle: String? = if let pullRequest = entry.onPullRequest {
                     copilot.pullRequestTitle(pullRequest)
@@ -271,7 +270,7 @@ final class WorkLinksStore {
             let entries = copilot.isOn ? tasks.compactMap { task in copilot.latest(for: task).map { (task, $0) } } : []
             let runs = Dictionary(entries.map { ($0.0.id, $0.1.sentence(now: nil)) }, uniquingKeysWith: { first, _ in first })
             var story = WorkItemStory.make(item, details: details?.details, tasks: tasks, taskRuns: runs)
-            story.waits = ItemStory.Wait.ordered(entries.flatMap { Self.waits(of: $0.1) })
+            story.waits = ItemStory.Wait.ordered(CopilotTaskEntry.waits(of: entries.map(\.1), isDone: isDone) { self.workItem($0)?.type })
             return story
         case .pullRequest:
             if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
@@ -284,10 +283,34 @@ final class WorkLinksStore {
             return pullRequest.map { PullRequestStory.others($0, me: me) }
         case .session:
             guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
-            return Self.story(of: entry)
+            var story = Self.story(of: entry)
+            // Its failure waits on you only while it's the latest sent for what it was sent for, and that isn't done.
+            let sentFor = copilot.entries.filter { $0.target == entry.target }
+            story.waits = CopilotTaskEntry.waits(of: sentFor, isDone: isDone) { self.workItem($0)?.type }.filter { $0.about == ref }
+            return story
         case .gitHubPullRequest:
             return nil
         }
+    }
+
+    /// Whether what work was sent to Copilot for is done, as last read: a work item that's done, a pull request that's
+    /// closed.
+    private func isDone(_ ref: ItemRef) -> Bool {
+        switch ref.kind {
+        case .workItem:
+            return workItem(ref)?.isDone ?? false
+        case .pullRequest:
+            let pullRequest = store.records.first { $0.id.linkRef == ref }?.pullRequest
+                ?? read.pullRequests.values.first { $0.key.linkRef == ref }
+            return pullRequest.map { $0.status != .active } ?? false
+        case .gitHubPullRequest, .session:
+            return false
+        }
+    }
+
+    /// One of the sprint's work items, or one read for what's linked.
+    private func workItem(_ ref: ItemRef) -> WorkItem? {
+        (sprintItems + read.workItems.values).first { $0.linkRef == ref }
     }
 
     /// A task sent to Copilot: how it went, without how long it's been at it, which its date says, the pull request it
@@ -307,19 +330,8 @@ final class WorkLinksStore {
         }
         return ItemStory(
             sentence: sentence, date: entry.status.since ?? entry.startedAt, facts: [ItemStory.Fact("Model", entry.options.title)],
-            account: account, waits: waits(of: entry)
+            account: account, waits: entry.waits()
         )
-    }
-
-    /// Copilot, while the work sent to it goes on; you, once it failed: "Copilot, on 5103".
-    static func waits(of entry: CopilotTaskEntry) -> [ItemStory.Wait] {
-        let on = entry.onPullRequest.map { "!\($0.id)" } ?? entry.workItem.map { "\($0.id)" } ?? "its task"
-        let session = ItemRef.session(entry.id)
-        if entry.status.phase.isActive { return [ItemStory.Wait(.copilot, "Copilot, on \(on)", about: session)] }
-        if entry.status.phase == .failed {
-            return [ItemStory.Wait(.you, "you, to look at Copilot's work on \(on), which failed", about: session)]
-        }
-        return []
     }
 
     static func hint(_ pullRequest: PullRequest) -> BranchHint {
@@ -361,6 +373,49 @@ extension RunPhase {
         case .finished: return .done
         case .failed: return .failing
         case .stopped: return nil
+        }
+    }
+}
+
+extension CopilotTaskEntry {
+    /// What it was sent for: the pull request it works on, or else its work item.
+    var target: ItemRef? {
+        onPullRequest.map { ItemRef.pullRequest(organization: $0.organization, number: $0.id) }
+            ?? workItem.map { ItemRef.workItem(organization: $0.organization, id: $0.id) }
+    }
+
+    /// Copilot, while it goes on; you, once it failed: "Copilot, on task 5103", and on that task itself, "Copilot, working
+    /// on it".
+    /// - Parameter type: its work item's type, such as "Task", when it's known; or else it's a work item.
+    func waits(type: String? = nil) -> [ItemStory.Wait] {
+        let on = onPullRequest.map { "!\($0.id)" } ?? workItem.map { "\(type?.lowercased() ?? "work item") \($0.id)" } ?? "its task"
+        let session = ItemRef.session(id)
+        if status.phase.isActive {
+            return [ItemStory.Wait(
+                .copilot, "Copilot, on \(on)", about: session, onItself: target.map { .init($0, "Copilot, working on it") }
+            )]
+        }
+        if status.phase == .failed {
+            return [ItemStory.Wait(
+                .you, "you, to look at Copilot's work on \(on), which failed", about: session,
+                onItself: target.map { .init($0, "you, to look at Copilot's work on it, which failed") }
+            )]
+        }
+        return []
+    }
+
+    /// Who the work sent to Copilot waits on, as the details and agents say it: Copilot, while each goes on; you, once the
+    /// one started last for a work item or a pull request failed, unless that's done since (`isDone`), as you'd send it
+    /// again or do it yourself.
+    /// - Parameter type: a work item's type, such as "Task", when it's known.
+    static func waits(
+        of entries: [CopilotTaskEntry], isDone: (ItemRef) -> Bool, type: (ItemRef) -> String? = { _ in nil }
+    ) -> [ItemStory.Wait] {
+        var sent: Set<ItemRef> = []
+        return entries.sorted { $0.startedAt > $1.startedAt }.flatMap { entry -> [ItemStory.Wait] in
+            let isLatest = entry.target.map { sent.insert($0).inserted } ?? true
+            if entry.status.phase == .failed, !isLatest || entry.target.map(isDone) == true { return [] }
+            return entry.waits(type: entry.workItem == nil ? nil : entry.target.flatMap(type))
         }
     }
 }

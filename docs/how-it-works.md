@@ -402,14 +402,21 @@ Links links to it, in a card, the one that needs you most first (needs you, then
 done or ready, then the rest, the newest first in each), a session linked through a pull request under that pull
 request, and a task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then
 **Show More**, with a tally of their states once there are five or more. A task with nothing linked shows none of it.
-Over the card, **Waiting on:** says who the work item and what's linked to it wait on, and for what (`ItemStory.waits`):
-you first, in the color of what needs you, saying what to do, such as "you, to complete !4091"; then other people, such
-as "reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on 5103". A pull request's come from
+Under its title, as its subtitle, **Waiting on:** says who the work item and what's linked to it wait on, and for what
+(`ItemStory.waits`): you first, in bold rather than a color, which could clash with the state of what it's about, such
+as a ready pull request's green, saying what to do, such as "you, to complete !4091"; then other people, such as
+"reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on task 5103", or, on that task itself, "Copilot,
+working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. A pull request's come from
 `PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do; a session waits on you while it asks, and on
-Copilot while it's at work; the work sent to Copilot, on Copilot while it goes, and on you once it failed. Each is said
-once, and a session once, whether the work sent to Copilot in it or the session itself tells of it
-(`ItemStory.Wait.about`). The chevron by the title folds Where It Stands to that line, and BriefBar remembers it
-(`links.whereItStandsFolded`); folded, with nothing waiting, it says so. Pages don't show it. Each row shows
+Copilot while it's at work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a
+work item or a pull request failed, unless that's done or closed since (`CopilotTaskEntry.waits(of:isDone:)`, which
+`work_item` uses too). Each is said once, and a session once, whether the work sent to Copilot in it or the session
+itself tells of it (`ItemStory.Wait.about`); two things in the same words, such as two sessions of the same name, are
+said once with how many, "(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under
+**Show More**, so it isn't said twice, or by other names. Its title, with its chevron and count, is one control, a
+disclosure to VoiceOver, that folds Where It Stands to that line, and BriefBar remembers it
+(`links.whereItStandsFolded`); folded, with nothing waiting, it says "Waiting on: no one", but only once the work item
+and all that's linked to it have said where they stand, and never while one can't. Pages don't show it. Each row shows
 its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
 color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
 item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
@@ -480,12 +487,12 @@ status as active or a draft (`LinkedItem.sharedStatus`). The details still show 
 The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
 what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
 short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
-has one control: **Stop** while it's written, which says the model and that it's one request, then **✕** only, in a
-22-point target, which hides it (`StorySummaries.hide`): it's kept, as long as summaries are, and **Show Summary** shows
-it again without asking Copilot; **Summarize Again**, **Copy Summary** and **Hide Summary** in its right-click menu. Out
-of date, its caption says so in bold, and **Summarize Again** joins **Show More** at its foot. VoiceOver says "Summary
-ready" and what it's of, once, however many places show it. Your name comes from Azure DevOps, or else from your GitHub
-login.
+has one control: **Stop** while it's written, after "Summarizing with Claude Haiku 5.5 · 1 request", then **✕** only, in
+a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long as summaries are, and **Show Summary**
+shows it again without asking Copilot; **Summarize Again**, **Copy Summary** and **Hide Summary** in its right-click
+menu. Out of date, its caption says so in bold, and **Summarize Again** joins **Show More** at its foot. VoiceOver says
+"Summary ready" and what it's of, once, however many places show it. Your name comes from Azure DevOps, or else from
+your GitHub login.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
 (`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
@@ -494,12 +501,12 @@ spinner takes that place, so a second click there doesn't open the row. Its righ
 group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
 **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
 under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
-whom, two lines each at most, the time it was written on the right, where ✕ shows while you point at it, then **More**,
-and, out of date, **Summarize Again**; it ends where the row's time does, left of its actions. The prompt tells the
-model that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as
-its page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's
-out of date. With nothing linked
-to it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
+whom, two lines each at most, with **Show More** at its end, and, out of date, **Summarize Again**; ✕ shows on the right
+while you point at it, over its first line, and the time it was written is in its tooltip, so that it isn't read as the
+row's; it ends where the row's time does, left of its actions. The prompt tells the model that the reader sees each
+item's Status line, so it leads with what that doesn't say. It's the same summary as its page's; while it shows, what it
+summed up is read again each minute, as for Where It Stands, so it says when it's out of date. With nothing linked to
+it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
 Desktop widgets show none (`offersSummaries`).
 
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
@@ -525,7 +532,8 @@ failed one's first error, all that Copilot recorded of its work, and a work item
 (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
 than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
 been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
-description and comments when they're known only then or only now: its story has them only while its details were read.
+description and comments when they're known only then or only now: its story has them only while its details were read
+(`ItemStory.notesRead`). Read both then and now, a first comment does, and so does the last one gone.
 Its caption then says **Out of date**, in orange, with what changed in its tooltip, "!4120 changed", and **Summarize
 Again** on its right; the headline and the next step turn gray. The demo makes summaries up (`DemoSummaries`) and never
 runs Copilot, and `--render` of your own data writes none; the demo's pictures show a summary as it's written, once it
@@ -1729,7 +1737,8 @@ comments, each quoted, since what people wrote is data. Who it waits on comes fr
 of your pull requests' group and reason in your lists, such as you, to complete one that's ready, or to
 fix one whose build failed; another's votes, such as its reviewers until every required one approved,
 people and groups alike, then its author, without saying it's ready to complete, since its policies and
-checks aren't read; the work sent to Copilot that's going on; and a session that waits for you. It
+checks aren't read; the work sent to Copilot, as the details have it: going on, or the one sent last
+for something that's not done failed; and a session that waits for you. It
 reads the work item with the same GETs as its details, whose `$expand=relations` already names its pull
 requests, so it works whether Show Links is on or not, then one GET for each of those pull requests your
 lists don't have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow

@@ -349,15 +349,16 @@ way, and **‹** goes back.
 
 With [Show Links](#links) on, the details start with **Where It Stands**: the pull requests, their
 pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
-it stands in a sentence. Over them, **Waiting on** says who it all waits on, you first, such as **you,
-to complete !4091 · Copilot, on 5103**; the chevron by its title folds it to just that line. Click one, and its page shows what's known of it, right in the details: a pull
-request's reviewers and their votes, its open comments and the ones waiting on you, conflicts, and each
-build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
-and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,
-what it did, what's next, and what it said last, with what else is linked to it, such as a pull
-request's sessions. The header shows the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or
-**Esc** goes back. BriefBar doesn't write or reword any of it: Copilot's notes show as Copilot wrote
-them, and nothing more is read from Azure DevOps for it.
+it stands in a sentence. Under its title, **Waiting on** says who it all waits on, you first, such as
+**you, to complete !4091 · Copilot, on task 5103**; click the title to fold it to just that line. Click
+one, and its page shows what's known of it, right in the details: a pull request's reviewers and their
+votes, its open comments and the ones waiting on you, conflicts, and each build or check that ran on it,
+with where a failed one failed; a Copilot session's question or plan, and what Copilot recorded of its
+work as it went: the story so far, a line for each of its checkpoints, what it did, what's next, and
+what it said last, with what else is linked to it, such as a pull request's sessions. The header shows
+the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or **Esc** goes back. BriefBar doesn't
+write or reword any of it: Copilot's notes show as Copilot wrote them, and nothing more is read from
+Azure DevOps for it.
 
 Turn on **Summarize with Copilot** in **Settings › General**, under Show Links, and, once there's something
 to sum up, two things linked or more, or a story's or a bug's tasks and one thing linked, **✨ Summarize
@@ -374,7 +375,7 @@ premium requests ran out.
 The lists have it too: point at a pull request or a Copilot session, in Azure DevOps', GitHub's or
 Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize with Copilot**.
 Its summary shows under its row in two lines, as a chat's does, from what's known of it and what's
-linked to it, leading with what its row doesn't say; **More** shows the rest. **✕** hides it, and
+linked to it, leading with what its row doesn't say; **Show More** shows the rest. **✕** hides it, and
 **Show Summary**, in its menu, shows it again without asking Copilot. The same summary shows on its
 page. Widgets never show one.
 

@@ -1316,9 +1316,9 @@ enum AgentText {
     }
 
     /// Who a work item waits on, and for what: "you, to complete !4091", "reviewers of Sam Rivera's !4120", "Copilot, on
-    /// 5103". From its pull requests (`PullRequestWait`), the work sent to Copilot that's going on, and what the other
-    /// sources told, such as a Copilot session that waits for you or stopped; you first, then other people, then Copilot.
-    /// Empty when nothing waits.
+    /// 5103". From its pull requests (`PullRequestWait`), the work sent to Copilot, as the details have it
+    /// (`CopilotTaskEntry.waits(of:isDone:)`), and what the other sources told, such as a Copilot session that waits for
+    /// you or stopped; you first, then other people, then Copilot. Empty when nothing waits.
     static func waits(
         _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Item], me: String?
     ) -> [ItemStory.Wait] {
@@ -1331,21 +1331,32 @@ enum AgentText {
                 waits += [PullRequestWait.waiting(on: pullRequest, me: me)].compactMap { $0 }
             }
         }
-        for task in tasks where task.status.phase.isActive {
-            let on = task.onPullRequest.map { "!\($0.id)" } ?? task.workItem.map { "\($0.id)" }
-            waits.append(ItemStory.Wait(.copilot, "Copilot, " + (on.map { "on \($0)" } ?? "at work")))
+        // What the work was sent for, as read with it.
+        func isDone(_ ref: ItemRef) -> Bool {
+            switch ref.kind {
+            case .workItem: return ([read.item] + read.tasks).first { $0.linkRef == ref }?.isDone ?? false
+            case .pullRequest:
+                let pullRequest = read.pullRequests.first { $0.linkRef == ref }.flatMap(read.pullRequest)
+                return pullRequest.map { $0.status != .active } ?? false
+            case .gitHubPullRequest, .session: return false
+            }
+        }
+        waits += CopilotTaskEntry.waits(of: tasks, isDone: isDone) { ref in
+            ([read.item] + read.tasks).first { $0.linkRef == ref }?.type
         }
         for item in related {
             let session = item.ref.kind == .session
             let name = session ? "session “\(item.title)”" : "“\(item.title)”"
             switch item.state {
-            case .needsYou?: waits.append(ItemStory.Wait(.you, session ? "you, to answer in \(name)" : "you, to look at \(name)"))
-            case .failing?: waits.append(ItemStory.Wait(.you, "you, to look at \(name), which stopped"))
-            case .running?: waits.append(ItemStory.Wait(.copilot, "Copilot, " + (session ? "in \(name)" : "on \(name)")))
+            case .needsYou?:
+                waits.append(ItemStory.Wait(.you, session ? "you, to answer in \(name)" : "you, to look at \(name)", about: item.ref))
+            case .failing?: waits.append(ItemStory.Wait(.you, "you, to look at \(name), which stopped", about: item.ref))
+            case .running?:
+                waits.append(ItemStory.Wait(.copilot, "Copilot, " + (session ? "in \(name)" : "on \(name)"), about: item.ref))
             case .done?, nil: break
             }
         }
-        return ItemStory.Wait.ordered(waits)
+        return ItemStory.Wait.said(ItemStory.Wait.ordered(waits), on: read.item.linkRef)
     }
 
     /// What `waits` says, as the "Waiting on:" line has it.

@@ -67,17 +67,20 @@ package struct SummaryCard: View {
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
     var style: Style = .section
+    /// Whether what's next shows only with the rest, as when who it waits on shows above it.
+    var foldsNext = false
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
     @LocalState private var showsAll = false
     @LocalState private var choosesModel = false
 
-    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section) {
+    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section, foldsNext: Bool = false) {
         self.subject = subject
         self.summaries = summaries
         self.rows = rows
         self.style = style
+        self.foldsNext = foldsNext
     }
 
     private var isRow: Bool { style == .row }
@@ -125,9 +128,9 @@ package struct SummaryCard: View {
 
     static let title = "Summary by Copilot"
 
-    /// "Summarizing with Copilot (Claude Haiku 5.5) · 1 request": what it costs, while it's written.
+    /// "Summarizing with Claude Haiku 5.5 · 1 request": what it costs, while it's written, under "Summary by Copilot".
     static func writing(_ summaries: StorySummaries) -> String {
-        "Summarizing with Copilot (\(summaries.name(of: summaries.model))) · 1 request"
+        "Summarizing with \(summaries.name(of: summaries.model)) · 1 request"
     }
 
     private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
@@ -148,7 +151,7 @@ package struct SummaryCard: View {
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                if let next = summary.next {
+                if let next = summary.next, !foldsNext || showsAll {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                         .font(.system(size: isRow ? 11.5 : 12))
                         .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -163,13 +166,14 @@ package struct SummaryCard: View {
                         .textSelection(.enabled)
                 }
                 // Its way on: the rest of it, and, once it's out of date, a new one.
-                if summary.paragraph != nil || isStale {
+                let hasMore = summary.paragraph != nil || (foldsNext && summary.next != nil)
+                if hasMore || isStale {
                     HStack(spacing: 14) {
-                        if summary.paragraph != nil {
+                        if hasMore {
                             Button(showsAll ? "Show Less" : "Show More") {
                                 withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
                             }
-                            .accessibilityHint(showsAll ? "Hides what's been done and what's left" : "Shows what's been done and what's left")
+                            .accessibilityHint(showsAll ? "Hides the rest of the summary" : "Shows the rest of the summary")
                         }
                         if isStale { againButton }
                     }

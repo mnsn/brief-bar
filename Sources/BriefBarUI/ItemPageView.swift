@@ -141,18 +141,28 @@ private struct PageContent: View {
                     .glassButtonStyle()
                     .help("Shows the summary you closed, as it was written")
                 } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
-                    Button {
-                        summaries.summarize(ref)
-                    } label: {
-                        Label("Summarize with Copilot", systemImage: "sparkles")
+                    // Just "Summarize" where the whole of it doesn't fit.
+                    ViewThatFits(in: .horizontal) {
+                        summarize("Summarize with Copilot")
+                        summarize("Summarize")
                     }
-                    .glassButtonStyle()
-                    .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
                 }
             }
             .controlSize(.small)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func summarize(_ title: String) -> some View {
+        Button {
+            summaries.summarize(ref)
+        } label: {
+            Label(title, systemImage: "sparkles")
+                .fixedSize()
+        }
+        .glassButtonStyle()
+        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
+        .accessibilityLabel("Summarize with Copilot")
     }
 
     /// "Pull Request", "Copilot Session", "Sent to Copilot".

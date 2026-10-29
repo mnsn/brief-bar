@@ -80,8 +80,8 @@ package final class StorySummaries: ObservableObject {
         /// What its story said, as the prompt has it but for its notes: where it stands, its facts, its runs and the first
         /// error of one that failed, and what Copilot recorded of its work; nil when its story wasn't known.
         package var story: String?
-        /// Its story's notes, as the prompt has them, such as a work item's description and latest comments; nil when it
-        /// had none.
+        /// Its story's notes, as the prompt has them, such as a work item's description and latest comments: empty when
+        /// they were read and it has none, and nil when they weren't read.
         package var notes: String?
 
         package init(ref: ItemRef, label: String, row: String, story: String?, notes: String? = nil) {
@@ -93,8 +93,9 @@ package final class StorySummaries: ObservableObject {
         }
 
         /// Whether it says something else now: its row; or its story, when it's known both then and now, with its notes
-        /// when it had some both then and now. A story known only then or only now, such as one that's been forgotten
-        /// since, says nothing either way, and so do notes: a work item has them only while its details were read.
+        /// when they were read both then and now, such as its first comment. A story known only then or only now, such as
+        /// one that's been forgotten since, says nothing either way, and so do notes: a work item's are read only with its
+        /// details.
         func differs(from now: Input) -> Bool {
             if row != now.row { return true }
             guard let story, let current = now.story else { return false }
@@ -393,7 +394,7 @@ package final class StorySummaries: ObservableObject {
             withoutNotes.notes = []
             told = ([story.sentenceToShare] + withoutNotes.lines()).joined(separator: "\n")
             let noted = ItemStory(sentence: "", notes: story.notes).lines()
-            notes = noted.isEmpty ? nil : noted.joined(separator: "\n")
+            notes = noted.isEmpty && !story.notesRead ? nil : noted.joined(separator: "\n")
         }
         return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes)
     }

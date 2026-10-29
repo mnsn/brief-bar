@@ -24,6 +24,8 @@ public struct ItemStory: Sendable, Equatable {
     public var account: Account?
     /// Its longer texts, such as a work item's description and latest comments: for a summary of it, not for its row.
     public var notes: [Fact]
+    /// Whether its notes were read, so that none means it has none: a work item's, once its details were read.
+    public var notesRead: Bool
     /// What it doesn't say, and why: "BriefBar reads builds and comments only on your pull requests."
     public var footnote: String?
     /// Who it waits on, and for what: "you, to complete !4091", "Copilot, on 5103".
@@ -31,7 +33,7 @@ public struct ItemStory: Sendable, Equatable {
 
     public init(
         sentence: String, sharedSentence: String? = nil, date: Date? = nil, facts: [Fact] = [], more: [Fact] = [], runs: [Run] = [],
-        account: Account? = nil, notes: [Fact] = [], footnote: String? = nil, waits: [Wait] = []
+        account: Account? = nil, notes: [Fact] = [], notesRead: Bool = false, footnote: String? = nil, waits: [Wait] = []
     ) {
         self.sentence = sentence
         self.sharedSentence = sharedSentence
@@ -41,6 +43,7 @@ public struct ItemStory: Sendable, Equatable {
         self.runs = runs
         self.account = account
         self.notes = notes
+        self.notesRead = notesRead
         self.footnote = footnote
         self.waits = waits
     }
@@ -60,19 +63,33 @@ public struct ItemStory: Sendable, Equatable {
         /// What waits, when two sources can tell of it in their own words, as a Copilot session: the work sent to Copilot
         /// in it, and the session itself. It's said once.
         public var about: ItemRef?
+        /// What it's on, when that's named, and what's said on that thing itself instead: on task 5103, "Copilot, working
+        /// on it" rather than "Copilot, on task 5103".
+        public var onItself: Itself?
 
-        public init(_ who: Who, _ text: String, about: ItemRef? = nil) {
+        public struct Itself: Sendable, Equatable, Hashable {
+            public var ref: ItemRef
+            public var text: String
+
+            public init(_ ref: ItemRef, _ text: String) {
+                self.ref = ref
+                self.text = text
+            }
+        }
+
+        public init(_ who: Who, _ text: String, about: ItemRef? = nil, onItself: Itself? = nil) {
             self.who = who
             self.text = text
             self.about = about
+            self.onItself = onItself
         }
 
         public static func you(_ text: String) -> Wait { Wait(.you, text) }
         public static func people(_ text: String) -> Wait { Wait(.people, text) }
         public static func copilot(_ text: String) -> Wait { Wait(.copilot, text) }
 
-        /// Several things' waits, you first, then other people, then Copilot, each once, in the order they came: a thing
-        /// that waits, by the first words for it.
+        /// Several things' waits, you first, then other people, then Copilot, in the order they came, each once: a thing
+        /// that waits, by the first words for it, and words for nothing in particular once.
         public static func ordered(_ waits: [Wait]) -> [Wait] {
             var said: Set<String> = []
             var told: Set<ItemRef> = []
@@ -80,9 +97,41 @@ public struct ItemStory: Sendable, Equatable {
                 .sorted { ($0.element.who, $0.offset) < ($1.element.who, $1.offset) }
                 .map(\.element)
                 .filter { wait in
-                    if let about = wait.about, !told.insert(about).inserted { return false }
+                    if let about = wait.about { return told.insert(about).inserted }
                     return said.insert(wait.text).inserted
                 }
+        }
+
+        /// As they're said on a thing, once they're `ordered`: what's on that thing itself as it's said there, and the
+        /// same words for several things once, with how many, such as two Copilot sessions of the same name, "you, to answer
+        /// in session “Fix the tests” (2 sessions)".
+        public static func said(_ waits: [Wait], on subject: ItemRef? = nil) -> [Wait] {
+            let waits = waits.map { wait in
+                guard let itself = wait.onItself, itself.ref == subject else { return wait }
+                var said = wait
+                said.text = itself.text
+                return said
+            }
+            var things: [String: Set<ItemRef>] = [:]
+            for wait in waits {
+                if let about = wait.about { things[wait.text, default: []].insert(about) }
+            }
+            var said: Set<String> = []
+            return waits.compactMap { wait in
+                guard said.insert(wait.text).inserted else { return nil }
+                guard let told = things[wait.text], told.count > 1 else { return wait }
+                var counted = wait
+                counted.text += " (\(told.count) \(plural(of: wait.about?.kind)))"
+                return counted
+            }
+        }
+
+        private static func plural(of kind: ItemRef.Kind?) -> String {
+            switch kind {
+            case .workItem?: "work items"
+            case .pullRequest?, .gitHubPullRequest?: "pull requests"
+            case .session?, nil: "sessions"
+            }
         }
     }
 
@@ -200,6 +249,7 @@ public struct ItemStory: Sendable, Equatable {
             }
         }
         merged.notes += other.notes.filter { note in !self.notes.contains { $0.label == note.label } }
+        merged.notesRead = notesRead || other.notesRead
         merged.waits = Wait.ordered(merged.waits + other.waits)
         if let date = other.date { merged.date = max(merged.date ?? date, date) }
         return merged

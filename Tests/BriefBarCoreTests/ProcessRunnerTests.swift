@@ -25,15 +25,16 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func endsAProgramThatIgnoresBeingAskedToStop() async throws {
         // Both sleeps ignore SIGTERM, so only SIGKILL, a second later, ends them. The program becomes one of them
-        // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would.
+        // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would. Its time
+        // leaves the shell time to ignore SIGTERM first, even while the other tests run.
         let (result, elapsed) = try await measured {
             try await ProcessRunner().run(
                 URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "trap '' TERM; sleep 30 & echo $!; exec sleep 30"],
-                environment: nil, timeout: 0.5
+                environment: nil, timeout: 2
             )
         }
         #expect(result.status == SIGKILL)
-        #expect(elapsed > .milliseconds(1_200) && elapsed < .seconds(5))
+        #expect(elapsed > .milliseconds(2_700) && elapsed < .seconds(10))
         // The sleep is ended too.
         let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         #expect(try await ends(child))

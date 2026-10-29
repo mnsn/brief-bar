@@ -150,6 +150,38 @@ import Testing
         #expect(ItemStory.Wait.ordered([onTask, asks]) == [asks])
     }
 
+    /// Two things in the same words, such as two sessions of the same name, are both kept, and said once with how many.
+    @Test func theSameWordsForTwoThingsAreSaidOnceWithHowMany() {
+        let first = ItemStory.Wait(.you, "you, to answer in session “Fix the tests”", about: ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-000000000001"))
+        let second = ItemStory.Wait(.you, "you, to answer in session “Fix the tests”", about: ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-000000000002"))
+        let reviewers = ItemStory.Wait(.people, "reviewers of Sam Rivera's !4120")
+        let ordered = ItemStory.Wait.ordered([reviewers, first, second, first, reviewers])
+        #expect(ordered == [first, second, reviewers])
+        #expect(ItemStory.Wait.said(ordered).map(\.text) == [
+            "you, to answer in session “Fix the tests” (2 sessions)", "reviewers of Sam Rivera's !4120",
+        ])
+        // Put together again, as two sources' stories are, they're still two.
+        #expect(ItemStory.Wait.ordered(ordered + [second]) == ordered)
+        #expect(ItemStory.Wait.said([first]) == [first])
+    }
+
+    /// What's on a thing is said as it is on that thing itself: "it".
+    @Test func whatsOnAThingIsSaidAsItOnItself() {
+        let task = ItemRef.workItem(organization: "contoso", id: 5103)
+        let working = ItemStory.Wait(.copilot, "Copilot, on task 5103", onItself: .init(task, "Copilot, working on it"))
+        #expect(ItemStory.Wait.said([working], on: task).map(\.text) == ["Copilot, working on it"])
+        #expect(ItemStory.Wait.said([working], on: .workItem(organization: "contoso", id: 5101)).map(\.text) == ["Copilot, on task 5103"])
+        #expect(ItemStory.Wait.said([working]).map(\.text) == ["Copilot, on task 5103"])
+    }
+
+    /// Whether a work item's notes were read stays with it when two sources tell about it.
+    @Test func notesReadByEitherSourceAreRead() {
+        let read = ItemStory(sentence: "Active", notesRead: true)
+        #expect(ItemStory(sentence: "").merged(with: read).notesRead)
+        #expect(read.merged(with: ItemStory(sentence: "")).notesRead)
+        #expect(!ItemStory(sentence: "").merged(with: ItemStory(sentence: "")).notesRead)
+    }
+
     @Test func thePromptSaysWhoReadsItWhenThatsKnown() {
         let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
         #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))

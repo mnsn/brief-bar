@@ -184,6 +184,33 @@ import Testing
         #expect(row.status == "Working: Run the cart tests")
     }
 
+    /// The work sent to Copilot waits on Copilot while it goes on, and on you once the one sent last for something failed,
+    /// unless that's done since.
+    @Test func workSentToCopilotWaitsOnYouOnceTheOneSentLastFailed() {
+        func sent(_ phase: RunPhase, minutesAgo: Double, session: Int) -> CopilotTaskEntry {
+            CopilotTaskEntry(
+                id: String(format: "1d6b2c7e-4f0a-4b8e-9c31-%012d", session),
+                workItem: WorkItemReference(organization: "Contoso", project: "Storefront", id: 5103), options: CopilotModel.standard,
+                startedAt: Date(timeIntervalSince1970: 1_792_000_000 - minutesAgo * 60), status: RunStatus(phase: phase)
+            )
+        }
+        let task = ItemRef.workItem(organization: "contoso", id: 5103)
+        let failed = sent(.failed, minutesAgo: 10, session: 1)
+        #expect(failed.target == task)
+        // A work item, by its type when it's known, and "it" on itself.
+        #expect(CopilotTaskEntry.waits(of: [failed], isDone: { _ in false }) { _ in "Task" } == [ItemStory.Wait(
+            .you, "you, to look at Copilot's work on task 5103, which failed", about: ItemRef.session(failed.id),
+            onItself: .init(task, "you, to look at Copilot's work on it, which failed")
+        )])
+        #expect(CopilotTaskEntry.waits(of: [failed], isDone: { _ in false }).map(\.text)
+            == ["you, to look at Copilot's work on work item 5103, which failed"])
+        // Sent again since: Copilot's at it, whichever order they come in.
+        let working = sent(.working, minutesAgo: 1, session: 2)
+        #expect(CopilotTaskEntry.waits(of: [failed, working], isDone: { _ in false }) { _ in "Task" }.map(\.text) == ["Copilot, on task 5103"])
+        // Or the task is done since.
+        #expect(CopilotTaskEntry.waits(of: [failed]) { $0 == task }.isEmpty)
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

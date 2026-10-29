@@ -42,9 +42,9 @@ package struct WhereItStandsSection: View {
     static let foldedKey = "links.whereItStandsFolded"
 
     /// Who it all waits on: the thing's own, such as Copilot at work on a story's task, and what's linked to it; you first,
-    /// then other people, then Copilot, each once.
-    static func waits(of subject: ItemStory?, _ connections: [ItemStory?]) -> [ItemStory.Wait] {
-        ItemStory.Wait.ordered((subject?.waits ?? []) + connections.flatMap { $0?.waits ?? [] })
+    /// then other people, then Copilot, each once, as they're said on it (`ItemStory.Wait.said`).
+    static func waits(of story: ItemStory?, _ connections: [ItemStory?], on subject: ItemRef) -> [ItemStory.Wait] {
+        ItemStory.Wait.said(ItemStory.Wait.ordered((story?.waits ?? []) + connections.flatMap { $0?.waits ?? [] }), on: subject)
     }
 
     /// The preferences' key for the line that says how to see what's linked, once you dismissed it.
@@ -256,22 +256,25 @@ private struct StandingContent: View {
         let rows = connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }
         if (links.isOn || !isHintHidden) && !(hidesWhenEmpty && groups.isEmpty) {
             VStack(alignment: .leading, spacing: 8) {
-                header(count: connections.count, canSummarize: showsSummary && !groups.isEmpty && !isFolded)
-                let waits = WhereItStandsSection.waits(of: stories.story(for: subject), connections.map { stories.story(for: $0.item.ref) })
-                if links.isOn, showsSummary, !waits.isEmpty {
-                    WaitingLine(waits: waits)
+                let story = stories.story(for: subject)
+                let told = connections.map { stories.story(for: $0.item.ref) }
+                let waits = WhereItStandsSection.waits(of: story, told, on: subject)
+                // Who it waits on, under the title, as its subtitle; that no one does only once all of it has said where it
+                // stands, and never while something can't.
+                VStack(alignment: .leading, spacing: 3) {
+                    header(count: connections.count, canSummarize: showsSummary && !groups.isEmpty && !isFolded)
+                    if links.isOn, showsSummary, !waits.isEmpty || (isFolded && story != nil && !told.contains(nil)) {
+                        WaitingLine(waits: waits)
+                    }
                 }
                 if links.isOn, showsSummary, !isFolded {
-                    SummaryCard(subject: subject, summaries: summaries, rows: rows)
+                    // What's next is said by who it waits on, above it: it shows with the rest.
+                    SummaryCard(subject: subject, summaries: summaries, rows: rows, foldsNext: !waits.isEmpty)
                 }
-                if isFolded, links.isOn {
-                    if waits.isEmpty {
-                        Text("Nothing waits on anyone.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                } else if !links.isOn {
+                if !links.isOn {
                     off
+                } else if isFolded {
+                    EmptyView()
                 } else if groups.isEmpty {
                     HStack(spacing: 8) {
                         Text("No pull requests or Copilot sessions yet.")
@@ -312,38 +315,51 @@ private struct StandingContent: View {
     private func header(count: Int, canSummarize: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if showsSummary, links.isOn {
+                // The chevron, the title and the count fold it, as a disclosure.
                 Button {
                     let fold = !isFolded
                     withAnimation(.easeOut(duration: 0.15)) { folded = fold }
                     defaults.set(fold, forKey: WhereItStandsSection.foldedKey)
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isFolded ? 0 : 90))
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isFolded ? 0 : 90))
+                            .frame(width: 14, height: 14)
+                        titleAndCount(count)
+                    }
+                    .contentShape(Rectangle().inset(by: -3))
                 }
                 .buttonStyle(.plain)
                 .help(isFolded ? "Show what's linked" : "Show only who it waits on")
-                .accessibilityLabel(isFolded ? "Show What's Linked" : "Show Only Who It Waits On")
-            }
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .accessibilityLabel(title)
+                .accessibilityValue((isFolded ? "Collapsed" : "Expanded") + (count > 0 ? ", \(count) linked" : ""))
+                .accessibilityHint(isFolded ? "Shows what's linked" : "Shows only who it waits on")
                 .accessibilityAddTraits(.isHeader)
-            if count > 0 {
-                Text(String(count))
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.primary.opacity(0.07)))
-                    .accessibilityLabel("\(count) linked")
+            } else {
+                titleAndCount(count)
             }
             Spacer(minLength: 8)
             if links.isOn, canSummarize {
                 SummarizeButton(subject: subject, summaries: summaries)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func titleAndCount(_ count: Int) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold))
+            .accessibilityAddTraits(.isHeader)
+        if count > 0 {
+            Text(String(count))
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.primary.opacity(0.07)))
+                .accessibilityLabel("\(count) linked")
         }
     }
 
@@ -448,21 +464,24 @@ private struct StandingContent: View {
     }
 }
 
-/// "Waiting on: you, to complete !4091 · Copilot, on 5103", what waits on you in the color of what needs you.
+/// "Waiting on: you, to complete !4091 · Copilot, on task 5103", what waits on you in bold; or "Waiting on: no one".
 private struct WaitingLine: View {
+    /// None: no one.
     let waits: [ItemStory.Wait]
 
     var body: some View {
-        let parts = waits.enumerated().map { index, wait in
+        // What waits on you stands out by its weight: a color could clash with its row's, such as a ready pull request's.
+        let parts = waits.isEmpty ? [Text("no one").foregroundStyle(.secondary)] : waits.enumerated().map { index, wait in
             (index > 0 ? Text(" · ").foregroundStyle(.secondary) : Text(""))
-                + Text(wait.text).foregroundStyle(wait.who == .you ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.primary))
+                + (wait.who == .you ? Text(wait.text).fontWeight(.semibold) : Text(wait.text))
         }
         (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { $0 + $1 })
             .font(.system(size: 12))
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
-            .accessibilityLabel("Waiting on " + waits.map(\.text).joined(separator: ", "))
+            // Each says who, then what for, after a comma: they're told apart by semicolons.
+            .accessibilityLabel(waits.isEmpty ? "Waiting on no one" : "Waiting on " + waits.map(\.text).joined(separator: "; "))
     }
 }
 

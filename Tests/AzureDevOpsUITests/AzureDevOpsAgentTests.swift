@@ -160,7 +160,7 @@ import Testing
             "- State: Active (work started), changed 1h ago · assigned to you (Robin Diaz)",
         ])
         #expect(lines[3].hasPrefix("- Sprint 42 ends ") && lines[3].hasSuffix(" (5 days left) · 1 of 4 tasks done · 6 h left"))
-        #expect(lines[4] == "- Waiting on: reviewers of Sam Rivera's !4120 · Copilot, on 5103")
+        #expect(lines[4] == "- Waiting on: reviewers of Sam Rivera's !4120 · Copilot, on task 5103")
         // Your task that isn't started; not 5103, which Copilot works on.
         #expect(lines[5] == "- You can: start task 5104")
         // Its tasks in work order, each with its state, who has it and its hours, and the work sent to Copilot for one.
@@ -268,7 +268,7 @@ import Testing
         #expect(query.branches == [savedItems: BranchHint(branch: "saved-items", target: "main", repositories: ["shop-web"])])
         #expect(query.limit == AgentText.relatedShown)
         #expect(story.contains("""
-            - Waiting on: you, to answer in session “Show the saved items” · reviewers of Sam Rivera's !4120 · Copilot, on 5103
+            - Waiting on: you, to answer in session “Show the saved items” · reviewers of Sam Rivera's !4120 · Copilot, on task 5103
             - You can: answer in session “Show the saved items” · start task 5104
 
             """))
@@ -376,6 +376,36 @@ import Testing
         ])
         #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me)
             == ["Sam Rivera, author of !4120 (approved; its checks aren't read)"])
+    }
+
+    /// Work sent to Copilot that failed waits on you, as the details say: while it's the one sent last for its work item
+    /// or pull request, and that isn't done.
+    @Test func failedWorkSentToCopilotWaitsOnYou() async throws {
+        let read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5112, organization: nil)
+        func sent(_ phase: RunPhase, minutesAgo: Double, session: Int) -> CopilotTaskEntry {
+            CopilotTaskEntry(
+                id: String(format: "1d6b2c7e-4f0a-4b8e-9c31-%012d", session),
+                workItem: WorkItemReference(organization: "contoso", project: "Storefront", id: 5112), options: CopilotModel.standard,
+                startedAt: Date().addingTimeInterval(-minutesAgo * 60), status: RunStatus(phase: phase)
+            )
+        }
+        let failed = sent(.failed, minutesAgo: 5, session: 1)
+        // On 5112 itself, it's "it".
+        let story = AgentText.workItem(read, tasks: [failed], now: Date())
+        #expect(story.contains("- Waiting on: you, to complete !4091 · you, to look at Copilot's work on it, which failed\n"))
+        #expect(story.contains("- You can: complete !4091 · look at Copilot's work on it, which failed\n"))
+        // On its bug, it's the task, by its type.
+        let bug = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5110, organization: nil)
+        #expect(AgentText.waitingOn(bug, tasks: [failed], related: [], me: bug.me)
+            == ["you, to complete !4091", "you, to look at Copilot's work on task 5112, which failed"])
+        // Sent again since, the one sent last says.
+        let again = sent(.finished, minutesAgo: 1, session: 2)
+        #expect(AgentText.waitingOn(read, tasks: [again, failed], related: [], me: read.me) == ["you, to complete !4091"])
+        // Done since, it waits on nobody.
+        var done = read
+        done.item.state = "Closed"
+        done.item.category = .completed
+        #expect(AgentText.waitingOn(done, tasks: [failed], related: [], me: done.me) == ["you, to complete !4091"])
     }
 
     /// A pull request with a thread that's open points to `pull_request` for it.

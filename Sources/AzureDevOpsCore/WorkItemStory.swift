@@ -42,7 +42,7 @@ public enum WorkItemStory {
         if let reason = current?.reason.flatMap({ $0.caseInsensitiveCompare(item.state) == .orderedSame ? nil : $0 }) {
             notes.insert(ItemStory.Fact("Why it's \(item.state)", reason), at: 0)
         }
-        return ItemStory(sentence: item.state, date: item.changedAt, facts: facts, more: more, notes: notes)
+        return ItemStory(sentence: item.state, date: item.changedAt, facts: facts, more: more, notes: notes, notesRead: current != nil)
     }
 
     /// "Show saved items under the cart: Active · Robin Diaz · 3 h left · Copilot: Working: Run the cart tests".
