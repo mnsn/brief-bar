@@ -445,10 +445,10 @@ it reads nothing and shows one line, with **Turn On…**, which shows Show Links
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while Show
 Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
 row changes, a minute later, or once more of it is read, such as a work item's details as they show
-(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or, for Azure
-DevOps, someone else signs in to the Azure CLI, with the summaries made of them, or when Show Links goes off. When two
-sources know the same thing, what they tell is put together in the sources' order: a task Azure DevOps sent to Copilot
-says how it went, and Copilot what it recorded.
+(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or someone else
+signs in to its CLI, the Azure CLI or GitHub's, or no one does, with the summaries made of them, or when Show Links goes
+off. When two sources know the same thing, what they tell is put together in the sources' order: a task Azure DevOps
+sent to Copilot says how it went, and Copilot what it recorded.
 
 - **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
   each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,

@@ -39,6 +39,8 @@ package final class GitHubSource: BriefBarSource {
     let settings: AppSettings
     let store: GitHubStore
     private var linkObservers: Set<AnyCancellable> = []
+    /// Who's signed in to the GitHub CLI, as the list last read it.
+    private var account: String?
 
     package init(services: AppServices) {
         self.services = services
@@ -71,6 +73,20 @@ package final class GitHubSource: BriefBarSource {
         store.$items
             .sink { [weak self] items in MainActor.assumeIsolated { self?.publishLinks(items) } }
             .store(in: &linkObservers)
+        store.$login.removeDuplicates()
+            .sink { [weak self] login in MainActor.assumeIsolated { self?.loginChanged(login) } }
+            .store(in: &linkObservers)
+    }
+
+    /// Someone else signed in to the GitHub CLI, or no one: what was told of its pull requests as the last one goes, with
+    /// the summaries made of it and those being written, as when the source stops; they're told again, as the new one,
+    /// when they're asked for. The first sign-in changes nothing.
+    func loginChanged(_ login: String?) {
+        let known = account
+        account = login
+        guard let known, known != login else { return }
+        services.stories.withdraw(.github)
+        tellStories()
     }
 
     package func stop() {
@@ -79,6 +95,7 @@ package final class GitHubSource: BriefBarSource {
         store.stop()
         services.links.withdraw(.github)
         services.stories.withdraw(.github)
+        account = nil
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
