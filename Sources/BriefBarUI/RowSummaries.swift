@@ -30,7 +30,7 @@ package struct RowSummary: View {
 
     package var body: some View {
         if offersSummaries, let subject {
-            RowSummaryContent(subject: subject, summaries: services.summaries)
+            RowSummaryContent(subject: subject, summaries: services.summaries, links: services.links, stories: services.stories)
         }
     }
 }
@@ -38,11 +38,26 @@ package struct RowSummary: View {
 private struct RowSummaryContent: View {
     let subject: ItemRef
     @ObservedObject var summaries: StorySummaries
+    let links: Links
+    let stories: ItemStories
 
     var body: some View {
         if summaries.isAvailable, summaries.state(for: subject) != nil {
             SummaryCard(subject: subject, summaries: summaries, rows: [], style: .row)
+                // While it shows, what it summed up as it is now, as Where It Stands reads it, to tell when it's out of
+                // date: such as a vote that doesn't change the row.
+                .onAppear(perform: refresh)
+                .background {
+                    TimelineView(.periodic(from: .distantPast, by: ItemStories.freshFor)) { context in
+                        Color.clear.onChange(of: context.date) { refresh() }
+                    }
+                }
         }
+    }
+
+    private func refresh() {
+        stories.request(links.describe(subject))
+        for connection in links.connections(of: subject) { stories.request(connection.item) }
     }
 }
 
