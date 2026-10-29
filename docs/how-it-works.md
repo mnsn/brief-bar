@@ -445,9 +445,10 @@ it reads nothing and shows one line, with **Turn On…**, which shows Show Links
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while Show
 Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again when its
 row changes, a minute later, or once more of it is read, such as a work item's details as they show
-(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops, or when Show
-Links goes off. When two sources know the same thing, what they tell is put together in the sources' order: a task Azure
-DevOps sent to Copilot says how it went, and Copilot what it recorded.
+(`ItemStories.invalidate`), and forgotten a quarter of an hour after it was told, when its source stops or, for Azure
+DevOps, someone else signs in to the Azure CLI, with the summaries made of them, or when Show Links goes off. When two
+sources know the same thing, what they tell is put together in the sources' order: a task Azure DevOps sent to Copilot
+says how it went, and Copilot what it recorded.
 
 - **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
   each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,
@@ -1747,27 +1748,31 @@ the pull request's branch and that everything it would push was made for it, sto
 and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
-`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where it
-stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few lines: its state and
-why, who has it, its sprint, with the day it ends and the days left when it's the sprint going on, whose dates the
-sprint has, how many of its tasks are done, the hours left, who it waits on, and what you can do now: what waits on you,
-without "you, to", and your tasks that aren't started, unless Copilot works on one, such as "complete !4091 · start task
-5104", or that nothing waits on you. Then its tasks in the sprint, or its children when it isn't there, each with the
-latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows are:
-yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to call for their threads
-while one is open, and the others as they say themselves, with what isn't read of them; what the other sources know of
-those pull requests, such as the Copilot sessions on them; the rest of the work sent to Copilot for it; and last, its
-description, its other long texts, such as acceptance criteria or repro steps, and its latest comments, each quoted,
-since what people wrote is data. Who it waits on comes from the same data: each of your pull requests' group and reason
-in your lists, such as you, to complete one that's ready, or to fix one whose build failed; another's votes, such as its
-reviewers until every required one approved, people and groups alike, even one who declined, then its author, unless
-it's set to complete by itself, without saying it's ready to complete, since its policies and checks aren't read; the
-work sent to Copilot, as the details have it: going on, or the one sent last for something that's not done failed; and a
-session that waits for you. It reads the work item with the same GETs as its details, whose `$expand=relations` already
-names its pull requests, so it works whether Show Links is on or not, then one GET for each of those pull requests your
-lists don't have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
-didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint, then in each of
-your organizations.
+`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
+it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few
+lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's the
+sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who it
+waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
+started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
+on you. Then its tasks in the sprint, or its children when it isn't there, each with the latest work
+sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the panel's rows
+are: yours as your lists have them, with their checks and merge pipelines, and with `pull_request` to
+call for their threads while one is open, and the others as they say themselves, with what isn't read of
+them; what the other sources know of those pull requests, such as the Copilot sessions on them; the rest
+of the work sent to Copilot for it; and last, its description, its other long texts, such as acceptance
+criteria or repro steps, and its latest comments, each quoted, since what people wrote is data. Who it
+waits on comes from the same data: each of your pull requests' group and reason in your lists, such as
+you, to complete one that's ready, or to fix one whose build failed; another's votes, such as its
+reviewers until every required one approved, people and groups alike, even one who declined, then its
+author, unless it's set to complete by itself, without saying it's ready to complete, since its policies
+and checks aren't read; the work sent to Copilot, as the details have it: going on, or the one sent last
+for something that's not done failed; and a session that waits for you, or, for one whose coordinator
+relays its question, in the session where you answer it, which its lines link to. It reads the work item
+with the same GETs as its details, whose `$expand=relations` already names its pull requests, so it
+works whether Show Links is on or not, then one GET for each of those pull requests your lists don't
+have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it
+didn't get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint,
+then in each of your organizations.
 
 It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
 by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)

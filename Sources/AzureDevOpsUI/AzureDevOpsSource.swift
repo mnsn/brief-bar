@@ -132,9 +132,14 @@ package final class AzureDevOpsSource: BriefBarSource {
         let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
         details.hasPage = { [services] in services.hasPage(.azureDevOpsSprint) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
-        // Someone else signed in to the Azure CLI: the details read as the last one go.
+        // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
-            .sink { [weak details] account in MainActor.assumeIsolated { details?.accountChanged(account) } }
+            .sink { [weak details, weak workLinks] account in
+                MainActor.assumeIsolated {
+                    details?.accountChanged(account)
+                    workLinks?.accountChanged(account)
+                }
+            }
             .store(in: &cancellables)
         self.details = details
         workLinks?.details = details

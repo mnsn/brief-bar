@@ -386,6 +386,20 @@ import Testing
         #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me).isEmpty)
     }
 
+    /// What a source says something waits on comes before what its state would: a session at work whose question its
+    /// coordinator relays waits on you, in the coordinator.
+    @Test func whatASourceSaysWaitsComesBeforeItsState() async throws {
+        let read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5101, organization: nil)
+        let coordinator = ItemRef.session("a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11")
+        let worker = try #require(ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"))
+        let relayed = MCPRelated.Item(
+            ref: worker, title: "Add dark mode to settings", status: "waiting for your answer in “Roll out dark mode”", state: .running,
+            waits: [ItemStory.Wait(.you, "you, to answer in session “Roll out dark mode”", about: coordinator)]
+        )
+        #expect(AgentText.waitingOn(read, tasks: [], related: [relayed], me: read.me)
+            == ["you, to answer in session “Roll out dark mode”", "reviewers of Sam Rivera's !4120"])
+    }
+
     /// A required reviewer who declined hasn't approved: it isn't said to be approved, whoever else did.
     @Test func aRequiredReviewerWhoDeclinedHoldsUpATeammatesPullRequest() async throws {
         let read = try await readWithTeammatesReviewers([

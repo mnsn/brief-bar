@@ -18,7 +18,7 @@ public enum SessionStory {
 
     /// You, while it waits for you, here or, for a question it relays, in the session that asks it for it, which tells of
     /// the same question, so it's said once; Copilot, while it works.
-    static func waits(of snapshot: SessionSnapshot) -> [ItemStory.Wait] {
+    public static func waits(of snapshot: SessionSnapshot) -> [ItemStory.Wait] {
         if snapshot.reason == .relayed {
             let asking = snapshot.answerIn
             return [ItemStory.Wait(

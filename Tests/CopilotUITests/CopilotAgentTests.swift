@@ -18,6 +18,19 @@ import Testing
         )
     }
 
+    /// A session whose question its coordinator relays waits on you there, and says where you answer it.
+    @Test func aRelayedQuestionWaitsOnYouWhereItsAsked() throws {
+        let worker = "0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"
+        let coordinator = "a3d9c5e1-7b2f-4e84-9c16-5f8e2d0b7a11"
+        var relayed = session(worker, name: "Add dark mode to settings", phase: .running, reason: .relayed, since: Date())
+        relayed.answerIn = RelatedSession(id: coordinator, name: "Roll out dark mode")
+        let ref = try #require(ItemRef.session(worker))
+        let item = CopilotAgent.item(CopilotAgent.Linked(session: relayed, ref: ref, links: []), account: nil, whole: true, now: Date())
+        #expect(item.waits == [ItemStory.Wait(.you, "you, to answer in session “Roll out dark mode”", about: ItemRef.session(coordinator))])
+        #expect(item.lines.first == "Answer in: “Roll out dark mode”, ghapp://sessions/\(coordinator)")
+        #expect(item.status.hasPrefix("waiting for your answer in “Roll out dark mode”"))
+    }
+
     @Test func describesWhatASessionAsksAndWhere() {
         let now = Date()
         let asking = session("abc", detail: "Should dark mode follow the system?", choices: ["Yes", "No"], since: now.addingTimeInterval(-120))

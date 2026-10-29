@@ -32,6 +32,8 @@ final class WorkLinksStore {
         }
     }
     private var detailsRead: AnyCancellable?
+    /// Who's signed in to the Azure CLI, as the pull requests' refresh last told.
+    private var account: String?
 
     init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
         self.links = links
@@ -259,6 +261,17 @@ final class WorkLinksStore {
     // MARK: What's known of them
 
     /// Tells the details what's known of its work items, pull requests and tasks, when they ask.
+    /// Someone else signed in to the Azure CLI: what was told of Azure DevOps' things as the last one goes, with the
+    /// summaries made of it and those being written, as when the source stops; they're told again, as the new one, when
+    /// they're asked for.
+    func accountChanged(_ account: String?) {
+        guard let account else { return }
+        defer { self.account = account }
+        guard let known = self.account, known != account else { return }
+        stories.withdraw(.azureDevOps)
+        if links.isOn { tellStories() }
+    }
+
     private func tellStories() {
         stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
     }

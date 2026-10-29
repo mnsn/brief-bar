@@ -1350,6 +1350,11 @@ enum AgentText {
             ([read.item] + read.tasks).first { $0.linkRef == ref }?.type
         }
         for item in related {
+            // As its source says it, when it does, such as a session's question relayed to the one that asks it for it.
+            guard item.waits.isEmpty else {
+                waits += item.waits
+                continue
+            }
             let session = item.ref.kind == .session
             let name = session ? "session “\(item.title)”" : "“\(item.title)”"
             switch item.state {

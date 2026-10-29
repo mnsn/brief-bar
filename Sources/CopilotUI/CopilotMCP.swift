@@ -195,7 +195,7 @@ struct CopilotAgent: Sendable {
         return MCPRelated.Item(
             ref: linked.ref, title: session.displayName, status: status(session, now: now), state: session.phase.state,
             date: session.since, url: URL(string: "ghapp://sessions/\(session.id)"), links: linked.links,
-            lines: whole ? lines(session, account: account) : []
+            lines: whole ? lines(session, account: account) : [], waits: SessionStory.waits(of: session)
         )
     }
 
@@ -230,6 +230,10 @@ struct CopilotAgent: Sendable {
     static func lines(_ session: SessionSnapshot, account: ItemStory.Account?) -> [String] {
         guard let story = SessionStory.make(snapshot: session, account: account) else { return [] }
         var lines: [String] = []
+        // Its question is asked for it in another session: that's where it's answered.
+        if session.reason == .relayed, let answerIn = session.answerIn {
+            lines.append("Answer in: “\(answerIn.name)”, ghapp://sessions/\(answerIn.id)")
+        }
         let says: Set<StatusReason> = [.question, .planApproval, .permission, .working, .starting, .failed]
         if session.detail != nil, says.contains(session.reason), !story.sentence.isEmpty { lines.append(story.sentence) }
         lines += story.facts.map { "\($0.label): \($0.value)" }

@@ -249,6 +249,32 @@ import Testing
         #expect(stories.story(for: item.linkRef)?.notes.isEmpty == false)
     }
 
+    /// Someone else signed in to the Azure CLI: what was told of Azure DevOps' things goes, and is told again as the new
+    /// one when asked; the first sign-in, or the same one, changes nothing.
+    @Test func anotherAccountForgetsWhatWasToldOfAzureDevOps() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        links.setOn(true)
+        let stories = ItemStories(links: links)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(links: links, stories: stories, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        await workLinks.loadOnce()
+        let item = try #require(sprint.board?.rows.compactMap(\.parent).first { $0.id == 5101 })
+        let row = links.describe(item.linkRef)
+        await stories.tell([row])
+        workLinks.accountChanged("robin")
+        workLinks.accountChanged("robin")
+        #expect(stories.story(for: item.linkRef) != nil)
+        workLinks.accountChanged("sam")
+        #expect(!stories.hasTold(item.linkRef))
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef) != nil)
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

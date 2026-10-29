@@ -38,10 +38,13 @@ package enum MCPRelated {
         package var links: [Link]
         /// What more it says, a line each without a list's marker, such as "Did: …" and "Next: …".
         package var lines: [String]
+        /// Who it waits on, as its source says it, when that's more than its state says: a session whose question its
+        /// coordinator relays waits on you, in that session.
+        package var waits: [ItemStory.Wait]
 
         package init(
             ref: ItemRef, title: String, status: String, state: ItemState? = nil, date: Date? = nil, url: URL? = nil,
-            links: [Link] = [], lines: [String] = []
+            links: [Link] = [], lines: [String] = [], waits: [ItemStory.Wait] = []
         ) {
             self.ref = ref
             self.title = title
@@ -51,6 +54,7 @@ package enum MCPRelated {
             self.url = url
             self.links = links
             self.lines = lines
+            self.waits = waits
         }
     }
 
