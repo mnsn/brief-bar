@@ -652,7 +652,10 @@ than left out. Once what it summed up says something else, it's out of date: wha
 status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
 one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
 (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
-than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
+than for how long, which its date says, and a pull request without recent activity says just that; nor is what
+Copilot's doing just now, on a session's or a task's row or story, "Working: Run the cart tests" being just "Working"
+(`StorySummaries.steady`), nor what a session at work said last, which change every few minutes, while its checkpoints,
+its asking or its ending do count; and a story that's
 been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
 description and comments when they're known only then or only now: its story has them only while its details were read
 and all of them only when its comments could be read too (`ItemStory.notesRead`). Read in full both then and now, a

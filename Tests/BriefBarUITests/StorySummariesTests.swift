@@ -493,6 +493,31 @@ import Testing
         }
     }
 
+    /// What one at work is doing just now, and what it said last, isn't news: that it's at work is, and what it records
+    /// as it goes. Its step, on its own story or on a task's line, changing doesn't make a summary out of date; a new
+    /// checkpoint, or the task failing, does.
+    @Test func whatOneAtWorkIsDoingJustNowDoesntMakeItOutOfDate() async {
+        let then = ItemStory(sentence: "Working: Run the cart tests", account: ItemStory.Account(
+            source: "Copilot's notes", milestones: ["Rounding reproduced"], lastMessage: "Running the cart tests."
+        ))
+        var step = then
+        step.sentence = "Working: Fix the snapshot test"
+        step.account?.lastMessage = "The snapshot test failed, as expected with a new button."
+        #expect(await whatChanged(then: [sentTask: then], now: [sentTask: step]) == nil)
+        var checkpoint = step
+        checkpoint.account?.milestones.append("Snapshot updated")
+        checkpoint.account?.milestoneCount = 2
+        #expect(await whatChanged(then: [sentTask: then], now: [sentTask: checkpoint]) == "“5112: Round half up” changed")
+        // A task's line on its work item says what Copilot's doing too.
+        let task = { (run: String) in
+            ItemStory(sentence: "Active", facts: [ItemStory.Fact("Task 5112", "Round half up: Active · Robin Diaz · Copilot: \(run)")])
+        }
+        let working = task("Working: Run the cart tests")
+        #expect(await whatChanged(then: [workItem: working], now: [workItem: task("Working: Fix the snapshot test")]) == nil)
+        #expect(await whatChanged(then: [workItem: working], now: [workItem: task("Failed: 2 tests failed")]) == "5110 changed")
+        #expect(StorySummaries.steady("Copilot: Working: Run the cart tests\nWorking") == "Copilot: Working\nWorking")
+    }
+
     /// Read both then and now, a work item's first comment, or its last one gone, changes what it says.
     @Test func aFirstCommentOrTheLastOneGoneMakesItOutOfDate() async {
         let none = ItemStory(sentence: "Active", notesRead: true)

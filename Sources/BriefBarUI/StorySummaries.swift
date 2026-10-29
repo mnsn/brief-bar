@@ -609,19 +609,28 @@ package final class StorySummaries: ObservableObject {
 
     /// What a thing says, as the prompt has it, to tell when that changes: its row's state, title and status, as it may be
     /// shared; its story's sentence, as it may be shared, and the lines the prompt gives it, its facts, its runs and the
-    /// first error of one that failed, and all Copilot recorded of its work; and its notes apart. No date goes in.
+    /// first error of one that failed, and all Copilot recorded of its work; and its notes apart. No date goes in. What
+    /// one at work is doing just now, and what it said last, which change every few minutes, aren't news: that it's at
+    /// work is, until it stops or asks, and what it records as it goes, such as a checkpoint.
     static func input(_ item: LinkedItem, story: ItemStory?) -> Input {
-        let row = [item.state?.rawValue ?? "", item.title, item.statusToShare ?? ""]
+        let row = [item.state?.rawValue ?? "", item.title, steady(item.statusToShare ?? "")]
         var told: String?
         var notes: String?
-        if let story {
+        if var story {
+            if item.state == .running { story.account?.lastMessage = nil }
             var withoutNotes = story
             withoutNotes.notes = []
-            told = ([story.sentenceToShare] + withoutNotes.lines()).joined(separator: "\n")
+            told = steady(([story.sentenceToShare] + withoutNotes.lines()).joined(separator: "\n"))
             let noted = ItemStory(sentence: "", notes: story.notes).lines()
             notes = story.notesRead ? noted.joined(separator: "\n") : nil
         }
         return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes)
+    }
+
+    /// Text without what Copilot's doing just now, on its own or on a task's line: "Working: Run the cart tests" as
+    /// "Working".
+    static func steady(_ text: String) -> String {
+        text.replacing(/Working: [^\n]*/, with: "Working")
     }
 
     /// What a sentence calls it: a work item's or a pull request's number, a session's name in quotes.
