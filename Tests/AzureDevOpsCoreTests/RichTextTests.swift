@@ -383,6 +383,31 @@ private typealias Run = RichText.Run
         #expect(RichText(markdown: "1. One\n![A](https://example.test/a.png)\n\ncontinued\n1. Two").blocks == [
             .listItem(.number(1), depth: 0, [Run("One")]), a, .paragraph([Run("continued")]), .listItem(.number(1), depth: 0, [Run("Two")]),
         ])
+        // A backslash that ends the line before the image breaks the line, which the image takes; an escaped one is a
+        // backslash.
+        #expect(RichText(markdown: "First\\\n![A](https://example.test/a.png)").blocks == [.paragraph([Run("First")]), a])
+        #expect(RichText(markdown: "Path \\\\\n![A](https://example.test/a.png)").blocks == [.paragraph([Run("Path \\")]), a])
+        #expect(RichText(markdown: "1. Step\\\n![A](https://example.test/a.png)\n1. Next").blocks == [
+            .listItem(.number(1), depth: 0, [Run("Step")]), a, .listItem(.number(2), depth: 0, [Run("Next")]),
+        ])
+    }
+
+    @Test func codeIsIndentedFourColumnsIntoWhatItsIn() {
+        // Four columns into an item's text, a line is code in the item, whatever it looks like; the list goes on after it.
+        #expect(RichText(markdown: "1. A\n   # Notes\n\n       # literal\n1. B").blocks == [
+            .listItem(.number(1), depth: 0, [Run("A")]), .heading(level: 1, [Run("Notes")]), .code("# literal"),
+            .listItem(.number(2), depth: 0, [Run("B")]),
+        ])
+        #expect(RichText(markdown: "- a\n\n      code\n      - not a list\n- b").blocks == [
+            .listItem(.bullet, depth: 0, [Run("a")]), .code("code\n- not a list"), .listItem(.bullet, depth: 0, [Run("b")]),
+        ])
+        // Less indented than the item's text but four columns into the page, it's code on the page, after the list.
+        #expect(RichText(markdown: "1234. A\n      # Heading\n\n    # literal\n1. B").blocks == [
+            .listItem(.number(1234), depth: 0, [Run("A")]), .heading(level: 1, [Run("Heading")]), .code("# literal"),
+            .listItem(.number(1), depth: 0, [Run("B")]),
+        ])
+        // Under the item's text, it's more of it, as on the page.
+        #expect(RichText(markdown: "- a\n      - b").blocks == [.listItem(.bullet, depth: 0, [Run("a\n- b")])])
     }
 
     @Test func keepsBackslashesThatArentLineBreaks() {
