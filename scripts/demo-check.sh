@@ -69,7 +69,8 @@ MCP="$(printf '%s\n' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
     '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"needs_me","arguments":{}}}' \
     '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pull_request_prompt","arguments":{"pull_request":4088,"action":"fix_build"}}}' \
-    '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5112"}}}' |
+    '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5112"}}}' \
+    '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"work_item","arguments":{"work_item":"5101"}}}' |
     within 60 "$BIN" --demo --mcp)"
 [[ "$(jq -sr 'map(select(.id == 1))[0].result.serverInfo.name' <<<"$MCP")" == briefbar ]] ||
     fail "--demo --mcp doesn't answer initialize"
@@ -88,6 +89,10 @@ jq -sr 'map(select(.id == 4))[0].result.content[0].text' <<<"$MCP" | grep '2 tes
     fail "--demo --mcp's pull_request_prompt doesn't have the failed build's errors"
 jq -sr 'map(select(.id == 5))[0].result.content[0].text' <<<"$MCP" | grep '^### !4091 “Fix the coupon rounding error”$' >/dev/null ||
     fail "--demo --mcp's work_item doesn't have the task's pull request"
+# Azure DevOps' work_item asks Copilot, the other source, for the sessions on the story's pull request's branch.
+jq -sr 'map(select(.id == 6))[0].result.content[0].text' <<<"$MCP" |
+    grep "^### “Save items for later”: .*, on !4120's branch$" >/dev/null ||
+    fail "--demo --mcp's work_item doesn't have the Copilot session on its pull request's branch"
 for source in teams github; do
     if within 60 "$BIN" --demo --source "$source" --mcp </dev/null >/dev/null 2>&1; then
         fail "--demo --source $source --mcp serves $source"
