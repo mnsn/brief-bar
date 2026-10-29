@@ -60,11 +60,18 @@ public enum RelayedQuestions {
             tool.relayedSession.flatMap { named[$0] }
         }
 
-        for (coordinator, tool) in questions.sorted(by: { $0.key < $1.key }) {
-            guard let session = relayed(by: tool), let waiting = byId[session],
-                  waiting.phase == .needsYou, waiting.reason == .question
-            else { continue }
-            ask(session, in: coordinator)
+        // Every question a coordinator relays while a relay is what it asks you: it can relay several at once. Its own
+        // question or plan, when it waits on one, comes first instead.
+        for (coordinator, tool) in questions.sorted(by: { $0.key < $1.key }) where tool.relaysQuestion {
+            let relays = records[coordinator]?.log?.pendingTools.values.filter(\.relaysQuestion) ?? [tool]
+            for relay in relays.sorted(by: {
+                ($0.startedAt ?? .distantPast, $0.callId) < ($1.startedAt ?? .distantPast, $1.callId)
+            }) {
+                guard let session = relayed(by: relay), let waiting = byId[session],
+                      waiting.phase == .needsYou, waiting.reason == .question
+                else { continue }
+                ask(session, in: coordinator)
+            }
         }
         for snapshot in snapshots where snapshot.phase == .needsYou
             && (snapshot.reason == .question || snapshot.reason == .planApproval) {

@@ -105,6 +105,12 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         )
         verify(resolve(relay(["project_session_id": "w-child"]), meta(running: true), now: t(30), options: once), .needsYou, .question, since: t(4))
         verify(resolve(framed, meta(running: true), now: t(30)), .running, .working, since: t(1))
+
+        // Its own plan still needs you, whichever way the setting is.
+        let planning = framed + [Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "Ship it."], at: t(5))]
+        for options in [ResolverOptions(), once] {
+            verify(resolve(planning, meta(running: true), now: t(30), options: options), .needsYou, .planApproval, since: t(5), detail: "Ship it.")
+        }
     }
 
     @Test func plansNeedYou() {

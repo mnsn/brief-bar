@@ -120,6 +120,11 @@ private let relayedOnce = ResolverOptions(showRelayedQuestionsOnce: true)
         #expect(phases(permission, asking("Push?", at: t(40))) == ["child": .permission, "coordinator": .question])
         // A relay is only of a question.
         #expect(phases(plan, coordinator: nil, relaying("child", at: t(40))) == ["child": .planApproval, "coordinator": .question])
+        // A coordinator whose own plan waits shows that, so the question it relays needs you in its session too.
+        let relayingWithAPlan = relaying("child", at: t(40)) + [
+            Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "Ship on Friday."], at: t(41)),
+        ]
+        #expect(phases(asking("Which color?", at: t(10)), relayingWithAPlan) == ["child": .question, "coordinator": .planApproval])
         // A coordinator that isn't listed asks nothing here.
         let alone = merged([record("child", "Pick colors", coordinator: "coordinator", plan)])
         #expect(alone["child"]?.reason == .planApproval)
@@ -172,6 +177,41 @@ private let relayedOnce = ResolverOptions(showRelayedQuestionsOnce: true)
             #expect(sessions[id]?.detail == "Which color?")
             #expect(sessions[id]?.answerIn == planner)
         }
+    }
+
+    /// A coordinator can relay several questions at once, whatever the app records of who coordinates whom: each is
+    /// answered where it asks, from the first it relayed.
+    @Test func everyQuestionACoordinatorRelaysAtOnceShowsOnce() throws {
+        let relayingBoth = [
+            Line.userMessage(at: t(0)),
+            Line.toolStart("relay_session_input", id: "r1", arguments: ["project_session_id": "w-first"], at: t(12)),
+            Line.toolStart("relay_session_input", id: "r2", arguments: ["project_session_id": "w-second"], at: t(13)),
+        ]
+        let sessions = merged([
+            record("first", "Pick colors", workspace: "w-first", asking("Which color?", at: t(10))),
+            record("second", "Pick fonts", workspace: "w-second", asking("Which font?", at: t(11))),
+            record("coordinator", "Release 2.5", relayingBoth),
+        ])
+        let coordinator = try #require(sessions["coordinator"])
+        #expect(coordinator.phase == .needsYou)
+        #expect(coordinator.detail == "Which color?")
+        #expect(coordinator.since == t(10))
+        #expect(coordinator.asksFor.map(\.id) == ["first", "second"])
+        for id in ["first", "second"] {
+            #expect(sessions[id]?.phase == .running)
+            #expect(sessions[id]?.answerIn == release)
+        }
+        #expect(sessions["second"]?.detail == "Which font?")
+
+        // Its own question comes first, and isn't one it relays.
+        let ownQuestionToo = relayingBoth + [Line.toolStart("ask_user", id: "q", arguments: ["question": "Ship it?"], at: t(14))]
+        let own = merged([
+            record("first", "Pick colors", workspace: "w-first", asking("Which color?", at: t(10))),
+            record("coordinator", "Release 2.5", ownQuestionToo),
+        ])
+        #expect(own["coordinator"]?.detail == "Ship it?")
+        #expect(own["coordinator"]?.asksFor.isEmpty == true)
+        #expect(own["first"]?.phase == .needsYou)
     }
 
     /// Sessions can't relay each other's questions, but if they seemed to, one of them would still need you.

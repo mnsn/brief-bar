@@ -173,17 +173,26 @@ import BriefBarCore
             try db.addChatParent(session: "chat-child", parent: "coordinator", coordinator: "coordinator")
             try db.addSession("chat-detached", title: "Ask about sizes", type: "general_chat")
             try db.addChatParent(session: "chat-detached", parent: "coordinator", coordinator: nil)
+            // A session with two live workspaces is listed with the newer one, and only its coordinator counts.
+            try db.addSession("moved", title: "Pick sizes")
+            try db.addWorkspace("w-moved-old", session: "moved", name: "Pick sizes", creator: "coordinator", coordinator: "coordinator", updatedAt: t(1))
+            try db.addWorkspace("w-moved-new", session: "moved", name: "Pick sizes", updatedAt: t(2))
+            try db.addSession("adopted", title: "Pick icons")
+            try db.addWorkspace("w-adopted-old", session: "adopted", name: "Pick icons", updatedAt: t(1))
+            try db.addWorkspace("w-adopted-new", session: "adopted", name: "Pick icons", coordinator: "coordinator", updatedAt: t(2))
 
             let sessions = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url).sessions.map { ($0.id, $0) })
             #expect(sessions.mapValues(\.coordinatorSessionId) == [
                 "coordinator": nil, "child": "coordinator", "detached": nil, "chat-child": "coordinator", "chat-detached": nil,
+                "moved": nil, "adopted": "coordinator",
             ])
             #expect(sessions["detached"]?.creatorSessionId == "coordinator")
+            #expect(sessions["moved"]?.workspaceId == "w-moved-new")
 
             // Older app versions record neither.
             try db.exec("ALTER TABLE workspaces DROP COLUMN coordinating_creator_session_id; DROP TABLE chat_parent_links;")
             let older = try AppDatabase.load(at: url).sessions
-            #expect(older.count == 5)
+            #expect(older.count == 7)
             #expect(older.allSatisfy { $0.coordinatorSessionId == nil })
             #expect(older.first { $0.id == "child" }?.projectName == "acme-web")
         }

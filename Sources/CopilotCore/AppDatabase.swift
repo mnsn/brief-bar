@@ -231,11 +231,12 @@ public enum AppDatabase {
         SELECT key, value, updated_at FROM app_state WHERE key IN ('workspace-unread', 'lastRoutePath')
         """
 
-    /// Which session coordinates each project session: the one that created it, while it coordinates it.
+    /// Which session coordinates each project session's workspace: the one that created it, while it coordinates it.
+    /// By workspace, as a session can have more than one: its own is the one `visibleSessionsQuery` shows.
     static let coordinatorsQuery = """
-        SELECT session_id, coordinating_creator_session_id
+        SELECT id, coordinating_creator_session_id
         FROM workspaces
-        WHERE session_id IS NOT NULL AND archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
+        WHERE archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
         """
 
     /// Which session coordinates each chat that another session started.
@@ -344,15 +345,8 @@ public enum AppDatabase {
             }
         }
 
-        let coordinators = readCoordinators(connection)
-        for index in sessions.indices {
-            sessions[index].coordinatorSessionId = coordinators[sessions[index].id]
-        }
-
-        let parents = readParents(connection, sessions: sessions)
-        for index in sessions.indices {
-            sessions[index].parentSessionId = parents[sessions[index].id]
-        }
+        readCoordinators(connection, into: &sessions)
+        readParents(connection, into: &sessions)
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -435,60 +429,53 @@ public enum AppDatabase {
         return bySession
     }
 
-    /// Each session's coordinator, best effort: an app without these tables or columns records none.
-    static func readCoordinators(_ connection: SQLiteConnection) -> [String: String] {
-        var bySession: [String: String] = [:]
-        for query in [coordinatorsQuery, chatCoordinatorsQuery] {
-            guard let rows = try? connection.rows(query, { row in (row.string(0) ?? "", row.string(1) ?? "") }) else {
-                continue
-            }
-            for (session, coordinator) in rows where !session.isEmpty && !coordinator.isEmpty && session != coordinator {
-                bySession[session] = bySession[session] ?? coordinator
-            }
+    /// Each session's coordinator, best effort: an app without these tables or columns records none. A chat's is its
+    /// own link's; a project session's is that of the workspace it's listed with, so a newer workspace without one has
+    /// none, whatever an older one has.
+    static func readCoordinators(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
         }
-        return bySession
+        let byWorkspace = read(coordinatorsQuery)
+        let byChat = read(chatCoordinatorsQuery)
+        for index in sessions.indices {
+            let session = sessions[index]
+            let coordinator = session.isChat ? byChat[session.id] : session.workspaceId.flatMap { byWorkspace[$0] }
+            sessions[index].coordinatorSessionId = coordinator == session.id ? nil : coordinator
+        }
     }
 
     /// The session the app's sidebar nests each one under, best effort: an app without these tables or columns records
     /// none, and a session it records none for stands on its own.
     ///
-    /// A project session is nested under the session of its workspace's parent workspace, the one in its project that
-    /// started it, but not under the one it was forked from. Without a parent workspace, it's under the chat that started
-    /// it, whether or not that chat coordinates it. A chat is under the session that coordinates it, or else the one that
-    /// started it. Detaching a session in the app forgets all of these.
+    /// A project session is nested under the session of the parent workspace of the workspace it's listed with, the one
+    /// in its project that started it, but not under the one it was forked from. Without a parent workspace, it's under
+    /// the chat that started it, whether or not that chat coordinates it. A chat is under the session that coordinates
+    /// it, or else the one that started it. Detaching a session in the app forgets all of these.
     /// - Parameter sessions: with their workspaces and coordinators, as the app lists them.
-    static func readParents(_ connection: SQLiteConnection, sessions: [SessionMeta]) -> [String: String] {
-        func pairs(_ query: String) -> [String: String] {
-            var byKey: [String: String] = [:]
-            guard let rows = try? connection.rows(query, { row in (row.string(0) ?? "", row.string(1) ?? "") }) else {
-                return byKey
-            }
-            for (key, session) in rows where !key.isEmpty && !session.isEmpty && key != session {
-                byKey[key] = byKey[key] ?? session
-            }
-            return byKey
+    static func readParents(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
         }
-        let forkedFrom = pairs(forksQuery)
-        let parentWorkspaces = pairs(parentWorkspacesQuery)
-        let chatParents = pairs(chatParentsQuery)
+        let forkedFrom = read(forksQuery)
+        let byWorkspace = read(parentWorkspacesQuery)
+        let byChat = read(chatParentsQuery)
         let chats = Set(sessions.filter(\.isChat).map(\.id))
-
-        var bySession: [String: String] = [:]
-        for session in sessions {
+        for index in sessions.indices {
+            let session = sessions[index]
             let parent: String?
             if session.isChat {
-                parent = session.coordinatorSessionId ?? chatParents[session.id]
+                parent = session.coordinatorSessionId ?? byChat[session.id]
             } else {
-                var linked = session.workspaceId.flatMap { parentWorkspaces[$0] }
+                var linked = session.workspaceId.flatMap { byWorkspace[$0] }
                 if linked == forkedFrom[session.id] { linked = nil }
                 let creator = session.coordinatorSessionId ?? session.creatorSessionId
                 parent = linked ?? creator.flatMap { chats.contains($0) ? $0 : nil }
             }
-            if let parent, parent != session.id {
-                bySession[session.id] = parent
-            }
+            sessions[index].parentSessionId = parent == session.id ? nil : parent
         }
-        return bySession
     }
 
     static func parseStringArray(_ json: String) -> [String]? {
