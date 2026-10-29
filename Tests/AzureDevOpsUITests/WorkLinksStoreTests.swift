@@ -273,6 +273,12 @@ import Testing
         #expect(!stories.hasTold(item.linkRef))
         await stories.tell([row])
         #expect(stories.story(for: item.linkRef) != nil)
+        // Signed in as another while Show Links is off: once it's on again, stories are told as the new one.
+        links.setOn(false)
+        workLinks.accountChanged("alex")
+        links.setOn(true)
+        await stories.tell([row])
+        #expect(stories.story(for: item.linkRef) != nil)
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

@@ -34,6 +34,9 @@ final class WorkLinksStore {
     private var detailsRead: AnyCancellable?
     /// Who's signed in to the Azure CLI, as the pull requests' refresh last told.
     private var account: String?
+    /// Whether it tells the details about its things: from `start` or `loadOnce`, until `stop`, whether Show Links is on
+    /// or not, as `ItemStories` asks only while it is.
+    private var tellsStories = false
 
     init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
         self.links = links
@@ -77,6 +80,7 @@ final class WorkLinksStore {
         read = WorkLinks()
         links.withdraw(.azureDevOps)
         stories.withdraw(.azureDevOps)
+        tellsStories = false
     }
 
     /// Reads once and tells Show Links, for `--render`: the demo's made-up links, or yours while Show Links is on.
@@ -269,10 +273,11 @@ final class WorkLinksStore {
         defer { self.account = account }
         guard let known = self.account, known != account else { return }
         stories.withdraw(.azureDevOps)
-        if links.isOn { tellStories() }
+        if tellsStories { tellStories() }
     }
 
     private func tellStories() {
+        tellsStories = true
         stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
     }
 
