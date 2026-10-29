@@ -85,7 +85,7 @@ public enum WorkItemStory {
     static let contextComments = 10
     static let contextCommentLimit = 600
 
-    /// What a work item's details add to a summary of it, for Summarize with Copilot: each of its texts, and up to ten of its
+    /// What a work item's details add to a summary of it, for a summary: each of its texts, and up to ten of its
     /// latest comments, newest first, each on a line: more than its story's notes say, by their labels, so they take the
     /// notes' places.
     public static func context(_ details: WorkItemDetails) -> [ItemStory.Fact] {

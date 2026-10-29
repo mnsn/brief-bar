@@ -2,19 +2,25 @@
 
 ## Unreleased
 
-- **Know where things stand in a few lines, as you open them.** With **Summarize with Copilot** on,
-  opening a work item's details, or a pull request's or a Copilot session's page, has Copilot write a
-  few sentences at the top: what reviewers asked and whether it's answered, what Copilot did and said is
-  left, what's blocking, where what was built differs from what the work item asks, and the next step
-  and whose it is. It reads more than the rows show, so you don't have to open Azure DevOps or the
-  session: the work item's description and comments, each Azure DevOps pull request's description and
-  comment threads, and what you asked in each Copilot session and what Copilot answered. Each summary is
-  one request on your Copilot plan, and its card says so as it opens, with **Not Now**; one that's still
-  current shows again without another, and once something changes, **↻** writes a new one, as opening it
-  does once it's ten minutes old. If you turned summaries on before, they're still written only when you
-  click **✨ Summarize with Copilot**: choose **As you open one** in its setting's **Writes** to change
-  that. While it's off, Where It Stands offers it, with **Turn On…**. Azure DevOps and GitHub Copilot
-  each say what they read for it, so they ask you to look again once.
+- **Summarize on your Mac with Apple Intelligence.** In **Settings › General › Summaries**, choose
+  Apple Intelligence or a model through Copilot. Apple Intelligence is the default unless you've
+  already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
+  still start off. If Apple Intelligence isn't ready or can't summarize an item, BriefBar explains why
+  and never switches to Copilot automatically.
+- **Know where things stand in a few lines, as you open them.** With **Summaries** on, opening a work
+  item's details, or a pull request's or a Copilot session's page, writes a few sentences at the top:
+  what reviewers asked and whether it's answered, what Copilot did and said is left, what's blocking,
+  where what was built differs from what the work item asks, and the next step and whose it is. It
+  reads more than the rows show, so you don't have to open Azure DevOps or the session: the work item's
+  description and comments, each Azure DevOps pull request's description and comment threads, and what
+  you asked in each Copilot session and what Copilot answered. Its card says what it's about to do as
+  it opens, with **Not Now**: Apple Intelligence writes it on your Mac, and a Copilot model uses one
+  request on your Copilot plan. One that's still current shows again as it was, and once something
+  changes, **↻** writes a new one, as opening it does once it's ten minutes old. If you turned summaries
+  on before, they're still written only when you click **✨**: choose **As you open one** in its
+  setting's **Writes** to change that. While they're off, Where It Stands offers them, with **Turn
+  On…**. Azure DevOps and GitHub Copilot each say what they read for it, so they ask you to look again
+  once.
 - **Read more of a summary under a row:** its headline, the next step and the first three lines of the
   rest, with **Show More** for all of it; written again, the one before stays until the new one's ready.
 

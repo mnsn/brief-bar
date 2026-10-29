@@ -3,8 +3,8 @@ import BriefBarCore
 import SwiftUI
 
 /// A pull request's or a Copilot session's page, where a work item's details show: what it is and where it stands, how
-/// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize with Copilot
-/// for it, and Copilot's notes.
+/// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize for it,
+/// and Copilot's notes.
 package struct ItemPageView: View {
     private let ref: ItemRef
 
@@ -174,7 +174,7 @@ private struct PageContent: View {
                 } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil, !summaries.isPending(ref) {
                     // Just "Summarize" where the whole of it doesn't fit.
                     ViewThatFits(in: .horizontal) {
-                        summarize("Summarize with Copilot")
+                        summarize(summaries.actionTitle)
                         summarize("Summarize")
                     }
                 }
@@ -192,8 +192,8 @@ private struct PageContent: View {
                 .fixedSize()
         }
         .glassButtonStyle()
-        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
-        .accessibilityLabel("Summarize with Copilot")
+        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+        .accessibilityLabel(summaries.actionTitle)
     }
 
     /// "Pull Request", "Copilot Session", "Sent to Copilot".

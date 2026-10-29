@@ -2,16 +2,16 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-// Summarize with Copilot on a pull request's or a Copilot session's row in the lists, on demand: ✨ in its time's place
-// while you point at it, Summarize with Copilot in its menus, and the summary in a few lines under it, as a chat's summary
-// shows, until you hide it. Only while Summarize with Copilot and Show Links are on; never in a widget.
+// On-demand summaries on pull requests' and sessions' rows in the lists: ✨ in its time's place while you point at it,
+// Summarize in its menus, and the summary in a few lines under it, as a chat's summary shows, until you hide it. Only
+// while summaries and Show Links are on; never in a widget.
 
 private struct OffersSummariesKey: EnvironmentKey {
     static let defaultValue = true
 }
 
 extension EnvironmentValues {
-    /// Whether rows offer Summarize with Copilot: not in a desktop widget.
+    /// Whether rows offer Summarize: not in a desktop widget.
     package var offersSummaries: Bool {
         get { self[OffersSummariesKey.self] }
         set { self[OffersSummariesKey.self] = newValue }
@@ -124,7 +124,7 @@ private struct RowSummaryContent: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tint)
                 .fixedSize()
-                .help("Asks Copilot again: 1 request")
+                .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
             Spacer(minLength: 4)
             Button("Close") { summaries.dismiss(subject) }
                 .buttonStyle(.borderless)
@@ -237,7 +237,7 @@ private struct RowSummaryContent: View {
                     Button("Try Again") { summaries.summarize(subject) }
                         .foregroundStyle(.tint)
                         .fixedSize()
-                        .help("Asks Copilot again: 1 request")
+                        .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 11))
@@ -250,7 +250,7 @@ private struct RowSummaryContent: View {
                         .help("Since it was written: \(changed).")
                     Button("Summarize Again") { summaries.summarize(subject) }
                         .foregroundStyle(.tint)
-                        .help("Asks Copilot again: 1 request")
+                        .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
                 }
                 .buttonStyle(.borderless)
                 .font(.system(size: 11))
@@ -259,23 +259,32 @@ private struct RowSummaryContent: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .help("Written by \(summaries.name(of: model)) through GitHub Copilot at \(at.formatted(date: .omitted, time: .shortened)), "
+        .help("Written by \(summaries.attribution(for: model)) at \(at.formatted(date: .omitted, time: .shortened)), "
               + "from \(StorySummaries.source(of: inputs)).")
+        // While another is written, Stop is what's done to it, as on its card.
         .contextMenu {
-            Button("Summarize Again") { summaries.summarize(subject) }
+            if !isUpdating {
+                Button("Summarize Again") { summaries.summarize(subject) }
+            }
             Button("Copy Summary") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(summary.plainText, forType: .string)
             }
-            Button("Hide Summary") { summaries.hide(subject) }
+            if !isUpdating {
+                Button("Hide Summary") { summaries.hide(subject) }
+            }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(SummaryCard.title)
-        .accessibilityAction(named: "Hide Summary") { summaries.hide(subject) }
+        .accessibilityLabel(SummaryCard.title(for: model))
+        .accessibilityActions {
+            if !isUpdating {
+                Button("Hide Summary") { summaries.hide(subject) }
+            }
+        }
     }
 }
 
-/// Summarize with Copilot in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
+/// Summarize in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
 /// it again for nothing, or to write it again; while it's written, to stop.
 package struct SummarizeMenuItems: View {
     private let subject: ItemRef?
@@ -307,7 +316,7 @@ private struct SummarizeMenuContent: View {
             if divided { Divider() }
             switch summaries.state(for: subject) {
             case nil:
-                Button("Summarize with Copilot") { summaries.summarize(subject) }
+                Button(summaries.actionTitle) { summaries.summarize(subject) }
             case .writing:
                 Button("Stop Summarizing") { summaries.cancel(subject) }
             case .written:
@@ -319,7 +328,12 @@ private struct SummarizeMenuContent: View {
                 Button("Summarize Again") { summaries.summarize(subject) }
             case .failed:
                 Button("Try Again") { summaries.summarize(subject) }
-                Button("Close Summary") { summaries.dismiss(subject) }
+                // One that couldn't be written again closes as the one before it, kept to show again.
+                if summaries.previous(for: subject) != nil {
+                    Button("Hide Summary") { summaries.hide(subject) }
+                } else {
+                    Button("Close Summary") { summaries.dismiss(subject) }
+                }
             }
             if divided { Divider() }
         }
@@ -386,7 +400,7 @@ private struct RowSummarizeSpot: PreferenceKey {
 }
 
 extension View {
-    /// ✨ Summarize with Copilot, or a spinner while it's written, where the row's `RowTime` is, while it gives its
+    /// ✨ Summarize, or a spinner while it's written, where the row's `RowTime` is, while it gives its
     /// place up.
     package func rowSummarizeButton(_ subject: ItemRef?) -> some View {
         overlayPreferenceValue(RowSummarizeSpot.self) { spot in
@@ -437,8 +451,8 @@ private struct RowSummarizeButtonContent: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model)))
-            .accessibilityLabel("Summarize with Copilot")
+            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+            .accessibilityLabel(summaries.actionTitle)
         }
     }
 }

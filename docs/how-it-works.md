@@ -416,17 +416,17 @@ closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item`
 session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
 pull requests in the same words, numbered alike in two organizations or repositories, are each said with its place, such
 as "(fabrikam)"; and other things in the same words, such as two sessions of the same name, are said once with how many,
-"(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't
-said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
-(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
+"(2 sessions)". While a summary shows under it, its next step shows too, always, since it says what to do, which the
+line doesn't. A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
 Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
 title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
 "Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
 while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
 stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
 a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
-`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
-and its summary under them, written as the page opens, as a work item's details do, unless one that's current is there; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**
+and its summary under them, written as the page opens, as a work item's details do, unless one that's current is there;
+then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
 to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
 Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
@@ -465,29 +465,34 @@ sent to Copilot says how it went, and Copilot what it recorded.
 - **GitHub**: one of its pull requests' latest reviews, conflicts, draft and branch, and its checks, from the one query
   it reads them with.
 
-### Summarize with Copilot
+### Summaries
 
-**Summarize with Copilot**, in Settings › General, under Show Links, is off until you turn it on, and works only while
-Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that,
-**Writes**: **As you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`,
-`summaries.copilot.whenOpened`); then, a line each, what it sends, where, what it costs, which follows that choice, and
-what Copilot can do, with the model it asks: Claude Haiku 5.5 (Recommended), Claude Sonnet 5.5, GPT-6.1 Sol or Gemini 4
-Argon (`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may choose it;
-and, once it's on, whether the Copilot CLI is there, as your login shell finds it. While Show Links is off, it's dimmed
-and can't be changed. **Writes** starts as **As you open one**, except for whoever had summaries on before it came, when
+**Summaries**, in Settings › General, under Show Links, is off until you turn it on, and works only while Show Links is
+on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that, **Writes**: **As
+you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
+line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
+model can do, with the model: Apple Intelligence (on this Mac), the default when no model was chosen, or Claude Haiku
+5.5, Claude Sonnet 5.5, GPT-6.1 Sol or Gemini 4 Argon through Copilot (`CopilotModel.forSummaries`), not Opus, which
+costs more than a summary is worth, nor Auto, which may choose it. Existing model choices and the on/off setting stay as
+they were, under the same `summaries.copilot.*` preferences. Apple Intelligence runs through `OnDeviceModel` and
+`SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests, sign-in or subscription;
+it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the setting explains when it
+isn't available. Only a selected Copilot model checks whether the Copilot CLI is there, as your login shell finds it,
+once it's on. Local failures never fall back to Copilot. While Show Links is off, it's dimmed and can't be changed. **Writes** starts as **As you open one**, except for whoever had summaries on before it came, when
 they were written only when you asked: they keep **Only when you ask** until they choose otherwise, saved once, the
 first time this version starts, so an update never starts spending for them.
 
 Once something's linked to the work item (`StorySummaries.hasSomethingToSum`), and no summary shows or is about to,
-Where It Stands' header has **✨ Summarize with Copilot**, or just **Summarize** where that doesn't fit; its tooltip says
-where it goes, and that it uses your Copilot plan. With **As you open one**, as the details open it, and while it isn't
-folded, the card shows at once, about as tall as it will be, with gray lines where the summary will go and "Summarizing
-in a moment · 1 request", and **Not Now** (`StorySummaries.expect`, `isPending`); two seconds later (`openedFor`), the
+Where It Stands' header has **✨ Summarize with Apple Intelligence** or **✨ Summarize with Copilot**, or just
+**Summarize** where that doesn't fit; its tooltip says whether it stays on this Mac or uses your Copilot plan. With **As
+you open one**, as the details open it, and while it isn't folded, the card shows at once, about as tall as it will be,
+with gray lines where the summary will go and "Summarizing in a moment · on this Mac", or "· 1 request" for a Copilot
+model, and **Not Now** (`StorySummaries.expect`, `isPending`); two seconds later (`openedFor`), the
 details ask for it (`StorySummaries.opened`), and it's written, the caption naming the model and **Stop** in Not Now's
 place, unless one is being written, you closed it, the last couldn't be written less than ten minutes ago
 (`retryAfter`), even if you closed what said so, or you wrote, stopped, closed or showed one for it since it opened
 (`timesActed(on:)`, which the details remember as it opens, so what they do by themselves never undoes what you did).
-One that's there already shows again, for nothing, while it's current, once what it summed up is told as it is now; out
+One that's there already shows again, as it was, while it's current, once what it summed up is told as it is now; out
 of date, it's written again as it opens only once it's ten minutes old (`rewriteAfter`), since a session at work changes
 what it says every few minutes, and ↻ writes it sooner. **Not Now** keeps it from being written as it opened, this time,
 and ✨ shows. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
@@ -499,12 +504,18 @@ comments too, and each of its tasks, with how the work sent to Copilot for it st
 each thing for the summary, only now (`ItemStories.context(for:)`, from what each registers with `registerContext`), as
 [below](#what-a-summary-reads) says; and `StorySummaryPrompt` (in `Sources/BriefBarCore`) puts them in a prompt:
 instructions, then the data between `<data>` and `</data>`, which the model is told is only data, never instructions,
-with any `<data>` or `</data>` in it taken out, the most pressing first, and at most 36,000 characters. What a source
-read for the summary follows each thing's story, a labelled part each, in place of a note of its story's by the same
-label, such as a description cut shorter: an even share each of 10,000 characters for the thing summed up and of 5,000
-for each one linked to it, 4,000 at most, what a short part doesn't use going to the others, so a long description
-doesn't crowd out the comments after it (`StorySummaryPrompt.room`); a part that would be cut to less than 200 is left
-out, a short one never is. The data starts with your name, as your pull requests have it in Azure DevOps, when that's
+with any `<data>` or `</data>` in it taken out, the most pressing first, and at most 36,000 characters for Copilot or
+6,000 for Apple Intelligence, even when the subject alone is long. What a source read for the summary follows each
+thing's story, a labelled part each, in place of a note of its story's by the same label, such as a description cut
+shorter: an even share each of 10,000 characters for the thing summed up and of 5,000 for each one linked to it, 4,000
+at most, what a short part doesn't use going to the others, so a long description doesn't crowd out the comments after
+it (`StorySummaryPrompt.room`); a part that would be cut to less than 200 is left out, a short one never is. For Apple
+Intelligence, each thing gets 1,800 characters in all, so long discussions leave room for what's linked, and what was
+read for it shares what its story leaves of them, the same way. The on-device session receives the instructions
+separately, reserves up to 500 tokens for the answer and has a 45-second timeout. Character limits aren't token
+guarantees: if the model's context window is exceeded, the summary says so and offers a model change, never a cloud
+retry. Data cut short says details were left out, and the instructions require the summary to say it's incomplete
+rather than treat missing data as no blockers or votes. The data starts with your name, as your pull requests have it in Azure DevOps, when that's
 known, and the model is told that's who reads it, to call you "you"; then, after `SHOWN`, who it all waits on, as Where
 It Stands says it above the summary. The model is told that you see each item's title and status line and what's after
 `SHOWN`, so it never repeats them, nor lists tasks' states or hours or says that a build passed, but says what you'd
@@ -522,31 +533,33 @@ waits on says only "you, to look at !4113". The details still show who sent it.
 
 The card (`SummaryCard`), at the top of Where It Stands, under Waiting On, shows all of it: the headline, the next step,
 "Next for you: Complete !4091.", and what's been done, what's under way and what's left, never behind **Show More**,
-since that's what explains where things stand. Its caption says "Summary by Copilot · 2m ago", the time each minute and
-never cut short, and its tooltip, which model wrote it, when, from what, "from 5101, !4120 and 1 Copilot session", and
-that it was 1 request. Each action has one control: **Not Now** before it's written, **Stop** while it is; then **↻**,
+since that's what explains where things stand. Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
+Copilot", the time each minute and never cut short, and its tooltip, which model wrote it, when, from what, "from 5101,
+!4120 and 1 Copilot session", and, for a Copilot model, that it was 1 request. Each action has one control: **Not Now** before it's written, **Stop** while it is; then **↻**,
 which writes it again, and **✕**, each in a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long
-as summaries are, and **Show Summary** shows it again without asking Copilot; **Summarize Again**, **Copy Summary** and
+as summaries are, and **Show Summary** shows it again without writing another; **Summarize Again**, **Copy Summary** and
 **Hide Summary** in its right-click menu. Written again, by ↻, by opening it, or by **Summarize Again**, the one before
-shows, gray, under "Updating · 1 request" with **Stop**, which brings it back as it was
+shows, gray, under "Updating · on this Mac", or "· 1 request", with **Stop**, which brings it back as it was
 (`StorySummaries.previous(for:)`). Out of date, its caption says so in bold, its text turns a little lighter, and its
 foot says what changed, "Since then: !4120 changed.", with **Summarize Again**, in the tint, as a link. One that
-couldn't be written again stays as it was, with why at its foot, "Couldn't update: Copilot took too long to answer.",
+couldn't be written again stays as it was, with why at its foot, "Couldn't update: Apple Intelligence is busy or took
+too long. Try again.",
 **Choose Model…** for a model that isn't on your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't
 be written at all says "Couldn't summarize: …", with the same. VoiceOver says "Summary ready" and what it's of, once,
 however many places show it. Your name comes from Azure DevOps, or else from your GitHub login.
 
-While Summarize with Copilot is off and Show Links is on, a line where its card would be, in Where It Stands once
-something's linked and under a page's heading, offers it (`SummaryOffer`): "Copilot can tell you where this stands, in a
-few lines.", with **Turn On…**, in the tint, which shows its setting in a popover, what it sends, where and what it
-costs, to turn it on there, the line staying while it shows; and **✕**, which hides the line for good
+While Summaries is off and Show Links is on, a line where its card would be, in Where It Stands once something's linked
+and under a page's heading, offers it (`SummaryOffer`): "Apple Intelligence can tell you where this stands, in a few
+lines.", or Copilot, as the model chosen, with **Turn On…**, in the tint, which shows its setting in a popover, what it
+uses or sends, where and what it costs, to turn it on there, the line staying while it shows; and **✕**, which hides the line for good
 (`summaries.copilot.offerHidden`).
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
 (`StorySummaries.canSummarize`, while a source describes it), only when you ask, never as they show: pointing at its row
 puts **✨** in its time's place (`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its
 actions, and while it's written a spinner takes that place, so a second click there doesn't open the row. Its
-right-click and Actions menus have, in a group of its own right after opening it, **Summarize with Copilot**, then
+right-click and Actions menus have, in a group of its own right after opening it, **Summarize with Apple
+Intelligence** or **Summarize with Copilot**, then
 **Stop Summarizing**, **Hide Summary** or **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do
 its accessibility actions. Its summary shows under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨
 and the headline, then the next step and for whom, in full, then, quieter, the first three lines of what's been done and
@@ -562,8 +575,8 @@ that nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries
 #### What a summary reads
 
 As a summary is written, and only then, each source reads more of each thing it sums up, beyond its story
-(`ItemStories.registerContext`); nothing of it is kept, and nothing is read while Show Links is off or once the summary
-is taken back:
+(`ItemStories.registerContext`), whichever model writes it; nothing of it is kept, and nothing is read while Show Links
+is off or once the summary is taken back:
 
 - Azure DevOps (`WorkLinksStore.context`; every request a GET): a pull request's description, in plain text, without
   what its template asks its author in HTML comments, from a GET of it; and its comment threads, your pull requests'
@@ -589,24 +602,26 @@ is taken back:
 - GitHub: nothing more. BriefBar reads GitHub with one fixed query, so a GitHub pull request's summary has what that
   reads: its reviews, its checks and whether it can merge.
 
-`CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
+When a Copilot model is selected, `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
 --no-ask-user --no-color --silent --name "BriefBar summary" -C <folder>`, through `ProcessRunner`, with your login
 shell's environment, for two minutes at most. No tool is called `briefbar_no_tools`, so the model has none: an empty
 `--available-tools` would leave it every tool, as the CLI takes that as no limit. The folder,
 `~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
-skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
-session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar,
-even when it finds sessions from their folders, without the app's database (`SessionStateScanner` leaves out those
-that worked in that folder, `CopilotPaths.briefBarSummaries`).
+skills or MCP servers apply. Only the chosen model is used. The CLI keeps each run as a session, as it keeps every
+session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar, even when it finds sessions
+from their folders, without the app's database (`SessionStateScanner` leaves out those that worked in that folder,
+`CopilotPaths.briefBarSummaries`).
 When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
 information found"), the model isn't on your plan, or your premium requests ran out, and the card says so in a
 sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
 **Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
 
-The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off,
-or a source stops, taking what it told with it; one being written is stopped then, and **Stop** stops it too: Copilot
-doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summaries goes off, or a source
+stops, taking what it told with it; one being written is stopped then, and **Stop** stops it too: the model isn't asked,
+or its answer is dropped, and `ProcessRunner` stops Copilot, with whatever it started, as at its timeout. Changing models
+also stops summaries being written, without starting another; written summaries keep the model that wrote them. The
+stories it was waiting for
 stop being read, unless the details asked for them too, and a story the details are reading already is waited for rather
 than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
 status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed

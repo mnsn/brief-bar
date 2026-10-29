@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Copilot wrote of where a thing stands, from what BriefBar knows of it and of what's linked to it
+/// A model's summary of where a thing stands, from what BriefBar knows of it and of what's linked to it
 /// (`StorySummaryPrompt`): a line, what's next and for whom, and a paragraph of a few sentences. Only ever in memory.
 public struct StorySummary: Sendable, Equatable {
     /// Where it stands, in a sentence.
@@ -158,7 +158,7 @@ public struct StorySummary: Sendable, Equatable {
 
 extension ItemStory {
     /// The story in plain text, but for its sentence: a line or a few for each of its facts, its pipelines' runs, its
-    /// notes and its account, cut to fit, as Summarize with Copilot and agents read it. `whole` adds the facts that say
+    /// notes and its account, cut to fit, as summaries and agents read it. `whole` adds the facts that say
     /// less, the runs' pages and what it doesn't say, for an agent that asks for all of it.
     public func lines(whole: Bool = false) -> [String] {
         var lines: [String] = []
@@ -251,7 +251,9 @@ public enum StorySummaryPrompt {
         SUMMARY: 3 to 5 sentences, about 100 words and at most 160, the most important first; fewer when there's little \
         to say.
         Write pull request and build, not PR or CI. Use only what the data says, and the names and numbers as they're \
-        given there. When something is unknown, say less rather than guess.
+        given there. When something is unknown, say less rather than guess. If details or linked items were left out \
+        for length, say the summary is incomplete. Missing data never means there are no blockers, votes, or remaining \
+        work.
         """
 
     /// The prompt: the instructions, then who reads it, when that's known, what they see already, the thing, and what's
@@ -260,23 +262,47 @@ public enum StorySummaryPrompt {
     ///   - reader: your name, as the data has it, for the model to call you "you".
     ///   - shown: what the reader sees beside the summary, besides each item's title and status, such as who it all waits
     ///     on, a line each: the model is told not to repeat it.
-    public static func make(subject: Item, linked: [Item], reader: String? = nil, shown: [String] = [], limit: Int = 36_000) -> String {
+    ///   - itemLimit: caps each item's details so one long discussion doesn't crowd out its linked items.
+    ///   - includeInstructions: false when the provider takes instructions separately from the prompt.
+    public static func make(
+        subject: Item, linked: [Item], reader: String? = nil, shown: [String] = [], limit: Int = 36_000,
+        itemLimit: Int? = nil, includeInstructions: Bool = true
+    ) -> String {
+        func description(_ item: Item, isSubject: Bool) -> String {
+            let text = scrub(describe(item, isSubject: isSubject, limit: itemLimit))
+            return itemLimit.map { bounded(text, limit: $0) } ?? text
+        }
         var data = reader.map { StoryText.line($0, limit: 80) }.flatMap { $0.isEmpty ? nil : "READER: \($0)\n" } ?? ""
         let seen = shown.map { StoryText.line($0, limit: 400) }.filter { !$0.isEmpty }
         if !seen.isEmpty { data += "SHOWN:\n" + seen.joined(separator: "\n") + "\n" }
         if !data.isEmpty { data += "\n" }
-        data += describe(subject, isSubject: true)
+        data += description(subject, isSubject: true)
+        data = scrub(data)
+        let budget = max(0, limit)
+        let omissionReserve = linked.isEmpty ? 0 : "\n\n(\(linked.count) more linked, left out for length.)".count
+        let contentBudget = max(0, budget - omissionReserve)
+        // The subject alone can exceed the budget; keep its data boundary and the omission notices intact.
+        data = bounded(data, limit: contentBudget)
         var left = 0
         for item in linked {
-            let described = describe(item, isSubject: false)
-            if data.count + described.count + 2 > limit {
+            let described = description(item, isSubject: false)
+            if data.count + described.count + 2 > contentBudget {
                 left += 1
                 continue
             }
             data += "\n\n" + described
         }
-        if left > 0 { data += "\n\n(\(left) more linked, left out for length.)" }
-        return instructions + "\n\n<data>\n" + scrub(data) + "\n</data>"
+        if left > 0 {
+            data += "\n\n(\(left) more linked, left out for length.)".prefix(max(0, budget - data.count))
+        }
+        return (includeInstructions ? instructions + "\n\n" : "") + "<data>\n" + data + "\n</data>"
+    }
+
+    private static func bounded(_ text: String, limit: Int) -> String {
+        let budget = max(0, limit)
+        guard text.count > budget else { return text }
+        let omitted = "\n\n(Details left out for length.)"
+        return String(text.prefix(max(0, budget - omitted.count))) + String(omitted.prefix(budget))
     }
 
     /// How much of what was read for the summary goes in, at most: for the thing itself, for each one linked, and for each
@@ -288,8 +314,10 @@ public enum StorySummaryPrompt {
         static let smallest = 200
     }
 
-    /// A thing, a line or a few for each part of its story, then what was read of it for the summary, cut to fit.
-    static func describe(_ item: Item, isSubject: Bool) -> String {
+    /// A thing, a line or a few for each part of its story, then what was read of it for the summary, cut to fit: within
+    /// `limit` in all, when there's one, as for a model on this Mac, which reads less, each part getting its share of what
+    /// the story leaves, so the first doesn't take it all.
+    static func describe(_ item: Item, isSubject: Bool, limit: Int? = nil) -> String {
         let title = StoryText.line(item.title, limit: 200)
         // A session's label is its name, its title.
         var lines = [item.label == item.title ? "\(item.kind.uppercased()): \(title)" : "\(item.kind.uppercased()) \(item.label): \(title)"]
@@ -303,7 +331,13 @@ public enum StorySummaryPrompt {
             story.notes = story.notes.filter { !read.contains($0.label) }
             lines += story.lines()
         }
-        let room = Self.room(for: item.context.map(\.value), in: isSubject ? ContextLimit.subject : ContextLimit.linked)
+        var space = isSubject ? ContextLimit.subject : ContextLimit.linked
+        if let limit {
+            // Each part's label takes a line of its own, after a line break.
+            let labels = item.context.reduce(0) { $0 + StoryText.line($1.label, limit: 80).count + 3 }
+            space = min(space, max(0, limit - lines.joined(separator: "\n").count - labels))
+        }
+        let room = Self.room(for: item.context.map(\.value), in: space)
         for (part, room) in zip(item.context, room) {
             let text = StoryText.paragraph(part.value, limit: room)
             // Cut to almost nothing, it would say nothing.

@@ -10,7 +10,7 @@ import SwiftUI
 @MainActor
 package final class CopilotSource: BriefBarSource {
     /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details. 4: a session's
-    /// conversation, for Summarize with Copilot.
+    /// conversation, for summaries.
     nonisolated package static let descriptionVersion = 4
 
     package let id = SourceID.copilot
@@ -19,8 +19,8 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask Summarize with Copilot for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only when Summarize with Copilot writes a summary of a session, or of something linked to it, what was asked in that session, by you or by another session, and Copilot's answers, from its event log. BriefBar sends them to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history; BriefBar keeps none of it. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
-        network: "None. Copilot's list makes no network requests. With Summarize with Copilot on, the Copilot CLI sends what a summary covers to GitHub Copilot.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only when a summary is written of a session, or of something linked to it, what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, they stay on this Mac; with a Copilot model, BriefBar sends them to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        network: "None. Copilot's list makes no network requests. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
     )
@@ -134,7 +134,7 @@ package final class CopilotSource: BriefBarSource {
         links.publish(.copilot, links: facts, items: items)
     }
 
-    /// Tells the details what's known of its sessions, when they ask, and Summarize with Copilot what was said in each,
+    /// Tells the details what's known of its sessions, when they ask, and summaries what was said in each,
     /// as it writes a summary.
     func tellStories() {
         services.stories.register(.copilot, kinds: [.session]) { [weak self] ref in await self?.tell(ref) }

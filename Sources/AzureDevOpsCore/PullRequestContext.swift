@@ -1,7 +1,7 @@
 import BriefBarCore
 import Foundation
 
-/// What a pull request adds to a summary of it beyond its story, read only as Summarize with Copilot writes one: what its
+/// What a pull request adds to a summary of it beyond its story, read only as a summary is written: what its
 /// description says, and how its comment threads go, in plain text, cut to fit. Nothing of it is kept.
 public enum PullRequestContext {
     /// The parts' labels.

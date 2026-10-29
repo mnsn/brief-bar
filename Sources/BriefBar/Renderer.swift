@@ -279,7 +279,7 @@ enum Renderer {
                 .frame(width: 600, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(notificationsSetting, appearance: appearance), "settings-notifications-\(suffix)")
-            // Show Links, and Summarize with Copilot under it, below it too.
+            // Show Links and Summaries, below it too, for each provider.
             let linksSettings = VStack(alignment: .leading, spacing: 20) {
                 LinksSetting(links: model.services.links)
                 StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
@@ -288,7 +288,19 @@ enum Renderer {
             .frame(width: 600, alignment: .leading)
             .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
-            // And with Show Links off, when Summarize with Copilot can't be changed.
+            if demo {
+                let cloudSummaries = StorySummaries(
+                    defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: true
+                )
+                cloudSummaries.models = model.services.summaries.models
+                cloudSummaries.setModel("claude-haiku-5.5")
+                let cloudSettings = StorySummariesSetting(summaries: cloudSummaries, links: model.services.links)
+                    .padding(24)
+                    .frame(width: 600, alignment: .leading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(cloudSettings, appearance: appearance), "settings-summaries-copilot-\(suffix)")
+            }
+            // And with Show Links off, when Summaries can't be changed.
             let linksOff = Links(defaults: MemoryDefaults(), isDemo: false)
             let summariesOff = StorySummaries(defaults: MemoryDefaults(), links: linksOff, stories: ItemStories(links: linksOff), isDemo: true)
             summariesOff.models = model.services.summaries.models
@@ -301,7 +313,7 @@ enum Renderer {
             .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(linksOffSettings, appearance: appearance), "settings-links-off-\(suffix)")
             // A summary as it's written, once it is, when it's out of date and when it fails, in the demo; and Where It Stands
-            // without one, with ✨ Summarize with Copilot.
+            // without one, with ✨ Summarize.
             let summaries = model.services.summaries
             let summarized = model.services.links.linked([.workItem]).sorted().first { subject in
                 if case .written? = summaries.state(for: subject) { return true }
@@ -330,14 +342,9 @@ enum Renderer {
                 // Written again: the one before shows meanwhile; and when that one couldn't be written, as it was.
                 summaries.useForRendering(subject, state: .writing(since: Date()), previous: written)
                 card("updating")
-                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
-                    "Copilot took too long to answer."
-                ), at: Date()), previous: written)
+                summaries.useForRendering(subject, state: .failed(StorySummaries.onDeviceProblem(.busy), at: Date()), previous: written)
                 card("not-updated")
-                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
-                    "Claude Haiku 5.5 isn't on your Copilot plan.",
-                    detail: "Error: Model \"claude-haiku-5.5\" from --model flag is not available.", fix: .chooseModel
-                ), at: Date()))
+                summaries.useForRendering(subject, state: .failed(StorySummaries.onDeviceProblem(.notReady), at: Date()))
                 card("failed")
                 // One of what it summed up said something else then.
                 if let index = inputs.firstIndex(where: { $0.ref.kind == .pullRequest }) { inputs[index].row += "\nthen" }
@@ -353,7 +360,7 @@ enum Renderer {
                     .background(Color(nsColor: .windowBackgroundColor))
                 write(Snapshot.render(standing, appearance: appearance), "summary-none-\(suffix)")
                 summaries.useForRendering(subject, state: written)
-                // While Summarize with Copilot is off, the line that offers it, where its card would be.
+                // While summaries are off, the line that offers them, where its card would be.
                 let off = StorySummaries(defaults: MemoryDefaults(), links: model.services.links, stories: model.services.stories, isDemo: false)
                 let offer = SummaryOffer(subject: subject, summaries: off, links: model.services.links, defaults: MemoryDefaults())
                     .interfaceOptions(from: model.services)
