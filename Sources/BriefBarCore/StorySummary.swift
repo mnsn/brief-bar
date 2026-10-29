@@ -270,7 +270,7 @@ public enum StorySummaryPrompt {
     }
 
     /// How much of what was read for the summary goes in, at most: for the thing itself, for each one linked, and for each
-    /// part of it; and the least room worth starting a part in.
+    /// part of it; and the least room worth giving a part that's longer.
     enum ContextLimit {
         static let subject = 10_000
         static let linked = 5_000
@@ -293,14 +293,30 @@ public enum StorySummaryPrompt {
             story.notes = story.notes.filter { !read.contains($0.label) }
             lines += story.lines()
         }
-        var left = isSubject ? ContextLimit.subject : ContextLimit.linked
-        for part in item.context where left >= ContextLimit.smallest {
-            let text = StoryText.paragraph(part.value, limit: min(left, ContextLimit.part))
-            guard !text.isEmpty else { continue }
+        let room = Self.room(for: item.context.map(\.value), in: isSubject ? ContextLimit.subject : ContextLimit.linked)
+        for (part, room) in zip(item.context, room) {
+            let text = StoryText.paragraph(part.value, limit: room)
+            // Cut to almost nothing, it would say nothing.
+            guard !text.isEmpty, room >= min(ContextLimit.smallest, part.value.count) else { continue }
             lines.append("\(StoryText.line(part.label, limit: 80)):\n\(text)")
-            left -= text.count
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// How much room each part gets: an even share of `room`, at most `ContextLimit.part`, and what a short one doesn't
+    /// use goes to the others, so a long description doesn't crowd out the comments after it.
+    static func room(for parts: [String], in room: Int) -> [Int] {
+        let lengths = parts.map { min($0.count, ContextLimit.part) }
+        var shares = [Int](repeating: 0, count: parts.count)
+        var left = room
+        var others = parts.count
+        // The shortest first: each takes what it needs, up to an even share of what's left.
+        for index in lengths.indices.sorted(by: { lengths[$0] < lengths[$1] }) {
+            shares[index] = min(lengths[index], left / others)
+            left -= shares[index]
+            others -= 1
+        }
+        return shares
     }
 
     /// The data without its own `<data>` and `</data>`, which would end it early, whatever their case.

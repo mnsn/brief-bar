@@ -265,14 +265,26 @@ import Testing
                 context: [ItemStory.Fact("Open threads", long), ItemStory.Fact("Description", long), ItemStory.Fact("Reviews", long)]
             ), isSubject: isSubject)
         }
-        // Each part, and all of it, is cut to fit: the thing summed up gets twice the room of each one linked to it.
+        // All of it is cut to fit, each part to an even share: the thing summed up gets twice the room of each one linked.
         let subject = reading(true)
         let linked = reading(false)
         #expect(subject.count <= StorySummaryPrompt.ContextLimit.subject + 200)
         #expect(subject.count > StorySummaryPrompt.ContextLimit.subject - 200)
         #expect(linked.count <= StorySummaryPrompt.ContextLimit.linked + 200)
-        #expect(!linked.contains("Reviews:"))
-        let firstPart = try #require(subject.components(separatedBy: "Open threads:\n").last?.components(separatedBy: "\nDescription:").first)
-        #expect(firstPart.count <= StorySummaryPrompt.ContextLimit.part)
+        for label in ["Open threads:", "Description:", "Reviews:"] {
+            #expect(linked.contains(label))
+        }
+        let firstPart = try #require(linked.components(separatedBy: "Open threads:\n").last?.components(separatedBy: "\nDescription:").first)
+        #expect(firstPart.count <= StorySummaryPrompt.ContextLimit.linked / 3 + 1)
+        // A short part takes what it needs, and leaves the rest of its share to the others, up to a part's most.
+        #expect(StorySummaryPrompt.room(for: ["No comments.", long], in: 5_000) == [12, StorySummaryPrompt.ContextLimit.part])
+        #expect(StorySummaryPrompt.room(for: [long, "No comments.", long], in: 5_000) == [2_494, 12, 2_494])
+        // Cut to almost nothing, a part says nothing, so it's left out; a short one never is.
+        let crowded = StorySummaryPrompt.describe(StorySummaryPrompt.Item(
+            kind: "Pull request", label: "!4120", title: "Save items in the cart service",
+            context: (1...30).map { ItemStory.Fact("Thread \($0)", long) } + [ItemStory.Fact("Resolved", "None.")]
+        ), isSubject: false)
+        #expect(!crowded.contains("Thread 1:"))
+        #expect(crowded.contains("Resolved:\nNone."))
     }
 }
