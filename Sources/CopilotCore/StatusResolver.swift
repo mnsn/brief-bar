@@ -22,6 +22,8 @@ public enum DisplayPhase: String, Sendable, Codable, CaseIterable, Comparable {
 public enum StatusReason: String, Sendable, Codable {
     case question, planApproval, permission
     case working, starting
+    /// Waits on a question or plan that the session coordinating it asks you for it (`RelayedQuestions`).
+    case relayed
     case finished, interrupted, failed, unresponsive
     case idle
 
@@ -32,6 +34,7 @@ public enum StatusReason: String, Sendable, Codable {
         case .permission: return "Needs permission"
         case .working: return "Working"
         case .starting: return "Starting…"
+        case .relayed: return "Answer in another session"
         case .finished: return "Finished"
         case .interrupted: return "Interrupted"
         case .failed: return "Error"
@@ -60,6 +63,10 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
     public var contextUsage: ContextUsage? = nil
     /// Where its work goes, as the app records it, while Show Links reads it.
     public var links: SessionLinks? = nil
+    /// The session that asks you this one's question or plan for it, which is where you answer it (`.relayed`).
+    public var answerIn: RelatedSession? = nil
+    /// The sessions whose questions or plans this one asks you for, the longest-waiting first.
+    public var asksFor: [RelatedSession] = []
 
     public var displayName: String {
         if !name.isEmpty { return name }
@@ -72,6 +79,17 @@ public struct SessionSnapshot: Sendable, Equatable, Identifiable, Codable {
         case .finished, .interrupted, .failed, .unresponsive: return true
         default: return false
         }
+    }
+}
+
+/// Another session that a session's row refers to, by its ID and the name the list shows it by.
+public struct RelatedSession: Sendable, Equatable, Codable {
+    public var id: String
+    public var name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
     }
 }
 
@@ -160,7 +178,8 @@ public enum StatusResolver {
         case .needsPermission(let permission):
             set(.needsYou, .permission, since: permission.requestedAt, detail: permission.detail ?? permission.kind)
         case .needsAnswer(let tool):
-            set(.needsYou, .question, since: tool.startedAt, detail: tool.question, choices: tool.choices)
+            // A relayed question's own words are the session's that waits on it (`RelayedQuestions`).
+            set(.needsYou, .question, since: tool.startedAt, detail: tool.question ?? tool.relayContext, choices: tool.choices)
         case .needsPlanApproval(let tool):
             set(.needsYou, .planApproval, since: tool.startedAt, detail: tool.planSummary)
         case .working(let since, let detail):
@@ -200,7 +219,7 @@ public enum StatusResolver {
         let phase: DisplayPhase
         switch reason {
         case .question, .planApproval, .permission: phase = .needsYou
-        case .working, .starting: phase = .running
+        case .working, .starting, .relayed: phase = .running
         case .finished, .interrupted, .failed, .unresponsive: phase = endedPhase(reason, at: since, now: now, options: options, isSeen: isSeen)
         case .idle: phase = .idle
         }
@@ -329,6 +348,8 @@ extension SessionSnapshot {
         case .planApproval: sentence = "\(name) has a plan for you to review" + (detail.map { ": \($0)" } ?? "")
         case .permission: sentence = "\(name) needs your permission" + (detail.map { " to run \($0)" } ?? "")
         case .working, .starting: sentence = "\(name) is working"
+        case .relayed:
+            sentence = "\(name) waits for your answer in " + (answerIn.map { "“\($0.name)”" } ?? "another session")
         case .finished: sentence = "\(name) finished"
         case .interrupted: sentence = "\(name) was interrupted"
         case .failed: sentence = "\(name) stopped with an error" + (detail.map { ": \($0)" } ?? "")

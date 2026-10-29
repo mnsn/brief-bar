@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **A Copilot question you'd be asked twice shows once.** When a session that another session
+  coordinates asks a question or has a plan for you, the coordinating session asks you too, and a
+  plan you approved in the session itself made the coordinating session's approval fail. Once the
+  coordinating session asks, **Needs You** lists it only there, and clicking it opens it, so you
+  answer where it's passed on. The session it's for moves to **Running** as **Answer in “…”**, which
+  opens the coordinating session too; right-click it to open the session itself. Until the
+  coordinating session asks, the session needs you on its own. A session passing on a question no
+  longer shows as **Working**.
+
 ## 0.8.4 - 2026-10-29
 
 - **A work item's details show its text as written.** In fields written in Markdown, a numbered list

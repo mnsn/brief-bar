@@ -443,7 +443,7 @@ as you wrote it when you choose another session, and **Reset** goes back to the 
 | Group | Status | When |
 |---|---|---|
 | **Needs you** | Waiting for your answer, Plan ready for review, Needs permission | The agent asked a question, finished a plan, or waits for a tool call's permission |
-| **Running** | Working, Starting… | A turn is in progress (the current step is shown) |
+| **Running** | Working, Starting…, Answer in “…” | A turn is in progress (the current step is shown), or the session coordinating it asks you its question or plan for it |
 | **Done** | Finished | The turn ended normally; shows the agent's summary if there is one |
 | **Stopped** | Interrupted, Error, Stopped responding | You cancelled the turn, it failed, or it went silent mid-turn for 90 s |
 | **Idle** | Idle | Everything else |
@@ -453,6 +453,14 @@ as you wrote it when you choose another session, and **Reset** goes back to the 
 them after you open or view them in Copilot; turning it off shows recent viewed completions again,
 but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
+
+When a session that another session started and coordinates has a question or a plan for you, the app
+tells the coordinating session, which then asks you too. Answer where it asks: it passes your answer
+on, while a plan you approve in the session itself leaves the coordinating session's question waiting,
+and its approval then fails. So once the coordinating session asks, BriefBar shows the question once, in
+**Needs you** on the coordinating session's row. The session it's for moves to **Running** as **Answer
+in “…”**, naming the coordinating session, and clicking it opens that session; right-click it to open
+the session itself. Until the coordinating session asks, the session needs you on its own.
 
 The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
 "Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the

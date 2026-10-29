@@ -62,12 +62,13 @@ final class AppSettings: ObservableObject {
         let cutoff = now.addingTimeInterval(-7 * 86_400)
         let cleared = dates(in: defaults, key: Key.cleared, after: cutoff)
         let viewed = dates(in: defaults, key: Key.viewed, after: cutoff)
-        return SessionOrdering.sorted(state.records.map {
+        let resolved = state.records.map {
             StatusResolver.snapshot(
                 for: $0, now: now, options: options, view: state.view,
                 clearedAt: cleared[$0.id], viewedAt: viewed[$0.id]
             )
-        })
+        }
+        return SessionOrdering.sorted(RelayedQuestions.merge(resolved, records: state.records))
     }
 
     nonisolated private static func dates(in defaults: UserDefaults, key: String, after cutoff: Date) -> [String: Date] {

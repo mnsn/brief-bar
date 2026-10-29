@@ -86,6 +86,16 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         #expect(snapshot.choices == ["Postgres", "SQLite"])
     }
 
+    /// Until it's merged with the session it relays for (`RelayedQuestionsTests`), a relay says what it says first.
+    @Test func relayedQuestionsNeedYou() {
+        let relay = { (arguments: [String: Any]) in
+            [Line.userMessage(at: t(1)), Line.toolStart("relay_session_input", id: "r", arguments: arguments, at: t(2))]
+        }
+        let framed = relay(["project_session_id": "w-child", "context": "From the **checkout** session."])
+        verify(resolve(framed, meta(running: true), now: t(30)), .needsYou, .question, since: t(2), detail: "From the checkout session.")
+        verify(resolve(relay(["project_session_id": "w-child"]), meta(running: true), now: t(30)), .needsYou, .question, since: t(2))
+    }
+
     @Test func plansNeedYou() {
         let lines = [
             Line.userMessage(at: t(1)),
@@ -321,6 +331,10 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         #expect(sentence(.interrupted) == "“Add dark mode” was interrupted.")
         #expect(sentence(.failed, "Lost the connection.\nTry again.") == "“Add dark mode” stopped with an error: Lost the connection. Try again.")
         #expect(sentence(.unresponsive, name: "") == "“Untitled session” stopped responding.")
+        var relayed = item("s", .running, since: nil, name: "Add dark mode", reason: .relayed)
+        #expect(relayed.briefSentence == "“Add dark mode” waits for your answer in another session.")
+        relayed.answerIn = RelatedSession(id: "p", name: "Release 2.5")
+        #expect(relayed.briefSentence == "“Add dark mode” waits for your answer in “Release 2.5”.")
         let long = sentence(.question, String(repeating: "Is it this? ", count: 30))
         #expect(long.hasSuffix("…"))
         #expect(long.count < 180)
@@ -329,7 +343,7 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
     @Test func phasesSortByUrgency() {
         #expect(DisplayPhase.allCases.shuffled().sorted() == [.needsYou, .running, .done, .stopped, .idle])
         let reasons: [StatusReason] = [
-            .question, .planApproval, .permission, .working, .starting,
+            .question, .planApproval, .permission, .working, .starting, .relayed,
             .finished, .interrupted, .failed, .unresponsive, .idle,
         ]
         #expect(reasons.filter { item("s", .idle, since: nil, reason: $0).isEnded }

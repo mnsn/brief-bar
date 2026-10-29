@@ -117,7 +117,8 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session or task; only the opt-in setting dismisses its recent completion.
+    /// Opens the session or task; only the opt-in setting dismisses its recent completion. A session whose question
+    /// another session asks you for opens that one, where you answer it.
     func open(_ session: SessionSnapshot) {
         if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
             settings.markViewed([session.id])
@@ -126,8 +127,13 @@ final class SessionStore: ObservableObject {
         if let task = tasks[session.id] {
             task.open()
         } else {
-            openSession(session.id)
+            openSession(session.answerIn?.id ?? session.id)
         }
+    }
+
+    /// Opens a session in the app itself, even when its question is asked in another session.
+    func openItself(_ session: SessionSnapshot) {
+        openSession(session.id)
     }
 
     /// The task BriefBar sent that a row shows, rather than a session of the app's.
@@ -171,6 +177,7 @@ final class SessionStore: ObservableObject {
                 clearedAt: settings.cleared[viewed], viewedAt: now
             )
         }
+        resolved = RelayedQuestions.merge(resolved, records: state.records)
 
         // The tasks BriefBar sent. Once you open one's session in the app, its database lists it, and then it's the app's;
         // without the database, every recent session folder is listed, the tasks' too, and those are the tasks'.

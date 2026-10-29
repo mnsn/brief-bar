@@ -89,6 +89,9 @@ struct SessionRowView: View {
             if let task {
                 Button(task.openTitle, action: action)
                 task.menu()
+            } else if session.answerIn != nil {
+                Button(openTitle(task), action: action)
+                Button("Open This Session") { store.openItself(session) }
             } else {
                 Button("Open in GitHub Copilot", action: action)
             }
@@ -100,15 +103,28 @@ struct SessionRowView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint(task.map { "Opens its \($0.opens.lowercased())" } ?? "Opens the session in GitHub Copilot")
-        .rowActions(for: session.displayName, openTitle: task?.openTitle ?? "Open in Copilot", open: action) {
+        .accessibilityHint(
+            task.map { "Opens its \($0.opens.lowercased())" }
+                ?? session.answerIn.map { "Opens “\($0.name)”, where you answer it" }
+                ?? "Opens the session in GitHub Copilot"
+        )
+        .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
             if let task {
                 task.menu()
+            } else if session.answerIn != nil {
+                Button("Open This Session") { store.openItself(session) }
             }
             if let ref = ItemRef.session(session.id) {
                 LinkMenuItems(ref)
             }
         }
+    }
+
+    /// What clicking the row does: open the task's page, or the session where you answer what it waits on.
+    private func openTitle(_ task: SentTask?) -> String {
+        if let task { return task.openTitle }
+        if let answerIn = session.answerIn { return "Answer in “\(answerIn.name)”" }
+        return "Open in Copilot"
     }
 
     /// The session's context usage, when the setting is on and the app has measured it.
@@ -129,7 +145,14 @@ struct SessionRowView: View {
         if let task {
             lines.append("Sent from BriefBar: the Copilot CLI works on it on its own, outside the Copilot app")
             lines.append("Click to open its \(task.opens.lowercased()), or right-click for its menu")
+        } else if let answerIn = session.answerIn {
+            lines.append("“\(answerIn.name)”, which coordinates it, asks you this for it")
+            lines.append("Click to answer in “\(answerIn.name)”, or right-click to open this session")
         } else {
+            if !session.asksFor.isEmpty {
+                let names = ListFormatter.localizedString(byJoining: session.asksFor.map { "“\($0.name)”" })
+                lines.append("Asks you for \(names), which it coordinates")
+            }
             lines.append("Click to open in GitHub Copilot")
         }
         return lines.joined(separator: "\n")

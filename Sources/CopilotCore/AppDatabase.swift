@@ -19,6 +19,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var projectName: String?
     public var branch: String?
     public var creatorSessionId: String?
+    /// The session that coordinates this one: the app tells it when this one waits for you, and it can ask you for it.
+    public var coordinatorSessionId: String?
     /// The app's workspace for project sessions (its unread markers are keyed by this).
     public var workspaceId: String?
     /// Latest entry in the app's activity feed for this session.
@@ -32,8 +34,9 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         id: String, name: String, sessionType: String = "project", mode: String? = nil,
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
-        branch: String? = nil, creatorSessionId: String? = nil, workspaceId: String? = nil,
-        lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
+        branch: String? = nil, creatorSessionId: String? = nil, coordinatorSessionId: String? = nil,
+        workspaceId: String? = nil, lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil,
+        links: SessionLinks? = nil
     ) {
         self.id = id
         self.name = name
@@ -47,6 +50,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.projectName = projectName
         self.branch = branch
         self.creatorSessionId = creatorSessionId
+        self.coordinatorSessionId = coordinatorSessionId
         self.workspaceId = workspaceId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
@@ -224,6 +228,20 @@ public enum AppDatabase {
         SELECT key, value, updated_at FROM app_state WHERE key IN ('workspace-unread', 'lastRoutePath')
         """
 
+    /// Which session coordinates each project session: the one that created it, while it coordinates it.
+    static let coordinatorsQuery = """
+        SELECT session_id, coordinating_creator_session_id
+        FROM workspaces
+        WHERE session_id IS NOT NULL AND archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
+        """
+
+    /// Which session coordinates each chat that another session started.
+    static let chatCoordinatorsQuery = """
+        SELECT session_id, coordinating_creator_session_id
+        FROM chat_parent_links
+        WHERE coordinating_creator_session_id IS NOT NULL
+        """
+
     /// Each session's latest context-window measurement. SQLite takes the bare columns from the row
     /// with the largest `ts_ms`.
     static let contextUsageQuery = """
@@ -299,6 +317,11 @@ public enum AppDatabase {
             for index in sessions.indices {
                 sessions[index].contextUsage = bySession[sessions[index].id]
             }
+        }
+
+        let coordinators = readCoordinators(connection)
+        for index in sessions.indices {
+            sessions[index].coordinatorSessionId = coordinators[sessions[index].id]
         }
 
         var view = AppViewState()
@@ -377,6 +400,20 @@ public enum AppDatabase {
                 var links = bySession[session] ?? SessionLinks()
                 if !links.pullRequests.contains(recorded) { links.pullRequests.append(recorded) }
                 bySession[session] = links
+            }
+        }
+        return bySession
+    }
+
+    /// Each session's coordinator, best effort: an app without these tables or columns records none.
+    static func readCoordinators(_ connection: SQLiteConnection) -> [String: String] {
+        var bySession: [String: String] = [:]
+        for query in [coordinatorsQuery, chatCoordinatorsQuery] {
+            guard let rows = try? connection.rows(query, { row in (row.string(0) ?? "", row.string(1) ?? "") }) else {
+                continue
+            }
+            for (session, coordinator) in rows where !session.isEmpty && !coordinator.isEmpty && session != coordinator {
+                bySession[session] = bySession[session] ?? coordinator
             }
         }
         return bySession
