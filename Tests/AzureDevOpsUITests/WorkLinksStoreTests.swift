@@ -281,6 +281,49 @@ import Testing
         #expect(stories.story(for: item.linkRef) != nil)
     }
 
+    /// Someone else signed in while Show Links reads: what was read as the last one goes at once, before it's told of
+    /// again, and what the engine that read as them still brings is left out; what's read as the new one is taken.
+    @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .live)
+        let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        // Engines with nothing to read, and no way to: the test tells what each one read.
+        let engines = Engines()
+        workLinks.makeEngine = { onChange in
+            engines.told.append(onChange)
+            return LinkEngine(client: ADOClient(tokens: NoTokens()), onChange: onChange)
+        }
+        workLinks.start()
+        defer { workLinks.stop() }
+        try await until("Show Links reads") { engines.told.count == 1 }
+        // A teammate's pull request on a sprint's story, which the lists don't show.
+        let key = PRKey(organization, 4120)
+        let ref = ItemRef.pullRequest(organization: organization, number: 4120)
+        let read = WorkLinks(pullRequests: [key: try #require(DemoData.workLinks(now: Date()).pullRequests[key])])
+        engines.told[0](read)
+        try await until("what's read as Robin") { workLinks.tell(ref) != nil }
+        #expect(links.describe(ref).title == "Save items for later in the cart service")
+
+        workLinks.accountChanged("robin")
+        workLinks.accountChanged("sam")
+        #expect(workLinks.tell(ref) == nil)
+        #expect(links.describe(ref).title == "Pull request 4120")
+        #expect(engines.told.count == 2)
+        // What the engine reading as Robin still brings is left out.
+        engines.told[0](read)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(workLinks.tell(ref) == nil)
+        // What's read as Sam is taken.
+        engines.told[1](read)
+        try await until("what's read as Sam") { workLinks.tell(ref) != nil }
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([
@@ -290,5 +333,30 @@ import Testing
         let lookups = WorkLinksStore.lookups(linked, listed: listed)
         #expect(lookups.workItems == [WorkItemKey("contoso", 5160)])
         #expect(lookups.pullRequests == [PRKey("contoso", 4120)])
+    }
+
+    /// What each engine tells the store, for the tests to tell it.
+    private final class Engines {
+        var told: [LinkEngine.ChangeHandler] = []
+    }
+
+    private struct NoTokens: AccessTokenProvider {
+        struct Unused: Error {}
+        func token() async throws -> AccessToken { throw Unused() }
+        func invalidate() async {}
+    }
+}
+
+private struct Timeout: Error, CustomStringConvertible {
+    let description: String
+}
+
+/// Lets the store take what it's told until `condition` holds.
+@MainActor
+private func until(_ what: String, _ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    while !condition() {
+        guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
+        try await Task.sleep(for: .milliseconds(2))
     }
 }

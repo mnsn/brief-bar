@@ -560,7 +560,8 @@ left out.
 - Azure DevOps (`LinkEngine`, with the pull requests' client, after each of their refreshes; every request a GET): each
   of your pull requests' work items, then every quarter of an hour; the sprint's work items with their relations, while
   the sprint is on screen; and what the linked work items and pull requests that no list shows are, so their rows can
-  say it. The [table below](#where-the-data-comes-from-1) has the requests.
+  say it. When someone else signs in to the Azure CLI, all it read goes, with what was told and summed up of it, and it
+  reads again from the start, as them. The [table below](#where-the-data-comes-from-1) has the requests.
 - Copilot: the same database, read-only, in a query of its own, which an app without those columns doesn't answer:
   the list of sessions is read as before.
 - GitHub: nothing more. Each pull request's branch comes with the one query (`headRefName`).

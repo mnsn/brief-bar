@@ -20,6 +20,11 @@ final class WorkLinksStore {
     private let copilot: CopilotTasksStore
     private let settings: AppSettings
     private var engine: LinkEngine?
+    /// How many engines it started: what one reads is taken only while it's the last started, as one replaced, when
+    /// someone else signed in, may still tell what it was reading as the last one.
+    private var engines = 0
+    /// Makes an engine that tells `onChange` what it reads, with the pull requests' client: tests read without it.
+    var makeEngine: (_ onChange: @escaping LinkEngine.ChangeHandler) -> LinkEngine
     private var read = WorkLinks()
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
@@ -45,6 +50,7 @@ final class WorkLinksStore {
         self.sprint = sprint
         self.copilot = copilot
         self.settings = settings
+        makeEngine = { [client = store.client] onChange in LinkEngine(client: client, onChange: onChange) }
     }
 
     func start() {
@@ -91,7 +97,7 @@ final class WorkLinksStore {
         case .demo:
             read = DemoData.workLinks(now: Date())
         case .live:
-            let engine = LinkEngine(client: store.client) { _ in }
+            let engine = makeEngine { _ in }
             await engine.update(inputs())
             read = await engine.currentLinks()
         }
@@ -105,11 +111,7 @@ final class WorkLinksStore {
             case .demo:
                 read = DemoData.workLinks(now: Date())
             case .live:
-                engine = LinkEngine(client: store.client) { [weak self] read in
-                    DispatchQueue.main.async { [weak self] in
-                        MainActor.assumeIsolated { self?.receive(read) }
-                    }
-                }
+                startEngine()
             }
         } else {
             stopEngine()
@@ -118,14 +120,27 @@ final class WorkLinksStore {
         update()
     }
 
+    /// Starts reading with nothing read, in place of the engine that read before.
+    private func startEngine() {
+        stopEngine()
+        engines += 1
+        let number = engines
+        lastInputs = nil
+        engine = makeEngine { [weak self] read in
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.receive(read, from: number) }
+            }
+        }
+    }
+
     /// Stops reading: a refresh under way stops before its next request.
     private func stopEngine() {
         if let engine { Task { await engine.stop() } }
         engine = nil
     }
 
-    private func receive(_ read: WorkLinks) {
-        guard engine != nil, read != self.read else { return }
+    private func receive(_ read: WorkLinks, from number: Int) {
+        guard engine != nil, number == engines, read != self.read else { return }
         self.read = read
         publish()
     }
@@ -264,18 +279,24 @@ final class WorkLinksStore {
 
     // MARK: What's known of them
 
-    /// Tells the details what's known of its work items, pull requests and tasks, when they ask.
-    /// Someone else signed in to the Azure CLI: what was told of Azure DevOps' things as the last one goes, with the
-    /// summaries made of it and those being written, as when the source stops; they're told again, as the new one, when
+    /// Someone else signed in to the Azure CLI: what was read as the last one goes, and what's still being read as them is
+    /// left out, so it's read again from the start, as the new one; and what was told of Azure DevOps' things goes, with
+    /// the summaries made of it and those being written, as when the source stops. They're told again, as the new one, when
     /// they're asked for.
     func accountChanged(_ account: String?) {
         guard let account else { return }
         defer { self.account = account }
         guard let known = self.account, known != account else { return }
+        if store.mode == .live {
+            read = WorkLinks()
+            if engine != nil { startEngine() }
+            update()
+        }
         stories.withdraw(.azureDevOps)
         if tellsStories { tellStories() }
     }
 
+    /// Tells the details what's known of its work items, pull requests and tasks, when they ask.
     private func tellStories() {
         tellsStories = true
         stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
