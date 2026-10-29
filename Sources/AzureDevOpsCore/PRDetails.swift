@@ -349,9 +349,7 @@ public enum CommentText {
     }
 
     public static func plain(_ markdown: String, names: [String: String], limit: Int = 500) -> String {
-        var text = markdown.replacing(mention) { match in
-            "@" + (names[String(match.output.1).lowercased()] ?? "someone")
-        }
+        var text = naming(markdown, names: names)
         // Code fences and HTML tags go; the text inside stays.
         text = text.replacing(/(?m)^\s*```.*$/, with: " ")
         text = text.replacing(/<[^>]{1,200}>/, with: " ")
@@ -361,6 +359,13 @@ public enum CommentText {
         text = PlainText.fromMarkdown(text)
         guard text.count > limit else { return text }
         return String(text.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// The markdown with each mention as a name, "@Sam Rivera", or "@someone" for one `names` doesn't have.
+    static func naming(_ markdown: String, names: [String: String]) -> String {
+        markdown.replacing(mention) { match in
+            "@" + (names[String(match.output.1).lowercased()] ?? "someone")
+        }
     }
 }
 

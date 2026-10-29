@@ -88,7 +88,7 @@ enum Fixture {
     static func pullRequest(
         _ id: Int, title: String = "Fix the checkout total", author: Person = People.me, reviewers: [[String: Any]] = [],
         created: Date = t(-2 * day), status: String = "active", closed: Date? = nil, merge: String = "succeeded",
-        draft: Bool = false, sourceCommit: String = "abc", project: String = "p1", repository: String = "r1"
+        draft: Bool = false, sourceCommit: String = "abc", project: String = "p1", repository: String = "r1", description: String? = nil
     ) -> [String: Any] {
         var json: [String: Any] = [
             "pullRequestId": id, "codeReviewId": id, "title": title, "status": status, "createdBy": identity(author),
@@ -100,6 +100,7 @@ enum Fixture {
             "url": "https://example.invalid", "supportsIterations": true,
         ]
         if let closed { json["closedDate"] = iso(closed) }
+        if let description { json["description"] = description }
         return json
     }
 

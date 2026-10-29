@@ -359,6 +359,40 @@ extension DemoData {
 }
 
 extension DemoData {
+    /// What a few of the made-up pull requests say they do, in Markdown, as their authors would write it, for a summary of
+    /// them; nil for the others.
+    public static func pullRequestDescription(_ key: PRKey) -> String? {
+        guard key.organization.caseInsensitiveCompare(organization) == .orderedSame else { return nil }
+        switch key.number {
+        case 4091:
+            return """
+                Coupon totals were cut to the cent instead of rounded, so a **$19.99** item with `SAVE15` came to $16.98 \
+                rather than $16.99.
+
+                - Round discounted totals half up, away from zero, in `CouponService.Apply`
+                - Add rounding tests for every currency the store sells in
+                """
+        case 4102:
+            return """
+                Payments that fail for a moment, with a timeout or a 503, are tried again up to five times, with \
+                exponential backoff from 200 ms.
+
+                ## Testing
+                - Unit tests for the backoff schedule
+                - Checkout against a payments stub that fails every other call
+                """
+        case 4120:
+            return """
+                Adds a saved items table to the cart service, and endpoints to save an item, list what's saved and move an \
+                item back to the cart. An account keeps up to 50 saved items: saving more drops the oldest.
+                """
+        default:
+            return nil
+        }
+    }
+}
+
+extension DemoData {
     /// What the demo notified you of, for the Notifications page: the made-up pull requests' news, each as of when it
     /// happened, as if BriefBar had been running all along.
     public static func notifications(for items: [PRSnapshot]) -> [PulseNotification] {
