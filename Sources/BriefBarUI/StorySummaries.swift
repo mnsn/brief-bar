@@ -3,18 +3,25 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
-/// never by itself, from what the details show and what the sources read of each for it as it's written, such as a
-/// session's conversation (`ItemStories.context(for:)`, `StorySummaryPrompt`), with no tools at all. It's off until you
-/// turn it on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's
-/// dismissed, Show Links or this goes off, or a source stops, and says when what it summed up changed since. One being
-/// written stops then, with Copilot.
+/// Summarize with Copilot: a few lines on where a thing stands and what's linked to it, which the Copilot CLI writes as
+/// you open the thing's details or page, unless one that's current is there, or when you ask, as you choose, never
+/// otherwise; from what the details show and what the sources read of each for it as it's written, such as a session's
+/// conversation (`ItemStories.context(for:)`, `StorySummaryPrompt`), with no tools at all. It's off until you turn it on,
+/// and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, Show
+/// Links or this goes off, or a source stops, and says when what it summed up changed since. One being written stops then,
+/// with Copilot.
 @MainActor
 package final class StorySummaries: ObservableObject {
     package static let enabledKey = "summaries.copilot.enabled"
     package static let modelKey = "summaries.copilot.model"
+    package static let whenOpenedKey = "summaries.copilot.whenOpened"
     /// A small, quick model: a summary needs little thinking.
     package static let defaultModel = "claude-haiku-5.5"
+    /// How long a work item's details or a page shows something before its summary is written: one you only pass on
+    /// your way to another costs nothing.
+    package static let openedFor: Duration = .milliseconds(1_500)
+    /// How long after a summary couldn't be written opening it again tries again by itself.
+    static let retryAfter: TimeInterval = 10 * 60
 
     /// The model, and how hard it thinks.
     package struct Options: Equatable, Sendable {
@@ -108,7 +115,13 @@ package final class StorySummaries: ObservableObject {
 
     @Published package private(set) var isOn: Bool
     @Published package private(set) var model: String
+    /// Whether opening a work item's details, or a pull request's or a session's page, writes its summary, unless one
+    /// that's current is there; or else only asking does.
+    @Published package private(set) var writesWhenOpened: Bool
     @Published private var states: [ItemRef: State] = [:]
+    /// The one written last for each, while another is written in its place: it shows until that one's written, and
+    /// comes back if that one's stopped.
+    @Published private var previous: [ItemRef: State] = [:]
     /// The written ones you closed, kept to show again without asking Copilot.
     @Published private var hidden: Set<ItemRef> = []
     /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
@@ -139,6 +152,7 @@ package final class StorySummaries: ObservableObject {
         self.stories = stories
         isOn = isDemo || defaults.bool(forKey: Self.enabledKey)
         model = defaults.string(forKey: Self.modelKey).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultModel
+        writesWhenOpened = defaults.object(forKey: Self.whenOpenedKey) as? Bool ?? true
         // Turning Show Links off forgets every summary, and stops writing them.
         links.$isOn.removeDuplicates().filter { !$0 }
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
@@ -189,6 +203,12 @@ package final class StorySummaries: ObservableObject {
         defaults.set(model, forKey: Self.modelKey)
     }
 
+    package func setWritesWhenOpened(_ on: Bool) {
+        guard on != writesWhenOpened else { return }
+        writesWhenOpened = on
+        defaults.set(on, forKey: Self.whenOpenedKey)
+    }
+
     /// The model's name, as Settings says it.
     package func name(of model: String) -> String {
         models.first { $0.id == model }?.name ?? model
@@ -206,6 +226,11 @@ package final class StorySummaries: ObservableObject {
         states[subject]
     }
 
+    /// The one written before, while another is written in its place, or when that one couldn't be.
+    package func previous(for subject: ItemRef) -> State? {
+        previous[subject]
+    }
+
     /// Whether there's something to sum up: two things linked to it or more, or one and parts of its own, such as a story's
     /// tasks. Nothing while this or Show Links is off.
     package func hasSomethingToSum(_ subject: ItemRef) -> Bool {
@@ -220,20 +245,43 @@ package final class StorySummaries: ObservableObject {
         isAvailable && subject.kind != .workItem && links.isDescribed(subject)
     }
 
-    /// For `--render`: a summary as it would stand, without asking Copilot.
-    package func useForRendering(_ subject: ItemRef, state: State?) {
+    /// For `--render`: a summary as it would stand, without asking Copilot, and the one it replaces.
+    package func useForRendering(_ subject: ItemRef, state: State?, previous: State? = nil) {
         states[subject] = state
+        self.previous[subject] = previous
+    }
+
+    /// A work item's details, or a pull request's or a session's page, has shown it for a moment (`openedFor`): writes its
+    /// summary, while writing on open is on, unless one is being written, you closed it, or one is there that's still
+    /// current, once what it summed up is told as it is now; and, when the last couldn't be written, unless that was
+    /// lately. A work item needs something to sum up, as ✨ does. Cancelled, as when it's closed, it asks nothing.
+    package func opened(_ subject: ItemRef) async {
+        guard isAvailable, writesWhenOpened, writing[subject] == nil, !hidden.contains(subject) else { return }
+        switch states[subject] {
+        case .writing?:
+            return
+        case .failed(_, let at)?:
+            guard now().timeIntervalSince(at) >= Self.retryAfter else { return }
+        case .written?:
+            await stories.tell([links.describe(subject)] + links.connections(of: subject).map(\.item))
+            guard isAvailable, writing[subject] == nil, !hidden.contains(subject), isOutOfDate(subject) else { return }
+        case nil:
+            break
+        }
+        guard !Task.isCancelled, subject.kind == .workItem ? hasSomethingToSum(subject) : canSummarize(subject) else { return }
+        summarize(subject)
     }
 
     /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
-    /// it has; of a pull request or a session with nothing linked, of what's known of it. Nothing unless this and Show
-    /// Links are on.
+    /// it has, which shows meanwhile; of a pull request or a session with nothing linked, of what's known of it. Nothing
+    /// unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
         guard isAvailable else { return }
         writing[subject]?.task.cancel()
         nextToken += 1
         let token = nextToken
         hidden.remove(subject)
+        if case .written? = states[subject] { previous[subject] = states[subject] }
         states[subject] = .writing(since: now())
         let options = Options(model: model, effort: "low")
         let task = Task { [weak self] in
@@ -245,8 +293,10 @@ package final class StorySummaries: ObservableObject {
             let context = await self.stories.context(for: items.map(\.ref))
             guard self.isCurrent(subject, token: token) else { return }
             guard let input = self.input(for: subject, context: context) else {
+                // Nothing to sum up anymore: the one before says what's gone.
                 self.writing[subject] = nil
                 self.states[subject] = nil
+                self.previous[subject] = nil
                 return
             }
             let answer: Result<String, Problem> = if let write = self.write {
@@ -279,6 +329,7 @@ package final class StorySummaries: ObservableObject {
         case .success(let text):
             if let summary = StorySummary.parse(text) {
                 states[subject] = .written(summary, at: now(), inputs: inputs, model: model)
+                previous[subject] = nil
                 // Once, wherever it shows.
                 AccessibilityNotification.Announcement("Summary ready: \(links.describe(subject).title)").post()
             } else {
@@ -290,16 +341,17 @@ package final class StorySummaries: ObservableObject {
         }
     }
 
-    /// Stops writing one.
+    /// Stops writing one: the one before it, if there was one, shows again.
     package func cancel(_ subject: ItemRef) {
         writing.removeValue(forKey: subject)?.task.cancel()
-        if case .writing? = states[subject] { states[subject] = nil }
+        if case .writing? = states[subject] { states[subject] = previous.removeValue(forKey: subject) }
     }
 
     /// Forgets one.
     package func dismiss(_ subject: ItemRef) {
         writing.removeValue(forKey: subject)?.task.cancel()
         states[subject] = nil
+        previous[subject] = nil
         hidden.remove(subject)
     }
 
@@ -351,6 +403,7 @@ package final class StorySummaries: ObservableObject {
         for writing in writing.values { writing.task.cancel() }
         writing = [:]
         states = [:]
+        previous = [:]
         hidden = []
     }
 

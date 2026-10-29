@@ -299,6 +299,14 @@ private struct StandingContent: View {
             .onChange(of: rows, initial: true) {
                 request(connections)
             }
+            // Once it's shown a moment, its summary, unless one that's current is there: as it opens, as it's unfolded, and
+            // as summaries are turned on.
+            .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)") {
+                guard links.isOn, showsSummary, !isFolded, !isRendering else { return }
+                try? await Task.sleep(for: StorySummaries.openedFor)
+                guard !Task.isCancelled else { return }
+                await summaries.opened(subject)
+            }
             // And each minute while it shows, for what changes without its row changing, such as a vote or a checkpoint.
             .background {
                 TimelineView(.periodic(from: .distantPast, by: ItemStories.freshFor)) { context in

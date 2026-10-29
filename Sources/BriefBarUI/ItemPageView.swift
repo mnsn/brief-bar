@@ -48,6 +48,7 @@ private struct PageContent: View {
     let defaults: UserDefaults
 
     @Environment(\.itemNavigation) private var navigation
+    @Environment(\.isRendering) private var isRendering
     @AccessibilityFocusState private var isTitleFocused: Bool
 
     /// What shows under it: the work item, and the pages you came through.
@@ -85,6 +86,13 @@ private struct PageContent: View {
             TimelineView(.periodic(from: .distantPast, by: ItemStories.freshFor)) { context in
                 Color.clear.onChange(of: context.date) { stories.request(links.describe(ref)) }
             }
+        }
+        // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
+        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)") {
+            guard links.isOn, !isRendering else { return }
+            try? await Task.sleep(for: StorySummaries.openedFor)
+            guard !Task.isCancelled else { return }
+            await summaries.opened(ref)
         }
         .onAppear { isTitleFocused = true }
     }

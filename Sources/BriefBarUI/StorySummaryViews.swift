@@ -104,18 +104,23 @@ package struct SummaryCard: View {
         case nil:
             EmptyView()
         case .writing:
-            card {
-                header { Text(Self.title) } trailing: { EmptyView() }
-            } content: {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Self.writingText(summaries)
-                    Spacer(minLength: 8)
-                    Button("Stop") { summaries.cancel(subject) }
-                        .buttonStyle(.borderless)
+            // Written again, the one it replaces shows meanwhile.
+            if case .written(let summary, let at, let inputs, let model)? = summaries.previous(for: subject) {
+                written(summary, at: at, inputs: inputs, model: model, isUpdating: true)
+            } else {
+                card {
+                    header { Text(Self.title) } trailing: { EmptyView() }
+                } content: {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Self.writingText(summaries)
+                        Spacer(minLength: 8)
+                        Button("Stop") { summaries.cancel(subject) }
+                            .buttonStyle(.borderless)
+                    }
+                    .font(.system(size: 12))
                 }
-                .font(.system(size: 12))
             }
         case .written(let summary, let at, let inputs, let model):
             written(summary, at: at, inputs: inputs, model: model)
@@ -143,28 +148,48 @@ package struct SummaryCard: View {
         .foregroundStyle(.secondary)
     }
 
-    private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
-        let changed = summaries.whatChanged(subject)
-        let isStale = changed != nil
+    /// A written one; or, `isUpdating`, the one before, dimmed, while another is written in its place, which you can stop.
+    private func written(
+        _ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String, isUpdating: Bool = false
+    ) -> some View {
+        let changed = isUpdating ? nil : summaries.whatChanged(subject)
+        let isDimmed = isUpdating || changed != nil
         let written = "Written by \(summaries.name(of: model)) through GitHub Copilot at "
             + "\(at.formatted(date: .omitted, time: .shortened)), from \(StorySummaries.source(of: inputs))."
         return card {
-            // Narrower, it says less, but always when it was written and whether it's out of date.
-            ViewThatFits(in: .horizontal) {
-                header { caption(Self.title, at: at, changed: changed, written: written) } trailing: { closeButton }
-                header { caption("Summary", at: at, changed: changed, written: written) } trailing: { closeButton }
+            if isUpdating {
+                header {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text("Updating · 1 request")
+                            .lineLimit(1)
+                            .help(Self.writing(summaries))
+                    }
+                } trailing: {
+                    Button("Stop") { summaries.cancel(subject) }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11.5))
+                        .help("Keep this one")
+                }
+            } else {
+                // Narrower, it says less, but always when it was written and whether it's out of date.
+                ViewThatFits(in: .horizontal) {
+                    header { caption(Self.title, at: at, changed: changed, written: written) } trailing: { refreshAndClose }
+                    header { caption("Summary", at: at, changed: changed, written: written) } trailing: { refreshAndClose }
+                }
             }
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
                     .font(.system(size: isRow ? 12.5 : 13, weight: .medium))
-                    .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let next = summary.next, !Self.foldsNext(summary, under: waitsAbove) {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                         .font(.system(size: isRow ? 11.5 : 12))
-                        .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -173,12 +198,12 @@ package struct SummaryCard: View {
                     Text(paragraph)
                         .font(.system(size: 12))
                         .lineSpacing(1.5)
-                        .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
+                        .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
                 // Once it's out of date, a new one.
-                if isStale {
+                if changed != nil {
                     againButton
                         .buttonStyle(.borderless)
                         .font(.system(size: 11.5))
@@ -186,12 +211,16 @@ package struct SummaryCard: View {
             }
         }
         .contextMenu {
-            Button("Summarize Again") { summaries.summarize(subject) }
+            if !isUpdating {
+                Button("Summarize Again") { summaries.summarize(subject) }
+            }
             Button("Copy Summary") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(summary.plainText, forType: .string)
             }
-            Button("Hide Summary") { summaries.hide(subject) }
+            if !isUpdating {
+                Button("Hide Summary") { summaries.hide(subject) }
+            }
         }
     }
 
@@ -216,8 +245,40 @@ package struct SummaryCard: View {
                     Button("Try Again") { summaries.summarize(subject) }
                 }
                 .buttonStyle(.borderless)
+                // The one before, when it was written again and couldn't be: what it said then still says something.
+                if case .written(let summary, let at, _, _)? = summaries.previous(for: subject) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Written at \(at.formatted(date: .omitted, time: .shortened)):")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(summary.headline)
+                            .fontWeight(.medium)
+                        if let paragraph = summary.paragraph { Text(paragraph) }
+                    }
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.top, 2)
+                }
             }
             .font(.system(size: 12))
+        }
+    }
+
+    /// ↻, which writes it again, and ✕, which closes it.
+    private var refreshAndClose: some View {
+        HStack(spacing: 0) {
+            Button {
+                summaries.summarize(subject)
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Summarize again: 1 request")
+            .accessibilityLabel("Summarize Again")
+            closeButton
         }
     }
 
@@ -397,8 +458,9 @@ package struct StorySummariesSetting: View {
 
     package static let title = "Summarize with Copilot"
     package static let explanation = """
-        Adds ✨ Summarize with Copilot to Where It Stands, and to pull requests' and Copilot sessions' rows (point at one, or \
-        right-click it) and pages. Nothing is sent until you click it.
+        Writes a few lines on where a work item, pull request or Copilot session stands, from what's known of it and \
+        what's linked to it: at the top of Where It Stands and under a page's heading, and under a pull request's or a \
+        session's row when you ask (point at one, or right-click it). Nothing is sent until you open one or ask.
         """
     /// What it sends, where, what it costs and what Copilot can do with it, a line each.
     package static let lines: [(label: String, symbol: String, text: String)] = [
@@ -411,9 +473,15 @@ package struct StorySummariesSetting: View {
             GitHub Copilot, through the Copilot CLI, which keeps a copy in its session history as “BriefBar summary”. \
             BriefBar keeps summaries in memory only.
             """),
-        ("Costs", "creditcard", "one request on your Copilot plan per summary, at the model's rate."),
+        ("Costs", "creditcard", """
+            one request on your Copilot plan per summary, at the model's rate. One that's still current shows again for \
+            nothing.
+            """),
         ("Can do", "lock.shield", "only write. It gets no tools: no commands, files or web."),
     ]
+    /// When it writes one, as the setting says it.
+    package static let whenOpened = "When you open one"
+    package static let whenAsked = "Only when you ask"
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -441,6 +509,16 @@ package struct StorySummariesSetting: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .fixedSize()
+                }
+                labeled("When", symbol: "clock") {
+                    Picker("When", selection: Binding(get: { summaries.writesWhenOpened }, set: { summaries.setWritesWhenOpened($0) })) {
+                        Text(Self.whenOpened).tag(true)
+                        Text(Self.whenAsked).tag(false)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .help("When you open a work item's details, or a pull request's or a Copilot session's page, unless one that's current is there")
                 }
             }
             .font(.callout)

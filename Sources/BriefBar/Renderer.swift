@@ -311,6 +311,9 @@ enum Renderer {
                 card("written")
                 summaries.useForRendering(subject, state: .writing(since: Date()))
                 card("writing")
+                // Written again: the one before shows meanwhile.
+                summaries.useForRendering(subject, state: .writing(since: Date()), previous: written)
+                card("updating")
                 summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
                     "Claude Haiku 5.5 isn't on your Copilot plan.",
                     detail: "Error: Model \"claude-haiku-5.5\" from --model flag is not available.", fix: .chooseModel

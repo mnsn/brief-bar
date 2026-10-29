@@ -690,6 +690,141 @@ import Testing
         #expect(summaries.hasCLI == false)
     }
 
+    // MARK: Writing one as it opens
+
+    /// A work item with something to sum up: a pull request, and tasks of its own.
+    private func publishWithTasks(_ links: Links, status: String = "Ready to complete") {
+        links.publish(.azureDevOps, links: [ItemLink(workItem, pullRequest, origin: .azureDevOps)!], items: [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active",
+                       parts: 2),
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .green, state: .done, status: status),
+        ])
+    }
+
+    /// Opening a work item's details writes its summary, then shows that one again for nothing while it's current; once
+    /// what it summed up changes, opening it writes another. Not when you closed it, or chose to write them only when you ask.
+    @Test func openingOneWritesItsSummaryUnlessOneIsCurrent() async throws {
+        let defaults = MemoryDefaults()
+        let (links, _, summaries) = hub(defaults: defaults)
+        publishWithTasks(links)
+        let asked = Asked()
+        summaries.write = writer(asked)
+        #expect(summaries.writesWhenOpened)
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(asked.prompts.count == 1)
+        // Current: shown again for nothing.
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 1)
+        // What it summed up changed: opening it again writes another.
+        publishWithTasks(links, status: "Completed")
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(asked.prompts.count == 2)
+
+        // Closed, it stays closed.
+        publishWithTasks(links, status: "Abandoned")
+        summaries.hide(workItem)
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 2)
+        // Written only when you ask.
+        summaries.show(workItem)
+        summaries.setWritesWhenOpened(false)
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 2)
+        #expect(defaults.object(forKey: StorySummaries.whenOpenedKey) as? Bool == false)
+        #expect(!StorySummaries(defaults: defaults, links: links, stories: ItemStories(links: links), isDemo: false).writesWhenOpened)
+        // Nothing to sum up: a work item with one pull request and no tasks has no summary, as it has no ✨.
+        summaries.setWritesWhenOpened(true)
+        publish(links)
+        summaries.dismiss(workItem)
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 2)
+        // A pull request's page sums up what's known of it, with nothing else linked.
+        await summaries.opened(pullRequest)
+        await waitForWriting(summaries, pullRequest)
+        #expect(asked.prompts.count == 3)
+    }
+
+    /// One that couldn't be written isn't tried again by opening it until a while later: Try Again does it at once.
+    @Test func openingOneThatFailedTriesAgainOnlyAfterAWhile() async {
+        let (links, _, summaries) = hub()
+        publishWithTasks(links)
+        var clock = Date(timeIntervalSince1970: 1_792_000_000)
+        summaries.now = { clock }
+        let tries = Asked()
+        summaries.write = { prompt, _ in
+            tries.add(prompt)
+            return .failure(StorySummaries.Problem("Copilot took too long to answer."))
+        }
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(tries.prompts.count == 1)
+        await summaries.opened(workItem)
+        #expect(tries.prompts.count == 1)
+        clock += StorySummaries.retryAfter
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(tries.prompts.count == 2)
+    }
+
+    /// Written again, the one before shows meanwhile; stopped, it's back; and once the new one's written, it's gone.
+    @Test func theOneBeforeShowsWhileAnotherIsWritten() async throws {
+        let (links, _, summaries) = hub()
+        publish(links)
+        summaries.write = { _, _ in .success("HEADLINE: Approved.") }
+        await summaries.summarizeAndWait(workItem)
+        let first = summaries.state(for: workItem)
+        guard case .written? = first else {
+            Issue.record("Not written")
+            return
+        }
+        let gate = Gate()
+        summaries.write = { _, _ in
+            await gate.wait()
+            return .success("HEADLINE: Completed.")
+        }
+        summaries.summarize(workItem)
+        #expect(summaries.previous(for: workItem) == first)
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Stopped: the one before is back.
+        summaries.cancel(workItem)
+        #expect(summaries.state(for: workItem) == first)
+        #expect(summaries.previous(for: workItem) == nil)
+        gate.open()
+
+        // Written: the new one replaces it.
+        summaries.write = { _, _ in .success("HEADLINE: Completed.") }
+        await summaries.summarizeAndWait(workItem)
+        guard case .written(let summary, _, _, _)? = summaries.state(for: workItem) else {
+            Issue.record("Not written again")
+            return
+        }
+        #expect(summary.headline == "Completed.")
+        #expect(summaries.previous(for: workItem) == nil)
+        // One that couldn't be written keeps the one before, to show under why.
+        summaries.write = { _, _ in .failure(StorySummaries.Problem("Copilot took too long to answer.")) }
+        let second = summaries.state(for: workItem)
+        await summaries.summarizeAndWait(workItem)
+        #expect(summaries.previous(for: workItem) == second)
+        summaries.dismiss(workItem)
+        #expect(summaries.previous(for: workItem) == nil)
+    }
+
+    /// Lets a summary started by opening one be written.
+    private func waitForWriting(_ summaries: StorySummaries, _ subject: ItemRef) async {
+        for _ in 0..<400 {
+            if case .writing? = summaries.state(for: subject) {
+                try? await Task.sleep(for: .milliseconds(5))
+            } else {
+                return
+            }
+        }
+    }
+
     /// Holds the writer until it's let go.
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()
