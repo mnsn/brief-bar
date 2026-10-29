@@ -112,7 +112,8 @@ public enum StorySummaryPrompt {
         /// "5101", "!4120", or a session's name.
         public var label: String
         public var title: String
-        /// Where it stands, as its row says it, when its story doesn't.
+        /// Where it stands, as its row says it, when its story doesn't: only what may leave this Mac, never who sent it in a
+        /// chat.
         public var status: String?
         /// Why it's linked: "Linked in Azure DevOps", "Through !4120".
         public var link: String?
@@ -165,7 +166,9 @@ public enum StorySummaryPrompt {
         // A session's label is its name, its title.
         var lines = [item.label == item.title ? "\(item.kind.uppercased()): \(title)" : "\(item.kind.uppercased()) \(item.label): \(title)"]
         if !isSubject, let link = item.link { lines.append("Linked: \(link)") }
-        let sentence = item.story?.sentence.isEmpty == false ? item.story?.sentence : item.status
+        // What it says to share: never what only this Mac knows, such as who sent it in a chat.
+        let shared = item.story?.sentenceToShare
+        let sentence = shared?.isEmpty == false ? shared : item.status
         if let sentence, !sentence.isEmpty { lines.append("Status: \(sentence)") }
         guard let story = item.story else { return lines.joined(separator: "\n") }
         for fact in story.facts {

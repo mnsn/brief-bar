@@ -204,7 +204,7 @@ package final class StorySummaries: ObservableObject {
         let described = links.describe(subject)
         let item = { (linked: LinkedItem, link: String?) in
             StorySummaryPrompt.Item(
-                kind: Self.kind(of: linked), label: linked.label, title: linked.title, status: linked.status, link: link,
+                kind: Self.kind(of: linked), label: linked.label, title: linked.title, status: linked.statusToShare, link: link,
                 story: self.stories.story(for: linked.ref)
             )
         }

@@ -16,6 +16,9 @@ package struct LinkedItem {
     package var state: ItemState?
     /// Where it stands, briefly: "Active", "Failing", "Waiting for your answer".
     package var status: String?
+    /// Where it stands, briefly, to share outside this Mac, such as with Copilot for a summary, when `status` says what only
+    /// this Mac knows, such as that it needs you because someone sent it to you in a chat. Nil when `status` can be shared.
+    package var sharedStatus: String?
     /// Where it is: a repository or a project.
     package var place: String?
     /// What links it by branch, and helps suggest what goes with it.
@@ -31,8 +34,8 @@ package struct LinkedItem {
 
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
-        place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil, menu: (() -> AnyView)? = nil,
-        sent: SentToCopilot? = nil
+        sharedStatus: String? = nil, place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil,
+        menu: (() -> AnyView)? = nil, sent: SentToCopilot? = nil
     ) {
         self.ref = ref
         self.label = label
@@ -41,6 +44,7 @@ package struct LinkedItem {
         self.color = color
         self.state = state
         self.status = status
+        self.sharedStatus = sharedStatus
         self.place = place
         self.hint = hint
         self.date = date
@@ -53,6 +57,11 @@ package struct LinkedItem {
     package var menuTitle: String {
         let name = label == title ? title : "\(label) · \(title)"
         return ref.kind == .session ? name : "\(ref.kind.title) \(name)"
+    }
+
+    /// Where it stands, briefly, to share outside this Mac: `sharedStatus`, or else `status`.
+    package var statusToShare: String? {
+        sharedStatus ?? status
     }
 
     /// What a session needs from you, in a word or two, for its capsule.
@@ -83,8 +92,8 @@ package struct SentToCopilot: Equatable, Sendable {
 extension LinkedItem: Equatable {
     package static func == (lhs: LinkedItem, rhs: LinkedItem) -> Bool {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
-            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.place == rhs.place
-            && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
+            && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.sharedStatus == rhs.sharedStatus
+            && lhs.place == rhs.place && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
             && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent
     }
 }

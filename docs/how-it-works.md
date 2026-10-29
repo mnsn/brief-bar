@@ -438,7 +438,10 @@ know of each, as for the details, the work item's description and latest comment
 `Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
 model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
 first, and at most 14,000 characters. It asks for a headline, what's next and who for, and at most 120 words, which
-`StorySummary` reads, whatever Markdown is around them.
+`StorySummary` reads, whatever Markdown is around them. Nothing from Teams goes in it, nor anything from the
+notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or that you
+answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its status as
+active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
 
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions

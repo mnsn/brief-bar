@@ -8,6 +8,10 @@ public struct ItemStory: Sendable, Equatable {
     /// Priya approved.", "Asks: Use a new table?". Empty when a source knows only what's been done, such as Copilot of a
     /// task Azure DevOps sent it, which says where that stands.
     public var sentence: String
+    /// The sentence to share outside this Mac, such as with Copilot for a summary, when `sentence` says what only this Mac
+    /// knows, such as who sent it to you in a chat: where it stands from what the thing says itself. Nil when `sentence`
+    /// can be shared.
+    public var sharedSentence: String?
     /// When what it says last changed.
     public var date: Date?
     /// A few facts, in the order they show: who reviews it, how its comments and its merge stand.
@@ -24,10 +28,11 @@ public struct ItemStory: Sendable, Equatable {
     public var footnote: String?
 
     public init(
-        sentence: String, date: Date? = nil, facts: [Fact] = [], more: [Fact] = [], runs: [Run] = [], account: Account? = nil,
-        notes: [Fact] = [], footnote: String? = nil
+        sentence: String, sharedSentence: String? = nil, date: Date? = nil, facts: [Fact] = [], more: [Fact] = [], runs: [Run] = [],
+        account: Account? = nil, notes: [Fact] = [], footnote: String? = nil
     ) {
         self.sentence = sentence
+        self.sharedSentence = sharedSentence
         self.date = date
         self.facts = facts
         self.more = more
@@ -113,13 +118,21 @@ public struct ItemStory: Sendable, Equatable {
         }
     }
 
+    /// Where it stands, in a sentence to share outside this Mac: `sharedSentence`, or else `sentence`.
+    public var sentenceToShare: String {
+        sharedSentence ?? sentence
+    }
+
     /// The two told together, as two sources tell about the same thing, such as a task Azure DevOps sent to Copilot and
-    /// what Copilot recorded of it: the first sentence and footnote that say something, both's facts, runs and notes,
-    /// without a fact or a note told twice, the first account that says something, unless only the other has checkpoints,
-    /// and the newer date.
+    /// what Copilot recorded of it: the first sentence that says something, with what of it may be shared, and the first
+    /// footnote, both's facts, runs and notes, without a fact or a note told twice, the first account that says something,
+    /// unless only the other has checkpoints, and the newer date.
     public func merged(with other: ItemStory) -> ItemStory {
         var merged = self
-        if merged.sentence.isEmpty { merged.sentence = other.sentence }
+        if merged.sentence.isEmpty, !other.sentence.isEmpty {
+            merged.sentence = other.sentence
+            merged.sharedSentence = other.sharedSentence
+        }
         if merged.footnote == nil { merged.footnote = other.footnote }
         let told = { (label: String) in merged.facts.contains { $0.label == label } || merged.more.contains { $0.label == label } }
         for fact in other.facts where !told(fact.label) {

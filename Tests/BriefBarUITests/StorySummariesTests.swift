@@ -168,6 +168,35 @@ import Testing
         #expect(summaries.state(for: workItem) == nil)
     }
 
+    @Test func whatOnlyThisMacKnowsIsNeverSent() async throws {
+        let (links, stories, summaries) = hub()
+        // Someone sent it to you in a chat: that's why it needs you.
+        links.publish(.azureDevOps, links: [ItemLink(workItem, pullRequest, origin: .azureDevOps)!], items: [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .orange, state: .needsYou, status: "Needs You", sharedStatus: "Active"),
+        ])
+        let asked = Asked()
+        summaries.write = writer(asked)
+        // Without its story, its row's status as it may be shared.
+        await summaries.summarizeAndWait(workItem)
+        let unknown = try #require(asked.prompts.last)
+        #expect(unknown.contains("PULL REQUEST !4091: Fix the coupon rounding error\nLinked: Linked in Azure DevOps\nStatus: Active"))
+        #expect(!unknown.contains("Needs You"))
+
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { _ in
+            ItemStory(sentence: "Dana Whitfield sent this in Teams: By Alex Kim", sharedSentence: "Waiting for reviewers: Sam Rivera")
+        }
+        await summaries.summarizeAndWait(workItem)
+        let told = try #require(asked.prompts.last)
+        #expect(told.contains("Status: Waiting for reviewers: Sam Rivera"))
+        for said in ["Dana", "Teams", "Needs You"] {
+            #expect(!told.contains(said))
+        }
+        // The details still say it.
+        #expect(stories.story(for: pullRequest)?.sentence == "Dana Whitfield sent this in Teams: By Alex Kim")
+    }
+
     /// Holds the writer until it's let go.
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()

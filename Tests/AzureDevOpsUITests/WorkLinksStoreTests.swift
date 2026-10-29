@@ -121,6 +121,39 @@ import Testing
         #expect(workLinks.tell(.workItem(organization: organization, id: 9999)) == nil)
     }
 
+    @Test func whoSentAPullRequestInAChatIsntShared() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+
+        // Dana sent it in Teams, and it needs you; Priya sent the other, and you approved it.
+        for (number, status) in [(4113, "Needs You"), (4108, "Answered")] {
+            let ref = ItemRef.pullRequest(organization: organization, number: number)
+            let row = links.describe(ref)
+            #expect(row.status == status)
+            #expect(row.statusToShare == "Active")
+            let story = try #require(workLinks.tell(ref))
+            #expect(story.sentence.contains("sent this in Teams"))
+            let shared = try #require(story.sharedSentence)
+            #expect(!shared.isEmpty)
+            for said in ["Dana", "Priya", "Teams", "sent this"] {
+                #expect(!shared.contains(said))
+            }
+        }
+        // One that's there for itself says so as it is.
+        let coupon = links.describe(.pullRequest(organization: organization, number: 4091))
+        #expect(coupon.sharedStatus == nil)
+        #expect(try #require(workLinks.tell(coupon.ref)).sharedSentence == nil)
+    }
+
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {
         let listed: Set<ItemRef> = [.pullRequest(organization: "contoso", number: 4091), .workItem(organization: "contoso", id: 5110)]
         let linked: Set<ItemRef> = listed.union([

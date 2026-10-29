@@ -188,7 +188,8 @@ final class WorkLinksStore {
             items.append(LinkedItem(
                 ref: .pullRequest(organization: item.key.organization, number: item.key.number), label: "!\(item.key.number)",
                 title: item.title, symbol: item.group == .done ? "arrow.triangle.merge" : "arrow.triangle.pull", color: item.rowColor,
-                state: item.group.state(showToReview: showToReview), status: item.group.title, place: item.repository,
+                state: item.group.state(showToReview: showToReview), status: item.group.title,
+                sharedStatus: PullRequestStory.sharedStatus(item), place: item.repository,
                 hint: record.map { Self.hint($0.pullRequest) }, date: item.since,
                 open: { [weak store] in
                     // As it is when you click it.
