@@ -22,15 +22,23 @@ struct WorkItemDetailsPanel: View {
                 Divider()
                     .opacity(0.6)
                 ScrollView {
-                    content(item)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 20)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Group {
+                        if let page = details.pages.last {
+                            ItemPageView(ref: page)
+                        } else {
+                            content(item)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // A pull request or a session linked to it opens its page here, a work item its details.
+                    .environment(\.itemNavigation, ItemNavigation { ref in navigate(to: ref) })
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                // Each work item from the top.
-                .id(item.key)
+                // Each work item, and each page, from the top.
+                .id("\(item.key)/\(details.pages.last.map(String.init(describing:)) ?? "")")
             }
             .onAppear { details.refreshIfStale() }
             .accessibilityElement(children: .contain)
@@ -40,11 +48,36 @@ struct WorkItemDetailsPanel: View {
 
     private var me: String { sprint.board?.me ?? "" }
 
+    /// "Back to Bug 5110: Coupon totals round down", or to the page before.
+    private func backHelp(_ item: WorkItem) -> String {
+        if details.pages.count > 1, let previous = details.pages.dropLast().last {
+            return "Back to \(services.links.describe(previous).menuTitle)"
+        }
+        if !details.pages.isEmpty { return "Back to \(item.type) \(item.id): \(item.title)" }
+        guard let previous = details.history.last else { return "Back" }
+        return "Back to \(previous.type) \(previous.id): \(previous.title)"
+    }
+
+    /// Opens something linked to the work item: a work item of the sprint, its details; a pull request or a session, its
+    /// page. False for a work item the sprint doesn't have, which opens its preview instead.
+    private func navigate(to ref: ItemRef) -> Bool {
+        switch ref.kind {
+        case .workItem:
+            let items = (sprint.board?.rows ?? []).flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
+            guard let item = items.first(where: { $0.linkRef == ref }) else { return false }
+            withAnimation(.easeOut(duration: 0.15)) { details.follow(item) }
+            return true
+        case .pullRequest, .gitHubPullRequest, .session:
+            withAnimation(.easeOut(duration: 0.15)) { details.open(page: ref) }
+            return true
+        }
+    }
+
     // MARK: Top
 
     private func topBar(_ item: WorkItem) -> some View {
         HStack(spacing: 8) {
-            if let previous = details.history.last {
+            if details.canGoBack {
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { details.back() }
                 } label: {
@@ -54,7 +87,7 @@ struct WorkItemDetailsPanel: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help("Back to \(previous.type) \(previous.id): \(previous.title)")
+                .help(backHelp(item))
                 .accessibilityLabel("Back")
             }
             TypeBadge(item: item, size: 20)

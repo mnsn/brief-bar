@@ -17,6 +17,9 @@
   click it, with a small model unless you choose another, and without any tools, so Copilot can only
   write. What the details show goes to GitHub Copilot for it, never anything from Teams, and the summary
   stays in memory, saying when something changed since.
+- **Open a pull request or a session on a page of its own.** In Where It Stands, click a pull request
+  or a Copilot session to see all that's known of it in the details, with its own links, such as a pull
+  request's sessions, and **‹** to go back to the work item.
 
 ## 0.8.3 - 2026-10-28
 

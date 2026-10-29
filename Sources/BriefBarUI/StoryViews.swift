@@ -114,6 +114,28 @@ struct StandingGroup: Identifiable {
     var date: Date? { all.compactMap(\.item.date).max() }
 }
 
+/// Opens a linked thing where the details show, rather than its preview in place: a work item's details, or a pull
+/// request's or a Copilot session's page, to come back from. False when it can't, and the row opens its preview then.
+package struct ItemNavigation {
+    package var open: @MainActor (ItemRef) -> Bool
+
+    package init(open: @escaping @MainActor (ItemRef) -> Bool) {
+        self.open = open
+    }
+}
+
+private struct ItemNavigationKey: EnvironmentKey {
+    static var defaultValue: ItemNavigation? { nil }
+}
+
+extension EnvironmentValues {
+    /// Where a linked thing opens, when there's somewhere: the Sprint page's details.
+    package var itemNavigation: ItemNavigation? {
+        get { self[ItemNavigationKey.self] }
+        set { self[ItemNavigationKey.self] = newValue }
+    }
+}
+
 private struct StandingContent: View {
     let subject: ItemRef
     @ObservedObject var links: Links
@@ -126,6 +148,7 @@ private struct StandingContent: View {
     @LocalState private var hintHidden: Bool?
     @LocalState private var showsSetting = false
     @Environment(\.isRendering) private var isRendering
+    @Environment(\.itemNavigation) private var navigation
 
     private var isHintHidden: Bool {
         hintHidden ?? defaults.bool(forKey: WhereItStandsSection.hintHiddenKey)
@@ -257,8 +280,8 @@ private struct StandingContent: View {
         return StoryRow(
             subject: subject, parent: parent, connection: connection, story: stories.story(for: ref),
             isTelling: stories.isTelling(ref) && !stories.hasTold(ref),
-            // Offscreen, the first one open, to show what's in it.
-            isExpanded: expanded.contains(ref) || (isRendering && isFirst),
+            // Offscreen, the first one open, to show what's in it, where rows open in place rather than as pages.
+            isExpanded: expanded.contains(ref) || (isRendering && isFirst && navigation == nil),
             links: links
         ) {
             withAnimation(.easeOut(duration: 0.15)) {
@@ -335,9 +358,12 @@ private struct StoryRow: View {
     let toggle: () -> Void
 
     @LocalState private var isHovered = false
+    @Environment(\.itemNavigation) private var navigation
 
     private var item: LinkedItem { connection.item }
     private var isChild: Bool { parent != nil }
+    /// A click opens its page, where there's one, rather than its preview.
+    private var navigates: Bool { navigation != nil }
     private var name: String { WhereItStandsSection.name(of: item, subject: subject, parent: parent) }
 
     /// Where it stands: as its source tells it, or its row's status until then.
@@ -370,7 +396,7 @@ private struct StoryRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: toggle) {
+            Button(action: click) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: symbol.name)
                         .font(.system(size: 12, weight: .medium))
@@ -403,7 +429,7 @@ private struct StoryRow: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .rotationEffect(.degrees(isExpanded && !navigates ? 90 : 0))
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 10)
@@ -420,12 +446,15 @@ private struct StoryRow: View {
             .onHover { isHovered = $0 }
             .help(help)
             .accessibilityLabel("\(kindName), \(name). \(sentence)")
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-            .accessibilityHint(isExpanded ? "Hides what's known of it" : "Shows what's known of it")
+            .accessibilityValue(navigates ? "" : isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(navigates ? "Shows its page" : isExpanded ? "Hides what's known of it" : "Shows what's known of it")
             .accessibilityAction(named: "Open") { open() }
             .accessibilityAction(named: connection.isKnownElsewhere ? "Hide Link" : "Unlink") { links.unlink(subject, item.ref) }
             if isExpanded {
-                StoryPreview(subject: subject, connection: connection, story: story, isTelling: isTelling)
+                StoryDetails(
+                    item: item, story: story, isTelling: isTelling, reason: WhereItStandsSection.reason(connection, subject: subject),
+                    mode: .preview
+                )
                     .padding(.leading, 34)
                     .padding(.trailing, 12)
                     .padding(.top, 1)
@@ -476,8 +505,8 @@ private struct StoryRow: View {
             }
             .buttonStyle(.plain)
             .padding(.trailing, item.date == nil ? 26 : 62)
-            .help(StoryPreview.openTitle(for: item.ref.kind))
-            .accessibilityLabel(StoryPreview.openTitle(for: item.ref.kind))
+            .help(StoryDetails.openTitle(for: item.ref.kind))
+            .accessibilityLabel(StoryDetails.openTitle(for: item.ref.kind))
         }
     }
 
@@ -485,15 +514,25 @@ private struct StoryRow: View {
         item.open?()
     }
 
+    /// Its page, where there's one; else its preview, in place.
+    private func click() {
+        if let navigation, navigation.open(item.ref) { return }
+        toggle()
+    }
+
     @ViewBuilder
     private var menu: some View {
         if let menu = item.menu {
             menu()
         } else if let open = item.open {
-            Button(StoryPreview.openTitle(for: item.ref.kind), action: open)
+            Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
         }
         Divider()
-        Button(isExpanded ? "Hide Details" : "Show Details", action: toggle)
+        if navigates {
+            Button("Show Details", action: click)
+        } else {
+            Button(isExpanded ? "Hide Details" : "Show Details", action: toggle)
+        }
         Button(connection.isKnownElsewhere ? "Hide Link" : "Unlink") { links.unlink(subject, item.ref) }
     }
 
@@ -516,17 +555,24 @@ private struct StoryRow: View {
     }
 }
 
-/// What's known of one thing, in short: what to do with it first, what it said last when it's at work or waits for you,
-/// a few facts, its pipelines, Copilot's own notes and what's next; then, when you ask, everything else.
-private struct StoryPreview: View {
-    let subject: ItemRef
-    let connection: LinkConnection
+/// What's known of one thing. As a preview, in short: what to do with it first, what it said last when it's at work or
+/// waits for you, a few facts, its pipelines, Copilot's own notes and what's next; then, when you ask, everything else. On
+/// its page, everything, its actions being in the page's heading.
+struct StoryDetails: View {
+    enum Mode {
+        case preview, page
+    }
+
+    let item: LinkedItem
     let story: ItemStory?
     let isTelling: Bool
+    /// Why it's here, beside its actions in a preview.
+    let reason: String?
+    let mode: Mode
 
-    @LocalState private var showsAll = false
+    @LocalState private var showsMore = false
 
-    private var item: LinkedItem { connection.item }
+    private var showsAll: Bool { mode == .page || showsMore }
     private var account: ItemStory.Account? { story?.account.flatMap { $0.isEmpty ? nil : $0 } }
     /// What it said last comes first while it's at work or waits for you: it's what it's doing now.
     private var lastWordsFirst: Bool { item.state == .needsYou || item.state == .running }
@@ -534,7 +580,7 @@ private struct StoryPreview: View {
     private static let previewNext = 3
 
     private var hasMore: Bool {
-        guard let story else { return false }
+        guard mode == .preview, let story else { return false }
         let account = self.account
         return !story.more.isEmpty || story.runs.count > Self.previewRuns || !(account?.done.isEmpty ?? true)
             || (account?.milestones.count ?? 0) > 1 || (account?.next.count ?? 0) > Self.previewNext
@@ -542,16 +588,18 @@ private struct StoryPreview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            actions
+        VStack(alignment: .leading, spacing: mode == .page ? 16 : 10) {
+            if mode == .preview {
+                actions
+            }
             if let story {
                 if lastWordsFirst, let last = account?.lastMessage {
                     CopilotWords(caption: "What it said last") {
-                        ClampedText(text: last, lines: 2)
+                        ClampedText(text: last, lines: mode == .page ? 4 : 2)
                     }
                 }
-                if !story.facts.isEmpty {
-                    FactsGrid(facts: story.facts)
+                if !story.facts.isEmpty || (showsAll && !story.more.isEmpty) {
+                    FactsGrid(facts: story.facts + (showsAll ? story.more : []))
                 }
                 if !story.runs.isEmpty {
                     RunsView(runs: showsAll ? story.runs : Array(story.runs.prefix(Self.previewRuns)))
@@ -565,12 +613,9 @@ private struct StoryPreview: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if showsAll, !story.more.isEmpty {
-                    FactsGrid(facts: story.more)
-                }
                 if hasMore {
-                    Button(showsAll ? "Show Less" : "Show All") {
-                        withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
+                    Button(showsMore ? "Show Less" : "Show All") {
+                        withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 11))
@@ -590,22 +635,14 @@ private struct StoryPreview: View {
     /// Opening it, or its own actions, and why it's here.
     private var actions: some View {
         HStack(spacing: 10) {
-            if let menu = item.menu {
-                Menu {
-                    menu()
-                } label: {
-                    Label("Actions", systemImage: "ellipsis.circle")
-                }
-                .menuStyle(.button)
-                .fixedSize()
-            } else if let open = item.open {
-                Button(Self.openTitle(for: item.ref.kind), action: open)
-            }
+            StoryActions(item: item)
             Spacer(minLength: 8)
-            Text(WhereItStandsSection.reason(connection, subject: subject))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if let reason {
+                Text(reason)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .controlSize(.small)
     }
@@ -616,7 +653,7 @@ private struct StoryPreview: View {
         CopilotWords(caption: caption(account)) {
             VStack(alignment: .leading, spacing: 8) {
                 if let overview = account.overview, !overview.isEmpty {
-                    ClampedText(text: overview, lines: 3)
+                    ClampedText(text: overview, lines: mode == .page ? 6 : 3)
                 }
                 if !account.next.isEmpty {
                     StoryList(title: "What's next", lines: showsAll ? account.next : Array(account.next.prefix(Self.previewNext)), symbol: "arrow.right")
@@ -652,6 +689,25 @@ private struct StoryPreview: View {
         case .workItem, .pullRequest: return "Open in Azure DevOps"
         case .gitHubPullRequest: return "Open on GitHub"
         case .session: return "Open in Copilot"
+        }
+    }
+}
+
+/// What opens a thing: its own actions, for a task you sent to Copilot; or a button that opens it where it lives.
+struct StoryActions: View {
+    let item: LinkedItem
+
+    var body: some View {
+        if let menu = item.menu {
+            Menu {
+                menu()
+            } label: {
+                Label("Actions", systemImage: "ellipsis.circle")
+            }
+            .menuStyle(.button)
+            .fixedSize()
+        } else if let open = item.open {
+            Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
         }
     }
 }

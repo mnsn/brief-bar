@@ -402,11 +402,14 @@ Links links to it, in a card, the one that needs you most first (needs you, then
 done or ready, then the rest, the newest first in each), and a session linked through a pull request under that pull
 request; four at first, then **Show More**, with a tally of their states once there are five or more. Each row shows
 its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
-color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens a short preview of what its
-source knows of it (`ItemStory` in `Sources/BriefBarCore`), its actions first: a few facts, the pipelines that ran on
-it, and what Copilot wrote of a session's work, set apart by a thin rule, since those are Copilot's words, not
-BriefBar's; **Show All** shows the rest. While Show Links is off it reads nothing and shows one line, with **Turn On…**,
-which shows Show Links' setting, until you dismiss it.
+color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
+item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and its actions,
+then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`): its facts, the pipelines that ran on it, and
+what Copilot wrote of a session's work, set apart by a thin rule, since those are Copilot's words, not BriefBar's;
+then its own Where It Stands. **‹** goes back through the pages, then to the work items you came from; a work item on
+a page is followed, as a link in the details is. A view with nowhere to open pages (no `itemNavigation`) shows a short
+preview under the row instead, with **Show All** for the rest. While Show Links is off it reads nothing and shows one
+line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
 
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
 Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again

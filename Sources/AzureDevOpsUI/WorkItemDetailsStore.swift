@@ -17,6 +17,9 @@ final class WorkItemDetailsStore: ObservableObject {
     @Published private(set) var failure: ADOError?
     /// The work items you went to from the details, to go back to: the latest last.
     @Published private(set) var history: [WorkItem] = []
+    /// The pages of pull requests and Copilot sessions opened over the work item's details from what's linked to it, the
+    /// latest last: ‹ goes back through them first.
+    @Published private(set) var pages: [ItemRef] = []
 
     /// What reading a work item brings: its details, or why they couldn't be read; and who's signed in to the Azure CLI,
     /// when the sign-in says.
@@ -74,20 +77,41 @@ final class WorkItemDetailsStore: ObservableObject {
     /// Shows a work item from the sprint: where you came from before is forgotten.
     func show(_ item: WorkItem) {
         history = []
+        pages = []
         select(item)
     }
 
     /// Shows a work item the details link to, such as a story's task, to come back from.
     func follow(_ item: WorkItem) {
-        guard let selected, selected.key != item.key else { return }
+        guard let selected else { return }
+        guard selected.key != item.key else {
+            // Its own, from a page over it: back to it.
+            pages = []
+            return
+        }
         history.append(selected)
+        pages = []
         select(item)
     }
 
+    /// Shows the page of a pull request or a Copilot session linked to the work item, over its details, to come back from.
+    func open(page ref: ItemRef) {
+        guard selected != nil, ref.kind != .workItem, pages.last != ref else { return }
+        pages.append(ref)
+    }
+
+    /// Back from a page, then to the work item you came from.
     func back() {
+        if !pages.isEmpty {
+            pages.removeLast()
+            return
+        }
         guard let previous = history.popLast() else { return }
         select(previous)
     }
+
+    /// Whether ‹ goes anywhere.
+    var canGoBack: Bool { !pages.isEmpty || !history.isEmpty }
 
     func close() {
         cancelLoading()
@@ -95,6 +119,7 @@ final class WorkItemDetailsStore: ObservableObject {
         details = nil
         failure = nil
         history = []
+        pages = []
     }
 
     /// From a list or a widget: shows the work item on the Sprint page, in BriefBar's window; in Azure DevOps when no

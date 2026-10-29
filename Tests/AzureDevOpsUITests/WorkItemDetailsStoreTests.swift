@@ -136,6 +136,56 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.selected == nil && store.details == nil)
     }
 
+    @Test func opensPagesOverTheDetailsAndGoesBackThroughThem() throws {
+        let store = makeStore()
+        let story = try item(5101)
+        let pullRequest = ItemRef.pullRequest(organization: DemoData.organization, number: 4120)
+        let session = try #require(ItemRef.session("c3e8f1a2-6b4d-4e97-a1c5-2f7d9b0e8a11"))
+        // Nothing shows to open it over.
+        store.open(page: pullRequest)
+        #expect(store.pages.isEmpty)
+        store.show(story)
+        #expect(!store.canGoBack)
+        store.open(page: pullRequest)
+        // The one that shows, once.
+        store.open(page: pullRequest)
+        store.open(page: session)
+        #expect(store.pages == [pullRequest, session])
+        #expect(store.canGoBack)
+        // A work item is followed, not opened as a page.
+        store.open(page: .workItem(organization: DemoData.organization, id: 5103))
+        #expect(store.pages == [pullRequest, session])
+        store.back()
+        #expect(store.pages == [pullRequest])
+        #expect(store.selected?.id == 5101)
+        store.back()
+        #expect(store.pages.isEmpty)
+        #expect(store.selected?.id == 5101)
+        #expect(!store.canGoBack)
+
+        // A work item followed from a page leaves the pages behind: back goes to the work item, not the page.
+        store.open(page: pullRequest)
+        store.follow(try item(5103))
+        #expect(store.pages.isEmpty)
+        #expect(store.history.map(\.id) == [5101])
+        store.back()
+        #expect(store.selected?.id == 5101)
+        #expect(store.pages.isEmpty)
+        // The work item that shows, from a page over it: back to it, with nothing to come back from.
+        store.open(page: pullRequest)
+        store.follow(story)
+        #expect(store.pages.isEmpty)
+        #expect(store.history.isEmpty)
+
+        // From the sprint, or closed, the pages go.
+        store.open(page: session)
+        store.show(try item(5110))
+        #expect(store.pages.isEmpty)
+        store.open(page: session)
+        store.close()
+        #expect(store.pages.isEmpty)
+    }
+
     @Test func aLinkedWorkItemShowsAsTheSprintKnowsIt() throws {
         let store = makeStore()
         store.show(try item(5101))
