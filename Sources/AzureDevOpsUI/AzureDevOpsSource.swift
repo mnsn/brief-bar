@@ -126,7 +126,9 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
         }
         self.copilot = copilot
-        workLinks = WorkLinksStore(links: services.links, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        workLinks = WorkLinksStore(
+            links: services.links, stories: services.stories, store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
         let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
         details.hasPage = { [services] in services.hasPage(.azureDevOpsSprint) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
@@ -544,14 +546,15 @@ package final class AzureDevOpsSource: BriefBarSource {
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }
 
-    /// The Sprint page with the details of your first story, and of your first task, read once, each in its own store,
-    /// so the window's own picture of the page shows none.
+    /// The Sprint page with the details of your first story, of your first task, and of the first bug, read once, each in
+    /// its own store, so the window's own picture of the page shows none.
     private func loadDetailsForRendering(store: PRStore) async {
         guard let sprint, let board = sprint.board else { return }
         let story = board.rows.compactMap(\.parent).first { $0.isAssigned(to: board.me) } ?? board.rows.compactMap(\.parent).first
         let task = board.myWork.first { $0.parentId != nil } ?? board.myWork.first
+        let bug = board.rows.compactMap(\.parent).first { $0.type.caseInsensitiveCompare("Bug") == .orderedSame }
         renderedDetails = []
-        for (name, item) in [("sprint-details", story), ("sprint-task-details", task)] {
+        for (name, item) in [("sprint-details", story), ("sprint-task-details", task), ("sprint-bug-details", bug)] {
             guard let item else { continue }
             let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
             await details.loadOnce(item)

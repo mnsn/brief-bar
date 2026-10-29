@@ -395,6 +395,36 @@ the work item's or pull request's number, or how many; and how the session that 
 its color. The task Copilot is doing on a pull request, or the latest sent from a work item, isn't in them: its own
 capsule shows it. Widgets' rows show none.
 
+### Where it stands
+
+A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show
+Links links to it, as its rows show them, the one that needs you most first (needs you, then what's wrong, what's at
+work, what's done or ready, then the rest, the newest first in each), with a tally of their states when there are two
+or more. Each says where it stands in a sentence, and a click opens what its source knows of it (`ItemStory` in
+`Sources/BriefBarCore`), in BriefBar's own words, without any model: a few facts, the pipelines that ran on it, and
+what's been done, as the thing itself recorded it.
+
+Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
+Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again
+when its row changes, or a minute later, and forgotten a quarter of an hour after it was told, when its source stops,
+or when Show Links goes off. When two sources know the same thing, what they tell is put together in the sources'
+order: a task Azure DevOps sent to Copilot says how it went, and Copilot what it recorded.
+
+- **Azure DevOps** (`PullRequestStory`): one of your pull requests, from all that's read of it: who reviews it and how
+  each voted (people only: groups aren't reviewers), how many threads are open and how many comments wait on you,
+  conflicts, a draft, auto-complete and its branches, and each build or status check that ran on it, with where a
+  failed build failed and its first error, and the pipelines after its merge. One that's only linked, such as a
+  teammate's, from the pull request itself: its author, its reviewers' votes, conflicts and branches. A task sent to
+  Copilot: how it went, what for and when, the pull request it opened, and the summary it ended with. No more requests:
+  it's what the lists, Show Links and Send Work to Copilot already read.
+- **Copilot** (`SessionStory`, `SessionAccount`): a session's question, plan, permission prompt or error, with its
+  project, branch, mode and how full its context is; and what Copilot recorded of its work, the app's sessions' and a
+  task's: the titles of its [checkpoints](#where-the-data-comes-from-2), the latest one's overview, what's done and
+  what's next, and the last thing it said when that came after; or, for a session without checkpoints, the summary it
+  ended with or its last message. Markdown becomes plain text, cut to a few hundred characters.
+- **GitHub**: one of its pull requests' latest reviews, conflicts, draft and branch, and its checks, from the one query
+  it reads them with.
+
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
 Nothing goes back to Azure DevOps, GitHub or Copilot: BriefBar never writes there. The edits are kept in the
@@ -1053,7 +1083,9 @@ The sprint's refresh tells when a work item changed (`System.ChangedDate`), whic
 again while they show, once more when it changed while they were read, and a linked work item shows as
 the newer of the sprint's and what was read with the details. Another team's sprint closes them, and
 so does someone else signing in to the Azure CLI, which forgets what was read as the last one. Its parent, its tasks and related work items
-open in the details too, and **‹** goes back. A link to a work item in another organization, such as a
+open in the details too, and **‹** goes back. With Show Links on, the details start with
+[Where It Stands](#where-it-stands): the pull requests, pipelines and Copilot sessions linked to the work item, and
+what's known of each, which needs no more requests. A link to a work item in another organization, such as a
 remote link, opens there, in your browser: its ID names another work item in this organization. A click on one of your work items in a
 menu-bar list or a widget opens BriefBar's window at the Sprint page, with its details, unless no
 window shows that page: then it opens in Azure DevOps.
@@ -1323,6 +1355,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 |---|---|---|
 | `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
+| `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
 BriefBar combines the two. The database says which sessions exist and whether the app
 thinks they're running. The tail of each log says exactly where a session is, for example
@@ -1331,6 +1364,12 @@ thinks they're running. The tail of each log says exactly where a session is, fo
 BriefBar never changes either of them:
 
 - The logs are opened read-only. After the first read, only what's been appended is read.
+- A session's checkpoints and last words are read only when a work item's details show the session
+  ([Where It Stands](#where-it-stands)): `index.md` (up to 256 KB), the start of the latest checkpoint
+  (up to 512 KB) and the end of its log (up to 2 MB), each opened below `~/.copilot` without following
+  a symbolic link (`LocalFile.openFile(below:_:)`), and only for a session whose ID is a UUID. A
+  checkpoint's file name comes from `index.md`, so it's opened only when it's a single plain name
+  ending in `.md`.
 - The database is opened with a read-only SQLite connection. Like any SQLite reader, it briefly
   takes shared locks and updates SQLite's shared-memory index (`data.db-shm`) while it reads;
   neither changes any data. When the app has quit and SQLite has removed the write-ahead log, a

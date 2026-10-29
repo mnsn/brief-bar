@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
+  details on the Sprint page start with **Where It Stands**: the pull requests, their pipelines and the
+  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence.
+  Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
+  ones waiting on you, conflicts, and each build or check that ran on it, with where a failed one
+  failed; a Copilot session's question or plan, and what Copilot recorded of its work as it went, its
+  checkpoints, what it did, what's next and what it said last. It's all from what BriefBar already
+  reads, with no AI and no more requests to Azure DevOps. The GitHub Copilot source asks you to look at
+  what it reads again, since it now reads a linked session's checkpoints, in memory only.
+
 ## 0.8.3 - 2026-10-28
 
 - **Follow pipeline runs by pull request.** Below pinned pipelines, **Your Pull Requests** shows one

@@ -5,9 +5,9 @@ import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
-/// A work item's details, beside the sprint: what it is and where it stands, what it's about, its tasks and the work items
-/// it links to, its attachments and its discussion, read from Azure DevOps when you open it. Open in Azure DevOps opens it
-/// there, to change it.
+/// A work item's details, beside the sprint: what it is and where it stands, with the pull requests, pipelines and Copilot
+/// sessions that go with it, what it's about, its tasks and the work items it links to, its attachments and its
+/// discussion, read from Azure DevOps when you open it. Open in Azure DevOps opens it there, to change it.
 struct WorkItemDetailsPanel: View {
     @EnvironmentObject private var details: WorkItemDetailsStore
     @EnvironmentObject private var sprint: SprintStore
@@ -130,6 +130,8 @@ struct WorkItemDetailsPanel: View {
     private func content(_ item: WorkItem) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             heading(item)
+            // What Show Links knows, which doesn't wait for the details.
+            WhereItStandsSection(subject: item.linkRef)
             if let read = details.details {
                 if let failure = details.failure {
                     Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
@@ -173,7 +175,6 @@ struct WorkItemDetailsPanel: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                WorkItemLinks(item: item)
             }
             actions(item)
         }

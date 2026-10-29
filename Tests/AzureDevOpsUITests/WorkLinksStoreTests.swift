@@ -44,7 +44,9 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
         await store.loadOnce()
         await sprint.loadOnce()
-        let workLinks = WorkLinksStore(links: links, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
         await workLinks.loadOnce()
 
         // The coupon pull request: its bug and task in Azure DevOps, and the task Copilot opened it from.
@@ -77,6 +79,39 @@ import Testing
         links.setOn(false)
         #expect(links.connections(of: .pullRequest(organization: organization, number: 4091)).isEmpty)
         #expect(workLinks.inputs().workItemLookups.isEmpty)
+    }
+
+    @Test func itTellsWhatItKnowsOfItsPullRequestsAndTasksWithoutReadingMore() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+
+        // One of your pull requests: all that's read of it, with the build that ran on it.
+        let coupon = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4091)))
+        #expect(coupon.sentence.hasPrefix("Ready to complete"))
+        #expect(coupon.facts.first { $0.label == "Reviewers" }?.value == "Chen Wei approved · Priya Shah approved")
+        #expect(coupon.runs.map(\.name) == ["payments-api CI"])
+        #expect(coupon.runs.first?.state == .done)
+        // A teammate's, which the lists don't show: what the pull request says itself.
+        let saved = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4120)))
+        #expect(saved.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(saved.runs.isEmpty)
+        // A task sent to Copilot: how it went, what it opened, and the summary it ended with.
+        let task = try #require(workLinks.tell(session))
+        #expect(task.sentence == "Opened a pull request")
+        #expect(task.facts.contains(ItemStory.Fact("Opened", "!4091")))
+        #expect(task.account?.overview == "Coupon totals now round half up, with tests for every currency. Opened pull request 4091.")
+        // Azure DevOps doesn't tell about the app's own sessions, or its work items yet.
+        #expect(workLinks.tell(.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")!) == nil)
+        #expect(workLinks.tell(.workItem(organization: organization, id: 5101)) == nil)
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

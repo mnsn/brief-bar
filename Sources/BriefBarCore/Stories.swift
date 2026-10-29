@@ -103,7 +103,7 @@ public struct ItemStory: Sendable, Equatable {
 
     /// The two told together, as two sources tell about the same thing, such as a task Azure DevOps sent to Copilot and
     /// what Copilot recorded of it: the first sentence that says something, both's facts and runs, without a fact told
-    /// twice, the first account that says something, and the newer date.
+    /// twice, the first account that says something, unless only the other has checkpoints, and the newer date.
     public func merged(with other: ItemStory) -> ItemStory {
         var merged = self
         if merged.sentence.isEmpty { merged.sentence = other.sentence }
@@ -112,7 +112,10 @@ public struct ItemStory: Sendable, Equatable {
         }
         let runs = other.runs.filter { run in !merged.runs.contains(run) }
         merged.runs += runs
-        if merged.account?.isEmpty ?? true, let account = other.account, !account.isEmpty { merged.account = account }
+        if let account = other.account, !account.isEmpty {
+            let mine = merged.account.flatMap { $0.isEmpty ? nil : $0 }
+            if mine == nil || (mine?.milestones.isEmpty == true && !account.milestones.isEmpty) { merged.account = account }
+        }
         if let date = other.date { merged.date = max(merged.date ?? date, date) }
         return merged
     }

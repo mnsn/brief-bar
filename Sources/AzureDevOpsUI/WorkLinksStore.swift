@@ -8,11 +8,13 @@ import SwiftUI
 
 /// Tells Show Links what Azure DevOps knows: the work items linked to your pull requests, the pull requests linked to the
 /// sprint's work items, the work items and pull requests you sent to Copilot and the pull requests it opened; and what each
-/// of them is, for other rows to show. It reads Azure DevOps for it only while Show Links is on, with the pull requests'
-/// client, after each of their refreshes (`LinkEngine`).
+/// of them is, for other rows to show, and what's known of each beyond its row, for the details (`ItemStories`). It reads
+/// Azure DevOps for it only while Show Links is on, with the pull requests' client, after each of their refreshes
+/// (`LinkEngine`).
 @MainActor
 final class WorkLinksStore {
     private let links: Links
+    private let stories: ItemStories
     private let store: PRStore
     private let sprint: SprintStore
     private let copilot: CopilotTasksStore
@@ -22,8 +24,9 @@ final class WorkLinksStore {
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
 
-    init(links: Links, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
+    init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
         self.links = links
+        self.stories = stories
         self.store = store
         self.sprint = sprint
         self.copilot = copilot
@@ -32,6 +35,7 @@ final class WorkLinksStore {
 
     func start() {
         guard cancellables.isEmpty else { return }
+        tellStories()
         // After the change: a @Published value emits before it's set.
         links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -61,11 +65,13 @@ final class WorkLinksStore {
         lastInputs = nil
         read = WorkLinks()
         links.withdraw(.azureDevOps)
+        stories.withdraw(.azureDevOps)
     }
 
     /// Reads once and tells Show Links, for `--render`: the demo's made-up links, or yours while Show Links is on.
     func loadOnce() async {
         guard links.isOn else { return }
+        tellStories()
         switch store.mode {
         case .demo:
             read = DemoData.workLinks(now: Date())
@@ -226,6 +232,53 @@ final class WorkLinksStore {
             if let workItem { links.append(ItemLink(workItem, opened, origin: .copilot)) }
         }
         return links.compactMap { $0 }
+    }
+
+    // MARK: What's known of them
+
+    /// Tells the details what's known of its pull requests and tasks, when they ask.
+    private func tellStories() {
+        stories.register(.azureDevOps, kinds: [.pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
+    }
+
+    /// What Azure DevOps knows of one of its things beyond its row, from what it read already: one of your pull requests
+    /// from all of it, one that's only linked from the pull request itself, and a task sent to Copilot from how it went.
+    func tell(_ ref: ItemRef) -> ItemStory? {
+        switch ref.kind {
+        case .pullRequest:
+            if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
+                return PullRequestStory.mine(snapshot, record: store.record(for: snapshot.key))
+            }
+            let pullRequest = read.pullRequests.values.first { $0.key.linkRef == ref }
+                ?? store.records.first { $0.id.linkRef == ref }?.pullRequest
+            return pullRequest.map(PullRequestStory.others)
+        case .session:
+            guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
+            return Self.story(of: entry, now: Date())
+        case .workItem, .gitHubPullRequest:
+            return nil
+        }
+    }
+
+    /// A task sent to Copilot: how it went, what for and when, the pull request it opened, and the summary it ended with.
+    /// What Copilot recorded of its work, its checkpoints, comes from Copilot's own files, when that source is on.
+    static func story(of entry: CopilotTaskEntry, now: Date) -> ItemStory {
+        var facts: [ItemStory.Fact] = []
+        let ago = Elapsed.short(since: entry.startedAt, now: now)
+        let sent = ago == "now" ? "Just now" : "\(ago) ago"
+        let sentFor = [entry.action?.title, sent, "with \(entry.options.title)"].compactMap { $0 }
+        facts.append(ItemStory.Fact("Sent", sentFor.joined(separator: " · ")))
+        if entry.onPullRequest == nil, let url = entry.pullRequest, let opened = ItemRef.from(link: url.absoluteString),
+           let number = opened.number {
+            facts.append(ItemStory.Fact("Opened", opened.kind == .gitHubPullRequest ? "#\(number)" : "!\(number)"))
+        }
+        var account: ItemStory.Account?
+        if !entry.status.phase.isActive, let detail = entry.status.detail, !detail.isEmpty {
+            account = ItemStory.Account(
+                source: "Copilot's summary", date: entry.status.since, overview: StoryText.paragraph(detail, limit: 700)
+            )
+        }
+        return ItemStory(sentence: entry.sentence(now: now), date: entry.status.since ?? entry.startedAt, facts: facts, account: account)
     }
 
     static func hint(_ pullRequest: PullRequest) -> BranchHint {

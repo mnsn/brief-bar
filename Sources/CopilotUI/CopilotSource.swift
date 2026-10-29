@@ -9,8 +9,8 @@ import SwiftUI
 /// finished or stopped. It reads the Copilot app's own files, and needs no permission.
 @MainActor
 package final class CopilotSource: BriefBarSource {
-    /// 2: Show Links.
-    nonisolated package static let descriptionVersion = 2
+    /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details.
+    nonisolated package static let descriptionVersion = 3
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
@@ -18,7 +18,7 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
         network: "None. Copilot's list makes no network requests.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
@@ -62,6 +62,7 @@ package final class CopilotSource: BriefBarSource {
 
     package func start() {
         store.start()
+        tellStories()
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -81,6 +82,7 @@ package final class CopilotSource: BriefBarSource {
         linkObservers.removeAll()
         store.stop()
         services.links.withdraw(.copilot)
+        services.stories.withdraw(.copilot)
     }
 
     package func deleteSavedData() {
@@ -122,6 +124,21 @@ package final class CopilotSource: BriefBarSource {
             ))
         }
         links.publish(.copilot, links: facts, items: items)
+    }
+
+    /// Tells the details what's known of its sessions, when they ask.
+    private func tellStories() {
+        services.stories.register(.copilot, kinds: [.session]) { [weak self] ref in await self?.tell(ref) }
+    }
+
+    /// What Copilot knows of a session beyond its row: where it stands, if it's one of the app's, and what Copilot recorded
+    /// of its work, the app's or a task's that Azure DevOps sent, read from its folder off the main thread.
+    private func tell(_ ref: ItemRef) async -> ItemStory? {
+        let snapshot = store.sessions.first { ItemRef.session($0.id) == ref }
+        guard let paths = store.paths else { return SessionStory.make(snapshot: snapshot, account: nil) }
+        let id = ref.id
+        let account = await Task.detached(priority: .utility) { SessionAccount.read(paths: paths, id: id) }.value
+        return SessionStory.make(snapshot: snapshot, account: account)
     }
 
     // MARK: Menu bar
@@ -213,6 +230,7 @@ package final class CopilotSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        tellStories()
         guard let paths = store.paths else {
             store.start()
             return

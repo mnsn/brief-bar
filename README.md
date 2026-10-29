@@ -39,7 +39,7 @@ from what it knows ([Agents](#agents)), and its plugin brings **/briefbar** to t
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
 | **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
-| **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
+| **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's own files under `~/.copilot` | Nothing | None |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
@@ -219,11 +219,16 @@ more, or unlink. The window that links things suggests what's on the same branch
 number or shares words with the title, and takes a pasted link to a pull request, a work item or a
 session.
 
+A work item's details on the Sprint page list what's linked to it, with what's known of each, under
+**Where It Stands** ([Azure DevOps](#azure-devops)).
+
 What you link or unlink stays in BriefBar: Azure DevOps, GitHub and Copilot never see it, so a policy
 that requires linked work items still sees only Azure DevOps' own. Unlinking what Azure DevOps or
 Copilot links hides it in BriefBar, until you choose **Show Hidden Links**. While it's on, Azure DevOps
 reads the links of your pull requests and, while the sprint is on screen, of its work items, and the
-Copilot source reads which pull request each session started from or opened.
+Copilot source reads which pull request each session started from or opened, and, when a work item's
+details show a session, the checkpoints and last words Copilot keeps in that session's folder, in
+memory only.
 
 ## Notifications
 
@@ -340,7 +345,16 @@ its title opens this page, and **Open Task Board** the sprint's task board in Az
 Click a story, bug or task to see its details beside the board, without leaving BriefBar: its state,
 who has it, its description, acceptance criteria or repro steps, its fields, its tasks and related work
 items, its attachments and its discussion. Its parent, its tasks and related work items open the same
-way, and **‹** goes back. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
+way, and **‹** goes back.
+
+With [Show Links](#links) on, the details start with **Where It Stands**: the pull requests, their
+pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
+it stands in a sentence. Click one to see what's known of it, without opening anything else: a pull
+request's reviewers and their votes, its open comments and the ones waiting on you, conflicts, and each
+build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
+and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,
+what it did, what's next, and what it said last. Nothing in it is written by AI, and nothing more is
+read from Azure DevOps for it. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
 the board does too. In a narrow window the details cover the board, until **✕** or Esc closes them.
 Clicking one of your work items in the Sprint list or widget opens its details here, in BriefBar's
 window.

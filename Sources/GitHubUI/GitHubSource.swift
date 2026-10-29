@@ -60,6 +60,7 @@ package final class GitHubSource: BriefBarSource {
 
     package func start() {
         store.start()
+        tellStories()
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -74,6 +75,7 @@ package final class GitHubSource: BriefBarSource {
         linkObservers.removeAll()
         store.stop()
         services.links.withdraw(.github)
+        services.stories.withdraw(.github)
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
@@ -101,6 +103,16 @@ package final class GitHubSource: BriefBarSource {
             )
         }
         links.publish(.github, links: [], items: shown)
+    }
+
+    /// Tells the details what's known of its pull requests, when they ask.
+    private func tellStories() {
+        services.stories.register(.github, kinds: [.gitHubPullRequest]) { [weak self] ref in self?.tell(ref) }
+    }
+
+    /// What GitHub knows of one of its pull requests beyond its row, from the one query it reads them with.
+    private func tell(_ ref: ItemRef) -> ItemStory? {
+        store.items.first { ItemRef.gitHubPullRequest(repository: $0.pullRequest.repository, number: $0.pullRequest.number) == ref }?.story
     }
 
     // MARK: Menu bar
@@ -215,6 +227,7 @@ package final class GitHubSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        tellStories()
         await store.loadOnce()
     }
 }
