@@ -116,6 +116,12 @@ struct SessionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The ↳ tag's click, outside the row's button, which takes every click on its label.
+        .overlayPreferenceValue(ParentTag.Bounds.self) { bounds in
+            if let bounds, let parent = taggedParent {
+                ParentTag.Target(parent: parent, bounds: bounds) { store.openParent(of: session) }
+            }
+        }
         .padding(.leading, indent)
         .onHover { isHovered = $0 }
         .contextMenu {
@@ -196,7 +202,7 @@ struct SessionRowView: View {
     }
 
     private func parentTag(_ parent: RelatedSession, truncates: Bool = false) -> some View {
-        ParentTag(parent: parent, truncates: truncates) { store.openParent(of: session) }
+        ParentTag(parent: parent, truncates: truncates)
     }
 
     /// The session that started it, unless that's where you answer its question, which the row names and opens already.
@@ -254,36 +260,62 @@ struct SessionRowView: View {
     }
 }
 
-/// The session that started a session, as a small tag on the session's row: ↳ and its name, which opens it.
+/// The session that started a session, as a small tag on the session's row: ↳ and its name. Clicking it opens that
+/// session. The row, itself a button, would take the click from a button in it, so it puts the tag's own over the tag,
+/// outside its button, where the tag says it is (`Bounds`).
 struct ParentTag: View {
     let parent: RelatedSession
     /// Whether its name is cut short to fit, as far as needed, rather than kept to its full width.
     var truncates = false
-    let open: () -> Void
 
     /// The longest name it shows in full; its tooltip has all of it.
     static let nameLimit = 24
 
     var body: some View {
-        Button(action: open) {
-            Text(verbatim: "↳ " + Self.shortName(parent.name))
-                .font(.system(size: 10, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1.5)
-                .background(Capsule().fill(Color.secondary.opacity(0.14)))
-                .contentShape(Capsule())
-                .fixedSize(horizontal: !truncates, vertical: true)
-        }
-        .buttonStyle(.plain)
-        .help("Started by “\(parent.name)”: click to open it")
+        Text(verbatim: "↳ " + Self.shortName(parent.name))
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(Color.secondary.opacity(0.14)))
+            .fixedSize(horizontal: !truncates, vertical: true)
+            .anchorPreference(key: Bounds.self, value: .bounds) { $0 }
     }
 
     static func shortName(_ name: String) -> String {
         guard name.count > nameLimit else { return name }
         return String(name.prefix(nameLimit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Where the tag is on its row.
+    struct Bounds: PreferenceKey {
+        static var defaultValue: Anchor<CGRect>? { nil }
+
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+            value = value ?? nextValue()
+        }
+    }
+
+    /// What clicking the tag does, over it, for a row that's a button: opens `parent`, with the tag's tooltip.
+    struct Target: View {
+        let parent: RelatedSession
+        let bounds: Anchor<CGRect>
+        let open: () -> Void
+
+        var body: some View {
+            GeometryReader { proxy in
+                let frame = proxy[bounds]
+                Button(action: open) {
+                    Color.clear.contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+                .help("Started by “\(parent.name)”: click to open it")
+            }
+        }
     }
 }
 
