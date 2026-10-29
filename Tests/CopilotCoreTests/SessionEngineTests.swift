@@ -238,6 +238,10 @@ import Testing
         ("name:", nil),
         ("  name: nested", nil),
         ("branch: main", nil),
+        // As the CLI writes a prompt that it names a session by: its line breaks, escaped, on one line.
+        (#"name: "I tried \"make\"\n\nand it failed""#, #"I tried "make" and it failed"#),
+        ("name: 'Robin''s fix'", "Robin's fix"),
+        (#"name: "\n""#, nil),
     ] as [(String, String?)])
     func readsWorkspaceNames(_ yaml: String, _ expected: String?) throws {
         try withTemporaryDirectory { directory in

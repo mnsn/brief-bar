@@ -81,5 +81,10 @@ import Testing
         #expect(SessionStateScanner.value("name", inWorkspace: text) == "Fix the checkout total")
         #expect(SessionStateScanner.value("branch", inWorkspace: text) == nil)
         #expect(SessionStateScanner.value("cwd", inWorkspace: "cwd:\n") == nil)
+        // Quoted as YAML quotes them: `''` in single quotes, and escapes in double quotes.
+        #expect(SessionStateScanner.value("cwd", inWorkspace: "cwd: '/Users/robin/Robin''s repo: demo'") == "/Users/robin/Robin's repo: demo")
+        #expect(SessionStateScanner.value("cwd", inWorkspace: #"cwd: "/Users/robin/a \"b\" c\\d \u00e9\x21\/""#)
+            == "/Users/robin/a \"b\" c\\d é!/")
+        #expect(SessionStateScanner.value("name", inWorkspace: #"name: "Two\nlines\t\q \u12""#) == "Two\nlines\t\\q \\u12")
     }
 }

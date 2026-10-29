@@ -76,7 +76,7 @@ public enum CopilotCommand {
     }
 
     /// A word for the shell, in single quotes.
-    static func quoted(_ text: String) -> String {
+    public static func quoted(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
