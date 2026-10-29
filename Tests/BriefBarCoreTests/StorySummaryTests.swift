@@ -134,7 +134,7 @@ import Testing
         let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
         #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))
         #expect(StorySummaryPrompt.instructions.contains("When the data starts with READER, that's who reads this: call them you"))
-        #expect(StorySummaryPrompt.instructions.contains("lead with what the rows don't say"))
+        #expect(StorySummaryPrompt.instructions.contains("already sees each item's Status line: never repeat it"))
         #expect(StorySummaryPrompt.instructions.contains("\nNEXT FOR: "))
         #expect(!StorySummaryPrompt.make(subject: subject, linked: []).contains("READER:"))
     }

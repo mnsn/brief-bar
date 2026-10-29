@@ -372,8 +372,10 @@ premium requests ran out.
 
 The lists have it too: point at a pull request or a Copilot session, in Azure DevOps', GitHub's or
 Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize with Copilot**.
-Its summary shows under its row, from what's known of it and what's linked to it, until you close it;
-the same summary shows on its page. Widgets never show one.
+Its summary shows under its row in two lines, as a chat's does, from what's known of it and what's
+linked to it, leading with what its row doesn't say; **More** shows the rest. **✕** hides it, and
+**Show Summary**, in its menu, shows it again without asking Copilot. The same summary shows on its
+page. Widgets never show one.
 
 **Open in Azure DevOps** opens the work item there, to change it; right-clicking it on the board does
 too. In a narrow window the details cover the board, until **✕** or Esc closes them. Clicking one of
@@ -776,7 +778,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   session's details to GitHub Copilot, only when you click **✨ Summarize with Copilot**: what they
   show, its description and latest comments, its pull requests' reviews, builds and their errors, and
   what Copilot wrote of its sessions, goes to the Copilot CLI and on to GitHub Copilot's model, as when you send work to Copilot,
-  with your name as Azure DevOps has it. Nothing from Teams ever does, nor who sent you a pull request
+  with your name as Azure DevOps has it, or your GitHub login. Nothing from Teams ever does, nor who sent you a pull request
   in a chat. Copilot gets no tools for it: it can't run a command, read or change a file, or open a web
   page. BriefBar keeps the summary in memory only; the Copilot CLI keeps each one as a session named
   "BriefBar summary", which the Copilot app doesn't list.

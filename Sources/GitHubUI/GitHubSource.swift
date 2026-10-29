@@ -61,6 +61,8 @@ package final class GitHubSource: BriefBarSource {
     package func start() {
         store.start()
         tellStories()
+        // Your login, for a summary to call you "you" when Azure DevOps doesn't know you.
+        services.summaries.setYourName(.github) { [weak store] in store?.login }
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -73,6 +75,7 @@ package final class GitHubSource: BriefBarSource {
 
     package func stop() {
         linkObservers.removeAll()
+        services.summaries.setYourName(.github, nil)
         store.stop()
         services.links.withdraw(.github)
         services.stories.withdraw(.github)

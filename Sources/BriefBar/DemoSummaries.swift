@@ -59,7 +59,7 @@ enum DemoSummaries {
             now, and the cart tests are running before it commits and opens a pull request.
             """),
         ("PULL REQUEST !4102:", """
-            HEADLINE: Sam asks to cap the backoff at 30 seconds; it waits on his vote and a second approval.
+            HEADLINE: Approved by Priya; Sam's required vote waits on a 30-second cap, and CI passed.
             NEXT FOR: you
             NEXT: Cap the backoff at 30 seconds, and reply to Sam on PaymentsClient.cs.
             SUMMARY: !4102 adds exponential backoff to the payments client, starting at 200 ms and doubling. Priya Shah \
@@ -67,7 +67,7 @@ enum DemoSummaries {
             gives up after 60 seconds. Its payments-api CI build passed.
             """),
         ("COPILOT SESSION: Add dark mode to settings", """
-            HEADLINE: Copilot waits for your answer: should dark mode follow the system appearance?
+            HEADLINE: Nothing's changed yet: it read the settings page and paused on its first question.
             NEXT FOR: you
             NEXT: Answer it in the session: follow the system, add a switch, or both.
             SUMMARY: The session on shop-web's dark-mode branch read the settings page and stopped to ask how dark mode \

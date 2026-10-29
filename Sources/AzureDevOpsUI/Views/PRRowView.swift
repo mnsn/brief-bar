@@ -25,37 +25,28 @@ struct PRRowView: View {
     private var isNew: Bool { item.group == .needsYou && item.hasNews }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            row
-            RowSummary(subject: item.key.linkRef)
-                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
-                .padding(.trailing, 8)
-                .padding(.bottom, 6)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-        )
-        .onHover { isHovered = $0 }
-        .contextMenu { menuItems }
-        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
-    }
-
-    private var row: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button(action: action) {
-                content
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, compact ? 5 : 6)
-                    .contentShape(Rectangle())
+            // The row, and its summary under it, which ends where its time does, left of its actions.
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: action) {
+                    content
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, compact ? 5 : 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(helpText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(item.title), \(item.headline)")
+                .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
+                .accessibilityHint("Opens the pull request in Azure DevOps")
+                .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
+                RowSummary(subject: item.key.linkRef)
+                    .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 6)
             }
-            .buttonStyle(.plain)
-            .help(helpText)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(item.title), \(item.headline)")
-            .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
-            .accessibilityHint("Opens the pull request in Azure DevOps")
+            .rowSummarizeButton(item.key.linkRef)
 
             if showsActions, !options.visibleActions {
                 Menu {
@@ -73,7 +64,13 @@ struct PRRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rowSummarizeButton(item.key.linkRef)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu { menuItems }
+        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
     }
 
     private var content: some View {
@@ -133,6 +130,8 @@ struct PRRowView: View {
 
     @ViewBuilder
     private var additionalMenuItems: some View {
+        // Right after opening it, a group of its own.
+        SummarizeMenuItems(item.key.linkRef)
         if let source = item.chatSource, let openSource {
             Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
         }
@@ -140,7 +139,6 @@ struct PRRowView: View {
             Button("Remove from Needs You", action: dismiss)
         }
         PullRequestCopilotMenuItems(item: item)
-        SummarizeMenuItems(item.key.linkRef)
         LinkMenuItems(item.key.linkRef)
         if item.isWatched, let stopWatching {
             Divider()

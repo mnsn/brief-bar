@@ -18,12 +18,31 @@ struct SessionRowView: View {
     @Environment(\.interfaceOptions) private var options
 
     var body: some View {
+        let task = store.task(for: session.id)
         VStack(alignment: .leading, spacing: 0) {
-            row(store.task(for: session.id))
+            row(task)
             RowSummary(subject: ref)
                 .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
+        }
+        // The row and its summary, together.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            if let task {
+                Button(task.openTitle, action: action)
+                task.menu()
+            } else {
+                Button("Open in GitHub Copilot", action: action)
+            }
+            SummarizeMenuItems(ref)
+            if let ref {
+                LinkMenuItems(ref)
+            }
         }
     }
 
@@ -86,31 +105,15 @@ struct SessionRowView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, compact ? 5 : 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            if let task {
-                Button(task.openTitle, action: action)
-                task.menu()
-            } else {
-                Button("Open in GitHub Copilot", action: action)
-            }
-            SummarizeMenuItems(ref)
-            if let ref {
-                LinkMenuItems(ref)
-            }
-        }
         .help(helpText(task))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(task.map { "Opens its \($0.opens.lowercased())" } ?? "Opens the session in GitHub Copilot")
+        .accessibilityActions { SummarizeMenuItems(ref, divided: false) }
         .rowActions(for: session.displayName, openTitle: task?.openTitle ?? "Open in Copilot", open: action) {
             if let task {
                 task.menu()

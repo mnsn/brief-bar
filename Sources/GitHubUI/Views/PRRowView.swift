@@ -21,6 +21,17 @@ struct PRRowView: View {
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
+        // The row and its summary, together.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Open on GitHub", action: action)
+            SummarizeMenuItems(linkRef)
+            LinkMenuItems(linkRef)
+        }
     }
 
     private var row: some View {
@@ -65,24 +76,15 @@ struct PRRowView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, compact ? 5 : 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            Button("Open on GitHub", action: action)
-            SummarizeMenuItems(linkRef)
-            LinkMenuItems(linkRef)
-        }
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.pullRequest.title), \(item.headline)")
         .accessibilityValue([item.detail, item.pullRequest.reference].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint("Opens the pull request on GitHub")
+        .accessibilityActions { SummarizeMenuItems(linkRef, divided: false) }
         .rowActions(for: item.pullRequest.title, openTitle: "Open on GitHub", open: action) {
             SummarizeMenuItems(linkRef)
             LinkMenuItems(linkRef)

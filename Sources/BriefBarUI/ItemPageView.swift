@@ -132,7 +132,15 @@ private struct PageContent: View {
             HStack(spacing: 8) {
                 StoryActions(item: item)
                     .glassButtonStyle()
-                if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
+                if summaries.isHidden(ref) {
+                    Button {
+                        summaries.show(ref)
+                    } label: {
+                        Label("Show Summary", systemImage: "sparkles")
+                    }
+                    .glassButtonStyle()
+                    .help("Shows the summary you closed, as it was written")
+                } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
                     Button {
                         summaries.summarize(ref)
                     } label: {

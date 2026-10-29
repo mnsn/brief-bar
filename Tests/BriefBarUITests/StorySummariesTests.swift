@@ -80,7 +80,8 @@ import Testing
         let asked = Asked()
         summaries.write = writer(asked)
         // Who you are, as Azure DevOps knows you.
-        summaries.yourName = { "Robin Diaz" }
+        summaries.setYourName(.github) { "robin" }
+        summaries.setYourName(.azureDevOps) { "Robin Diaz" }
         // Nothing until you ask.
         #expect(asked.prompts.isEmpty)
         await summaries.summarizeAndWait(workItem)
@@ -450,6 +451,52 @@ import Testing
         #expect(!summaries.canSummarize(pullRequest))
     }
 
+    @Test func closingOneKeepsItToShowAgainForNothing() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in ItemStory(sentence: "Active") }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        await summaries.summarizeAndWait(workItem)
+        guard case .written? = summaries.state(for: workItem) else {
+            Issue.record("Not written")
+            return
+        }
+        // ✕ hides it; it's kept, and shows again without asking Copilot.
+        summaries.hide(workItem)
+        #expect(summaries.isHidden(workItem))
+        #expect(summaries.shownState(for: workItem) == nil)
+        summaries.show(workItem)
+        #expect(summaries.shownState(for: workItem) == summaries.state(for: workItem))
+        #expect(asked.prompts.count == 1)
+        // Writing it again shows it.
+        summaries.hide(workItem)
+        await summaries.summarizeAndWait(workItem)
+        #expect(!summaries.isHidden(workItem))
+        #expect(asked.prompts.count == 2)
+        // Turned off, what was hidden goes with the rest.
+        summaries.hide(workItem)
+        summaries.setOn(false)
+        summaries.setOn(true)
+        #expect(!summaries.isHidden(workItem))
+        #expect(summaries.state(for: workItem) == nil)
+    }
+
+    @Test func itCallsYouByWhatAzureDevOpsOrGitHubKnowsYouAs() {
+        let (_, _, summaries) = hub()
+        #expect(summaries.yourName == nil)
+        summaries.setYourName(.github) { "robin" }
+        #expect(summaries.yourName == "robin")
+        summaries.setYourName(.azureDevOps) { "Robin Diaz" }
+        #expect(summaries.yourName == "Robin Diaz")
+        // Before Azure DevOps read your pull requests, GitHub's.
+        summaries.setYourName(.azureDevOps) { nil }
+        #expect(summaries.yourName == "robin")
+        summaries.setYourName(.github, nil)
+        summaries.setYourName(.azureDevOps, nil)
+        #expect(summaries.yourName == nil)
+    }
+
     @Test func itSaysWhatItWasWrittenFrom() {
         func input(_ ref: ItemRef, _ label: String) -> StorySummaries.Input {
             StorySummaries.Input(ref: ref, label: label, row: "", story: nil)
@@ -461,7 +508,7 @@ import Testing
         #expect(StorySummaries.source(of: [input(workItem, "5110"), input(first, "One"), input(second, "Two")])
             == "5110 and 2 Copilot sessions")
         #expect(SummarizeButton.help(for: workItem, model: "Claude Haiku 5.5")
-            == "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5). Uses your Copilot plan.")
+            == "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5): 1 request on your Copilot plan.")
     }
 
     @Test func settingsSaysWhenTheCLIIsntThere() async {

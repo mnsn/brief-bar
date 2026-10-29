@@ -1,6 +1,7 @@
 import BriefBarCore
 import Combine
 import Foundation
+import SwiftUI
 
 /// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
 /// never by itself, from what the details show (`StorySummaryPrompt`), with no tools at all. It's off until you turn it
@@ -99,6 +100,8 @@ package final class StorySummaries: ObservableObject {
     @Published package private(set) var isOn: Bool
     @Published package private(set) var model: String
     @Published private var states: [ItemRef: State] = [:]
+    /// The written ones you closed, kept to show again without asking Copilot.
+    @Published private var hidden: Set<ItemRef> = []
     /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
     @Published package private(set) var hasCLI: Bool?
     /// The models Settings offers; the app fills it in.
@@ -107,9 +110,8 @@ package final class StorySummaries: ObservableObject {
     package var write: Writer?
     /// Looks for the Copilot CLI, nil when it couldn't tell; nil where nothing's looked for, as in the demo.
     package var findCLI: (@Sendable () async -> Bool?)?
-    /// Your name as a source knows it, for a summary to call you "you": Azure DevOps sets it, once it read your pull
-    /// requests, while it's on.
-    package var yourName: (@MainActor () -> String?)?
+    /// Your name as each source knows it, while it's on, for a summary to call you "you".
+    private var yourNames: [SourceID: @MainActor () -> String?] = [:]
     /// For tests: what "now" is.
     var now: () -> Date = Date.init
 
@@ -145,6 +147,20 @@ package final class StorySummaries: ObservableObject {
     private func lookAgain() {
         guard states.values.contains(where: { if case .written = $0 { true } else { false } }) else { return }
         objectWillChange.send()
+    }
+
+    /// Sets how a source knows your name, or, with nil, that it doesn't: Azure DevOps, once it read your pull requests, or
+    /// GitHub, your login.
+    package func setYourName(_ source: SourceID, _ name: (@MainActor () -> String?)?) {
+        yourNames[source] = name
+    }
+
+    /// Your name: as your pull requests have it in Azure DevOps, or else your GitHub login.
+    var yourName: String? {
+        for source in [SourceID.azureDevOps, .github] {
+            if let name = yourNames[source]?(), !name.isEmpty { return name }
+        }
+        return nil
     }
 
     /// Whether ✨ Summarize shows: this is on, and so is Show Links.
@@ -208,6 +224,7 @@ package final class StorySummaries: ObservableObject {
         writing[subject]?.task.cancel()
         nextToken += 1
         let token = nextToken
+        hidden.remove(subject)
         states[subject] = .writing(since: now())
         let options = Options(model: model, effort: "low")
         let task = Task { [weak self] in
@@ -250,6 +267,8 @@ package final class StorySummaries: ObservableObject {
         case .success(let text):
             if let summary = StorySummary.parse(text) {
                 states[subject] = .written(summary, at: now(), inputs: inputs, model: model)
+                // Once, wherever it shows.
+                AccessibilityNotification.Announcement("Summary ready: \(links.describe(subject).title)").post()
             } else {
                 states[subject] = .failed(Problem("Copilot answered nothing."), at: now())
             }
@@ -269,6 +288,28 @@ package final class StorySummaries: ObservableObject {
     package func dismiss(_ subject: ItemRef) {
         writing.removeValue(forKey: subject)?.task.cancel()
         states[subject] = nil
+        hidden.remove(subject)
+    }
+
+    /// Closes one, keeping it to show again for nothing, as long as it's kept; one that isn't written is forgotten.
+    package func hide(_ subject: ItemRef) {
+        guard case .written? = states[subject] else { return dismiss(subject) }
+        hidden.insert(subject)
+    }
+
+    /// Shows one you closed again.
+    package func show(_ subject: ItemRef) {
+        hidden.remove(subject)
+    }
+
+    /// Whether you closed it, and it's kept.
+    package func isHidden(_ subject: ItemRef) -> Bool {
+        hidden.contains(subject)
+    }
+
+    /// What shows: its state, but nothing for one you closed.
+    package func shownState(for subject: ItemRef) -> State? {
+        hidden.contains(subject) ? nil : states[subject]
     }
 
     /// Whether what a written summary summed up changed since: what's linked, or what one of them says.
@@ -298,6 +339,7 @@ package final class StorySummaries: ObservableObject {
         for writing in writing.values { writing.task.cancel() }
         writing = [:]
         states = [:]
+        hidden = []
     }
 
     // MARK: What's summed up
@@ -320,7 +362,7 @@ package final class StorySummaries: ObservableObject {
         let prompt = StorySummaryPrompt.make(
             subject: item(described, nil),
             linked: connections.map { item($0.item, $0.reason) },
-            reader: yourName?()
+            reader: yourName
         )
         return (prompt, inputs(for: subject))
     }

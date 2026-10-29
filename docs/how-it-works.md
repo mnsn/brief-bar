@@ -472,15 +472,25 @@ status as active or a draft (`LinkedItem.sharedStatus`). The details still show 
 The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
 what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
 short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
-has one control: **Cancel** while it's written, then **✕** only, in a 22-point target; **Summarize Again** and **Copy
-Summary** in its right-click menu. VoiceOver says "Summary ready" once it's written.
+has one control: **Stop** while it's written, which says the model and that it's one request, then **✕** only, in a
+22-point target, which hides it (`StorySummaries.hide`): it's kept, as long as summaries are, and **Show Summary** shows
+it again without asking Copilot; **Summarize Again**, **Copy Summary** and **Hide Summary** in its right-click menu. Out
+of date, its caption says so in bold, and **Summarize Again** joins **Show More** at its foot. VoiceOver says "Summary
+ready" and what it's of, once, however many places show it. Your name comes from Azure DevOps, or else from your GitHub
+login.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
 (`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
-(`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and its right-click and
-Actions menus have **Summarize with Copilot**, then **Summarize Again** and **Close Summary** (`SummarizeMenuItems`). Its
-summary shows under its row (`RowSummary`), in a smaller card, and on its page, being the same one; while it shows, what
-it summed up is read again each minute, as for Where It Stands, so it says when it's out of date. With nothing linked
+(`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and while it's written a
+spinner takes that place, so a second click there doesn't open the row. Its right-click and Actions menus have, in a
+group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
+**Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
+under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
+whom, two lines each at most, the time it was written on the right, where ✕ shows while you point at it, then **More**,
+and, out of date, **Summarize Again**; it ends where the row's time does, left of its actions. The prompt tells the
+model that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as
+its page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's
+out of date. With nothing linked
 to it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
 Desktop widgets show none (`offersSummaries`).
 

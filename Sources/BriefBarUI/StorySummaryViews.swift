@@ -10,7 +10,17 @@ struct SummarizeButton: View {
     @ObservedObject var summaries: StorySummaries
 
     var body: some View {
-        if summaries.state(for: subject) == nil, summaries.hasSomethingToSum(subject) {
+        if summaries.isHidden(subject) {
+            Button {
+                summaries.show(subject)
+            } label: {
+                Label("Show Summary", systemImage: "sparkles")
+                    .font(.system(size: 11.5))
+                    .fixedSize()
+            }
+            .buttonStyle(.borderless)
+            .help("Shows the summary you closed, as it was written")
+        } else if summaries.state(for: subject) == nil, summaries.hasSomethingToSum(subject) {
             ViewThatFits(in: .horizontal) {
                 button("Summarize with Copilot")
                 button("Summarize")
@@ -31,14 +41,14 @@ struct SummarizeButton: View {
         .accessibilityLabel("Summarize with Copilot")
     }
 
-    /// "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5). Uses your Copilot plan."
+    /// "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5): 1 request on your Copilot plan."
     static func help(for subject: ItemRef, model: String) -> String {
         let what = switch subject.kind {
         case .workItem: "work item"
         case .pullRequest, .gitHubPullRequest: "pull request"
         case .session: "Copilot session"
         }
-        return "Sends this \(what) and what's linked to it to GitHub Copilot (\(model)). Uses your Copilot plan."
+        return "Sends this \(what) and what's linked to it to GitHub Copilot (\(model)): 1 request on your Copilot plan."
     }
 }
 
@@ -78,13 +88,12 @@ package struct SummaryCard: View {
                 guard written != nil else { return }
                 // A new one starts short.
                 showsAll = false
-                AccessibilityNotification.Announcement("Summary ready").post()
             }
     }
 
     @ViewBuilder
     private var content: some View {
-        switch summaries.state(for: subject) {
+        switch summaries.shownState(for: subject) {
         case nil:
             EmptyView()
         case .writing:
@@ -94,10 +103,10 @@ package struct SummaryCard: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Copilot is writing a summary…")
+                    Text(Self.writing(summaries))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
-                    Button("Cancel") { summaries.cancel(subject) }
+                    Button("Stop") { summaries.cancel(subject) }
                         .buttonStyle(.borderless)
                 }
                 .font(.system(size: 12))
@@ -116,6 +125,11 @@ package struct SummaryCard: View {
 
     static let title = "Summary by Copilot"
 
+    /// "Summarizing with Copilot (Claude Haiku 5.5) · 1 request": what it costs, while it's written.
+    static func writing(_ summaries: StorySummaries) -> String {
+        "Summarizing with Copilot (\(summaries.name(of: summaries.model))) · 1 request"
+    }
+
     private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
         let changed = summaries.whatChanged(subject)
         let isStale = changed != nil
@@ -124,18 +138,8 @@ package struct SummaryCard: View {
         return card {
             // Narrower, it says less, but always when it was written and whether it's out of date.
             ViewThatFits(in: .horizontal) {
-                header { caption(Self.title, at: at, changed: changed, written: written) } trailing: {
-                    if isStale { againButton }
-                    closeButton
-                }
-                header { caption("Summary", at: at, changed: changed, written: written) } trailing: {
-                    if isStale { againButton }
-                    closeButton
-                }
-                VStack(alignment: .trailing, spacing: 2) {
-                    header { caption("Summary", at: at, changed: changed, written: written) } trailing: { closeButton }
-                    if isStale { againButton }
-                }
+                header { caption(Self.title, at: at, changed: changed, written: written) } trailing: { closeButton }
+                header { caption("Summary", at: at, changed: changed, written: written) } trailing: { closeButton }
             }
         } content: {
             VStack(alignment: .leading, spacing: 6) {
@@ -151,20 +155,26 @@ package struct SummaryCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                if let paragraph = summary.paragraph {
-                    if showsAll {
-                        Text(paragraph)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.primary.opacity(0.85))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                    Button(showsAll ? "Show Less" : "Show More") {
-                        withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
+                if let paragraph = summary.paragraph, showsAll {
+                    Text(paragraph)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                // Its way on: the rest of it, and, once it's out of date, a new one.
+                if summary.paragraph != nil || isStale {
+                    HStack(spacing: 14) {
+                        if summary.paragraph != nil {
+                            Button(showsAll ? "Show Less" : "Show More") {
+                                withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
+                            }
+                            .accessibilityHint(showsAll ? "Hides what's been done and what's left" : "Shows what's been done and what's left")
+                        }
+                        if isStale { againButton }
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 11.5))
-                    .accessibilityHint(showsAll ? "Hides what's been done and what's left" : "Shows what's been done and what's left")
                 }
             }
         }
@@ -174,6 +184,7 @@ package struct SummaryCard: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(summary.plainText, forType: .string)
             }
+            Button("Hide Summary") { summaries.hide(subject) }
         }
     }
 
@@ -203,10 +214,10 @@ package struct SummaryCard: View {
         }
     }
 
-    /// ✕, which closes it, or stops it being written.
+    /// ✕, which closes it, kept to show again for nothing; or one that couldn't be written, forgotten.
     private var closeButton: some View {
         Button {
-            summaries.dismiss(subject)
+            summaries.hide(subject)
         } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 10, weight: .semibold))
@@ -232,7 +243,7 @@ package struct SummaryCard: View {
                 Text(" · ")
                     .fixedSize()
                 Text("Out of date")
-                    .foregroundStyle(Self.outOfDate)
+                    .fontWeight(.bold)
                     .fixedSize()
                     .help("Since it was written: \(changed).")
             }
@@ -240,17 +251,11 @@ package struct SummaryCard: View {
         .help(written)
     }
 
-    /// "Out of date", in orange that reads on the card's tint: darker in light mode.
-    static let outOfDate = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .systemOrange : NSColor(srgbRed: 0.66, green: 0.26, blue: 0, alpha: 1)
-    })
-
     /// Summarize Again, while it's out of date.
     private var againButton: some View {
         Button("Summarize Again") { summaries.summarize(subject) }
-            .buttonStyle(.borderless)
-            .font(.system(size: 11))
             .fixedSize()
+            .help("Asks Copilot again: 1 request")
     }
 
     /// The card's first line: ✨, its caption, gray, and what it does on its right.
@@ -321,8 +326,8 @@ package struct StorySummariesSetting: View {
 
     package static let title = "Summarize with Copilot"
     package static let explanation = """
-        Adds ✨ Summarize with Copilot to Where It Stands, and to pull requests' and Copilot sessions' rows. Nothing is \
-        sent until you click it.
+        Adds ✨ Summarize with Copilot to Where It Stands, and to pull requests' and Copilot sessions' rows (point at one, or \
+        right-click it) and pages. Nothing is sent until you click it.
         """
     /// What it sends, where, what it costs and what Copilot can do with it, a line each.
     package static let lines: [(label: String, symbol: String, text: String)] = [
