@@ -1,0 +1,66 @@
+name: CodeQL
+
+# On pushes to main that change more than docs, weekly, and when started by hand, never on pull requests: the
+# Swift scan holds a macOS runner for twenty to thirty minutes, which pull requests' CI would wait for. Scans the
+# Swift code and the workflows, in the same categories as the default setup it replaces, so alerts carry over.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  # Weekly too, so new queries check code that hasn't changed.
+  schedule:
+    - cron: '37 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new run cancels the one in progress on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+            runner: ubuntu-latest
+          # Like CI, on the current macOS.
+          - language: swift
+            build-mode: autobuild
+            runner: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # A debug swift build of the package, which CodeQL watches.
+      - name: Build
+        if: matrix.build-mode == 'autobuild'
+        uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}

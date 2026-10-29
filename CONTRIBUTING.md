@@ -161,9 +161,9 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   use a small `@LocalState` property wrapper instead of `@State`, and environment values are written
   out by hand.
 - Liquid Glass (`glassEffect`, the glass button style) is in the macOS 26 SDK only: use it inside
-  `#if compiler(>=6.2)` and `if #available(macOS 26.0, *)`, so CI's macOS 15 build still compiles.
-  `--render` can't draw glass or materials, so views draw a stand-in when `isRendering` is set
-  (`Sources/BriefBarUI/WindowStyle.swift`).
+  `#if compiler(>=6.2)` and `if #available(macOS 26.0, *)`, so CI's macOS 15 build on `main` still
+  compiles. `--render` can't draw glass or materials, so views draw a stand-in when `isRendering` is
+  set (`Sources/BriefBarUI/WindowStyle.swift`).
 
 ## Ground rules
 
@@ -268,15 +268,16 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 ## Pull requests
 
 - Keep each pull request focused, and describe the change users will see.
-- Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 15 (with
-  Xcode 16, so without summaries) and macOS 26, checks the signing keys' protection, packages the app,
-  checks its updater, and runs it on Apple silicon only.
+- Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 26,
+  checks the signing keys' protection, packages the app and checks its updater, on Apple silicon only.
+  After you merge, CI on `main` also runs them on macOS 15 (with Xcode 16, so without summaries) and
+  runs the app there.
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
-`main` requires a pull request, all four CI jobs to pass on an up-to-date branch, and all review
-conversations to be resolved. A second person's approval isn't required, so a solo maintainer can
-merge their own pull request. Force-pushing to `main` and deleting it are blocked.
+`main` requires a pull request, CI's `Build and test (macos-26)` job to pass on an up-to-date branch,
+and all review conversations to be resolved. A second person's approval isn't required, so a solo
+maintainer can merge their own pull request. Force-pushing to `main` and deleting it are blocked.
 
 ## Signing
 
@@ -306,16 +307,23 @@ security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN" && rmdir "$(dirname "$BRIE
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` that changes more than docs, on pull requests,
-and when started by hand:
+and when started by hand. A new run cancels the one in progress on the same pull request or branch,
+`main` included.
 
-- It builds and tests on Apple silicon on macOS 15, whose Xcode 16 SDK has no FoundationModels, and on
-  macOS 26. Each runs the boundary and demo checks and `make signing-key-check`, packages the arm64
-  app with a throwaway certificate, signs its update with a throwaway key, the way a release does
-  (`scripts/appcast-dry-run.sh`), checks that its updater can't use BriefBar's permissions
-  (`scripts/test-updater-isolation.sh`), and installs an update through it
-  (`scripts/update-rehearsal.sh`).
-- The macOS 26 job uploads the package as the `BriefBar` artifact, and the next job runs it on
-  macOS 15, on Apple silicon, with the updater check too. Intel builds and checks aren't supported.
+- It builds and tests on Apple silicon on macOS 26. It runs the boundary and demo checks and
+  `make signing-key-check`, packages the arm64 app with a throwaway certificate, signs its update with
+  a throwaway key, the way a release does (`scripts/appcast-dry-run.sh`), checks that its updater can't
+  use BriefBar's permissions (`scripts/test-updater-isolation.sh`), installs an update through it
+  (`scripts/update-rehearsal.sh`), and uploads the package as the `BriefBar` artifact.
+- On `main` only, pushed or started by hand, it also builds and tests the same way on macOS 15, whose
+  Xcode 16 SDK has no FoundationModels, and the next job runs the macOS 26 package on macOS 15, with
+  the updater check too. Pull requests skip macOS 15, so each waits for one runner instead of three.
+- Intel builds and checks aren't supported.
+
+`.github/workflows/codeql.yml` scans the Swift code and the workflows with CodeQL on the same pushes
+to `main`, weekly, and when started by hand, never on pull requests, since the Swift scan holds a
+macOS runner for twenty to thirty minutes. A new scan cancels the one in progress. Its alerts are
+under **Security**, so check them before you approve a release.
 
 ## Releasing
 
@@ -337,8 +345,8 @@ Releases are built and signed by GitHub Actions, not on a maintainer's Mac.
    git push origin v0.2.0
    ```
 
-5. Approve the release: in the run under **Actions**, click **Review deployments**, select `release`
-   and click **Approve and deploy**.
+5. Approve the release once CI has passed on `main`, the only run on macOS 15: in the run under
+   **Actions**, click **Review deployments**, select `release` and click **Approve and deploy**.
 
 The tag starts the [release workflow](.github/workflows/release.yml). Its first job checks the
 version and the changelog, then builds and tests the Apple silicon app on macOS 26, signed with a
