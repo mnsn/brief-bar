@@ -26,17 +26,24 @@ import Testing
     func endsAProgramThatIgnoresBeingAskedToStop() async throws {
         // Both sleeps ignore SIGTERM, so only SIGKILL, a second later, ends them. The program becomes one of them
         // (exec), so it can't exit on its own when the other is killed first, as a shell waiting for it would.
-        let (result, elapsed) = try await measured {
-            try await ProcessRunner().run(
-                URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "trap '' TERM; sleep 30 & echo $!; exec sleep 30"],
-                environment: nil, timeout: 0.5
-            )
+        // A program starts with SIGTERM's default, so SIGTERM can come before a shell that's slow to start, as on a
+        // busy runner, ignores it. It then ends at once, before it writes anything: that isn't what's tested, so it's
+        // tried again with twice the time, and the last time counts.
+        for timeout in [0.5, 1, 2, 4, 8] {
+            let (result, elapsed) = try await measured {
+                try await ProcessRunner().run(
+                    URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "trap '' TERM; sleep 30 & echo $!; exec sleep 30"],
+                    environment: nil, timeout: timeout
+                )
+            }
+            if result.status == SIGTERM, result.stdout.isEmpty, timeout < 8 { continue }
+            #expect(result.status == SIGKILL)
+            #expect(elapsed > .seconds(timeout + 0.7) && elapsed < .seconds(timeout + 4.5))
+            // The sleep is ended too.
+            let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
+            #expect(try await ends(child))
+            return
         }
-        #expect(result.status == SIGKILL)
-        #expect(elapsed > .milliseconds(1_200) && elapsed < .seconds(5))
-        // The sleep is ended too.
-        let child = try #require(pid_t(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
-        #expect(try await ends(child))
     }
 
     @Test(.timeLimit(.minutes(1)))
