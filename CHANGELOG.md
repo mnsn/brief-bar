@@ -8,8 +8,8 @@
   Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
   ones waiting on you, conflicts, and each build or check that ran on it, with where a failed one
   failed; a Copilot session's question or plan, and what Copilot recorded of its work as it went, its
-  checkpoints, what it did, what's next and what it said last. It's all from what BriefBar already
-  reads, with no AI and no more requests to Azure DevOps. The GitHub Copilot source asks you to look at
+  notes, what it did, what's next and what it said last. It's all from what BriefBar already reads,
+  shown as it was written, with no more requests to Azure DevOps. The GitHub Copilot source asks you to look at
   what it reads again, since it now reads a linked session's checkpoints, in memory only.
 
 ## 0.8.3 - 2026-10-28

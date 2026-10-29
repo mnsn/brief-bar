@@ -13,6 +13,7 @@ struct WorkItemDetailsPanel: View {
     @EnvironmentObject private var sprint: SprintStore
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var services: AppServices
 
     var body: some View {
         if let item = details.selected {
@@ -198,7 +199,10 @@ struct WorkItemDetailsPanel: View {
             .help("Open it in Azure DevOps, to change it there")
             if copilot.isOn {
                 if let entry = copilot.latest(for: item) {
-                    CopilotRunBadge(entry: entry)
+                    // With Show Links, Where It Stands lists the task, with its actions.
+                    UnlessShowingLinks(links: services.links) {
+                        CopilotRunBadge(entry: entry)
+                    }
                 } else {
                     Button {
                         copilot.compose(item)
@@ -502,6 +506,16 @@ struct WorkItemDetailsPanel: View {
     static func ago(_ date: Date, now: Date) -> String {
         let elapsed = Elapsed.short(since: date, now: now)
         return elapsed == "now" ? "just now" : "\(elapsed) ago"
+    }
+}
+
+/// What shows only while Show Links is off.
+private struct UnlessShowingLinks<Content: View>: View {
+    @ObservedObject var links: Links
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if !links.isOn { content() }
     }
 }
 

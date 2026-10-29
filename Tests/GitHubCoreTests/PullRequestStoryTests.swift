@@ -26,7 +26,7 @@ import Testing
         #expect(!sentence.contains("\n"))
     }
 
-    @Test func factsSayWhoWroteItItsReviewsItsMergeAndItsBranch() {
+    @Test func factsSayItsReviewsAndMergeThenWhoWroteItAndItsBranch() {
         var pullRequest = Fixture.make(isDraft: true, conflicts: true, reviews: [
             .init(reviewer: "alice", state: .changesRequested),
             .init(reviewer: "bob", state: .changesRequested),
@@ -34,17 +34,20 @@ import Testing
             .init(reviewer: "alice", state: .approved),
         ])
         pullRequest.branch = "priya/tax-rounding"
-        #expect(classify(pullRequest, role: .reviewer).story.facts == [
-            ItemStory.Fact("Author", "priya"),
+        let reviewing = classify(pullRequest, role: .reviewer).story
+        #expect(reviewing.facts == [
             ItemStory.Fact("Reviews", "alice approved · bob requested changes"),
             ItemStory.Fact("Merge", "Conflicts · Draft"),
-            ItemStory.Fact("Branch", "priya/tax-rounding"),
         ])
+        // Who wrote it and its branch say less: they show with the rest.
+        #expect(reviewing.more == [ItemStory.Fact("Author", "priya"), ItemStory.Fact("Branch", "priya/tax-rounding")])
 
         // Yours has no author; and each fact shows only when it says something.
-        #expect(classify(pullRequest).story.facts.map(\.label) == ["Reviews", "Merge", "Branch"])
+        #expect(classify(pullRequest).story.facts.map(\.label) == ["Reviews", "Merge"])
+        #expect(classify(pullRequest).story.more.map(\.label) == ["Branch"])
         #expect(classify(Fixture.make()).story.facts.isEmpty)
         #expect(classify(Fixture.make(author: nil), role: .reviewer).story.facts.isEmpty)
+        #expect(classify(Fixture.make(author: nil), role: .reviewer).story.more.isEmpty)
         #expect(classify(Fixture.make(conflicts: true)).story.facts == [ItemStory.Fact("Merge", "Conflicts")])
     }
 

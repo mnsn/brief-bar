@@ -100,7 +100,7 @@ private let sample = """
             try session.checkpoint("002-saved-items-table-and-api-a.md", sample, modified: t(100))
 
             #expect(session.read() == ItemStory.Account(
-                source: "Copilot's checkpoints", date: t(100),
+                source: "Copilot's notes", date: t(100),
                 milestones: ["Planning saved items for the cart", "Saved items table and API added"],
                 overview: """
                     The user asked for a Save for later button in the cart. Saved items are kept in a saved_items table, \
@@ -186,7 +186,7 @@ private let sample = """
                 at: session.checkpoints.appendingPathComponent("001-elsewhere.md"),
                 withDestinationURL: elsewhere.appendingPathComponent("001-elsewhere.md")
             )
-            #expect(session.read() == ItemStory.Account(source: "Copilot's checkpoints", milestones: ["Linked"]))
+            #expect(session.read() == ItemStory.Account(source: "Copilot's notes", milestones: ["Linked"]))
 
             // The checkpoints' folder: nothing in it.
             try FileManager.default.removeItem(at: session.checkpoints)

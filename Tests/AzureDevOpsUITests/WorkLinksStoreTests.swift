@@ -97,21 +97,28 @@ import Testing
         // One of your pull requests: all that's read of it, with the build that ran on it.
         let coupon = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4091)))
         #expect(coupon.sentence.hasPrefix("Ready to complete"))
-        #expect(coupon.facts.first { $0.label == "Reviewers" }?.value == "Chen Wei approved · Priya Shah approved")
+        #expect(coupon.facts.first { $0.label == "Reviewers" }?.value == "Approved by Chen Wei and Priya Shah")
         #expect(coupon.runs.map(\.name) == ["payments-api CI"])
         #expect(coupon.runs.first?.state == .done)
         // A teammate's, which the lists don't show: what the pull request says itself.
         let saved = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4120)))
-        #expect(saved.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(saved.more.first == ItemStory.Fact("Author", "Sam Rivera"))
         #expect(saved.runs.isEmpty)
+        #expect(saved.footnote != nil)
         // A task sent to Copilot: how it went, what it opened, and the summary it ended with.
         let task = try #require(workLinks.tell(session))
-        #expect(task.sentence == "Opened a pull request")
-        #expect(task.facts.contains(ItemStory.Fact("Opened", "!4091")))
+        #expect(task.sentence == "Opened !4091")
+        #expect(task.facts == [ItemStory.Fact("Model", "Claude Opus 5.5 · Max")])
         #expect(task.account?.overview == "Coupon totals now round half up, with tests for every currency. Opened pull request 4091.")
-        // Azure DevOps doesn't tell about the app's own sessions, or its work items yet.
+        // Azure DevOps doesn't tell about the app's own sessions.
         #expect(workLinks.tell(.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")!) == nil)
-        #expect(workLinks.tell(.workItem(organization: organization, id: 5101)) == nil)
+        // A sprint's work item: who has it and how its tasks stand.
+        let story = try #require(workLinks.tell(.workItem(organization: organization, id: 5101)))
+        #expect(story.sentence == "Active")
+        #expect(story.facts.prefix(2) == [ItemStory.Fact("Assigned to", "Robin Diaz"), ItemStory.Fact("Tasks", "1 of 4 done")])
+        #expect(story.more == [ItemStory.Fact("Type", "User Story")])
+        #expect(story.facts.contains(ItemStory.Fact("Work", "6 h left")))
+        #expect(workLinks.tell(.workItem(organization: organization, id: 9999)) == nil)
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

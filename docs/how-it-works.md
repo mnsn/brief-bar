@@ -398,11 +398,15 @@ capsule shows it. Widgets' rows show none.
 ### Where it stands
 
 A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show
-Links links to it, as its rows show them, the one that needs you most first (needs you, then what's wrong, what's at
-work, what's done or ready, then the rest, the newest first in each), with a tally of their states when there are two
-or more. Each says where it stands in a sentence, and a click opens what its source knows of it (`ItemStory` in
-`Sources/BriefBarCore`), in BriefBar's own words, without any model: a few facts, the pipelines that ran on it, and
-what's been done, as the thing itself recorded it.
+Links links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's
+done or ready, then the rest, the newest first in each), and a session linked through a pull request under that pull
+request; four at first, then **Show More**, with a tally of their states once there are five or more. Each row shows
+its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
+color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens a short preview of what its
+source knows of it (`ItemStory` in `Sources/BriefBarCore`), its actions first: a few facts, the pipelines that ran on
+it, and what Copilot wrote of a session's work, set apart by a thin rule, since those are Copilot's words, not
+BriefBar's; **Show All** shows the rest. While Show Links is off it reads nothing and shows one line, with **Turn On…**,
+which shows Show Links' setting, until you dismiss it.
 
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
 Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again

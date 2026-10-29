@@ -125,6 +125,60 @@ import Testing
         #expect(!stories.hasTold(session))
     }
 
+    @Test func turningShowLinksOffBeforeAStoryIsToldReadsNothing() async throws {
+        let (links, stories) = hub()
+        let asked = Asked()
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Finished")
+        }
+        stories.request(item(session))
+        links.setOn(false)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(asked.refs.isEmpty)
+        #expect(!stories.isTelling(session))
+        #expect(!stories.hasTold(session))
+    }
+
+    /// Holds a teller until it's let go.
+    @MainActor
+    private final class Gate {
+        var continuation: CheckedContinuation<Void, Never>?
+
+        func wait() async {
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func open() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    @Test func aStoryTakenBackNeverReplacesTheOneToldInItsPlace() async throws {
+        let (_, stories) = hub()
+        let gate = Gate()
+        stories.register(.copilot, kinds: [.session]) { _ in
+            await gate.wait()
+            return ItemStory(sentence: "Told before Copilot stopped")
+        }
+        stories.request(item(session))
+        for _ in 0..<200 where gate.continuation == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Copilot stops and starts again, and the same row asks again, while the first story is still being told.
+        stories.withdraw(.copilot)
+        stories.register(.copilot, kinds: [.session]) { _ in ItemStory(sentence: "Told since") }
+        stories.request(item(session))
+        gate.open()
+        for _ in 0..<200 where !stories.hasTold(session) || stories.isTelling(session) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(stories.story(for: session)?.sentence == "Told since")
+        #expect(!stories.isTelling(session))
+    }
+
     // MARK: Where it stands
 
     private func connection(_ ref: ItemRef, state: ItemState?, minutesAgo: Double) -> LinkConnection {
@@ -145,13 +199,48 @@ import Testing
         #expect(ordered.map(\.item.ref) == [asks, failing, working, newerDone, done, waiting].map(\.item.ref))
     }
 
-    @Test func theTallyCountsEachStateForTwoThingsOrMore() {
+    @Test func theTallyCountsEachStateForFiveThingsOrMore() {
         let asks = connection(session, state: .needsYou, minutesAgo: 1)
         let done = connection(.pullRequest(organization: "contoso", number: 4091), state: .done, minutesAgo: 2)
         let alsoDone = connection(.pullRequest(organization: "contoso", number: 4093), state: .done, minutesAgo: 3)
         let waiting = connection(.pullRequest(organization: "contoso", number: 4120), state: nil, minutesAgo: 4)
-        #expect(WhereItStandsSection.tally([asks])?.map(\.text) == nil)
-        #expect(WhereItStandsSection.tally([asks, done, alsoDone, waiting])?.map(\.text) == ["1 needs you", "2 done or ready"])
-        #expect(WhereItStandsSection.tally([waiting, waiting]) == nil)
+        let other = connection(.pullRequest(organization: "contoso", number: 4118), state: nil, minutesAgo: 5)
+        // Fewer: their icons say it.
+        #expect(WhereItStandsSection.tally([asks, done, alsoDone, waiting]) == nil)
+        #expect(WhereItStandsSection.tally([asks, done, alsoDone, waiting, other])?.map(\.text) == ["1 needs you", "2 done or ready"])
+        #expect(WhereItStandsSection.tally([waiting, other, waiting, other, waiting]) == nil)
+    }
+
+    @Test func sessionsShowUnderThePullRequestTheyreLinkedThrough() {
+        let pullRequest = item(.pullRequest(organization: "contoso", number: 4091), state: .done, date: Date(timeIntervalSince1970: 1_000_000))
+        let teammates = connection(.pullRequest(organization: "contoso", number: 4120), state: nil, minutesAgo: 1)
+        let ready = LinkConnection(item: pullRequest, origins: [.azureDevOps], via: nil, isHidden: false, isKnownElsewhere: true)
+        let opened = LinkConnection(
+            item: item(session, state: .needsYou, date: Date(timeIntervalSince1970: 1_000_000 - 60)), origins: [], via: pullRequest,
+            isHidden: false, isKnownElsewhere: true
+        )
+        let groups = WhereItStandsSection.groups(WhereItStandsSection.ordered([teammates, ready, opened]))
+        // The pull request leads its session, and the session's needing you puts the group first.
+        #expect(groups.map(\.lead.item.ref) == [ready.item.ref, teammates.item.ref])
+        #expect(groups.first?.children.map(\.item.ref) == [session])
+    }
+
+    @Test func aTaskYouSentSaysWhatFor() {
+        let workItem = ItemRef.workItem(organization: "contoso", id: 5112)
+        let fix = ItemRef.pullRequest(organization: "contoso", number: 4088)
+        func task(_ sent: SentToCopilot) -> LinkedItem {
+            LinkedItem(ref: session, label: "5112: Round half up", title: "Copilot: 5112: Round half up", symbol: "paperplane.fill",
+                       color: .blue, sent: sent)
+        }
+        #expect(WhereItStandsSection.name(of: task(SentToCopilot(from: workItem)), subject: workItem) == "Sent to Copilot")
+        #expect(WhereItStandsSection.name(of: task(SentToCopilot(from: workItem)), subject: .workItem(organization: "contoso", id: 5110))
+            == "Sent to Copilot: 5112: Round half up")
+        #expect(WhereItStandsSection.name(of: task(SentToCopilot(action: "Fix the Build", from: fix)), subject: workItem, parent: fix)
+            == "Fix the Build with Copilot")
+        // A session of the app's is called by its name, a pull request by its title.
+        #expect(WhereItStandsSection.name(of: item(session), subject: workItem) == session.id)
+        #expect(WhereItStandsSection.name(of: item(fix), subject: workItem) == "Round coupons")
+        #expect(WhereItStandsSection.phrase("Ready to complete: Approved by you") == ("Ready to complete:", "Approved by you"))
+        #expect(WhereItStandsSection.phrase("Finished") == ("Finished", ""))
     }
 }

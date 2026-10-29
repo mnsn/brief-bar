@@ -5,13 +5,13 @@ import Foundation
 /// and who reviews it, how its comments and its merge stand, its branch, and the builds and checks that ran on it.
 public enum PullRequestStory {
     /// One of the pull requests in your lists: you wrote it, review it or watch it, or someone sent it to you. Its row says
-    /// where it stands; what was read for it, when it's there, says the rest.
+    /// where it stands; what was read for it, when it's there, says the rest: who reviews it, you among them, how its
+    /// comments and its merge stand, and the builds and checks that ran on it. Who wrote it and its branch say less.
     public static func mine(_ snapshot: PRSnapshot, record: PRRecord?) -> ItemStory {
         let pullRequest = record?.pullRequest
         var facts: [ItemStory.Fact] = []
-        if snapshot.role != .author { facts.append(ItemStory.Fact("Author", snapshot.author)) }
         if let pullRequest {
-            if let reviewers = reviewers(pullRequest.reviewers) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
+            if let reviewers = reviewers(pullRequest.reviewers, me: record?.me) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
         } else if !snapshot.approvals.isEmpty {
             facts.append(ItemStory.Fact("Reviewers", "Approved by " + names(snapshot.approvals)))
         }
@@ -19,9 +19,11 @@ public enum PullRequestStory {
             let waiting = snapshot.pendingEvents.filter { waitingKinds.contains($0.kind) }.count
             facts.append(ItemStory.Fact("Comments", comments(details.threads, waitingOnYou: waiting)))
         }
+        var more: [ItemStory.Fact] = []
+        if snapshot.role != .author { more.append(ItemStory.Fact("Author", snapshot.author)) }
         if let pullRequest {
             if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
-            if let branch = branch(pullRequest) { facts.append(ItemStory.Fact("Branch", branch)) }
+            if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
         }
 
         var runs = (record?.details?.checks ?? []).compactMap { check in
@@ -29,19 +31,24 @@ public enum PullRequestStory {
         }
         if let merge = snapshot.merge { runs.append(run(merge)) }
         return ItemStory(
-            sentence: sentence(snapshot.headline, snapshot.detail), date: snapshot.since, facts: facts,
+            sentence: sentence(snapshot.headline, snapshot.detail), date: snapshot.since, facts: facts, more: more,
             runs: runs.sorted(by: ItemStory.Run.showsFirst)
         )
     }
 
     /// A pull request that's linked but not in your lists, such as a teammate's on a sprint's work item. BriefBar reads only
     /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say.
-    public static func others(_ pullRequest: PullRequest) -> ItemStory {
-        var facts = [ItemStory.Fact("Author", pullRequest.author.name)]
-        if let reviewers = reviewers(pullRequest.reviewers) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
+    /// - Parameter me: your identity in its organization, to say "you" rather than your name.
+    public static func others(_ pullRequest: PullRequest, me: String? = nil) -> ItemStory {
+        var facts: [ItemStory.Fact] = []
+        if let reviewers = reviewers(pullRequest.reviewers, me: me) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
         if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
-        if let branch = branch(pullRequest) { facts.append(ItemStory.Fact("Branch", branch)) }
-        return ItemStory(sentence: standing(pullRequest), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts)
+        var more = [ItemStory.Fact("Author", isMe(pullRequest.author, me) ? "You" : pullRequest.author.name)]
+        if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
+        return ItemStory(
+            sentence: standing(pullRequest, me: me), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
+            footnote: pullRequest.status == .active ? "Builds and comments aren't read for pull requests you're not on." : nil
+        )
     }
 
     // MARK: Where it stands
@@ -51,11 +58,11 @@ public enum PullRequestStory {
         StoryText.line([headline, detail ?? ""].filter { !$0.isEmpty }.joined(separator: ": "), limit: 160)
     }
 
-    /// Where a pull request stands from what it says itself: whether it's closed or a draft, and its votes. "Sam wants
-    /// changes", "Approved by Priya Shah", "Waiting for reviewers: Alex Kim".
-    static func standing(_ pullRequest: PullRequest) -> String {
+    /// Where a pull request stands from what it says itself: whether it's closed or a draft, and its votes. "Sam Rivera
+    /// wants changes", "Approved by you and Priya Shah", "Waiting for your review", "Waiting for reviewers: Alex Kim".
+    static func standing(_ pullRequest: PullRequest, me: String? = nil) -> String {
         switch pullRequest.status {
-        case .completed: return "Completed: merged into \(pullRequest.targetBranch)"
+        case .completed: return "Merged into \(pullRequest.targetBranch)"
         case .abandoned: return "Abandoned"
         case .other: return "Closed"
         case .active: break
@@ -64,14 +71,16 @@ public enum PullRequestStory {
         let people = Self.people(pullRequest.reviewers)
         let wantChanges = people.filter(\.vote.wantsChanges)
         if let first = wantChanges.first {
-            return wantChanges.count == 1 ? "\(first.person.firstName) wants changes" : "Changes requested"
+            guard wantChanges.count == 1 else { return "Changes requested" }
+            return isMe(pullRequest.author, me) ? "\(first.person.name) is waiting for you" : "\(first.person.name) wants changes"
         }
         let approved = people.filter(\.vote.isApproval)
         if !approved.isEmpty, people.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
-            return "Approved by " + names(approved.map(\.person.name))
+            return "Approved by " + names(approved.map(\.person), me: me)
         }
-        let notVoted = people.filter { $0.vote == .none && !$0.hasDeclined }.map(\.person.name)
-        return notVoted.isEmpty ? "Waiting for reviewers" : "Waiting for reviewers: " + names(notVoted)
+        let notVoted = people.filter { $0.vote == .none && !$0.hasDeclined }
+        if notVoted.contains(where: { isMe($0.person, me) }) { return "Waiting for your review" }
+        return notVoted.isEmpty ? "Waiting for reviewers" : "Waiting for reviewers: " + names(notVoted.map(\.person), me: me)
     }
 
     // MARK: Facts
@@ -85,24 +94,36 @@ public enum PullRequestStory {
         }
     }
 
-    /// "Sam Rivera (required) hasn't voted · Priya Shah approved": each person's vote; nil without anyone.
-    static func reviewers(_ reviewers: [Reviewer]) -> String? {
-        let votes = people(reviewers).map { reviewer in
-            "\(reviewer.person.name)\(reviewer.isRequired ? " (required)" : "") \(vote(reviewer))"
+    /// "Approved by you and Priya Shah · Waiting on Sam Rivera (required)": the people who review it, by how they voted,
+    /// you first; nil without anyone.
+    static func reviewers(_ reviewers: [Reviewer], me: String? = nil) -> String? {
+        let people = people(reviewers)
+        func group(_ title: String, _ matching: (Reviewer) -> Bool, required: Bool = false) -> String? {
+            let found = people.filter(matching)
+            guard !found.isEmpty else { return nil }
+            let named = found.sorted { isMe($0.person, me) && !isMe($1.person, me) }.map { reviewer in
+                (isMe(reviewer.person, me) ? "you" : reviewer.person.name) + (required && reviewer.isRequired ? " (required)" : "")
+            }
+            return "\(title) " + names(named)
         }
-        return votes.isEmpty ? nil : votes.joined(separator: " · ")
+        let groups = [
+            group("Approved by", { $0.vote.isApproval && !$0.hasDeclined }),
+            group("Changes requested by", { $0.vote.wantsChanges && !$0.hasDeclined }),
+            group("Waiting on", { $0.vote == .none && !$0.hasDeclined }, required: true),
+            group("Declined by", \.hasDeclined),
+        ].compactMap { $0 }
+        return groups.isEmpty ? nil : groups.joined(separator: " · ")
     }
 
-    /// What a reviewer did: "approved", "is waiting for the author", "hasn't voted", "declined".
-    static func vote(_ reviewer: Reviewer) -> String {
-        if reviewer.hasDeclined { return "declined" }
-        switch reviewer.vote {
-        case .approved: return "approved"
-        case .approvedWithSuggestions: return "approved with suggestions"
-        case .waitingForAuthor: return "is waiting for the author"
-        case .rejected: return "rejected"
-        case .none: return "hasn't voted"
-        }
+    /// Whether a person is you.
+    static func isMe(_ person: Person, _ me: String?) -> Bool {
+        guard let me, !me.isEmpty else { return false }
+        return person.id == me.lowercased()
+    }
+
+    /// Names, you first and as "you".
+    static func names(_ people: [Person], me: String?) -> String {
+        names(people.sorted { isMe($0, me) && !isMe($1, me) }.map { isMe($0, me) ? "you" : $0.name })
     }
 
     /// What waits on you among what needs you: a comment, a reply or a mention, and a vote that wants changes; not a review
@@ -113,7 +134,7 @@ public enum PullRequestStory {
     static func comments(_ threads: [ReviewThread], waitingOnYou waiting: Int) -> String {
         let open = threads.filter { $0.status == "active" || $0.status == "pending" }.count
         var said = switch open {
-        case 0: "None open"
+        case 0: "No open threads"
         case 1: "1 open thread"
         default: "\(open) open threads"
         }

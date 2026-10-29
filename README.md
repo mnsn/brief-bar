@@ -353,8 +353,8 @@ it stands in a sentence. Click one to see what's known of it, without opening an
 request's reviewers and their votes, its open comments and the ones waiting on you, conflicts, and each
 build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
 and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,
-what it did, what's next, and what it said last. Nothing in it is written by AI, and nothing more is
-read from Azure DevOps for it. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
+what it did, what's next, and what it said last. BriefBar doesn't write or reword any of it: Copilot's
+notes show as Copilot wrote them, and nothing more is read from Azure DevOps for it. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
 the board does too. In a narrow window the details cover the board, until **✕** or Esc closes them.
 Clicking one of your work items in the Sprint list or widget opens its details here, in BriefBar's
 window.

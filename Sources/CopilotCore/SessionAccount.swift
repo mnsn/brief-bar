@@ -20,7 +20,7 @@ public enum SessionAccount {
         guard !checkpoints.isEmpty else { return account(words) }
 
         var account = ItemStory.Account(
-            source: "Copilot's checkpoints", milestones: checkpoints.suffix(max(maxMilestones, 0)).map(\.title),
+            source: "Copilot's notes", milestones: checkpoints.suffix(max(maxMilestones, 0)).map(\.title),
             milestoneCount: checkpoints.count
         )
         if let file = checkpoints.last(where: { $0.file != nil })?.file,

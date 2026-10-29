@@ -135,7 +135,10 @@ package final class CopilotSource: BriefBarSource {
     /// of its work, the app's or a task's that Azure DevOps sent, read from its folder off the main thread.
     private func tell(_ ref: ItemRef) async -> ItemStory? {
         let snapshot = store.sessions.first { ItemRef.session($0.id) == ref }
-        guard let paths = store.paths else { return SessionStory.make(snapshot: snapshot, account: nil) }
+        // Nothing's read once Show Links is off, or the details stopped asking.
+        guard let paths = store.paths, services.links.isOn, !Task.isCancelled else {
+            return SessionStory.make(snapshot: snapshot, account: nil)
+        }
         let id = ref.id
         let account = await Task.detached(priority: .utility) { SessionAccount.read(paths: paths, id: id) }.value
         return SessionStory.make(snapshot: snapshot, account: account)

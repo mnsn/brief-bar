@@ -23,6 +23,8 @@ final class WorkLinksStore {
     private var read = WorkLinks()
     private var lastInputs: LinkEngine.Inputs?
     private var cancellables: Set<AnyCancellable> = []
+    /// The details on screen, for what's known of the work item they show.
+    weak var details: WorkItemDetailsStore?
 
     init(links: Links, stories: ItemStories, store: PRStore, sprint: SprintStore, copilot: CopilotTasksStore, settings: AppSettings) {
         self.links = links
@@ -207,11 +209,14 @@ final class WorkLinksStore {
                 facts += Self.links(of: entry, session: session)
                 let phase = entry.status.phase
                 let copilot = self.copilot
+                let from = entry.onPullRequest.map { ItemRef.pullRequest(organization: $0.organization, number: $0.id) }
+                    ?? entry.workItem.map { ItemRef.workItem(organization: $0.organization, id: $0.id) }
                 items.append(LinkedItem(
                     ref: session, label: copilot.subject(of: entry), title: "Copilot: \(copilot.subject(of: entry))",
                     symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: now),
                     date: entry.status.since ?? entry.startedAt,
-                    menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) }
+                    menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) },
+                    sent: SentToCopilot(action: entry.action?.title, from: from)
                 ))
             }
         }
@@ -236,41 +241,46 @@ final class WorkLinksStore {
 
     // MARK: What's known of them
 
-    /// Tells the details what's known of its pull requests and tasks, when they ask.
+    /// Tells the details what's known of its work items, pull requests and tasks, when they ask.
     private func tellStories() {
-        stories.register(.azureDevOps, kinds: [.pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
     }
 
-    /// What Azure DevOps knows of one of its things beyond its row, from what it read already: one of your pull requests
-    /// from all of it, one that's only linked from the pull request itself, and a task sent to Copilot from how it went.
+    /// What Azure DevOps knows of one of its things beyond its row, from what it read already: a work item from the sprint,
+    /// and from its details when they show it; one of your pull requests from all of it, one that's only linked from the
+    /// pull request itself; and a task sent to Copilot from how it went.
     func tell(_ ref: ItemRef) -> ItemStory? {
         switch ref.kind {
+        case .workItem:
+            let rows = sprint.board?.rows ?? []
+            let shown = details?.selected.flatMap { $0.linkRef == ref ? $0 : nil }
+            guard let item = shown ?? (sprintItems + read.workItems.values).first(where: { $0.linkRef == ref }) else { return nil }
+            let tasks = rows.first { $0.parent?.linkRef == ref }?.tasks ?? []
+            return WorkItemStory.make(item, details: details?.details, tasks: tasks)
         case .pullRequest:
             if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
                 return PullRequestStory.mine(snapshot, record: store.record(for: snapshot.key))
             }
             let pullRequest = read.pullRequests.values.first { $0.key.linkRef == ref }
                 ?? store.records.first { $0.id.linkRef == ref }?.pullRequest
-            return pullRequest.map(PullRequestStory.others)
+            // You, in its organization, as your pull requests have you.
+            let me = store.records.first { $0.id.organization.lowercased() == ref.scope }?.me
+            return pullRequest.map { PullRequestStory.others($0, me: me) }
         case .session:
             guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
             return Self.story(of: entry, now: Date())
-        case .workItem, .gitHubPullRequest:
+        case .gitHubPullRequest:
             return nil
         }
     }
 
-    /// A task sent to Copilot: how it went, what for and when, the pull request it opened, and the summary it ended with.
-    /// What Copilot recorded of its work, its checkpoints, comes from Copilot's own files, when that source is on.
+    /// A task sent to Copilot: how it went, the pull request it opened, the model it works with, and the summary it ended
+    /// with. What Copilot recorded of its work, its notes, comes from Copilot's own files, when that source is on.
     static func story(of entry: CopilotTaskEntry, now: Date) -> ItemStory {
-        var facts: [ItemStory.Fact] = []
-        let ago = Elapsed.short(since: entry.startedAt, now: now)
-        let sent = ago == "now" ? "Just now" : "\(ago) ago"
-        let sentFor = [entry.action?.title, sent, "with \(entry.options.title)"].compactMap { $0 }
-        facts.append(ItemStory.Fact("Sent", sentFor.joined(separator: " · ")))
-        if entry.onPullRequest == nil, let url = entry.pullRequest, let opened = ItemRef.from(link: url.absoluteString),
-           let number = opened.number {
-            facts.append(ItemStory.Fact("Opened", opened.kind == .gitHubPullRequest ? "#\(number)" : "!\(number)"))
+        var sentence = entry.sentence(now: now)
+        if entry.status.phase == .finished, entry.action == nil, let url = entry.pullRequest,
+           let opened = ItemRef.from(link: url.absoluteString), let number = opened.number {
+            sentence = "Opened " + (opened.kind == .gitHubPullRequest ? "#\(number)" : "!\(number)")
         }
         var account: ItemStory.Account?
         if !entry.status.phase.isActive, let detail = entry.status.detail, !detail.isEmpty {
@@ -278,7 +288,10 @@ final class WorkLinksStore {
                 source: "Copilot's summary", date: entry.status.since, overview: StoryText.paragraph(detail, limit: 700)
             )
         }
-        return ItemStory(sentence: entry.sentence(now: now), date: entry.status.since ?? entry.startedAt, facts: facts, account: account)
+        return ItemStory(
+            sentence: sentence, date: entry.status.since ?? entry.startedAt, facts: [ItemStory.Fact("Model", entry.options.title)],
+            account: account
+        )
     }
 
     static func hint(_ pullRequest: PullRequest) -> BranchHint {

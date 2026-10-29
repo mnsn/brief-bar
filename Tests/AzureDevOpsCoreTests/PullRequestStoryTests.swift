@@ -26,8 +26,9 @@ import BriefBarCore
         PullRequestStory.mine(try snapshot(record), record: record)
     }
 
+    /// A fact, whether it shows first or only with the rest.
     private func fact(_ label: String, in story: ItemStory) -> String? {
-        story.facts.first { $0.label == label }?.value
+        (story.facts + story.more).first { $0.label == label }?.value
     }
 
     private func passing(_ extra: [Check] = []) -> [Check] {
@@ -94,7 +95,7 @@ import BriefBarCore
 
     // MARK: Yours: facts
 
-    @Test func reviewersArePeopleTheRequiredOnesFirstThenByName() throws {
+    @Test func reviewersArePeopleByHowTheyVotedYouFirst() throws {
         let pr = makePR(author: People.sam, reviewers: [
             Reviewer(person: People.priya, vote: .approved),
             Reviewer(person: team, vote: .approved, isRequired: true, isGroup: true),
@@ -105,9 +106,11 @@ import BriefBarCore
             Reviewer(person: me, vote: .none, isRequired: true),
         ])
         let reviewing = try story(record(pr, role: .reviewer, details: makeDetails(for: pr, lastActivity: t(-hour))))
-        #expect(reviewing.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
-        #expect(fact("Reviewers", in: reviewing) == "Robin Diaz (required) hasn't voted · Alex Kim is waiting for the author · "
-            + "Chen Wei rejected · Jordan Lee approved with suggestions · Maria Garcia declined · Priya Shah approved")
+        // Who wrote it says less: it shows with the rest.
+        #expect(reviewing.more.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(fact("Reviewers", in: reviewing) == "Approved by Jordan Lee and Priya Shah · Changes requested by Alex Kim and Chen Wei · "
+            + "Waiting on you (required) · Declined by Maria Garcia")
+        #expect(reviewing.facts.first?.label == "Reviewers")
 
         // Only groups: nobody to name.
         let groups = makePR(reviewers: [Reviewer(person: team, vote: .approved, isRequired: true, isGroup: true)])
@@ -128,8 +131,9 @@ import BriefBarCore
 
     @Test func yourOwnHasNoAuthor() throws {
         let story = try story(record(makePR()))
-        #expect(!story.facts.contains { $0.label == "Author" })
-        #expect(story.facts == [ItemStory.Fact("Branch", "fix-total → main")])
+        #expect(fact("Author", in: story) == nil)
+        #expect(story.facts.isEmpty)
+        #expect(story.more == [ItemStory.Fact("Branch", "fix-total → main")])
     }
 
     @Test func commentsSayHowManyThreadsAreOpenAndHowManyWaitOnYou() throws {
@@ -162,7 +166,7 @@ import BriefBarCore
         }
         #expect(try comments([threads[0]]) == "1 open thread · 1 waits on you")
         #expect(try comments([threads[1]]) == "1 open thread")
-        #expect(try comments([threads[2], threads[3]]) == "None open")
+        #expect(try comments([threads[2], threads[3]]) == "No open threads")
         // Until they're read, it says nothing of them.
         #expect(fact("Comments", in: try story(record(one))) == nil)
     }
@@ -253,7 +257,8 @@ import BriefBarCore
             name: "shop-web Deploy", state: .failing, status: "Failed at Run unit tests", detail: "2 tests failed in CheckoutTests.",
             url: deployRun, date: t(-minute)
         )])
-        #expect(failed.facts == [ItemStory.Fact("Branch", "fix-total → main")])
+        #expect(failed.facts.isEmpty)
+        #expect(failed.more == [ItemStory.Fact("Branch", "fix-total → main")])
 
         let production = PipelineStage(id: "s3", name: "Production", state: .waiting)
         let waiting = try story([ci, pipeline(2, "shop-web Deploy", .running, stages: [production])])
@@ -276,7 +281,7 @@ import BriefBarCore
         }
         #expect(sentence([Reviewer(person: People.priya, vote: .rejected)], draft: true) == "Draft")
         #expect(sentence([Reviewer(person: People.priya, vote: .waitingForAuthor), Reviewer(person: People.alex, vote: .approved)])
-            == "Priya wants changes")
+            == "Priya Shah wants changes")
         #expect(sentence([Reviewer(person: People.priya, vote: .waitingForAuthor), Reviewer(person: chen, vote: .rejected)])
             == "Changes requested")
         // A group's vote isn't a person's.
@@ -298,7 +303,8 @@ import BriefBarCore
 
     @Test func aLinkedPullRequestThatsClosed() {
         let completed = PullRequestStory.others(makePR(status: .completed, author: People.sam, closed: t(-hour)))
-        #expect(completed.sentence == "Completed: merged into main")
+        #expect(completed.sentence == "Merged into main")
+        #expect(completed.footnote == nil)
         #expect(completed.date == t(-hour))
         #expect(PullRequestStory.others(makePR(status: .abandoned, closed: t(-hour))).sentence == "Abandoned")
         #expect(PullRequestStory.others(makePR(status: .other)).sentence == "Closed")
@@ -313,17 +319,36 @@ import BriefBarCore
         #expect(story.sentence == "Waiting for reviewers: Alex Kim")
         #expect(story.date == t(-5 * hour))
         #expect(story.facts == [
-            ItemStory.Fact("Author", "Sam Rivera"),
-            ItemStory.Fact("Reviewers", "Alex Kim (required) hasn't voted · Priya Shah approved"),
+            ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on Alex Kim (required)"),
             ItemStory.Fact("Merge", "Conflicts with main · Completes by itself once it can"),
-            ItemStory.Fact("Branch", "fix-total → main"),
         ])
+        #expect(story.more == [ItemStory.Fact("Author", "Sam Rivera"), ItemStory.Fact("Branch", "fix-total → main")])
+        // It says why there are no builds or comments.
+        #expect(story.footnote == "Builds and comments aren't read for pull requests you're not on.")
         #expect(story.runs.isEmpty)
         #expect(story.account == nil)
 
         var merged = pr
         merged.status = .completed
         merged.closedAt = t(-hour)
-        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Author", "Reviewers", "Branch"])
+        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Reviewers"])
+        #expect(PullRequestStory.others(merged).more.map(\.label) == ["Author", "Branch"])
+    }
+
+    @Test func aLinkedPullRequestSaysYouRatherThanYourName() {
+        let waiting = makePR(author: People.sam, reviewers: [
+            Reviewer(person: me, vote: .none, isRequired: true), Reviewer(person: People.priya, vote: .approved),
+        ])
+        let story = PullRequestStory.others(waiting, me: me.id)
+        #expect(story.sentence == "Waiting for your review")
+        #expect(story.facts.first == ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on you (required)"))
+        // Without knowing who you are, by name.
+        #expect(PullRequestStory.others(waiting).sentence == "Waiting for reviewers: Robin Diaz")
+
+        let yours = makePR(author: me, reviewers: [Reviewer(person: People.priya, vote: .waitingForAuthor)])
+        #expect(PullRequestStory.others(yours, me: me.id).sentence == "Priya Shah is waiting for you")
+        #expect(PullRequestStory.others(yours, me: me.id).more.first == ItemStory.Fact("Author", "You"))
+        let approved = makePR(author: People.sam, reviewers: [Reviewer(person: People.priya, vote: .approved), Reviewer(person: me, vote: .approved)])
+        #expect(PullRequestStory.others(approved, me: me.id).sentence == "Approved by you and Priya Shah")
     }
 }

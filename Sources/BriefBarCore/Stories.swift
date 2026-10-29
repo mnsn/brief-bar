@@ -10,19 +10,31 @@ public struct ItemStory: Sendable, Equatable {
     public var sentence: String
     /// When what it says last changed.
     public var date: Date?
-    /// A few facts, in the order they show: who wrote it, who reviews it, how its comments and its merge stand.
+    /// A few facts, in the order they show: who reviews it, how its comments and its merge stand.
     public var facts: [Fact]
+    /// Facts that say less, shown only when you ask for all of it: who wrote it, its branch, a session's project and mode.
+    public var more: [Fact]
     /// The pipelines that ran on it, the one that needs you most first.
     public var runs: [Run]
     /// What's been done so far, as the thing recorded it: a Copilot session's checkpoints and last words.
     public var account: Account?
+    /// Its longer texts, such as a work item's description and latest comments: for a summary of it, not for its row.
+    public var notes: [Fact]
+    /// What it doesn't say, and why: "Builds and comments aren't read for pull requests you're not on."
+    public var footnote: String?
 
-    public init(sentence: String, date: Date? = nil, facts: [Fact] = [], runs: [Run] = [], account: Account? = nil) {
+    public init(
+        sentence: String, date: Date? = nil, facts: [Fact] = [], more: [Fact] = [], runs: [Run] = [], account: Account? = nil,
+        notes: [Fact] = [], footnote: String? = nil
+    ) {
         self.sentence = sentence
         self.date = date
         self.facts = facts
+        self.more = more
         self.runs = runs
         self.account = account
+        self.notes = notes
+        self.footnote = footnote
     }
 
     /// A fact in a word or a few: "Reviewers": "Priya approved · Sam hasn't voted".
@@ -102,13 +114,19 @@ public struct ItemStory: Sendable, Equatable {
     }
 
     /// The two told together, as two sources tell about the same thing, such as a task Azure DevOps sent to Copilot and
-    /// what Copilot recorded of it: the first sentence that says something, both's facts and runs, without a fact told
-    /// twice, the first account that says something, unless only the other has checkpoints, and the newer date.
+    /// what Copilot recorded of it: the first sentence and footnote that say something, both's facts, runs and notes,
+    /// without a fact or a note told twice, the first account that says something, unless only the other has checkpoints,
+    /// and the newer date.
     public func merged(with other: ItemStory) -> ItemStory {
         var merged = self
         if merged.sentence.isEmpty { merged.sentence = other.sentence }
-        for fact in other.facts where !merged.facts.contains(where: { $0.label == fact.label }) {
+        if merged.footnote == nil { merged.footnote = other.footnote }
+        let told = { (label: String) in merged.facts.contains { $0.label == label } || merged.more.contains { $0.label == label } }
+        for fact in other.facts where !told(fact.label) {
             merged.facts.append(fact)
+        }
+        for fact in other.more where !told(fact.label) {
+            merged.more.append(fact)
         }
         let runs = other.runs.filter { run in !merged.runs.contains(run) }
         merged.runs += runs
@@ -116,13 +134,15 @@ public struct ItemStory: Sendable, Equatable {
             let mine = merged.account.flatMap { $0.isEmpty ? nil : $0 }
             if mine == nil || (mine?.milestones.isEmpty == true && !account.milestones.isEmpty) { merged.account = account }
         }
+        merged.notes += other.notes.filter { note in !self.notes.contains { $0.label == note.label } }
         if let date = other.date { merged.date = max(merged.date ?? date, date) }
         return merged
     }
 
     /// Whether it says nothing more than its row.
     public var isEmpty: Bool {
-        sentence.isEmpty && facts.isEmpty && runs.isEmpty && (account?.isEmpty ?? true)
+        sentence.isEmpty && facts.isEmpty && more.isEmpty && runs.isEmpty && (account?.isEmpty ?? true) && notes.isEmpty
+            && footnote == nil
     }
 }
 

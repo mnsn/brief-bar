@@ -2,17 +2,20 @@ import BriefBarCore
 import Foundation
 
 extension GitHubPRSnapshot {
-    /// What BriefBar can tell about it beyond its row, from what its query read: where it stands, who wrote it, its
-    /// reviews, how its merge stands, its branch, and its checks.
+    /// What BriefBar can tell about it beyond its row, from what its query read: where it stands, its reviews, how its
+    /// merge stands, and its checks; and, saying less, who wrote it and its branch.
     public var story: ItemStory {
         var facts: [ItemStory.Fact] = []
-        if role == .reviewer, let author = pullRequest.author { facts.append(ItemStory.Fact("Author", author)) }
         if let reviews = latestReviews { facts.append(ItemStory.Fact("Reviews", reviews)) }
         let merge = [pullRequest.hasConflicts ? "Conflicts" : nil, pullRequest.isDraft ? "Draft" : nil].compactMap { $0 }
         if !merge.isEmpty { facts.append(ItemStory.Fact("Merge", merge.joined(separator: " · "))) }
-        if let branch = pullRequest.branch, !branch.isEmpty { facts.append(ItemStory.Fact("Branch", branch)) }
+        var more: [ItemStory.Fact] = []
+        if role == .reviewer, let author = pullRequest.author { more.append(ItemStory.Fact("Author", author)) }
+        if let branch = pullRequest.branch, !branch.isEmpty { more.append(ItemStory.Fact("Branch", branch)) }
         let sentence = [headline, detail ?? ""].filter { !$0.isEmpty }.joined(separator: ": ")
-        return ItemStory(sentence: StoryText.line(sentence, limit: 160), date: since, facts: facts, runs: checksRun.map { [$0] } ?? [])
+        return ItemStory(
+            sentence: StoryText.line(sentence, limit: 160), date: since, facts: facts, more: more, runs: checksRun.map { [$0] } ?? []
+        )
     }
 
     /// "alice approved · bob requested changes": each reviewer's latest review that approves or requests changes; nil

@@ -137,6 +137,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             .sink { [weak details] account in MainActor.assumeIsolated { details?.accountChanged(account) } }
             .store(in: &cancellables)
         self.details = details
+        workLinks?.details = details
         return store
     }
 
