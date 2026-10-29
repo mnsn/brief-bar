@@ -169,12 +169,15 @@ public struct SessionLogState: Sendable, Equatable {
                 return .needsPermission(permission)
             }
             let tools = pendingTools.values.sorted { Self.earlier($0.startedAt, $1.startedAt) }
-            // Its own question before one it relays for a session it coordinates, which may show as work instead.
-            if let question = tools.first(where: { $0.name == "ask_user" }) ?? tools.first(where: \.relaysQuestion) {
+            if let question = tools.first(where: { $0.name == "ask_user" }) {
                 return .needsAnswer(question)
             }
             if let plan = tools.first(where: { $0.name == "exit_plan_mode" }) {
                 return .needsPlanApproval(plan)
+            }
+            // Only then a question it relays for a session it coordinates, which may show as work instead.
+            if let relay = tools.first(where: \.relaysQuestion) {
+                return .needsAnswer(relay)
             }
         }
         switch phase {

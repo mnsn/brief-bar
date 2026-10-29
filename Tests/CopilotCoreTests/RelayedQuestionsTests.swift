@@ -120,6 +120,11 @@ private let relayedOnce = ResolverOptions(showRelayedQuestionsOnce: true)
         #expect(phases(permission, asking("Push?", at: t(40))) == ["child": .permission, "coordinator": .question])
         // A relay is only of a question.
         #expect(phases(plan, coordinator: nil, relaying("child", at: t(40))) == ["child": .planApproval, "coordinator": .question])
+        // A coordinator whose own plan waits shows that, so the question it relays needs you in its session too.
+        let relayingWithAPlan = relaying("child", at: t(40)) + [
+            Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "Ship on Friday."], at: t(41)),
+        ]
+        #expect(phases(asking("Which color?", at: t(10)), relayingWithAPlan) == ["child": .question, "coordinator": .planApproval])
         // A coordinator that isn't listed asks nothing here.
         let alone = merged([record("child", "Pick colors", coordinator: "coordinator", plan)])
         #expect(alone["child"]?.reason == .planApproval)

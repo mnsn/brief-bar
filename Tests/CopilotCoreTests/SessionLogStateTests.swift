@@ -92,6 +92,11 @@ import Testing
         #expect(both.activity == .needsAnswer(PendingTool(
             callId: "q", name: "ask_user", startedAt: t(5), question: "Ship it?", choices: []
         )))
+        // So does its own plan.
+        let planning = logState(relaying + [Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "Ship it."], at: t(5))])
+        #expect(planning.activity == .needsPlanApproval(PendingTool(
+            callId: "p", name: "exit_plan_mode", startedAt: t(5), choices: [], planSummary: "Ship it."
+        )))
     }
 
     @Test func permissionsComeFirstThenQuestionsThenPlans() {

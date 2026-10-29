@@ -1367,15 +1367,16 @@ it applies. A few more details:
   in the coordinator: answered there, it's passed on. A relayed question answered in the session ends
   the relay too, but a plan approved in the session itself leaves the coordinator's question waiting,
   and its approval then fails. With the setting on, a relay counts as waiting for your answer, with the
-  words of the question it relays. Once the coordinator asks, by a relay that names the session or by a
-  question of its own that started after the session began waiting, the session moves to **Running**
-  as **Answer in “…”**, and clicking it opens the coordinator. Every other session it coordinates that
-  had been waiting since before moves with it, since the coordinator brings them up next. The
-  coordinator stays in **Needs you**, timed from the longest wait among them. When a coordinator's own
-  question is asked for in turn, by the session coordinating it, they all point to the session that
-  asks you in the end. Until the coordinator asks, the session needs you on its own. Permission prompts
-  are never asked for: only the session itself can answer one. With the setting off, a relay shows as
-  **Working**, as it did before, and the session it relays for needs you on its own.
+  words of the question it relays, after any question or plan of the coordinator's own, which comes
+  first. Once the coordinator asks, by a relay that names the session or by a question of its own that
+  started after the session began waiting, the session moves to **Running** as **Answer in “…”**, and
+  clicking it opens the coordinator. Every other session it coordinates that had been waiting since
+  before moves with it, since the coordinator brings them up next. The coordinator stays in **Needs
+  you**, timed from the longest wait among them. When a coordinator's own question is asked for in
+  turn, by the session coordinating it, they all point to the session that asks you in the end. Until
+  the coordinator asks, the session needs you on its own. Permission prompts are never asked for: only
+  the session itself can answer one. With the setting off, a relay shows as **Working**, as it did
+  before, and the session it relays for needs you on its own.
 - **Show Context Usage** shows the app's latest measurement of each session's context window
   (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
   limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns
