@@ -237,11 +237,12 @@ final class CopilotTasksStore: ObservableObject {
         Set(settings.copilotRepositories.values).sorted().map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
-    /// Your login shell's environment: the one asked for last, unless `fresh`.
+    /// Your login shell's environment: the one asked for last, unless `fresh`. One asked for by a task that's cancelled
+    /// meanwhile, such as a window's that closed, isn't kept: its shell may have been stopped before it said it all.
     func environment(fresh: Bool = false) async -> [String: String] {
         if !fresh, let loginEnvironment { return loginEnvironment }
         let environment = await LoginEnvironment.load()
-        loginEnvironment = environment
+        if !Task.isCancelled { loginEnvironment = environment }
         return environment
     }
 

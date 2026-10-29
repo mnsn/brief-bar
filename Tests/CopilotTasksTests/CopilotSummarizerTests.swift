@@ -80,4 +80,79 @@ import Testing
         _ = await summarizer.summarize("Two", options: options)
         #expect(loads.withLock { $0 } == 1)
     }
+
+    @Test func cancelledWhileYourEnvironmentLoadsItStartsNothing() async throws {
+        let folder = folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let loads = Mutex(0)
+        let gate = Gate()
+        let copilot = self.copilot
+        let runner = FakeRunner { _ in .ok("HEADLINE: Done.") }
+        let summarizer = CopilotSummarizer(
+            runner: runner, folder: folder,
+            loadEnvironment: {
+                loads.withLock { $0 += 1 }
+                await gate.wait()
+                return ["PATH": "/opt/homebrew/bin:/usr/bin"]
+            },
+            locate: { _ in copilot }
+        )
+        let options = self.options
+        let summary = Task { await summarizer.summarize("Sum it up", options: options) }
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        summary.cancel()
+        gate.open()
+        #expect(await summary.value == .failure(.cancelled))
+        #expect(runner.arguments.isEmpty)
+        // What the shell said by then isn't kept: it's asked again.
+        #expect(await summarizer.summarize("Sum it up", options: options) == .success("HEADLINE: Done."))
+        #expect(loads.withLock { $0 } == 2)
+        #expect(runner.arguments.count == 1)
+    }
+
+    @Test func cancelledWhileCopilotWritesItSaysSo() async {
+        let folder = folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let copilot = self.copilot
+        let summarizer = CopilotSummarizer(
+            runner: CancelledRunner(), folder: folder, loadEnvironment: { [:] }, locate: { _ in copilot }
+        )
+        #expect(await summarizer.summarize("Sum it up", options: options) == .failure(.cancelled))
+    }
+
+    /// Stopped, as `ProcessRunner` is once its task is cancelled.
+    private struct CancelledRunner: ProcessRunning {
+        func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
+            throw CancellationError()
+        }
+    }
+
+    /// Holds what waits until it's let go.
+    private final class Gate: Sendable {
+        private let state = Mutex<(opened: Bool, waiting: CheckedContinuation<Void, Never>?)>((false, nil))
+
+        var isWaiting: Bool { state.withLock { $0.waiting != nil } }
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                let open = state.withLock { state in
+                    if state.opened { return true }
+                    state.waiting = continuation
+                    return false
+                }
+                if open { continuation.resume() }
+            }
+        }
+
+        func open() {
+            let waiting = state.withLock { state in
+                state.opened = true
+                defer { state.waiting = nil }
+                return state.waiting
+            }
+            waiting?.resume()
+        }
+    }
 }

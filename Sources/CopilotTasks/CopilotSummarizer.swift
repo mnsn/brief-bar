@@ -5,7 +5,7 @@ import Foundation
 /// requests' comments, is only ever something to write about. It can't run a command, read or change a file, or reach a
 /// web page for it. It runs in a folder of BriefBar's own, without your custom instructions or the built-in MCP servers,
 /// in a session of its own named "BriefBar summary", which the CLI keeps, as it keeps every session, and which the
-/// Copilot app doesn't list. Nothing runs unless you ask for a summary.
+/// Copilot app doesn't list. Nothing runs unless you ask for a summary, and what runs stops when the summary's cancelled.
 public actor CopilotSummarizer {
     public enum Failure: Error, Sendable, Equatable {
         /// No `copilot` was found.
@@ -16,6 +16,8 @@ public actor CopilotSummarizer {
         case empty
         /// It took longer than `timeout`.
         case timedOut
+        /// It was cancelled: Copilot didn't start, or was stopped.
+        case cancelled
 
         /// Why there's no summary, for you.
         public var message: String {
@@ -24,6 +26,7 @@ public actor CopilotSummarizer {
             case .failed(let reason): return "Copilot couldn't write it: \(reason)"
             case .empty: return "Copilot answered nothing."
             case .timedOut: return "Copilot took too long to answer."
+            case .cancelled: return "The summary was cancelled."
             }
         }
     }
@@ -74,11 +77,13 @@ public actor CopilotSummarizer {
         return arguments
     }
 
-    /// What the model answered to the prompt, or why there's no answer.
+    /// What the model answered to the prompt, or why there's no answer. Cancelled, it runs nothing more: Copilot doesn't
+    /// start, or it's stopped, with whatever it started.
     public func summarize(_ prompt: String, options: CopilotRunOptions) async -> Result<String, Failure> {
-        let environment = await self.loadedEnvironment()
+        guard let environment = await loadedEnvironment() else { return .failure(.cancelled) }
         guard let copilot = locate(environment) else { return .failure(.noCLI) }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard !Task.isCancelled else { return .failure(.cancelled) }
         let started = Date()
         let result: ProcessResult
         do {
@@ -86,6 +91,8 @@ public actor CopilotSummarizer {
                 copilot, arguments: Self.arguments(prompt: prompt, options: options, folder: folder), environment: environment,
                 timeout: Self.timeout
             )
+        } catch is CancellationError {
+            return .failure(.cancelled)
         } catch {
             return .failure(.failed(String(describing: error)))
         }
@@ -95,9 +102,12 @@ public actor CopilotSummarizer {
         return answer.isEmpty ? .failure(.empty) : .success(answer)
     }
 
-    private func loadedEnvironment() async -> [String: String] {
+    /// Your login shell's environment, asked for once; nil when the summary was cancelled meanwhile, and then it's asked
+    /// again next time, since the shell may have been stopped before it said it all.
+    private func loadedEnvironment() async -> [String: String]? {
         if let environment { return environment }
         let loaded = await loadEnvironment()
+        guard !Task.isCancelled else { return nil }
         environment = loaded
         return loaded
     }

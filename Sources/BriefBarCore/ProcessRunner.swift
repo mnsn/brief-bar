@@ -101,7 +101,8 @@ public enum ProcessRunnerError: Error, Sendable, Equatable, CustomStringConverti
 /// Runs a program to completion and collects its output, within the timeout. The program runs in a process group
 /// of its own, so at the timeout it ends with everything it started. Once it exits, output that something it started
 /// keeps open (a background upload, say) is waited for only briefly, and that is ended too. Like every program
-/// BriefBar starts, it's responsible for itself (see `Responsibility`).
+/// BriefBar starts, it's responsible for itself (see `Responsibility`). When its task is cancelled, the program ends as
+/// at the timeout and `run` throws `CancellationError`; cancelled before it starts, it doesn't start at all.
 public struct ProcessRunner: ProcessRunning {
     /// How long to wait for the output to end after the program exits.
     var drainTime: TimeInterval = 0.5
@@ -111,8 +112,15 @@ public struct ProcessRunner: ProcessRunning {
     public func run(
         _ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval
     ) async throws -> ProcessResult {
+        try Task.checkCancellation()
         let process = try SpawnedProcess(executable: executable, arguments: arguments, environment: environment)
-        return await process.result(timeout: timeout, drainTime: drainTime)
+        let result = await withTaskCancellationHandler {
+            await process.result(timeout: timeout, drainTime: drainTime)
+        } onCancel: {
+            process.stop()
+        }
+        try Task.checkCancellation()
+        return result
     }
 
     /// Starts a program that outlives BriefBar, such as the one that opens it again after it quits, in a
@@ -154,6 +162,10 @@ private final class SpawnedProcess: @unchecked Sendable {
     private var status: Int32?
     private var reaped = false
     private var continuation: CheckedContinuation<ProcessResult, Never>?
+    /// The result is out.
+    private var isDone = false
+    /// It was asked to stop, at the timeout or because its task was cancelled.
+    private var isEnding = false
 
     init(executable: URL, arguments: [String], environment: [String: String]?) throws {
         var stdout: [Int32] = [-1, -1]
@@ -222,6 +234,11 @@ private final class SpawnedProcess: @unchecked Sendable {
         }
     }
 
+    /// Ends it as the timeout does, for a task that's cancelled: at once, or once it starts being waited for.
+    func stop() {
+        queue.async { self.end() }
+    }
+
     private func start(_ continuation: CheckedContinuation<ProcessResult, Never>, timeout: TimeInterval, drainTime: TimeInterval) {
         self.continuation = continuation
         for (index, descriptor) in descriptors.enumerated() {
@@ -238,16 +255,19 @@ private final class SpawnedProcess: @unchecked Sendable {
         self.exitWatch = exitWatch
         // It may have exited before the watch began.
         reap(drainTime: drainTime, exited: false)
+        queue.asyncAfter(deadline: .now() + timeout) { self.end() }
+    }
 
-        // At the timeout, ask it (and whatever it started) to stop, then make it; and stop waiting soon after either way.
-        queue.asyncAfter(deadline: .now() + timeout) {
-            guard self.continuation != nil else { return }
-            killpg(self.pid, SIGTERM)
-            self.queue.asyncAfter(deadline: .now() + 1) {
-                guard self.continuation != nil else { return }
-                killpg(self.pid, SIGKILL)
-                self.queue.asyncAfter(deadline: .now() + 2) { self.stopReading(status: SIGKILL) }
-            }
+    /// Asks it, and whatever it started, to stop, then makes it; and stops waiting soon after either way. Nothing once the
+    /// result is out: its process group may be gone, and its number someone else's.
+    private func end() {
+        guard !isDone, !isEnding else { return }
+        isEnding = true
+        killpg(pid, SIGTERM)
+        queue.asyncAfter(deadline: .now() + 1) {
+            guard !self.isDone else { return }
+            killpg(self.pid, SIGKILL)
+            self.queue.asyncAfter(deadline: .now() + 2) { self.stopReading(status: SIGKILL) }
         }
     }
 
@@ -302,6 +322,7 @@ private final class SpawnedProcess: @unchecked Sendable {
     private func finishIfDone() {
         guard let continuation, let status, reading.allSatisfy(\.isCancelled) else { return }
         self.continuation = nil
+        isDone = true
         continuation.resume(returning: ProcessResult(status: status, stdout: output[0], stderr: output[1]))
     }
 }
