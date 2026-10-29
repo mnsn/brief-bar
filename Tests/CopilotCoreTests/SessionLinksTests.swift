@@ -60,12 +60,17 @@ import Testing
             let sessions = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url, links: true).sessions.map { ($0.id, $0) })
             #expect(sessions[Self.created]?.links == SessionLinks(
                 gitHubRepository: "octo/shop-web", folder: "shop-web",
-                pullRequests: [RecordedPullRequest(repository: "octo/shop-web", number: 12, url: "https://github.com/octo/shop-web/pull/12")]
+                pullRequests: [RecordedPullRequest(
+                    repository: "octo/shop-web", number: 12, url: "https://github.com/octo/shop-web/pull/12", role: .opened
+                )]
             ))
             #expect(sessions[Self.created]?.links?.pullRequests.compactMap(\.ref) == [.gitHubPullRequest(repository: "octo/shop-web", number: 12)])
             #expect(sessions[Self.started]?.links?.pullRequests.compactMap(\.ref) == [.pullRequest(organization: "contoso", number: 4071)])
+            #expect(sessions[Self.started]?.links?.pullRequests.map(\.role) == [.startedFrom])
             #expect(sessions[Self.started]?.links?.gitHubRepository == nil)
             #expect(sessions[Self.provided]?.links?.pullRequests.compactMap(\.ref) == [.pullRequest(organization: "contoso", number: 4072)])
+            // A provider's link doesn't say whether the session started from it or opened it.
+            #expect(sessions[Self.provided]?.links?.pullRequests.map(\.role) == [nil])
 
             // What a session's snapshot shows comes with it.
             let record = SessionRecord(meta: try #require(sessions[Self.created]), log: nil)
@@ -95,5 +100,32 @@ import Testing
         // Its link wins over the rest.
         #expect(RecordedPullRequest(repository: "octo/other", number: 1, url: "https://github.com/octo/shop-web/pull/12").ref
             == .gitHubPullRequest(repository: "octo/shop-web", number: 12))
+    }
+
+    /// What Show Links, and agents, link a session by: its branch in its project's repository, and the pull requests the
+    /// app records with it.
+    @Test func aSessionIsLinkedByItsBranchAndWhatTheAppRecords() throws {
+        let id = Self.created
+        var session = SessionSnapshot(
+            id: id, name: "Save items for later", projectName: "shop-web", branch: "refs/heads/saved-items", isChat: false, mode: nil,
+            phase: .idle, reason: .finished, headline: "Finished", detail: nil, choices: [], since: nil
+        )
+        #expect(session.branchHint == BranchHint(branch: "saved-items", repositories: ["shop-web"]))
+        #expect(session.recordedLinks.isEmpty)
+
+        session.links = SessionLinks(
+            gitHubRepository: "octo/storefront", folder: "storefront-web",
+            pullRequests: [
+                RecordedPullRequest(repository: nil, number: 4091, url: "https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4091", role: .opened),
+                RecordedPullRequest(repository: nil, number: nil, url: "provider://not-a-pull-request"),
+            ]
+        )
+        #expect(session.branchHint?.repositories == ["shop-web", "storefront-web", "octo/storefront", "storefront"])
+        let ref = try #require(ItemRef.session(id))
+        #expect(session.recordedLinks == [ItemLink(ref, .pullRequest(organization: "contoso", number: 4091), origin: .copilot)])
+
+        // A chat works on no branch.
+        session.isChat = true
+        #expect(session.branchHint == nil)
     }
 }

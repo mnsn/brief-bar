@@ -6,6 +6,12 @@ import Foundation
 /// undocumented, so any part of it may be missing. Each file is opened without following a symbolic link below the
 /// Copilot folder, and only so much of it is read. It reads the disk, so not on the main thread; it logs nothing.
 public enum SessionAccount {
+    /// Where an account comes from, as its caption says it: a session's checkpoints, the summary it finished with, or,
+    /// with neither, its last message.
+    public static let fromCheckpoints = "Copilot's notes"
+    public static let fromReport = "Copilot's report"
+    public static let fromLastMessage = "Copilot's last message"
+
     /// What the session recorded: its checkpoints' titles, the latest one's overview, what's done and what's next, and
     /// what it said after that; without checkpoints, the summary it finished with, or else its last message. Nil when
     /// it recorded nothing, and for an ID that isn't a session's, a UUID.
@@ -20,7 +26,7 @@ public enum SessionAccount {
         guard !checkpoints.isEmpty else { return account(words) }
 
         var account = ItemStory.Account(
-            source: "Copilot's notes", milestones: checkpoints.suffix(max(maxMilestones, 0)).map(\.title),
+            source: fromCheckpoints, milestones: checkpoints.suffix(max(maxMilestones, 0)).map(\.title),
             milestoneCount: checkpoints.count
         )
         if let file = checkpoints.last(where: { $0.file != nil })?.file,
@@ -51,7 +57,7 @@ public enum SessionAccount {
         let message = words.message.flatMap { nonEmpty(plain($0.text, limit: 700)) }
         let date = [words.summary?.date, words.message?.date].compactMap { $0 }.max()
         if let summary {
-            var account = ItemStory.Account(source: "Copilot's report", date: date, overview: summary)
+            var account = ItemStory.Account(source: fromReport, date: date, overview: summary)
             if let message, message != summary,
                (words.message?.date ?? .distantPast) > (words.summary?.date ?? .distantPast) {
                 account.lastMessage = words.message.flatMap { nonEmpty(plain($0.text, limit: 600)) }
@@ -59,7 +65,7 @@ public enum SessionAccount {
             return account
         }
         return message.map { message in
-            ItemStory.Account(source: "Copilot's last message", date: words.message?.date, overview: message)
+            ItemStory.Account(source: fromLastMessage, date: words.message?.date, overview: message)
         }
     }
 
