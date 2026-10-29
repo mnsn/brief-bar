@@ -22,6 +22,10 @@ enum Renderer {
         // Never the app's own preferences: a copy of them in memory, or the demo's.
         let model = AppModel(demo: demo, rendering: true)
         model.placeSections()
+        // BRIEFBAR_RENDER_TEXT_SIZE=150: windows' pages with bigger text, as Settings › Appearance chooses.
+        if let percent = Attribution.environment["BRIEFBAR_RENDER_TEXT_SIZE"].flatMap({ Int($0) }) {
+            model.services.setTextSize(TextSize(percent: percent))
+        }
         let sources = model.onSources
         var loaded = false
         // In the demo, a summary under a pull request's row and under a session's, kept aside for their own pictures.
@@ -352,6 +356,7 @@ enum Renderer {
 
             if demo {
                 let savedInterface = model.services.interfaceOptions
+                let savedTextSize = model.services.textSize
                 func interfaceExample(_ enabled: Set<InterfaceOption>, name: String) {
                     for option in InterfaceOption.allCases {
                         model.services.setInterfaceOption(option, enabled: enabled.contains(option))
@@ -381,11 +386,15 @@ enum Renderer {
                 for option in InterfaceOption.allCases {
                     interfaceExample([option], name: option.rawValue)
                 }
+                // The largest text, on its own and with every option.
+                model.services.setTextSize(TextSize(percent: TextSize.percentages.last ?? 100))
+                interfaceExample([], name: "textSize")
                 interfaceExample(Set(InterfaceOption.allCases), name: "all")
                 page(.appearance, name: "appearance-enabled")
                 for option in InterfaceOption.allCases {
                     model.services.setInterfaceOption(option, enabled: savedInterface[option])
                 }
+                model.services.setTextSize(savedTextSize)
             }
         }
         written.forEach { print($0) }

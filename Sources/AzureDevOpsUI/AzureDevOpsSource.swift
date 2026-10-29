@@ -608,6 +608,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                     .environmentObject(details)
                     .environment(\.whereItStandsFolded, suffix == "-folded" ? true : nil)
                     .environment(\.panelStyle, .page)
+                    .textSize(from: services)
                     .frame(width: size.width, height: size.height)
                     .background(WindowBackdrop())
                     .environment(\.isRendering, true)
@@ -676,7 +677,7 @@ struct SignInStatusView: View {
                 .foregroundStyle(ok ? .green : .orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -753,7 +754,7 @@ struct WorkPanelView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }

@@ -171,7 +171,7 @@ struct SprintPage: View {
         } else if sprint.isRefreshing || !sprint.hasLoaded {
             VStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Loading your sprint…").foregroundStyle(.secondary)
+                Text("Loading your sprint…").font(style: .body).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -217,7 +217,7 @@ struct SprintPage: View {
                     HStack(spacing: 6) {
                         SectionTitle(column: .done, title: "Done", count: done.count)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(size: 10, weight: .bold)
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(showDone ? 90 : 0))
                     }
@@ -270,12 +270,12 @@ private struct SectionTitle: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
                 .foregroundStyle(color)
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(size: 15, weight: .semibold)
             Text("\(count)")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .font(size: 12, weight: .semibold).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 1.5)
@@ -350,17 +350,17 @@ private struct SprintHero: View {
         return HStack(spacing: 14) {
             ProgressRing(value: fraction, colors: [Color(red: 0.20, green: 0.78, blue: 0.55), Color(red: 0.15, green: 0.68, blue: 0.35)]) {
                 Text("\(Int((fraction * 100).rounded()))%")
-                    .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(size: 14, weight: .bold, design: .rounded).monospacedDigit()
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(total == 0 ? "No tasks" : "\(doneCount) of \(total) \(total == 1 ? "task" : "tasks") done")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
                 Text("\(board.count(in: .inProgress)) in progress · \(board.count(in: .toDo)) to do")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
                 if board.remainingWork > 0 {
                     Text("\(Hours.text(board.remainingWork)) of work left")
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -378,24 +378,24 @@ private struct SprintHero: View {
             ) {
                 VStack(spacing: -2) {
                     Text(left.map(String.init) ?? "–")
-                        .font(.system(size: 17, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(size: 17, weight: .bold, design: .rounded).monospacedDigit()
                     Text(left == 1 ? "day" : "days")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(size: 9, weight: .medium)
                         .foregroundStyle(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(daysLeft(left))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
                     .foregroundStyle(urgent ? Color.orange : .primary)
                 if let day = sprint.day(now: now), let length = sprint.length {
                     Text("Day \(day) of \(length)")
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                 }
                 if let start = sprint.start, let finish = sprint.finish {
                     Text(SprintDates.range(start, finish))
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -420,7 +420,7 @@ private struct SprintHero: View {
             HStack(spacing: 6) {
                 Avatar(name: DisplayName.me(in: mine), size: 18, isMe: true)
                 Text("Your work")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
             }
             HStack(spacing: 14) {
                 stat(.inProgress, inProgress)
@@ -429,7 +429,7 @@ private struct SprintHero: View {
             }
             if hours > 0 {
                 Text("\(Hours.text(hours)) left for you")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
             }
         }
@@ -438,10 +438,10 @@ private struct SprintHero: View {
     private func stat(_ column: SprintBoard.Column, _ count: Int) -> some View {
         HStack(spacing: 4) {
             Image(systemName: column.symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(column.color)
             Text("\(count)")
-                .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                .font(size: 15, weight: .bold, design: .rounded).monospacedDigit()
         }
         .help("\(count) \(column.title.lowercased())")
     }
@@ -487,7 +487,7 @@ private struct StoryCard: View {
                                 .labelStyle(.titleAndIcon)
                         }
                     }
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                 }
                 VStack(spacing: 1) {
@@ -501,14 +501,14 @@ private struct StoryCard: View {
                             withAnimation(.easeOut(duration: 0.15)) { showAll.toggle() }
                         }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .padding(.top, 4)
                     }
                 }
                 .padding(.horizontal, -6)
             } else if row.parent != nil {
                 Text("No tasks yet")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -530,8 +530,10 @@ private struct StoryCard: View {
                 HStack(spacing: 7) {
                     TypeBadge(item: parent, size: 20)
                     Text(String(parent.id))
-                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .font(size: 11.5, weight: .medium).monospacedDigit()
                         .foregroundStyle(.secondary)
+                        // Whole, however little room its links leave, as with bigger text.
+                        .fixedSize()
                     Spacer(minLength: 6)
                     WorkItemLinks(item: parent)
                     CopilotTaskControl(item: parent, isHovered: isHovered)
@@ -539,7 +541,7 @@ private struct StoryCard: View {
                 }
                 Button { open(parent) } label: {
                     Text(parent.title)
-                        .font(.system(size: 14.5, weight: .semibold))
+                        .font(size: 14.5, weight: .semibold)
                         .foregroundStyle(parent.isDone ? .secondary : .primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
@@ -563,7 +565,7 @@ private struct StoryCard: View {
                 HStack(spacing: 6) {
                     Avatar(name: parent.assignedTo?.name, size: 18, isMe: parent.isAssigned(to: me))
                     Text(parent.assignedTo?.name ?? "Unassigned")
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -571,9 +573,9 @@ private struct StoryCard: View {
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Tasks without a story")
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(size: 14.5, weight: .semibold)
                 Text("Their story isn't in this sprint, or they don't have one")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
             }
         }
@@ -598,18 +600,18 @@ private struct TaskLine: View {
             Button(action: open) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: task.stateSymbol)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(size: 13, weight: .medium)
                         .foregroundStyle(task.stateColor)
                         .frame(width: 16)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     if task.type.lowercased() != "task" {
                         Image(systemName: task.typeSymbol)
-                            .font(.system(size: 10))
+                            .font(size: 10)
                             .foregroundStyle(task.typeColor)
                             .help(task.type)
                     }
                     Text(task.title)
-                        .font(.system(size: 12.5, weight: task.category.column == .inProgress ? .medium : .regular))
+                        .font(size: 12.5, weight: task.category.column == .inProgress ? .medium : .regular)
                         .foregroundStyle(task.isDone ? .secondary : .primary)
                         .strikethrough(task.isDone, color: .secondary.opacity(0.6))
                         .multilineTextAlignment(.leading)
@@ -617,7 +619,7 @@ private struct TaskLine: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let remaining = task.remainingText {
                         Text(remaining)
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .font(size: 11, weight: .medium).monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -687,13 +689,13 @@ private struct DoneStrip: View {
                         HStack(spacing: 9) {
                             TypeBadge(item: parent, size: 18)
                             Text(parent.title)
-                                .font(.system(size: 12.5))
+                                .font(size: 12.5)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
                             if !row.tasks.isEmpty {
                                 Text("\(row.tasks.count) \(row.tasks.count == 1 ? "task" : "tasks")")
-                                    .font(.system(size: 11))
+                                    .font(size: 11)
                                     .foregroundStyle(.tertiary)
                             }
                             Avatar(name: parent.assignedTo?.name, size: 18)

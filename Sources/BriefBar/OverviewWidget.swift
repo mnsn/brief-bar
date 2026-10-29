@@ -109,11 +109,11 @@ struct OverviewWidgetView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         if text.isWritten {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(size: 10, weight: .semibold)
                                 .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(Self.gradient))
                         }
                         Text(text.text)
-                            .font(.system(size: options.readableRows ? 13 : 12, weight: .medium))
+                            .font(size: options.readableRows ? 13 : 12, weight: .medium)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +132,7 @@ struct OverviewWidgetView: View {
                     HStack(spacing: 8) {
                         mark(line.source)
                         Text(writer.text(for: line).text)
-                            .font(.system(size: options.readableRows ? 13 : 12))
+                            .font(size: options.readableRows ? 13 : 12)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 0)
@@ -155,13 +155,13 @@ struct OverviewWidgetView: View {
                         }
                     }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .frame(height: content.rowHeight)
                         .padding(.horizontal, 14)
                         .help("\(lines.more) more need you")
                 } else {
                     Text("\(lines.more) more need you")
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .foregroundStyle(.secondary)
                         .frame(height: content.rowHeight)
                         .padding(.horizontal, 14)
@@ -169,7 +169,7 @@ struct OverviewWidgetView: View {
             }
             if list.groups.isEmpty {
                 Text(list.sections.isEmpty ? "Turn on a source to see it here" : "Nothing needs you")
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 12)
@@ -185,17 +185,17 @@ struct OverviewWidgetView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: AppSymbols.app)
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(.secondary)
             Text("Overview")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             Spacer(minLength: 4)
             ForEach(list.groups) { group in
                 HStack(spacing: 2) {
                     Image(systemName: group.symbol)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(size: 10, weight: .semibold)
                     Text("\(group.entries.count)")
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .font(size: 12, weight: .semibold).monospacedDigit()
                 }
                 .foregroundStyle(group.state.color)
                 .help("\(group.title): \(group.entries.count)")
@@ -211,7 +211,7 @@ struct OverviewWidgetView: View {
     private func mark(_ id: SourceID) -> some View {
         let source = content.model.source(id)
         return Image(systemName: source?.symbol ?? "circle")
-            .font(.system(size: 10, weight: .semibold))
+            .font(size: 10, weight: .semibold)
             .foregroundStyle(options.quietAppearance ? Color.secondary : source?.sections.first?.tint ?? .secondary)
             .frame(width: 14)
             .help(source?.name ?? "")

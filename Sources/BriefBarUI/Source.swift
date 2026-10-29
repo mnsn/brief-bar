@@ -359,6 +359,8 @@ package final class AppServices: ObservableObject {
     /// Made-up data instead of yours (`--demo`).
     package let isDemo: Bool
     @Published package private(set) var interfaceOptions: InterfaceOptions
+    /// How big text is on windows' pages.
+    @Published package private(set) var textSize: TextSize
     package let loginItem: LoginItem
     package let notifier: Notifier
     /// What BriefBar notified you of lately, from every source: the Notifications page, which the notifier lists them on.
@@ -389,6 +391,7 @@ package final class AppServices: ObservableObject {
         self.defaults = defaults
         self.isDemo = isDemo
         interfaceOptions = InterfaceOptions.load(from: defaults)
+        textSize = TextSize.load(from: defaults)
         loginItem = LoginItem()
         recentNotifications = RecentNotifications(defaults: defaults, isDemo: isDemo)
         notifier = Notifier(recent: recentNotifications)
@@ -404,5 +407,11 @@ package final class AppServices: ObservableObject {
         guard changed != interfaceOptions else { return }
         interfaceOptions = changed
         changed.save(to: defaults)
+    }
+
+    package func setTextSize(_ size: TextSize) {
+        guard size != textSize else { return }
+        textSize = size
+        size.save(to: defaults)
     }
 }

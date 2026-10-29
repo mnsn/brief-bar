@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Make the text in BriefBar's windows bigger.** **Text Size in Windows**, in **Settings ›
+  Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
+  descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it
+  smaller. The menu bar's lists, the widgets and Settings keep their size.
+
 ## 0.9.0 - 2026-10-29
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
