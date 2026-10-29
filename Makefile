@@ -14,9 +14,13 @@ DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DI
 BRIEFBAR = $(shell swift build --arch arm64 --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
 	menubar-by-state-light menubar-by-state-dark widget-all-medium-light widget-all-medium-dark
-# The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
+# Window and detail pictures, as JPEG: their backgrounds would make PNGs several times larger.
 WINDOW_SHOTS := window-overview-light window-overview-dark \
-	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark
+	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark \
+	azureDevOps-sprint-details-light azureDevOps-sprint-details-dark \
+	azureDevOps-sprint-deep-page-light azureDevOps-sprint-deep-page-dark \
+	rows-summary-pull-requests-light rows-summary-pull-requests-dark \
+	azureDevOps-copilot-composer-light azureDevOps-copilot-composer-dark
 
 build:
 	swift build --arch arm64

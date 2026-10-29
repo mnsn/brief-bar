@@ -199,7 +199,7 @@ widest of the item's lists, and as tabs stop fitting, they get smaller, then bec
 then a menu. A popover opens from an invisible window over the item (`PopoverAnchor`), so it stays on
 the display you clicked: macOS moves an item's own window to whichever menu bar is active, and a click
 on an item can make another display's menu bar active, as the
-[FAQ in the README](../README.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
+[FAQ in the user guide](user-guide.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
 With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
 
 Every popover starts with **Overview**, which opens the window at its Overview
@@ -224,7 +224,7 @@ of the list or widget you opened it from, or at its Overview when no page is ask
 the page you left it at. BriefBar is a menu-bar app (`LSUIElement`): while a window or Settings is open,
 it shows a Dock icon and the usual menus, and it goes back once they're all closed. It needs the menu bar
 then: a click on a menu-bar item first makes the app the menu bar belongs to active again
-([FAQ](../README.md#why-did-clicking-briefbar-switch-my-other-displays-space)), whose windows would cover
+([FAQ](user-guide.md#why-did-clicking-briefbar-switch-my-other-displays-space)), whose windows would cover
 Settings, or whose Space macOS would switch to, each time you clicked an item to see what you arranged. An
 app only takes the menu bar as it becomes active, so when BriefBar already is, as when you open Settings
 from a list, it hands over to the Dock, which has no windows to bring forward, and comes straight back
@@ -613,7 +613,7 @@ updates SQLite's shared-memory index (`db-shm`) while it reads; neither changes 
 
 ### Deciding what's unread
 
-The [table in the README](../README.md#microsoft-teams) lists the rules. In more detail
+The [table in the user guide](user-guide.md#microsoft-teams) lists the rules. In more detail
 (`UnreadTracker` in `Sources/TeamsCore`):
 
 - **Arrival.** A chat message is unread if it was delivered after the chat was last read, or after
@@ -928,7 +928,7 @@ minute is plenty.
 
 ### How a pull request's group is decided
 
-The [groups table in the README](../README.md#azure-devops) lists them. In more detail:
+The [groups table in the user guide](user-guide.md#azure-devops) lists them. In more detail:
 
 **Checks.** Each branch policy becomes a check:
 
@@ -1504,7 +1504,7 @@ BriefBar never changes either of them:
 
 ### How a status is decided
 
-The [states table in the README](../README.md#github-copilot) lists every status and when
+The [states table in the user guide](user-guide.md#github-copilot) lists every status and when
 it applies. A few more details:
 
 - "Needs you" sorts the longest-waiting session first; the other groups show the most recent

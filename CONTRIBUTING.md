@@ -286,7 +286,7 @@ BriefBar with, but each build needs Full Disk Access again (see above). To keep 
 `make signing-identity` creates **BriefBar Signing** in your login keychain, with a key that no app may
 use without asking and that can't be exported. Each build then asks for your login password twice,
 for the updater and the app: click **Allow** only while your build is signing, never **Always Allow**
-([why](README.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
+([why](docs/user-guide.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
 that some app may use without asking, signs with the certificate's SHA-1 rather than its name, and
 checks the signature's certificate afterwards. `scripts/make-signing-identity.sh --check` reads the
 key's protection, `--replace` makes a new certificate and `--delete` goes back to ad hoc.
