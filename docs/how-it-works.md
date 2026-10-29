@@ -2097,6 +2097,10 @@ when BriefBar does.
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
 - **Full Disk Access survives**, because every release is signed with the same certificate.
+- **Installed with Homebrew**, it updates itself all the same. The cask, in
+  [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), says so (`auto_updates`), so
+  `brew upgrade` leaves it to the updater unless you add `--greedy`. The release workflow points the
+  cask at each release, with its zip's SHA-256 (`scripts/update-homebrew-cask.sh`).
 
 ## Checks
 
@@ -2128,5 +2132,9 @@ when BriefBar does.
   designated requirement stays the same. CI runs it on every package.
 - `make signing-key-check` checks, in throwaway keychains, everything that keeps a signing key safe
   (above).
+- `scripts/test-homebrew-cask.sh` (`make homebrew-cask-check`) runs the release workflow's last step,
+  `scripts/update-homebrew-cask.sh`, against a tap of its own, with no network and no key: it sets the
+  cask's version and SHA-256 in one commit, the same release again changes nothing, an older release
+  never replaces a newer one, and it refuses another zip for the same version. CI runs it.
 - `scripts/appcast-dry-run.sh` signs a packaged app's update and appcast with a throwaway key, the way
   a release does, and checks them as the app would.

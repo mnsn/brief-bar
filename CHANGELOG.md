@@ -7,6 +7,9 @@
   already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
   still start off and run only when you ask. If Apple Intelligence isn't ready or can't summarize
   an item, BriefBar explains why and never switches to Copilot automatically.
+- **Install it with Homebrew.** `brew install --cask mnsn/tap/briefbar` puts BriefBar in your
+  Applications folder, and each release updates the cask. BriefBar still updates itself, and since it
+  isn't notarized, macOS still asks you to allow it the first time you open it.
 
 ## 0.9.0 - 2026-10-29
 
