@@ -1,4 +1,5 @@
 import BriefBarCore
+import CopilotCore
 import Foundation
 
 /// Asks the Copilot CLI to write a summary, with no tools at all: what it's given, which others wrote, such as pull
@@ -79,10 +80,8 @@ public actor CopilotSummarizer {
     /// How long a summary may take.
     public static let timeout: TimeInterval = 120
     /// Where it runs: a folder of BriefBar's own, with nothing in it, so no project's instructions, skills or MCP servers
-    /// apply.
-    public static let defaultFolder = UserHome.url.appendingPathComponent(
-        "Library/Application Support/BriefBar/Copilot/Summaries", isDirectory: true
-    )
+    /// apply (`CopilotPaths.briefBarSummaries`).
+    public static let defaultFolder = CopilotPaths.briefBarSummaries
 
     private let runner: any ProcessRunning
     private let folder: URL

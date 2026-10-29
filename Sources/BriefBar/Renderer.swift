@@ -24,8 +24,10 @@ enum Renderer {
         model.placeSections()
         let sources = model.onSources
         var loaded = false
-        // In the demo, a summary under a pull request's row and under a session's, kept aside for their own pictures.
+        // In the demo, a summary under a pull request's row and under a session's, kept aside for their own pictures; and
+        // one of each pull request and session linked to the sprint, for their pages' pictures only.
         var rowSummaries: [(ItemRef, StorySummaries.State)] = []
+        var pageSummaries: [(ItemRef, StorySummaries.State)] = []
         Task {
             for source in sources { await source.loadForRendering() }
             // What's known of everything linked, for the details' pictures; and, in the demo, a made-up summary of each work
@@ -44,6 +46,11 @@ enum Renderer {
                 for ref in [replied, asking].compactMap({ $0 }) where summaries.canSummarize(ref) {
                     await summaries.summarizeAndWait(ref)
                     if let state = summaries.state(for: ref) { rowSummaries.append((ref, state)) }
+                    summaries.useForRendering(ref, state: nil)
+                }
+                for ref in links.linked([.pullRequest, .session]).sorted() where summaries.canSummarize(ref) {
+                    await summaries.summarizeAndWait(ref)
+                    if let state = summaries.state(for: ref) { pageSummaries.append((ref, state)) }
                     summaries.useForRendering(ref, state: nil)
                 }
             }
@@ -241,11 +248,14 @@ enum Renderer {
                 write(Snapshot.render(view, appearance: appearance), "window-notifications-\(suffix)")
             }
 
+            // The pages show their summaries; the lists' pictures, drawn already, don't.
+            for (ref, state) in pageSummaries { model.services.summaries.useForRendering(ref, state: state) }
             for source in sources {
                 for rendering in source.extraRenderings() {
                     write(Snapshot.render(rendering.view, appearance: appearance), "\(source.id.rawValue)-\(rendering.name)-\(suffix)")
                 }
             }
+            for (ref, _) in pageSummaries { model.services.summaries.useForRendering(ref, state: nil) }
 
             func page(_ destination: SettingsDestination, name: String) {
                 let navigation = SettingsNavigation()
@@ -309,11 +319,21 @@ enum Renderer {
                     write(Snapshot.render(view, appearance: appearance), "summary-\(name)-\(suffix)")
                 }
                 card("written")
+                // About to be written as it opened, then being written, at about the height it will be.
+                summaries.useForRendering(subject, state: nil)
+                if let wait = summaries.expect(subject, unlessActedSince: nil) {
+                    card("pending")
+                    summaries.stopExpecting(subject, wait)
+                }
                 summaries.useForRendering(subject, state: .writing(since: Date()))
                 card("writing")
-                // Written again: the one before shows meanwhile.
+                // Written again: the one before shows meanwhile; and when that one couldn't be written, as it was.
                 summaries.useForRendering(subject, state: .writing(since: Date()), previous: written)
                 card("updating")
+                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
+                    "Copilot took too long to answer."
+                ), at: Date()), previous: written)
+                card("not-updated")
                 summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
                     "Claude Haiku 5.5 isn't on your Copilot plan.",
                     detail: "Error: Model \"claude-haiku-5.5\" from --model flag is not available.", fix: .chooseModel

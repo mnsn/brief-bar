@@ -534,10 +534,9 @@ import Testing
                              color: .green, state: .done, status: "Ready to complete")
         let task = LinkedItem(ref: session, label: "5112: Round half up", title: "Copilot: 5112: Round half up", symbol: "paperplane.fill",
                               color: .blue, state: .running, status: "Working: Run the cart tests")
-        // One thing linked, and nothing of its own: its row says it all.
+        // One thing linked is enough: its description, comments or conversation say more than its row.
         publish(tasks: 0, linked: [fix])
-        #expect(!summaries.hasSomethingToSum(workItem))
-        // With its tasks, or another linked, there's something to sum up.
+        #expect(summaries.hasSomethingToSum(workItem))
         publish(tasks: 3, linked: [fix])
         #expect(summaries.hasSomethingToSum(workItem))
         publish(tasks: 0, linked: [fix, task])
@@ -689,10 +688,13 @@ import Testing
     }
 
     /// Opening a work item's details writes its summary, then shows that one again for nothing while it's current; once
-    /// what it summed up changes, opening it writes another. Not when you closed it, or chose to write them only when you ask.
+    /// what it summed up changes, opening it writes another, once that one's a while old. Not when you closed it, or chose
+    /// to write them only when you ask.
     @Test func openingOneWritesItsSummaryUnlessOneIsCurrent() async throws {
         let defaults = MemoryDefaults()
-        let (links, _, summaries) = hub(defaults: defaults)
+        let (links, stories, summaries) = hub(defaults: defaults)
+        var clock = Date(timeIntervalSince1970: 1_792_000_000)
+        summaries.now = { clock }
         publishWithTasks(links)
         let asked = Asked()
         summaries.write = writer(asked)
@@ -703,8 +705,12 @@ import Testing
         // Current: shown again for nothing.
         await summaries.opened(workItem)
         #expect(asked.prompts.count == 1)
-        // What it summed up changed: opening it again writes another.
+        // What it summed up changed: it's out of date, but opening it writes another only once it's a while old.
         publishWithTasks(links, status: "Completed")
+        #expect(summaries.isOutOfDate(workItem))
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 1)
+        clock += StorySummaries.rewriteAfter
         await summaries.opened(workItem)
         await waitForWriting(summaries, workItem)
         #expect(asked.prompts.count == 2)
@@ -721,13 +727,18 @@ import Testing
         #expect(asked.prompts.count == 2)
         #expect(defaults.object(forKey: StorySummaries.whenOpenedKey) as? Bool == false)
         #expect(!StorySummaries(defaults: defaults, links: links, stories: ItemStories(links: links), isDemo: false).writesWhenOpened)
-        // Nothing to sum up: a work item with one pull request and no tasks has no summary, as it has no ✨.
+        // Nothing to sum up: a work item with nothing linked has no summary, as it has no ✨.
         summaries.setWritesWhenOpened(true)
-        publish(links)
+        links.publish(.azureDevOps, links: [], items: [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .green, state: .done, status: "Ready to complete"),
+        ])
         summaries.dismiss(workItem)
         await summaries.opened(workItem)
         #expect(asked.prompts.count == 2)
         // A pull request's page sums up what's known of it, with nothing else linked.
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { _ in ItemStory(sentence: "Ready to complete") }
         await summaries.opened(pullRequest)
         await waitForWriting(summaries, pullRequest)
         #expect(asked.prompts.count == 3)
@@ -765,9 +776,77 @@ import Testing
         await waitForWriting(summaries, workItem)
         #expect(tries.prompts.count == 3)
         publishWithTasks(links, status: "Completed")
+        clock += StorySummaries.rewriteAfter
         await summaries.opened(workItem)
         await waitForWriting(summaries, workItem)
         #expect(tries.prompts.count == 4)
+    }
+
+    /// Before When came, summaries were written only when you asked: whoever had them on then keeps that; whoever turns
+    /// them on later has them written as they open things. Saved once, so it doesn't change later.
+    @Test func whoHadSummariesOnKeepsThemWrittenOnlyWhenTheyAsk() {
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        let before = MemoryDefaults()
+        before.set(true, forKey: StorySummaries.enabledKey)
+        let theirs = StorySummaries(defaults: before, links: links, stories: ItemStories(links: links), isDemo: false)
+        #expect(theirs.isOn && !theirs.writesWhenOpened)
+        #expect(before.object(forKey: StorySummaries.whenOpenedKey) as? Bool == false)
+        let fresh = MemoryDefaults()
+        let yours = StorySummaries(defaults: fresh, links: links, stories: ItemStories(links: links), isDemo: false)
+        #expect(yours.writesWhenOpened)
+        yours.setOn(true)
+        #expect(StorySummaries(defaults: fresh, links: links, stories: ItemStories(links: links), isDemo: false).writesWhenOpened)
+    }
+
+    /// As the details open a thing whose summary they'll write in a moment, its card shows already, as it will be; Not Now
+    /// keeps it from being written, this time; and once they stop waiting, it's gone, unless another wait took its place.
+    @Test func whatsAboutToBeWrittenShowsAndNotNowKeepsIt() async {
+        let (links, _, summaries) = hub()
+        publishWithTasks(links)
+        let asked = Asked()
+        summaries.write = writer(asked)
+        let acted = summaries.timesActed(on: workItem)
+        let wait = summaries.expect(workItem, unlessActedSince: acted)
+        #expect(wait != nil && summaries.isPending(workItem))
+        // Opened again meanwhile: the first wait ending says nothing.
+        let again = summaries.expect(workItem, unlessActedSince: acted)
+        summaries.stopExpecting(workItem, wait)
+        #expect(summaries.isPending(workItem))
+        summaries.stopExpecting(workItem, again)
+        #expect(!summaries.isPending(workItem))
+        // Not Now: nothing's written as it opened, and nothing's about to be.
+        _ = summaries.expect(workItem, unlessActedSince: acted)
+        summaries.notNow(workItem)
+        #expect(!summaries.isPending(workItem))
+        await summaries.opened(workItem, unlessActedSince: acted)
+        #expect(asked.prompts.isEmpty)
+        // Nothing waits where a summary is there already, or where there's nothing to sum up.
+        summaries.summarize(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(summaries.expect(workItem, unlessActedSince: nil) == nil)
+        #expect(summaries.expect(.workItem(organization: "contoso", id: 1), unlessActedSince: nil) == nil)
+    }
+
+    /// Closing one that couldn't be written again closes the one before it, kept to show again; and it's not tried again
+    /// by opening it any sooner.
+    @Test func closingOneThatCouldntBeWrittenAgainKeepsTheOneBefore() async {
+        let (links, _, summaries) = hub()
+        publishWithTasks(links)
+        summaries.write = { _, _ in .success("HEADLINE: Fixed in !4091.") }
+        await summaries.summarizeAndWait(workItem)
+        let first = summaries.state(for: workItem)
+        summaries.write = { _, _ in .failure(StorySummaries.Problem("Copilot took too long to answer.")) }
+        await summaries.summarizeAndWait(workItem)
+        guard case .failed? = summaries.state(for: workItem) else {
+            Issue.record("Didn't fail")
+            return
+        }
+        summaries.hide(workItem)
+        #expect(summaries.isHidden(workItem))
+        #expect(summaries.shownState(for: workItem) == nil)
+        summaries.show(workItem)
+        #expect(summaries.state(for: workItem) == first)
+        #expect(summaries.previous(for: workItem) == nil)
     }
 
     /// What you did since it opened stands: a summary you stopped, wrote, closed or showed again isn't written by

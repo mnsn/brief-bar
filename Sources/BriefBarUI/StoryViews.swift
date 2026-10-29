@@ -307,10 +307,16 @@ private struct StandingContent: View {
             .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.hasSomethingToSum(subject))") {
                 guard links.isOn, showsSummary, !isFolded, !isRendering else { return }
                 let acted = visit(subject)
+                // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.
+                let wait = summaries.expect(subject, unlessActedSince: acted)
+                defer { summaries.stopExpecting(subject, wait) }
                 try? await Task.sleep(for: StorySummaries.openedFor)
                 guard !Task.isCancelled else { return }
                 await summaries.opened(subject, unlessActedSince: acted)
             }
+            // The card coming, filling and going moves what's under it smoothly.
+            .animation(.easeOut(duration: 0.2), value: summaries.shownState(for: subject))
+            .animation(.easeOut(duration: 0.2), value: summaries.isPending(subject))
             // And each minute while it shows, for what changes without its row changing, such as a vote or a checkpoint.
             .background {
                 TimelineView(.periodic(from: .distantPast, by: ItemStories.freshFor)) { context in

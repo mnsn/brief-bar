@@ -3,8 +3,11 @@ import Foundation
 /// Fallback session discovery straight from `session-state/`, used only if the app database
 /// has never been readable. Lists sessions whose event log changed recently.
 public enum SessionStateScanner {
+    /// - Parameter summaries: where BriefBar's summaries are written (`CopilotPaths.briefBarSummaries`): the sessions
+    ///   that worked there aren't listed.
     public static func recentSessions(
-        paths: CopilotPaths, maxAge: TimeInterval = 24 * 3_600, now: Date = Date()
+        paths: CopilotPaths, maxAge: TimeInterval = 24 * 3_600, now: Date = Date(),
+        summaries: URL = CopilotPaths.briefBarSummaries
     ) -> [SessionMeta] {
         let fileManager = FileManager.default
         guard let directories = try? fileManager.contentsOfDirectory(
@@ -17,10 +20,13 @@ public enum SessionStateScanner {
                   let modified = attributes[.modificationDate] as? Date,
                   now.timeIntervalSince(modified) <= maxAge
             else { return nil }
+            let workspace = try? String(contentsOf: directory.appendingPathComponent("workspace.yaml"), encoding: .utf8)
+            // The Copilot CLI's sessions that wrote BriefBar's summaries are BriefBar's own, not yours.
+            if let workspace, isBriefBarSummary(workspace: workspace, summaries: summaries) { return nil }
             let id = directory.lastPathComponent
             return SessionMeta(
                 id: id,
-                name: workspaceName(in: directory) ?? "Session \(id.prefix(8))",
+                name: workspace.flatMap(name(inWorkspace:)) ?? "Session \(id.prefix(8))",
                 sessionType: "unknown",
                 isRunning: nil,
                 updatedAt: modified
@@ -31,8 +37,18 @@ public enum SessionStateScanner {
     static func workspaceName(in directory: URL) -> String? {
         let file = directory.appendingPathComponent("workspace.yaml")
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        // A name in double quotes can have line breaks, written `\n`.
-        return value("name", inWorkspace: text).map(PlainText.singleLine).flatMap { $0.isEmpty ? nil : $0 }
+        return name(inWorkspace: text)
+    }
+
+    /// A session's name in its `workspace.yaml`, on one line: a name in double quotes can have line breaks, written `\n`.
+    static func name(inWorkspace text: String) -> String? {
+        value("name", inWorkspace: text).map(PlainText.singleLine).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Whether a session ran in the folder where BriefBar has the Copilot CLI write its summaries.
+    static func isBriefBarSummary(workspace text: String, summaries: URL) -> Bool {
+        guard let cwd = value("cwd", inWorkspace: text) else { return false }
+        return URL(fileURLWithPath: cwd, isDirectory: true).standardizedFileURL.path == summaries.standardizedFileURL.path
     }
 
     /// One of the top-level values in a session's `workspace.yaml`, such as its `name`, or its `cwd`, the folder it

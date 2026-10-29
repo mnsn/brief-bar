@@ -94,10 +94,16 @@ private struct PageContent: View {
         .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.canSummarize(ref))") {
             guard links.isOn, !isRendering else { return }
             let acted = visit(ref)
+            // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.
+            let wait = summaries.expect(ref, unlessActedSince: acted)
+            defer { summaries.stopExpecting(ref, wait) }
             try? await Task.sleep(for: StorySummaries.openedFor)
             guard !Task.isCancelled else { return }
             await summaries.opened(ref, unlessActedSince: acted)
         }
+        // The card coming, filling and going moves what's under it smoothly.
+        .animation(.easeOut(duration: 0.2), value: summaries.shownState(for: ref))
+        .animation(.easeOut(duration: 0.2), value: summaries.isPending(ref))
         .onAppear { isTitleFocused = true }
     }
 
@@ -165,7 +171,7 @@ private struct PageContent: View {
                     }
                     .glassButtonStyle()
                     .help("Shows the summary you closed, as it was written")
-                } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
+                } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil, !summaries.isPending(ref) {
                     // Just "Summarize" where the whole of it doesn't fit.
                     ViewThatFits(in: .horizontal) {
                         summarize("Summarize with Copilot")

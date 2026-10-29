@@ -198,9 +198,17 @@ import Testing
         let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
         #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))
         #expect(StorySummaryPrompt.instructions.contains("When the data starts with READER, that's who reads this: call them you"))
-        #expect(StorySummaryPrompt.instructions.contains("already sees each item's Status line: never repeat it"))
+        #expect(StorySummaryPrompt.instructions.contains("already sees each item's title and Status line, and the lines after SHOWN: never repeat them"))
+        #expect(StorySummaryPrompt.instructions.contains("against the work item's description and acceptance criteria"))
         #expect(StorySummaryPrompt.instructions.contains("\nNEXT FOR: "))
         #expect(!StorySummaryPrompt.make(subject: subject, linked: []).contains("READER:"))
+        // What the reader sees beside it, such as who it all waits on, comes after who reads it, for the model not to repeat.
+        let shown = StorySummaryPrompt.make(
+            subject: subject, linked: [], reader: "Robin Diaz", shown: ["Waiting on: reviewers of Sam Rivera's !4120", " "]
+        )
+        #expect(shown.contains("<data>\nREADER: Robin Diaz\nSHOWN:\nWaiting on: reviewers of Sam Rivera's !4120\n\nWORK ITEM 5101:"))
+        #expect(StorySummaryPrompt.make(subject: subject, linked: [], shown: ["Waiting on: Copilot, on task 5103"])
+            .contains("<data>\nSHOWN:\nWaiting on: Copilot, on task 5103\n\nWORK ITEM 5101:"))
     }
 
     @Test func dataCantEndItselfOrCrowdOutTheRest() {

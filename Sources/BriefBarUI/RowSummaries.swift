@@ -79,41 +79,68 @@ private struct RowSummaryContent: View {
     private func line(_ state: StorySummaries.State) -> some View {
         switch state {
         case .writing:
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                ProgressView()
-                    .controlSize(.mini)
-                SummaryCard.writingText(summaries)
-                Button("Stop") { summaries.cancel(subject) }
-                    .buttonStyle(.borderless)
-                Spacer(minLength: 0)
+            // Written again, the one it replaces shows meanwhile, dimmed, with Stop.
+            if case .written(let summary, let at, let inputs, let model)? = summaries.previous(for: subject) {
+                written(summary, at: at, inputs: inputs, model: model, isUpdating: true)
+            } else {
+                writingLine
             }
-            .font(.system(size: options.rowDetailSize))
         case .written(let summary, let at, let inputs, let model):
             written(summary, at: at, inputs: inputs, model: model)
         case .failed(let problem, _):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("Couldn't summarize: \(problem.message)")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .help(problem.detail ?? "")
-                Button("Try Again") { summaries.summarize(subject) }
-                    .buttonStyle(.borderless)
-                    .fixedSize()
-                Spacer(minLength: 4)
-                Button("Close") { summaries.dismiss(subject) }
-                    .buttonStyle(.borderless)
-                    .fixedSize()
+            // Written again and couldn't be: the one before stays, with why at its foot.
+            if case .written(let summary, let at, let inputs, let model)? = summaries.previous(for: subject) {
+                written(summary, at: at, inputs: inputs, model: model, failure: problem)
+            } else {
+                failedLine(problem)
             }
-            .font(.system(size: options.rowDetailSize))
         }
     }
 
-    private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
-        let changed = summaries.whatChanged(subject)
+    private var writingLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            SummaryCard.writingText(summaries)
+            Button("Stop") { summaries.cancel(subject) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tint)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: options.rowDetailSize))
+    }
+
+    private func failedLine(_ problem: StorySummaries.Problem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Couldn't summarize: \(problem.message)")
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(problem.detail ?? "")
+            Button("Try Again") { summaries.summarize(subject) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tint)
+                .fixedSize()
+                .help("Asks Copilot again: 1 request")
+            Spacer(minLength: 4)
+            Button("Close") { summaries.dismiss(subject) }
+                .buttonStyle(.borderless)
+                .fixedSize()
+        }
+        .font(.system(size: options.rowDetailSize))
+    }
+
+    /// A written one; while another is written in its place, dimmed, with Stop; or, when that one couldn't be written, as
+    /// it was, with why at its foot.
+    private func written(
+        _ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String, isUpdating: Bool = false,
+        failure: StorySummaries.Problem? = nil
+    ) -> some View {
+        let changed = isUpdating || failure != nil ? nil : summaries.whatChanged(subject)
+        let isDimmed = isUpdating || changed != nil || failure != nil
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: "sparkles")
@@ -123,16 +150,28 @@ private struct RowSummaryContent: View {
                     .accessibilityHidden(true)
                 Text(summary.headline)
                     .font(.system(size: options.rowReasonSize, weight: .medium))
-                    .foregroundStyle(changed == nil ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                     // Never cut short, nor what's next: a sentence each, and what the rest is cut to make room for.
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 // Room for ✕; its time is in its tooltip, so that it isn't read as the row's.
                 Spacer(minLength: 24)
             }
-            // While you point at it, ✕, over the end of its first line, which it doesn't make any taller.
+            // While another is written in its place, that it is, with Stop, over the end of its first line; or, while you
+            // point at it, ✕; neither makes it any taller.
             .overlay(alignment: .topTrailing) {
-                if isHovered {
+                if isUpdating {
+                    HStack(spacing: 5) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Button("Stop") { summaries.cancel(subject) }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.tint)
+                            .font(.system(size: 11))
+                            .help("Stop, and keep the summary from \(at.formatted(date: .omitted, time: .shortened))")
+                    }
+                    .help(SummaryCard.writing(summaries))
+                } else if isHovered {
                     Button {
                         summaries.hide(subject)
                     } label: {
@@ -160,16 +199,17 @@ private struct RowSummaryContent: View {
             if let next = summary.next {
                 (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                     .font(.system(size: options.rowDetailSize))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .padding(.leading, Self.indent)
             }
             if let paragraph = summary.paragraph {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    // Quieter than what's next, and than the row: it's what explains the rest.
                     Text(paragraph)
                         .font(.system(size: options.rowDetailSize))
-                        .foregroundStyle(changed == nil ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(.secondary)
                         .lineLimit(showsMore ? nil : Self.paragraphLines)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -187,13 +227,29 @@ private struct RowSummaryContent: View {
                 .padding(.leading, Self.indent)
                 .padding(.top, 2)
             }
-            if let changed {
+            if let failure {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Couldn't update: \(failure.message)")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(failure.detail ?? "")
+                    Button("Try Again") { summaries.summarize(subject) }
+                        .foregroundStyle(.tint)
+                        .fixedSize()
+                        .help("Asks Copilot again: 1 request")
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11))
+                .padding(.leading, Self.indent)
+            } else if let changed {
                 HStack(spacing: 12) {
                     Text("Out of date")
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
                         .help("Since it was written: \(changed).")
                     Button("Summarize Again") { summaries.summarize(subject) }
+                        .foregroundStyle(.tint)
                         .help("Asks Copilot again: 1 request")
                 }
                 .buttonStyle(.borderless)

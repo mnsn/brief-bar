@@ -32,6 +32,13 @@ public struct CopilotPaths: Sendable, Equatable {
         return CopilotPaths(root: URL(fileURLWithPath: expanded, isDirectory: true))
     }
 
+    /// Where BriefBar runs the Copilot CLI to write summaries (`CopilotSummarizer`): a folder of its own, with nothing in
+    /// it, so no project's instructions, skills or MCP servers apply; and the sessions that worked there are BriefBar's,
+    /// not yours, so they're never listed.
+    public static let briefBarSummaries = UserHome.url.appendingPathComponent(
+        "Library/Application Support/BriefBar/Copilot/Summaries", isDirectory: true
+    )
+
     public var database: URL { root.appendingPathComponent("data.db") }
     /// SQLite's write-ahead log, where the app's commits land until a checkpoint.
     public var databaseWAL: URL { root.appendingPathComponent("data.db-wal") }

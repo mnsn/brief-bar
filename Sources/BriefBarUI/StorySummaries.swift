@@ -18,10 +18,13 @@ package final class StorySummaries: ObservableObject {
     /// A small, quick model: a summary needs little thinking.
     package static let defaultModel = "claude-haiku-5.5"
     /// How long a work item's details or a page shows something before its summary is written: one you only pass on
-    /// your way to another costs nothing.
-    package static let openedFor: Duration = .milliseconds(1_500)
+    /// your way to another costs nothing, and Not Now has time to keep it from being written.
+    package static let openedFor: Duration = .seconds(2)
     /// How long after a summary couldn't be written opening it again tries again by itself.
     static let retryAfter: TimeInterval = 10 * 60
+    /// How old one that's out of date is before opening it writes it again by itself: a session at work changes what it
+    /// says every few minutes, and ↻ writes it again sooner.
+    static let rewriteAfter: TimeInterval = 10 * 60
 
     /// The model, and how hard it thinks.
     package struct Options: Equatable, Sendable {
@@ -124,6 +127,10 @@ package final class StorySummaries: ObservableObject {
     @Published private var previous: [ItemRef: State] = [:]
     /// The written ones you closed, kept to show again without asking Copilot.
     @Published private var hidden: Set<ItemRef> = []
+    /// The ones the details or a page will write in a moment, as they open (`expect(_:unlessActedSince:)`), each with
+    /// which wait it is: their card shows as it will be, with Not Now, and ✨ doesn't.
+    @Published private var pending: [ItemRef: Int] = [:]
+    private var nextWait = 0
     /// How many times you wrote, stopped, closed or showed each one (`timesActed(on:)`).
     private var acted: [ItemRef: Int] = [:]
     /// When each last couldn't be written, until one is: opening it doesn't try again before `retryAfter`, even if you
@@ -157,6 +164,11 @@ package final class StorySummaries: ObservableObject {
         self.stories = stories
         isOn = isDemo || defaults.bool(forKey: Self.enabledKey)
         model = defaults.string(forKey: Self.modelKey).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultModel
+        // Before When came, summaries were written only when you asked: whoever had them on then keeps that, until they
+        // choose otherwise. Saved once, so it doesn't change for whoever turns them on later.
+        if !isDemo, defaults.object(forKey: Self.whenOpenedKey) == nil {
+            defaults.set(!defaults.bool(forKey: Self.enabledKey), forKey: Self.whenOpenedKey)
+        }
         writesWhenOpened = defaults.object(forKey: Self.whenOpenedKey) as? Bool ?? true
         // Turning Show Links off forgets every summary, and stops writing them.
         links.$isOn.removeDuplicates().filter { !$0 }
@@ -236,12 +248,10 @@ package final class StorySummaries: ObservableObject {
         previous[subject]
     }
 
-    /// Whether there's something to sum up: two things linked to it or more, or one and parts of its own, such as a story's
-    /// tasks. Nothing while this or Show Links is off.
+    /// Whether there's something to sum up: something linked to it, whose description, comments or conversation say more
+    /// than its row. Nothing while this or Show Links is off.
     package func hasSomethingToSum(_ subject: ItemRef) -> Bool {
-        guard isAvailable else { return false }
-        let linked = links.connections(of: subject).count
-        return linked >= 2 || (linked == 1 && links.describe(subject).parts > 0)
+        isAvailable && !links.connections(of: subject).isEmpty
     }
 
     /// Whether a pull request's or a session's row offers ✨ Summarize with Copilot: this and Show Links are on, and a
@@ -258,23 +268,60 @@ package final class StorySummaries: ObservableObject {
 
     /// A work item's details, or a pull request's or a session's page, has shown it for a moment (`openedFor`): writes its
     /// summary, while writing on open is on, unless one is being written, you closed it, or one is there that's still
-    /// current, once what it summed up is told as it is now; unless the last couldn't be written lately, even if you
-    /// closed what said so; and unless you wrote, stopped, closed or showed one for it since you opened it (`acted`, as
-    /// `timesActed(on:)` said then). A work item needs something to sum up, as ✨ does. Cancelled, as when it's closed, it
-    /// asks nothing.
+    /// current, once what it summed up is told as it is now, or was written less than `rewriteAfter` ago; unless the last
+    /// couldn't be written lately, even if you closed what said so; and unless you wrote, stopped, closed or showed one
+    /// for it since you opened it (`acted`, as `timesActed(on:)` said then). It needs something to sum up, as ✨ does.
+    /// Cancelled, as when it's closed, it asks nothing.
     package func opened(_ subject: ItemRef, unlessActedSince acted: Int? = nil) async {
-        func mayWrite() -> Bool {
-            isAvailable && writesWhenOpened && writing[subject] == nil && !hidden.contains(subject)
-                && acted.map { $0 == timesActed(on: subject) } ?? true
-                && lastFailed[subject].map { now().timeIntervalSince($0) >= Self.retryAfter } ?? true
-        }
-        guard mayWrite() else { return }
-        if case .written? = states[subject] {
+        guard mayWrite(subject, unlessActedSince: acted) else { return }
+        if case .written(_, let at, _, _)? = states[subject] {
+            guard now().timeIntervalSince(at) >= Self.rewriteAfter else { return }
             await stories.tell([links.describe(subject)] + links.connections(of: subject).map(\.item))
-            guard mayWrite(), isOutOfDate(subject) else { return }
+            guard mayWrite(subject, unlessActedSince: acted), isOutOfDate(subject) else { return }
         }
-        guard !Task.isCancelled, subject.kind == .workItem ? hasSomethingToSum(subject) : canSummarize(subject) else { return }
+        guard !Task.isCancelled, canWrite(subject) else { return }
         write(subject)
+    }
+
+    /// Whether opening it may write its summary, as `opened` says.
+    private func mayWrite(_ subject: ItemRef, unlessActedSince acted: Int?) -> Bool {
+        isAvailable && writesWhenOpened && writing[subject] == nil && !hidden.contains(subject)
+            && acted.map { $0 == timesActed(on: subject) } ?? true
+            && lastFailed[subject].map { now().timeIntervalSince($0) >= Self.retryAfter } ?? true
+    }
+
+    /// Whether there's something to sum up for it: for a work item, something linked; for a pull request or a session,
+    /// what a source says of it.
+    private func canWrite(_ subject: ItemRef) -> Bool {
+        subject.kind == .workItem ? hasSomethingToSum(subject) : canSummarize(subject)
+    }
+
+    /// The details or a page just opened it: when they'll write its summary in a moment, there being none yet, its card
+    /// shows as it will be, with Not Now, until they do or stop waiting (`stopExpecting(_:_:)`, with what this returns).
+    @discardableResult
+    package func expect(_ subject: ItemRef, unlessActedSince acted: Int?) -> Int? {
+        guard states[subject] == nil, mayWrite(subject, unlessActedSince: acted), canWrite(subject) else { return nil }
+        nextWait += 1
+        pending[subject] = nextWait
+        return nextWait
+    }
+
+    /// The details or the page stopped waiting to write it: they did, or they closed. A wait that another took the place
+    /// of, as when they opened it again, says nothing.
+    package func stopExpecting(_ subject: ItemRef, _ wait: Int?) {
+        guard let wait, pending[subject] == wait else { return }
+        pending[subject] = nil
+    }
+
+    /// Whether the details or a page will write its summary in a moment.
+    package func isPending(_ subject: ItemRef) -> Bool {
+        pending[subject] != nil
+    }
+
+    /// Not Now: what was about to be written as it opened isn't, this time; ✨ writes it.
+    package func notNow(_ subject: ItemRef) {
+        act(on: subject)
+        pending[subject] = nil
     }
 
     /// How many times you wrote, stopped, closed or showed its summary: the details remember it as they open a thing, so
@@ -381,8 +428,12 @@ package final class StorySummaries: ObservableObject {
         hidden.remove(subject)
     }
 
-    /// Closes one, keeping it to show again for nothing, as long as it's kept; one that isn't written is forgotten.
+    /// Closes one, keeping it to show again for nothing, as long as it's kept: one that couldn't be written again closes
+    /// as the one before it; one that was never written is forgotten.
     package func hide(_ subject: ItemRef) {
+        if case .failed? = states[subject], let before = previous.removeValue(forKey: subject) {
+            states[subject] = before
+        }
         guard case .written? = states[subject] else { return dismiss(subject) }
         act(on: subject)
         hidden.insert(subject)
@@ -433,6 +484,7 @@ package final class StorySummaries: ObservableObject {
         states = [:]
         previous = [:]
         hidden = []
+        pending = [:]
     }
 
     // MARK: What's summed up
@@ -452,10 +504,15 @@ package final class StorySummaries: ObservableObject {
                 story: self.stories.story(for: linked.ref), context: context[linked.ref] ?? []
             )
         }
+        // Who it all waits on, as Where It Stands says it above the summary.
+        let waits = WhereItStandsSection.waits(
+            of: stories.story(for: subject), connections.map { stories.story(for: $0.item.ref) }, on: subject
+        )
         let prompt = StorySummaryPrompt.make(
             subject: item(described, nil),
             linked: connections.map { item($0.item, $0.reason) },
-            reader: yourName
+            reader: yourName,
+            shown: waits.isEmpty ? [] : ["Waiting on: " + waits.map(\.text).joined(separator: " · ")]
         )
         return (prompt, inputs(for: subject))
     }
