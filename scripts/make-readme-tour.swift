@@ -295,7 +295,7 @@ for appearance in ["light", "dark"] {
     let scenes = [
         Scene(image: shot("window-overview"), caption: "Everything that needs you, in one place"),
         Scene(image: board, caption: "Your sprint, with its pull requests and Copilot sessions"),
-        Scene(image: shot("azureDevOps-sprint-details"), caption: "Open a story: where it stands, summarized by Copilot"),
+        Scene(image: shot("azureDevOps-sprint-details"), caption: "Open a story: where it stands, summarized by AI"),
         Scene(image: shot("azureDevOps-sprint-bug-details"), caption: "Every item links to its pull requests and sessions"),
         Scene(image: shot("azureDevOps-sprint-pull-request-page"), caption: "Click through to the pull request…"),
         Scene(image: shot("azureDevOps-sprint-deep-page"), caption: "…and the Copilot session that opened it"),

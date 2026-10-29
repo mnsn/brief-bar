@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Summarize on your Mac with Apple Intelligence.** In **Settings › General › Summaries**, choose
+  Apple Intelligence or a model through Copilot. Apple Intelligence is the default unless you've
+  already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
+  still start off and run only when you ask. If Apple Intelligence isn't ready or can't summarize
+  an item, BriefBar explains why and never switches to Copilot automatically.
+
 ## 0.9.0 - 2026-10-29
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's

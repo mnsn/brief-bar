@@ -18,7 +18,7 @@ package struct WhereItStandsSection: View {
     /// - Parameters:
     ///   - excluding: what it leaves out, such as, on a page, the work item and the pages you came from.
     ///   - hidesWhenEmpty: whether it shows nothing at all while nothing's linked, as on a page.
-    ///   - showsSummary: whether ✨ Summarize with Copilot and its summary are here, rather than, on a page, under its
+    ///   - showsSummary: whether ✨ Summarize and its summary are here, rather than, on a page, under its
     ///     heading; and whether it says who it all waits on, and folds to that.
     package init(
         subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false,

@@ -2,16 +2,15 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-// Summarize with Copilot on a pull request's or a Copilot session's row in the lists, on demand: ✨ in its time's place
-// while you point at it, Summarize with Copilot in its menus, and the summary in two lines under it, as a chat's summary
-// shows, until you hide it. Only while Summarize with Copilot and Show Links are on; never in a widget.
+// On-demand summaries on pull requests' and sessions' rows: in the time's place while hovered, and in their menus.
+// Only while Summaries and Show Links are on; never in a widget.
 
 private struct OffersSummariesKey: EnvironmentKey {
     static let defaultValue = true
 }
 
 extension EnvironmentValues {
-    /// Whether rows offer Summarize with Copilot: not in a desktop widget.
+    /// Whether rows offer Summarize: not in a desktop widget.
     package var offersSummaries: Bool {
         get { self[OffersSummariesKey.self] }
         set { self[OffersSummariesKey.self] = newValue }
@@ -183,7 +182,8 @@ private struct RowSummaryContent: View {
                             .foregroundStyle(.secondary)
                             .help("Since it was written: \(changed).")
                         Button("Summarize Again") { summaries.summarize(subject) }
-                            .help("Asks Copilot again: 1 request")
+                            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model),
+                                                       onDevice: summaries.usesOnDeviceModel))
                     }
                 }
                 .buttonStyle(.borderless)
@@ -193,7 +193,7 @@ private struct RowSummaryContent: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .help("Written by \(summaries.name(of: model)) through GitHub Copilot at \(at.formatted(date: .omitted, time: .shortened)), "
+        .help("Written by \(summaries.attribution(for: model)) at \(at.formatted(date: .omitted, time: .shortened)), "
               + "from \(StorySummaries.source(of: inputs)).")
         .contextMenu {
             Button("Summarize Again") { summaries.summarize(subject) }
@@ -204,12 +204,12 @@ private struct RowSummaryContent: View {
             Button("Hide Summary") { summaries.hide(subject) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(SummaryCard.title)
+        .accessibilityLabel(SummaryCard.title(for: model))
         .accessibilityAction(named: "Hide Summary") { summaries.hide(subject) }
     }
 }
 
-/// Summarize with Copilot in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
+/// Summarize in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
 /// it again for nothing, or to write it again; while it's written, to stop.
 package struct SummarizeMenuItems: View {
     private let subject: ItemRef?
@@ -241,7 +241,7 @@ private struct SummarizeMenuContent: View {
             if divided { Divider() }
             switch summaries.state(for: subject) {
             case nil:
-                Button("Summarize with Copilot") { summaries.summarize(subject) }
+                Button(summaries.actionTitle) { summaries.summarize(subject) }
             case .writing:
                 Button("Stop Summarizing") { summaries.cancel(subject) }
             case .written:
@@ -320,7 +320,7 @@ private struct RowSummarizeSpot: PreferenceKey {
 }
 
 extension View {
-    /// ✨ Summarize with Copilot, or a spinner while it's written, where the row's `RowTime` is, while it gives its
+    /// ✨ Summarize, or a spinner while it's written, where the row's `RowTime` is, while it gives its
     /// place up.
     package func rowSummarizeButton(_ subject: ItemRef?) -> some View {
         overlayPreferenceValue(RowSummarizeSpot.self) { spot in
@@ -371,8 +371,8 @@ private struct RowSummarizeButtonContent: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model)))
-            .accessibilityLabel("Summarize with Copilot")
+            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+            .accessibilityLabel(summaries.actionTitle)
         }
     }
 }

@@ -18,14 +18,14 @@ the next step to Copilot without piecing the story together across tabs.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-tour-dark.gif">
-    <img src="docs/images/readme-tour-light.gif" width="900" alt="A 20-second tour of BriefBar: from the Overview to the Sprint page, a story's details with Copilot's summary of where it stands, a bug's pull request and the Copilot session that opened it, pull requests with AI summaries, and a task sent to Copilot">
+    <img src="docs/images/readme-tour-light.gif" width="900" alt="A 20-second tour of BriefBar: from the Overview to the Sprint page, a story's details with an AI summary of where it stands, a bug's pull request and the Copilot session that opened it, pull requests with AI summaries, and a task sent to Copilot">
   </picture>
 </p>
 
 <p align="center"><em>From your sprint to a story, its pull request and the Copilot session behind it, summarized by AI, then the next task handed to Copilot.</em></p>
 
-Screenshots use made-up demo data, including example Copilot summaries, in light and dark mode.
-They show optional features enabled. **Every source starts off**, and links, Copilot summaries,
+Screenshots use made-up demo data, including example summaries, in light and dark mode.
+They show optional features enabled. **Every source starts off**, and links, summaries,
 delegating work and agent access are separate opt-ins.
 
 ## Follow the work, not just the notifications
@@ -66,15 +66,15 @@ Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilo
 
 **“Where does this stand, what's next, and who is it waiting on?”**
 
-Enable **Summarize with Copilot** under **Settings › General**, with Show Links on, then click
-**Summarize** in a work item's details. It combines the work item and its linked work into a short
+Enable **Summaries** under **Settings › General**, with Show Links on, then click **✨ Summarize**
+in a work item's details. It combines the work item and its linked work into a short
 status and a next step, with more detail behind **Show More**. Pull requests and sessions have the
 same action: hover over a row for **✨**, or use its right-click menu.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/rows-summary-pull-requests-dark.jpg">
-    <img src="docs/images/rows-summary-pull-requests-light.jpg" width="900" alt="Pull requests with linked work and an inline Copilot summary explaining the remaining review feedback and the next action">
+    <img src="docs/images/rows-summary-pull-requests-light.jpg" width="900" alt="Pull requests with linked work and an inline summary explaining the remaining review feedback and the next action">
   </picture>
 </p>
 
@@ -82,13 +82,14 @@ There are two different kinds of AI help:
 
 | | What you get | Where it runs |
 |---|---|---|
-| **Summarize with Copilot** | On-demand summaries of work items, pull requests and sessions, using what BriefBar knows about them and their links | Through your signed-in Copilot CLI and the model you choose, on your Copilot plan. Details go to GitHub Copilot; nothing from Teams does. No tools are allowed: summarizing cannot change files or take actions. |
-| **Apple Intelligence** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires macOS 26+ with Apple Intelligence available and enabled. |
+| **Summaries** | On-demand summaries of work items, pull requests and sessions, using what BriefBar knows about them and their links | Apple Intelligence on your Mac by default: macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests. Or choose a Copilot model, and the details go through your signed-in Copilot CLI to GitHub Copilot, on your Copilot plan. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
+| **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires macOS 26+ with Apple Intelligence available and enabled. |
 
-Copilot summaries run **only when you ask**, not in the background. BriefBar marks a summary
+Summaries of your work run **only when you ask**, not in the background. BriefBar marks a summary
 **Out of date** when its inputs change, so you know when to ask again. BriefBar keeps summaries in
-memory; the Copilot CLI keeps its summary sessions locally. The app and its plain-language brief
-work without either AI feature.
+memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. BriefBar never
+switches from Apple Intelligence to Copilot on its own. The app and its plain-language brief work
+without either AI feature.
 
 ## Send the next step to Copilot
 
@@ -189,7 +190,7 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
-| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summarize with Copilot**, in **Settings › General**. Copilot summaries require the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in with access to the selected model. |
+| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Apple Intelligence (macOS 26+) unless you choose a Copilot model, which requires the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in with access to that model. |
 
 You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
 through the built-in updater and keep Full Disk Access.
@@ -203,10 +204,10 @@ Sources are read-only: Azure DevOps and GitHub use your existing CLI sign-ins, a
 tracking reads files on your Mac. Full Disk Access is needed for Teams and the optional
 **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 
-Links, Copilot summaries, Send Work to Copilot and agent access each start off. Copilot summaries
-send the selected work's details to GitHub Copilot; sending work gives an agent permission to act
-within that action's limits. Apple Intelligence summaries stay on your Mac. Teams content never goes
-to Copilot summaries or BriefBar's agent tools.
+Links, summaries, Send Work to Copilot and agent access each start off. Summaries stay on your Mac
+with Apple Intelligence; only if you choose a Copilot model do they send the selected work's details
+to GitHub Copilot. Sending work gives an agent permission to act within that action's limits. Teams
+content never goes to Copilot summaries or BriefBar's agent tools.
 
 [Full privacy details](docs/user-guide.md#privacy) · [Security and download verification](SECURITY.md)
 
