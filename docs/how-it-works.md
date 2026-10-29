@@ -452,10 +452,13 @@ shell's environment, for two minutes at most. No tool is called `briefbar_no_too
 skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
 session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
 
-The summary is kept in memory only, until BriefBar quits, you close it, or Show Links or Summarize with Copilot goes off;
-one being written is stopped then, and **Cancel** stops it too. Once what it summed up changes, each row's state, status,
-title or date, it says it's out of date, with **Summarize Again**. The demo makes summaries up (`DemoSummaries`) and never
-runs Copilot, and `--render` of your own data writes none.
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off, or
+a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
+doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
+stop being read, unless the details asked for them too, and a story the details are reading already is waited for
+rather than left out. Once what it summed up changes, each row's state, status, title or date, it says it's out of date,
+with **Summarize Again**. The demo makes summaries up (`DemoSummaries`) and never runs Copilot, and `--render` of your
+own data writes none.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.

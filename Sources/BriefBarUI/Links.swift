@@ -158,6 +158,8 @@ package final class Links: ObservableObject {
     /// Show Links. Sources read what links need only while it's on.
     @Published package private(set) var isOn: Bool
     @Published package private(set) var graph = LinkGraph()
+    /// The sources that stop, as each does, once what they said is gone: what was made of it, such as a summary, goes too.
+    package let withdrawn = PassthroughSubject<SourceID, Never>()
 
     private let defaults: UserDefaults
     private var edits: LinkEdits
@@ -204,6 +206,7 @@ package final class Links: ObservableObject {
         facts[source] = nil
         described[source] = nil
         rebuild()
+        withdrawn.send(source)
     }
 
     /// Forgets the links you added or hid that involve a source's things, when you turn it off.
@@ -212,9 +215,11 @@ package final class Links: ObservableObject {
         guard !kinds.isEmpty else { return }
         edits.forget(kinds)
         save()
+        let said = facts[source] != nil || described[source] != nil
         facts[source] = nil
         described[source] = nil
         rebuild()
+        if said { withdrawn.send(source) }
     }
 
     private func rebuild() {

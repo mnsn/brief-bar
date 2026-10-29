@@ -23,17 +23,21 @@ package final class ItemStories: ObservableObject {
     }
 
     /// A story being told: for which version of its row, and which request is telling it, which alone may say what was
-    /// told, so a request that was taken back, or replaced, never does.
+    /// told, so a request that was taken back, or replaced, never does; and its task, which whoever else asks for the same
+    /// row waits for (`tell(_:)`).
     private struct Telling {
         var version: String
         var token: Int
-        var task: Task<Void, Never>?
+        var task: Task<Void, Never>
     }
 
     /// How long a story is kept once told: what it says has moved on by then.
     static let lifetime: TimeInterval = 15 * 60
     /// How long it's current while its row stays the same: a session's checkpoints come without its state changing.
     static let freshFor: TimeInterval = 60
+
+    /// The sources that stop, as each does, once what they told is gone: what was made of it, such as a summary, goes too.
+    package let withdrawn = PassthroughSubject<SourceID, Never>()
 
     private let links: Links
     private var tellers: [SourceID: Registration] = [:]
@@ -53,7 +57,7 @@ package final class ItemStories: ObservableObject {
 
     /// Forgets every story, and stops telling them: what's asked and not read yet isn't read.
     private func forgetAll() {
-        for telling in telling.values { telling.task?.cancel() }
+        for telling in telling.values { telling.task.cancel() }
         told = [:]
         telling = [:]
     }
@@ -70,10 +74,11 @@ package final class ItemStories: ObservableObject {
     package func withdraw(_ source: SourceID) {
         guard let registration = tellers.removeValue(forKey: source) else { return }
         forget(registration.kinds)
+        withdrawn.send(source)
     }
 
     private func forget(_ kinds: Set<ItemRef.Kind>) {
-        for (ref, telling) in telling where kinds.contains(ref.kind) { telling.task?.cancel() }
+        for (ref, telling) in telling where kinds.contains(ref.kind) { telling.task.cancel() }
         told = told.filter { !kinds.contains($0.key.kind) }
         telling = telling.filter { !kinds.contains($0.key.kind) }
     }
@@ -101,16 +106,33 @@ package final class ItemStories: ObservableObject {
     package func request(_ item: LinkedItem) {
         let version = Self.version(of: item)
         guard needsTelling(item.ref, version: version) else { return }
-        let token = begin(item.ref, version: version)
-        telling[item.ref]?.task = Task { [weak self] in await self?.tell(item.ref, token: token) }
+        start(item.ref, version: version)
     }
 
-    /// Tells every one of them and waits, for `--render`.
+    /// Tells every one of them and waits, for a summary and for `--render`: one being told already for the row as it is,
+    /// as the details asked, is waited for rather than told again. Once the task that waits is cancelled, it asks nothing
+    /// more, and what it asked is taken back.
     package func tell(_ items: [LinkedItem]) async {
         for item in items {
-            let version = Self.version(of: item)
-            guard needsTelling(item.ref, version: version) else { continue }
-            await tell(item.ref, token: begin(item.ref, version: version))
+            guard !Task.isCancelled else { return }
+            await tell(item)
+        }
+    }
+
+    /// Tells one, or waits while it's told. Whoever asked for what it waits for may take it back before it's told: then
+    /// it's asked again, a few times at most.
+    private func tell(_ item: LinkedItem) async {
+        let version = Self.version(of: item)
+        for _ in 0..<3 {
+            guard !Task.isCancelled else { return }
+            if let current = telling[item.ref], current.version == version {
+                await current.task.value
+            } else if needsTelling(item.ref, version: version) {
+                let task = start(item.ref, version: version)
+                await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+            } else {
+                return
+            }
         }
     }
 
@@ -123,11 +145,17 @@ package final class ItemStories: ObservableObject {
     }
 
     /// Starts telling a story, in place of any telling it for an older row: that one's work is taken back.
-    private func begin(_ ref: ItemRef, version: String) -> Int {
-        telling[ref]?.task?.cancel()
+    @discardableResult
+    private func start(_ ref: ItemRef, version: String) -> Task<Void, Never> {
+        telling[ref]?.task.cancel()
         nextToken += 1
-        telling[ref] = Telling(version: version, token: nextToken)
-        return nextToken
+        let token = nextToken
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.tell(ref, token: token)
+        }
+        telling[ref] = Telling(version: version, token: token, task: task)
+        return task
     }
 
     /// Whether a request is still the one telling a story, while Show Links is on: not taken back by turning Show Links off,
@@ -137,8 +165,12 @@ package final class ItemStories: ObservableObject {
     }
 
     /// Asks each source that tells about its kind, in the sources' order, and puts together what they tell. Each is asked
-    /// only while the request is current, so nothing is read for one that was taken back.
+    /// only while the request is current, so nothing is read for one that was taken back. However it ends, the story isn't
+    /// being told by this request anymore, though one that took its place may tell it.
     private func tell(_ ref: ItemRef, token: Int) async {
+        defer {
+            if telling[ref]?.token == token { telling[ref] = nil }
+        }
         var story: ItemStory?
         for source in SourceID.allCases {
             guard isCurrent(ref, token: token) else { return }
@@ -147,7 +179,6 @@ package final class ItemStories: ObservableObject {
             story = story.map { $0.merged(with: told) } ?? told
         }
         guard isCurrent(ref, token: token), let version = telling[ref]?.version else { return }
-        telling[ref] = nil
         told[ref] = Told(story: story.flatMap { $0.isEmpty ? nil : $0 }, version: version, at: now())
     }
 

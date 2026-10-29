@@ -4,8 +4,9 @@ import Foundation
 
 /// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
 /// never by itself, from what the details show (`StorySummaryPrompt`), with no tools at all. It's off until you turn it
-/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, or
-/// Show Links or this goes off, and says when what it summed up changed since.
+/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, Show
+/// Links or this goes off, or a source stops, and says when what it summed up changed since. One being written stops then,
+/// with Copilot.
 @MainActor
 package final class StorySummaries: ObservableObject {
     package static let enabledKey = "summaries.copilot.enabled"
@@ -69,7 +70,9 @@ package final class StorySummaries: ObservableObject {
     private let defaults: UserDefaults
     private let links: Links
     private let stories: ItemStories
-    private var tasks: [ItemRef: Task<Void, Never>] = [:]
+    /// The summaries being written: which request writes each, which alone may say what was written, and its task.
+    private var writing: [ItemRef: (token: Int, task: Task<Void, Never>)] = [:]
+    private var nextToken = 0
     private var cancellables: Set<AnyCancellable> = []
 
     /// - Parameter isDemo: the demo shows made-up summaries, in preferences that are thrown away.
@@ -81,6 +84,10 @@ package final class StorySummaries: ObservableObject {
         model = defaults.string(forKey: Self.modelKey).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultModel
         // Turning Show Links off forgets every summary, and stops writing them.
         links.$isOn.removeDuplicates().filter { !$0 }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
+            .store(in: &cancellables)
+        // So does a source that stops: what it said goes with it, and any summary may say it.
+        links.withdrawn.merge(with: stories.withdrawn)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
             .store(in: &cancellables)
     }
@@ -117,16 +124,18 @@ package final class StorySummaries: ObservableObject {
     /// it has. Nothing unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
         guard isAvailable, !links.connections(of: subject).isEmpty else { return }
-        tasks[subject]?.cancel()
-        let started = now()
-        states[subject] = .writing(since: started)
+        writing[subject]?.task.cancel()
+        nextToken += 1
+        let token = nextToken
+        states[subject] = .writing(since: now())
         let options = Options(model: model, effort: "low")
-        tasks[subject] = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
             // What's known of it and of each, as it is now.
             await self.stories.tell([self.links.describe(subject)] + self.links.connections(of: subject).map(\.item))
-            guard self.isCurrent(subject, started: started) else { return }
+            guard self.isCurrent(subject, token: token) else { return }
             guard let input = self.input(for: subject) else {
+                self.writing[subject] = nil
                 self.states[subject] = nil
                 return
             }
@@ -135,26 +144,27 @@ package final class StorySummaries: ObservableObject {
             } else {
                 .failure(Problem("BriefBar can't ask the Copilot CLI here."))
             }
-            self.finish(subject, started: started, answer: answer, inputs: input.inputs, model: options.model)
+            self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model)
         }
+        writing[subject] = (token, task)
     }
 
-    /// Whether the summary started then is still the one being written.
-    private func isCurrent(_ subject: ItemRef, started: Date) -> Bool {
-        guard isAvailable, !Task.isCancelled, case .writing(let since)? = states[subject] else { return false }
-        return since == started
+    /// Whether a request is still the one writing a summary: not cancelled, dismissed, asked again, taken back by a source
+    /// that stopped, or turned off.
+    private func isCurrent(_ subject: ItemRef, token: Int) -> Bool {
+        isAvailable && !Task.isCancelled && writing[subject]?.token == token
     }
 
     /// Writes one and waits, for `--render`.
     package func summarizeAndWait(_ subject: ItemRef) async {
         summarize(subject)
-        await tasks[subject]?.value
+        await writing[subject]?.task.value
     }
 
-    private func finish(_ subject: ItemRef, started: Date, answer: Result<String, Problem>, inputs: String, model: String) {
+    private func finish(_ subject: ItemRef, token: Int, answer: Result<String, Problem>, inputs: String, model: String) {
         // Taken back meanwhile: cancelled, dismissed, asked again, or turned off.
-        guard isCurrent(subject, started: started) else { return }
-        tasks[subject] = nil
+        guard isCurrent(subject, token: token) else { return }
+        writing[subject] = nil
         switch answer {
         case .success(let text):
             if let summary = StorySummary.parse(text) {
@@ -170,13 +180,13 @@ package final class StorySummaries: ObservableObject {
 
     /// Stops writing one.
     package func cancel(_ subject: ItemRef) {
-        tasks.removeValue(forKey: subject)?.cancel()
+        writing.removeValue(forKey: subject)?.task.cancel()
         if case .writing? = states[subject] { states[subject] = nil }
     }
 
     /// Forgets one.
     package func dismiss(_ subject: ItemRef) {
-        tasks.removeValue(forKey: subject)?.cancel()
+        writing.removeValue(forKey: subject)?.task.cancel()
         states[subject] = nil
     }
 
@@ -187,8 +197,8 @@ package final class StorySummaries: ObservableObject {
     }
 
     private func forgetAll() {
-        for task in tasks.values { task.cancel() }
-        tasks = [:]
+        for writing in writing.values { writing.task.cancel() }
+        writing = [:]
         states = [:]
     }
 

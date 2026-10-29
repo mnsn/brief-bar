@@ -197,6 +197,90 @@ import Testing
         #expect(stories.story(for: pullRequest)?.sentence == "Dana Whitfield sent this in Teams: By Alex Kim")
     }
 
+    @Test func aSourceThatStopsTakesItsSummariesWithIt() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in ItemStory(sentence: "Ready to complete") }
+        let gate = Gate()
+        let stopped = Asked()
+        summaries.write = { _, _ in
+            await gate.wait()
+            if Task.isCancelled { stopped.add("cancelled") }
+            return .success("HEADLINE: Fixed in !4091.")
+        }
+        summaries.summarize(workItem)
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Azure DevOps stops while Copilot writes.
+        links.withdraw(.azureDevOps)
+        stories.withdraw(.azureDevOps)
+        #expect(summaries.state(for: workItem) == nil)
+        gate.open()
+        for _ in 0..<200 where stopped.prompts.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        // Copilot was stopped, and what it answered doesn't show.
+        #expect(stopped.prompts == ["cancelled"])
+        #expect(summaries.state(for: workItem) == nil)
+
+        // One written already goes too.
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in ItemStory(sentence: "Ready to complete") }
+        await summaries.summarizeAndWait(workItem)
+        guard case .written? = summaries.state(for: workItem) else {
+            Issue.record("Not written")
+            return
+        }
+        stories.withdraw(.azureDevOps)
+        #expect(summaries.state(for: workItem) == nil)
+        // And Copilot's own stopping does the same.
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in ItemStory(sentence: "Ready to complete") }
+        await summaries.summarizeAndWait(workItem)
+        links.publish(.copilot, links: [], items: [])
+        links.withdraw(.copilot)
+        #expect(summaries.state(for: workItem) == nil)
+    }
+
+    @Test func aSummaryWaitsForAStoryBeingToldAlready() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        let gate = Gate()
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { ref in
+            guard ref.kind == .pullRequest else { return ItemStory(sentence: "Active") }
+            await gate.wait()
+            return ItemStory(sentence: "Ready to complete: Approved by Priya Shah", facts: [ItemStory.Fact("Comments", "No open threads")])
+        }
+        // The details ask for the pull request's story first.
+        stories.request(links.describe(pullRequest))
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        summaries.summarize(workItem)
+        try await Task.sleep(for: .milliseconds(50))
+        // It waits for that story, rather than going without it.
+        #expect(asked.prompts.isEmpty)
+        #expect(stories.isTelling(pullRequest))
+        gate.open()
+        for _ in 0..<200 where asked.prompts.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let prompt = try #require(asked.prompts.first)
+        #expect(prompt.contains("Status: Ready to complete: Approved by Priya Shah\n- Comments: No open threads"))
+        for _ in 0..<200 where isWriting(summaries.state(for: workItem)) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(!summaries.isOutOfDate(workItem))
+    }
+
+    private func isWriting(_ state: StorySummaries.State?) -> Bool {
+        if case .writing? = state { return true }
+        return false
+    }
+
     /// Holds the writer until it's let go.
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()
