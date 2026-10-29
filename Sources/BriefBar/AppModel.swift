@@ -55,14 +55,14 @@ final class AppModel: ObservableObject {
         services = AppServices(defaults: defaults, isDemo: demo)
         // Only the app itself asks the Copilot CLI.
         agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
-        // Summaries: the app asks the Copilot CLI when you ask; the demo makes them up; `--render` of your own data writes
-        // none.
-        services.summaries.models = CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
+        // Summaries use the selected provider only when asked; the demo makes them up, and `--render` writes none.
+        services.summaries.models = [StorySummaries.appleIntelligence]
+            + CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
         if demo {
             services.summaries.write = DemoSummaries.write
         } else if !rendering {
             let summarizer = CopilotSummarizer()
-            services.summaries.write = AppModel.copilotSummaries(summarizer)
+            services.summaries.write = StorySummaries.writer(copilot: AppModel.copilotSummaries(summarizer))
             services.summaries.findCLI = { await summarizer.findsCLI() }
         }
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
