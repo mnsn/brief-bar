@@ -47,6 +47,32 @@ import Testing
             """)
     }
 
+    /// With Nest Sessions Under Their Parents: one nested under the session that started it is indented under it, and one
+    /// that isn't says which session started it, unless it says to answer there already.
+    @Test func showsWhichSessionStartedEachOne() {
+        let now = Date()
+        var nested = session("abc", phase: .running, reason: .working, since: now)
+        nested.parent = RelatedSession(id: "p1", name: "Release 2.5")
+        nested.depth = 1
+        #expect(CopilotAgent.line(nested, now: now) == """
+              - “Add dark mode” (shop-web, dark-mode): Working, just now
+                session abc
+            """)
+        var elsewhere = session("abc", detail: "Which color?", choices: ["Blue", "Green"], since: now)
+        elsewhere.parent = RelatedSession(id: "p1", name: "Release 2.5")
+        #expect(CopilotAgent.line(elsewhere, now: now) == """
+            - “Add dark mode” (shop-web, dark-mode): Waiting for your answer, just now. Which color?
+              Choices: Blue · Green
+              Started by “Release 2.5” (session p1)
+              session abc
+            """)
+        var relayed = session("abc", phase: .running, reason: .relayed, since: now)
+        relayed.headline = "Answer in “Release 2.5”"
+        relayed.answerIn = RelatedSession(id: "p1", name: "Release 2.5")
+        relayed.parent = relayed.answerIn
+        #expect(!CopilotAgent.line(relayed, now: now).contains("Started by"))
+    }
+
     @Test func namesPhasesTheWayAgentsCallThem() {
         #expect(DisplayPhase.allCases.map(\.agentName) == ["needs_you", "running", "done", "stopped", "idle"])
         #expect(DisplayPhase.named("needsYou") == .needsYou)

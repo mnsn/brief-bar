@@ -1323,7 +1323,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
 
 BriefBar combines the two. The database says which sessions exist and whether the app
@@ -1378,6 +1378,30 @@ it applies. A few more details:
   the session that asks you in the end. Until the coordinator asks, the session needs you on its own.
   Permission prompts are never asked for: only the session itself can answer one. With the setting off,
   a relay shows as **Working**, as it did before, and the session it relays for needs you on its own.
+- **Nest Sessions Under Their Parents**, off by default, nests sessions under the sessions that started
+  them, as the Copilot app's sidebar does (`SessionNesting`), but within each group. A session's parent
+  is the one the sidebar nests it under. For a project session, that's the session of the parent
+  workspace (`workspace_parent_links`) of the workspace it's listed with, the one in its project that
+  started it, but not the one it was forked from (`forked_from_session_id`). Without a parent workspace,
+  it's the chat that started it (`coordinating_creator_session_id`, else `creator_session_id`, on that
+  workspace), whether or not the chat coordinates it. For a chat, it's the session that coordinates it,
+  else the one that started it (`chat_parent_links`). Detaching a session in the app forgets all of
+  these, so it stands on its own, and a session that started one in another project gets no parent
+  workspace, so the sidebar doesn't nest that one either. Each is read apart from the main query, so an
+  older schema only loses nesting. Without the Copilot app, there's no database to read them from, so
+  nothing nests.
+  Within a group, a session whose parent is in the same group sits right under it, indented, its own
+  children under it in turn. A family takes the place of the member that sorts first, so **Needs you**
+  still starts with the longest wait; in it, the parent comes first, then its children in the group's
+  order. A session whose parent is in another group keeps its place, with a **↳** tag naming the parent,
+  which opens it, as clicking it would, except when its **Answer in “…”** names that session already. The
+  row, itself a button, would take the click from a button in it, so the tag's button lies over the tag,
+  outside the row's (`ParentTag.Target`). A parent BriefBar doesn't
+  list, such as an archived one, nests nothing and gets no tag. Counts don't change. **Everything by
+  State** sorts every section's items together, so it doesn't nest sessions, and tags each one with a
+  listed parent. The command line and agents follow the same setting: `--dump` indents nested sessions
+  and tags the others, and `--mcp` indents nested sessions under their parents and says which session
+  started each of the others.
 - **Show Context Usage** shows the app's latest measurement of each session's context window
   (`session_context_usage`): the tokens the conversation takes up, as a share of the model's
   limit. Copilot compacts a conversation at about 80% of the limit, so the percentage turns

@@ -283,6 +283,69 @@ import Testing
         #expect(AppSettings(defaults: defaults).showRelayedQuestionsOnce)
     }
 
+    /// Sessions under the sessions that started them, in their own groups, only with Nest Sessions Under Their Parents on;
+    /// counts stay the same.
+    @Test func nestsSessionsUnderTheirParentsOnlyWhenTurnedOn() throws {
+        let now = Date()
+        func running(_ id: String, _ name: String, since seconds: TimeInterval, parent: String? = nil) -> SessionRecord {
+            SessionRecord(
+                meta: SessionMeta(id: id, name: name, isRunning: true, updatedAt: now.addingTimeInterval(-seconds), parentSessionId: parent),
+                log: nil
+            )
+        }
+        var notes = ended("notes", at: now.addingTimeInterval(-120))
+        notes.meta.parentSessionId = "lead"
+        let state = EngineSnapshot(records: [
+            running("lead", "Release 2.5", since: 60), running("other", "Fix the build", since: 30),
+            running("child", "Pick colors", since: 10, parent: "lead"), notes,
+        ])
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let app = InstalledApp()
+        var opened: [String] = []
+        var withCLI: [String] = []
+        let store = SessionStore(
+            settings: settings, paths: nil, openSession: { opened.append($0) }, openCLISession: { withCLI.append($0) },
+            isAppInstalled: { app.isInstalled }
+        )
+        store.receive(state)
+        #expect(!settings.nestSessions)
+        #expect(store.sessions.map(\.id) == ["child", "other", "lead", "notes"])
+        #expect(store.sessions.allSatisfy { $0.parent == nil && $0.depth == 0 })
+        let counts = store.counts
+
+        settings.nestSessions = true
+        store.receive(state)
+        #expect(store.sessions.map(\.id) == ["lead", "child", "other", "notes"])
+        #expect(store.sessions.map(\.depth) == [0, 1, 0, 0])
+        #expect(store.counts == counts)
+        // Finished, it's in another group than the session that started it, which its tag opens: in the app, or without
+        // it, with the Copilot CLI.
+        let finished = try #require(store.sessions(in: .done).first)
+        #expect(finished.parent == RelatedSession(id: "lead", name: "Release 2.5"))
+        store.openParent(of: finished)
+        #expect(opened == ["lead"])
+        app.isInstalled = false
+        store.openParent(of: finished)
+        #expect(opened == ["lead"])
+        #expect(withCLI == ["lead"])
+
+        // The command line and agents see the same, as the setting says.
+        let defaults = MemoryDefaults()
+        #expect(CopilotCommandLine.resolve(state, now: now, defaults: defaults).map(\.id) == ["child", "other", "lead", "notes"])
+        defaults.set(true, forKey: "copilot.nestSessions")
+        let resolved = CopilotCommandLine.resolve(state, now: now, defaults: defaults)
+        #expect(resolved.map(\.id) == ["lead", "child", "other", "notes"])
+        #expect(resolved.map(\.depth) == [0, 1, 0, 0])
+    }
+
+    @Test func nestingSessionsIsOptInAndPersists() {
+        let defaults = MemoryDefaults()
+        #expect(!AppSettings(defaults: defaults).nestSessions)
+        AppSettings(defaults: defaults).nestSessions = true
+        #expect(AppSettings(defaults: defaults).nestSessions)
+    }
+
     @Test func theOptionIsOptInAndPersists() {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)

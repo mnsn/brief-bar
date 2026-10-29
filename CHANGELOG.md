@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **See which Copilot sessions another one started.** Turn on **Nest Sessions Under Their Parents** in
+  Copilot's settings, and a session that another session started shows under it, indented, as in the
+  Copilot app's sidebar, when both are in the same group, such as **Running**. One in another group
+  stays where it was, with a **↳** tag that names the session that started it; click the tag to open
+  that session. The counts stay the same.
+
 ## 0.8.6 - 2026-10-29
 
 - **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the

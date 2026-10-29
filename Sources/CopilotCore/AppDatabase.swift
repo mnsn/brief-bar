@@ -21,6 +21,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var creatorSessionId: String?
     /// The session that coordinates this one: the app tells it when this one waits for you, and it can ask you for it.
     public var coordinatorSessionId: String?
+    /// The session the app's sidebar nests this one under, which started it (`AppDatabase.readParents`).
+    public var parentSessionId: String?
     /// The app's workspace for project sessions (its unread markers are keyed by this).
     public var workspaceId: String?
     /// Latest entry in the app's activity feed for this session.
@@ -35,8 +37,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
         branch: String? = nil, creatorSessionId: String? = nil, coordinatorSessionId: String? = nil,
-        workspaceId: String? = nil, lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil,
-        links: SessionLinks? = nil
+        parentSessionId: String? = nil, workspaceId: String? = nil, lastActivity: ActivityPreview? = nil,
+        contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
     ) {
         self.id = id
         self.name = name
@@ -51,6 +53,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.branch = branch
         self.creatorSessionId = creatorSessionId
         self.coordinatorSessionId = coordinatorSessionId
+        self.parentSessionId = parentSessionId
         self.workspaceId = workspaceId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
@@ -243,6 +246,28 @@ public enum AppDatabase {
         WHERE coordinating_creator_session_id IS NOT NULL
         """
 
+    /// The session of each workspace's parent workspace: the one in its project that started it.
+    static let parentWorkspacesQuery = """
+        SELECT link.child_workspace_id, parent.session_id
+        FROM workspace_parent_links link
+        JOIN workspaces parent ON parent.id = link.parent_workspace_id
+        WHERE parent.session_id IS NOT NULL
+        """
+
+    /// The session each forked session was forked from.
+    static let forksQuery = """
+        SELECT id, forked_from_session_id
+        FROM sessions
+        WHERE forked_from_session_id IS NOT NULL
+        """
+
+    /// The session that started each chat that another session started.
+    static let chatParentsQuery = """
+        SELECT session_id, parent_session_id
+        FROM chat_parent_links
+        WHERE parent_session_id IS NOT NULL
+        """
+
     /// Each session's latest context-window measurement. SQLite takes the bare columns from the row
     /// with the largest `ts_ms`.
     static let contextUsageQuery = """
@@ -321,6 +346,7 @@ public enum AppDatabase {
         }
 
         readCoordinators(connection, into: &sessions)
+        readParents(connection, into: &sessions)
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -417,6 +443,38 @@ public enum AppDatabase {
             let session = sessions[index]
             let coordinator = session.isChat ? byChat[session.id] : session.workspaceId.flatMap { byWorkspace[$0] }
             sessions[index].coordinatorSessionId = coordinator == session.id ? nil : coordinator
+        }
+    }
+
+    /// The session the app's sidebar nests each one under, best effort: an app without these tables or columns records
+    /// none, and a session it records none for stands on its own.
+    ///
+    /// A project session is nested under the session of the parent workspace of the workspace it's listed with, the one
+    /// in its project that started it, but not under the one it was forked from. Without a parent workspace, it's under
+    /// the chat that started it, whether or not that chat coordinates it. A chat is under the session that coordinates
+    /// it, or else the one that started it. Detaching a session in the app forgets all of these.
+    /// - Parameter sessions: with their workspaces and coordinators, as the app lists them.
+    static func readParents(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
+        }
+        let forkedFrom = read(forksQuery)
+        let byWorkspace = read(parentWorkspacesQuery)
+        let byChat = read(chatParentsQuery)
+        let chats = Set(sessions.filter(\.isChat).map(\.id))
+        for index in sessions.indices {
+            let session = sessions[index]
+            let parent: String?
+            if session.isChat {
+                parent = session.coordinatorSessionId ?? byChat[session.id]
+            } else {
+                var linked = session.workspaceId.flatMap { byWorkspace[$0] }
+                if linked == forkedFrom[session.id] { linked = nil }
+                let creator = session.coordinatorSessionId ?? session.creatorSessionId
+                parent = linked ?? creator.flatMap { chats.contains($0) ? $0 : nil }
+            }
+            sessions[index].parentSessionId = parent == session.id ? nil : parent
         }
     }
 

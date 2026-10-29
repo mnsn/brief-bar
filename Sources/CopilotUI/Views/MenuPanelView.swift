@@ -148,11 +148,13 @@ struct MenuPanelView: View {
 /// Copilot app, or what a task BriefBar sent is for.
 struct SessionRow: View {
     let session: SessionSnapshot
+    /// Whether the list nests sessions under the sessions that started them: not one that mixes sources.
+    var nests = true
 
     @EnvironmentObject private var store: SessionStore
 
     var body: some View {
-        SessionRowView(session: session, now: store.now) { store.open(session) }
+        SessionRowView(session: session, now: store.now, nests: nests) { store.open(session) }
     }
 }
 
