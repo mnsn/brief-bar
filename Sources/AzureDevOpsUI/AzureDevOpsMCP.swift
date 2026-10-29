@@ -642,11 +642,11 @@ struct AzureDevOpsAgent: Sendable {
         let (id, organization) = try Self.workItemReference(reference)
         let read = try await reader.workItem(id, organization: organization, now: now)
         let item = read.item
-        let tasks = await reader.sendsToCopilot
-            ? Self.tasks(await reader.copilotTasks(now: now), for: item, tasks: read.tasks, pullRequests: read.pullRequests) : []
+        let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        let tasks = Self.tasks(sent, for: item, tasks: read.tasks, pullRequests: read.pullRequests)
         // What the other sources know of its pull requests, such as the Copilot sessions on them.
         let related = read.pullRequests.isEmpty ? [] : await MCPRelated.ask(Self.query(for: read))
-        return AgentText.workItem(read, tasks: tasks, related: related, now: now)
+        return AgentText.workItem(read, tasks: tasks, allSent: sent, related: related, now: now)
     }
 
     /// What `work_item` asks the other sources about: the work item and its pull requests, and what links each pull request
@@ -1021,8 +1021,10 @@ enum AgentText {
     /// A work item and what goes with it, for the `work_item` tool: where it stands and who it waits on; its tasks, its pull
     /// requests, what the other sources know of those, such as the Copilot sessions on them, and the work sent to Copilot
     /// for it; then what people wrote in it, quoted, since that's data.
+    /// - Parameter allSent: all the work sent to Copilot, to tell whether a failed one was sent again since; `tasks` when nil.
     static func workItem(
-        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Part] = [], now: Date
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], allSent: [CopilotTaskEntry]? = nil,
+        related: [MCPRelated.Part] = [], now: Date
     ) -> String {
         let item = read.item
         let me = read.me ?? read.lists.records.first { $0.id.organization.caseInsensitiveCompare(item.organization) == .orderedSame }?.me
@@ -1051,7 +1053,7 @@ enum AgentText {
         if let parent = read.parent { lines.append("- Under \(parent.type.lowercased()) \(parent.id) “\(parent.title)”") }
         lines.append("- " + standing(item, details: read.details, me: me, now: now))
         if let progress = progress(read, now: now) { lines.append("- " + progress) }
-        let waits = Self.waits(read, tasks: tasks, related: parts.flatMap(\.items), me: me)
+        let waits = Self.waits(read, tasks: tasks, allSent: allSent, related: parts.flatMap(\.items), me: me)
         if !waits.isEmpty { lines.append("- Waiting on: " + waits.map(\.text).joined(separator: " · ")) }
         lines.append("- You can: " + youCan(waits, read: read, tasks: tasks, me: me))
 
@@ -1320,7 +1322,8 @@ enum AgentText {
     /// (`CopilotTaskEntry.waits(of:isDone:)`), and what the other sources told, such as a Copilot session that waits for
     /// you or stopped; you first, then other people, then Copilot. Empty when nothing waits.
     static func waits(
-        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Item], me: String?
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], allSent: [CopilotTaskEntry]? = nil,
+        related: [MCPRelated.Item], me: String?
     ) -> [ItemStory.Wait] {
         var waits: [ItemStory.Wait] = []
         for key in read.pullRequests {
@@ -1336,12 +1339,14 @@ enum AgentText {
             switch ref.kind {
             case .workItem: return ([read.item] + read.tasks).first { $0.linkRef == ref }?.isDone ?? false
             case .pullRequest:
-                let pullRequest = read.pullRequests.first { $0.linkRef == ref }.flatMap(read.pullRequest)
+                // Whether it's one of the work item's or not, such as one a task's work went on to.
+                let pullRequest = read.lists.records.first { $0.id.linkRef == ref }?.pullRequest
+                    ?? read.others.read.first { $0.key.linkRef == ref }?.value
                 return pullRequest.map { $0.status != .active } ?? false
             case .gitHubPullRequest, .session: return false
             }
         }
-        waits += CopilotTaskEntry.waits(of: tasks, isDone: isDone) { ref in
+        waits += CopilotTaskEntry.waits(of: tasks, among: allSent, isDone: isDone) { ref in
             ([read.item] + read.tasks).first { $0.linkRef == ref }?.type
         }
         for item in related {

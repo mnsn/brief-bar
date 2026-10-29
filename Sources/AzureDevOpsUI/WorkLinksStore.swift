@@ -270,7 +270,8 @@ final class WorkLinksStore {
             let entries = copilot.isOn ? tasks.compactMap { task in copilot.latest(for: task).map { (task, $0) } } : []
             let runs = Dictionary(entries.map { ($0.0.id, $0.1.sentence(now: nil)) }, uniquingKeysWith: { first, _ in first })
             var story = WorkItemStory.make(item, details: details?.details, tasks: tasks, taskRuns: runs)
-            story.waits = ItemStory.Wait.ordered(CopilotTaskEntry.waits(of: entries.map(\.1), isDone: isDone) { self.workItem($0)?.type })
+            let waits = CopilotTaskEntry.waits(of: entries.map(\.1), among: copilot.entries, isDone: isDone) { self.workItem($0)?.type }
+            story.waits = ItemStory.Wait.ordered(waits)
             return story
         case .pullRequest:
             if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
@@ -285,8 +286,7 @@ final class WorkLinksStore {
             guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
             var story = Self.story(of: entry)
             // Its failure waits on you only while it's the latest sent for what it was sent for, and that isn't done.
-            let sentFor = copilot.entries.filter { $0.target == entry.target }
-            story.waits = CopilotTaskEntry.waits(of: sentFor, isDone: isDone) { self.workItem($0)?.type }.filter { $0.about == ref }
+            story.waits = CopilotTaskEntry.waits(of: [entry], among: copilot.entries, isDone: isDone) { self.workItem($0)?.type }
             return story
         case .gitHubPullRequest:
             return nil
@@ -407,14 +407,26 @@ extension CopilotTaskEntry {
     /// Who the work sent to Copilot waits on, as the details and agents say it: Copilot, while each goes on; you, once the
     /// one started last for a work item or a pull request failed, unless that's done since (`isDone`), as you'd send it
     /// again or do it yourself.
-    /// - Parameter type: a work item's type, such as "Task", when it's known.
+    /// - Parameters:
+    ///   - entries: the ones to tell of.
+    ///   - all: all the work sent to Copilot, to tell whether something was sent again since, such as a pull request a task's
+    ///     work went on to; `entries` when nil.
+    ///   - type: a work item's type, such as "Task", when it's known.
     static func waits(
-        of entries: [CopilotTaskEntry], isDone: (ItemRef) -> Bool, type: (ItemRef) -> String? = { _ in nil }
+        of entries: [CopilotTaskEntry], among all: [CopilotTaskEntry]? = nil, isDone: (ItemRef) -> Bool,
+        type: (ItemRef) -> String? = { _ in nil }
     ) -> [ItemStory.Wait] {
-        var sent: Set<ItemRef> = []
+        // When each was last sent for.
+        var latest: [ItemRef: Date] = [:]
+        for entry in all ?? entries {
+            guard let target = entry.target else { continue }
+            latest[target] = max(latest[target] ?? entry.startedAt, entry.startedAt)
+        }
         return entries.sorted { $0.startedAt > $1.startedAt }.flatMap { entry -> [ItemStory.Wait] in
-            let isLatest = entry.target.map { sent.insert($0).inserted } ?? true
-            if entry.status.phase == .failed, !isLatest || entry.target.map(isDone) == true { return [] }
+            if entry.status.phase == .failed, let target = entry.target,
+               (latest[target] ?? entry.startedAt) > entry.startedAt || isDone(target) {
+                return []
+            }
             return entry.waits(type: entry.workItem == nil ? nil : entry.target.flatMap(type))
         }
     }

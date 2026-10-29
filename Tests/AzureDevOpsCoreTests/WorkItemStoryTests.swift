@@ -71,5 +71,11 @@ import Testing
         let blank = WorkItemDetails(item: task, readAt: Date())
         #expect(WorkItemStory.make(task, details: blank).notes.isEmpty)
         #expect(WorkItemStory.make(task, details: blank).notesRead)
+        // Its comments couldn't be read: its notes aren't all there, whatever else it has.
+        var unread = details
+        unread.comments = []
+        unread.commentsProblem = "Azure DevOps didn't answer."
+        #expect(!WorkItemStory.make(task, details: unread).notes.isEmpty)
+        #expect(!WorkItemStory.make(task, details: unread).notesRead)
     }
 }

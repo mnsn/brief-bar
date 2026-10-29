@@ -406,6 +406,12 @@ import Testing
         done.item.state = "Closed"
         done.item.category = .completed
         #expect(AgentText.waitingOn(done, tasks: [failed], related: [], me: done.me) == ["you, to complete !4091"])
+        // Nor once it went on to a pull request that's completed since, though that one isn't linked to the work item.
+        var wentOn = failed
+        wentOn.onPullRequest = PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 4085,
+                                                    sourceBranch: "readme-badges")
+        #expect(!read.pullRequests.contains { $0.number == 4085 })
+        #expect(AgentText.waitingOn(read, tasks: [wentOn], related: [], me: read.me) == ["you, to complete !4091"])
     }
 
     /// A pull request with a thread that's open points to `pull_request` for it.

@@ -42,7 +42,9 @@ public enum WorkItemStory {
         if let reason = current?.reason.flatMap({ $0.caseInsensitiveCompare(item.state) == .orderedSame ? nil : $0 }) {
             notes.insert(ItemStory.Fact("Why it's \(item.state)", reason), at: 0)
         }
-        return ItemStory(sentence: item.state, date: item.changedAt, facts: facts, more: more, notes: notes, notesRead: current != nil)
+        // All of them, unless its comments couldn't be read.
+        let notesRead = current.map { $0.commentsProblem == nil } ?? false
+        return ItemStory(sentence: item.state, date: item.changedAt, facts: facts, more: more, notes: notes, notesRead: notesRead)
     }
 
     /// "Show saved items under the cart: Active · Robin Diaz · 3 h left · Copilot: Working: Run the cart tests".

@@ -397,45 +397,45 @@ capsule shows it. Widgets' rows show none.
 
 ### Where it stands
 
-A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show
-Links links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's
-done or ready, then the rest, the newest first in each), a session linked through a pull request under that pull
-request, and a task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then
-**Show More**, with a tally of their states once there are five or more. A task with nothing linked shows none of it.
-Under its title, as its subtitle, **Waiting on:** says who the work item and what's linked to it wait on, and for what
+A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show Links
+links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's done or
+ready, then the rest, the newest first in each), a session linked through a pull request under that pull request, and a
+task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then **Show More**,
+with a tally of their states once there are five or more. A task with nothing linked shows none of it. Under its title,
+as its subtitle, **Waiting on:** says who the work item and what's linked to it wait on, and for what
 (`ItemStory.waits`): you first, in bold rather than a color, which could clash with the state of what it's about, such
 as a ready pull request's green, saying what to do, such as "you, to complete !4091"; then other people, such as
 "reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on task 5103", or, on that task itself, "Copilot,
 working on it" (`ItemStory.Wait.said(_:on:)`); VoiceOver hears them apart, by semicolons. A pull request's come from
 `PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do; a session waits on you while it asks, and on
 Copilot while it's at work; the work sent to Copilot, on Copilot while it goes, and on you once the one sent last for a
-work item or a pull request failed, unless that's done or closed since (`CopilotTaskEntry.waits(of:isDone:)`, which
-`work_item` uses too). Each is said once, and a session once, whether the work sent to Copilot in it or the session
-itself tells of it (`ItemStory.Wait.about`); two things in the same words, such as two sessions of the same name, are
-said once with how many, "(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under
-**Show More**, so it isn't said twice, or by other names. Its title, with its chevron and count, is one control, a
-disclosure to VoiceOver, that folds Where It Stands to that line, and BriefBar remembers it
-(`links.whereItStandsFolded`); folded, with nothing waiting, it says "Waiting on: no one", but only once the work item
-and all that's linked to it have said where they stand, and never while one can't. Pages don't show it. Each row shows
-its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
-color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
-item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
-its actions, with **✨ Summarize with Copilot** and its summary under them; then what Copilot said after its last
-checkpoint, while it's at work or waits for you, or how it ended once it stopped; then all its source knows of it
-(`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you opened it from first, in a card as the work item's
-fields are, and the pipelines that ran on it; then **Also Linked**, what else is linked to it, without the work item
-and the pages you came through (the `trail` of `itemNavigation`), so it never leads back; and last what Copilot wrote of
-a session's work, its overview and what's next, the rest behind **Show All Notes**, set apart by a thin rule, since
-those are Copilot's words, not BriefBar's. Once it stopped, its last checkpoint's next steps are what it planned then,
-behind Show All Notes too. A task's report, what Copilot printed when it ended, is what it said last when it came after
-its checkpoints (`ItemStory.Account.ending(with:)`). The header says where you
-are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it, and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a
-page go back through the pages, then to the work items you came from, each with the pages that showed over it, and
-scroll back to the row you opened; opening a page that shows already goes back to it. A work item on a page is
-followed, as a link in the details is, read from Azure DevOps when the sprint doesn't have it. Turning Show Links off
-takes the pages away. A view with nowhere to open pages (no `itemNavigation`) shows a short preview under the row
-instead, with **Show All** for the rest. While Show Links is off it reads nothing and shows one line, with **Turn On…**,
-which shows Show Links' setting, until you dismiss it.
+work item or a pull request failed, among all that was sent, such as on a pull request a task's work went on to, unless
+that's done or closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item` uses too). Each is said
+once, and a session once, whether the work sent to Copilot in it or the session itself tells of it
+(`ItemStory.Wait.about`); two things in the same words, such as two sessions of the same name, are said once with how
+many, "(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it
+isn't said twice, or by other names. Its title, with its chevron and count, is one control, a disclosure to VoiceOver,
+that folds Where It Stands to that line, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing
+waiting, it says "Waiting on: no one", but only once the work item and all that's linked to it have said where they
+stand, and never while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it
+is, where it stands in a sentence, its opening words in its state's color, and since when; one that needs you or went
+wrong opens in a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
+and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
+to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
+Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
+`itemNavigation`), so it never leads back; and last what Copilot wrote of a session's work, its overview and what's
+next, the rest behind **Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's.
+Once it stopped, its last checkpoint's next steps are what it planned then, behind Show All Notes too. A task's report,
+what Copilot printed when it ended, is what it said last when it came after its checkpoints
+(`ItemStory.Account.ending(with:)`). The header says where you are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it,
+and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a page go back through the pages, then to the work items
+you came from, each with the pages that showed over it, and scroll back to the row you opened; opening a page that shows
+already goes back to it. A work item on a page is followed, as a link in the details is, read from Azure DevOps when the
+sprint doesn't have it. Turning Show Links off takes the pages away. A view with nowhere to open pages (no
+`itemNavigation`) shows a short preview under the row instead, with **Show All** for the rest. While Show Links is off
+it reads nothing and shows one line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
 
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
 Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again
@@ -522,23 +522,24 @@ information found"), the model isn't on your plan, or your premium requests ran 
 sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
 **Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
 
-The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off, or
-a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off,
+or a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
 doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
-stop being read, unless the details asked for them too, and a story the details are reading already is waited for
-rather than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state,
-title or status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a
-failed one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
+stop being read, unless the details asked for them too, and a story the details are reading already is waited for rather
+than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
+status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
+one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
 (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
 than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
 been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
 description and comments when they're known only then or only now: its story has them only while its details were read
-(`ItemStory.notesRead`). Read both then and now, a first comment does, and so does the last one gone.
-Its caption then says **Out of date**, in orange, with what changed in its tooltip, "!4120 changed", and **Summarize
-Again** on its right; the headline and the next step turn gray. The demo makes summaries up (`DemoSummaries`) and never
-runs Copilot, and `--render` of your own data writes none; the demo's pictures show a summary as it's written, once it
-is, out of date and failed (`summary-*`), and the setting with Show Links off; and a pull request's and a session's
-summary under its row (`rows-summary-*`), which the other pictures of the lists don't show.
+and all of them only when its comments could be read too (`ItemStory.notesRead`). Read in full both then and now, a
+first comment does, and so does the last one gone. Its caption then says **Out of date**, in orange, with what changed
+in its tooltip, "!4120 changed", and **Summarize Again** on its right; the headline and the next step turn gray. The
+demo makes summaries up (`DemoSummaries`) and never runs Copilot, and `--render` of your own data writes none; the
+demo's pictures show a summary as it's written, once it is, out of date and failed (`summary-*`), and the setting with
+Show Links off; and a pull request's and a session's summary under its row (`rows-summary-*`), which the other pictures
+of the lists don't show.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.

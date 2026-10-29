@@ -209,6 +209,18 @@ import Testing
         #expect(CopilotTaskEntry.waits(of: [failed, working], isDone: { _ in false }) { _ in "Task" }.map(\.text) == ["Copilot, on task 5103"])
         // Or the task is done since.
         #expect(CopilotTaskEntry.waits(of: [failed]) { $0 == task }.isEmpty)
+        // A task's work that went on to a pull request and failed there, sent again on that pull request since: among all
+        // that was sent, it's not the latest, though it's the task's.
+        let pullRequest = PullRequestReference(organization: "contoso", project: "Storefront", repository: "shop-web", id: 4120,
+                                               sourceBranch: "saved-items")
+        var wentOn = sent(.failed, minutesAgo: 10, session: 3)
+        wentOn.onPullRequest = pullRequest
+        var again = sent(.finished, minutesAgo: 2, session: 4)
+        again.workItem = nil
+        again.onPullRequest = pullRequest
+        #expect(CopilotTaskEntry.waits(of: [wentOn], isDone: { _ in false }).map(\.text)
+            == ["you, to look at Copilot's work on !4120, which failed"])
+        #expect(CopilotTaskEntry.waits(of: [wentOn], among: [again, wentOn], isDone: { _ in false }).isEmpty)
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

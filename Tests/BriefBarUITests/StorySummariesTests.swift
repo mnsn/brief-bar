@@ -411,7 +411,7 @@ import Testing
     }
 
     @Test func anEditedDescriptionMakesItOutOfDate() async {
-        let then = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])
+        let then = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")], notesRead: true)
         var now = then
         now.notes = [ItemStory.Fact("Description", "Totals round down when a coupon takes off a percentage.")]
         #expect(await whatChanged(then: [workItem: then], now: [workItem: now]) == "5110 changed")
@@ -421,7 +421,7 @@ import Testing
         let then = ItemStory(sentence: "Active", notes: [
             ItemStory.Fact("Description", "Totals round down."),
             ItemStory.Fact("Latest comments", "Priya Shah: Only totals with half a cent are off."),
-        ])
+        ], notesRead: true)
         var now = then
         now.notes[1].value = "Sam Rivera: Finance wants them rounded half up instead.\nPriya Shah: Only totals with half a cent are off."
         #expect(await whatChanged(then: [workItem: then], now: [workItem: now]) == "5110 changed")
@@ -472,10 +472,16 @@ import Testing
 
     /// A work item has its notes only while its details were read, which those of another may have taken the place of.
     @Test func notesKnownOnlyThenOrOnlyNowDontMakeItOutOfDate() async {
-        let read = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])
+        let read = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")], notesRead: true)
         let unread = ItemStory(sentence: "Active")
         #expect(await whatChanged(then: [workItem: read], now: [workItem: unread]) == nil)
         #expect(await whatChanged(then: [workItem: unread], now: [workItem: read]) == nil)
+        // Nor when only some were read, such as its description while its comments couldn't be.
+        let commented = ItemStory(sentence: "Active", notes: [
+            ItemStory.Fact("Description", "Totals round down."), ItemStory.Fact("Latest comments", "Sam Rivera: This blocks the release."),
+        ], notesRead: true)
+        let withoutComments = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])
+        #expect(await whatChanged(then: [workItem: commented], now: [workItem: withoutComments]) == nil)
     }
 
     /// What the Copilot CLI was looked for with.

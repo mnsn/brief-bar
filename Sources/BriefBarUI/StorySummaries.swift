@@ -80,8 +80,8 @@ package final class StorySummaries: ObservableObject {
         /// What its story said, as the prompt has it but for its notes: where it stands, its facts, its runs and the first
         /// error of one that failed, and what Copilot recorded of its work; nil when its story wasn't known.
         package var story: String?
-        /// Its story's notes, as the prompt has them, such as a work item's description and latest comments: empty when
-        /// they were read and it has none, and nil when they weren't read.
+        /// Its story's notes, as the prompt has them, such as a work item's description and latest comments, when they
+        /// were all read (`ItemStory.notesRead`): empty for none; nil when they weren't, or only some were.
         package var notes: String?
 
         package init(ref: ItemRef, label: String, row: String, story: String?, notes: String? = nil) {
@@ -394,7 +394,7 @@ package final class StorySummaries: ObservableObject {
             withoutNotes.notes = []
             told = ([story.sentenceToShare] + withoutNotes.lines()).joined(separator: "\n")
             let noted = ItemStory(sentence: "", notes: story.notes).lines()
-            notes = noted.isEmpty && !story.notesRead ? nil : noted.joined(separator: "\n")
+            notes = story.notesRead ? noted.joined(separator: "\n") : nil
         }
         return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes)
     }
