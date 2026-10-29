@@ -24,12 +24,18 @@ public struct TextSize: Equatable, Hashable, Comparable, Sendable {
 
     /// The next size up, or this one at the largest.
     public var bigger: TextSize {
-        TextSize(percent: Self.percentages.first { $0 > percent } ?? percent)
+        stepped(by: 1)
     }
 
     /// The next size down, or this one at the standard size.
     public var smaller: TextSize {
-        TextSize(percent: Self.percentages.last { $0 < percent } ?? percent)
+        stepped(by: -1)
+    }
+
+    /// `steps` sizes bigger, or smaller for a negative number, as far as there are sizes.
+    public func stepped(by steps: Int) -> TextSize {
+        guard let index = Self.percentages.firstIndex(of: percent) else { return self }
+        return TextSize(percent: Self.percentages[min(max(index + steps, 0), Self.percentages.count - 1)])
     }
 
     public static func < (lhs: TextSize, rhs: TextSize) -> Bool {

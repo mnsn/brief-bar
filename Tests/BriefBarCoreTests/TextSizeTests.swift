@@ -24,6 +24,14 @@ import Testing
         #expect(TextSize(percent: 110) < TextSize(percent: 120))
     }
 
+    @Test func severalStepsAtOnceStopAtEitherEnd() {
+        #expect(TextSize.standard.stepped(by: 3).percent == 130)
+        #expect(TextSize(percent: 130).stepped(by: -2).percent == 110)
+        #expect(TextSize(percent: 130).stepped(by: 9).percent == 150)
+        #expect(TextSize(percent: 130).stepped(by: -9) == .standard)
+        #expect(TextSize(percent: 120).stepped(by: 0).percent == 120)
+    }
+
     @Test func anyPercentageBecomesTheNearestSizeOffered() {
         #expect(TextSize(percent: 124).percent == 120)
         #expect(TextSize(percent: 126).percent == 130)

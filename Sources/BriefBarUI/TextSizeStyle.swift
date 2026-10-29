@@ -115,13 +115,14 @@ extension Font.TextStyle {
 }
 
 /// Turns ⌘-scrolling into steps of text size: a step for each notch of a mouse's wheel, and for each stretch of a
-/// trackpad's or a Magic Mouse's swipe, but none for the momentum that carries on once you lift your fingers. Scrolling up,
-/// as toward the top of a page, makes text bigger, and down, smaller, whichever way your scrolling goes.
+/// trackpad's or a Magic Mouse's swipe, however its events divide it, but none for the momentum that carries on once you
+/// lift your fingers. Scrolling up, as toward the top of a page, makes text bigger, and down, smaller, whichever way your
+/// scrolling goes.
 package struct TextSizeScrolling: Sendable {
     /// How far a swipe scrolls for each step, in points.
     package static let stretch: CGFloat = 40
 
-    /// How far the swipe scrolled since its last step, up or down.
+    /// How far the swipe scrolled since its last step, up or down: less than a stretch.
     private var travelled: CGFloat = 0
 
     package init() {}
@@ -131,8 +132,8 @@ package struct TextSizeScrolling: Sendable {
     ///   - isPrecise: from a trackpad or a Magic Mouse, in points, rather than a wheel's notches.
     ///   - isMomentum: momentum, after you lifted your fingers.
     ///   - begins: a new swipe begins.
-    /// - Returns: 1 for a step bigger, -1 for a step smaller, 0 for none.
-    package mutating func step(delta: CGFloat, isPrecise: Bool, isMomentum: Bool = false, begins: Bool = false) -> Int {
+    /// - Returns: how many steps bigger, or smaller for a negative number: 0 for none.
+    package mutating func steps(delta: CGFloat, isPrecise: Bool, isMomentum: Bool = false, begins: Bool = false) -> Int {
         guard !isMomentum else { return 0 }
         guard isPrecise else {
             travelled = 0
@@ -143,9 +144,8 @@ package struct TextSizeScrolling: Sendable {
             travelled = 0
         }
         travelled += delta
-        guard abs(travelled) >= Self.stretch else { return 0 }
-        let step = travelled > 0 ? 1 : -1
-        travelled -= CGFloat(step) * Self.stretch
-        return step
+        let steps = Int(travelled / Self.stretch)
+        travelled -= CGFloat(steps) * Self.stretch
+        return steps
     }
 }

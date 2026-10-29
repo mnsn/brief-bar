@@ -573,9 +573,9 @@ final class AppModel: ObservableObject {
     private func scrollTextSize(_ scroll: ScrollEvent) -> Bool {
         guard let window = NSApp.window(withWindowNumber: scroll.windowNumber), windows.values.contains(where: { $0.owns(window) })
         else { return false }
-        let step = textSizeScrolling.step(delta: scroll.delta, isPrecise: scroll.isPrecise, isMomentum: scroll.isMomentum, begins: scroll.begins)
-        if step != 0 {
-            services.setTextSize(step > 0 ? services.textSize.bigger : services.textSize.smaller)
+        let steps = textSizeScrolling.steps(delta: scroll.delta, isPrecise: scroll.isPrecise, isMomentum: scroll.isMomentum, begins: scroll.begins)
+        if steps != 0 {
+            services.setTextSize(services.textSize.stepped(by: steps))
         }
         return true
     }

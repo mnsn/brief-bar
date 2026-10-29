@@ -19,41 +19,52 @@ import Testing
 
     @Test func eachNotchOfAWheelIsAStep() {
         var scrolling = TextSizeScrolling()
-        #expect(scrolling.step(delta: 1, isPrecise: false) == 1)
-        #expect(scrolling.step(delta: 6, isPrecise: false) == 1)
-        #expect(scrolling.step(delta: -2, isPrecise: false) == -1)
-        #expect(scrolling.step(delta: 0, isPrecise: false) == 0)
+        #expect(scrolling.steps(delta: 1, isPrecise: false) == 1)
+        #expect(scrolling.steps(delta: 6, isPrecise: false) == 1)
+        #expect(scrolling.steps(delta: -2, isPrecise: false) == -1)
+        #expect(scrolling.steps(delta: 0, isPrecise: false) == 0)
     }
 
     @Test func aSwipeStepsOncePerStretch() {
         var scrolling = TextSizeScrolling()
         let stretch = TextSizeScrolling.stretch
-        #expect(scrolling.step(delta: stretch / 2, isPrecise: true, begins: true) == 0)
-        #expect(scrolling.step(delta: stretch / 2, isPrecise: true) == 1)
-        #expect(scrolling.step(delta: stretch * 0.75, isPrecise: true) == 0)
-        // What's left of a long scroll counts toward the next step.
-        #expect(scrolling.step(delta: stretch * 1.5, isPrecise: true) == 1)
-        #expect(scrolling.step(delta: stretch * 0.25, isPrecise: true) == 1)
+        #expect(scrolling.steps(delta: stretch / 2, isPrecise: true, begins: true) == 0)
+        #expect(scrolling.steps(delta: stretch / 2, isPrecise: true) == 1)
+        #expect(scrolling.steps(delta: stretch * 0.75, isPrecise: true) == 0)
+        // A long scroll at once is as many steps as it's stretches, and what's left counts toward the next.
+        #expect(scrolling.steps(delta: stretch * 2.5, isPrecise: true) == 3)
+        #expect(scrolling.steps(delta: stretch * 0.5, isPrecise: true) == 0)
+        #expect(scrolling.steps(delta: stretch * 0.25, isPrecise: true) == 1)
         // Down, smaller.
-        #expect(scrolling.step(delta: -stretch, isPrecise: true, begins: true) == -1)
+        #expect(scrolling.steps(delta: -stretch * 2, isPrecise: true, begins: true) == -2)
+    }
+
+    /// However macOS divides a swipe into events, it's as many steps.
+    @Test(arguments: [[120.0, 0], [40.0, 40, 40, 0], [30.0, 30, 30, 30], [10.0, 110], [119.0, 1, 39]])
+    func aSwipesStepsDontDependOnItsEvents(_ deltas: [Double]) {
+        var scrolling = TextSizeScrolling()
+        let steps = deltas.enumerated().reduce(0) { total, delta in
+            total + scrolling.steps(delta: CGFloat(delta.element), isPrecise: true, begins: delta.offset == 0)
+        }
+        #expect(steps == Int(deltas.reduce(0, +) / Double(TextSizeScrolling.stretch)))
     }
 
     @Test func turningBackOrStartingAgainTakesAWholeStretch() {
         var scrolling = TextSizeScrolling()
         let stretch = TextSizeScrolling.stretch
-        #expect(scrolling.step(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
-        #expect(scrolling.step(delta: -stretch * 0.5, isPrecise: true) == 0)
-        #expect(scrolling.step(delta: -stretch * 0.5, isPrecise: true) == -1)
-        #expect(scrolling.step(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
-        #expect(scrolling.step(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
+        #expect(scrolling.steps(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
+        #expect(scrolling.steps(delta: -stretch * 0.5, isPrecise: true) == 0)
+        #expect(scrolling.steps(delta: -stretch * 0.5, isPrecise: true) == -1)
+        #expect(scrolling.steps(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
+        #expect(scrolling.steps(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
     }
 
     @Test func momentumAfterLiftingYourFingersChangesNothing() {
         var scrolling = TextSizeScrolling()
         let stretch = TextSizeScrolling.stretch
-        #expect(scrolling.step(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
+        #expect(scrolling.steps(delta: stretch * 0.9, isPrecise: true, begins: true) == 0)
         for _ in 0..<20 {
-            #expect(scrolling.step(delta: stretch * 3, isPrecise: true, isMomentum: true) == 0)
+            #expect(scrolling.steps(delta: stretch * 3, isPrecise: true, isMomentum: true) == 0)
         }
     }
 
