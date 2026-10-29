@@ -489,20 +489,6 @@ import Testing
         }
     }
 
-    /// Under a line that says who it waits on, the next step shows only with the rest, unless it's yours and the line
-    /// doesn't say anything waits on you.
-    @Test func theNextStepFoldsUnderWhoItWaitsOnUnlessItsYoursAlone() {
-        let reviewers = ItemStory.Wait(.people, "reviewers of Sam Rivera's !4120")
-        let complete = ItemStory.Wait(.you, "you, to complete !4091")
-        let theirs = StorySummary(headline: "Waiting on review.", nextFor: "Sam Rivera", next: "Get !4120 reviewed.")
-        let yours = StorySummary(headline: "Nearly done.", nextFor: "you", next: "Start task 5104.")
-        #expect(!SummaryCard.foldsNext(theirs, under: []))
-        #expect(SummaryCard.foldsNext(theirs, under: [reviewers]))
-        #expect(!SummaryCard.foldsNext(yours, under: [reviewers]))
-        #expect(SummaryCard.foldsNext(yours, under: [complete, reviewers]))
-        #expect(!SummaryCard.foldsNext(StorySummary(headline: "Done."), under: [reviewers]))
-    }
-
     /// Read both then and now, a work item's first comment, or its last one gone, changes what it says.
     @Test func aFirstCommentOrTheLastOneGoneMakesItOutOfDate() async {
         let none = ItemStory(sentence: "Active", notesRead: true)
@@ -767,6 +753,56 @@ import Testing
         await summaries.opened(workItem)
         await waitForWriting(summaries, workItem)
         #expect(tries.prompts.count == 2)
+
+        // Closing what said it couldn't be written doesn't make opening it try again any sooner.
+        summaries.hide(workItem)
+        #expect(summaries.state(for: workItem) == nil)
+        await summaries.opened(workItem)
+        #expect(tries.prompts.count == 2)
+        // Try Again does, at once; once one is written, opening it writes as before.
+        summaries.write = writer(tries)
+        summaries.summarize(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(tries.prompts.count == 3)
+        publishWithTasks(links, status: "Completed")
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(tries.prompts.count == 4)
+    }
+
+    /// What you did since it opened stands: a summary you stopped, wrote, closed or showed again isn't written by
+    /// itself as the details open; the next time it opens, it is.
+    @Test func openingOneNeverUndoesWhatYouDidSinceItOpened() async throws {
+        let (links, _, summaries) = hub()
+        publishWithTasks(links)
+        let asked = Asked()
+        let gate = Gate()
+        summaries.write = { prompt, _ in
+            asked.add(prompt)
+            await gate.wait()
+            return .success("HEADLINE: Fixed in !4091.")
+        }
+        // It opens; before its moment is up, you ask for one, then stop it.
+        let acted = summaries.timesActed(on: workItem)
+        summaries.summarize(workItem)
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        summaries.cancel(workItem)
+        gate.open()
+        await summaries.opened(workItem, unlessActedSince: acted)
+        #expect(asked.prompts.count == 1)
+        #expect(summaries.state(for: workItem) == nil)
+        // Opened again, it's written.
+        await summaries.opened(workItem, unlessActedSince: summaries.timesActed(on: workItem))
+        await waitForWriting(summaries, workItem)
+        #expect(asked.prompts.count == 2)
+        // Each of these is something you did.
+        let before = summaries.timesActed(on: workItem)
+        summaries.hide(workItem)
+        summaries.show(workItem)
+        summaries.dismiss(workItem)
+        #expect(summaries.timesActed(on: workItem) == before + 3)
     }
 
     /// Written again, the one before shows meanwhile; stopped, it's back; and once the new one's written, it's gone.

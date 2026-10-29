@@ -19,7 +19,7 @@ extension EnvironmentValues {
 }
 
 /// The summary under a row, in the row's own sizes: ✨ and its headline, then what's next and for whom, then the first
-/// lines of the rest, all of it on request; while it's written, that it is, with Stop; when it couldn't be, why, with Try
+/// three lines of the rest, all of it on request; while it's written, that it is, with Stop; when it couldn't be, why, with Try
 /// Again.
 package struct RowSummary: View {
     private let subject: ItemRef?
@@ -124,7 +124,7 @@ private struct RowSummaryContent: View {
                 Text(summary.headline)
                     .font(.system(size: options.rowReasonSize, weight: .medium))
                     .foregroundStyle(changed == nil ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
-                    .lineLimit(showsMore ? nil : 2)
+                    // Never cut short, nor what's next: a sentence each, and what the rest is cut to make room for.
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 // Room for ✕; its time is in its tooltip, so that it isn't read as the row's.
@@ -161,7 +161,6 @@ private struct RowSummaryContent: View {
                 (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                     .font(.system(size: options.rowDetailSize))
                     .foregroundStyle(.secondary)
-                    .lineLimit(showsMore ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .padding(.leading, Self.indent)

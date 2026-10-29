@@ -93,6 +93,25 @@ private typealias Conversation = SessionConversation.Conversation
         }
     }
 
+    /// Once the summary it's read for is taken back, as when Show Links goes off, a read that's still to happen reads
+    /// nothing, and one under way makes nothing of what it read.
+    @Test func aCancelledReadReadsNothing() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = CopilotPaths(root: root)
+        try writeLog([
+            Line.sessionStart(at: t(0)),
+            Line.userMessage("Add a Save for later button.", at: t(1)),
+            Line.message("Added it.", at: t(2)),
+        ], to: paths.eventsFile(Self.id))
+        #expect(!SessionConversation.digest(paths: paths, id: Self.id).isEmpty)
+        let read = Task.detached { () -> Conversation in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return SessionConversation.read(paths: paths, id: Self.id)
+        }
+        #expect(await read.value == Conversation())
+    }
+
     /// A log can be huge: only its start, for what was asked first, and its end, for the latest turns, are read, and the
     /// digest says a part was left out. One no longer than both is read whole.
     @Test func readsAHugeLogByItsStartAndItsEnd() throws {

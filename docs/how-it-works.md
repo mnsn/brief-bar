@@ -480,9 +480,11 @@ summary of the work item and what's linked to it: **When you open one**, the def
 (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`). When you open one, once Where It Stands has shown
 for a moment, 1.5 seconds (`StorySummaries.openedFor`), unfolded, the details ask for it (`StorySummaries.opened`), and
 it's written unless one is being written, you closed it, the last couldn't be written less than ten minutes ago
-(`retryAfter`), or one is there that's still current once what it summed up is told as it is now: then that one shows
-again, for nothing. Passing through a work item on your way to another costs nothing, and turning summaries on, or
-unfolding Where It Stands, asks again. Only when you ask, it's written when you click ✨. Before it asks, the sources
+(`retryAfter`), even if you closed what said so, you wrote, stopped, closed or showed one for it since it opened
+(`timesActed(on:)`, which the details remember as it opens, so what they do by themselves never undoes what you did),
+or one is there that's still current once what it summed up is told as it is now: then that one shows again, for
+nothing. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
+Stands, or its getting something to sum up while it shows, such as links read after it opened, asks again. Only when you ask, it's written when you click ✨. Before it asks, the sources
 tell what they know of each, as for the details, the work item's description and latest comments too, and each of its
 tasks, with how the work sent to Copilot for it stands; then each source reads more of each thing for the summary, only
 now (`ItemStories.context(for:)`, from what each registers with `registerContext`), as [below](#what-a-summary-reads)
@@ -504,8 +506,8 @@ that you answered them, the prompt says where it stands by its votes instead (`I
 status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
 
 The card (`SummaryCard`), at the top of Where It Stands, under Waiting On, shows all of it: the headline, the next
-step, "Next for you: Complete !4091.", unless Waiting On says it already, and what's been done, what's under way and
-what's left, never behind **Show More**, since that's what explains where things stand. Its caption says "Summary by
+step, "Next for you: Complete !4091.", and what's been done, what's under way and what's left, never behind **Show
+More**, since that's what explains where things stand. Its caption says "Summary by
 Copilot · 2m ago", the time each minute and never cut short, and its tooltip, which model wrote it, when, and from
 what: "from 5101, !4120 and 1 Copilot session". Each action has one control: **Stop** while it's written, after
 "Summarizing with Claude Haiku 5.5 · 1 request", or "Summarizing · 1 request" where that doesn't fit; then **↻**, which
@@ -530,9 +532,8 @@ spinner takes that place, so a second click there doesn't open the row. Its righ
 group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
 **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
 under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
-whom, two lines each at most, then the first three lines of what's been done and what's left
-(`RowSummaryContent.paragraphLines`), with **Show More** at their end, in the tint, as a link, while there's more,
-and, out of date, **Summarize Again**; ✕ shows on the right while you point at it, over its first line, and the time it was written is in its tooltip,
+whom, in full, then the first three lines of what's been done and what's left (`RowSummaryContent.paragraphLines`),
+with **Show More** at their end, in the tint, as a link, while there's more, and, out of date, **Summarize Again**; ✕ shows on the right while you point at it, over its first line, and the time it was written is in its tooltip,
 so that it isn't read as the row's; it ends where the row's time does, left of its actions. The prompt tells the model
 that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as its
 page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's out of
@@ -972,8 +973,8 @@ so a pull request's details (policies and threads, two requests) are fetched on 
   minutes, and drafts and idle ones every fifteen.
 
 Requests honor `Retry-After`: when Azure DevOps asks to slow down, nothing is sent until the time it
-gave. When nothing can be read (offline, for example), refreshes back off up to ten minutes, and
-waking the Mac or getting back online refreshes right away.
+gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`). When nothing can be read (offline, for
+example), refreshes back off up to ten minutes, and waking the Mac or getting back online refreshes right away.
 
 Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
 server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a

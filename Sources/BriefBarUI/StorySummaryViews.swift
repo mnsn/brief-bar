@@ -52,9 +52,10 @@ struct SummarizeButton: View {
     }
 }
 
-/// What Copilot summed up, at the top of Where It Stands: where it stands in a line and what's next, for whom, in the
-/// colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it couldn't, why, and
-/// what would help. One whose rows changed since says it's out of date, and what changed.
+/// What Copilot summed up, at the top of Where It Stands and under a page's heading: where it stands in a line, what's
+/// next and for whom, and what's been done and what's left, all of it, in the colors of what a model wrote; while it's
+/// written again, the one before, dimmed, with a way to stop; when it couldn't be, why, and what would help. One whose
+/// rows changed since says it's out of date, and what changed.
 package struct SummaryCard: View {
     /// Where it shows: at the top of Where It Stands, or under a pull request's or a session's row in a list, where it's
     /// smaller and quieter.
@@ -67,29 +68,16 @@ package struct SummaryCard: View {
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
     var style: Style = .section
-    /// Who it waits on, as the line above it says: then what's next is left out, unless it's yours and the line doesn't
-    /// say anything waits on you.
-    var waitsAbove: [ItemStory.Wait] = []
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
     @LocalState private var choosesModel = false
 
-    package init(
-        subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section, waitsAbove: [ItemStory.Wait] = []
-    ) {
+    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section) {
         self.subject = subject
         self.summaries = summaries
         self.rows = rows
         self.style = style
-        self.waitsAbove = waitsAbove
-    }
-
-    /// Whether its next step is left out: another's, or yours, under a line that says what waits on you.
-    static func foldsNext(_ summary: StorySummary, under waits: [ItemStory.Wait]) -> Bool {
-        guard !waits.isEmpty, summary.next != nil else { return false }
-        let isYours = summary.nextFor?.caseInsensitiveCompare("you") == .orderedSame
-        return !isYours || waits.contains { $0.who == .you }
     }
 
     private var isRow: Bool { style == .row }
@@ -186,7 +174,7 @@ package struct SummaryCard: View {
                     .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                if let next = summary.next, !Self.foldsNext(summary, under: waitsAbove) {
+                if let next = summary.next {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                         .font(.system(size: isRow ? 11.5 : 12))
                         .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -380,6 +368,13 @@ package struct SummaryCard: View {
 }
 
 // MARK: - The setting
+
+/// A thing the details or a page shows, and how many times you'd acted on its summary as it opened
+/// (`StorySummaries.timesActed(on:)`): what they write by themselves as it opens never undoes what you did meanwhile.
+struct OpenedSubject: Equatable {
+    var subject: ItemRef
+    var acted: Int
+}
 
 /// Where a summary could be, while Summarize with Copilot is off: a line that says what it would do, **Turn On…**, which
 /// shows its setting, what it sends and what it costs, to turn it on there, and ✕, which hides the line for good. Nothing

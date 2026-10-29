@@ -237,6 +237,8 @@ private struct StandingContent: View {
     @LocalState private var hintHidden: Bool?
     @LocalState private var folded: Bool?
     @LocalState private var showsSetting = false
+    /// What it shows, and how many times you'd acted on its summary as it opened.
+    @LocalState private var opened: OpenedSubject?
     @Environment(\.isRendering) private var isRendering
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.whereItStandsFolded) private var foldedToShow
@@ -268,7 +270,7 @@ private struct StandingContent: View {
                     }
                 }
                 if links.isOn, showsSummary, !isFolded {
-                    SummaryCard(subject: subject, summaries: summaries, rows: rows, waitsAbove: waits)
+                    SummaryCard(subject: subject, summaries: summaries, rows: rows)
                     if !groups.isEmpty {
                         SummaryOffer(subject: subject, summaries: summaries, links: links, defaults: defaults)
                     }
@@ -299,13 +301,15 @@ private struct StandingContent: View {
             .onChange(of: rows, initial: true) {
                 request(connections)
             }
-            // Once it's shown a moment, its summary, unless one that's current is there: as it opens, as it's unfolded, and
-            // as summaries are turned on.
-            .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)") {
+            // Once it's shown a moment, its summary, unless one that's current is there: as it opens, as it's unfolded, as
+            // summaries are turned on, and as it has something to sum up, such as links that came after it opened; never
+            // once you wrote, stopped, closed or showed it since it opened.
+            .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.hasSomethingToSum(subject))") {
                 guard links.isOn, showsSummary, !isFolded, !isRendering else { return }
+                let acted = visit(subject)
                 try? await Task.sleep(for: StorySummaries.openedFor)
                 guard !Task.isCancelled else { return }
-                await summaries.opened(subject)
+                await summaries.opened(subject, unlessActedSince: acted)
             }
             // And each minute while it shows, for what changes without its row changing, such as a vote or a checkpoint.
             .background {
@@ -320,6 +324,15 @@ private struct StandingContent: View {
         // Its own, for who it waits on, such as Copilot at work on one of its tasks.
         if showsSummary { stories.request(links.describe(subject)) }
         for connection in connections { stories.request(connection.item) }
+    }
+
+    /// How many times you'd acted on its summary as it opened (`StorySummaries.timesActed(on:)`), remembered for as long
+    /// as it shows.
+    private func visit(_ subject: ItemRef) -> Int {
+        if let opened, opened.subject == subject { return opened.acted }
+        let acted = summaries.timesActed(on: subject)
+        opened = OpenedSubject(subject: subject, acted: acted)
+        return acted
     }
 
     private func header(count: Int, canSummarize: Bool) -> some View {

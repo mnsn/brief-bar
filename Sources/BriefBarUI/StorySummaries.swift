@@ -124,6 +124,11 @@ package final class StorySummaries: ObservableObject {
     @Published private var previous: [ItemRef: State] = [:]
     /// The written ones you closed, kept to show again without asking Copilot.
     @Published private var hidden: Set<ItemRef> = []
+    /// How many times you wrote, stopped, closed or showed each one (`timesActed(on:)`).
+    private var acted: [ItemRef: Int] = [:]
+    /// When each last couldn't be written, until one is: opening it doesn't try again before `retryAfter`, even if you
+    /// closed what said so.
+    private var lastFailed: [ItemRef: Date] = [:]
     /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
     @Published package private(set) var hasCLI: Bool?
     /// The models Settings offers; the app fills it in.
@@ -253,29 +258,45 @@ package final class StorySummaries: ObservableObject {
 
     /// A work item's details, or a pull request's or a session's page, has shown it for a moment (`openedFor`): writes its
     /// summary, while writing on open is on, unless one is being written, you closed it, or one is there that's still
-    /// current, once what it summed up is told as it is now; and, when the last couldn't be written, unless that was
-    /// lately. A work item needs something to sum up, as ✨ does. Cancelled, as when it's closed, it asks nothing.
-    package func opened(_ subject: ItemRef) async {
-        guard isAvailable, writesWhenOpened, writing[subject] == nil, !hidden.contains(subject) else { return }
-        switch states[subject] {
-        case .writing?:
-            return
-        case .failed(_, let at)?:
-            guard now().timeIntervalSince(at) >= Self.retryAfter else { return }
-        case .written?:
+    /// current, once what it summed up is told as it is now; unless the last couldn't be written lately, even if you
+    /// closed what said so; and unless you wrote, stopped, closed or showed one for it since you opened it (`acted`, as
+    /// `timesActed(on:)` said then). A work item needs something to sum up, as ✨ does. Cancelled, as when it's closed, it
+    /// asks nothing.
+    package func opened(_ subject: ItemRef, unlessActedSince acted: Int? = nil) async {
+        func mayWrite() -> Bool {
+            isAvailable && writesWhenOpened && writing[subject] == nil && !hidden.contains(subject)
+                && acted.map { $0 == timesActed(on: subject) } ?? true
+                && lastFailed[subject].map { now().timeIntervalSince($0) >= Self.retryAfter } ?? true
+        }
+        guard mayWrite() else { return }
+        if case .written? = states[subject] {
             await stories.tell([links.describe(subject)] + links.connections(of: subject).map(\.item))
-            guard isAvailable, writing[subject] == nil, !hidden.contains(subject), isOutOfDate(subject) else { return }
-        case nil:
-            break
+            guard mayWrite(), isOutOfDate(subject) else { return }
         }
         guard !Task.isCancelled, subject.kind == .workItem ? hasSomethingToSum(subject) : canSummarize(subject) else { return }
-        summarize(subject)
+        write(subject)
     }
 
-    /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
-    /// it has, which shows meanwhile; of a pull request or a session with nothing linked, of what's known of it. Nothing
-    /// unless this and Show Links are on.
+    /// How many times you wrote, stopped, closed or showed its summary: the details remember it as they open a thing, so
+    /// what they write by themselves never undoes what you did meanwhile.
+    package func timesActed(on subject: ItemRef) -> Int {
+        acted[subject, default: 0]
+    }
+
+    private func act(on subject: ItemRef) {
+        acted[subject, default: 0] += 1
+    }
+
+    /// Asks Copilot for a summary of a thing and what's linked to it, as you asked, as the details show them now, in place
+    /// of the one it has, which shows meanwhile; of a pull request or a session with nothing linked, of what's known of it.
+    /// Nothing unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
+        act(on: subject)
+        write(subject)
+    }
+
+    /// Writes one, as you asked or as it opened.
+    private func write(_ subject: ItemRef) {
         guard isAvailable else { return }
         writing[subject]?.task.cancel()
         nextToken += 1
@@ -330,25 +351,30 @@ package final class StorySummaries: ObservableObject {
             if let summary = StorySummary.parse(text) {
                 states[subject] = .written(summary, at: now(), inputs: inputs, model: model)
                 previous[subject] = nil
+                lastFailed[subject] = nil
                 // Once, wherever it shows.
                 AccessibilityNotification.Announcement("Summary ready: \(links.describe(subject).title)").post()
             } else {
                 states[subject] = .failed(Problem("Copilot answered nothing."), at: now())
+                lastFailed[subject] = now()
             }
         case .failure(let problem):
             Log.app.error("Summary not written")
             states[subject] = .failed(problem, at: now())
+            lastFailed[subject] = now()
         }
     }
 
     /// Stops writing one: the one before it, if there was one, shows again.
     package func cancel(_ subject: ItemRef) {
+        act(on: subject)
         writing.removeValue(forKey: subject)?.task.cancel()
         if case .writing? = states[subject] { states[subject] = previous.removeValue(forKey: subject) }
     }
 
     /// Forgets one.
     package func dismiss(_ subject: ItemRef) {
+        act(on: subject)
         writing.removeValue(forKey: subject)?.task.cancel()
         states[subject] = nil
         previous[subject] = nil
@@ -358,11 +384,13 @@ package final class StorySummaries: ObservableObject {
     /// Closes one, keeping it to show again for nothing, as long as it's kept; one that isn't written is forgotten.
     package func hide(_ subject: ItemRef) {
         guard case .written? = states[subject] else { return dismiss(subject) }
+        act(on: subject)
         hidden.insert(subject)
     }
 
     /// Shows one you closed again.
     package func show(_ subject: ItemRef) {
+        act(on: subject)
         hidden.remove(subject)
     }
 

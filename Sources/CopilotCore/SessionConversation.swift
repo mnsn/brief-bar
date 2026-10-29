@@ -64,17 +64,20 @@ public enum SessionConversation {
     /// The conversation in a session's log in the Copilot folder, `session-state/<id>/events.jsonl`, opened without
     /// following a symbolic link below that folder (`LocalFile.openFile(below:_:)`): all of it when it's no longer than
     /// `headBytes` and `tailBytes` together, or else what was asked first, from its first `headBytes`, and the turns in
-    /// its last `tailBytes`. Nothing for an ID that isn't a session's, a UUID.
+    /// its last `tailBytes`. Nothing for an ID that isn't a session's, a UUID; and nothing more is read, or made of what
+    /// was, once the task that reads it is cancelled.
     public static func read(
         paths: CopilotPaths, id: String, headBytes: Int = 512 << 10, tailBytes: Int = 4 << 20
     ) -> Conversation {
         let log = [paths.sessionState.lastPathComponent, id, "events.jsonl"]
         let both = max(headBytes, 0) + max(tailBytes, 0)
         // A byte more than both tells a log that's no longer than both, and is read whole, from one that's longer.
-        guard UUID(uuidString: id) != nil, let end = LocalFile.tail(below: paths.root, log, maxBytes: both + 1)
+        guard UUID(uuidString: id) != nil, !Task.isCancelled, let end = LocalFile.tail(below: paths.root, log, maxBytes: both + 1),
+              !Task.isCancelled
         else { return Conversation() }
         guard end.count > both else { return Conversation(turns: turns(in: end)) }
         let first = LocalFile.head(below: paths.root, log, maxBytes: headBytes).flatMap { firstAsk(in: $0.data) }
+        guard !Task.isCancelled else { return Conversation() }
         let latest = turns(in: end.suffix(max(tailBytes, 0)))
         return Conversation(turns: (first.map { [Turn(ask: $0)] } ?? []) + latest, unreadBefore: first == nil ? 0 : 1)
     }

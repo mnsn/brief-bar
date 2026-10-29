@@ -50,6 +50,8 @@ private struct PageContent: View {
     @Environment(\.itemNavigation) private var navigation
     @Environment(\.isRendering) private var isRendering
     @AccessibilityFocusState private var isTitleFocused: Bool
+    /// What it shows, and how many times you'd acted on its summary as it opened.
+    @LocalState private var opened: OpenedSubject?
 
     /// What shows under it: the work item, and the pages you came through.
     private var trail: [ItemRef] {
@@ -87,14 +89,25 @@ private struct PageContent: View {
                 Color.clear.onChange(of: context.date) { stories.request(links.describe(ref)) }
             }
         }
-        // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
-        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)") {
+        // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details: as it
+        // opens, as summaries are turned on, and as a source says what it is; never once you acted on it since it opened.
+        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.canSummarize(ref))") {
             guard links.isOn, !isRendering else { return }
+            let acted = visit(ref)
             try? await Task.sleep(for: StorySummaries.openedFor)
             guard !Task.isCancelled else { return }
-            await summaries.opened(ref)
+            await summaries.opened(ref, unlessActedSince: acted)
         }
         .onAppear { isTitleFocused = true }
+    }
+
+    /// How many times you'd acted on its summary as it opened (`StorySummaries.timesActed(on:)`), remembered for as long
+    /// as it shows.
+    private func visit(_ ref: ItemRef) -> Int {
+        if let opened, opened.subject == ref { return opened.acted }
+        let acted = summaries.timesActed(on: ref)
+        opened = OpenedSubject(subject: ref, acted: acted)
+        return acted
     }
 
     /// How it's linked to what you opened it from.

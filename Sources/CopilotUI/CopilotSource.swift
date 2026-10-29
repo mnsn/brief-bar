@@ -152,18 +152,26 @@ package final class CopilotSource: BriefBarSource {
             return SessionStory.make(snapshot: snapshot, account: nil)
         }
         let id = ref.id
-        let account = await Task.detached(priority: .utility) { SessionAccount.read(paths: paths, id: id) }.value
+        let account = await Self.offMain { Task.isCancelled ? nil : SessionAccount.read(paths: paths, id: id) }
         return SessionStory.make(snapshot: snapshot, account: account)
     }
 
     /// What was asked in a session and what Copilot answered, the app's or a task's that Azure DevOps sent, read from its
     /// log off the main thread, for a summary as it's written (`SessionConversation`). Nothing's read once Show Links is
-    /// off, or the summary stopped.
+    /// off, or the summary stopped, even when that's while it's read.
     private func conversation(_ ref: ItemRef) async -> [ItemStory.Fact] {
         guard let paths = store.paths, services.links.isOn, !Task.isCancelled else { return [] }
         let id = ref.id
-        let digest = await Task.detached(priority: .utility) { SessionConversation.digest(paths: paths, id: id) }.value
-        return digest.isEmpty ? [] : [ItemStory.Fact("Conversation", digest)]
+        let digest = await Self.offMain { SessionConversation.digest(paths: paths, id: id) }
+        guard services.links.isOn, !Task.isCancelled, !digest.isEmpty else { return [] }
+        return [ItemStory.Fact("Conversation", digest)]
+    }
+
+    /// Does `work` off the main thread, and stops it when the task that waits for it is cancelled: work that hasn't
+    /// started by then finds itself cancelled, and a read checks before each file it opens.
+    private static func offMain<Value: Sendable>(_ work: @escaping @Sendable () -> Value) async -> Value {
+        let task = Task.detached(priority: .utility, operation: work)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     // MARK: Menu bar
