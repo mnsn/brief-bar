@@ -363,7 +363,11 @@ certificate (`scripts/sign-release.sh`), checks that it's the certificate in
 `Resources/ReleaseRequirement.txt` and deletes it from the runner. It then signs the zip and writes
 `appcast.xml` (`scripts/make-appcast.sh`), checks the signatures with the public key
 (`scripts/verify-appcast.swift`), attests both files, and publishes the release with `BriefBar.zip`,
-its SHA-256, `appcast.xml` and the changelog section.
+its SHA-256, `appcast.xml` and the changelog section. Last, it points the Homebrew cask,
+`Casks/briefbar.rb` in [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), at the release, with
+the zip's SHA-256 (`scripts/update-homebrew-cask.sh`), but never back to an older version. If that step
+fails, the release is out all the same: set `version` and `sha256` in the cask by hand, from the
+release's `BriefBar.zip.sha256`.
 
 The app and its updater are built only for arm64. Sparkle derives
 `<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>` from the app's binary, and
@@ -391,6 +395,18 @@ Universal Clipboard doesn't offer them to other devices, and clipboard managers 
   the form Sparkle's `generate_keys -x` exports, but kept out of the keychain, where any program could
   export it with `generate_keys`. Secret: `SPARKLE_PRIVATE_KEY`.
 
+The environment also holds **the tap's deploy key**, `HOMEBREW_TAP_DEPLOY_KEY`, an SSH key that can
+push to [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap) only. Whoever has it decides what
+`brew install` downloads, so it's kept only there too, but no installed app depends on it, so the
+password manager needn't keep a copy. If it leaks or is lost, delete it in the tap's
+**Settings › Deploy keys**, and make a new one in a folder that you delete right after:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C 'mnsn/brief-bar release workflow' -f key
+gh repo deploy-key add key.pub --repo mnsn/homebrew-tap --allow-write --title 'mnsn/brief-bar release workflow'
+gh secret set HOMEBREW_TAP_DEPLOY_KEY --env release --repo mnsn/brief-bar < key
+```
+
 To set up a repository:
 
 1. In its **Settings › Environments**, create an environment named `release`. Under
@@ -404,6 +420,7 @@ To set up a repository:
    public halves only once you've copied all three, and refuses to run again after that.
 3. Commit the public halves it wrote, `Resources/Info.plist` and `Resources/ReleaseRequirement.txt`,
    and push.
+4. Give the environment the tap's deploy key, with the commands above.
 
 Never put either private key anywhere else: in a file you keep, a keychain, a command-line argument
 or a log. Don't change `SUPublicEDKey` or the release certificate either, unless one leaks or is

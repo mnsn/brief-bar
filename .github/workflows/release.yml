@@ -1,9 +1,9 @@
 name: Release
 
 # Pushing a version tag such as v0.1.0 publishes a GitHub release with the Apple silicon app and the appcast that
-# the app's updater reads. The tag must match CFBundleShortVersionString in Resources/Info.plist and be higher
-# than every earlier tag, and CHANGELOG.md needs a section for that version; it becomes the release notes. See
-# "Releasing" in CONTRIBUTING.md.
+# the app's updater reads, and points the Homebrew cask at it. The tag must match CFBundleShortVersionString in
+# Resources/Info.plist and be higher than every earlier tag, and CHANGELOG.md needs a section for that version; it
+# becomes the release notes. See "Releasing" in CONTRIBUTING.md.
 on:
   push:
     tags: ['v*']
@@ -144,3 +144,17 @@ jobs:
           --notes-file build/release/notes.md
           build/release/BriefBar.zip build/release/BriefBar.zip.sha256
           build/release/appcast.xml
+
+      # Points the Homebrew cask, Casks/briefbar.rb in mnsn/homebrew-tap, at this release, with the zip's SHA-256.
+      # The tap's deploy key can push to that repository only, and goes to the script on standard input only. The
+      # cask never goes back to an older version, so releases approved out of order end at the newest.
+      - name: Update the Homebrew cask
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_DEPLOY_KEY" ]; then
+            echo "::error::The release environment has no HOMEBREW_TAP_DEPLOY_KEY secret."
+            exit 1
+          fi
+          printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" | env -u HOMEBREW_TAP_DEPLOY_KEY ./scripts/update-homebrew-cask.sh \
+            "${GITHUB_REF_NAME#v}" "$(cut -d ' ' -f 1 build/release/BriefBar.zip.sha256)"

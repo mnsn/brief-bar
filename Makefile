@@ -1,4 +1,4 @@
-.PHONY: build test check-boundaries signing-key-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
+.PHONY: build test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -37,6 +37,11 @@ check-boundaries: build
 # What keeps signing keys safe, in throwaway keychains: nothing here makes macOS ask anything. CI runs it.
 signing-key-check:
 	./scripts/test-signing-key.sh
+
+# The release workflow's last step, which points the Homebrew cask at a release, against a tap of its own in a
+# temporary folder: no network, no key. CI runs it.
+homebrew-cask-check:
+	./scripts/test-homebrew-cask.sh
 
 # That BriefBar's updater, which holds Sparkle with library validation off, can't use BriefBar's privacy
 # permissions, and that other code in Sparkle's place never runs as BriefBar: in a copy of build/BriefBar.app

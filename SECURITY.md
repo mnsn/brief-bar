@@ -146,6 +146,12 @@ deletes its copy of the certificate right after signing. Before publishing, it c
 certificate is the one every release uses (`Resources/ReleaseRequirement.txt`) and that the
 signatures match the public key in `Info.plist`.
 
+After publishing, the same job points the Homebrew cask, `Casks/briefbar.rb` in
+[mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), at the release: its version, and the SHA-256
+of its zip, which Homebrew checks the download against. It pushes with a deploy key that can push to
+that repository only, `HOMEBREW_TAP_DEPLOY_KEY`, which is also only in the `release` environment. A
+copy installed with Homebrew updates itself like any other, with the checks above.
+
 If the update signing key were lost, users would have to download a new version by hand once,
 because the app can't accept an update signed with a different key. If the certificate were lost, a
 release signed with a new one would lose Full Disk Access, and users would have to grant it again.

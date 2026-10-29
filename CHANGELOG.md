@@ -11,6 +11,9 @@
   Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
   descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it
   smaller. The menu bar's lists, the widgets and Settings keep their size.
+- **Install it with Homebrew.** `brew install --cask mnsn/tap/briefbar` puts BriefBar in your
+  Applications folder, and each release updates the cask. BriefBar still updates itself, and since it
+  isn't notarized, macOS still asks you to allow it the first time you open it.
 
 ## 0.9.0 - 2026-10-29
 
