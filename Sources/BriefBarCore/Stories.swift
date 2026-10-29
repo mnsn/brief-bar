@@ -24,7 +24,7 @@ public struct ItemStory: Sendable, Equatable {
     public var account: Account?
     /// Its longer texts, such as a work item's description and latest comments: for a summary of it, not for its row.
     public var notes: [Fact]
-    /// What it doesn't say, and why: "Builds and comments aren't read for pull requests you're not on."
+    /// What it doesn't say, and why: "BriefBar reads builds and comments only on your pull requests."
     public var footnote: String?
 
     public init(

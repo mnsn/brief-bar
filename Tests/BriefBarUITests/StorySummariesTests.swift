@@ -79,18 +79,20 @@ import Testing
         }
         let asked = Asked()
         summaries.write = writer(asked)
+        // Who you are, as Azure DevOps knows you.
+        summaries.yourName = { "Robin Diaz" }
         // Nothing until you ask.
         #expect(asked.prompts.isEmpty)
         await summaries.summarizeAndWait(workItem)
         let prompt = try #require(asked.prompts.first)
-        #expect(prompt.contains("WORK ITEM 5110: Coupon totals round down\nStatus: Active\nDescription: Totals round down."))
+        #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5110: Coupon totals round down\nStatus: Active\nDescription: Totals round down."))
         #expect(prompt.contains("PULL REQUEST !4091: Fix the coupon rounding error\nLinked: Linked in Azure DevOps"))
         #expect(prompt.contains("- Comments: No open threads"))
         guard case .written(let summary, _, _, let model)? = summaries.state(for: workItem) else {
             Issue.record("Not written")
             return
         }
-        #expect(summary == StorySummary(headline: "Fixed in !4091.", next: "You: complete !4091.", paragraph: "Approved."))
+        #expect(summary == StorySummary(headline: "Fixed in !4091.", nextFor: "you", next: "Complete !4091.", paragraph: "Approved."))
         #expect(model == "claude-haiku-5.5")
         #expect(!summaries.isOutOfDate(workItem))
 

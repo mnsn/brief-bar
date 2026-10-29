@@ -595,13 +595,19 @@ final class AppModel: ObservableObject {
 }
 
 extension AppModel {
-    /// Asks the Copilot CLI for summaries, with no tools, one at a time as you ask.
+    /// Asks the Copilot CLI for summaries, with no tools, one at a time as you ask; and when one fails, says why in a
+    /// sentence, with what the CLI said for its tooltip.
     static func copilotSummaries() -> StorySummaries.Writer {
         let summarizer = CopilotSummarizer()
         return { prompt, options in
             switch await summarizer.summarize(prompt, options: CopilotRunOptions(model: options.model, effort: options.effort)) {
-            case .success(let answer): return .success(answer)
-            case .failure(let failure): return .failure(StorySummaries.Problem(failure.message))
+            case .success(let answer):
+                return .success(answer)
+            case .failure(let failure):
+                let fix: StorySummaries.Problem.Fix? = if case .modelUnavailable = failure { .chooseModel } else { nil }
+                return .failure(StorySummaries.Problem(
+                    failure.message(model: CopilotModel.name(of: options.model)), detail: failure.detail, fix: fix
+                ))
             }
         }
     }

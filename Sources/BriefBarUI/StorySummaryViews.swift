@@ -60,7 +60,7 @@ struct SummaryCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                     if let next = summary.next {
-                        (Text("Next: ").fontWeight(.semibold) + Text(next))
+                        (Text(summary.nextFor.map { "Next for \($0): " } ?? "Next: ").fontWeight(.semibold) + Text(next))
                             .font(.system(size: 12))
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -88,6 +88,7 @@ struct SummaryCard: View {
                     Label(problem.message, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .help(problem.detail ?? "")
                     Spacer(minLength: 8)
                     Button("Try Again") { summaries.summarize(subject) }
                         .buttonStyle(.borderless)

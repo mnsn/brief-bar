@@ -437,11 +437,15 @@ asks the Copilot CLI for a summary of the work item and what's linked to it. Bef
 know of each, as for the details, the work item's description and latest comments too, and `StorySummaryPrompt` (in
 `Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
 model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
-first, and at most 14,000 characters. It asks for a headline, what's next and who for, and at most 120 words, which
-`StorySummary` reads, whatever Markdown is around them. Nothing from Teams goes in it, nor anything from the
-notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or that you
-answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its status as
-active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
+first, and at most 14,000 characters. The data starts with your name, as your pull requests have it in Azure DevOps,
+when that's known, and the model is told that's who reads it, to call you "you"; and that you already see each row's
+status, so it leads with what the rows don't say: blockers, what's left, contradictions. It asks for a headline, whom
+the next step is for (you, a person or Copilot) and what it is, and at most 120 words, which `StorySummary` reads,
+whatever Markdown is around them, and a next step that names whom it's for first, as in "Sam Rivera: get !4120
+reviewed". A teammate's pull request says who wrote it as one of its facts. Nothing from Teams goes in it, nor anything
+from the notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or
+that you answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its
+status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
 
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
@@ -451,6 +455,9 @@ shell's environment, for two minutes at most. No tool is called `briefbar_no_too
 `~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
 skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
 session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
+When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
+information found"), the model isn't on your plan, or your premium requests ran out, and the summary says so in a
+sentence, with what to do, and what the CLI said in its tooltip.
 
 The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off, or
 a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot

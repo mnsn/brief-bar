@@ -53,14 +53,67 @@ import Testing
     @Test func itSaysWhyThereIsNoSummary() async {
         let folder = folder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let failing = FakeRunner { _ in .failure("\u{1B}[31mError: Model \"x\" is not available.\u{1B}[0m\nTry another one.\n", status: 1) }
+        let failing = FakeRunner { _ in .failure("\u{1B}[31mError: Something broke.\u{1B}[0m\nTry again later.\n", status: 1) }
         #expect(await summarizer(failing, folder: folder).summarize("Sum it up", options: options)
-            == .failure(.failed("Error: Model \"x\" is not available. Try another one.")))
+            == .failure(.failed("Error: Something broke. Try again later.")))
         let silent = FakeRunner { _ in .ok("  \n") }
         #expect(await summarizer(silent, folder: folder).summarize("Sum it up", options: options) == .failure(.empty))
         let none = FakeRunner { _ in .ok("Never runs") }
         #expect(await summarizer(none, folder: folder, finds: false).summarize("Sum it up", options: options) == .failure(.noCLI))
         #expect(none.arguments.isEmpty)
+    }
+
+    /// What the CLI says when it fails often, made up after its own words: a sentence each, and what it said for its
+    /// tooltip.
+    @Test func itSaysWhatFailedInASentence() async {
+        let folder = folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func failure(_ stderr: String) async -> CopilotSummarizer.Failure? {
+            let runner = FakeRunner { _ in .failure(stderr, status: 1) }
+            guard case .failure(let failure) = await summarizer(runner, folder: folder).summarize("Sum it up", options: options) else {
+                return nil
+            }
+            return failure
+        }
+        let signedOut = await failure("Error: No authentication information found.\n\nCopilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.\n")
+        #expect(signedOut == .notSignedIn(
+            "Error: No authentication information found. Copilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token."
+        ))
+        #expect(signedOut?.message(model: "Claude Haiku 5.5") == "The Copilot CLI isn't signed in. Run copilot in Terminal once.")
+        #expect(await failure("Could not obtain an authentication token. Please log out and log in again with /login.")
+            == .notSignedIn("Could not obtain an authentication token. Please log out and log in again with /login."))
+
+        let model = await failure("\u{1B}[31mError: Model \"claude-haiku-5.5\" from --model flag is not available.\u{1B}[0m\n")
+        #expect(model == .modelUnavailable("Error: Model \"claude-haiku-5.5\" from --model flag is not available."))
+        #expect(model?.message(model: "Claude Haiku 5.5") == "Claude Haiku 5.5 isn't on your Copilot plan.")
+        #expect(model?.detail == "Error: Model \"claude-haiku-5.5\" from --model flag is not available.")
+
+        for spent in [
+            "Error: You have exceeded your premium request allowance for this month.",
+            "Error: 402 Payment Required: quota exceeded",
+            "Error: You're out of AI credits until your plan renews.",
+        ] {
+            let failure = await failure(spent)
+            #expect(failure == .outOfRequests(spent))
+            #expect(failure?.message(model: "Claude Haiku 5.5") == "You're out of premium requests this month.")
+        }
+
+        // Anything else, in its own words.
+        let other = await failure("Error: 429 Too Many Requests: rate limit exceeded")
+        #expect(other == .failed("Error: 429 Too Many Requests: rate limit exceeded"))
+        #expect(other?.message(model: "Claude Haiku 5.5") == "Copilot couldn't write it: Error: 429 Too Many Requests: rate limit exceeded")
+        #expect(other?.detail == nil)
+        #expect(CopilotSummarizer.Failure.noCLI.message(model: "Claude Haiku 5.5")
+            == "BriefBar can't find the Copilot CLI. Install it, or open the GitHub Copilot app once.")
+    }
+
+    @Test func itTellsWhetherTheCLIIsThere() async {
+        let folder = folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let runner = FakeRunner { _ in .ok("Never runs") }
+        #expect(await summarizer(runner, folder: folder).findsCLI() == true)
+        #expect(await summarizer(runner, folder: folder, finds: false).findsCLI() == false)
+        #expect(runner.arguments.isEmpty)
     }
 
     @Test func itAsksForYourShellsEnvironmentOnce() async {

@@ -39,12 +39,23 @@ package final class StorySummaries: ObservableObject {
     /// Writes an answer to a prompt, or says why it can't, in a sentence.
     package typealias Writer = @Sendable (_ prompt: String, _ options: Options) async -> Result<String, Problem>
 
-    /// Why there's no summary, in a sentence.
+    /// Why there's no summary, in a sentence; what the Copilot CLI said, as it said it, when the sentence says it in other
+    /// words; and what would help, beside trying again.
     package struct Problem: Error, Equatable, Sendable {
-        package var message: String
+        /// What would help, beside trying again.
+        package enum Fix: Equatable, Sendable {
+            /// Choosing another model, in the setting.
+            case chooseModel
+        }
 
-        package init(_ message: String) {
+        package var message: String
+        package var detail: String?
+        package var fix: Fix?
+
+        package init(_ message: String, detail: String? = nil, fix: Fix? = nil) {
             self.message = message
+            self.detail = detail
+            self.fix = fix
         }
     }
 
@@ -92,6 +103,9 @@ package final class StorySummaries: ObservableObject {
     package var models: [Model] = [Model(id: StorySummaries.defaultModel, name: "Claude Haiku 5.5")]
     /// Asks Copilot; nil until the app sets it, and then summaries can't be written.
     package var write: Writer?
+    /// Your name as a source knows it, for a summary to call you "you": Azure DevOps sets it, once it read your pull
+    /// requests, while it's on.
+    package var yourName: (@MainActor () -> String?)?
     /// For tests: what "now" is.
     var now: () -> Date = Date.init
 
@@ -274,7 +288,8 @@ package final class StorySummaries: ObservableObject {
         }
         let prompt = StorySummaryPrompt.make(
             subject: item(described, nil),
-            linked: connections.map { item($0.item, $0.reason) }
+            linked: connections.map { item($0.item, $0.reason) },
+            reader: yourName?()
         )
         return (prompt, inputs(for: subject))
     }

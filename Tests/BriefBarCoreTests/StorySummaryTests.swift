@@ -5,16 +5,36 @@ import Testing
 /// The prompt that asks Copilot for a summary, with what's linked as data it's told not to follow, and the summary it
 /// answers, in the form the prompt asks for or not.
 @Suite struct StorySummaryTests {
-    @Test func aSummaryInTheAskedFormHasItsThreeParts() {
+    @Test func aSummaryInTheAskedFormHasItsParts() {
         let summary = StorySummary.parse("""
             HEADLINE: Saved items work end to end; !4120 waits for Alex's review.
-            NEXT: Alex: review !4120.
+            NEXT FOR: Alex Kim
+            NEXT: Review !4120.
             SUMMARY: The cart service saves items and the cart shows them.
             Moving one back is left, in 5104.
             """)
         #expect(summary?.headline == "Saved items work end to end; !4120 waits for Alex's review.")
-        #expect(summary?.next == "Alex: review !4120.")
+        #expect(summary?.nextFor == "Alex Kim")
+        #expect(summary?.next == "Review !4120.")
         #expect(summary?.paragraph == "The cart service saves items and the cart shows them.\nMoving one back is left, in 5104.")
+
+        // You, however it's written; nobody when nothing waits.
+        #expect(StorySummary.parse("HEADLINE: Approved.\nNEXT FOR: You\nNEXT: complete !4091.") == StorySummary(
+            headline: "Approved.", nextFor: "you", next: "Complete !4091."
+        ))
+        #expect(StorySummary.parse("HEADLINE: Merged.\nNEXT FOR: Nobody\nNEXT: Nothing") == StorySummary(headline: "Merged."))
+    }
+
+    @Test func aNextStepThatNamesWhomItsForFirstIsReadToo() {
+        // The form asked for before NEXT FOR.
+        let summary = StorySummary.parse("HEADLINE: Waiting for review.\nNEXT: Sam Rivera: get !4120 reviewed and merged.")
+        #expect(summary?.nextFor == "Sam Rivera")
+        #expect(summary?.next == "Get !4120 reviewed and merged.")
+        #expect(StorySummary.parse("HEADLINE: Approved.\nNEXT: You: complete !4091.")?.nextFor == "you")
+        // A colon that doesn't follow a name is part of the step.
+        let step = StorySummary.parse("HEADLINE: Failing.\nNEXT: Fix the build: 2 tests fail in CheckoutTests.")
+        #expect(step?.nextFor == nil)
+        #expect(step?.next == "Fix the build: 2 tests fail in CheckoutTests.")
     }
 
     @Test func markdownAroundTheLabelsAndOtherCasesAreReadToo() {
@@ -100,6 +120,15 @@ import Testing
             - Show them
             Said last: All tests pass.
             """)
+    }
+
+    @Test func thePromptSaysWhoReadsItWhenThatsKnown() {
+        let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
+        #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))
+        #expect(StorySummaryPrompt.instructions.contains("When the data starts with READER, that's who reads this: call them you"))
+        #expect(StorySummaryPrompt.instructions.contains("lead with what the rows don't say"))
+        #expect(StorySummaryPrompt.instructions.contains("\nNEXT FOR: "))
+        #expect(!StorySummaryPrompt.make(subject: subject, linked: []).contains("READER:"))
     }
 
     @Test func dataCantEndItselfOrCrowdOutTheRest() {

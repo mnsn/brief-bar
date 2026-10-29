@@ -397,21 +397,23 @@ import BriefBarCore
         let story = PullRequestStory.others(pr)
         #expect(story.sentence == "Waiting for reviewers: Alex Kim")
         #expect(story.date == t(-5 * hour))
+        // A teammate's: who wrote it is one of its facts, for a summary too.
         #expect(story.facts == [
+            ItemStory.Fact("Author", "Sam Rivera"),
             ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on Alex Kim (required)"),
             ItemStory.Fact("Merge", "Conflicts with main · Completes by itself once it can"),
         ])
-        #expect(story.more == [ItemStory.Fact("Author", "Sam Rivera"), ItemStory.Fact("Branch", "fix-total → main")])
+        #expect(story.more == [ItemStory.Fact("Branch", "fix-total → main")])
         // It says why there are no builds or comments.
-        #expect(story.footnote == "Builds and comments aren't read for pull requests you're not on.")
+        #expect(story.footnote == "BriefBar reads builds and comments only on your pull requests.")
         #expect(story.runs.isEmpty)
         #expect(story.account == nil)
 
         var merged = pr
         merged.status = .completed
         merged.closedAt = t(-hour)
-        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Reviewers"])
-        #expect(PullRequestStory.others(merged).more.map(\.label) == ["Author", "Branch"])
+        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Author", "Reviewers"])
+        #expect(PullRequestStory.others(merged).more.map(\.label) == ["Branch"])
     }
 
     @Test func aLinkedPullRequestSaysYouRatherThanYourName() {
@@ -420,13 +422,15 @@ import BriefBarCore
         ])
         let story = PullRequestStory.others(waiting, me: me.id)
         #expect(story.sentence == "Waiting for your review")
-        #expect(story.facts.first == ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on you (required)"))
+        #expect(story.facts.first { $0.label == "Reviewers" } == ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on you (required)"))
         // Without knowing who you are, by name.
         #expect(PullRequestStory.others(waiting).sentence == "Waiting for reviewers: Robin Diaz")
 
         let yours = makePR(author: me, reviewers: [Reviewer(person: People.priya, vote: .waitingForAuthor)])
         #expect(PullRequestStory.others(yours, me: me.id).sentence == "Priya Shah is waiting for you")
+        // Yours: that you wrote it says less.
         #expect(PullRequestStory.others(yours, me: me.id).more.first == ItemStory.Fact("Author", "You"))
+        #expect(!PullRequestStory.others(yours, me: me.id).facts.contains { $0.label == "Author" })
         let approved = makePR(author: People.sam, reviewers: [Reviewer(person: People.priya, vote: .approved), Reviewer(person: me, vote: .approved)])
         #expect(PullRequestStory.others(approved, me: me.id).sentence == "Approved by you and Priya Shah")
     }

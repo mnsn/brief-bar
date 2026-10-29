@@ -48,17 +48,19 @@ public enum PullRequestStory {
     }
 
     /// A pull request that's linked but not in your lists, such as a teammate's on a sprint's work item. BriefBar reads only
-    /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say.
+    /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say. Who
+    /// wrote it is one of its facts, unless it's you.
     /// - Parameter me: your identity in its organization, to say "you" rather than your name.
     public static func others(_ pullRequest: PullRequest, me: String? = nil) -> ItemStory {
-        var facts: [ItemStory.Fact] = []
+        let yours = isMe(pullRequest.author, me)
+        var facts = yours ? [] : [ItemStory.Fact("Author", pullRequest.author.name)]
         if let reviewers = reviewers(pullRequest.reviewers, me: me) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
         if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
-        var more = [ItemStory.Fact("Author", isMe(pullRequest.author, me) ? "You" : pullRequest.author.name)]
+        var more = yours ? [ItemStory.Fact("Author", "You")] : []
         if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
         return ItemStory(
             sentence: standing(pullRequest, me: me), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
-            footnote: pullRequest.status == .active ? "Builds and comments aren't read for pull requests you're not on." : nil
+            footnote: pullRequest.status == .active ? "BriefBar reads builds and comments only on your pull requests." : nil
         )
     }
 

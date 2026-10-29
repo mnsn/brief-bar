@@ -102,7 +102,7 @@ import Testing
         #expect(coupon.runs.first?.state == .done)
         // A teammate's, which the lists don't show: what the pull request says itself.
         let saved = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4120)))
-        #expect(saved.more.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(saved.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
         #expect(saved.runs.isEmpty)
         #expect(saved.footnote != nil)
         // A task sent to Copilot: how it went, what it opened, and the summary it ended with.
