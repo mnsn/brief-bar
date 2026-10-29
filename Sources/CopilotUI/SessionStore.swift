@@ -66,8 +66,9 @@ final class SessionStore: ObservableObject {
         settings.$keepEndedMinutes.map { _ in () }
             .merge(with: settings.$cleared.map { _ in () },
                    settings.$viewed.map { _ in () },
-                   settings.$moveViewedToIdle.map { _ in () })
-            .dropFirst(4)
+                   settings.$moveViewedToIdle.map { _ in () },
+                   settings.$showRelayedQuestionsOnce.map { _ in () })
+            .dropFirst(5)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.recompute() } }
             .store(in: &cancellables)
@@ -159,7 +160,8 @@ final class SessionStore: ObservableObject {
     private func recompute() {
         let now = Date()
         let options = ResolverOptions(
-            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle
+            recentWindow: TimeInterval(settings.keepEndedMinutes * 60), moveViewedToIdle: settings.moveViewedToIdle,
+            showRelayedQuestionsOnce: settings.showRelayedQuestionsOnce
         )
         var resolved = state.records.map {
             StatusResolver.snapshot(
@@ -177,7 +179,9 @@ final class SessionStore: ObservableObject {
                 clearedAt: settings.cleared[viewed], viewedAt: now
             )
         }
-        resolved = RelayedQuestions.merge(resolved, records: state.records)
+        if options.showRelayedQuestionsOnce {
+            resolved = RelayedQuestions.merge(resolved, records: state.records)
+        }
 
         // The tasks BriefBar sent. Once you open one's session in the app, its database lists it, and then it's the app's;
         // without the database, every recent session folder is listed, the tasks' too, and those are the tasks'.

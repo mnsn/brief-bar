@@ -39,6 +39,8 @@ package final class CopilotSource: BriefBarSource {
     let settings: AppSettings
     let store: SessionStore
     private var linkObservers: Set<AnyCancellable> = []
+    /// What `--render` read, for its other pictures.
+    private var rendered: EngineSnapshot?
 
     package init(services: AppServices) {
         self.services = services
@@ -217,7 +219,30 @@ package final class CopilotSource: BriefBarSource {
             store.start()
             return
         }
-        store.receive(SessionEngine.loadOnce(paths: paths, links: services.links.isOn))
+        let state = SessionEngine.loadOnce(paths: paths, links: services.links.isOn)
+        rendered = state
+        store.receive(state)
         publishLinks()
+    }
+
+    /// The list again with each option that changes what it shows turned on, unless it's on already: Show Relayed
+    /// Questions Once.
+    package func extraRenderings() -> [(name: String, view: AnyView)] {
+        guard let rendered, !settings.showRelayedQuestionsOnce else { return [] }
+        let relayed = AppSettings(defaults: MemoryDefaults())
+        relayed.keepEndedMinutes = settings.keepEndedMinutes
+        relayed.moveViewedToIdle = settings.moveViewedToIdle
+        relayed.showContextUsage = settings.showContextUsage
+        relayed.showRelayedQuestionsOnce = true
+        let store = SessionStore(settings: relayed, paths: nil, sentTasks: services.sentTasks)
+        store.receive(rendered)
+        let panel = MenuPanelView()
+            .interfaceOptions(from: services)
+            .environmentObject(store)
+            .environmentObject(relayed)
+            .environmentObject(services)
+            .environmentObject(services.loginItem)
+            .background(Color(nsColor: .windowBackgroundColor))
+        return [(name: "sessions-relayed-questions-once", view: AnyView(panel))]
     }
 }

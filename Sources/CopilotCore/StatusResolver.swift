@@ -102,15 +102,19 @@ public struct ResolverOptions: Sendable, Equatable {
     public var startingGrace: TimeInterval
     /// Whether a session viewed since it ended moves to idle before the recent window expires.
     public var moveViewedToIdle: Bool
+    /// Whether a session relaying another's question waits for your answer (`RelayedQuestions`). Off, it's working,
+    /// and the session it relays for needs you on its own.
+    public var showRelayedQuestionsOnce: Bool
 
     public init(
         recentWindow: TimeInterval = 3_600, staleAfter: TimeInterval = 90, startingGrace: TimeInterval = 120,
-        moveViewedToIdle: Bool = false
+        moveViewedToIdle: Bool = false, showRelayedQuestionsOnce: Bool = false
     ) {
         self.recentWindow = recentWindow
         self.staleAfter = staleAfter
         self.startingGrace = startingGrace
         self.moveViewedToIdle = moveViewedToIdle
+        self.showRelayedQuestionsOnce = showRelayedQuestionsOnce
     }
 }
 
@@ -177,6 +181,8 @@ public enum StatusResolver {
         switch log.activity {
         case .needsPermission(let permission):
             set(.needsYou, .permission, since: permission.requestedAt, detail: permission.detail ?? permission.kind)
+        case .needsAnswer(let tool) where tool.relaysQuestion && !options.showRelayedQuestionsOnce:
+            set(.running, .working, since: log.phaseSince, detail: log.currentStep)
         case .needsAnswer(let tool):
             // A relayed question's own words are the session's that waits on it (`RelayedQuestions`).
             set(.needsYou, .question, since: tool.startedAt, detail: tool.question ?? tool.relayContext, choices: tool.choices)

@@ -16,8 +16,8 @@ public struct PendingTool: Sendable, Equatable {
     public var relayedSession: String?
     public var relayContext: String?
 
-    /// Asks you a question: its own (`ask_user`), or one a session it coordinates waits on (`relay_session_input`).
-    public var asksYou: Bool { name == "ask_user" || name == "relay_session_input" }
+    /// Asks you a question that a session it coordinates waits on.
+    public var relaysQuestion: Bool { name == "relay_session_input" }
 }
 
 public struct PendingPermission: Sendable, Equatable {
@@ -53,9 +53,7 @@ public struct SessionLogState: Sendable, Equatable {
     public private(set) var pendingPermissions: [String: PendingPermission] = [:]
     public private(set) var lastMainMessageHadTools = false
 
-    private static let interactionTools: Set<String> = [
-        "ask_user", "relay_session_input", "exit_plan_mode", "report_intent", "task_complete",
-    ]
+    private static let interactionTools: Set<String> = ["ask_user", "exit_plan_mode", "report_intent", "task_complete"]
 
     public init() {}
 
@@ -171,7 +169,8 @@ public struct SessionLogState: Sendable, Equatable {
                 return .needsPermission(permission)
             }
             let tools = pendingTools.values.sorted { Self.earlier($0.startedAt, $1.startedAt) }
-            if let question = tools.first(where: \.asksYou) {
+            // Its own question before one it relays for a session it coordinates, which may show as work instead.
+            if let question = tools.first(where: { $0.name == "ask_user" }) ?? tools.first(where: \.relaysQuestion) {
                 return .needsAnswer(question)
             }
             if let plan = tools.first(where: { $0.name == "exit_plan_mode" }) {

@@ -35,9 +35,12 @@ private func record(
 }
 
 private func merged(_ records: [SessionRecord], now: Date = t(60)) -> [String: SessionSnapshot] {
-    let snapshots = records.map { StatusResolver.snapshot(for: $0, now: now) }
+    let snapshots = records.map { StatusResolver.snapshot(for: $0, now: now, options: relayedOnce) }
     return Dictionary(uniqueKeysWithValues: RelayedQuestions.merge(snapshots, records: records).map { ($0.id, $0) })
 }
+
+/// What the merge needs: with Show Relayed Questions Once off, nothing is merged and a relay is work.
+private let relayedOnce = ResolverOptions(showRelayedQuestionsOnce: true)
 
 @Suite struct RelayedQuestionsTests {
     private let release = RelatedSession(id: "coordinator", name: "Release 2.5")
@@ -187,7 +190,7 @@ private func merged(_ records: [SessionRecord], now: Date = t(60)) -> [String: S
             record("child", "Pick colors", coordinator: "coordinator", asking("Which color?", at: t(10))),
             record("coordinator", "Release 2.5", working(at: t(12))),
         ]
-        let snapshots = records.map { StatusResolver.snapshot(for: $0, now: t(60)) }
+        let snapshots = records.map { StatusResolver.snapshot(for: $0, now: t(60), options: relayedOnce) }
         #expect(RelayedQuestions.merge(snapshots, records: records) == snapshots)
         #expect(RelayedQuestions.merge([], records: records).isEmpty)
     }

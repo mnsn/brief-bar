@@ -86,6 +86,12 @@ import Testing
         )))
         #expect(state.currentStep == nil)
         #expect(logState(relaying + [Line.toolComplete(id: "r", at: t(4))]).activity == .working(since: t(1), detail: nil))
+
+        // Its own question comes first.
+        let both = logState(relaying + [Line.toolStart("ask_user", id: "q", arguments: ["question": "Ship it?"], at: t(5))])
+        #expect(both.activity == .needsAnswer(PendingTool(
+            callId: "q", name: "ask_user", startedAt: t(5), question: "Ship it?", choices: []
+        )))
     }
 
     @Test func permissionsComeFirstThenQuestionsThenPlans() {

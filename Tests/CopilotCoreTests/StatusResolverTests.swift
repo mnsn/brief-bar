@@ -86,14 +86,25 @@ private let finishedTurn = [Line.userMessage(at: t(1)), Line.assistantMessage(at
         #expect(snapshot.choices == ["Postgres", "SQLite"])
     }
 
-    /// Until it's merged with the session it relays for (`RelayedQuestionsTests`), a relay says what it says first.
-    @Test func relayedQuestionsNeedYou() {
+    /// With Show Relayed Questions Once, a relay waits for your answer, saying what it says first until it's merged with
+    /// the session it relays for (`RelayedQuestionsTests`). Without it, it's work, as the session it relays for needs you.
+    @Test func relayedQuestionsNeedYouOnlyWhenShownOnce() {
         let relay = { (arguments: [String: Any]) in
-            [Line.userMessage(at: t(1)), Line.toolStart("relay_session_input", id: "r", arguments: arguments, at: t(2))]
+            [
+                Line.userMessage(at: t(1)),
+                Line.toolStart("bash", id: "b", arguments: ["description": "Run the tests"], at: t(2)),
+                Line.toolComplete(id: "b", at: t(3)),
+                Line.toolStart("relay_session_input", id: "r", arguments: arguments, at: t(4)),
+            ]
         }
+        let once = ResolverOptions(showRelayedQuestionsOnce: true)
         let framed = relay(["project_session_id": "w-child", "context": "From the **checkout** session."])
-        verify(resolve(framed, meta(running: true), now: t(30)), .needsYou, .question, since: t(2), detail: "From the checkout session.")
-        verify(resolve(relay(["project_session_id": "w-child"]), meta(running: true), now: t(30)), .needsYou, .question, since: t(2))
+        verify(
+            resolve(framed, meta(running: true), now: t(30), options: once), .needsYou, .question, since: t(4),
+            detail: "From the checkout session."
+        )
+        verify(resolve(relay(["project_session_id": "w-child"]), meta(running: true), now: t(30), options: once), .needsYou, .question, since: t(4))
+        verify(resolve(framed, meta(running: true), now: t(30)), .running, .working, since: t(1))
     }
 
     @Test func plansNeedYou() {
