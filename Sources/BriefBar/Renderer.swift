@@ -237,6 +237,15 @@ enum Renderer {
                 .frame(width: 600, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(notificationsSetting, appearance: appearance), "settings-notifications-\(suffix)")
+            // Show Links, and Summarize with Copilot under it, below it too.
+            let linksSettings = VStack(alignment: .leading, spacing: 20) {
+                LinksSetting(links: model.services.links)
+                StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
+            }
+            .padding(24)
+            .frame(width: 600, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor))
+            write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
             let saved = model.layout(.menuBar)
             let savedOptions = model.menuBarItemOptions
             model.useForRendering(example)
