@@ -20,7 +20,7 @@ import Testing
 
     @Test func namesItsToolsTheWayAgentsCallThem() {
         #expect(agent.tools.map(\.name) == [
-            "pull_requests", "pull_request", "pull_request_prompt", "pipelines", "sprint", "copilot_tasks",
+            "pull_requests", "pull_request", "pull_request_prompt", "pipelines", "sprint", "work_item", "copilot_tasks",
             "watch_pull_request", "stop_watching_pull_request", "pin_pipeline", "unpin_pipeline",
         ])
         #expect(agent.tools.filter { !$0.readOnly }.map(\.name) == [
@@ -147,6 +147,56 @@ import Testing
         let tasks = try await call("copilot_tasks")
         #expect(tasks.contains("- Work item 5112 “Round half up in the coupon service” in Storefront: finished"))
         #expect(tasks.contains("- Fix the Build on !4088 “Show delivery estimates on the product page” in shop-web: working"))
+    }
+
+    @Test func tellsAWorkItemAndWhatGoesWithIt() async throws {
+        let story = try await call("work_item", ["work_item": .string("5101")])
+        #expect(story.hasPrefix("""
+            # User Story 5101 “Save items for later from the cart”
+            https://dev.azure.com/contoso/Storefront/_workitems/edit/5101
+
+            - In Storefront (contoso)
+            - Status: Active: Work started
+            """))
+        #expect(story.contains("- Tasks: 1 of 4 done"))
+        #expect(story.contains("Description: As a shopper, I want to save items for later from my cart"))
+        #expect(story.contains("Latest comments: Robin Diaz: Only signed-in shoppers for now."))
+        // Its tasks in work order, yours marked.
+        #expect(story.contains("## Tasks (4)\n- ◐ 5103 Show saved items under the cart  [Active · Robin Diaz (you)]"))
+        // A teammate's pull request, as it says itself, and what BriefBar doesn't read of it.
+        #expect(story.contains("""
+            ### !4120 “Save items for later in the cart service”
+            https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4120
+            - In shop-web, not in your lists
+            - Status: Waiting for reviewers
+            """))
+        #expect(story.contains("- Branch: saved-items → main"))
+        #expect(story.contains("Builds and comments aren't read for pull requests you're not on."))
+        // The work sent to Copilot for one of its tasks.
+        #expect(story.contains("## Sent to Copilot (1)\n- Work item 5103 “Show saved items under the cart” in Storefront: working"))
+
+        // A task, by its link: its bug, and one of your pull requests, with its pipeline.
+        let task = try await call("work_item", ["work_item": .string("https://dev.azure.com/contoso/Storefront/_workitems/edit/5112")])
+        #expect(task.contains("- In Storefront (contoso), under bug 5110 “Coupon totals round down instead of to the nearest cent”"))
+        #expect(!task.contains("## Tasks"))
+        #expect(task.contains("- In payments-api, in BriefBar's Ready to Complete"))
+        #expect(task.contains("Pipelines:\n- payments-api CI: Passed"))
+        #expect(task.contains("- Work item 5112 “Round half up in the coupon service” in Storefront: finished"))
+
+        await #expect(throws: MCPToolError("The demo's sprint has no work item 1.")) { try await call("work_item", ["work_item": .int(1)]) }
+    }
+
+    @Test func readsWorkItemsByNumberOrLink() throws {
+        #expect(try AzureDevOpsAgent.workItemReference(.int(5101)) == (5101, nil))
+        #expect(try AzureDevOpsAgent.workItemReference(.string("#5101")) == (5101, nil))
+        #expect(try AzureDevOpsAgent.workItemReference(.string(" 5101 ")) == (5101, nil))
+        #expect(try AzureDevOpsAgent.workItemReference(.string("https://contoso.visualstudio.com/Shop/_workitems/edit/12")) == (12, "contoso"))
+        #expect(try AzureDevOpsAgent.workItemReference(.string("https://dev.azure.com/Fabrikam/Shop/_workitems/edit/7/")) == (7, "fabrikam"))
+        #expect(throws: MCPToolError.self) {
+            try AzureDevOpsAgent.workItemReference(.string("https://dev.azure.com/contoso/Shop/_git/web/pullrequest/12"))
+        }
+        #expect(throws: MCPToolError.self) { try AzureDevOpsAgent.workItemReference(.string("!5101")) }
+        #expect(throws: MCPToolError.self) { try AzureDevOpsAgent.workItemReference(nil) }
     }
 
     @Test func watchesAndStopsWatchingInMemoryInTheDemo() async throws {

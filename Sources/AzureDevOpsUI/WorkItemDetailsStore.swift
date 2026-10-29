@@ -371,7 +371,7 @@ final class WorkItemDetailsStore: ObservableObject {
     /// The one that changed last; the sprint's, which knows its team's states, when neither did. One that doesn't say when
     /// it changed, such as a linked work item that couldn't be read, gives way to what's read. The details guess the
     /// category of the state, so they keep the sprint's while the state is the same.
-    static func newest(_ sprint: WorkItem?, _ read: WorkItem?) -> WorkItem? {
+    nonisolated static func newest(_ sprint: WorkItem?, _ read: WorkItem?) -> WorkItem? {
         guard let read else { return sprint }
         guard let sprint else { return read }
         if sprint.changedAt != nil || read.changedAt == nil {
@@ -383,7 +383,7 @@ final class WorkItemDetailsStore: ObservableObject {
         return item
     }
 
-    private static func isNewer(_ date: Date?, than other: Date?) -> Bool {
+    private nonisolated static func isNewer(_ date: Date?, than other: Date?) -> Bool {
         guard let date, let other else { return false }
         return date > other
     }
@@ -391,7 +391,7 @@ final class WorkItemDetailsStore: ObservableObject {
     // MARK: Saying what went wrong
 
     /// What to say when a work item's details can't be read, but for signing in, which shows its own way.
-    static func message(for error: ADOError) -> String {
+    nonisolated static func message(for error: ADOError) -> String {
         switch error {
         case .notFound: return "Azure DevOps can't find this work item. It may have been deleted, or moved where you can't see it."
         case .forbidden: return "You don't have access to this work item."

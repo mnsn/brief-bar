@@ -101,6 +101,43 @@ public struct StorySummary: Sendable, Equatable {
     }
 }
 
+extension ItemStory {
+    /// The story in plain text, but for its sentence: a line or a few for each of its facts, its pipelines' runs, its
+    /// notes and its account, cut to fit, as Summarize with Copilot and agents read it. `whole` adds the facts that say
+    /// less, the runs' pages and what it doesn't say, for an agent that asks for all of it.
+    public func lines(whole: Bool = false) -> [String] {
+        var lines: [String] = []
+        for fact in facts + (whole ? more : []) {
+            lines.append("- \(fact.label): \(StoryText.line(fact.value, limit: 300))")
+        }
+        if !runs.isEmpty {
+            lines.append("Pipelines:")
+            for run in runs.prefix(8) {
+                var line = "- \(run.name): \(run.status)"
+                if let detail = run.detail { line += " (\(StoryText.line(detail, limit: 200)))" }
+                if whole, let url = run.url { line += "\n  \(url.absoluteString)" }
+                lines.append(line)
+            }
+        }
+        for note in notes {
+            lines.append("\(note.label): \(StoryText.paragraph(note.value, limit: 1_500))")
+        }
+        if let account, !account.isEmpty {
+            lines.append("\(account.source):")
+            if !account.milestones.isEmpty {
+                let first = account.milestoneCount - account.milestones.count + 1
+                lines += account.milestones.enumerated().map { "\(first + $0.offset). \($0.element)" }
+            }
+            if let overview = account.overview { lines.append("Overview: \(StoryText.paragraph(overview, limit: 900))") }
+            if !account.done.isEmpty { lines.append("Done:"); lines += account.done.map { "- \($0)" } }
+            if !account.next.isEmpty { lines.append("Next:"); lines += account.next.map { "- \($0)" } }
+            if let last = account.lastMessage { lines.append("Said last: \(StoryText.paragraph(last, limit: 600))") }
+        }
+        if whole, let footnote { lines.append(footnote) }
+        return lines
+    }
+}
+
 /// The prompt that asks for a summary of a thing and what's linked to it: instructions, then what BriefBar knows, as
 /// data between `<data>` and `</data>`, which the model is told never to take instructions from. What's said there comes
 /// from what the sources read, as the details show it, in plain text, cut to fit.
@@ -168,31 +205,7 @@ public enum StorySummaryPrompt {
         let sentence = item.story?.sentence.isEmpty == false ? item.story?.sentence : item.status
         if let sentence, !sentence.isEmpty { lines.append("Status: \(sentence)") }
         guard let story = item.story else { return lines.joined(separator: "\n") }
-        for fact in story.facts {
-            lines.append("- \(fact.label): \(StoryText.line(fact.value, limit: 300))")
-        }
-        if !story.runs.isEmpty {
-            lines.append("Pipelines:")
-            for run in story.runs.prefix(8) {
-                var line = "- \(run.name): \(run.status)"
-                if let detail = run.detail { line += " (\(StoryText.line(detail, limit: 200)))" }
-                lines.append(line)
-            }
-        }
-        for note in story.notes {
-            lines.append("\(note.label): \(StoryText.paragraph(note.value, limit: 1_500))")
-        }
-        if let account = story.account, !account.isEmpty {
-            lines.append("\(account.source):")
-            if !account.milestones.isEmpty {
-                let first = account.milestoneCount - account.milestones.count + 1
-                lines += account.milestones.enumerated().map { "\(first + $0.offset). \($0.element)" }
-            }
-            if let overview = account.overview { lines.append("Overview: \(StoryText.paragraph(overview, limit: 900))") }
-            if !account.done.isEmpty { lines.append("Done:"); lines += account.done.map { "- \($0)" } }
-            if !account.next.isEmpty { lines.append("Next:"); lines += account.next.map { "- \($0)" } }
-            if let last = account.lastMessage { lines.append("Said last: \(StoryText.paragraph(last, limit: 600))") }
-        }
+        lines += story.lines()
         return lines.joined(separator: "\n")
     }
 

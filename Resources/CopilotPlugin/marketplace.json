@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "briefbar",
-      "description": "/briefbar shows what needs you, from BriefBar, and hands pull requests to sessions you can follow.",
+      "description": "/briefbar shows what needs you, from BriefBar, tells how a work item and its pull requests stand, and hands pull requests to sessions you can follow.",
       "source": "./briefbar"
     }
   ]

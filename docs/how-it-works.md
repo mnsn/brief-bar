@@ -1627,6 +1627,17 @@ the pull request's branch and that everything it would push was made for it, sto
 and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
+`work_item` tells a work item, by its number or link, as its details and Where It Stands do (see
+[Where it stands](#where-it-stands)), in text: `WorkItemStory`'s facts and notes, its tasks in the
+sprint, or its children when it isn't there, and each pull request it links to, told by
+`PullRequestStory` as the panel's rows are: yours as your lists have them, with their checks and
+merge pipelines, and the others as they say themselves. It reads the work item with the same GETs as
+its details, whose `$expand=relations` already names its pull requests, so it works whether Show Links
+is on or not, then one GET for each of those pull requests your lists don't have, ten at a time,
+through a `LinkEngine` of its own. Without a link, it looks in the sprint, then in each of your organizations.
+The text of a story (`ItemStory.lines`) is the one Summarize with Copilot sends, with what says less
+too: who wrote a pull request, its branch, its runs' pages and what isn't read for it.
+
 The tools that change something change only BriefBar's own lists, as its menus do:
 `watch_pull_request` and `stop_watching_pull_request` the pull requests you watch, and `pin_pipeline`
 and `unpin_pipeline` the pinned pipelines. A pull request is read right after it's watched, and if

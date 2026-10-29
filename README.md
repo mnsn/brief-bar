@@ -522,6 +522,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
+| `work_item` | One work item and what goes with it: where it stands, its description and latest comments, its tasks, each pull request linked to it with its votes, comments and pipelines, and the work BriefBar sent to Copilot for it |
 | `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
 | `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
 | `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
@@ -769,8 +770,9 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   sessions you've cleared; the links you added or hid, with Show Links; and its settings. Turning a source off deletes
   what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
-  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, and Copilot tasks and
-  sessions, never Teams or GitHub. That goes to the agent's model, which may run in the cloud. Their
+  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
+  description, comments and the pull requests linked to it, and Copilot tasks and sessions, never Teams
+  or GitHub. That goes to the agent's model, which may run in the cloud. Their
   only changes are to the pull requests BriefBar watches and the pipelines it pins. Turning them on
   adds BriefBar to the Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`, and installing
   its plugin uses `copilot plugin`: BriefBar never reads the CLI's configuration, where other servers'

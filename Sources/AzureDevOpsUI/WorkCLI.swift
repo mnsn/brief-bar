@@ -109,13 +109,18 @@ enum WorkCLI {
                     lines.append("  \(symbol(parent)) \(parent.id) \(parent.type): \(parent.title)  [\(parent.state) · \(parent.assignedTo?.name ?? "Unassigned")]  \(progress)")
                 }
                 for task in row.tasksInWorkOrder {
-                    let mark = task.isAssigned(to: board.me) ? " (you)" : ""
-                    let hours = task.remainingText.map { "  \($0)" } ?? ""
-                    lines.append("      \(symbol(task)) \(task.id) \(task.title)  [\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\(mark)]\(hours)")
+                    lines.append("      " + taskLine(task, me: board.me))
                 }
             }
         }
         return lines
+    }
+
+    /// "◐ 5112 Show saved items  [Active · Sam Rivera (you)]  3 h", as `--sprint` prints a task.
+    static func taskLine(_ task: WorkItem, me: String?) -> String {
+        let mark = me.map { task.isAssigned(to: $0) } == true ? " (you)" : ""
+        let hours = task.remainingText.map { "  \($0)" } ?? ""
+        return "\(symbol(task)) \(task.id) \(task.title)  [\(task.state) · \(task.assignedTo?.name ?? "Unassigned")\(mark)]\(hours)"
     }
 
     private static func symbol(_ item: WorkItem) -> String {

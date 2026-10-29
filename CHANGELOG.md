@@ -20,6 +20,11 @@
 - **Open a pull request or a session on a page of its own.** In Where It Stands, click a pull request
   or a Copilot session to see all that's known of it in the details, with its own links, such as a pull
   request's sessions, and **‹** to go back to the work item.
+- **Ask an agent how a work item is going.** BriefBar's agent tools have `work_item`: a work item by its
+  number or link, with its description and latest comments, its tasks, each pull request linked to it,
+  your teammates' too, with its votes, comments and pipelines, and the work BriefBar sent to Copilot for
+  it. In the GitHub Copilot app, try **/briefbar 5101**. Since agents get more, they wait until you've
+  seen what they get now.
 
 ## 0.8.3 - 2026-10-28
 

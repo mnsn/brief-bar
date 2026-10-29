@@ -1,6 +1,6 @@
 ---
 name: briefbar
-description: What needs the user, from BriefBar, their macOS menu-bar app. Azure DevOps pull requests that need them, fail or are ready to complete, pinned pipelines that failed, and GitHub Copilot sessions waiting for them. Use it for /briefbar, "what needs me?" or "what's next?", and to fix a pull request's comments, build or conflicts, review it, or push and reply. In the GitHub Copilot app, that work goes to a session of its own that the user can follow.
+description: What needs the user, from BriefBar, their macOS menu-bar app. Azure DevOps pull requests that need them, fail or are ready to complete, pinned pipelines that failed, and GitHub Copilot sessions waiting for them. Use it for /briefbar, "what needs me?" or "what's next?", "what's going on with 5101?", and to fix a pull request's comments, build or conflicts, review it, or push and reply. In the GitHub Copilot app, that work goes to a session of its own that the user can follow.
 ---
 
 # BriefBar
@@ -80,6 +80,15 @@ only `push_and_reply` pushes the pull request's branch and replies on its thread
 `copilot_sessions` lists the user's sessions in the GitHub Copilot app, each with its session ID; its `needs_you` phase
 has the questions, plans and permission requests that wait for them. Never answer one for the user. In the GitHub
 Copilot app, offer to open it with `navigate_to` and its session ID; elsewhere, give its ghapp://sessions/ link.
+
+## What's going on with a work item
+
+For /briefbar with a work item's number or link, such as /briefbar 5101, or when the user asks how a story, a bug or a
+task is going, call `work_item` with it. It gives where the work item stands, who has it, its description and latest
+comments, its tasks, each pull request linked to it with its reviewers, comments and pipelines, and the work BriefBar
+sent to Copilot for it. Answer in a few sentences: where it stands, what's been done, what's left and who it waits on,
+with the links it gives. For one of its pull requests in detail, call `pull_request`. A Copilot session on a pull
+request's branch works on it: `copilot_sessions` lists them with their branches.
 
 ## More
 

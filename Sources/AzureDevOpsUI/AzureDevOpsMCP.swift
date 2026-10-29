@@ -289,6 +289,94 @@ actor AzureDevOpsReader {
         }
         return entries.sorted { $0.startedAt > $1.startedAt }
     }
+
+    // MARK: A work item
+
+    /// A work item, as the `work_item` tool tells it: its details, where it is in the sprint, and the pull requests it
+    /// links to, yours as your lists have them and the others as they say themselves.
+    struct WorkItemRead: Sendable {
+        var item: WorkItem
+        var details: WorkItemDetails?
+        /// Its tasks in the sprint, in work order, for a story or a bug; or its children, as its details have them, for one
+        /// that isn't in the sprint.
+        var tasks: [WorkItem]
+        var tasksAreInSprint: Bool
+        /// The story or bug it's a task of.
+        var parent: WorkItem?
+        /// You, in the sprint's organization, to mark your tasks.
+        var me: String?
+        var pullRequests: [PRKey]
+        /// Your lists, which have yours, the ones you review and the ones you watch.
+        var lists: PullRequests
+        /// The others, read for this; one that couldn't be read isn't here.
+        var others: [PRKey: PullRequest]
+    }
+
+    /// Reads a work item by its number, in the organization its link names, or else the sprint's or one of yours, with the
+    /// GET requests its details make, and one for each pull request it links to that your lists don't have.
+    func workItem(_ id: Int, organization: String?, now: Date = Date()) async throws -> WorkItemRead {
+        let board = await sprint(now: now).board
+        let rows = board?.rows ?? []
+        func isIt(_ item: WorkItem) -> Bool {
+            item.id == id && (organization.map { item.organization.caseInsensitiveCompare($0) == .orderedSame } ?? true)
+        }
+        let row = rows.first { $0.parent.map(isIt) == true }
+        let parentRow = row == nil ? rows.first { $0.tasks.contains(where: isIt) } : nil
+        let inSprint = row?.parent ?? parentRow?.tasks.first(where: isIt)
+        let lists = await pullRequests(now: now)
+        func told(_ details: WorkItemDetails, others: [PRKey: PullRequest]) -> WorkItemRead {
+            let children = SprintBoard.Row(parent: nil, tasks: details.children.compactMap(\.item)).tasksInWorkOrder
+            return WorkItemRead(
+                item: WorkItemDetailsStore.newest(inSprint, details.item) ?? details.item, details: details,
+                tasks: row?.tasksInWorkOrder ?? children, tasksAreInSprint: row != nil,
+                parent: parentRow?.parent ?? details.parent?.item, me: board?.me, pullRequests: details.pullRequests, lists: lists,
+                others: others
+            )
+        }
+        if demo {
+            let organization = inSprint?.organization ?? organization ?? DemoData.organization
+            guard let details = DemoData.workItemDetails(organization: organization, id: id, now: now) else {
+                throw MCPToolError("The demo's sprint has no work item \(id).")
+            }
+            return told(details, others: DemoData.workLinks(now: now).pullRequests)
+        }
+        guard let client else { throw MCPToolError("BriefBar can't read Azure DevOps here.") }
+        var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
+        if organizations.isEmpty { organizations = await self.organizations(client: client) }
+        if organizations.isEmpty { throw MCPToolError(discoveryProblem ?? "BriefBar doesn't know your Azure DevOps organizations.") }
+        for organization in organizations {
+            let item = inSprint ?? WorkItem(
+                id: id, organization: organization, project: "", type: "Work Item", title: "Work item \(id)", state: "", category: .proposed
+            )
+            let read = await WorkItemDetailsStore.read(item, client: client)
+            switch read.result {
+            case .success(let details):
+                return told(details, others: await lookUp(details.pullRequests, notIn: lists, client: client))
+            case .failure(let error):
+                // Another of your organizations may have it.
+                if case .notFound = error, organizations.count > 1 { continue }
+                if case .auth(.signedOut) = error { throw MCPToolError("You're signed out of the Azure CLI. Run az login, then ask again.") }
+                throw MCPToolError(WorkItemDetailsStore.message(for: error))
+            }
+        }
+        throw MCPToolError("None of your organizations has a work item \(id) you can see: give its link.")
+    }
+
+    /// The pull requests your lists don't have, as Show Links reads them: one GET each, ten at a time.
+    private func lookUp(_ keys: [PRKey], notIn lists: PullRequests, client: ADOClient) async -> [PRKey: PullRequest] {
+        let listed = Set(lists.records.map(\.id.linkRef))
+        let others = Set(keys.filter { !listed.contains($0.linkRef) })
+        guard !others.isEmpty else { return [:] }
+        let engine = LinkEngine(client: client) { _ in }
+        await engine.update(LinkEngine.Inputs(pullRequestLookups: others))
+        var read = await engine.currentLinks().pullRequests
+        for _ in 0..<4 where read.count < others.count {
+            await engine.refresh()
+            read = await engine.currentLinks().pullRequests
+        }
+        await engine.stop()
+        return read
+    }
 }
 
 /// The tools `--mcp` gives agents for Azure DevOps.
@@ -363,6 +451,19 @@ struct AzureDevOpsAgent: Sendable {
                     "mine": MCPSchema.boolean("Only the user's own stories and tasks"),
                 ])
             ) { arguments in try await sprint(mine: arguments["mine"]?.bool ?? false) },
+            MCPTool(
+                name: "work_item",
+                title: "Work Item",
+                description: """
+                    One work item and what goes with it, by its number or link: where it stands, who has it, its \
+                    description and latest comments, its tasks, each pull request linked to it in Azure DevOps with its \
+                    reviewers' votes, comments, merge and the pipelines that ran on it, and the work BriefBar sent to \
+                    Copilot for it. For what's going on with a story, a bug or a task.
+                    """,
+                inputSchema: MCPSchema.object([
+                    "work_item": MCPSchema.string("Its number, such as 5101, or its link"),
+                ], required: ["work_item"])
+            ) { arguments in try await workItem(arguments["work_item"]) },
             MCPTool(
                 name: "copilot_tasks",
                 title: "Copilot Tasks",
@@ -537,6 +638,21 @@ struct AzureDevOpsAgent: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    func workItem(_ reference: JSONValue?, now: Date = Date()) async throws -> String {
+        let (id, organization) = try Self.workItemReference(reference)
+        let read = try await reader.workItem(id, organization: organization, now: now)
+        let item = read.item
+        // The work sent for it, for its tasks, and on its pull requests.
+        let ids = Set([item.id] + read.tasks.map(\.id))
+        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now).filter { task in
+            if let workItem = task.workItem {
+                return ids.contains(workItem.id) && workItem.organization.caseInsensitiveCompare(item.organization) == .orderedSame
+            }
+            return read.pullRequests.contains { task.isOn($0) }
+        } : []
+        return AgentText.workItem(read, tasks: tasks, now: now)
+    }
+
     func copilotTasks(now: Date = Date()) async throws -> String {
         guard await reader.sendsToCopilot else {
             throw MCPToolError("Send Work to Copilot is off in BriefBar: it's in Azure DevOps' settings.")
@@ -628,6 +744,16 @@ struct AzureDevOpsAgent: Sendable {
             if text.hasPrefix("!"), let number = Int(text.dropFirst()), number > 0 { return (number, nil) }
         }
         throw MCPToolError("Name the pull request by its number, such as 4088, or its link.")
+    }
+
+    /// A work item an agent names: its number, such as 5101 or #5101, or its link, which says its organization too.
+    static func workItemReference(_ value: JSONValue?) throws -> (id: Int, organization: String?) {
+        if let number = value?.int, number > 0 { return (number, nil) }
+        if let text = value?.string?.trimmingCharacters(in: .whitespaces) {
+            if let ref = ItemRef.from(link: text), ref.kind == .workItem, let id = Int(ref.id) { return (id, ref.scope) }
+            if let number = Int(text.hasPrefix("#") ? String(text.dropFirst()) : text), number > 0 { return (number, nil) }
+        }
+        throw MCPToolError("Name the work item by its number, such as 5101, or its link.")
     }
 
     static func find(_ value: JSONValue?, in read: AzureDevOpsReader.PullRequests) throws -> PRRecord {
@@ -783,6 +909,67 @@ enum AgentText {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// A work item and what goes with it, for the `work_item` tool.
+    static func workItem(_ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], now: Date) -> String {
+        let item = read.item
+        var lines = ["# \(item.type) \(item.id) “\(item.title)”"]
+        if !item.project.isEmpty {
+            lines.append(ADOEndpoint.workItemPage(organization: item.organization, project: item.project, id: item.id).absoluteString)
+        }
+        lines.append("")
+        var place = "- In " + (item.project.isEmpty ? item.organization : "\(item.project) (\(item.organization))")
+        if let parent = read.parent { place += ", under \(parent.type.lowercased()) \(parent.id) “\(parent.title)”" }
+        lines.append(place)
+        let story = WorkItemStory.make(item, details: read.details, tasks: read.tasksAreInSprint ? read.tasks : [])
+        var state = "- Status: " + (story.sentence.isEmpty ? item.state : story.sentence)
+        if let date = story.date { state += ", changed \(ago(date, now: now))" }
+        lines.append(state)
+        lines += story.lines(whole: true)
+
+        if !read.tasks.isEmpty {
+            lines.append("\n## \(read.tasksAreInSprint ? "Tasks" : "Children") (\(read.tasks.count))")
+            lines += read.tasks.map { "- " + WorkCLI.taskLine($0, me: read.me) }
+            lines.append("✓ done, ◐ in progress, ○ to do. (you) marks your own.")
+        }
+
+        lines.append("\n## Pull requests (\(read.pullRequests.count))")
+        if read.pullRequests.isEmpty { lines.append("None is linked to it in Azure DevOps.") }
+        for key in read.pullRequests {
+            lines += pullRequest(key, in: read, now: now)
+        }
+
+        if !tasks.isEmpty {
+            lines.append("\n## Sent to Copilot (\(tasks.count))")
+            var titles = Dictionary(read.lists.records.map { ($0.id, $0.pullRequest.title) }, uniquingKeysWith: { first, _ in first })
+            for (key, pullRequest) in read.others { titles[key] = pullRequest.title }
+            let workItems = Dictionary(([item] + read.tasks).map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+            lines += tasks.map { task($0, titles: titles, workItems: workItems, now: now) }
+        }
+        lines.append("""
+
+            pull_request gives one of your pull requests in detail, with its comment threads and what Copilot can do with it. \
+            copilot_sessions lists your sessions in the GitHub Copilot app, with their branches: one on a pull request's \
+            branch works on it.
+            """)
+        return lines.joined(separator: "\n")
+    }
+
+    /// A pull request linked to a work item: yours as your lists have it, another as it says itself.
+    private static func pullRequest(_ key: PRKey, in read: AzureDevOpsReader.WorkItemRead, now: Date) -> [String] {
+        let record = read.lists.records.first { $0.id.linkRef == key.linkRef }
+        let snapshot = read.lists.items.first { $0.key.linkRef == key.linkRef }
+        guard let pullRequest = record?.pullRequest ?? read.others.first(where: { $0.key.linkRef == key.linkRef })?.value else {
+            return ["", "### !\(key.number)", "BriefBar couldn't read it."]
+        }
+        let me = record?.me ?? read.lists.records.first { $0.id.organization.caseInsensitiveCompare(key.organization) == .orderedSame }?.me
+        let story = snapshot.map { PullRequestStory.mine($0, record: record) } ?? PullRequestStory.others(pullRequest, me: me)
+        var lines = ["", "### !\(key.number) “\(pullRequest.title)”", pullRequest.webURL.absoluteString]
+        lines.append("- In \(pullRequest.repositoryName)" + (snapshot.map { ", in BriefBar's \($0.group.title)" } ?? ", not in your lists"))
+        if !story.sentence.isEmpty { lines.append("- Status: \(story.sentence)") }
+        lines += story.lines(whole: true)
+        return lines
     }
 
     static func vote(_ vote: Vote) -> String {
