@@ -55,9 +55,19 @@ public enum CopilotCommand {
 
     /// The same, for a session about `subject`, such as "pull request 4071".
     public static func resumeScript(copilot: URL, sessionId: String, directory: URL, subject: String) -> String {
+        resumeScript(copilot: copilot, sessionId: sessionId, directory: directory, about: "Copilot's session for \(subject)")
+    }
+
+    /// The same, for a session of the Copilot CLI's own rather than one BriefBar sent. Its name, which anyone's prompt
+    /// can make, stays out of the script.
+    public static func resumeScript(copilot: URL, sessionId: String, directory: URL) -> String {
+        resumeScript(copilot: copilot, sessionId: sessionId, directory: directory, about: "a Copilot CLI session")
+    }
+
+    private static func resumeScript(copilot: URL, sessionId: String, directory: URL, about: String) -> String {
         """
         #!/bin/zsh -l
-        # Opened by BriefBar: Copilot's session for \(subject), to go on with it.
+        # Opened by BriefBar: \(about), to go on with it.
         cd \(quoted(directory.path)) && exec \(quoted(copilot.path)) --resume \(quoted(sessionId))
         """
     }

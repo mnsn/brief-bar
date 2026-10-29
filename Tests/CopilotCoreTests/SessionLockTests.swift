@@ -29,6 +29,19 @@ import Testing
         #expect(!SessionLock.isHeld(sessionFolder: URL(fileURLWithPath: "/nonexistent")))
     }
 
+    /// Which program holds it, to bring up the terminal a Copilot CLI has it open in: only one that's still running.
+    @Test func namesTheProgramThatHoldsIt() throws {
+        try withTemporaryDirectory { folder in
+            #expect(SessionLock.holder(sessionFolder: folder) == nil)
+            try Data().write(to: folder.appendingPathComponent("inuse.4242.lock"))
+            #expect(SessionLock.holder(sessionFolder: folder, isRunning: { _ in false }) == nil)
+            #expect(SessionLock.holder(sessionFolder: folder, isRunning: { $0 == 4242 }, startTime: { _ in nil }) == 4242)
+            try FileManager.default.removeItem(at: folder.appendingPathComponent("inuse.4242.lock"))
+            try Data().write(to: folder.appendingPathComponent("inuse.\(getpid()).lock"))
+            #expect(SessionLock.holder(sessionFolder: folder) == getpid())
+        }
+    }
+
     /// macOS reuses process IDs: a lock whose process ID belongs to a program that started after the lock was written was
     /// left by one that's gone, and doesn't count.
     @Test func doesNotTakeAReusedProcessIDForTheLocksProgram() throws {

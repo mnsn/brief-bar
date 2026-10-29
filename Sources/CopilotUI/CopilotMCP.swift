@@ -43,7 +43,7 @@ struct CopilotAgent: Sendable {
                 continuation.resume(returning: SessionEngine.loadOnce(paths: paths))
             }
         }
-        return (CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil), state.problem)
+        return (CopilotCommandLine.resolve(state, now: now, defaults: isDemo ? MemoryDefaults() : nil), CopilotApp.problem(of: state))
     }
 
     func sessions(phase: JSONValue?, now: Date = Date()) async throws -> String {

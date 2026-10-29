@@ -3,7 +3,8 @@ import Foundation
 
 /// Whether a program has a session open. The Copilot app's runtime keeps `inuse.<pid>.lock` in a session's folder while
 /// it has the session loaded, with its history in memory: a turn that another program, such as the Copilot CLI, runs in
-/// the session meanwhile is one the app never sees, and the session's history forks. The CLI doesn't check for it.
+/// the session meanwhile is one the app never sees, and the session's history forks. The CLI doesn't check for it, but
+/// keeps one too, from the moment it opens a session in a terminal until it quits.
 public enum SessionLock {
     /// Whether a program that's still running holds the session in `folder`. A lock left by one that's gone, as after the
     /// app quits, doesn't count; nor does one whose process ID a program that started after it was written has now, since
@@ -12,12 +13,20 @@ public enum SessionLock {
         sessionFolder folder: URL, isRunning: (pid_t) -> Bool = SessionLock.isRunning,
         startTime: (pid_t) -> Date? = DetachedProgram.startTime(of:)
     ) -> Bool {
-        holders(in: folder).contains { lock in
+        holder(sessionFolder: folder, isRunning: isRunning, startTime: startTime) != nil
+    }
+
+    /// The process ID of the program that holds the session in `folder`, as `isHeld` tells it: nil when none does.
+    public static func holder(
+        sessionFolder folder: URL, isRunning: (pid_t) -> Bool = SessionLock.isRunning,
+        startTime: (pid_t) -> Date? = DetachedProgram.startTime(of:)
+    ) -> pid_t? {
+        holders(in: folder).first { lock in
             guard isRunning(lock.pid) else { return false }
             guard let written = lock.written, let started = startTime(lock.pid) else { return true }
             // Start times and modification dates are both precise to well under a second.
             return started <= written.addingTimeInterval(1)
-        }
+        }?.pid
     }
 
     /// The programs that left a lock in the folder, by their process IDs, with when each lock was written.

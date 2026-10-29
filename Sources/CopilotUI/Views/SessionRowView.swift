@@ -90,7 +90,7 @@ struct SessionRowView: View {
                 Button(task.openTitle, action: action)
                 task.menu()
             } else {
-                Button("Open in GitHub Copilot", action: action)
+                Button(store.appInstalled ? "Open in GitHub Copilot" : "Open in Terminal", action: action)
             }
             if let ref = ItemRef.session(session.id) {
                 LinkMenuItems(ref)
@@ -100,8 +100,9 @@ struct SessionRowView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(session.displayName), \(session.headline)")
         .accessibilityValue([session.detail, contextUsage.map(ContextUsageView.description)].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityHint(task.map { "Opens its \($0.opens.lowercased())" } ?? "Opens the session in GitHub Copilot")
-        .rowActions(for: session.displayName, openTitle: task?.openTitle ?? "Open in Copilot", open: action) {
+        .accessibilityHint(task.map { "Opens its \($0.opens.lowercased())" }
+            ?? (store.appInstalled ? "Opens the session in GitHub Copilot" : "Opens the session in Terminal"))
+        .rowActions(for: session.displayName, openTitle: task?.openTitle ?? (store.appInstalled ? "Open in Copilot" : "Open in Terminal"), open: action) {
             if let task {
                 task.menu()
             }
@@ -129,8 +130,10 @@ struct SessionRowView: View {
         if let task {
             lines.append("Sent from BriefBar: the Copilot CLI works on it on its own, outside the Copilot app")
             lines.append("Click to open its \(task.opens.lowercased()), or right-click for its menu")
-        } else {
+        } else if store.appInstalled {
             lines.append("Click to open in GitHub Copilot")
+        } else {
+            lines.append("Click to open in Terminal with the Copilot CLI, or bring up the terminal that has it open")
         }
         return lines.joined(separator: "\n")
     }

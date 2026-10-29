@@ -43,9 +43,10 @@ package final class CopilotSource: BriefBarSource {
     package init(services: AppServices) {
         self.services = services
         settings = AppSettings(defaults: services.defaults)
-        // The demo reads only made-up data, never your own.
+        // The demo reads only made-up data, never your own, and its sessions are the app's, never the CLI's.
         store = SessionStore(
-            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks
+            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks,
+            isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
         )
     }
 

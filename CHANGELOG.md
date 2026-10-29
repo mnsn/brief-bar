@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Copilot sessions work without the Copilot app.** On a Mac with only the Copilot CLI, the
+  Sessions list said "Could not open Copilot database", and clicking a session failed, since nothing
+  could open it. It now lists the CLI's recent sessions without that warning, and clicking one opens it
+  in a terminal: one the CLI still has open brings up the app it runs in, such as Terminal, and any
+  other opens in Terminal with `copilot --resume`, in the folder it worked in. With the Copilot app
+  installed, nothing changes.
+
 ## 0.8.4 - 2026-10-29
 
 - **A work item's details show its text as written.** In fields written in Markdown, a numbered list

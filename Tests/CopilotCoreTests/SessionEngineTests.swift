@@ -28,6 +28,7 @@ import Testing
             let snapshot = SessionEngine.loadOnce(paths: paths)
             #expect(snapshot.problem == nil)
             #expect(snapshot.listedByApp)
+            #expect(!snapshot.databaseMissing)
             let records = Dictionary(uniqueKeysWithValues: snapshot.records.map { ($0.id, $0) })
             #expect(records.keys.sorted() == ["asking", "finished", "fresh"])
             #expect(try #require(records["fresh"]).log == nil)
@@ -43,6 +44,7 @@ import Testing
             let snapshot = SessionEngine.loadOnce(paths: paths)
             #expect(snapshot.records.isEmpty)
             #expect(snapshot.problem == "No Copilot data found at \(paths.root.path)")
+            #expect(!snapshot.databaseMissing)
         }
     }
 
@@ -68,6 +70,20 @@ import Testing
             #expect(snapshot.problem?.contains("Could not open Copilot database") == true)
             // Every recent folder, not the app's own list.
             #expect(!snapshot.listedByApp)
+            // As on a Mac with only the Copilot CLI, which keeps no database.
+            #expect(snapshot.databaseMissing)
+        }
+    }
+
+    /// A database that's there but can't be read is a problem whether or not the app is installed.
+    @Test func tellsAnUnreadableDatabaseFromAMissingOne() throws {
+        try withTemporaryDirectory { root in
+            let paths = CopilotPaths(root: root)
+            try Data("not a database".utf8).write(to: paths.database)
+            let snapshot = SessionEngine.loadOnce(paths: paths)
+            #expect(snapshot.problem != nil)
+            #expect(!snapshot.listedByApp)
+            #expect(!snapshot.databaseMissing)
         }
     }
 

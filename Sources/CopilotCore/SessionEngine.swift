@@ -23,12 +23,19 @@ public struct EngineSnapshot: Sendable, Equatable {
     /// The sessions are the ones the app's database lists, rather than every recent session folder, which is all there
     /// is to go on while the database has never been readable (`SessionStateScanner`).
     public var listedByApp: Bool
+    /// There's a Copilot folder, but no app database in it at all, as on a Mac with only the Copilot CLI, which keeps
+    /// none: the sessions are every recent session folder's.
+    public var databaseMissing: Bool
 
-    public init(records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true) {
+    public init(
+        records: [SessionRecord] = [], view: AppViewState = AppViewState(), problem: String? = nil, listedByApp: Bool = true,
+        databaseMissing: Bool = false
+    ) {
         self.records = records
         self.view = view
         self.problem = problem
         self.listedByApp = listedByApp
+        self.databaseMissing = databaseMissing
     }
 }
 
@@ -52,6 +59,7 @@ public final class SessionEngine: @unchecked Sendable {
     private var view = AppViewState()
     private var problem: String?
     private var metadataFromDatabase = false
+    private var databaseMissing = false
     private var readers: [String: EventLogReader] = [:]
     private var lastPublished: EngineSnapshot?
     private var stream: FileEventStream?
@@ -231,6 +239,7 @@ public final class SessionEngine: @unchecked Sendable {
             metas = snapshot.sessions
             view = snapshot.view
             metadataFromDatabase = true
+            databaseMissing = false
             problem = nil
         } catch {
             if metadataFromDatabase {
@@ -242,7 +251,9 @@ public final class SessionEngine: @unchecked Sendable {
                 problem = "\(error). The list may be out of date."
             } else {
                 metas = SessionStateScanner.recentSessions(paths: paths)
-                problem = FileManager.default.fileExists(atPath: paths.root.path)
+                let hasFolder = FileManager.default.fileExists(atPath: paths.root.path)
+                databaseMissing = hasFolder && !FileManager.default.fileExists(atPath: paths.database.path)
+                problem = hasFolder
                     ? String(describing: error)
                     : "No Copilot data found at \(paths.root.path)"
             }
@@ -265,7 +276,9 @@ public final class SessionEngine: @unchecked Sendable {
             let reader = readers[meta.id]
             return SessionRecord(meta: meta, log: reader?.isLoaded == true ? reader?.state : nil)
         }
-        return EngineSnapshot(records: records, view: view, problem: problem, listedByApp: metadataFromDatabase)
+        return EngineSnapshot(
+            records: records, view: view, problem: problem, listedByApp: metadataFromDatabase, databaseMissing: databaseMissing
+        )
     }
 
     private func publish(force: Bool = false) {

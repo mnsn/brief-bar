@@ -12,12 +12,16 @@ struct SettingsMenuContent: View {
     }
 }
 
-/// Copilot's settings and a way to open it: in the gear menu, and in a widget's context menu.
+/// Copilot's settings and a way to open it, when it's on this Mac: in the gear menu, and in a widget's context menu.
 struct SourceMenuContent: View {
+    @EnvironmentObject private var store: SessionStore
+
     var body: some View {
         CopilotSettings()
-        Divider()
-        Button("Open GitHub Copilot") { CopilotApp.activate() }
+        if store.appInstalled {
+            Divider()
+            Button("Open GitHub Copilot") { CopilotApp.activate() }
+        }
     }
 }
 

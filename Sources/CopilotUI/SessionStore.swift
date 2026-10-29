@@ -17,9 +17,13 @@ final class SessionStore: ObservableObject {
     @Published private(set) var hasLoaded = false
     /// The tasks in `sessions`, by their sessions' IDs: what their rows open, and their menus.
     @Published private(set) var tasks: [String: SentTask] = [:]
+    /// The Copilot app is on this Mac. Without it, sessions are the Copilot CLI's, and open in a terminal (`CLISession`).
+    @Published private(set) var appInstalled: Bool
 
     private let settings: AppSettings
     private let openSession: @MainActor (String) -> Void
+    private let openCLISession: @MainActor (String) -> Void
+    private let isAppInstalled: @MainActor () -> Bool
     /// Where the Copilot app's files are; nil for the demo without made-up data, which reads nothing.
     let paths: CopilotPaths?
     /// The tasks BriefBar sent to the Copilot CLI, as the source that sent them says.
@@ -31,14 +35,25 @@ final class SessionStore: ObservableObject {
     /// Show Links: the engine reads where each session's work goes too.
     private var readsLinks = false
 
+    /// - Parameters:
+    ///   - openSession: opens a session in the Copilot app.
+    ///   - openCLISession: opens one without the app; by default, as `CLISession` does.
+    ///   - isAppInstalled: whether the Copilot app is on this Mac, looked at again every so often.
     init(
         settings: AppSettings, paths: CopilotPaths?, sentTasks: SentTasks? = nil,
-        openSession: @escaping @MainActor (String) -> Void = CopilotApp.open
+        openSession: @escaping @MainActor (String) -> Void = CopilotApp.open,
+        openCLISession: (@MainActor (String) -> Void)? = nil,
+        isAppInstalled: @escaping @MainActor () -> Bool = { CopilotApp.isInstalled }
     ) {
         self.settings = settings
         self.paths = paths
         self.openSession = openSession
+        self.openCLISession = openCLISession ?? { id in
+            if let paths { CLISession.open(id, paths: paths) }
+        }
+        self.isAppInstalled = isAppInstalled
         self.sentTasks = sentTasks
+        appInstalled = isAppInstalled()
     }
 
     var activeSessions: [SessionSnapshot] { sessions.filter { $0.phase != .idle } }
@@ -81,11 +96,19 @@ final class SessionStore: ObservableObject {
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.recompute() } }
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.refreshAppInstalled()
+                    self?.recompute()
+                }
+            }
             .store(in: &cancellables)
 
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.recompute() }
+            MainActor.assumeIsolated {
+                self?.refreshAppInstalled()
+                self?.recompute()
+            }
         }
         ticker.tolerance = 3
         RunLoop.main.add(ticker, forMode: .common)
@@ -117,7 +140,8 @@ final class SessionStore: ObservableObject {
         engine?.setReadsLinks(reads)
     }
 
-    /// Opens the session or task; only the opt-in setting dismisses its recent completion.
+    /// Opens the session or task: a session in the Copilot app, or without it, in a terminal. Only the opt-in setting
+    /// dismisses its recent completion.
     func open(_ session: SessionSnapshot) {
         if settings.moveViewedToIdle, session.phase == .done || session.phase == .stopped {
             settings.markViewed([session.id])
@@ -125,8 +149,13 @@ final class SessionStore: ObservableObject {
         }
         if let task = tasks[session.id] {
             task.open()
-        } else {
+            return
+        }
+        refreshAppInstalled()
+        if appInstalled {
             openSession(session.id)
+        } else {
+            openCLISession(session.id)
         }
     }
 
@@ -143,11 +172,24 @@ final class SessionStore: ObservableObject {
     func receive(_ state: EngineSnapshot) {
         self.state = state
         hasLoaded = true
-        if problem != state.problem {
-            problem = state.problem
-            if let problem { Log.app.error("\(problem, privacy: .public)") }
-        }
+        updateProblem()
         recompute()
+    }
+
+    /// The engine's problem, unless it's only that there's no app database on a Mac without the app (`CopilotApp`).
+    private func updateProblem() {
+        let problem = CopilotApp.problem(of: state, isInstalled: { appInstalled })
+        guard problem != self.problem else { return }
+        self.problem = problem
+        if let problem { Log.app.error("\(problem, privacy: .public)") }
+    }
+
+    /// Looks again whether the Copilot app is on this Mac, since you may have installed or removed it.
+    private func refreshAppInstalled() {
+        let installed = isAppInstalled()
+        guard installed != appInstalled else { return }
+        appInstalled = installed
+        if state.databaseMissing { updateProblem() }
     }
 
     private func recompute() {

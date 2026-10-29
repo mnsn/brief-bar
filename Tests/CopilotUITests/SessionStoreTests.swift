@@ -84,7 +84,7 @@ import Testing
     @Test func openingOnlyDismissesWhileTheOptionIsOn() throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         var opened: [String] = []
-        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) })
+        let store = SessionStore(settings: settings, paths: nil, openSession: { opened.append($0) }, isAppInstalled: { true })
         let records = [
             ended("finished", at: Date().addingTimeInterval(-120)),
             ended("stopped", at: Date().addingTimeInterval(-120), failed: true),
@@ -109,6 +109,65 @@ import Testing
         store.clear(.done)
         store.receive(EngineSnapshot(records: records))
         #expect(store.counts.done == 0)
+    }
+
+    /// With the Copilot app on this Mac, sessions open in it, as they always have; without it, with the Copilot CLI. It's
+    /// looked at again on each click, in case you installed or removed it since.
+    @Test func opensInTheAppWhenItsInstalledAndWithTheCLIWithout() throws {
+        let app = InstalledApp()
+        var inApp: [String] = []
+        var withCLI: [String] = []
+        let store = SessionStore(
+            settings: AppSettings(defaults: MemoryDefaults()), paths: nil,
+            openSession: { inApp.append($0) }, openCLISession: { withCLI.append($0) }, isAppInstalled: { app.isInstalled }
+        )
+        store.receive(EngineSnapshot(records: [ended("finished", at: Date().addingTimeInterval(-120))]))
+        let session = try #require(store.sessions.first)
+        #expect(store.appInstalled)
+        store.open(session)
+        #expect(inApp == ["finished"])
+        #expect(withCLI.isEmpty)
+
+        app.isInstalled = false
+        store.open(session)
+        #expect(!store.appInstalled)
+        #expect(inApp == ["finished"])
+        #expect(withCLI == ["finished"])
+    }
+
+    /// Whether the Copilot app is on this Mac, as a test installs or removes it.
+    @MainActor private final class InstalledApp {
+        var isInstalled = true
+    }
+
+    /// A Mac with only the Copilot CLI has no app database, which is no problem there. With the app, it's one, as before;
+    /// and a database that's there but can't be read is one either way.
+    @Test func saysNothingOfAMissingDatabaseOnlyWithoutTheApp() {
+        let missing = EngineSnapshot(
+            problem: "Could not open Copilot database: unable to open database file", listedByApp: false, databaseMissing: true
+        )
+        let cliOnly = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: nil, isAppInstalled: { false })
+        cliOnly.receive(missing)
+        #expect(cliOnly.problem == nil)
+
+        let withApp = SessionStore(settings: AppSettings(defaults: MemoryDefaults()), paths: nil, isAppInstalled: { true })
+        withApp.receive(missing)
+        #expect(withApp.problem == missing.problem)
+
+        var unreadable = missing
+        unreadable.databaseMissing = false
+        cliOnly.receive(unreadable)
+        #expect(cliOnly.problem == unreadable.problem)
+    }
+
+    /// Without the app, a session a Copilot CLI still has open is in that CLI's terminal; any other is resumed.
+    @Test func showsACLISessionWhereItsOpenOrResumesIt() {
+        let paths = CopilotPaths(root: URL(fileURLWithPath: "/Users/robin/.copilot"))
+        let id = "5d2e8a90-1f3b-4e7c-8a26-7b9c0d4e5f02"
+        var asked: [URL] = []
+        #expect(CLISession.way(for: id, paths: paths, holder: { asked.append($0); return 4242 }) == .show(4242))
+        #expect(asked == [paths.sessionDirectory(id)])
+        #expect(CLISession.way(for: id, paths: paths, holder: { _ in nil }) == .resume)
     }
 
     @Test func theOptionIsOptInAndPersists() {
