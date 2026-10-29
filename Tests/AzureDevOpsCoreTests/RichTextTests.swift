@@ -298,6 +298,72 @@ private typealias Run = RichText.Run
         ])
     }
 
+    @Test func linesLessIndentedThanAnItemsTextAreOutsideIt() {
+        // An item's text starts after its marker and the spaces after it: three columns into "1. One". A block between
+        // the marker and the text isn't in the item, and ends the list, so the next one counts from its own first number.
+        #expect(RichText(markdown: "1. One\n # Title\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .heading(level: 1, [Run("Title")]), .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n  > Quoted\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .quote([Run("Quoted")]), .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n  ```\n  code\n  ```\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .code("code"), .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n  | H |\n  | - |\n  | 1 |\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .table([[[Run("H", style: .bold)]], [[Run("1")]]]),
+            .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+        // An item there is the list's next one, not one in the item.
+        #expect(RichText(markdown: "1. One\n  1. Two\n- a\n - b").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .listItem(.number(2), depth: 0, [Run("Two")]),
+            .listItem(.bullet, depth: 0, [Run("a")]), .listItem(.bullet, depth: 0, [Run("b")]),
+        ])
+        // Where the text starts counts the spaces after the marker, but one when the text is indented as code.
+        #expect(RichText(markdown: "1.  Two spaces\n    - In it").blocks == [
+            .listItem(.number(1), depth: 0, [Run("Two spaces")]), .listItem(.bullet, depth: 1, [Run("In it")]),
+        ])
+        #expect(RichText(markdown: "1.  Two spaces\n   - Not in it").blocks == [
+            .listItem(.number(1), depth: 0, [Run("Two spaces")]), .listItem(.bullet, depth: 0, [Run("Not in it")]),
+        ])
+        #expect(RichText(markdown: "-      Far\n  - In it").blocks == [
+            .listItem(.bullet, depth: 0, [Run("Far")]), .listItem(.bullet, depth: 1, [Run("In it")]),
+        ])
+        // A quote's, a table's or code's line that leaves the item ends them, and the list.
+        #expect(RichText(markdown: "1. A\n   > inside\n> outside\n1. B").blocks == [
+            .listItem(.number(1), depth: 0, [Run("A")]), .quote([Run("inside")]), .quote([Run("outside")]),
+            .listItem(.number(1), depth: 0, [Run("B")]),
+        ])
+        #expect(RichText(markdown: "1. First\n   | H |\n   | - |\n| Outside |\n1. Second").blocks == [
+            .listItem(.number(1), depth: 0, [Run("First")]), .table([[[Run("H", style: .bold)]]]), .paragraph([Run("| Outside |")]),
+            .listItem(.number(1), depth: 0, [Run("Second")]),
+        ])
+        #expect(RichText(markdown: "1. a\n   ```\n   code\nOutside\n1. b").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .code("code"), .paragraph([Run("Outside")]),
+            .listItem(.number(1), depth: 0, [Run("b")]),
+        ])
+        // A fence indented further into the item is closed up to three columns into the item's text, not the fence's.
+        #expect(RichText(markdown: "- a\n    ```\n    x\n       ```\n    ```").blocks == [
+            .listItem(.bullet, depth: 0, [Run("a")]), .code("x\n   ```"),
+        ])
+        // A table whose separator is outside the item isn't one: its lines go on with the item's text.
+        #expect(RichText(markdown: "1. a\n   | H |\n| - |").blocks == [.listItem(.number(1), depth: 0, [Run("a\n| H |\n| - |")])])
+        // After a block, a paragraph is in the item when it's indented into it. A line that goes on with a paragraph, or
+        // an image on such a line, is in what the paragraph is in, however it's indented.
+        #expect(RichText(markdown: "1. a\n   # H\n   Text\nmore\n1. b").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .heading(level: 1, [Run("H")]), .paragraph([Run("Text\nmore")]),
+            .listItem(.number(2), depth: 0, [Run("b")]),
+        ])
+        #expect(RichText(markdown: "1. a\n   # H\nText\n1. b").blocks == [
+            .listItem(.number(1), depth: 0, [Run("a")]), .heading(level: 1, [Run("H")]), .paragraph([Run("Text")]),
+            .listItem(.number(1), depth: 0, [Run("b")]),
+        ])
+        #expect(RichText(markdown: "1. One\n![Diagram](https://example.com/d.png)\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), .image(alt: "Diagram", url: URL(string: "https://example.com/d.png")),
+            .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
+    }
+
     @Test func keepsBackslashesThatArentLineBreaks() {
         // Nothing follows it to break: it's the path's.
         #expect(RichText(markdown: #"Folder: C:\"#).plainText == #"Folder: C:\"#)
