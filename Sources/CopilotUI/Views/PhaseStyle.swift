@@ -54,6 +54,7 @@ extension StatusReason {
         case .permission: return "lock.shield.fill"
         case .working: return "bolt.circle.fill"
         case .starting: return "hourglass.circle.fill"
+        case .relayed: return "arrowshape.turn.up.left.circle.fill"
         case .finished: return "checkmark.circle.fill"
         case .interrupted: return "stop.circle.fill"
         case .failed: return "xmark.octagon.fill"
@@ -65,7 +66,7 @@ extension StatusReason {
     var color: Color {
         switch self {
         case .question, .planApproval, .permission: return .orange
-        case .working, .starting: return .blue
+        case .working, .starting, .relayed: return .blue
         case .finished: return .green
         case .interrupted: return .gray
         case .failed: return .red

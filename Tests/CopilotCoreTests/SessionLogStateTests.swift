@@ -70,6 +70,35 @@ import Testing
         )))
     }
 
+    /// A coordinator that relays a question a session it coordinates waits on waits for your answer itself.
+    @Test func relayedQuestionsWaitForTheUser() {
+        let relaying = [
+            Line.userMessage("Child session needs your input.", at: t(1)),
+            Line.assistantMessage(toolCalls: ["r"], at: t(2)),
+            Line.toolStart("relay_session_input", id: "r", arguments: [
+                "project_session_id": "w-child", "request_id": "request", "context": "From the checkout session.",
+            ], at: t(3)),
+        ]
+        let state = logState(relaying)
+        #expect(state.activity == .needsAnswer(PendingTool(
+            callId: "r", name: "relay_session_input", startedAt: t(3), choices: [],
+            relayedSession: "w-child", relayContext: "From the checkout session."
+        )))
+        #expect(state.currentStep == nil)
+        #expect(logState(relaying + [Line.toolComplete(id: "r", at: t(4))]).activity == .working(since: t(1), detail: nil))
+
+        // Its own question comes first.
+        let both = logState(relaying + [Line.toolStart("ask_user", id: "q", arguments: ["question": "Ship it?"], at: t(5))])
+        #expect(both.activity == .needsAnswer(PendingTool(
+            callId: "q", name: "ask_user", startedAt: t(5), question: "Ship it?", choices: []
+        )))
+        // So does its own plan.
+        let planning = logState(relaying + [Line.toolStart("exit_plan_mode", id: "p", arguments: ["summary": "Ship it."], at: t(5))])
+        #expect(planning.activity == .needsPlanApproval(PendingTool(
+            callId: "p", name: "exit_plan_mode", startedAt: t(5), choices: [], planSummary: "Ship it."
+        )))
+    }
+
     @Test func permissionsComeFirstThenQuestionsThenPlans() {
         var lines = [
             Line.userMessage(at: t(1)),

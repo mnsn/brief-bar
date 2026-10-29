@@ -16,6 +16,7 @@ final class AppSettings: ObservableObject {
         static let keepEndedMinutes = "copilot.keepEndedMinutes"
         static let showContextUsage = "copilot.showContextUsage"
         static let moveViewedToIdle = "copilot.moveViewedToIdle"
+        static let showRelayedQuestionsOnce = "copilot.showRelayedQuestionsOnce"
         static let cleared = "copilot.clearedSessions"
         static let viewed = "copilot.acknowledgedSessions"
     }
@@ -34,6 +35,11 @@ final class AppSettings: ObservableObject {
     @Published var moveViewedToIdle: Bool {
         didSet { defaults.set(moveViewedToIdle, forKey: Key.moveViewedToIdle) }
     }
+    /// Opt-in: a question or plan that a coordinating session asks you for another shows once, where you answer it
+    /// (`RelayedQuestions`).
+    @Published var showRelayedQuestionsOnce: Bool {
+        didSet { defaults.set(showRelayedQuestionsOnce, forKey: Key.showRelayedQuestionsOnce) }
+    }
     /// Session ID → when the user last clicked Clear for its finished/stopped state.
     @Published private(set) var cleared: [String: Date]
     @Published private(set) var viewed: [String: Date]
@@ -44,6 +50,7 @@ final class AppSettings: ObservableObject {
         keepEndedMinutes = minutes > 0 ? minutes : 60
         showContextUsage = defaults.bool(forKey: Key.showContextUsage)
         moveViewedToIdle = defaults.bool(forKey: Key.moveViewedToIdle)
+        showRelayedQuestionsOnce = defaults.bool(forKey: Key.showRelayedQuestionsOnce)
 
         // Old acknowledgments include automatic dismissals just from viewing a session.
         // Keep them only as viewed markers, used while the option is on, never as explicit clears.
@@ -52,22 +59,26 @@ final class AppSettings: ObservableObject {
         viewed = Self.dates(in: defaults, key: Key.viewed, after: cutoff)
     }
 
-    /// Command-line and agent reads honor the same retention and dismissal settings as the UI.
+    /// Command-line and agent reads honor the same retention, dismissal and relayed-question settings as the UI.
     nonisolated static func resolve(_ state: EngineSnapshot, now: Date, defaults: UserDefaults) -> [SessionSnapshot] {
         let minutes = defaults.integer(forKey: Key.keepEndedMinutes)
         let options = ResolverOptions(
             recentWindow: TimeInterval((minutes > 0 ? minutes : 60) * 60),
-            moveViewedToIdle: defaults.bool(forKey: Key.moveViewedToIdle)
+            moveViewedToIdle: defaults.bool(forKey: Key.moveViewedToIdle),
+            showRelayedQuestionsOnce: defaults.bool(forKey: Key.showRelayedQuestionsOnce)
         )
         let cutoff = now.addingTimeInterval(-7 * 86_400)
         let cleared = dates(in: defaults, key: Key.cleared, after: cutoff)
         let viewed = dates(in: defaults, key: Key.viewed, after: cutoff)
-        return SessionOrdering.sorted(state.records.map {
+        let resolved = state.records.map {
             StatusResolver.snapshot(
                 for: $0, now: now, options: options, view: state.view,
                 clearedAt: cleared[$0.id], viewedAt: viewed[$0.id]
             )
-        })
+        }
+        return SessionOrdering.sorted(
+            options.showRelayedQuestionsOnce ? RelayedQuestions.merge(resolved, records: state.records) : resolved
+        )
     }
 
     nonisolated private static func dates(in defaults: UserDefaults, key: String, after cutoff: Date) -> [String: Date] {

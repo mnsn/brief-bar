@@ -19,6 +19,8 @@ public struct SessionMeta: Sendable, Equatable, Codable {
     public var projectName: String?
     public var branch: String?
     public var creatorSessionId: String?
+    /// The session that coordinates this one: the app tells it when this one waits for you, and it can ask you for it.
+    public var coordinatorSessionId: String?
     /// The app's workspace for project sessions (its unread markers are keyed by this).
     public var workspaceId: String?
     /// Latest entry in the app's activity feed for this session.
@@ -32,8 +34,9 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         id: String, name: String, sessionType: String = "project", mode: String? = nil,
         isRunning: Bool? = false, wasInterrupted: Bool = false, interruptionReason: String? = nil,
         createdAt: Date? = nil, updatedAt: Date? = nil, projectName: String? = nil,
-        branch: String? = nil, creatorSessionId: String? = nil, workspaceId: String? = nil,
-        lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil, links: SessionLinks? = nil
+        branch: String? = nil, creatorSessionId: String? = nil, coordinatorSessionId: String? = nil,
+        workspaceId: String? = nil, lastActivity: ActivityPreview? = nil, contextUsage: ContextUsage? = nil,
+        links: SessionLinks? = nil
     ) {
         self.id = id
         self.name = name
@@ -47,6 +50,7 @@ public struct SessionMeta: Sendable, Equatable, Codable {
         self.projectName = projectName
         self.branch = branch
         self.creatorSessionId = creatorSessionId
+        self.coordinatorSessionId = coordinatorSessionId
         self.workspaceId = workspaceId
         self.lastActivity = lastActivity
         self.contextUsage = contextUsage
@@ -224,6 +228,21 @@ public enum AppDatabase {
         SELECT key, value, updated_at FROM app_state WHERE key IN ('workspace-unread', 'lastRoutePath')
         """
 
+    /// Which session coordinates each project session's workspace: the one that created it, while it coordinates it.
+    /// By workspace, as a session can have more than one: its own is the one `visibleSessionsQuery` shows.
+    static let coordinatorsQuery = """
+        SELECT id, coordinating_creator_session_id
+        FROM workspaces
+        WHERE archived_at IS NULL AND coordinating_creator_session_id IS NOT NULL
+        """
+
+    /// Which session coordinates each chat that another session started.
+    static let chatCoordinatorsQuery = """
+        SELECT session_id, coordinating_creator_session_id
+        FROM chat_parent_links
+        WHERE coordinating_creator_session_id IS NOT NULL
+        """
+
     /// Each session's latest context-window measurement. SQLite takes the bare columns from the row
     /// with the largest `ts_ms`.
     static let contextUsageQuery = """
@@ -300,6 +319,8 @@ public enum AppDatabase {
                 sessions[index].contextUsage = bySession[sessions[index].id]
             }
         }
+
+        readCoordinators(connection, into: &sessions)
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -380,6 +401,23 @@ public enum AppDatabase {
             }
         }
         return bySession
+    }
+
+    /// Each session's coordinator, best effort: an app without these tables or columns records none. A chat's is its
+    /// own link's; a project session's is that of the workspace it's listed with, so a newer workspace without one has
+    /// none, whatever an older one has.
+    static func readCoordinators(_ connection: SQLiteConnection, into sessions: inout [SessionMeta]) {
+        func read(_ query: String) -> [String: String] {
+            let rows = (try? connection.rows(query) { row in (row.string(0) ?? "", row.string(1) ?? "") }) ?? []
+            return Dictionary(rows.filter { !$0.0.isEmpty && !$0.1.isEmpty }, uniquingKeysWith: { first, _ in first })
+        }
+        let byWorkspace = read(coordinatorsQuery)
+        let byChat = read(chatCoordinatorsQuery)
+        for index in sessions.indices {
+            let session = sessions[index]
+            let coordinator = session.isChat ? byChat[session.id] : session.workspaceId.flatMap { byWorkspace[$0] }
+            sessions[index].coordinatorSessionId = coordinator == session.id ? nil : coordinator
+        }
     }
 
     static func parseStringArray(_ json: String) -> [String]? {

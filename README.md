@@ -443,7 +443,7 @@ as you wrote it when you choose another session, and **Reset** goes back to the 
 | Group | Status | When |
 |---|---|---|
 | **Needs you** | Waiting for your answer, Plan ready for review, Needs permission | The agent asked a question, finished a plan, or waits for a tool call's permission |
-| **Running** | Working, Starting… | A turn is in progress (the current step is shown) |
+| **Running** | Working, Starting…, Answer in “…” | A turn is in progress (the current step is shown), or, with **Show Relayed Questions Once**, the session coordinating it asks you its question or plan for it |
 | **Done** | Finished | The turn ended normally; shows the agent's summary if there is one |
 | **Stopped** | Interrupted, Error, Stopped responding | You cancelled the turn, it failed, or it went silent mid-turn for 90 s |
 | **Idle** | Idle | Everything else |
@@ -453,6 +453,16 @@ as you wrote it when you choose another session, and **Reset** goes back to the 
 them after you open or view them in Copilot; turning it off shows recent viewed completions again,
 but never ones you explicitly cleared. Click a session to open it in the
 Copilot app.
+
+When a session that another session started and coordinates has a question or a plan for you, the app
+tells the coordinating session, which then asks you too. Answer where it asks: it passes your answer
+on, while a plan you approve in the session itself leaves the coordinating session's question waiting,
+and its approval then fails. **Show Relayed Questions Once**, off by default, shows such a question
+once: as soon as the coordinating session asks, it's in **Needs you** on that session's row only. The
+session it's for moves to **Running** as **Answer in “…”**, naming the coordinating session, and
+clicking it opens that session; right-click it to open the session itself. Until the coordinating
+session asks, the session needs you on its own. Off, both need you once both ask, and a session
+passing on a question shows as **Working**.
 
 The list has the tasks you sent to Copilot from Azure DevOps too, with ✈︎ before their names, such as
 "Fix Comments: !4071 Fix the checkout total": they run in the Copilot CLI, not the Copilot app, so the
@@ -659,6 +669,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Send Work to Copilot | off by default: a button on the sprint's work items that sends one to the Copilot CLI on your Mac, and your pull requests' Copilot actions. Its **Model** (Claude Opus 5.5, Max by default), **Model for Easy Work** (Claude Sonnet 5.5, Medium), **Prompt**, and where **Worktrees** go (in `copilot-worktrees` next to each repository by default) |
 | Copilot | Keep Finished Sessions For | 15 minutes, 1 hour, 4 hours, 1 day |
 | | Move Viewed Sessions to Idle | off by default: when on, opening or viewing a finished or stopped session moves it to Idle |
+| | Show Relayed Questions Once | off by default: a question or plan that a coordinating session asks you for another session shows once, on the coordinating session (see [GitHub Copilot](#github-copilot)) |
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
 
