@@ -53,9 +53,9 @@ struct SummarizeButton: View {
     }
 }
 
-/// What the selected model summed up, at the top of Where It Stands: where it stands in a line and what's next, for whom, in the
-/// colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it couldn't, why, and
-/// what would help. One whose rows changed since says it's out of date, and what changed.
+/// What the selected model summed up, at the top of Where It Stands: where it stands in a line and what's next, for
+/// whom, in the colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it
+/// couldn't, why, and what would help. One whose rows changed since says it's out of date, and what changed.
 package struct SummaryCard: View {
     /// Where it shows: at the top of Where It Stands, or under a pull request's or a session's row in a list, where it's
     /// smaller and quieter.

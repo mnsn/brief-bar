@@ -303,7 +303,7 @@ enum Renderer {
             .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(linksOffSettings, appearance: appearance), "settings-links-off-\(suffix)")
             // A summary as it's written, once it is, when it's out of date and when it fails, in the demo; and Where It Stands
-            // without one, with ✨ Summarize with Copilot.
+            // without one, with ✨ Summarize.
             let summaries = model.services.summaries
             let summarized = model.services.links.linked([.workItem]).sorted().first { subject in
                 if case .written? = summaries.state(for: subject) { return true }

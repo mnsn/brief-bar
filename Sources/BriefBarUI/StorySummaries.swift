@@ -237,9 +237,9 @@ package final class StorySummaries: ObservableObject {
         states[subject] = state
     }
 
-    /// Asks the selected provider for a summary of a thing and what's linked to it, as the details show them now, in place of the one
-    /// it has; of a pull request or a session with nothing linked, of what's known of it. Nothing unless this and Show
-    /// Links are on.
+    /// Asks the selected provider for a summary of a thing and what's linked to it, as the details show them now, in
+    /// place of the one it has; of a pull request or a session with nothing linked, of what's known of it. Nothing
+    /// unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
         guard isAvailable else { return }
         writing[subject]?.task.cancel()

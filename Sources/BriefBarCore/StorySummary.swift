@@ -158,7 +158,7 @@ public struct StorySummary: Sendable, Equatable {
 
 extension ItemStory {
     /// The story in plain text, but for its sentence: a line or a few for each of its facts, its pipelines' runs, its
-    /// notes and its account, cut to fit, as Summarize with Copilot and agents read it. `whole` adds the facts that say
+    /// notes and its account, cut to fit, as summaries and agents read it. `whole` adds the facts that say
     /// less, the runs' pages and what it doesn't say, for an agent that asks for all of it.
     public func lines(whole: Bool = false) -> [String] {
         var lines: [String] = []

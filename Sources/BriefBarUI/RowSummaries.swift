@@ -10,7 +10,7 @@ private struct OffersSummariesKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Whether rows offer Summarize with Copilot: not in a desktop widget.
+    /// Whether rows offer Summarize: not in a desktop widget.
     package var offersSummaries: Bool {
         get { self[OffersSummariesKey.self] }
         set { self[OffersSummariesKey.self] = newValue }
@@ -209,7 +209,7 @@ private struct RowSummaryContent: View {
     }
 }
 
-/// Summarize with Copilot in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
+/// Summarize in a row's menus, in a group of its own: to write one; once there's one, to hide it or show
 /// it again for nothing, or to write it again; while it's written, to stop.
 package struct SummarizeMenuItems: View {
     private let subject: ItemRef?
@@ -320,7 +320,7 @@ private struct RowSummarizeSpot: PreferenceKey {
 }
 
 extension View {
-    /// ✨ Summarize with Copilot, or a spinner while it's written, where the row's `RowTime` is, while it gives its
+    /// ✨ Summarize, or a spinner while it's written, where the row's `RowTime` is, while it gives its
     /// place up.
     package func rowSummarizeButton(_ subject: ItemRef?) -> some View {
         overlayPreferenceValue(RowSummarizeSpot.self) { spot in
