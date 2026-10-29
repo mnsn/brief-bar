@@ -354,7 +354,13 @@ request's reviewers and their votes, its open comments and the ones waiting on y
 build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
 and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,
 what it did, what's next, and what it said last. BriefBar doesn't write or reword any of it: Copilot's
-notes show as Copilot wrote them, and nothing more is read from Azure DevOps for it. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
+notes show as Copilot wrote them, and nothing more is read from Azure DevOps for it.
+
+Turn on **Summarize with Copilot** in **Settings › General**, and **✨ Summarize** asks the Copilot CLI
+for a short summary of the work item and everything linked to it: where it stands in a line, what's
+next and who for, and what's been done, in about a hundred words. It runs only when you click it, with
+the model you choose, Claude Haiku 5.5 unless you change it, and no tools at all, so Copilot can only
+write. It says when something changed since, and **Summarize Again** writes a new one. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
 the board does too. In a narrow window the details cover the board, until **✕** or Esc closes them.
 Clicking one of your work items in the Sprint list or widget opens its details here, in BriefBar's
 window.
@@ -649,7 +655,8 @@ has the details.
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
 right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
 **BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
-**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)), and
+**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)),
+**Summarize with Copilot**, off by default (see [Azure DevOps](#azure-devops)), and
 **Notifications Page**, off by default, with how long it keeps what it lists: 4 hours, 1 day (default)
 or 3 days (see [Notifications](#notifications)).
 
@@ -744,6 +751,13 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Summaries and the brief are made on your Mac**, by Apple's on-device model, never Private Cloud
   Compute or any other model, and are kept in memory only: the brief's, for ten minutes after its
   line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
+- **Summarize with Copilot** is the exception, off until you turn it on, and only when you click
+  **✨ Summarize**: what a work item's details show, its description and latest comments, its pull
+  requests' reviews, builds and their errors, and what Copilot wrote of its sessions, goes to the
+  Copilot CLI and on to GitHub Copilot's model, as when you send work to Copilot. Nothing from Teams
+  ever does. Copilot gets no tools for it: it can't run a command, read or change a file, or open a web
+  page. BriefBar keeps the summary in memory only; the Copilot CLI keeps each one as a session named
+  "BriefBar summary", which the Copilot app doesn't list.
 - **The Notifications page** keeps what BriefBar notified you of in memory only, for as long as you
   choose, a day unless you change it: never in its preferences or on disk. Turning a source off takes
   its notifications off the page.

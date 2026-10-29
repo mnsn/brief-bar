@@ -2,6 +2,7 @@ import AppKit
 import BriefBarCore
 import BriefBarUI
 import Combine
+import CopilotTasks
 
 /// The app: its sources, which of them are on, and where their sections show: menu-bar items, desktop widgets
 /// and windows, each arranged by a layout of its own.
@@ -54,6 +55,10 @@ final class AppModel: ObservableObject {
         services = AppServices(defaults: defaults, isDemo: demo)
         // Only the app itself asks the Copilot CLI.
         agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
+        // Summaries: the app asks the Copilot CLI when you ask; the demo makes them up; `--render` of your own data writes
+        // none.
+        services.summaries.models = CopilotModel.suggestions.map { StorySummaries.Model(id: $0.id, name: $0.name) }
+        services.summaries.write = demo ? DemoSummaries.write : rendering ? nil : AppModel.copilotSummaries()
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
         // Only the app itself reads Notification Center for pull requests sent in chats.
@@ -586,5 +591,18 @@ final class AppModel: ObservableObject {
         closePanels()
         settingsWindow.show(destination)
         showInDock()
+    }
+}
+
+extension AppModel {
+    /// Asks the Copilot CLI for summaries, with no tools, one at a time as you ask.
+    static func copilotSummaries() -> StorySummaries.Writer {
+        let summarizer = CopilotSummarizer()
+        return { prompt, options in
+            switch await summarizer.summarize(prompt, options: CopilotRunOptions(model: options.model, effort: options.effort)) {
+            case .success(let answer): return .success(answer)
+            case .failure(let failure): return .failure(StorySummaries.Problem(failure.message))
+            }
+        }
     }
 }

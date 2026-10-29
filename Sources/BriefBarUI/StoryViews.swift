@@ -16,7 +16,9 @@ package struct WhereItStandsSection: View {
     }
 
     package var body: some View {
-        StandingContent(subject: subject, links: services.links, stories: services.stories, defaults: services.defaults)
+        StandingContent(
+            subject: subject, links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults
+        )
     }
 
     /// The preferences' key for the line that says how to see what's linked, once you dismissed it.
@@ -116,6 +118,7 @@ private struct StandingContent: View {
     let subject: ItemRef
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
+    @ObservedObject var summaries: StorySummaries
     let defaults: UserDefaults
 
     @LocalState private var expanded: Set<ItemRef> = []
@@ -131,9 +134,13 @@ private struct StandingContent: View {
     var body: some View {
         let connections = WhereItStandsSection.ordered(links.connections(of: subject))
         let groups = WhereItStandsSection.groups(connections)
+        let rows = connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }
         if links.isOn || !isHintHidden {
             VStack(alignment: .leading, spacing: 8) {
-                header(count: connections.count)
+                header(count: connections.count, canSummarize: !groups.isEmpty)
+                if links.isOn {
+                    SummaryCard(subject: subject, summaries: summaries, rows: rows)
+                }
                 if !links.isOn {
                     off
                 } else if groups.isEmpty {
@@ -155,7 +162,7 @@ private struct StandingContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // As it shows, and whenever what's linked changes or how one of them stands: their stories, as they are now.
-            .onChange(of: connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }, initial: true) {
+            .onChange(of: rows, initial: true) {
                 request(connections)
             }
             // And each minute while it shows, for what changes without its row changing, such as a vote or a checkpoint.
@@ -171,7 +178,7 @@ private struct StandingContent: View {
         for connection in connections { stories.request(connection.item) }
     }
 
-    private func header(count: Int) -> some View {
+    private func header(count: Int, canSummarize: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("Where It Stands")
                 .font(.system(size: 13, weight: .semibold))
@@ -186,6 +193,9 @@ private struct StandingContent: View {
                     .accessibilityLabel("\(count) linked")
             }
             Spacer(minLength: 8)
+            if links.isOn, canSummarize {
+                SummarizeButton(subject: subject, summaries: summaries)
+            }
         }
     }
 
@@ -689,7 +699,7 @@ private struct CopilotWords<Content: View>: View {
 }
 
 /// Text that shows a few lines, and "Show More" only when it has more than that.
-private struct ClampedText: View {
+struct ClampedText: View {
     let text: String
     let lines: Int
 
@@ -872,7 +882,7 @@ private struct StoryList: View {
 }
 
 /// A part's title in what's known of a thing: "Pipelines", "What's next".
-private struct StoryCaption: View {
+struct StoryCaption: View {
     let text: String
 
     var body: some View {

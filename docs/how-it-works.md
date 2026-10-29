@@ -429,6 +429,31 @@ order: a task Azure DevOps sent to Copilot says how it went, and Copilot what it
 - **GitHub**: one of its pull requests' latest reviews, conflicts, draft and branch, and its checks, from the one query
   it reads them with.
 
+### Summarize with Copilot
+
+**Summarize with Copilot**, in Settings › General, is off until you turn it on, and works only while Show Links is on
+(`StorySummaries` in `Sources/BriefBarUI`). Then Where It Stands has **✨ Summarize**, which, only when you click it,
+asks the Copilot CLI for a summary of the work item and what's linked to it. Before it asks, the sources tell what they
+know of each, as for the details, the work item's description and latest comments too, and `StorySummaryPrompt` (in
+`Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
+model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
+first, and at most 14,000 characters. It asks for a headline, what's next and who for, and at most 120 words, which
+`StorySummary` reads, whatever Markdown is around them.
+
+`CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
+--available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
+--no-ask-user --no-color --silent --name "BriefBar summary" -C <folder>`, through `ProcessRunner`, with your login
+shell's environment, for two minutes at most. No tool is called `briefbar_no_tools`, so the model has none: an empty
+`--available-tools` would leave it every tool, as the CLI takes that as no limit. The folder,
+`~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
+skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
+session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
+
+The summary is kept in memory only, until BriefBar quits, you close it, or Show Links or Summarize with Copilot goes off;
+one being written is stopped then, and **Cancel** stops it too. Once what it summed up changes, each row's state, status,
+title or date, it says it's out of date, with **Summarize Again**. The demo makes summaries up (`DemoSummaries`) and never
+runs Copilot, and `--render` of your own data writes none.
+
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
 Nothing goes back to Azure DevOps, GitHub or Copilot: BriefBar never writes there. The edits are kept in the

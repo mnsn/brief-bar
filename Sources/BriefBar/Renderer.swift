@@ -26,9 +26,13 @@ enum Renderer {
         var loaded = false
         Task {
             for source in sources { await source.loadForRendering() }
-            // What's known of everything linked, for the details' pictures.
+            // What's known of everything linked, for the details' pictures; and, in the demo, a made-up summary of each work
+            // item with links.
             let links = model.services.links
             await model.services.stories.tell(links.linked(Set(ItemRef.Kind.allCases)).sorted().map(links.describe))
+            if demo {
+                for workItem in links.linked([.workItem]).sorted() { await model.services.summaries.summarizeAndWait(workItem) }
+            }
             loaded = true
         }
         while !loaded {

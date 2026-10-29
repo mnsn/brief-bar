@@ -83,7 +83,8 @@ package struct BriefContainer<Content: View>: View {
     @Environment(\.interfaceOptions) private var options
     @LocalState private var expanded = false
 
-    private static var gradient: LinearGradient {
+    /// The colors of what a model wrote: the brief's, and a summary's.
+    package static var gradient: LinearGradient {
         LinearGradient(
             colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.93, green: 0.30, blue: 0.55),
                      Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 1.0)],

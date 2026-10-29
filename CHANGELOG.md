@@ -11,6 +11,12 @@
   notes, what it did, what's next and what it said last. It's all from what BriefBar already reads,
   shown as it was written, with no more requests to Azure DevOps. The GitHub Copilot source asks you to look at
   what it reads again, since it now reads a linked session's checkpoints, in memory only.
+- **Ask Copilot to sum it up.** Turn on **Summarize with Copilot** in **Settings › General**, and **✨
+  Summarize** in Where It Stands asks the Copilot CLI for a short summary of the work item and everything
+  linked to it: where it stands, what's next and who for, and what's been done. It runs only when you
+  click it, with a small model unless you choose another, and without any tools, so Copilot can only
+  write. What the details show goes to GitHub Copilot for it, never anything from Teams, and the summary
+  stays in memory, saying when something changed since.
 
 ## 0.8.3 - 2026-10-28
 
