@@ -173,30 +173,8 @@ public struct RunStatus: Sendable, Equatable {
 public enum RunTranscript {
     /// The summary it called the task done with, and its last message to you.
     public static func lastWords(events: URL, maxBytes: Int = 4 << 20) -> (summary: String?, message: String?) {
-        guard let data = LocalFile.tail(of: events, maxBytes: maxBytes) else { return (nil, nil) }
-        var summary: String?
-        var message: String?
-        for line in data.split(separator: UInt8(ascii: "\n")).reversed() {
-            if summary == nil, line.starts(with: Self.taskComplete) {
-                summary = text(line, key: "summary")
-            } else if message == nil, line.starts(with: Self.assistantMessage) {
-                message = text(line, key: "content", mainAgentOnly: true)
-            }
-            if summary != nil && message != nil { break }
-        }
-        return (summary, message)
-    }
-
-    private static let taskComplete = Data(#"{"type":"session.task_complete""#.utf8)
-    private static let assistantMessage = Data(#"{"type":"assistant.message""#.utf8)
-
-    private static func text(_ line: Data, key: String, mainAgentOnly: Bool = false) -> String? {
-        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let data = object["data"] as? [String: Any]
-        else { return nil }
-        if mainAgentOnly, data["parentToolCallId"] is String || object["agentId"] is String { return nil }
-        let value = (data[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
+        let words = SessionTranscript.lastWords(events: events, maxBytes: maxBytes)
+        return (words.summary?.text, words.message?.text)
     }
 
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the
