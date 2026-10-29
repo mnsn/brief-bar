@@ -72,6 +72,12 @@ enum Line {
         return event("assistant.message", data: tagged(data, subagent), at: date)
     }
 
+    /// A message from the agent with no tool calls: to you, or, from a subagent, to the agent that started it.
+    static func message(_ content: String, at date: Date, subagent: Bool = false, agentId: String? = nil) -> String {
+        let data: [String: Any] = ["messageId": UUID().uuidString, "content": content, "toolRequests": [Any]()]
+        return event("assistant.message", data: tagged(data, subagent), at: date, agentId: agentId)
+    }
+
     static func toolStart(
         _ name: String, id: String, arguments: [String: Any] = [:], title: String? = nil,
         at date: Date, subagent: Bool = false

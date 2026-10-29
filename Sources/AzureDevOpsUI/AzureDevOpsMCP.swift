@@ -289,6 +289,93 @@ actor AzureDevOpsReader {
         }
         return entries.sorted { $0.startedAt > $1.startedAt }
     }
+
+    // MARK: A work item
+
+    /// A work item, as the `work_item` tool tells it: its details, where it is in the sprint, and the pull requests it
+    /// links to, yours as your lists have them and the others as they say themselves.
+    struct WorkItemRead: Sendable {
+        var item: WorkItem
+        var details: WorkItemDetails?
+        /// Its tasks in the sprint, in work order, for a story or a bug; or its children, as its details have them, for one
+        /// that isn't in the sprint.
+        var tasks: [WorkItem]
+        var tasksAreInSprint: Bool
+        /// The story or bug it's a task of.
+        var parent: WorkItem?
+        /// You, in the sprint's organization, to mark your tasks.
+        var me: String?
+        /// The sprint going on, with its dates, to say when the work item's ends.
+        var sprint: Sprint?
+        var pullRequests: [PRKey]
+        /// Your lists, which have yours, the ones you review and the ones you watch.
+        var lists: PullRequests
+        /// The others, read for this, and those that couldn't be.
+        var others: LinkEngine.Lookups
+
+        /// One of its pull requests, as your lists have it or as it was read for this; nil when it couldn't be read.
+        func pullRequest(_ key: PRKey) -> PullRequest? {
+            lists.records.first { $0.id.linkRef == key.linkRef }?.pullRequest
+                ?? others.read.first { $0.key.linkRef == key.linkRef }?.value
+        }
+    }
+
+    /// Reads a work item by its number, in the organization its link names, or else the sprint's or one of yours, with the
+    /// GET requests its details make, and one for each pull request it links to that your lists don't have.
+    func workItem(_ id: Int, organization: String?, now: Date = Date()) async throws -> WorkItemRead {
+        let board = await sprint(now: now).board
+        let rows = board?.rows ?? []
+        func isIt(_ item: WorkItem) -> Bool {
+            item.id == id && (organization.map { item.organization.caseInsensitiveCompare($0) == .orderedSame } ?? true)
+        }
+        let row = rows.first { $0.parent.map(isIt) == true }
+        let parentRow = row == nil ? rows.first { $0.tasks.contains(where: isIt) } : nil
+        let inSprint = row?.parent ?? parentRow?.tasks.first(where: isIt)
+        let lists = await pullRequests(now: now)
+        func told(_ details: WorkItemDetails, others: LinkEngine.Lookups) -> WorkItemRead {
+            let children = SprintBoard.Row(parent: nil, tasks: details.children.compactMap(\.item)).tasksInWorkOrder
+            return WorkItemRead(
+                item: WorkItemDetailsStore.newest(inSprint, details.item) ?? details.item, details: details,
+                tasks: row?.tasksInWorkOrder ?? children, tasksAreInSprint: row != nil,
+                parent: parentRow?.parent ?? details.parent?.item, me: board?.me, sprint: board?.sprint,
+                pullRequests: details.pullRequests, lists: lists, others: others
+            )
+        }
+        if demo {
+            let organization = inSprint?.organization ?? organization ?? DemoData.organization
+            guard let details = DemoData.workItemDetails(organization: organization, id: id, now: now) else {
+                throw MCPToolError("The demo's sprint has no work item \(id).")
+            }
+            return told(details, others: LinkEngine.Lookups(read: DemoData.workLinks(now: now).pullRequests))
+        }
+        guard let client else { throw MCPToolError("BriefBar can't read Azure DevOps here.") }
+        var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
+        if organizations.isEmpty { organizations = await self.organizations(client: client) }
+        if organizations.isEmpty { throw MCPToolError(discoveryProblem ?? "BriefBar doesn't know your Azure DevOps organizations.") }
+        for organization in organizations {
+            let item = inSprint ?? WorkItem(
+                id: id, organization: organization, project: "", type: "Work Item", title: "Work item \(id)", state: "", category: .proposed
+            )
+            let read = await WorkItemDetailsStore.read(item, client: client)
+            switch read.result {
+            case .success(let details):
+                return told(details, others: await lookUp(details.pullRequests, notIn: lists, client: client))
+            case .failure(let error):
+                // Another of your organizations may have it.
+                if case .notFound = error, organizations.count > 1 { continue }
+                if case .auth(.signedOut) = error { throw MCPToolError("You're signed out of the Azure CLI. Run az login, then ask again.") }
+                throw MCPToolError(WorkItemDetailsStore.message(for: error))
+            }
+        }
+        throw MCPToolError("None of your organizations has a work item \(id) you can see: give its link.")
+    }
+
+    /// The pull requests your lists don't have, as Show Links reads them.
+    private func lookUp(_ keys: [PRKey], notIn lists: PullRequests, client: ADOClient) async -> LinkEngine.Lookups {
+        let listed = Set(lists.records.map(\.id.linkRef))
+        let others = Set(keys.filter { !listed.contains($0.linkRef) })
+        return await LinkEngine.lookUp(others.sorted(), client: client)
+    }
 }
 
 /// The tools `--mcp` gives agents for Azure DevOps.
@@ -363,6 +450,20 @@ struct AzureDevOpsAgent: Sendable {
                     "mine": MCPSchema.boolean("Only the user's own stories and tasks"),
                 ])
             ) { arguments in try await sprint(mine: arguments["mine"]?.bool ?? false) },
+            MCPTool(
+                name: "work_item",
+                title: "Work Item",
+                description: """
+                    One work item and what goes with it, by its number or link: where it stands, who has it and who it \
+                    waits on, its tasks, each pull request linked to it in Azure DevOps with its reviewers' votes, \
+                    comments, merge and the pipelines that ran on it, the Copilot sessions on those pull requests with \
+                    what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and \
+                    latest comments. For what's going on with a story, a bug or a task.
+                    """,
+                inputSchema: MCPSchema.object([
+                    "work_item": MCPSchema.string("Its number, such as 5101, or its link"),
+                ], required: ["work_item"])
+            ) { arguments in try await workItem(arguments["work_item"]) },
             MCPTool(
                 name: "copilot_tasks",
                 title: "Copilot Tasks",
@@ -537,6 +638,45 @@ struct AzureDevOpsAgent: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    func workItem(_ reference: JSONValue?, now: Date = Date()) async throws -> String {
+        let (id, organization) = try Self.workItemReference(reference)
+        let read = try await reader.workItem(id, organization: organization, now: now)
+        let item = read.item
+        let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        let tasks = Self.tasks(sent, for: item, tasks: read.tasks, pullRequests: read.pullRequests)
+        // What the other sources know of its pull requests, such as the Copilot sessions on them.
+        let related = read.pullRequests.isEmpty ? [] : await MCPRelated.ask(Self.query(for: read))
+        return AgentText.workItem(read, tasks: tasks, allSent: sent, related: related, now: now)
+    }
+
+    /// What `work_item` asks the other sources about: the work item and its pull requests, and what links each pull request
+    /// to a session by its branch, as Show Links has it.
+    static func query(for read: AzureDevOpsReader.WorkItemRead) -> MCPRelated.Query {
+        var branches: [ItemRef: BranchHint] = [:]
+        for key in read.pullRequests {
+            guard let pullRequest = read.pullRequest(key) else { continue }
+            branches[key.linkRef] = BranchHint(
+                branch: pullRequest.sourceBranch, target: pullRequest.targetBranch, repositories: [pullRequest.repositoryName]
+            )
+        }
+        return MCPRelated.Query(
+            items: [read.item.linkRef] + read.pullRequests.map(\.linkRef), branches: branches, limit: AgentText.relatedShown
+        )
+    }
+
+    /// The work sent to Copilot for a work item or its tasks, and on its pull requests: a session sent from another work item
+    /// may have gone on to one of them.
+    static func tasks(_ all: [CopilotTaskEntry], for item: WorkItem, tasks: [WorkItem], pullRequests: [PRKey]) -> [CopilotTaskEntry] {
+        let ids = Set([item.id] + tasks.map(\.id))
+        return all.filter { task in
+            if let workItem = task.workItem, ids.contains(workItem.id),
+               workItem.organization.caseInsensitiveCompare(item.organization) == .orderedSame {
+                return true
+            }
+            return pullRequests.contains { task.isOn($0) }
+        }
+    }
+
     func copilotTasks(now: Date = Date()) async throws -> String {
         guard await reader.sendsToCopilot else {
             throw MCPToolError("Send Work to Copilot is off in BriefBar: it's in Azure DevOps' settings.")
@@ -628,6 +768,16 @@ struct AzureDevOpsAgent: Sendable {
             if text.hasPrefix("!"), let number = Int(text.dropFirst()), number > 0 { return (number, nil) }
         }
         throw MCPToolError("Name the pull request by its number, such as 4088, or its link.")
+    }
+
+    /// A work item an agent names: its number, such as 5101 or #5101, or its link, which says its organization too.
+    static func workItemReference(_ value: JSONValue?) throws -> (id: Int, organization: String?) {
+        if let number = value?.int, number > 0 { return (number, nil) }
+        if let text = value?.string?.trimmingCharacters(in: .whitespaces) {
+            if let ref = ItemRef.from(link: text), ref.kind == .workItem, let id = Int(ref.id) { return (id, ref.scope) }
+            if let number = Int(text.hasPrefix("#") ? String(text.dropFirst()) : text), number > 0 { return (number, nil) }
+        }
+        throw MCPToolError("Name the work item by its number, such as 5101, or its link.")
     }
 
     static func find(_ value: JSONValue?, in read: AzureDevOpsReader.PullRequests) throws -> PRRecord {
@@ -860,5 +1010,369 @@ enum AgentText {
         line += "\n  " + facts.joined(separator: " · ")
         if let link = task.pullRequest { line += "\n  \(link.absoluteString)" }
         return line
+    }
+
+    // MARK: A work item
+
+    /// How many of what another source tells of a work item's pull requests, such as the Copilot sessions on them, are told
+    /// in full: the rest by name.
+    static let relatedShown = 5
+
+    /// A work item and what goes with it, for the `work_item` tool: where it stands and who it waits on; its tasks, its pull
+    /// requests, what the other sources know of those, such as the Copilot sessions on them, and the work sent to Copilot
+    /// for it; then what people wrote in it, quoted, since that's data.
+    /// - Parameter allSent: all the work sent to Copilot, to tell whether a failed one was sent again since; `tasks` when nil.
+    static func workItem(
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], allSent: [CopilotTaskEntry]? = nil,
+        related: [MCPRelated.Part] = [], now: Date
+    ) -> String {
+        let item = read.item
+        let me = read.me ?? read.lists.records.first { $0.id.organization.caseInsensitiveCompare(item.organization) == .orderedSame }?.me
+        // The latest work sent for one of its tasks goes on that task's line; the rest, for it or on its pull requests, below.
+        var latest: [Int: CopilotTaskEntry] = [:]
+        var rest: [CopilotTaskEntry] = []
+        for task in tasks {
+            if task.onPullRequest == nil, let workItem = task.workItem, workItem.id != item.id,
+               workItem.organization.caseInsensitiveCompare(item.organization) == .orderedSame,
+               read.tasks.contains(where: { $0.id == workItem.id }) {
+                if latest[workItem.id] == nil { latest[workItem.id] = task }
+            } else {
+                rest.append(task)
+            }
+        }
+        // A session BriefBar sent work to is told with that work.
+        let sessions = Set(tasks.map { $0.id.lowercased() })
+        let parts = related.map { part in
+            var part = part
+            part.items.removeAll { $0.ref.kind == .session && sessions.contains($0.ref.id) }
+            return part
+        }
+
+        var lines = ["# \(item.type) \(item.id) “\(item.title)”"]
+        lines.append(item.project.isEmpty ? "- In \(item.organization)" : item.webURL.absoluteString)
+        if let parent = read.parent { lines.append("- Under \(parent.type.lowercased()) \(parent.id) “\(parent.title)”") }
+        lines.append("- " + standing(item, details: read.details, me: me, now: now))
+        if let progress = progress(read, now: now) { lines.append("- " + progress) }
+        let waits = Self.waits(read, tasks: tasks, allSent: allSent, related: parts.flatMap(\.items), me: me)
+        if !waits.isEmpty { lines.append("- Waiting on: " + waits.map(\.text).joined(separator: " · ")) }
+        lines.append("- You can: " + youCan(waits, read: read, tasks: tasks, me: me))
+
+        if !read.tasks.isEmpty {
+            lines += ["", read.tasksAreInSprint ? "## Tasks" : "## Children"]
+            lines += read.tasks.map { "- " + taskLine($0, me: me, copilot: latest[$0.id], now: now) }
+        }
+        lines += ["", "## Pull requests"]
+        if read.pullRequests.isEmpty { lines.append("None is linked to it in Azure DevOps.") }
+        for key in read.pullRequests {
+            lines += pullRequest(key, in: read, me: me, now: now)
+        }
+        for part in parts {
+            lines += told(part)
+        }
+        if !rest.isEmpty {
+            lines += ["", "## Sent to Copilot"]
+            lines += rest.map { sent($0, for: item, now: now) }
+        }
+        lines += texts(read.details)
+        lines += comments(read.details, me: me, now: now)
+        return lines.joined(separator: "\n")
+    }
+
+    /// "State: Active (work started), changed 1h ago · assigned to you (Robin Diaz)": its state and why, and who has it.
+    static func standing(_ item: WorkItem, details: WorkItemDetails?, me: String?, now: Date) -> String {
+        var state = "State: " + (item.state.isEmpty ? "unknown" : item.state)
+        if let reason = details?.reason, !reason.isEmpty, reason.caseInsensitiveCompare(item.state) != .orderedSame {
+            state += " (\(lowercasingFirst(reason)))"
+        }
+        if let changed = item.changedAt { state += ", changed \(ago(changed, now: now))" }
+        let who = item.assignedTo.map { isMe($0, me) ? "assigned to you (\($0.name))" : "assigned to \($0.name)" } ?? "unassigned"
+        return "\(state) · \(who)"
+    }
+
+    /// "work started" for "Work started", in a sentence; "PR merged" as it is.
+    static func lowercasingFirst(_ text: String) -> String {
+        guard let first = text.first, first.isUppercase, text.dropFirst().first?.isLowercase == true else { return text }
+        return first.lowercased() + text.dropFirst()
+    }
+
+    /// "Sprint 42 ends 2 Nov (5 days left) · 1 of 4 tasks done · 6 h left": its sprint, how many of its tasks are done, and
+    /// the hours left, those that are known.
+    static func progress(_ read: AzureDevOpsReader.WorkItemRead, now: Date, calendar: Calendar = .current) -> String? {
+        var parts: [String] = []
+        if let iteration = iteration(read.details?.iterationPath, sprint: read.sprint, now: now, calendar: calendar) {
+            parts.append(iteration)
+        }
+        if !read.tasks.isEmpty {
+            let kind = read.tasksAreInSprint ? "tasks" : "children"
+            parts.append("\(read.tasks.filter(\.isDone).count) of \(read.tasks.count) \(kind) done")
+        }
+        if let hours = remaining(read.item, tasks: read.tasksAreInSprint ? read.tasks : []) {
+            parts.append("\(Hours.text(hours)) left")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "Sprint 42 ends 2 Nov (5 days left)", for the sprint going on, whose dates the sprint has; "In Sprint 41" for another.
+    /// Nil without an iteration, or for the project's own, which is the backlog.
+    static func iteration(_ path: String?, sprint: Sprint?, now: Date, calendar: Calendar = .current) -> String? {
+        guard let path, let name = path.split(separator: "\\").dropFirst().last else { return nil }
+        guard let sprint, sprint.path.caseInsensitiveCompare(path) == .orderedSame, let finish = sprint.finish,
+              let left = sprint.daysLeft(now: now, calendar: calendar)
+        else { return "In \(name)" }
+        // Azure DevOps keeps a sprint's days in UTC.
+        let day = finish.formatted(
+            Date.FormatStyle(locale: Locale(identifier: "en_GB"), timeZone: TimeZone(identifier: "UTC") ?? .gmt).day().month(.abbreviated)
+        )
+        switch left {
+        case 0: return "\(sprint.name) ended \(day)"
+        case 1: return "\(sprint.name) ends today, \(day)"
+        default: return "\(sprint.name) ends \(day) (\(left) days left)"
+        }
+    }
+
+    /// Its own hours left, or its tasks' that aren't done.
+    static func remaining(_ item: WorkItem, tasks: [WorkItem]) -> Double? {
+        if let own = item.remainingWork, own > 0, !item.isDone { return own }
+        let left = tasks.filter { !$0.isDone }.compactMap(\.remainingWork).reduce(0, +)
+        return left > 0 ? left : nil
+    }
+
+    /// "5103 Show saved items under the cart: Active · you · 3 h left · Copilot working (started 6m ago): Run the cart
+    /// tests": a task, who has it, its hours left, and the latest work sent to Copilot for it.
+    static func taskLine(_ task: WorkItem, me: String?, copilot: CopilotTaskEntry?, now: Date) -> String {
+        var parts = [task.state.isEmpty ? "unknown" : task.state]
+        parts.append(task.assignedTo.map { isMe($0, me) ? "you" : $0.name } ?? "unassigned")
+        if let hours = task.remainingWork, hours > 0, !task.isDone { parts.append("\(Hours.text(hours)) left") }
+        if let copilot { parts.append("Copilot " + sentStatus(copilot, now: now)) }
+        return "\(task.id) \(task.title): " + parts.joined(separator: " · ")
+    }
+
+    /// How work sent to Copilot is going: "working (started 6m ago): Run the cart tests", "finished 12m ago. Opened pull
+    /// request 4091."
+    static func sentStatus(_ task: CopilotTaskEntry, now: Date) -> String {
+        let status = task.status
+        var text = status.phase.rawValue
+        if status.phase.isActive {
+            text += " (started \(ago(task.startedAt, now: now)))"
+        } else if let since = status.since {
+            text += " \(ago(since, now: now))"
+        }
+        if let detail = status.detail.map({ StoryText.line($0, limit: 240) }), !detail.isEmpty {
+            text += (status.phase.isActive ? ": " : ". ") + detail
+        }
+        return text
+    }
+
+    /// Work sent to Copilot for the work item, or on one of its pull requests: what for, how it's going, and where.
+    static func sent(_ task: CopilotTaskEntry, for item: WorkItem, now: Date) -> String {
+        let subject: String
+        if let pullRequest = task.onPullRequest {
+            subject = "\(task.action?.title ?? "Work") on !\(pullRequest.id)"
+        } else if let workItem = task.workItem, workItem.id == item.id {
+            subject = "This \(item.type.lowercased())"
+        } else {
+            subject = task.workItem.map { "Work item \($0.id)" } ?? "A task"
+        }
+        var line = "- \(subject): Copilot \(sentStatus(task, now: now))"
+        let facts = task.run.map { ["worktree \($0.worktree.path)", "session \($0.id)"] } ?? ["session \(task.id)"]
+        line += "\n  " + facts.joined(separator: " · ")
+        if let link = task.pullRequest { line += "\n  \(link.absoluteString)" }
+        return line
+    }
+
+    /// A pull request linked to a work item: where it stands, with its branch; its reviewers, comments and merge; who wrote
+    /// it; the pipelines that ran on it; and, for one not in your lists, what isn't read of it. Yours as your lists have it,
+    /// another as it says itself.
+    private static func pullRequest(_ key: PRKey, in read: AzureDevOpsReader.WorkItemRead, me: String?, now: Date) -> [String] {
+        let record = read.lists.records.first { $0.id.linkRef == key.linkRef }
+        let snapshot = read.lists.items.first { $0.key.linkRef == key.linkRef }
+        guard let pullRequest = read.pullRequest(key) else {
+            let failed = read.others.failed.contains { $0.linkRef == key.linkRef }
+            return ["", "### !\(key.number)", failed
+                ? "BriefBar couldn't read it."
+                : "BriefBar didn't read it: Azure DevOps asked it to slow down. Ask again in a minute."]
+        }
+        let me = record?.me ?? me
+        let story = snapshot.map { PullRequestStory.mine($0, record: record) } ?? PullRequestStory.others(pullRequest, me: me)
+        var lines = ["", "### !\(key.number) “\(pullRequest.title)”", pullRequest.webURL.absoluteString]
+        var branch = pullRequest.sourceBranch
+        if !pullRequest.targetBranch.isEmpty { branch += " → \(pullRequest.targetBranch)" }
+        let place = (branch.isEmpty ? "" : "\(branch), ") + "in \(pullRequest.repositoryName)"
+        let state = story.sentence.isEmpty ? pullRequest.status.rawValue.capitalized : story.sentence
+        lines.append("- \(state) · \(place)")
+        // Who wrote it, once, saying "you" for yours.
+        lines += story.facts.filter { $0.label != "Author" }.map { "- \($0.label): \(StoryText.line($0.value, limit: 300))" }
+        lines.append("- Author: " + (record?.role == .author || isMe(pullRequest.author, me) ? "you" : pullRequest.author.name))
+        if !story.runs.isEmpty {
+            lines.append("- Pipelines:")
+            for run in story.runs.prefix(8) {
+                lines.append("  - \(run.name): \(run.status)" + (run.detail.map { " (\(StoryText.line($0, limit: 200)))" } ?? ""))
+                if let url = run.url { lines.append("    \(url.absoluteString)") }
+            }
+        }
+        if record == nil {
+            if pullRequest.status == .active { lines.append("- Not read: builds and comment threads (you're not on it)") }
+        } else if record?.details?.threads.contains(where: { !$0.isResolved }) == true {
+            lines.append("- Threads: pull_request \(key.number)")
+        }
+        return lines
+    }
+
+    /// What another source told of a work item's pull requests, under its title: the first few in full, a heading each with
+    /// where it stands and why it goes with them, its link and a few lines; then the rest by name. Or why it couldn't tell.
+    /// Nothing when it knows of none.
+    static func told(_ part: MCPRelated.Part) -> [String] {
+        if let problem = part.problem { return ["", "## \(part.title)", problem] }
+        guard !part.items.isEmpty else { return [] }
+        var lines = ["", "## \(part.title)"]
+        for item in part.items.prefix(relatedShown) {
+            let why = item.links.map(\.reason).joined(separator: ", ")
+            lines += ["", "### “\(item.title)”: \(item.status)" + (why.isEmpty ? "" : ", \(why)")]
+            if let url = item.url { lines.append(url.absoluteString) }
+            lines += item.lines.map { "- \($0)" }
+        }
+        let rest = part.items.dropFirst(relatedShown)
+        if !rest.isEmpty {
+            lines += ["", "And \(rest.count) more: " + rest.map { "“\($0.title)” (\($0.status))" }.joined(separator: ", ") + "."]
+        }
+        return lines
+    }
+
+    /// Its description and its other long texts, such as acceptance criteria or repro steps, each quoted as written: the
+    /// description first, then the others under their names.
+    static func texts(_ details: WorkItemDetails?) -> [String] {
+        let texts = (details?.texts ?? []).compactMap { text -> (field: String, title: String, text: String)? in
+            let plain = StoryText.paragraph(text.text.plainText, limit: 1_500)
+            return plain.isEmpty ? nil : (text.id, text.title, plain)
+        }
+        guard !texts.isEmpty else { return [] }
+        var lines = ["", "## Description"]
+        for text in texts {
+            if text.field != "System.Description" { lines += ["", "### \(text.title)"] }
+            lines += quote(text.text)
+        }
+        return lines
+    }
+
+    /// Its latest comments, the newest first, each with who wrote it and when, quoted as written.
+    static func comments(_ details: WorkItemDetails?, me: String?, now: Date, limit: Int = 5) -> [String] {
+        guard let details else { return [] }
+        if details.comments.isEmpty, let problem = details.commentsProblem {
+            return ["", "## Latest comments", "BriefBar couldn't read them: \(problem)"]
+        }
+        var lines: [String] = []
+        var shown = 0
+        for comment in details.comments.prefix(limit) {
+            let text = StoryText.paragraph(comment.text.plainText, limit: 600)
+            guard !text.isEmpty else { continue }
+            let who = comment.author.map { isMe($0, me) ? "You" : $0.name } ?? "Someone"
+            lines.append("- \(who)" + (comment.createdAt.map { ", \(ago($0, now: now))" } ?? "") + ":")
+            lines += quote(text, indent: "  ")
+            shown += 1
+        }
+        guard shown > 0 else { return [] }
+        let count = details.commentCount > shown ? ", \(shown) of \(details.commentCount)" : ""
+        return ["", "## Latest comments (newest first\(count))"] + lines
+    }
+
+    /// Text as a Markdown quote, a line each.
+    static func quote(_ text: String, indent: String = "") -> [String] {
+        text.components(separatedBy: "\n").map { $0.isEmpty ? "\(indent)>" : "\(indent)> \($0)" }
+    }
+
+    /// Whether a person is you.
+    static func isMe(_ person: Person, _ me: String?) -> Bool {
+        guard let me, !me.isEmpty else { return false }
+        return person.id == me.lowercased()
+    }
+
+    /// "Priya Shah", "Priya Shah and Chen Wei", "Alex Kim, Priya Shah and Chen Wei"; past three, "and 2 more".
+    static func names(_ names: [String]) -> String {
+        if names.count > 3 { return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" }
+        guard names.count > 1, let last = names.last else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + last
+    }
+
+    // MARK: Who a work item waits on
+
+    /// What you can do now: what waits on you, "complete !4091"; and what's yours and not started, unless Copilot works on
+    /// it, "start task 5104", or "start it" for a work item without tasks. Otherwise, that nothing waits on you.
+    static func youCan(
+        _ waits: [ItemStory.Wait], read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], me: String?
+    ) -> String {
+        var things = waits.filter { $0.who == .you }.map { wait in
+            var text = Substring(wait.text)
+            if text.hasPrefix("you, ") { text = text.dropFirst(5) }
+            if text.hasPrefix("to ") { text = text.dropFirst(3) }
+            return String(text)
+        }
+        func toStart(_ item: WorkItem) -> Bool {
+            item.category == .proposed && item.assignedTo.map { isMe($0, me) } == true
+                && !tasks.contains { $0.status.phase.isActive && $0.workItem?.id == item.id && $0.onPullRequest == nil }
+        }
+        let yours = read.tasks.filter(toStart).map { "\($0.id)" }
+        if yours.count == 1 { things.append("start task \(yours[0])") }
+        if yours.count > 1 { things.append("start tasks " + names(yours)) }
+        if read.tasks.isEmpty, toStart(read.item) { things.append("start it") }
+        return things.isEmpty ? "nothing waits on you" : things.joined(separator: " · ")
+    }
+
+    /// Who a work item waits on, and for what: "you, to complete !4091", "reviewers of Sam Rivera's !4120", "Copilot, on
+    /// 5103". From its pull requests (`PullRequestWait`), the work sent to Copilot, as the details have it
+    /// (`CopilotTaskEntry.waits(of:isDone:)`), and what the other sources told, such as a Copilot session that waits for
+    /// you or stopped; you first, then other people, then Copilot. Empty when nothing waits.
+    static func waits(
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], allSent: [CopilotTaskEntry]? = nil,
+        related: [MCPRelated.Item], me: String?
+    ) -> [ItemStory.Wait] {
+        var waits: [ItemStory.Wait] = []
+        for key in read.pullRequests {
+            if let snapshot = read.lists.items.first(where: { $0.key.linkRef == key.linkRef }) {
+                waits += [PullRequestWait.waiting(on: snapshot, record: read.lists.records.first { $0.id.linkRef == key.linkRef })]
+                    .compactMap { $0 }
+            } else if let pullRequest = read.pullRequest(key) {
+                waits += [PullRequestWait.waiting(on: pullRequest, me: me)].compactMap { $0 }
+            }
+        }
+        // What the work was sent for, as read with it.
+        func isDone(_ ref: ItemRef) -> Bool {
+            switch ref.kind {
+            case .workItem: return ([read.item] + read.tasks).first { $0.linkRef == ref }?.isDone ?? false
+            case .pullRequest:
+                // Whether it's one of the work item's or not, such as one a task's work went on to.
+                let pullRequest = read.lists.records.first { $0.id.linkRef == ref }?.pullRequest
+                    ?? read.others.read.first { $0.key.linkRef == ref }?.value
+                return pullRequest.map { $0.status != .active } ?? false
+            case .gitHubPullRequest, .session: return false
+            }
+        }
+        waits += CopilotTaskEntry.waits(of: tasks, among: allSent, isDone: isDone) { ref in
+            ([read.item] + read.tasks).first { $0.linkRef == ref }?.type
+        }
+        for item in related {
+            // As its source says it, when it does, such as a session's question relayed to the one that asks it for it.
+            guard item.waits.isEmpty else {
+                waits += item.waits
+                continue
+            }
+            let session = item.ref.kind == .session
+            let name = session ? "session “\(item.title)”" : "“\(item.title)”"
+            switch item.state {
+            case .needsYou?:
+                waits.append(ItemStory.Wait(.you, session ? "you, to answer in \(name)" : "you, to look at \(name)", about: item.ref))
+            case .failing?: waits.append(ItemStory.Wait(.you, "you, to look at \(name), which stopped", about: item.ref))
+            case .running?:
+                waits.append(ItemStory.Wait(.copilot, "Copilot, " + (session ? "in \(name)" : "on \(name)"), about: item.ref))
+            case .done?, nil: break
+            }
+        }
+        return ItemStory.Wait.said(ItemStory.Wait.ordered(waits), on: read.item.linkRef)
+    }
+
+    /// What `waits` says, as the "Waiting on:" line has it.
+    static func waitingOn(
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Item], me: String?
+    ) -> [String] {
+        waits(read, tasks: tasks, related: related, me: me).map(\.text)
     }
 }

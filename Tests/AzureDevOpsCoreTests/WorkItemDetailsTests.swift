@@ -118,6 +118,9 @@ import Testing
         #expect(read.resources[2].url.absoluteString == "https://dev.azure.com/fabrikam/p9/_workitems/edit/4")
         #expect(read.resources[0].url.absoluteString == "https://dev.azure.com/\(Self.org)/p1/_apis/wit/attachments/abc?fileName=shot.png")
 
+        // The pull requests it links to, in its organization.
+        #expect(read.pullRequests == [PRKey(Self.org.lowercased(), 42)])
+
         // Its comments, newest first, as Azure DevOps renders them, but the deleted one.
         #expect(read.comments.map(\.id) == [12, 10])
         #expect(read.comments[0].text.blocks == [.paragraph([RichText.Run("Newest "), RichText.Run("one", style: .bold)])])
@@ -258,6 +261,7 @@ import Testing
         #expect(story.texts.map(\.title) == ["Description", "Acceptance Criteria"])
         #expect(story.children.count == 4)
         #expect(story.comments.count == 3)
+        #expect(story.pullRequests == [PRKey("contoso", 4120)])
         let task = try #require(DemoData.workItemDetails(organization: "contoso", id: 5103, now: t(0)))
         #expect(task.parent?.workItemId == 5101)
         #expect(task.texts.first?.text.blocks.contains { if case .listItem(.checkbox(checked: true), _, _) = $0 { true } else { false } } == true)

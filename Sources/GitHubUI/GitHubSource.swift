@@ -39,6 +39,8 @@ package final class GitHubSource: BriefBarSource {
     let settings: AppSettings
     let store: GitHubStore
     private var linkObservers: Set<AnyCancellable> = []
+    /// Who's signed in to the GitHub CLI, as the list last read it.
+    private var account: String?
 
     package init(services: AppServices) {
         self.services = services
@@ -60,6 +62,9 @@ package final class GitHubSource: BriefBarSource {
 
     package func start() {
         store.start()
+        tellStories()
+        // Your login, for a summary to call you "you" when Azure DevOps doesn't know you.
+        services.summaries.setYourName(.github) { [weak store] in store?.login }
         // After the change: a @Published value emits before it's set.
         services.links.$isOn.removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -68,12 +73,29 @@ package final class GitHubSource: BriefBarSource {
         store.$items
             .sink { [weak self] items in MainActor.assumeIsolated { self?.publishLinks(items) } }
             .store(in: &linkObservers)
+        store.$login.removeDuplicates()
+            .sink { [weak self] login in MainActor.assumeIsolated { self?.loginChanged(login) } }
+            .store(in: &linkObservers)
+    }
+
+    /// Someone else signed in to the GitHub CLI, or no one: what was told of its pull requests as the last one goes, with
+    /// the summaries made of it and those being written, as when the source stops; they're told again, as the new one,
+    /// when they're asked for. The first sign-in changes nothing.
+    func loginChanged(_ login: String?) {
+        let known = account
+        account = login
+        guard let known, known != login else { return }
+        services.stories.withdraw(.github)
+        tellStories()
     }
 
     package func stop() {
         linkObservers.removeAll()
+        services.summaries.setYourName(.github, nil)
         store.stop()
         services.links.withdraw(.github)
+        services.stories.withdraw(.github)
+        account = nil
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: only the links you added or
@@ -101,6 +123,16 @@ package final class GitHubSource: BriefBarSource {
             )
         }
         links.publish(.github, links: [], items: shown)
+    }
+
+    /// Tells the details what's known of its pull requests, when they ask.
+    private func tellStories() {
+        services.stories.register(.github, kinds: [.gitHubPullRequest]) { [weak self] ref in self?.tell(ref) }
+    }
+
+    /// What GitHub knows of one of its pull requests beyond its row, from the one query it reads them with.
+    private func tell(_ ref: ItemRef) -> ItemStory? {
+        store.items.first { ItemRef.gitHubPullRequest(repository: $0.pullRequest.repository, number: $0.pullRequest.number) == ref }?.story
     }
 
     // MARK: Menu bar
@@ -215,6 +247,7 @@ package final class GitHubSource: BriefBarSource {
     // MARK: Rendering
 
     package func loadForRendering() async {
+        tellStories()
         await store.loadOnce()
     }
 }

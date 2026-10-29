@@ -82,14 +82,25 @@ public struct SessionLinks: Sendable, Equatable, Codable {
 
 /// A pull request the app recorded for a session: by its repository and number, its link, or both.
 public struct RecordedPullRequest: Sendable, Equatable, Codable {
+    /// What the session did with it, as the app records it.
+    public enum Role: String, Sendable, Equatable, Codable {
+        /// The session started from it, such as to review it or fix its comments.
+        case startedFrom
+        /// The session opened it.
+        case opened
+    }
+
     public var repository: String?
     public var number: Int?
     public var url: String?
+    /// Nil when the app doesn't say, as for a link one of its providers records.
+    public var role: Role?
 
-    public init(repository: String?, number: Int?, url: String?) {
+    public init(repository: String?, number: Int?, url: String?, role: Role? = nil) {
         self.repository = repository
         self.number = number
         self.url = url
+        self.role = role
     }
 
     /// Which pull request it is: what its link names, or a GitHub pull request by its repository and number.
@@ -97,6 +108,23 @@ public struct RecordedPullRequest: Sendable, Equatable, Codable {
         if let url, let ref = ItemRef.from(link: url), ref.kind.isPullRequest { return ref }
         guard let repository, let number, number > 0 else { return nil }
         return ItemRef.from(link: "https://github.com/\(repository)/pull/\(number)")
+    }
+}
+
+extension SessionSnapshot {
+    /// What links it to a pull request by its branch (`BranchLinks`): its branch, in its project's repository, which its
+    /// project, its folder or its GitHub repository names. Nil for a chat.
+    public var branchHint: BranchHint? {
+        guard !isChat, let branch else { return nil }
+        return BranchHint(
+            branch: branch, repositories: BranchHint.repositories([projectName, links?.folder], gitHub: links?.gitHubRepository)
+        )
+    }
+
+    /// Its links to the pull requests the app records it started from or opened, when those were read (`SessionLinks`).
+    public var recordedLinks: [ItemLink] {
+        guard let ref = ItemRef.session(id) else { return [] }
+        return (links?.pullRequests ?? []).compactMap { recorded in recorded.ref.flatMap { ItemLink(ref, $0, origin: .copilot) } }
     }
 }
 
@@ -404,8 +432,8 @@ public enum AppDatabase {
         var bySession: [String: SessionLinks] = [:]
         if let rows = try? connection.rows(linksQuery, { row in
             (row.string(0) ?? "", row.string(1), row.string(2), row.string(3),
-             RecordedPullRequest(repository: row.string(4), number: row.int64(5).map { Int($0) }, url: row.string(6)),
-             RecordedPullRequest(repository: row.string(7), number: row.int64(8).map { Int($0) }, url: row.string(9)))
+             RecordedPullRequest(repository: row.string(4), number: row.int64(5).map { Int($0) }, url: row.string(6), role: .startedFrom),
+             RecordedPullRequest(repository: row.string(7), number: row.int64(8).map { Int($0) }, url: row.string(9), role: .opened))
         }) {
             for (session, owner, repository, path, source, created) in rows where !session.isEmpty {
                 var links = bySession[session] ?? SessionLinks()

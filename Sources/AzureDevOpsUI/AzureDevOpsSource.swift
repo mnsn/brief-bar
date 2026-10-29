@@ -126,15 +126,23 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
         }
         self.copilot = copilot
-        workLinks = WorkLinksStore(links: services.links, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        workLinks = WorkLinksStore(
+            links: services.links, stories: services.stories, store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
         let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
         details.hasPage = { [services] in services.hasPage(.azureDevOpsSprint) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
-        // Someone else signed in to the Azure CLI: the details read as the last one go.
+        // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
-            .sink { [weak details] account in MainActor.assumeIsolated { details?.accountChanged(account) } }
+            .sink { [weak details, weak workLinks] account in
+                MainActor.assumeIsolated {
+                    details?.accountChanged(account)
+                    workLinks?.accountChanged(account)
+                }
+            }
             .store(in: &cancellables)
         self.details = details
+        workLinks?.details = details
         return store
     }
 
@@ -196,6 +204,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.start()
         copilot?.start()
         workLinks?.start()
+        // Your name, as your pull requests have it, for a summary to call you "you".
+        services.summaries.setYourName(.azureDevOps) { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
         // read.
         if let copilot, let sprint {
@@ -252,6 +262,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         workLinks?.stop()
         details?.stop()
         services.sentTasks.withdraw(.azureDevOps)
+        services.summaries.setYourName(.azureDevOps, nil)
         store = nil
         sprint = nil
         pipelines = nil
@@ -544,14 +555,21 @@ package final class AzureDevOpsSource: BriefBarSource {
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)
     }
 
-    /// The Sprint page with the details of your first story, and of your first task, read once, each in its own store,
-    /// so the window's own picture of the page shows none.
+    /// The Sprint page with the details of your first story, of your first task, and of the first bug, read once, each in
+    /// its own store, so the window's own picture of the page shows none; and, in the demo, the page of the bug's first
+    /// pull request, of the story's first Copilot session, and of a session linked to the bug's pull request, over that
+    /// pull request's page.
     private func loadDetailsForRendering(store: PRStore) async {
         guard let sprint, let board = sprint.board else { return }
         let story = board.rows.compactMap(\.parent).first { $0.isAssigned(to: board.me) } ?? board.rows.compactMap(\.parent).first
         let task = board.myWork.first { $0.parentId != nil } ?? board.myWork.first
+        let bug = board.rows.compactMap(\.parent).first { $0.type.caseInsensitiveCompare("Bug") == .orderedSame }
         renderedDetails = []
-        for (name, item) in [("sprint-details", story), ("sprint-task-details", task)] {
+        var rendered = [("sprint-details", story), ("sprint-task-details", task), ("sprint-bug-details", bug)]
+        if store.mode == .demo {
+            rendered += [("sprint-pull-request-page", bug), ("sprint-session-page", story), ("sprint-deep-page", bug)]
+        }
+        for (name, item) in rendered {
             guard let item else { continue }
             let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
             await details.loadOnce(item)
@@ -566,13 +584,29 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func extraRenderings() -> [(name: String, view: AnyView)] {
         var renderings: [(name: String, view: AnyView)] = []
         for (name, details) in renderedDetails {
-            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one.
+            // A page over the details, of what Show Links links to them, now that every source told it; or a page over
+            // another.
+            if let item = details.selected, details.pages.isEmpty, name.hasSuffix("-page") {
+                let path: [ItemRef.Kind] = name.contains("deep") ? [.pullRequest, .session] : name.contains("pull-request") ? [.pullRequest] : [.session]
+                var trail = [item.linkRef]
+                for kind in path {
+                    guard let from = trail.last,
+                          let next = services.links.connections(of: from).first(where: { $0.item.ref.kind == kind && !trail.contains($0.item.ref) })
+                    else { break }
+                    details.open(page: next.item.ref)
+                    trail.append(next.item.ref)
+                }
+            }
+            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; and with Where It
+            // Stands folded to who it waits on.
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),
+                ("-folded", CGSize(width: 1_000, height: 720)),
             ] {
-                guard suffix.isEmpty || name == "sprint-details" else { continue }
+                guard suffix.isEmpty || name == "sprint-details" || (name == "sprint-pull-request-page" && suffix == "-medium") else { continue }
                 let page = SprintPage()
                     .environmentObject(details)
+                    .environment(\.whereItStandsFolded, suffix == "-folded" ? true : nil)
                     .environment(\.panelStyle, .page)
                     .frame(width: size.width, height: size.height)
                     .background(WindowBackdrop())

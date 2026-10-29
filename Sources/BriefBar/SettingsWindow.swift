@@ -177,6 +177,7 @@ struct GeneralPage: View {
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
 
             LinksSetting(links: model.services.links)
+            StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
 
             NotificationsSetting(recent: model.services.recentNotifications)
 

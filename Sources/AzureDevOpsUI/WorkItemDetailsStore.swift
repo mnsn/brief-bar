@@ -15,8 +15,17 @@ final class WorkItemDetailsStore: ObservableObject {
     @Published private(set) var isLoading = false
     /// Why its details couldn't be read, the last time they were.
     @Published private(set) var failure: ADOError?
+    /// A work item you went on from, and the pages that showed over it then, to go back to.
+    struct Visit: Equatable {
+        var item: WorkItem
+        var pages: [ItemRef] = []
+    }
+
     /// The work items you went to from the details, to go back to: the latest last.
-    @Published private(set) var history: [WorkItem] = []
+    @Published private(set) var history: [Visit] = []
+    /// The pages of pull requests and Copilot sessions opened over the work item's details from what's linked to it, the
+    /// latest last: ‹ goes back through them first.
+    @Published private(set) var pages: [ItemRef] = []
 
     /// What reading a work item brings: its details, or why they couldn't be read; and who's signed in to the Azure CLI,
     /// when the sign-in says.
@@ -74,20 +83,63 @@ final class WorkItemDetailsStore: ObservableObject {
     /// Shows a work item from the sprint: where you came from before is forgotten.
     func show(_ item: WorkItem) {
         history = []
+        pages = []
         select(item)
     }
 
-    /// Shows a work item the details link to, such as a story's task, to come back from.
+    /// Shows a work item the details link to, such as a story's task, to come back from, with the pages that showed.
     func follow(_ item: WorkItem) {
-        guard let selected, selected.key != item.key else { return }
-        history.append(selected)
+        guard let selected else { return }
+        guard selected.key != item.key else {
+            // Its own, from a page over it: back to it.
+            pages = []
+            return
+        }
+        history.append(Visit(item: selected, pages: pages))
+        pages = []
         select(item)
     }
 
-    func back() {
-        guard let previous = history.popLast() else { return }
-        select(previous)
+    /// Shows the page of a pull request or a Copilot session linked to the work item, over its details, to come back from;
+    /// one that shows already, under the one on top, by going back to it.
+    func open(page ref: ItemRef) {
+        guard selected != nil, ref.kind != .workItem else { return }
+        if let index = pages.firstIndex(of: ref) {
+            pages = Array(pages.prefix(through: index))
+        } else {
+            pages.append(ref)
+        }
     }
+
+    /// Back from a page, then to the work item you came from, with the pages that showed over it.
+    func back() {
+        if !pages.isEmpty {
+            pages.removeLast()
+            return
+        }
+        guard let previous = history.popLast() else { return }
+        select(previous.item)
+        pages = previous.pages
+    }
+
+    /// Back to one of the pages that show, or, for nil, to the work item under them.
+    func back(toPage index: Int?) {
+        guard let index else {
+            pages = []
+            return
+        }
+        guard pages.indices.contains(index) else { return }
+        pages = Array(pages.prefix(through: index))
+    }
+
+    /// Takes the pages away, those to go back to too: when Show Links goes off, which they come from.
+    func closePages() {
+        pages = []
+        history = history.map { Visit(item: $0.item) }
+    }
+
+    /// Whether ‹ goes anywhere.
+    var canGoBack: Bool { !pages.isEmpty || !history.isEmpty }
 
     func close() {
         cancelLoading()
@@ -95,6 +147,7 @@ final class WorkItemDetailsStore: ObservableObject {
         details = nil
         failure = nil
         history = []
+        pages = []
     }
 
     /// From a list or a widget: shows the work item on the Sprint page, in BriefBar's window; in Azure DevOps when no
@@ -349,7 +402,7 @@ final class WorkItemDetailsStore: ObservableObject {
     /// The one that changed last; the sprint's, which knows its team's states, when neither did. One that doesn't say when
     /// it changed, such as a linked work item that couldn't be read, gives way to what's read. The details guess the
     /// category of the state, so they keep the sprint's while the state is the same.
-    static func newest(_ sprint: WorkItem?, _ read: WorkItem?) -> WorkItem? {
+    nonisolated static func newest(_ sprint: WorkItem?, _ read: WorkItem?) -> WorkItem? {
         guard let read else { return sprint }
         guard let sprint else { return read }
         if sprint.changedAt != nil || read.changedAt == nil {
@@ -361,7 +414,7 @@ final class WorkItemDetailsStore: ObservableObject {
         return item
     }
 
-    private static func isNewer(_ date: Date?, than other: Date?) -> Bool {
+    private nonisolated static func isNewer(_ date: Date?, than other: Date?) -> Bool {
         guard let date, let other else { return false }
         return date > other
     }
@@ -369,7 +422,7 @@ final class WorkItemDetailsStore: ObservableObject {
     // MARK: Saying what went wrong
 
     /// What to say when a work item's details can't be read, but for signing in, which shows its own way.
-    static func message(for error: ADOError) -> String {
+    nonisolated static func message(for error: ADOError) -> String {
         switch error {
         case .notFound: return "Azure DevOps can't find this work item. It may have been deleted, or moved where you can't see it."
         case .forbidden: return "You don't have access to this work item."

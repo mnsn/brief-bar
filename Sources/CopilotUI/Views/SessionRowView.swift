@@ -26,6 +26,44 @@ struct SessionRowView: View {
 
     var body: some View {
         let task = store.task(for: session.id)
+        VStack(alignment: .leading, spacing: 0) {
+            row(task)
+            RowSummary(subject: ref)
+                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.trailing, 8)
+                .padding(.bottom, 6)
+        }
+        // The row and its summary, together, indented under the session that started it.
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+        )
+        .padding(.leading, indent)
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            if let task {
+                Button(task.openTitle, action: action)
+                task.menu()
+            } else if session.answerIn != nil {
+                Button(openTitle(task), action: action)
+                Button("Open This Session") { store.openItself(session) }
+            } else {
+                Button(store.appInstalled ? "Open in GitHub Copilot" : "Open in Terminal", action: action)
+            }
+            if let parent = otherParent {
+                Button("Open “\(parent.name)”") { store.openParent(of: session) }
+            }
+            SummarizeMenuItems(ref)
+            if let ref {
+                LinkMenuItems(ref)
+            }
+        }
+    }
+
+    /// What it's linked and summed up by.
+    private var ref: ItemRef? { ItemRef.session(session.id) }
+
+    private func row(_ task: SentTask?) -> some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: session.rowSymbol)
@@ -51,10 +89,7 @@ struct SessionRowView: View {
                         if let contextUsage {
                             ContextUsageView(usage: contextUsage)
                         }
-                        Text(Elapsed.short(since: session.since, now: now))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+                        RowTime(Elapsed.short(since: session.since, now: now), subject: ref, isHovered: isHovered)
                     }
                     if compact {
                         if let taggedParent {
@@ -109,10 +144,6 @@ struct SessionRowView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, compact ? 5 : 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -120,25 +151,6 @@ struct SessionRowView: View {
         .overlayPreferenceValue(ParentTag.Bounds.self) { bounds in
             if let bounds, let parent = taggedParent {
                 ParentTag.Target(parent: parent, bounds: bounds) { store.openParent(of: session) }
-            }
-        }
-        .padding(.leading, indent)
-        .onHover { isHovered = $0 }
-        .contextMenu {
-            if let task {
-                Button(task.openTitle, action: action)
-                task.menu()
-            } else if session.answerIn != nil {
-                Button(openTitle(task), action: action)
-                Button("Open This Session") { store.openItself(session) }
-            } else {
-                Button(store.appInstalled ? "Open in GitHub Copilot" : "Open in Terminal", action: action)
-            }
-            if let parent = otherParent {
-                Button("Open “\(parent.name)”") { store.openParent(of: session) }
-            }
-            if let ref = ItemRef.session(session.id) {
-                LinkMenuItems(ref)
             }
         }
         .help(helpText(task))
@@ -157,6 +169,7 @@ struct SessionRowView: View {
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
+            SummarizeMenuItems(ref, divided: false)
         }
         .rowActions(for: session.displayName, openTitle: openTitle(task), open: action) {
             if let task {
@@ -167,10 +180,12 @@ struct SessionRowView: View {
             if let parent = otherParent {
                 Button("Open “\(parent.name)”") { store.openParent(of: session) }
             }
-            if let ref = ItemRef.session(session.id) {
+            SummarizeMenuItems(ref)
+            if let ref {
                 LinkMenuItems(ref)
             }
         }
+        .rowSummarizeButton(ref)
     }
 
     /// How far it's indented under the session that started it, where the list nests it.

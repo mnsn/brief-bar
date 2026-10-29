@@ -17,7 +17,7 @@ public struct AgentConsent: Codable, Equatable, Sendable {
 /// wait until you've seen what they get now (`SourceState.needsReview`).
 public enum AgentAccess {
     /// What agents get: raise it when they get something new, such as another tool or another source's data.
-    public static let version = 1
+    public static let version = 2
 
     public static let defaultsKey = "agents"
 

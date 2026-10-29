@@ -38,8 +38,8 @@ from what it knows ([Agents](#agents)), and its plugin brings **/briefbar** to t
 | Source | Shows | Reads | Needs | Network |
 |---|---|---|---|---|
 | **Microsoft Teams** | Unread 1:1 chats, and group and meeting chats, in two items | The notifications Teams sends to Notification Center, from its database on your Mac; and how far you've read each chat, from Teams' own data on your Mac | Full Disk Access | None |
-| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only |
-| **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped | The Copilot app's own files under `~/.copilot` | Nothing | None |
+| **Azure DevOps** | Pull requests that need you, are failing, are ready to complete, or wait on someone else; your team's sprint, with each work item's details, and the pipelines you pin | Azure DevOps, with the Azure CLI's sign-in; and, only if you turn on **Pull Requests Sent in Chats**, every app's notifications in Notification Center, for links to pull requests; and, only if you turn on **Send Work to Copilot** and send a work item or a pull request, the repository you choose, Copilot's log of that session, and the Copilot app's sessions it could go to instead; and, only if you turn on **Show Links**, the work items and pull requests linked to yours and to the sprint's | The Azure CLI, signed in; notifications; Full Disk Access for pull requests sent in chats; the Copilot CLI to send work to Copilot | `dev.azure.com` and `app.vssps.visualstudio.com`, GET requests only; and, only if you turn on **Summarize with Copilot** and click **✨ Summarize with Copilot**, a work item's, pull request's or session's details and what's linked to it go to GitHub Copilot, through the Copilot CLI |
+| **GitHub Copilot** | Which Copilot app sessions are running, need you, or have finished or stopped; and, with Show Links, what Copilot recorded of a linked session's work, in a work item's details | The Copilot app's own files under `~/.copilot` | Nothing | None |
 | **GitHub** | Pull requests that ask for your review by name, and yours that need changes, are failing, are approved or wait on someone else | github.com, with the GitHub CLI's sign-in: those open pull requests, with their checks, reviews, branches and whether they can merge | The GitHub CLI, signed in; no personal access token | `api.github.com`, one read-only GraphQL query each refresh |
 
 Only the Azure DevOps and GitHub sources talk to the network for what you see, each only to its own
@@ -219,11 +219,16 @@ more, or unlink. The window that links things suggests what's on the same branch
 number or shares words with the title, and takes a pasted link to a pull request, a work item or a
 session.
 
+A work item's details on the Sprint page list what's linked to it, with what's known of each, under
+**Where It Stands** ([Azure DevOps](#azure-devops)).
+
 What you link or unlink stays in BriefBar: Azure DevOps, GitHub and Copilot never see it, so a policy
 that requires linked work items still sees only Azure DevOps' own. Unlinking what Azure DevOps or
 Copilot links hides it in BriefBar, until you choose **Show Hidden Links**. While it's on, Azure DevOps
 reads the links of your pull requests and, while the sprint is on screen, of its work items, and the
-Copilot source reads which pull request each session started from or opened.
+Copilot source reads which pull request each session started from or opened, and, when a work item's
+details show a session, the checkpoints and last words Copilot keeps in that session's folder, in
+memory only.
 
 ## Notifications
 
@@ -340,10 +345,43 @@ its title opens this page, and **Open Task Board** the sprint's task board in Az
 Click a story, bug or task to see its details beside the board, without leaving BriefBar: its state,
 who has it, its description, acceptance criteria or repro steps, its fields, its tasks and related work
 items, its attachments and its discussion. Its parent, its tasks and related work items open the same
-way, and **‹** goes back. **Open in Azure DevOps** opens it there, to change it; right-clicking it on
-the board does too. In a narrow window the details cover the board, until **✕** or Esc closes them.
-Clicking one of your work items in the Sprint list or widget opens its details here, in BriefBar's
-window.
+way, and **‹** goes back.
+
+With [Show Links](#links) on, the details start with **Where It Stands**: the pull requests, their
+pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
+it stands in a sentence. Under its title, **Waiting on** says who it all waits on, you first, such as
+**you, to complete !4091 · Copilot, on task 5103**; click the title to fold it to just that line. Click
+one, and its page shows what's known of it, right in the details: a pull request's reviewers and their
+votes, its open comments and the ones waiting on you, conflicts, and each build or check that ran on it,
+with where a failed one failed; a Copilot session's question or plan, and what Copilot recorded of its
+work as it went: the story so far, a line for each of its checkpoints, what it did, what's next, and
+what it said last, with what else is linked to it, such as a pull request's sessions. The header shows
+the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or **Esc** goes back. BriefBar doesn't
+write or reword any of it: Copilot's notes show as Copilot wrote them, and nothing more is read from
+Azure DevOps for it.
+
+Turn on **Summarize with Copilot** in **Settings › General**, under Show Links, and, once there's something
+to sum up, two things linked or more, or a story's or a bug's tasks and one thing linked, **✨ Summarize
+with Copilot** sends the work item and what's linked to it to GitHub Copilot, through the Copilot CLI,
+for a short summary: where it stands in a line, leading with what the rows don't say, and what's next
+and for whom, with what's been done and what's left behind **Show More**. It runs only when you click
+it, with the model you choose, Claude Haiku 5.5 unless you change it, one request on your Copilot plan
+each time, and no tools at all, so Copilot can only write. The card says when it was written, and its
+tooltip by which model and from what; once something it summed up changes, it says **Out of date**,
+and what changed, with **Summarize Again**. When Copilot can't write one, it says why and what would
+help: the Copilot CLI isn't signed in, the model isn't on your plan (**Choose Model…**), or your
+premium requests ran out.
+
+The lists have it too: point at a pull request or a Copilot session, in Azure DevOps', GitHub's or
+Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize with Copilot**.
+Its summary shows under its row in two lines, as a chat's does, from what's known of it and what's
+linked to it, leading with what its row doesn't say; **Show More** shows the rest. **✕** hides it, and
+**Show Summary**, in its menu, shows it again without asking Copilot. The same summary shows on its
+page. Widgets never show one.
+
+**Open in Azure DevOps** opens the work item there, to change it; right-clicking it on the board does
+too. In a narrow window the details cover the board, until **✕** or Esc closes them. Clicking one of
+your work items in the Sprint list or widget opens its details here, in BriefBar's window.
 
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent
@@ -524,6 +562,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
+| `work_item` | One work item and what goes with it: where it stands and who it waits on, its tasks, each pull request linked to it with its votes, comments and pipelines, the Copilot sessions on those pull requests with what Copilot recorded of their work, the work BriefBar sent to Copilot for it, and its description and latest comments |
 | `copilot_tasks` | The work BriefBar sent to the Copilot CLI, and how it's going |
 | `copilot_sessions` | Your Copilot app sessions, as BriefBar shows them |
 | `watch_pull_request`, `stop_watching_pull_request` | Watches a pull request by its link, or stops |
@@ -532,10 +571,12 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 It serves only the sources that are on in BriefBar, reads as the app does, with your Azure CLI sign-in
 and only GET requests, and changes nothing in Azure DevOps: only BriefBar's own lists of the pull
 requests you watch and the pipelines you pin, which a running BriefBar picks up at once. It leaves
-Teams and GitHub out. What it answers goes to the agent's model, which may run in the cloud, so let
-only agents you'd show your pull requests to use it. Titles and comments come word for word from
-whoever wrote them, and an agent may act on what they say: keep its permissions to what you'd allow
-anyway. If an update gives agents more, they wait until you've seen what they get now, as a source
+Teams and GitHub out. A source's tool asks the others what they know of what it names, and each
+answers only while it's on: `work_item` gets the Copilot sessions on a work item's pull requests from
+Copilot, on their branches or as the Copilot app records them, or a line saying Copilot is off. What it
+answers goes to the agent's model, which may run in the cloud, so let only agents you'd show your pull
+requests to use it. Titles, comments and Copilot's notes come word for word from whoever wrote them,
+and an agent may act on what they say: keep its permissions to what you'd allow anyway. If an update gives agents more, they wait until you've seen what they get now, as a source
 does. `BriefBar --mcp --demo` answers with made-up data, whatever your settings.
 
 ### In the GitHub Copilot app
@@ -553,6 +594,9 @@ agents off removes it; if Copilot can't, the page says so, with **Try Again**. I
   BriefBar for the prompt of the same Copilot action, and does what it allows: it changes files there,
   resolving conflicts commits the merge, and only **Push & Reply**, sent to that same session, pushes
   and replies as you. In the Copilot CLI, the work happens where you are.
+- **/briefbar 5101**, or "how's 5101 going?", answers in four short lines, with their links: where the
+  work item stands and what you can do now, what's done, by people and by Copilot, what's left and who
+  has it, and who it waits on. Then it offers a next step, and starts nothing until you say so.
 - It never answers a session's question, plan or permission for you: it offers to open the session.
 
 The plugin comes with BriefBar.app, which the Copilot CLI loads it from, so it updates with BriefBar
@@ -658,7 +702,8 @@ has the details.
 Each source has its settings on its page in **Settings**, and in the gear menu of its list (or the
 right-click menu of its widget), next to **Launch BriefBar at Login**, **Check for Updates…**,
 **BriefBar Settings…** and **Quit BriefBar**. **Settings › General** also has
-**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)), and
+**Check for Updates Automatically**, **Show Links**, off by default (see [Links](#links)),
+**Summarize with Copilot**, off by default (see [Azure DevOps](#azure-devops)), and
 **Notifications Page**, off by default, with how long it keeps what it lists: 4 hours, 1 day (default)
 or 3 days (see [Notifications](#notifications)).
 
@@ -752,9 +797,18 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   app's database, read-only, which pull request each session started from or opened. The links you add
   or hide stay in BriefBar, in its preferences, as references only, never titles: nothing goes back to
   Azure DevOps, GitHub or Copilot.
-- **Summaries and the brief are made on your Mac**, by Apple's on-device model, never Private Cloud
-  Compute or any other model, and are kept in memory only: the brief's, for ten minutes after its
-  line was last on screen. With **Show Message Previews** off, no message text goes into the brief.
+- **Apple Intelligence summaries and the brief are made on your Mac**, by Apple's on-device model, never
+  Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten minutes
+  after its line was last on screen. With **Show Message Previews** off, no message text goes into the
+  brief.
+- **Summarize with Copilot**, off until you turn it on, sends a work item's, pull request's or Copilot
+  session's details to GitHub Copilot, only when you click **✨ Summarize with Copilot**: what they
+  show, its description and latest comments, its pull requests' reviews, builds and their errors, and
+  what Copilot wrote of its sessions, goes to the Copilot CLI and on to GitHub Copilot's model, as when you send work to Copilot,
+  with your name as Azure DevOps has it, or your GitHub login. Nothing from Teams ever does, nor who sent you a pull request
+  in a chat. Copilot gets no tools for it: it can't run a command, read or change a file, or open a web
+  page. BriefBar keeps the summary in memory only; the Copilot CLI keeps each one as a session named
+  "BriefBar summary", which the Copilot app doesn't list.
 - **The Notifications page** keeps what BriefBar notified you of in memory only, for as long as you
   choose, a day unless you change it: never in its preferences or on disk. Turning a source off takes
   its notifications off the page.
@@ -765,8 +819,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   sessions you've cleared; the links you added or hid, with Show Links; and its settings. Turning a source off deletes
   what it saved, and the links you added or hid to its things.
 - **Agents**, only if you turn them on, get what the command-line modes print, from the sources that
-  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, and Copilot tasks and
-  sessions, never Teams or GitHub. That goes to the agent's model, which may run in the cloud. Their
+  are on: your Azure DevOps pull requests and their comments, pipelines, sprint, a work item's
+  description, comments and the pull requests linked to it, and Copilot tasks and sessions, never Teams
+  or GitHub; and, for the Copilot sessions on a work item's pull requests, found by their branches and
+  the pull requests the Copilot app records with them, what Copilot recorded of their work: the latest
+  checkpoint's overview and next step, and the last thing a session said, whether Show Links is on or
+  not. That goes to the agent's model, which may run in the cloud. Their
   only changes are to the pull requests BriefBar watches and the pipelines it pins. Turning them on
   adds BriefBar to the Copilot CLI's MCP servers, with the CLI's own `copilot mcp add`, and installing
   its plugin uses `copilot plugin`: BriefBar never reads the CLI's configuration, where other servers'

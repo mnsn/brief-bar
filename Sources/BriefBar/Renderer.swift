@@ -24,8 +24,29 @@ enum Renderer {
         model.placeSections()
         let sources = model.onSources
         var loaded = false
+        // In the demo, a summary under a pull request's row and under a session's, kept aside for their own pictures.
+        var rowSummaries: [(ItemRef, StorySummaries.State)] = []
         Task {
             for source in sources { await source.loadForRendering() }
+            // What's known of everything linked, for the details' pictures; and, in the demo, a made-up summary of each work
+            // item with something to sum up.
+            let links = model.services.links
+            await model.services.stories.tell(links.linked(Set(ItemRef.Kind.allCases)).sorted().map(links.describe))
+            if demo {
+                let summaries = model.services.summaries
+                for workItem in links.linked([.workItem]).sorted() where summaries.hasSomethingToSum(workItem) {
+                    await summaries.summarizeAndWait(workItem)
+                }
+                // The demo's pull request that Sam replied on, and its session that waits for your answer: at the top of their
+                // pages.
+                let replied = ItemRef.pullRequest(organization: "contoso", number: 4102)
+                let asking = ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01")
+                for ref in [replied, asking].compactMap({ $0 }) where summaries.canSummarize(ref) {
+                    await summaries.summarizeAndWait(ref)
+                    if let state = summaries.state(for: ref) { rowSummaries.append((ref, state)) }
+                    summaries.useForRendering(ref, state: nil)
+                }
+            }
             loaded = true
         }
         while !loaded {
@@ -189,6 +210,24 @@ enum Renderer {
                     write(Snapshot.render(view, appearance: appearance), "window-\(section.rawValue)-\(suffix)")
                 }
             }
+            // A pull request's and a session's summary under its row, on their pages.
+            if !rowSummaries.isEmpty {
+                let summaries = model.services.summaries
+                for (ref, state) in rowSummaries { summaries.useForRendering(ref, state: state) }
+                let content = WindowContent(id: "render-rows", model: model)
+                content.update(sections: windowSections)
+                for (section, name) in [(SectionID.azureDevOpsPullRequests, "pull-requests"), (.copilotSessions, "sessions")]
+                where windowSections.contains(section) {
+                    content.select(section, notify: false)
+                    let view = WindowView(content: content)
+                        .environment(\.isRendering, true)
+                        .environmentObject(model.services)
+                        .environmentObject(model.services.loginItem)
+                        .frame(width: 980, height: 680)
+                    write(Snapshot.render(view, appearance: appearance), "rows-summary-\(name)-\(suffix)")
+                }
+                for (ref, _) in rowSummaries { summaries.useForRendering(ref, state: nil) }
+            }
             // The Notifications page, in the window that has it, while it lists something, as the demo's does.
             if let window = model.overviewLink.window, model.hasNotificationsPage(window: window.id) {
                 let content = WindowContent(id: window.id, model: model)
@@ -230,6 +269,68 @@ enum Renderer {
                 .frame(width: 600, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor))
             write(Snapshot.render(notificationsSetting, appearance: appearance), "settings-notifications-\(suffix)")
+            // Show Links, and Summarize with Copilot under it, below it too.
+            let linksSettings = VStack(alignment: .leading, spacing: 20) {
+                LinksSetting(links: model.services.links)
+                StorySummariesSetting(summaries: model.services.summaries, links: model.services.links)
+            }
+            .padding(24)
+            .frame(width: 600, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor))
+            write(Snapshot.render(linksSettings, appearance: appearance), "settings-links-\(suffix)")
+            // And with Show Links off, when Summarize with Copilot can't be changed.
+            let linksOff = Links(defaults: MemoryDefaults(), isDemo: false)
+            let summariesOff = StorySummaries(defaults: MemoryDefaults(), links: linksOff, stories: ItemStories(links: linksOff), isDemo: true)
+            summariesOff.models = model.services.summaries.models
+            let linksOffSettings = VStack(alignment: .leading, spacing: 20) {
+                LinksSetting(links: linksOff)
+                StorySummariesSetting(summaries: summariesOff, links: linksOff)
+            }
+            .padding(24)
+            .frame(width: 600, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor))
+            write(Snapshot.render(linksOffSettings, appearance: appearance), "settings-links-off-\(suffix)")
+            // A summary as it's written, once it is, when it's out of date and when it fails, in the demo; and Where It Stands
+            // without one, with ✨ Summarize with Copilot.
+            let summaries = model.services.summaries
+            let summarized = model.services.links.linked([.workItem]).sorted().first { subject in
+                if case .written? = summaries.state(for: subject) { return true }
+                return false
+            }
+            if demo, let subject = summarized, case .written(let summary, let at, var inputs, let modelID)? = summaries.state(for: subject) {
+                let written = summaries.state(for: subject)
+                func card(_ name: String, width: CGFloat = 420) {
+                    let view = SummaryCard(subject: subject, summaries: summaries, rows: [])
+                        .interfaceOptions(from: model.services)
+                        .environmentObject(model.services)
+                        .padding(16)
+                        .frame(width: width, alignment: .leading)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                    write(Snapshot.render(view, appearance: appearance), "summary-\(name)-\(suffix)")
+                }
+                card("written")
+                summaries.useForRendering(subject, state: .writing(since: Date()))
+                card("writing")
+                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
+                    "Claude Haiku 5.5 isn't on your Copilot plan.",
+                    detail: "Error: Model \"claude-haiku-5.5\" from --model flag is not available.", fix: .chooseModel
+                ), at: Date()))
+                card("failed")
+                // One of what it summed up said something else then.
+                if let index = inputs.firstIndex(where: { $0.ref.kind == .pullRequest }) { inputs[index].row += "\nthen" }
+                summaries.useForRendering(subject, state: .written(summary, at: at.addingTimeInterval(-40 * 60), inputs: inputs, model: modelID))
+                card("out-of-date")
+                card("out-of-date-narrow", width: 330)
+                summaries.useForRendering(subject, state: nil)
+                let standing = WhereItStandsSection(subject: subject)
+                    .interfaceOptions(from: model.services)
+                    .environmentObject(model.services)
+                    .padding(16)
+                    .frame(width: 420, alignment: .leading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                write(Snapshot.render(standing, appearance: appearance), "summary-none-\(suffix)")
+                summaries.useForRendering(subject, state: written)
+            }
             let saved = model.layout(.menuBar)
             let savedOptions = model.menuBarItemOptions
             model.useForRendering(example)

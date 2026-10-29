@@ -99,9 +99,11 @@ public enum ProcessRunnerError: Error, Sendable, Equatable, CustomStringConverti
 }
 
 /// Runs a program to completion and collects its output, within the timeout. The program runs in a process group
-/// of its own, so at the timeout it ends with everything it started. Once it exits, output that something it started
-/// keeps open (a background upload, say) is waited for only briefly, and that is ended too. Like every program
-/// BriefBar starts, it's responsible for itself (see `Responsibility`).
+/// of its own, so at the timeout it ends with everything it started: all of it is asked to stop, then made to a second
+/// later, even what outlives the program. Once it exits, output that something it started keeps open (a background
+/// upload, say) is waited for only briefly, and that is ended too. Like every program BriefBar starts, it's responsible
+/// for itself (see `Responsibility`). When its task is cancelled, the program ends as at the timeout and `run` throws
+/// `CancellationError`; cancelled before it starts, it doesn't start at all.
 public struct ProcessRunner: ProcessRunning {
     /// How long to wait for the output to end after the program exits.
     var drainTime: TimeInterval = 0.5
@@ -111,8 +113,15 @@ public struct ProcessRunner: ProcessRunning {
     public func run(
         _ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval
     ) async throws -> ProcessResult {
+        try Task.checkCancellation()
         let process = try SpawnedProcess(executable: executable, arguments: arguments, environment: environment)
-        return await process.result(timeout: timeout, drainTime: drainTime)
+        let result = await withTaskCancellationHandler {
+            await process.result(timeout: timeout, drainTime: drainTime)
+        } onCancel: {
+            process.stop()
+        }
+        try Task.checkCancellation()
+        return result
     }
 
     /// Starts a program that outlives BriefBar, such as the one that opens it again after it quits, in a
@@ -144,6 +153,13 @@ public struct ProcessRunner: ProcessRunning {
 }
 
 /// One run of a program, its output read as it comes. Everything after `init` happens on `queue`.
+///
+/// Signals to its process group go by the program's process ID, which is the group's. macOS gives that number to no
+/// other process or group while the program is unreaped, even once it has exited, as a zombie. Once it's reaped, the
+/// number is free again as soon as whatever it started is gone too, and there's no telling then whether a group with
+/// that number is still its own. So instead of checking the group before each signal, the program stays unreaped for
+/// as long as anything may still be sent to its group (`reapIfDone`), and its exit status is read without reaping it,
+/// so the result needn't wait for that.
 private final class SpawnedProcess: @unchecked Sendable {
     private let queue = DispatchQueue(label: "BriefBar.ProcessRunner")
     private let pid: pid_t
@@ -152,8 +168,16 @@ private final class SpawnedProcess: @unchecked Sendable {
     private var reading: [DispatchSourceRead] = []
     private var exitWatch: DispatchSourceProcess?
     private var status: Int32?
+    /// It exited, and stays a zombie until it's reaped.
+    private var hasExited = false
     private var reaped = false
     private var continuation: CheckedContinuation<ProcessResult, Never>?
+    /// The result is out.
+    private var isDone = false
+    /// It was asked to stop, at the timeout or because its task was cancelled.
+    private var isEnding = false
+    /// Its process group was made to stop, a second after it was asked to.
+    private var wasKilled = false
 
     init(executable: URL, arguments: [String], environment: [String: String]?) throws {
         var stdout: [Int32] = [-1, -1]
@@ -222,6 +246,11 @@ private final class SpawnedProcess: @unchecked Sendable {
         }
     }
 
+    /// Ends it as the timeout does, for a task that's cancelled: at once, or once it starts being waited for.
+    func stop() {
+        queue.async { self.end() }
+    }
+
     private func start(_ continuation: CheckedContinuation<ProcessResult, Never>, timeout: TimeInterval, drainTime: TimeInterval) {
         self.continuation = continuation
         for (index, descriptor) in descriptors.enumerated() {
@@ -233,22 +262,33 @@ private final class SpawnedProcess: @unchecked Sendable {
             reading.append(source)
         }
         let exitWatch = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
-        exitWatch.setEventHandler { self.reap(drainTime: drainTime, exited: true) }
+        exitWatch.setEventHandler { self.noteExit(drainTime: drainTime, exited: true) }
         exitWatch.resume()
         self.exitWatch = exitWatch
         // It may have exited before the watch began.
-        reap(drainTime: drainTime, exited: false)
+        noteExit(drainTime: drainTime, exited: false)
+        queue.asyncAfter(deadline: .now() + timeout) { self.end() }
+    }
 
-        // At the timeout, ask it (and whatever it started) to stop, then make it; and stop waiting soon after either way.
-        queue.asyncAfter(deadline: .now() + timeout) {
-            guard self.continuation != nil else { return }
-            killpg(self.pid, SIGTERM)
-            self.queue.asyncAfter(deadline: .now() + 1) {
-                guard self.continuation != nil else { return }
-                killpg(self.pid, SIGKILL)
-                self.queue.asyncAfter(deadline: .now() + 2) { self.stopReading(status: SIGKILL) }
-            }
+    /// Asks it, and whatever it started, to stop, then makes them a second later, even if it has ended and the result
+    /// is out by then: something it started may ignore being asked, with its output closed. And stops waiting soon after
+    /// either way. Nothing if the result came out first: the program was reaped then.
+    private func end() {
+        guard !isDone, !isEnding else { return }
+        isEnding = true
+        signalGroup(SIGTERM)
+        queue.asyncAfter(deadline: .now() + 1) {
+            self.signalGroup(SIGKILL)
+            self.wasKilled = true
+            self.reapIfDone()
+            self.queue.asyncAfter(deadline: .now() + 2) { self.stopReading(status: SIGKILL) }
         }
+    }
+
+    /// Sends a signal to its process group, only while the program is unreaped and the group's number is its own.
+    private func signalGroup(_ signal: Int32) {
+        guard !reaped else { return }
+        killpg(pid, signal)
     }
 
     private func read(_ descriptor: Int32, into index: Int, source: DispatchSourceRead) {
@@ -263,45 +303,58 @@ private final class SpawnedProcess: @unchecked Sendable {
                 // The end of the output (or an error reading it).
                 source.cancel()
                 finishIfDone()
+                reapIfDone()
                 return
             }
         }
     }
 
-    /// Collects its exit status. Once told it `exited`, it waits for that: the exit can be reported a moment before
-    /// the status can be collected, and isn't reported again.
-    private func reap(drainTime: TimeInterval, exited: Bool) {
-        guard !reaped else { return }
-        var raw: Int32 = 0
-        var result: pid_t
+    /// Reads its exit status once it has exited, without reaping it. Once told it `exited`, it waits for that: the exit
+    /// can be reported a moment before the status can be read, and isn't reported again.
+    private func noteExit(drainTime: TimeInterval, exited: Bool) {
+        guard !hasExited else { return }
+        var info = siginfo_t()
+        var result: Int32
         repeat {
-            result = waitpid(pid, &raw, exited ? 0 : WNOHANG)
+            result = waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT | (exited ? 0 : WNOHANG))
         } while result == -1 && errno == EINTR
-        guard result == pid else { return }
-        reaped = true
+        guard result == 0, info.si_pid == pid else { return }
+        hasExited = true
         exitWatch?.cancel()
-        // Reaped after giving up on it: the result is already out.
-        guard status == nil else { return }
-        // Exited normally: its exit code. Ended by a signal: the signal, as Foundation's Process reports it.
-        let signal = raw & 0x7f
-        status = signal == 0 ? (raw >> 8) & 0xff : signal
-        finishIfDone()
-        // Whatever still holds its output open is something it started.
-        queue.asyncAfter(deadline: .now() + drainTime) { self.stopReading(status: nil) }
+        // Given up on before it exited, the result is already out.
+        if status == nil {
+            // Exited normally: its exit code. Ended by a signal: the signal, as Foundation's Process reports it.
+            status = info.si_code == CLD_EXITED ? info.si_status & 0xff : info.si_status & 0x7f
+            finishIfDone()
+            // Whatever still holds its output open is something it started.
+            queue.asyncAfter(deadline: .now() + drainTime) { self.stopReading(status: nil) }
+        }
+        reapIfDone()
+    }
+
+    /// Reaps it once it has exited and nothing more will be sent to its group: once its output has ended or been given
+    /// up on; or, once it was asked to stop, once its group was made to.
+    private func reapIfDone() {
+        guard hasExited, !reaped, isEnding ? wasKilled : reading.allSatisfy(\.isCancelled) else { return }
+        var raw: Int32 = 0
+        while waitpid(pid, &raw, 0) == -1 && errno == EINTR {}
+        reaped = true
     }
 
     /// Stops waiting for output that's still open, and ends whatever in its process group holds it.
     private func stopReading(status fallback: Int32?) {
         guard continuation != nil else { return }
-        killpg(pid, SIGKILL)
+        signalGroup(SIGKILL)
         for source in reading where !source.isCancelled { source.cancel() }
         if status == nil { status = fallback }
         finishIfDone()
+        reapIfDone()
     }
 
     private func finishIfDone() {
         guard let continuation, let status, reading.allSatisfy(\.isCancelled) else { return }
         self.continuation = nil
+        isDone = true
         continuation.resume(returning: ProcessResult(status: status, stdout: output[0], stderr: output[1]))
     }
 }

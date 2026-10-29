@@ -181,6 +181,13 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     /// there is what you've seen and haven't answered.
     public var hasNews: Bool { pendingEvents.contains(where: \.isNew) }
 
+    /// Whether its headline and detail may say what only this Mac knows, from the notifications of the app someone sent it
+    /// to you in: who sent it, and in which app, while that needs you and once you've answered it. Its group then may be
+    /// there only because of it, too.
+    public var isFromChat: Bool {
+        reason == .sentInChat || (reason == .answered && chatSource != nil)
+    }
+
     /// The pull request's page, scrolled to a comment thread when there's one.
     public func pageURL(thread: Int? = nil) -> URL {
         ADOEndpoint.pullRequestPage(organization: key.organization, project: project, repository: repository, id: key.number, threadId: thread)
