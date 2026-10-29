@@ -364,6 +364,27 @@ private typealias Run = RichText.Run
         ])
     }
 
+    @Test func anImageDoesntEndTheParagraphItsIn() {
+        // An image on a line of its own shows as a block, but what follows it without a blank line, text or another image,
+        // is still the paragraph's, here the item's text: the list goes on.
+        let a = RichText.Block.image(alt: "A", url: URL(string: "https://example.test/a.png"))
+        let b = RichText.Block.image(alt: "B", url: URL(string: "https://example.test/b.png"))
+        #expect(RichText(markdown: "1. One\n![A](https://example.test/a.png)\ncontinued\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), a, .paragraph([Run("continued")]), .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
+        #expect(RichText(markdown: "1. One\n![A](https://example.test/a.png)\n![B](https://example.test/b.png)\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), a, b, .listItem(.number(2), depth: 0, [Run("Two")]),
+        ])
+        // Indented four columns, it's more of the paragraph, not code.
+        #expect(RichText(markdown: "Text\n![A](https://example.test/a.png)\n    more").blocks == [
+            .paragraph([Run("Text")]), a, .paragraph([Run("more")]),
+        ])
+        // A blank line still ends it.
+        #expect(RichText(markdown: "1. One\n![A](https://example.test/a.png)\n\ncontinued\n1. Two").blocks == [
+            .listItem(.number(1), depth: 0, [Run("One")]), a, .paragraph([Run("continued")]), .listItem(.number(1), depth: 0, [Run("Two")]),
+        ])
+    }
+
     @Test func keepsBackslashesThatArentLineBreaks() {
         // Nothing follows it to break: it's the path's.
         #expect(RichText(markdown: #"Folder: C:\"#).plainText == #"Folder: C:\"#)

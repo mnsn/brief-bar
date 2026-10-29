@@ -773,6 +773,9 @@ private enum MarkdownReader {
         var itemIndents: [Int] = []
         /// Each open list's next number, by depth: nil for a bulleted one.
         var numbers: [Int?] = []
+        /// Whether a paragraph, or an item's text, goes on: a line that starts nothing else is more of it, however it's
+        /// indented, as CommonMark has it. An image on a line of its own shows as a block, but is part of it too.
+        var paragraphOpen = false
         var index = 0
 
         func flush() {
@@ -803,6 +806,9 @@ private enum MarkdownReader {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = line.prefix { $0 == " " }.count
+            // Only more of the paragraph, or an image in it, keeps it going: a blank line or any other block ends it.
+            let continuing = paragraphOpen
+            paragraphOpen = false
             if trimmed.isEmpty {
                 flush()
                 index += 1
@@ -811,8 +817,9 @@ private enum MarkdownReader {
             // Indented four spaces or more, outside a list, a line starts nothing else, whatever it looks like: it's code,
             // or more of the paragraph above it.
             if itemIndents.isEmpty, indent >= 4 {
-                if !pending.isEmpty {
+                if continuing {
                     pending.append(Self.unindented(line))
+                    paragraphOpen = true
                     index += 1
                     continue
                 }
@@ -920,12 +927,13 @@ private enum MarkdownReader {
             }
             if let match = trimmed.wholeMatch(of: /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+["'(][^)]*["')])?\s*\)/) {
                 // Like a paragraph: in the list items it's indented into, and after the lists it isn't, unless it goes on
-                // with the paragraph above.
-                if pending.isEmpty { closeLists(at: indent) }
+                // with the paragraph above. What follows can go on with it.
+                if !continuing { closeLists(at: indent) }
                 flush()
                 let url = RichText.webLink(String(match.2))
                 let alt = String(match.1).trimmingCharacters(in: .whitespaces)
                 blocks.append(.image(alt: alt.isEmpty ? RichText.fileName(of: url) ?? "Image" : alt, url: url))
+                paragraphOpen = true
                 index += 1
                 continue
             }
@@ -964,13 +972,15 @@ private enum MarkdownReader {
                 }
                 pendingKind = .listItem(marker, depth: depth)
                 pending = [content]
+                paragraphOpen = true
                 index += 1
                 continue
             }
             // A new paragraph is in the list items it's indented into, and after the lists it isn't; a line that goes on
             // with the paragraph above is in what that is in, however it's indented, as CommonMark has it.
-            if pending.isEmpty { closeLists(at: indent) }
+            if !continuing { closeLists(at: indent) }
             pending.append(Self.unindented(line))
+            paragraphOpen = true
             index += 1
         }
         flush()
