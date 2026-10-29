@@ -33,10 +33,20 @@ public enum PullRequestStory {
         if let merge = snapshot.merge { runs.append(run(merge)) }
         // Who sent it to you in a chat, and in which app, stays on this Mac: what's shared says what the pull request says.
         let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me) } ?? sharedStatus(snapshot) : nil
+        let sentence = sentence(of: snapshot)
         return ItemStory(
-            sentence: sentence(of: snapshot), sharedSentence: shared, date: snapshot.since, facts: facts, more: more,
-            runs: runs.sorted(by: ItemStory.Run.showsFirst)
+            sentence: sentence, sharedSentence: shared, date: snapshot.since, facts: withoutApprovals(facts, saidIn: sentence),
+            more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst)
         )
+    }
+
+    /// The facts but its reviewers, when all they say is who approved it, which its sentence says already: "Ready to
+    /// complete: Approved by Priya Shah, Chen Wei".
+    static func withoutApprovals(_ facts: [ItemStory.Fact], saidIn sentence: String) -> [ItemStory.Fact] {
+        guard sentence.contains("Approved by") else { return facts }
+        return facts.filter { fact in
+            !(fact.label == "Reviewers" && fact.value.hasPrefix("Approved by") && !fact.value.contains(" · "))
+        }
     }
 
     /// Where one of your pull requests stands, in a word, to share outside this Mac when its row is there because someone

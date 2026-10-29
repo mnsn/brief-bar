@@ -99,8 +99,10 @@ import Testing
 
         // One of your pull requests: all that's read of it, with the build that ran on it.
         let coupon = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4091)))
-        #expect(coupon.sentence.hasPrefix("Ready to complete"))
-        #expect(coupon.facts.first { $0.label == "Reviewers" }?.value == "Approved by Chen Wei and Priya Shah")
+        #expect(coupon.sentence.hasPrefix("Ready to complete: Approved by"))
+        // Which its sentence says, once.
+        #expect(!coupon.facts.contains { $0.label == "Reviewers" })
+        #expect(coupon.facts.first?.label == "Comments")
         #expect(coupon.runs.map(\.name) == ["payments-api CI"])
         #expect(coupon.runs.first?.state == .done)
         // A teammate's, which the lists don't show: what the pull request says itself.

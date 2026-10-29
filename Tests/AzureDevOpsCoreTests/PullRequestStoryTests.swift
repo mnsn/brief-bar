@@ -201,11 +201,29 @@ import BriefBarCore
             Reviewer(person: People.sam, vote: .approved), Reviewer(person: People.priya, vote: .approvedWithSuggestions),
             Reviewer(person: team, vote: .approved, isGroup: true), Reviewer(person: People.alex, vote: .none),
         ])
-        let alone = PullRequestStory.mine(try snapshot(record(pr)), record: nil)
+        var row = try snapshot(record(pr))
+        // Its row names them already.
+        #expect(PullRequestStory.mine(row, record: nil).sentence.contains("Approved by Sam Rivera, Priya Shah"))
+        #expect(PullRequestStory.mine(row, record: nil).facts.isEmpty)
+        // A row that says something else.
+        row.headline = "Sam Rivera replied"
+        row.detail = "Could we cap it?"
+        let alone = PullRequestStory.mine(row, record: nil)
         #expect(alone.facts == [ItemStory.Fact("Reviewers", "Approved by Sam Rivera and Priya Shah")])
         #expect(alone.runs.isEmpty)
 
         #expect(PullRequestStory.mine(try snapshot(record(makePR())), record: nil).facts.isEmpty)
+    }
+
+    @Test func approvalsItsSentenceSaysArentSaidAgain() {
+        let approved = ItemStory.Fact("Reviewers", "Approved by Chen Wei and Priya Shah")
+        let comments = ItemStory.Fact("Comments", "No open threads")
+        #expect(PullRequestStory.withoutApprovals([approved, comments], saidIn: "Ready to complete: Approved by Priya Shah, Chen Wei")
+            == [comments])
+        // What the sentence doesn't say stays: a vote that isn't an approval, or approvals it doesn't name.
+        let mixed = ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on Alex Kim (required)")
+        #expect(PullRequestStory.withoutApprovals([mixed], saidIn: "Waiting for reviewers: Approved by Priya Shah") == [mixed])
+        #expect(PullRequestStory.withoutApprovals([approved], saidIn: "Build failed") == [approved])
     }
 
     @Test func yourOwnHasNoAuthor() throws {
