@@ -1,6 +1,5 @@
 import BriefBarCore
 import CopilotCore
-import Darwin
 import Foundation
 
 /// How a task sent to Copilot stands.
@@ -170,84 +169,12 @@ public struct RunStatus: Sendable, Equatable {
     }
 }
 
-/// Reads a run's files without following a symbolic link: they're in folders any program running as you can write to,
-/// and BriefBar may have Full Disk Access, which such a link would hand to whoever made it.
-public enum LocalFile {
-    /// The end of a regular file, up to `maxBytes`; nil for a link, a folder, or a file that isn't there.
-    public static func tail(of url: URL, maxBytes: Int) -> Data? {
-        tail(descriptor: open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK), maxBytes: maxBytes)
-    }
-
-    /// The end of a file below a folder, opened without following a symbolic link below it (`openFile(below:_:)`): at
-    /// most `maxBytes`; nil unless it's a regular file.
-    public static func tail(below root: URL, _ components: [String], maxBytes: Int) -> Data? {
-        tail(descriptor: openFile(below: root, components), maxBytes: maxBytes)
-    }
-
-    /// Opens a file below a folder, read-only, without following a symbolic link below it: neither the file nor any
-    /// folder on the way to it may be one, so it can't lead out of the folder, which may be one itself, as `~/.copilot`
-    /// can. Each component is a single name, never `..`. -1 when it can't be opened so.
-    public static func openFile(below root: URL, _ components: [String]) -> Int32 {
-        guard let name = components.last,
-              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") })
-        else { return -1 }
-        var folder = open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        for component in components.dropLast() where folder >= 0 {
-            let next = openat(folder, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            close(folder)
-            folder = next
-        }
-        guard folder >= 0 else { return -1 }
-        defer { close(folder) }
-        return openat(folder, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-    }
-
-    private static func tail(descriptor: Int32, maxBytes: Int) -> Data? {
-        guard descriptor >= 0 else { return nil }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
-        let size = UInt64(max(info.st_size, 0))
-        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
-        guard (try? handle.seek(toOffset: start)) != nil else { return nil }
-        return try? handle.read(upToCount: Int(size - start)) ?? Data()
-    }
-
-    /// Whether the path is a symbolic link.
-    public static func isLink(_ url: URL) -> Bool {
-        var info = stat()
-        return lstat(url.path, &info) == 0 && info.st_mode & S_IFMT == S_IFLNK
-    }
-}
-
 /// What Copilot said at the end of a run, from its session log.
 public enum RunTranscript {
     /// The summary it called the task done with, and its last message to you.
     public static func lastWords(events: URL, maxBytes: Int = 4 << 20) -> (summary: String?, message: String?) {
-        guard let data = LocalFile.tail(of: events, maxBytes: maxBytes) else { return (nil, nil) }
-        var summary: String?
-        var message: String?
-        for line in data.split(separator: UInt8(ascii: "\n")).reversed() {
-            if summary == nil, line.starts(with: Self.taskComplete) {
-                summary = text(line, key: "summary")
-            } else if message == nil, line.starts(with: Self.assistantMessage) {
-                message = text(line, key: "content", mainAgentOnly: true)
-            }
-            if summary != nil && message != nil { break }
-        }
-        return (summary, message)
-    }
-
-    private static let taskComplete = Data(#"{"type":"session.task_complete""#.utf8)
-    private static let assistantMessage = Data(#"{"type":"assistant.message""#.utf8)
-
-    private static func text(_ line: Data, key: String, mainAgentOnly: Bool = false) -> String? {
-        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let data = object["data"] as? [String: Any]
-        else { return nil }
-        if mainAgentOnly, data["parentToolCallId"] is String || object["agentId"] is String { return nil }
-        let value = (data[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
+        let words = SessionTranscript.lastWords(events: events, maxBytes: maxBytes)
+        return (words.summary?.text, words.message?.text)
     }
 
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the

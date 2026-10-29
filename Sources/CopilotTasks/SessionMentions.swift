@@ -1,3 +1,4 @@
+import BriefBarCore
 import Darwin
 import Foundation
 
