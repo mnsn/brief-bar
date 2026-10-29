@@ -1,8 +1,9 @@
 name: CI
 
 # On pushes to main that change more than docs, on pull requests, and when started by hand. Builds and tests on
-# the oldest supported macOS, whose Xcode 16 SDK has no FoundationModels, and the current one, packages the
-# Apple silicon app and signs its update the way a release does, then runs the package on macOS 15.
+# the current macOS, packages the Apple silicon app and signs its update the way a release does. Only on main does
+# it also build and test on the oldest supported macOS, whose Xcode 16 SDK has no FoundationModels, and run the
+# package there, so a pull request waits for one runner instead of three.
 on:
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
 permissions:
   contents: read
 
+# A new run cancels the one in progress on the same pull request or branch, main included.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-26]
+        os: ${{ fromJSON(github.ref == 'refs/heads/main' && '["macos-15", "macos-26"]' || '["macos-26"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,7 +56,7 @@ jobs:
       - name: Check the demo data
         run: make demo-check
 
-      # On both versions of macOS, since it's macOS that enforces what keeps the keys safe.
+      # On both versions of macOS on main, since it's macOS that enforces what keeps the keys safe.
       - name: Check the signing keys' protection
         run: make signing-key-check
 
@@ -95,6 +97,8 @@ jobs:
   run-package:
     name: Run the package (macos-15)
     needs: build
+    # On main only, like the macOS 15 build; pull requests skip it.
+    if: github.ref == 'refs/heads/main'
     # The oldest supported macOS, on Apple silicon.
     runs-on: macos-15
     timeout-minutes: 15
