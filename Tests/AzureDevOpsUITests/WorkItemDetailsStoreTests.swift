@@ -554,6 +554,46 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(SprintPage.DetailsLayout(width: 700, showsDetails: true).panelWidth == 330)
     }
 
+    @Test func theDetailsAreAsWideAsYouMakeThemWhereThereIsRoom() {
+        #expect(SprintPage.DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 640).panelWidth == 640)
+        // Never narrower than 330 points, and the board keeps the room it has on the narrowest page that shows the details
+        // beside it.
+        #expect(SprintPage.DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 100).panelWidth == 330)
+        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: 2_000).panelWidth == 630)
+        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true).panelWidths == 330...630)
+        // Where nothing fits but the narrowest details, they can't be resized.
+        #expect(SprintPage.DetailsLayout(width: 700, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
+        #expect(SprintPage.DetailsLayout(width: 560, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
+        // A width that isn't one is the usual width.
+        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .nan).panelWidth == 400)
+        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .infinity).panelWidth == 400)
+
+        // Dragging the edge to the left widens them, to the right narrows them, as far as they go.
+        let layout = SprintPage.DetailsLayout(width: 1_000, showsDetails: true)
+        #expect(layout.panelWidth(draggedBy: -100) == 500)
+        #expect(layout.panelWidth(draggedBy: 50) == 350)
+        #expect(layout.panelWidth(draggedBy: -1_000) == 630)
+        #expect(layout.panelWidth(draggedBy: 1_000) == 330)
+        #expect(layout.panelWidth(nearest: 450) == 450)
+    }
+
+    @Test func keepsHowWideYouMadeTheDetails() {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.sprintDetailsWidth == nil)
+        settings.sprintDetailsWidth = 620
+        #expect(AppSettings(defaults: defaults).sprintDetailsWidth == 620)
+        // Their usual width again.
+        settings.sprintDetailsWidth = nil
+        #expect(defaults.object(forKey: SettingsKey.sprintDetailsWidth) == nil)
+        #expect(AppSettings(defaults: defaults).sprintDetailsWidth == nil)
+        // Anything else in its place is their usual width.
+        for odd: Any in [Double.nan, Double.infinity, -40.0, 0.0, "wide"] {
+            defaults.set(odd, forKey: SettingsKey.sprintDetailsWidth)
+            #expect(AppSettings(defaults: defaults).sprintDetailsWidth == nil)
+        }
+    }
+
     @Test func saysWhatWentWrong() {
         #expect(WorkItemDetailsStore.message(for: .notFound).contains("can't find"))
         #expect(WorkItemDetailsStore.message(for: .forbidden) == "You don't have access to this work item.")

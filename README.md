@@ -380,8 +380,11 @@ linked to it, leading with what its row doesn't say; **Show More** shows the res
 page. Widgets never show one.
 
 **Open in Azure DevOps** opens the work item there, to change it; right-clicking it on the board does
-too. In a narrow window the details cover the board, until **✕** or Esc closes them. Clicking one of
-your work items in the Sprint list or widget opens its details here, in BriefBar's window.
+too. Drag the details' left edge to make them wider, to read a long description or summary, or
+narrower again: BriefBar keeps the width, as far as the window has room for it beside the board, and
+double-clicking the edge brings back the usual one. In a narrow window the details cover the board,
+until **✕** or Esc closes them. Clicking one of your work items in the Sprint list or widget opens its
+details here, in BriefBar's window.
 
 **Pipelines** shows the pipelines that ran after your merges, then the pipelines you pin, from any of
 your projects: how each one's latest run is going stage by stage, where it failed, and how its recent

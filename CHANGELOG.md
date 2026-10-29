@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Make a work item's details wider.** On the Sprint page, drag the left edge of a work item's
+  details to make them wider, to read a long description or summary, or narrower again. BriefBar
+  keeps the width you choose, as far as the window has room for it beside the board; double-click
+  the edge for the usual width.
+
 ## 0.9.0 - 2026-10-29
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's

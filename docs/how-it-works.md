@@ -1191,8 +1191,12 @@ widget and the menu bar, is your tasks, and your stories and bugs without tasks,
 
 **A work item's details.** A click on a story, bug or task shows its details beside the board, or over
 it when the page is narrower than 700 points (`WorkItemDetailsStore`, `WorkItemDetailsPanel`): what
-the sprint knows of it at once, then what's read of it (`WorkItemDetailsReader`). The work item comes
-with all its fields and its links, and its comments at the same time, through its project: when the
+the sprint knows of it at once, then what's read of it (`WorkItemDetailsReader`). Beside the board,
+they're 40% of the page, from 330 to 480 points, until you drag their left edge
+(`SprintPage.DetailsLayout`): then they're as wide as you made them, from 330 points to as wide as
+leaves the board the room it has on a 700-point page, and the width is kept in the preferences
+(`ado.sprintDetailsWidth`) until a double-click on the edge brings back the usual one. The work item
+comes with all its fields and its links, and its comments at the same time, through its project: when the
 sprint doesn't know its project, its comments are read after it, and when it moved to another
 project, they're read again through that one. Then one request reads what the work items it links to
 are. A work item that can't be read says why, with **Sign In…** when that's the reason; comments that
