@@ -42,7 +42,8 @@ make signing-key-check  # check what keeps signing keys safe, in throwaway keych
 make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions
 make update-rehearsal   # install an update through the updater, in copies of build/BriefBar.app
 make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
-make screenshots        # render the README's pictures from the demo data
+make screenshots        # render the README's pictures from the demo data, and its tour if ffmpeg is installed
+make readme-tour        # redraw the README's animated tour from those pictures (brew install ffmpeg)
 make app                # build BriefBar.app into ./build, signed ad hoc
 make install            # build the app, copy it to ~/Applications and open it
 make signing-identity   # optional: a certificate that builds are then signed with, to keep Full Disk Access
@@ -293,7 +294,7 @@ BriefBar with, but each build needs Full Disk Access again (see above). To keep 
 `make signing-identity` creates **BriefBar Signing** in your login keychain, with a key that no app may
 use without asking and that can't be exported. Each build then asks for your login password twice,
 for the updater and the app: click **Allow** only while your build is signing, never **Always Allow**
-([why](README.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
+([why](docs/user-guide.md#keeping-full-disk-access-across-rebuilds)). `make app` refuses to sign with a key
 that some app may use without asking, signs with the certificate's SHA-1 rather than its name, and
 checks the signature's certificate afterwards. `scripts/make-signing-identity.sh --check` reads the
 key's protection, `--replace` makes a new certificate and `--delete` goes back to ad hoc.

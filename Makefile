@@ -1,4 +1,4 @@
-.PHONY: build test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots icon signing-identity pppc-profile clean
+.PHONY: build test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -14,9 +14,13 @@ DEMO_ENV := BRIEFBAR_TEAMS_DB="$(DEMO_DIR)/teams/db2/db" BRIEFBAR_TEAMS_STATE_DI
 BRIEFBAR = $(shell swift build --arch arm64 --show-bin-path)/BriefBar
 SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combined-light menubar-combined-dark \
 	menubar-by-state-light menubar-by-state-dark widget-all-medium-light widget-all-medium-dark
-# The window's pictures, as JPEG: its translucent background would make PNGs several times larger.
+# Window and detail pictures, as JPEG: their backgrounds would make PNGs several times larger.
 WINDOW_SHOTS := window-overview-light window-overview-dark \
-	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark
+	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark \
+	azureDevOps-sprint-details-light azureDevOps-sprint-details-dark \
+	azureDevOps-sprint-deep-page-light azureDevOps-sprint-deep-page-dark \
+	rows-summary-pull-requests-light rows-summary-pull-requests-dark \
+	azureDevOps-copilot-composer-light azureDevOps-copilot-composer-dark
 
 build:
 	swift build --arch arm64
@@ -109,13 +113,19 @@ demo-check: $(if $(filter command line,$(origin BRIEFBAR)),,build) demo-data
 render: build
 	"$(BRIEFBAR)" --render render $(ARGS)
 
-# Renders the README's pictures from the demo data, with Teams' summaries if Apple Intelligence is on.
+# Renders the README's pictures from the demo data, with Teams' summaries if Apple Intelligence is on, and its
+# animated tour if ffmpeg is installed.
 screenshots: build demo-data
 	rm -rf build/screenshots
 	$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots
 	mkdir -p docs/images
 	for name in $(SCREENSHOTS); do cp build/screenshots/$$name.png docs/images/; done
 	for name in $(WINDOW_SHOTS); do sips -s format jpeg -s formatOptions 88 build/screenshots/$$name.png --out docs/images/$$name.jpg >/dev/null; done
+	@if command -v ffmpeg >/dev/null; then $(MAKE) readme-tour; else echo "Skipped the README's tour: brew install ffmpeg, then make readme-tour."; fi
+
+# The README's animated tour, in light and dark, from the pictures make screenshots renders. Needs ffmpeg.
+readme-tour:
+	swift scripts/make-readme-tour.swift build/screenshots docs/images build/readme-tour
 
 icon:
 	swift scripts/make-icon.swift build/AppIcon.iconset
