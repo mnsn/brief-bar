@@ -10,6 +10,7 @@ import Testing
 @Suite struct StorySummariesTests {
     private let workItem = ItemRef.workItem(organization: "contoso", id: 5110)
     private let pullRequest = ItemRef.pullRequest(organization: "contoso", number: 4091)
+    private let sentTask = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02")!
 
     /// What the writer was asked.
     private final class Asked: @unchecked Sendable {
@@ -367,6 +368,102 @@ import Testing
                        color: .red, state: .failing, status: "Failing"),
         ])
         #expect(summaries.whatChanged(workItem) == "!4091 changed")
+    }
+
+    /// What's told of each, which a test changes.
+    private final class Told {
+        var stories: [ItemRef: ItemStory] = [:]
+    }
+
+    /// What a summary of the work item says changed since, once what's told of what it summed up goes from `then` to `now`,
+    /// as it's told again a minute on; nil when nothing did. A pull request and a task sent to Copilot are linked to it.
+    private func whatChanged(then: [ItemRef: ItemStory], now: [ItemRef: ItemStory]) async -> String? {
+        let (links, stories, summaries) = hub()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        stories.now = { clock }
+        let items = [
+            LinkedItem(ref: workItem, label: "5110", title: "Coupon totals round down", symbol: "ladybug", color: .red, status: "Active"),
+            LinkedItem(ref: pullRequest, label: "!4091", title: "Fix the coupon rounding error", symbol: "arrow.triangle.pull",
+                       color: .red, state: .failing, status: "Build failed"),
+            LinkedItem(ref: sentTask, label: "5112: Round half up", title: "Copilot: 5112: Round half up", symbol: "paperplane.fill",
+                       color: .blue, state: .running, status: "Working: Run the cart tests", sent: SentToCopilot(from: workItem)),
+        ]
+        links.publish(.azureDevOps, links: items.dropFirst().compactMap { ItemLink(workItem, $0.ref, origin: .azureDevOps) }, items: items)
+        let told = Told()
+        told.stories = then
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { ref in told.stories[ref] }
+        summaries.write = writer(Asked())
+        await summaries.summarizeAndWait(workItem)
+        guard case .written? = summaries.state(for: workItem) else {
+            Issue.record("Not written")
+            return nil
+        }
+        #expect(summaries.whatChanged(workItem) == nil)
+
+        told.stories = now
+        clock += 61
+        await stories.tell(items)
+        for (ref, story) in now {
+            #expect(stories.story(for: ref) == story)
+        }
+        return summaries.whatChanged(workItem)
+    }
+
+    @Test func anEditedDescriptionMakesItOutOfDate() async {
+        let then = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])
+        var now = then
+        now.notes = [ItemStory.Fact("Description", "Totals round down when a coupon takes off a percentage.")]
+        #expect(await whatChanged(then: [workItem: then], now: [workItem: now]) == "5110 changed")
+    }
+
+    @Test func aNewCommentMakesItOutOfDate() async {
+        let then = ItemStory(sentence: "Active", notes: [
+            ItemStory.Fact("Description", "Totals round down."),
+            ItemStory.Fact("Latest comments", "Priya Shah: Only totals with half a cent are off."),
+        ])
+        var now = then
+        now.notes[1].value = "Sam Rivera: Finance wants them rounded half up instead.\nPriya Shah: Only totals with half a cent are off."
+        #expect(await whatChanged(then: [workItem: then], now: [workItem: now]) == "5110 changed")
+    }
+
+    @Test func anotherErrorInAFailedRunMakesItOutOfDate() async {
+        func failed(_ error: String) -> ItemStory {
+            ItemStory(sentence: "Build failed: payments-api CI", runs: [
+                ItemStory.Run(name: "payments-api CI", state: .failing, status: "Failed at Run unit tests", detail: error),
+            ])
+        }
+        let then = failed("2 tests failed in CouponTests.")
+        let now = failed("1 test failed in CurrencyTests.")
+        #expect(await whatChanged(then: [pullRequest: then], now: [pullRequest: now]) == "!4091 changed")
+    }
+
+    /// Copilot's checkpoints, corrected: as many as before, but one of them, or what's been done or what's next, says
+    /// something else.
+    @Test func whatCopilotRecordedMakesItOutOfDateWithAsManyCheckpoints() async {
+        let then = ItemStory(sentence: "Working: Run the cart tests", account: ItemStory.Account(
+            source: "Copilot's notes", milestones: ["Rounding reproduced", "Rounding fixed"], overview: "Totals round half up now.",
+            done: ["Rounded half up in CouponService.Apply"], next: ["Run the cart tests"], lastMessage: "Running the cart tests."
+        ))
+        var milestone = then
+        milestone.account?.milestones[1] = "Rounding fixed for positive totals"
+        var overview = then
+        overview.account?.overview = "Totals round half up now, but negative ones still round down."
+        var done = then
+        done.account?.done = ["Rounded half up in CouponService.Apply", "Added a test for negative totals"]
+        var next = then
+        next.account?.next = ["Round negative totals too"]
+        for now in [milestone, overview, done, next] {
+            #expect(now.account?.milestoneCount == then.account?.milestoneCount)
+            #expect(await whatChanged(then: [sentTask: then], now: [sentTask: now]) == "“5112: Round half up” changed")
+        }
+    }
+
+    /// A work item has its notes only while its details were read, which those of another may have taken the place of.
+    @Test func notesKnownOnlyThenOrOnlyNowDontMakeItOutOfDate() async {
+        let read = ItemStory(sentence: "Active", notes: [ItemStory.Fact("Description", "Totals round down.")])
+        let unread = ItemStory(sentence: "Active")
+        #expect(await whatChanged(then: [workItem: read], now: [workItem: unread]) == nil)
+        #expect(await whatChanged(then: [workItem: unread], now: [workItem: read]) == nil)
     }
 
     /// What the Copilot CLI was looked for with.

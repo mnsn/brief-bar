@@ -76,23 +76,30 @@ package final class StorySummaries: ObservableObject {
         package var label: String
         /// What its row says: its state, its title and its status.
         package var row: String
-        /// What its story said: where it stands, its facts, its runs' names and how they stand, and how many checkpoints
-        /// Copilot recorded and what it said last; nil when its story wasn't known.
+        /// What its story said, as the prompt has it but for its notes: where it stands, its facts, its runs and the first
+        /// error of one that failed, and what Copilot recorded of its work; nil when its story wasn't known.
         package var story: String?
+        /// Its story's notes, as the prompt has them, such as a work item's description and latest comments; nil when it
+        /// had none.
+        package var notes: String?
 
-        package init(ref: ItemRef, label: String, row: String, story: String?) {
+        package init(ref: ItemRef, label: String, row: String, story: String?, notes: String? = nil) {
             self.ref = ref
             self.label = label
             self.row = row
             self.story = story
+            self.notes = notes
         }
 
-        /// Whether it says something else now: its row, or its story, when it's known both then and now. A story known only
-        /// then or only now, such as one that's been forgotten since, says nothing either way.
+        /// Whether it says something else now: its row; or its story, when it's known both then and now, with its notes
+        /// when it had some both then and now. A story known only then or only now, such as one that's been forgotten
+        /// since, says nothing either way, and so do notes: a work item has them only while its details were read.
         func differs(from now: Input) -> Bool {
             if row != now.row { return true }
-            guard let then = story, let now = now.story else { return false }
-            return then != now
+            guard let story, let current = now.story else { return false }
+            if story != current { return true }
+            guard let notes, let currentNotes = now.notes else { return false }
+            return notes != currentNotes
         }
     }
 
@@ -325,20 +332,20 @@ package final class StorySummaries: ObservableObject {
     }
 
     /// What a thing says, as the prompt has it, to tell when that changes: its row's state, title and status, as it may be
-    /// shared; and its story's sentence, facts, runs' names and how they stand, and how many checkpoints Copilot recorded
-    /// and what it said last. No date goes in, nor do its notes or a failed run's error.
+    /// shared; its story's sentence, as it may be shared, and the lines the prompt gives it, its facts, its runs and the
+    /// first error of one that failed, and all Copilot recorded of its work; and its notes apart. No date goes in.
     static func input(_ item: LinkedItem, story: ItemStory?) -> Input {
-        let story = story.map { story in
-            var lines = [story.sentenceToShare]
-            lines += story.facts.map { "\($0.label): \($0.value)" }
-            lines += story.runs.map { "\($0.name): \($0.status)" }
-            if let account = story.account, !account.isEmpty {
-                lines += ["\(account.milestoneCount) checkpoints", account.lastMessage ?? ""]
-            }
-            return lines.joined(separator: "\n")
-        }
         let row = [item.state?.rawValue ?? "", item.title, item.statusToShare ?? ""]
-        return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: story)
+        var told: String?
+        var notes: String?
+        if let story {
+            var withoutNotes = story
+            withoutNotes.notes = []
+            told = ([story.sentenceToShare] + withoutNotes.lines()).joined(separator: "\n")
+            let noted = ItemStory(sentence: "", notes: story.notes).lines()
+            notes = noted.isEmpty ? nil : noted.joined(separator: "\n")
+        }
+        return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes)
     }
 
     /// What a sentence calls it: a work item's or a pull request's number, a session's name in quotes.

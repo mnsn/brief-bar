@@ -487,10 +487,12 @@ a source stops, taking what it told with it; one being written is stopped then, 
 doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
 stop being read, unless the details asked for them too, and a story the details are reading already is waited for
 rather than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state,
-title or status, or what its story says, where it stands, its facts, how its runs stand and how many checkpoints Copilot
-recorded and what it said last (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and
-story say "Working" rather than for how long, which its date says, and a pull request without recent activity says
-just that; and a story that's been forgotten since, a quarter of an hour on, makes no difference until it's told again.
+title or status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a
+failed one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
+(`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
+than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
+been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
+description and comments when they're known only then or only now: its story has them only while its details were read.
 Its caption then says **Out of date**, in orange, with what changed in its tooltip, "!4120 changed", and **Summarize
 Again** on its right; the headline and the next step turn gray. The demo makes summaries up (`DemoSummaries`) and never
 runs Copilot, and `--render` of your own data writes none; the demo's pictures show a summary as it's written, once it
