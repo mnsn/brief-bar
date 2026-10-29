@@ -23,12 +23,16 @@ import Testing
             item(5102, "Task", "Closed", who: robin, hours: 4, parent: 5101), item(5103, "Task", "Active", who: robin, hours: 3, parent: 5101),
             item(5104, "Task", "New", hours: 2.5, parent: 5101),
         ]
-        let told = WorkItemStory.make(story, tasks: tasks)
+        let told = WorkItemStory.make(story, tasks: tasks, taskRuns: [5103: "Working: Run the cart tests"])
         #expect(told.sentence == "Active")
         #expect(told.facts == [
             ItemStory.Fact("Assigned to", "Robin Diaz"), ItemStory.Fact("Tasks", "1 of 3 done"),
             // The hours of the tasks that aren't done.
             ItemStory.Fact("Work", "5.5 h left"),
+            // Each task, in work order, with the work sent to Copilot for it.
+            ItemStory.Fact("Task 5103", "Item 5103: Active · Robin Diaz · 3 h left · Copilot: Working: Run the cart tests"),
+            ItemStory.Fact("Task 5104", "Item 5104: New · Unassigned · 2.5 h left"),
+            ItemStory.Fact("Task 5102", "Item 5102: Closed · Robin Diaz"),
         ])
         #expect(told.more == [ItemStory.Fact("Type", "User Story")])
         #expect(told.notes.isEmpty)

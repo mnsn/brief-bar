@@ -8,7 +8,10 @@ public enum WorkItemStory {
     /// - Parameters:
     ///   - details: what was read when you opened it, if it was.
     ///   - tasks: its tasks in the sprint, for a story or a bug.
-    public static func make(_ item: WorkItem, details: WorkItemDetails? = nil, tasks: [WorkItem] = []) -> ItemStory {
+    ///   - taskRuns: how the work sent to Copilot for each of them stands, by its ID: "Working: Run the cart tests".
+    public static func make(
+        _ item: WorkItem, details: WorkItemDetails? = nil, tasks: [WorkItem] = [], taskRuns: [Int: String] = [:]
+    ) -> ItemStory {
         // Only its own details count.
         let current = details?.key == item.key ? details : nil
         var facts = [ItemStory.Fact("Assigned to", item.assignedTo?.name ?? "Unassigned")]
@@ -18,6 +21,10 @@ public enum WorkItemStory {
         }
         if let remaining = remaining(item, tasks: tasks) {
             facts.append(ItemStory.Fact("Work", "\(hours(remaining)) left"))
+        }
+        // Each task, in work order, with how the work sent to Copilot for it stands.
+        for task in SprintBoard.Row(parent: nil, tasks: tasks).tasksInWorkOrder {
+            facts.append(ItemStory.Fact("Task \(task.id)", self.task(of: task, run: taskRuns[task.id])))
         }
         if let iteration = current?.iterationPath?.split(separator: "\\").last {
             more.append(ItemStory.Fact("Iteration", String(iteration)))
@@ -29,11 +36,20 @@ public enum WorkItemStory {
         }
         let comments = (current?.comments ?? []).prefix(5).compactMap(comment)
         if !comments.isEmpty { notes.append(ItemStory.Fact("Latest comments", comments.joined(separator: "\n"))) }
+
         let reason = current?.reason.flatMap { $0.caseInsensitiveCompare(item.state) == .orderedSame ? nil : $0 }
         return ItemStory(
             sentence: [item.state, reason].compactMap { $0 }.joined(separator: ": "), date: item.changedAt, facts: facts, more: more,
             notes: notes
         )
+    }
+
+    /// "Show saved items under the cart: Active · Robin Diaz · 3 h left · Copilot: Working: Run the cart tests".
+    static func task(of task: WorkItem, run: String?) -> String {
+        var parts = [task.state, task.assignedTo?.name ?? "Unassigned"]
+        if !task.isDone, let left = task.remainingWork, left > 0 { parts.append("\(hours(left)) left") }
+        if let run { parts.append("Copilot: \(run)") }
+        return "\(StoryText.line(task.title, limit: 120)): " + parts.joined(separator: " · ")
     }
 
     /// Its own hours left, or its tasks' that aren't done.

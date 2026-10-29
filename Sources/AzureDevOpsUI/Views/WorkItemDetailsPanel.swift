@@ -296,8 +296,8 @@ struct WorkItemDetailsPanel: View {
     private func content(_ item: WorkItem) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             heading(item)
-            // What Show Links knows, which doesn't wait for the details.
-            WhereItStandsSection(subject: item.linkRef)
+            // What Show Links knows, which doesn't wait for the details; for a task, only once something's linked.
+            WhereItStandsSection(subject: item.linkRef, hidesWhenEmpty: item.type.caseInsensitiveCompare("Task") == .orderedSame)
             if let read = details.details {
                 if let failure = details.failure {
                     Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")

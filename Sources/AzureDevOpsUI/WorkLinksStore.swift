@@ -267,7 +267,10 @@ final class WorkLinksStore {
             let shown = details?.selected.flatMap { $0.linkRef == ref ? $0 : nil }
             guard let item = shown ?? (sprintItems + read.workItems.values).first(where: { $0.linkRef == ref }) else { return nil }
             let tasks = rows.first { $0.parent?.linkRef == ref }?.tasks ?? []
-            return WorkItemStory.make(item, details: details?.details, tasks: tasks)
+            // How the work you sent to Copilot for each stands, without for how long.
+            let runs = copilot.isOn ? Dictionary(tasks.compactMap { task in copilot.latest(for: task).map { (task.id, $0.sentence(now: nil)) } },
+                                                 uniquingKeysWith: { first, _ in first }) : [:]
+            return WorkItemStory.make(item, details: details?.details, tasks: tasks, taskRuns: runs)
         case .pullRequest:
             if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
                 return PullRequestStory.mine(snapshot, record: store.record(for: snapshot.key))

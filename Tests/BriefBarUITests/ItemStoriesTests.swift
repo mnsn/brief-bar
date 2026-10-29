@@ -62,8 +62,9 @@ import Testing
         let told = stories.story(for: session)
         #expect(told?.sentence == "Opened a pull request")
         #expect(told?.facts == [ItemStory.Fact("Sent", "12m ago")])
-        // Copilot's checkpoints say more than the summary a task ended with.
-        #expect(told?.account == checkpoints)
+        // Copilot's checkpoints say more than the report a task ended with, which is what it said last.
+        #expect(told?.account?.milestones == checkpoints.milestones)
+        #expect(told?.account?.lastMessage == "Coupons round half up.")
         // Nobody knows the pull request: there's nothing to tell, and that's told.
         #expect(stories.story(for: pullRequest) == nil)
         #expect(stories.hasTold(pullRequest))

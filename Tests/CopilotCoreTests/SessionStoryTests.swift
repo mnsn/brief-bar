@@ -95,5 +95,16 @@ import Testing
             #expect(merged.account == account)
             #expect(merged.date == t(40))
         }
+
+        // What Copilot printed when the task ended, after its checkpoints, is what it said last; one written before them
+        // isn't.
+        let report = ItemStory.Account(source: "Copilot's report", date: t(40), overview: "Opened pull request 4091.")
+        let ended = ItemStory(sentence: "Finished", account: report)
+        for merged in [ended.merged(with: recorded), recorded.merged(with: ended)] {
+            #expect(merged.account?.milestones == account.milestones)
+            #expect(merged.account?.lastMessage == "Opened pull request 4091.")
+        }
+        let early = ItemStory(sentence: "Finished", account: ItemStory.Account(source: "Copilot's report", date: t(1), overview: "Started."))
+        #expect(early.merged(with: recorded).account == account)
     }
 }

@@ -15,7 +15,7 @@ package struct ItemPageView: View {
     }
 
     package var body: some View {
-        PageContent(ref: ref, links: services.links, stories: services.stories)
+        PageContent(ref: ref, links: services.links, stories: services.stories, summaries: services.summaries)
     }
 
     /// What a page is called where it's named, for VoiceOver: "Pull request 4091", "Copilot session Save items for later".
@@ -29,11 +29,13 @@ package struct ItemPageView: View {
         }
     }
 
-    /// Its crumb in the details' header: "!4091", "Session", "Sent to Copilot".
+    /// Its crumb in the details' header: "!4091", a session's name, or "✈ 5112" for a task sent to Copilot from 5112.
     package static func crumb(of item: LinkedItem) -> String {
         switch item.ref.kind {
         case .pullRequest, .gitHubPullRequest, .workItem: return item.label
-        case .session: return item.sent != nil ? "Sent to Copilot" : "Session"
+        case .session:
+            guard let sent = item.sent else { return item.label }
+            return sent.label.map { "✈ \($0)" } ?? "Sent to Copilot"
         }
     }
 }
@@ -42,6 +44,7 @@ private struct PageContent: View {
     let ref: ItemRef
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
+    @ObservedObject var summaries: StorySummaries
 
     @Environment(\.itemNavigation) private var navigation
     @AccessibilityFocusState private var isTitleFocused: Bool
@@ -57,11 +60,13 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
+            // Its summary, of it and what's linked to it, under what it is.
+            SummaryCard(subject: ref, summaries: summaries, rows: [])
             StoryDetails(
                 item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page,
                 linkFact: linkFact
             )
-            WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Linked", hidesWhenEmpty: true)
+            WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
             if let account = story?.account, !account.isEmpty {
                 StoryNotesSection(item: item, account: account)
             }
@@ -124,9 +129,20 @@ private struct PageContent: View {
                     .font(.system(size: 12.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            StoryActions(item: item)
-                .glassButtonStyle()
-                .controlSize(.small)
+            HStack(spacing: 8) {
+                StoryActions(item: item)
+                    .glassButtonStyle()
+                if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
+                    Button {
+                        summaries.summarize(ref)
+                    } label: {
+                        Label("Summarize with Copilot", systemImage: "sparkles")
+                    }
+                    .glassButtonStyle()
+                    .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
+                }
+            }
+            .controlSize(.small)
         }
         .accessibilityElement(children: .contain)
     }

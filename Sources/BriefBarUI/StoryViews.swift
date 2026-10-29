@@ -11,23 +11,30 @@ package struct WhereItStandsSection: View {
     private let excluding: Set<ItemRef>
     private let title: String
     private let hidesWhenEmpty: Bool
+    private let showsSummary: Bool
 
     @EnvironmentObject private var services: AppServices
 
     /// - Parameters:
     ///   - excluding: what it leaves out, such as, on a page, the work item and the pages you came from.
     ///   - hidesWhenEmpty: whether it shows nothing at all while nothing's linked, as on a page.
-    package init(subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false) {
+    ///   - showsSummary: whether ✨ Summarize with Copilot and its summary are here, rather than, on a page, under its
+    ///     heading.
+    package init(
+        subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false,
+        showsSummary: Bool = true
+    ) {
         self.subject = subject
         self.excluding = excluding
         self.title = title
         self.hidesWhenEmpty = hidesWhenEmpty
+        self.showsSummary = showsSummary
     }
 
     package var body: some View {
         StandingContent(
-            subject: subject, excluding: excluding, title: title, hidesWhenEmpty: hidesWhenEmpty, links: services.links,
-            stories: services.stories, summaries: services.summaries, defaults: services.defaults
+            subject: subject, excluding: excluding, title: title, hidesWhenEmpty: hidesWhenEmpty, showsSummary: showsSummary,
+            links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults
         )
     }
 
@@ -48,7 +55,7 @@ package struct WhereItStandsSection: View {
     }
 
     /// What's linked, each with what's linked to the subject only through it, such as a session on a pull request's
-    /// branch: the group with what needs you most first, then the newest.
+    /// branch, or a task you sent to Copilot from it: the group with what needs you most first, then the newest.
     static func groups(_ connections: [LinkConnection]) -> [StandingGroup] {
         let refs = Set(connections.map(\.item.ref))
         var children: [ItemRef: [LinkConnection]] = [:]
@@ -56,6 +63,8 @@ package struct WhereItStandsSection: View {
         for connection in connections {
             if let via = connection.via?.ref, refs.contains(via) {
                 children[via, default: []].append(connection)
+            } else if let from = connection.item.sent?.from, from != connection.item.ref, refs.contains(from) {
+                children[from, default: []].append(connection)
             } else {
                 leads.append(connection)
             }
@@ -114,14 +123,14 @@ package struct WhereItStandsSection: View {
         }
         let value: String
         if let via = connection.via {
-            value = "Through \(via.label)"
+            value = "To \(what), through \(via.label)"
         } else if let sent = connection.item.sent, sent.from == subject.ref {
             value = "Sent to Copilot from \(what)"
         } else {
             switch connection.origins.first {
             case .azureDevOps?: value = "In Azure DevOps, to \(what)"
             case .copilot?: value = "By Copilot, to \(what)"
-            case .branch?: value = "On the same branch as \(what)"
+            case .branch?: value = subject.ref.kind.isPullRequest ? "On \(what)'s branch" : "On the same branch as \(what)"
             case .you?: value = "By you, to \(what)"
             case nil: value = "To \(what)"
             }
@@ -198,6 +207,7 @@ private struct StandingContent: View {
     let excluding: Set<ItemRef>
     let title: String
     let hidesWhenEmpty: Bool
+    let showsSummary: Bool
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
     @ObservedObject var summaries: StorySummaries
@@ -220,8 +230,8 @@ private struct StandingContent: View {
         let rows = connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }
         if (links.isOn || !isHintHidden) && !(hidesWhenEmpty && groups.isEmpty) {
             VStack(alignment: .leading, spacing: 8) {
-                header(count: connections.count, canSummarize: !groups.isEmpty)
-                if links.isOn {
+                header(count: connections.count, canSummarize: showsSummary && !groups.isEmpty)
+                if links.isOn, showsSummary {
                     SummaryCard(subject: subject, summaries: summaries, rows: rows)
                 }
                 if !links.isOn {
@@ -675,13 +685,24 @@ struct StoryDetails: View {
 
     private var showsAll: Bool { mode == .page || showsMore }
     private var account: ItemStory.Account? { story?.account.flatMap { $0.isEmpty ? nil : $0 } }
-    /// What it said last comes first while it's at work or waits for you: it's what it's doing now.
-    private var lastWordsFirst: Bool { Self.lastWordsFirst(item) }
     private static let previewRuns = 3
     private static let previewNext = 3
 
-    static func lastWordsFirst(_ item: LinkedItem) -> Bool {
+    /// Whether it's at work or waits for you.
+    static func isActive(_ item: LinkedItem) -> Bool {
         item.state == .needsYou || item.state == .running
+    }
+
+    /// What it said after its last checkpoint comes first: while it's at work or waits for you, it's what it's doing now;
+    /// once it stopped, how it ended.
+    static func lastWordsCaption(_ item: LinkedItem) -> String {
+        isActive(item) ? "What it said last" : "How it ended"
+    }
+
+    /// Once it stopped, saying something after its last checkpoint, that checkpoint's next steps are what it planned then,
+    /// not what's next.
+    static func nextIsStale(_ item: LinkedItem, _ account: ItemStory.Account) -> Bool {
+        !isActive(item) && account.lastMessage != nil
     }
 
     private var hasMore: Bool {
@@ -689,7 +710,7 @@ struct StoryDetails: View {
         let account = self.account
         return !story.more.isEmpty || story.runs.count > Self.previewRuns || !(account?.done.isEmpty ?? true)
             || (account?.milestones.count ?? 0) > 1 || (account?.next.count ?? 0) > Self.previewNext
-            || (account?.lastMessage != nil && !lastWordsFirst)
+            || (account.map { Self.nextIsStale(item, $0) && !$0.next.isEmpty } ?? false)
     }
 
     var body: some View {
@@ -703,8 +724,8 @@ struct StoryDetails: View {
         VStack(alignment: .leading, spacing: 10) {
             actions
             if let story {
-                if lastWordsFirst, let last = account?.lastMessage {
-                    CopilotWords(caption: "What it said last") {
+                if let last = account?.lastMessage {
+                    CopilotWords(caption: Self.lastWordsCaption(item)) {
                         ClampedText(text: last, lines: 2)
                     }
                 }
@@ -734,8 +755,8 @@ struct StoryDetails: View {
     private var page: some View {
         VStack(alignment: .leading, spacing: 20) {
             if let story {
-                if lastWordsFirst, let last = account?.lastMessage {
-                    CopilotWords(caption: "What it said last") {
+                if let last = account?.lastMessage {
+                    CopilotWords(caption: Self.lastWordsCaption(item)) {
                         ClampedText(text: last, lines: 4)
                     }
                 }
@@ -745,7 +766,7 @@ struct StoryDetails: View {
                 }
                 if !story.runs.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        PageSectionHeader(title: story.runs.count == 1 ? "Pipeline" : "Pipelines", count: story.runs.count)
+                        PageSectionHeader(title: "Pipelines", count: story.runs.count)
                         RunsView(runs: story.runs, showsCaption: false)
                     }
                 }
@@ -803,21 +824,19 @@ struct StoryDetails: View {
                 if let overview = account.overview, !overview.isEmpty {
                     ClampedText(text: overview, lines: 3)
                 }
-                if !account.next.isEmpty {
+                let stale = Self.nextIsStale(item, account)
+                if !account.next.isEmpty, !stale {
                     StoryList(title: "What's next", lines: showsAll ? account.next : Array(account.next.prefix(Self.previewNext)), symbol: "arrow.right")
                 }
                 if showsAll {
+                    if !account.next.isEmpty, stale {
+                        StoryList(title: "Planned at its last checkpoint", lines: account.next, symbol: "arrow.right")
+                    }
                     if !account.done.isEmpty {
                         StoryList(title: "What it did", lines: account.done, symbol: "checkmark")
                     }
                     if account.milestones.count > 1 {
                         Milestones(account: account)
-                    }
-                    if !lastWordsFirst, let last = account.lastMessage {
-                        VStack(alignment: .leading, spacing: 3) {
-                            StoryCaption(text: "What it said last")
-                            ClampedText(text: last, lines: 4)
-                        }
                     }
                 }
             }
@@ -857,11 +876,13 @@ struct StoryNotesSection: View {
 
     private static let shownNext = 3
 
-    /// What it said last shows at the top of the page while it's at work or waits for you.
-    private var lastMessage: String? { StoryDetails.lastWordsFirst(item) ? nil : account.lastMessage }
+    /// What it said after its last checkpoint shows at the top of the page; once it stopped, that checkpoint's next steps
+    /// are what it planned then.
+    private var nextIsStale: Bool { StoryDetails.nextIsStale(item, account) }
 
     private var hasMore: Bool {
-        account.next.count > Self.shownNext || !account.done.isEmpty || account.milestones.count > 1 || lastMessage != nil
+        (nextIsStale ? !account.next.isEmpty : account.next.count > Self.shownNext) || !account.done.isEmpty
+            || account.milestones.count > 1
     }
 
     var body: some View {
@@ -872,22 +893,19 @@ struct StoryNotesSection: View {
                     if let overview = account.overview, !overview.isEmpty {
                         ClampedText(text: overview, lines: 3)
                     }
-                    if !account.next.isEmpty {
+                    if !account.next.isEmpty, !nextIsStale {
                         let next = showsAll ? account.next : Array(account.next.prefix(Self.shownNext))
                         StoryList(title: "What's next", lines: next, symbol: "arrow.right")
                     }
                     if showsAll {
+                        if !account.next.isEmpty, nextIsStale {
+                            StoryList(title: "Planned at its last checkpoint", lines: account.next, symbol: "arrow.right")
+                        }
                         if !account.done.isEmpty {
                             StoryList(title: "What it did", lines: account.done, symbol: "checkmark")
                         }
                         if account.milestones.count > 1 {
                             Milestones(account: account)
-                        }
-                        if let lastMessage {
-                            VStack(alignment: .leading, spacing: 3) {
-                                StoryCaption(text: "What it said last")
-                                ClampedText(text: lastMessage, lines: 4)
-                            }
                         }
                     }
                     if hasMore {

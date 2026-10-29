@@ -232,13 +232,18 @@ package struct SummaryCard: View {
                 Text(" · ")
                     .fixedSize()
                 Text("Out of date")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Self.outOfDate)
                     .fixedSize()
                     .help("Since it was written: \(changed).")
             }
         }
         .help(written)
     }
+
+    /// "Out of date", in orange that reads on the card's tint: darker in light mode.
+    static let outOfDate = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .systemOrange : NSColor(srgbRed: 0.66, green: 0.26, blue: 0, alpha: 1)
+    })
 
     /// Summarize Again, while it's out of date.
     private var againButton: some View {

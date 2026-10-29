@@ -144,8 +144,16 @@ public struct ItemStory: Sendable, Equatable {
         let runs = other.runs.filter { run in !merged.runs.contains(run) }
         merged.runs += runs
         if let account = other.account, !account.isEmpty {
-            let mine = merged.account.flatMap { $0.isEmpty ? nil : $0 }
-            if mine == nil || (mine?.milestones.isEmpty == true && !account.milestones.isEmpty) { merged.account = account }
+            switch merged.account.flatMap({ $0.isEmpty ? nil : $0 }) {
+            case nil:
+                merged.account = account
+            case let mine? where mine.milestones.isEmpty && !account.milestones.isEmpty:
+                merged.account = account.ending(with: mine)
+            case let mine? where !mine.milestones.isEmpty && account.milestones.isEmpty:
+                merged.account = mine.ending(with: account)
+            default:
+                break
+            }
         }
         merged.notes += other.notes.filter { note in !self.notes.contains { $0.label == note.label } }
         if let date = other.date { merged.date = max(merged.date ?? date, date) }
@@ -156,6 +164,18 @@ public struct ItemStory: Sendable, Equatable {
     public var isEmpty: Bool {
         sentence.isEmpty && facts.isEmpty && more.isEmpty && runs.isEmpty && (account?.isEmpty ?? true) && notes.isEmpty
             && footnote == nil
+    }
+}
+
+extension ItemStory.Account {
+    /// Its checkpoints, with a report written after them, such as what Copilot printed when a task ended, as what it said
+    /// last, unless it says something later already.
+    func ending(with report: ItemStory.Account) -> ItemStory.Account {
+        guard lastMessage == nil, let words = report.overview ?? report.lastMessage, !words.isEmpty else { return self }
+        if let written = report.date, let checkpoint = date, written < checkpoint { return self }
+        var account = self
+        account.lastMessage = words
+        return account
     }
 }
 

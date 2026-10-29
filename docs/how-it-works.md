@@ -399,16 +399,21 @@ capsule shows it. Widgets' rows show none.
 
 A work item's details start with **Where It Stands** (`WhereItStandsSection` in `Sources/BriefBarUI`): what Show
 Links links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's
-done or ready, then the rest, the newest first in each), and a session linked through a pull request under that pull
-request; four at first, then **Show More**, with a tally of their states once there are five or more. Each row shows
+done or ready, then the rest, the newest first in each), a session linked through a pull request under that pull
+request, and a task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then
+**Show More**, with a tally of their states once there are five or more. A task with nothing linked shows none of it. Each row shows
 its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
 color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
 item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
-its actions; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you
-opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Linked**, what
-else is linked to it, without the work item and the pages you came through (the `trail` of `itemNavigation`), so it
-never leads back; and last what Copilot wrote of a session's work, its overview and what's next, the rest behind
-**Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's. The header says where you
+its actions, with **✨ Summarize with Copilot** and its summary under them; then what Copilot said after its last
+checkpoint, while it's at work or waits for you, or how it ended once it stopped; then all its source knows of it
+(`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you opened it from first, in a card as the work item's
+fields are, and the pipelines that ran on it; then **Also Linked**, what else is linked to it, without the work item
+and the pages you came through (the `trail` of `itemNavigation`), so it never leads back; and last what Copilot wrote of
+a session's work, its overview and what's next, the rest behind **Show All Notes**, set apart by a thin rule, since
+those are Copilot's words, not BriefBar's. Once it stopped, its last checkpoint's next steps are what it planned then,
+behind Show All Notes too. A task's report, what Copilot printed when it ended, is what it said last when it came after
+its checkpoints (`ItemStory.Account.ending(with:)`). The header says where you
 are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it, and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a
 page go back through the pages, then to the work items you came from, each with the pages that showed over it, and
 scroll back to the row you opened; opening a page that shows already goes back to it. A work item on a page is
@@ -450,7 +455,8 @@ or one and its own tasks, as the sprint has them for a story or a bug (`LinkedIt
 has **✨ Summarize with Copilot**, or just **Summarize** where that doesn't fit, while no summary shows; its tooltip says
 where it goes, and that it uses your Copilot plan. Only when you click it, it asks the Copilot CLI for a summary of the
 work item and what's linked to it. Before it asks, the sources tell what they
-know of each, as for the details, the work item's description and latest comments too, and `StorySummaryPrompt` (in
+know of each, as for the details, the work item's description and latest comments too, and each of its tasks, with how
+the work sent to Copilot for it stands, and `StorySummaryPrompt` (in
 `Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
 model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
 first, and at most 14,000 characters. The data starts with your name, as your pull requests have it in Azure DevOps,
@@ -473,7 +479,8 @@ The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Cop
 (`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
 (`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and its right-click and
 Actions menus have **Summarize with Copilot**, then **Summarize Again** and **Close Summary** (`SummarizeMenuItems`). Its
-summary shows under its row (`RowSummary`), in a smaller card, and on its page, being the same one. With nothing linked
+summary shows under its row (`RowSummary`), in a smaller card, and on its page, being the same one; while it shows, what
+it summed up is read again each minute, as for Where It Stands, so it says when it's out of date. With nothing linked
 to it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
 Desktop widgets show none (`offersSummaries`).
 
