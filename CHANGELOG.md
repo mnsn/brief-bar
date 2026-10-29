@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Summarize on your Mac with Apple Intelligence.** In **Settings › General › Summaries**, choose
+  Apple Intelligence or a model through Copilot. Apple Intelligence is the default unless you've
+  already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
+  still start off and run only when you ask. If Apple Intelligence isn't ready or can't summarize
+  an item, BriefBar explains why and never switches to Copilot automatically.
+- **Make the text in BriefBar's windows bigger.** **Text Size in Windows**, in **Settings ›
+  Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
+  descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it
+  smaller. The menu bar's lists, the widgets and Settings keep their size.
+- **Install it with Homebrew.** `brew install --cask mnsn/tap/briefbar` puts BriefBar in your
+  Applications folder, and each release updates the cask. BriefBar still updates itself, and since it
+  isn't notarized, macOS still asks you to allow it the first time you open it.
 - **Make a work item's details wider.** On the Sprint page, drag the left edge of a work item's
   details to make them wider, to read a long description or summary, or narrower again. BriefBar
   keeps the width you choose, as far as the window has room for it beside the board; double-click

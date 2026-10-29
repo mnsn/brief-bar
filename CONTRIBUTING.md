@@ -22,10 +22,14 @@ links sent in chats, sprint, pipelines and tasks sent to Copilot, and never runs
 screenshots without showing your own chats, pull requests or sessions. `make demo ARGS=--window` also
 opens the window.
 
-Settings › Appearance offers independent presentation options, all off by default. `--demo --render`
-also draws each option separately and all of them together (`interface-*`), plus the Appearance page
-with its switches off and on. These examples use in-memory preferences and never create live menu-bar
-items or widgets, change your layout, or enable optional features in the installed app.
+Settings › Appearance offers independent presentation options, all off by default, and the size of the
+text on windows' pages. `--demo --render` also draws each option separately and all of them together
+(`interface-*`), the window with its largest text (`interface-textSize-window`), plus the Appearance
+page with its switches off and on. These examples use in-memory preferences and never create live
+menu-bar items or widgets, change your layout, or enable optional features in the installed app.
+Views set fonts with `.font(size:)` and `.font(style:)` from `BriefBarUI`, never `.font(.system(size:))`
+or `.font(.headline)`, so their text follows the text size on windows' pages (`TextSizeTests` checks);
+size anything that must fit that text, such as a label's column, by the `textScale` environment value.
 
 Other targets:
 
@@ -134,6 +138,7 @@ other data:
 | `BRIEFBAR_COPILOT_CLI` | Another `copilot`, for Send Work to Copilot |
 | `BRIEFBAR_CHAT_LINKS_DB` | Another Notification Center database for Azure DevOps' pull requests sent in chats, such as one the tests make, which needs no Full Disk Access |
 | `BRIEFBAR_RENDER_SUMMARIES=1` | `--render` summarizes Teams' unread chats first, and words the brief across sources, with the on-device model |
+| `BRIEFBAR_RENDER_TEXT_SIZE=150` | `--render` draws windows' pages with that text size, as **Text Size in Windows** does (100 to 150) |
 
 With `--demo`, Teams and Copilot read only what these variables name, never your own data. Chats from
 Notification Center's own database are only ever saved by the installed app, with the key in the
@@ -240,10 +245,12 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Summaries stay on the Mac.** Use `SystemLanguageModel.default`, through `OnDeviceModel`, never
   Private Cloud Compute or any other model. A brief across sources says a chat's text only while Teams
   shows message previews, and asks the model only as each source's settings allow. The one exception
-  is **Summarize with Copilot** (`StorySummaries`), off until you turn it on, which asks the Copilot
+  is a Copilot model explicitly chosen in **Summaries** (`StorySummaries`), off until you turn it on,
+  which defaults to Apple Intelligence without replacing saved model choices. It asks the Copilot
   CLI only when you click **✨ Summarize with Copilot**, with no tools at all (`CopilotSummarizer`), and
   never with anything from Teams, or from the notifications that sent you a pull request
-  (`ItemStory.sharedSentence`, `LinkedItem.sharedStatus`); keep it that way.
+  (`ItemStory.sharedSentence`, `LinkedItem.sharedStatus`); keep it that way. A local summary failure
+  must never fall back to Copilot. The demo uses made-up answers for both providers.
 - **No content in logs.** Log counts, states and errors, never names, messages, titles or IDs.
 - **Use made-up data.** Real chats, pull requests and sessions are private, and often confidential.
   Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share,
@@ -355,7 +362,11 @@ certificate (`scripts/sign-release.sh`), checks that it's the certificate in
 `Resources/ReleaseRequirement.txt` and deletes it from the runner. It then signs the zip and writes
 `appcast.xml` (`scripts/make-appcast.sh`), checks the signatures with the public key
 (`scripts/verify-appcast.swift`), attests both files, and publishes the release with `BriefBar.zip`,
-its SHA-256, `appcast.xml` and the changelog section.
+its SHA-256, `appcast.xml` and the changelog section. Last, it points the Homebrew cask,
+`Casks/briefbar.rb` in [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), at the release, with
+the zip's SHA-256 (`scripts/update-homebrew-cask.sh`), but never back to an older version. If that step
+fails, the release is out all the same: set `version` and `sha256` in the cask by hand, from the
+release's `BriefBar.zip.sha256`.
 
 The app and its updater are built only for arm64. Sparkle derives
 `<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>` from the app's binary, and
@@ -383,6 +394,18 @@ Universal Clipboard doesn't offer them to other devices, and clipboard managers 
   the form Sparkle's `generate_keys -x` exports, but kept out of the keychain, where any program could
   export it with `generate_keys`. Secret: `SPARKLE_PRIVATE_KEY`.
 
+The environment also holds **the tap's deploy key**, `HOMEBREW_TAP_DEPLOY_KEY`, an SSH key that can
+push to [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap) only. Whoever has it decides what
+`brew install` downloads, so it's kept only there too, but no installed app depends on it, so the
+password manager needn't keep a copy. If it leaks or is lost, delete it in the tap's
+**Settings › Deploy keys**, and make a new one in a folder that you delete right after:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C 'mnsn/brief-bar release workflow' -f key
+gh repo deploy-key add key.pub --repo mnsn/homebrew-tap --allow-write --title 'mnsn/brief-bar release workflow'
+gh secret set HOMEBREW_TAP_DEPLOY_KEY --env release --repo mnsn/brief-bar < key
+```
+
 To set up a repository:
 
 1. In its **Settings › Environments**, create an environment named `release`. Under
@@ -396,6 +419,7 @@ To set up a repository:
    public halves only once you've copied all three, and refuses to run again after that.
 3. Commit the public halves it wrote, `Resources/Info.plist` and `Resources/ReleaseRequirement.txt`,
    and push.
+4. Give the environment the tap's deploy key, with the commands above.
 
 Never put either private key anywhere else: in a file you keep, a keychain, a command-line argument
 or a log. Don't change `SUPublicEDKey` or the release certificate either, unless one leaks or is

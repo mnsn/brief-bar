@@ -336,11 +336,11 @@ struct AgentsPage: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Image(systemName: AgentsText.symbol)
-                    .font(.largeTitle)
+                    .font(style: .largeTitle)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Agents")
-                        .font(.title2.weight(.semibold))
+                        .font(style: .title2, weight: .semibold)
                     Text(AgentsText.summary)
                         .foregroundStyle(.secondary)
                 }
@@ -358,7 +358,7 @@ struct AgentsPage: View {
                     sessions use too. Then you can install its Copilot plugin, which adds \(AgentsText.command) \
                     there. Turning agents off, at any time, removes both.
                     """)
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             case .needsReview:
@@ -417,7 +417,7 @@ private struct AgentsLeftoversRow: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("BriefBar couldn't leave the Copilot CLI")
-                        .font(.headline)
+                        .font(style: .headline)
                     if let server = leftovers.server {
                         Text("Its MCP server, \(CopilotMCPRegistration.name): \(server)")
                     }
@@ -470,7 +470,7 @@ private struct CopilotCLIRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Copilot CLI")
-                    .font(.headline)
+                    .font(style: .headline)
                 status
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -550,7 +550,7 @@ private struct CopilotPluginRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Copilot plugin")
-                    .font(.headline)
+                    .font(style: .headline)
                 Text("""
                     \(AgentsText.command), in the GitHub Copilot app and the Copilot CLI: what needs you, and pull \
                     requests handed to sessions you can follow there. Those sessions change code, and Push & Reply \
@@ -664,7 +664,7 @@ private struct OtherAgentsRow: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Other agents")
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(apps.isEmpty
                      ? "Copy the command that starts BriefBar, and add it to another agent's MCP servers."
                      : "Install BriefBar in another agent on this Mac, or copy the command that starts it.")
@@ -710,12 +710,12 @@ struct AgentsSummaryRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: AgentsText.symbol)
-                .font(.title2)
+                .font(style: .title2)
                 .frame(width: 30)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Agents")
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(AgentsText.summary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -18,7 +18,7 @@ package struct WhereItStandsSection: View {
     /// - Parameters:
     ///   - excluding: what it leaves out, such as, on a page, the work item and the pages you came from.
     ///   - hidesWhenEmpty: whether it shows nothing at all while nothing's linked, as on a page.
-    ///   - showsSummary: whether ✨ Summarize with Copilot and its summary are here, rather than, on a page, under its
+    ///   - showsSummary: whether ✨ Summarize and its summary are here, rather than, on a page, under its
     ///     heading; and whether it says who it all waits on, and folds to that.
     package init(
         subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false,
@@ -282,7 +282,7 @@ private struct StandingContent: View {
                             .buttonStyle(.borderless)
                             .help(LinkPickerView.buttonTitle(for: subject.kind))
                     }
-                    .font(.system(size: 12))
+                    .font(size: 12)
                 } else {
                     if let tally = WhereItStandsSection.tally(connections) {
                         TallyLine(parts: tally)
@@ -319,7 +319,7 @@ private struct StandingContent: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Button(action: toggleFolded) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(size: 10, weight: .semibold)
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isFolded ? 0 : 90))
                             .frame(width: 14, height: 14)
@@ -353,11 +353,11 @@ private struct StandingContent: View {
     @ViewBuilder
     private func titleAndCount(_ count: Int) -> some View {
         Text(title)
-            .font(.system(size: 13, weight: .semibold))
+            .font(size: 13, weight: .semibold)
             .accessibilityAddTraits(.isHeader)
         if count > 0 {
             Text(String(count))
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .font(size: 11, weight: .semibold).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1)
@@ -385,7 +385,7 @@ private struct StandingContent: View {
                 hintHidden = true
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(size: 9.5, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
@@ -394,7 +394,7 @@ private struct StandingContent: View {
             .help("Don't show this again: Show Links is in Settings › General")
             .accessibilityLabel("Dismiss")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
     }
 
     private func card(_ groups: [StandingGroup]) -> some View {
@@ -463,7 +463,7 @@ private struct StandingContent: View {
                 .buttonStyle(.borderless)
             }
         }
-        .font(.system(size: 11.5))
+        .font(size: 11.5)
     }
 }
 
@@ -481,7 +481,7 @@ private struct WaitingLine: View {
                 + (wait.who == .you ? Text(text).fontWeight(.semibold) : Text(text))
         }
         (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { $0 + $1 })
-            .font(.system(size: 12))
+            .font(size: 12)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
@@ -505,7 +505,7 @@ private struct TallyLine: View {
                 }
             }
         }
-        .font(.system(size: 11))
+        .font(size: 11)
         .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
     }
@@ -581,7 +581,7 @@ private struct StoryRow: View {
             Button(action: click) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: symbol.name)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(size: 12, weight: .medium)
                         .foregroundStyle(symbol.color)
                         .frame(width: 16)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -590,13 +590,13 @@ private struct StoryRow: View {
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             kindMarker
                             Text(name)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(size: 12.5, weight: .medium)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
                         if !sentence.isEmpty {
                             sentenceText
-                                .font(.system(size: 11.5))
+                                .font(size: 11.5)
                                 .lineLimit(isChild ? 1 : 2)
                                 .multilineTextAlignment(.leading)
                         }
@@ -609,7 +609,7 @@ private struct StoryRow: View {
                     }
                     if let date = item.date {
                         Text(Self.ago(date))
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .font(size: 11, weight: .medium).monospacedDigit()
                             .foregroundStyle(.secondary)
                             .opacity(opensOnHover ? 0 : 1)
                             .anchorPreference(key: QuickOpenSpot.self, value: .bounds) { opensOnHover ? $0 : nil }
@@ -620,7 +620,7 @@ private struct StoryRow: View {
                             .anchorPreference(key: QuickOpenSpot.self, value: .bounds) { $0 }
                     }
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(size: 10, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded && !navigates ? 90 : 0))
                         .accessibilityHidden(true)
@@ -671,18 +671,18 @@ private struct StoryRow: View {
         switch item.ref.kind {
         case .pullRequest, .gitHubPullRequest, .workItem:
             Text(item.label)
-                .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                .font(size: 11.5, weight: .medium).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .fixedSize()
         case .session:
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: item.sent != nil ? "paperplane" : "waveform.path.ecg")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(size: 10, weight: .medium)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 if let sentFrom {
                     Text(sentFrom)
-                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .font(size: 11.5, weight: .medium).monospacedDigit()
                         .foregroundStyle(.secondary)
                         .fixedSize()
                 }
@@ -707,7 +707,7 @@ private struct StoryRow: View {
     private var quickOpen: some View {
         Button(action: open) {
             Image(systemName: "arrow.up.forward.app")
-                .font(.system(size: 11.5, weight: .medium))
+                .font(size: 11.5, weight: .medium)
                 .foregroundStyle(item.state.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -842,7 +842,7 @@ struct StoryDetails: View {
                         withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 11))
+                    .font(size: 11)
                 }
             } else if isTelling {
                 reading
@@ -892,7 +892,7 @@ struct StoryDetails: View {
     private func footnote(_ story: ItemStory) -> some View {
         if let footnote = story.footnote {
             Text(footnote)
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -905,7 +905,7 @@ struct StoryDetails: View {
             Text("Reading what's known of it…")
                 .foregroundStyle(.secondary)
         }
-        .font(.system(size: 11.5))
+        .font(size: 11.5)
     }
 
     /// Opening it, or its own actions; why it's here is in its row's tooltip.
@@ -1011,7 +1011,7 @@ struct StoryNotesSection: View {
                             withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
                         }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                     }
                 }
             }
@@ -1033,10 +1033,10 @@ struct PageSectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if let count {
                 Text(String(count))
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .font(size: 11, weight: .semibold).monospacedDigit()
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
@@ -1045,7 +1045,7 @@ struct PageSectionHeader: View {
             if let trailing {
                 Spacer(minLength: 8)
                 Text(trailing)
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1072,7 +1072,7 @@ private struct PageFacts: View {
                 }
             }
         }
-        .font(.system(size: 12.5))
+        .font(size: 12.5)
         .textSelection(.enabled)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1141,7 +1141,7 @@ private struct FactsGrid: View {
                 }
             }
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .textSelection(.enabled)
     }
 }
@@ -1196,10 +1196,10 @@ struct ClampedText: View {
                     withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
                 }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
+                .font(size: 11)
             }
         }
-        .font(.system(size: 12))
+        .font(size: 12)
     }
 }
 
@@ -1253,23 +1253,23 @@ private struct RunRow: View {
     private func content(opens: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(color)
                 .frame(width: 14)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(run.name)
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(status)
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(run.state == .failing ? AnyShapeStyle(ItemState.failing.textColor) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
                 if let detail = run.detail {
                     Text(detail)
-                        .font(.system(size: 11).monospaced())
+                        .font(size: 11).monospaced()
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1279,7 +1279,7 @@ private struct RunRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
                 Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
                     .opacity(isHovered ? 1 : 0)
                     .accessibilityHidden(true)
@@ -1328,18 +1328,18 @@ private struct Milestones: View {
             StoryCaption(text: "The story so far")
             if first > 1 {
                 Text("\(first - 1) earlier")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
             }
             ForEach(Array(account.milestones.enumerated()), id: \.offset) { index, title in
                 let isLatest = index == account.milestones.count - 1
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(String(first + index))
-                        .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        .font(size: 10.5, weight: .semibold).monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 14, alignment: .trailing)
                     Text(title)
-                        .font(.system(size: 12, weight: isLatest ? .medium : .regular))
+                        .font(size: 12, weight: isLatest ? .medium : .regular)
                         .foregroundStyle(isLatest ? .primary : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1362,12 +1362,12 @@ private struct StoryList: View {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: symbol)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(size: 9, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
                         .accessibilityHidden(true)
                     Text(line)
-                        .font(.system(size: 12))
+                        .font(size: 12)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -1382,7 +1382,7 @@ struct StoryCaption: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(size: 11, weight: .semibold)
             .foregroundStyle(.secondary)
             .accessibilityAddTraits(.isHeader)
     }

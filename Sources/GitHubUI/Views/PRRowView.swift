@@ -12,12 +12,13 @@ struct PRRowView: View {
 
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             row
             RowSummary(subject: linkRef)
-                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
@@ -38,15 +39,15 @@ struct PRRowView: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.reason.symbol)
-                    .font(.system(size: compact ? 15 : 17))
+                    .font(size: compact ? 15 : 17)
                     .foregroundStyle(item.group.color)
-                    .frame(width: options.rowIconWidth, height: 20)
+                    .frame(width: options.rowIconWidth * textScale, height: 20 * textScale)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.pullRequest.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(size: 13, weight: .semibold)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 4)
@@ -54,19 +55,19 @@ struct PRRowView: View {
                     }
                     if compact {
                         Text("\(item.headline) · \(item.pullRequest.reference)")
-                            .font(.system(size: options.rowDetailSize))
+                            .font(size: options.rowDetailSize)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else {
                         HStack(spacing: 6) {
                             Text(subtitle)
-                                .font(.system(size: options.rowReasonSize, weight: .medium))
+                                .font(size: options.rowReasonSize, weight: .medium)
                                 .foregroundStyle(options.quietAppearance ? Color.secondary : item.group.color)
                                 .lineLimit(1)
                             LinkCapsules(linkRef)
                         }
                         Text(item.pullRequest.reference)
-                            .font(.system(size: options.rowDetailSize))
+                            .font(size: options.rowDetailSize)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -123,7 +124,7 @@ struct CountChips: View {
                             Text("\(counts[group])")
                                 .monospacedDigit()
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .help("\(counts[group]) \(group.countLabel)")
                     }
                 }

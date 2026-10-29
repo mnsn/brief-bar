@@ -8,26 +8,64 @@ struct AppearancePage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Appearance")
-                .font(.title2.weight(.semibold))
-            Text("Choose a simpler presentation, one option at a time. Every option starts off. Sources, permissions and saved layouts stay as they are.")
+                .font(style: .title2, weight: .semibold)
+            Text("Choose a simpler presentation, one option at a time. Every option starts off, and text starts at its usual size. Sources, permissions and saved layouts stay as they are.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Form {
-                ForEach(InterfaceOption.allCases, id: \.self) { option in
-                    Toggle(isOn: Binding(
-                        get: { services.interfaceOptions[option] },
-                        set: { services.setInterfaceOption(option, enabled: $0) }
-                    )) {
-                        Text(option.title)
-                        Text(option.explanation)
+                Section {
+                    TextSizeSetting(services: services)
+                }
+                Section {
+                    ForEach(InterfaceOption.allCases, id: \.self) { option in
+                        Toggle(isOn: Binding(
+                            get: { services.interfaceOptions[option] },
+                            set: { services.setInterfaceOption(option, enabled: $0) }
+                        )) {
+                            Text(option.title)
+                            Text(option.explanation)
+                        }
+                        .toggleStyle(.switch)
                     }
-                    .toggleStyle(.switch)
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .scrollDisabled(true)
             .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// How big text is on windows' pages, from its usual size up to half as big again.
+private struct TextSizeSetting: View {
+    @ObservedObject var services: AppServices
+
+    var body: some View {
+        let percent = services.textSize.percent
+        LabeledContent {
+            Slider(
+                value: Binding(
+                    get: { Double(percent) },
+                    set: { services.setTextSize(TextSize(percent: Int($0.rounded()))) }
+                ),
+                in: Double(TextSize.percentages.first ?? 100)...Double(TextSize.percentages.last ?? 100),
+                step: 10
+            ) {
+                Text("Text Size in Windows")
+            } minimumValueLabel: {
+                Image(systemName: "textformat.size.smaller")
+                    .accessibilityLabel("Smaller")
+            } maximumValueLabel: {
+                Image(systemName: "textformat.size.larger")
+                    .accessibilityLabel("Bigger")
+            }
+            .labelsHidden()
+            .accessibilityValue("\(percent) percent")
+            .frame(width: 180)
+        } label: {
+            Text("Text Size in Windows") + Text("  \(percent)%").foregroundStyle(.secondary)
+            Text("Bigger text on the pages of BriefBar's windows. The menu bar's lists and the widgets keep their size. In a window, hold ⌘ and scroll up or down to change it.")
         }
     }
 }

@@ -95,7 +95,8 @@ $CHANGES
 
 Requires macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
-1. Download **$ZIP** below, unzip it, and move **BriefBar** to your Applications folder.
+1. Download **$ZIP** below, unzip it, and move **BriefBar** to your Applications folder. Or install
+   it with [Homebrew](https://brew.sh): \`brew install --cask mnsn/tap/briefbar\`.
 2. Open it. The app isn't notarized, so macOS blocks it the first time: click **Done**, then
    **Open Anyway** in **System Settings › Privacy & Security**.
 3. In its Settings, turn on the sources you want. Each first says what it reads; Teams needs **Full

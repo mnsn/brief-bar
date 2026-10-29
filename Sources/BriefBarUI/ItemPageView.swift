@@ -3,8 +3,8 @@ import BriefBarCore
 import SwiftUI
 
 /// A pull request's or a Copilot session's page, where a work item's details show: what it is and where it stands, how
-/// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize with Copilot
-/// for it, and Copilot's notes.
+/// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize for it,
+/// and Copilot's notes.
 package struct ItemPageView: View {
     private let ref: ItemRef
 
@@ -113,12 +113,12 @@ private struct PageContent: View {
                         .lineLimit(1)
                 }
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(size: 12, weight: .medium)
             .foregroundStyle(.secondary)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.description(of: item))
             Text(item.ref.kind == .session ? item.label : item.title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(size: 17, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
@@ -126,7 +126,7 @@ private struct PageContent: View {
             if !sentence.isEmpty || date != nil {
                 (WhereItStandsSection.sentenceText(sentence, state: item.state)
                     + Text(date.map { (sentence.isEmpty ? "" : " · ") + StoryTime.ago($0) } ?? "").foregroundStyle(.secondary))
-                    .font(.system(size: 12.5))
+                    .font(size: 12.5)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
@@ -143,7 +143,7 @@ private struct PageContent: View {
                 } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
                     // Just "Summarize" where the whole of it doesn't fit.
                     ViewThatFits(in: .horizontal) {
-                        summarize("Summarize with Copilot")
+                        summarize(summaries.actionTitle)
                         summarize("Summarize")
                     }
                 }
@@ -161,8 +161,8 @@ private struct PageContent: View {
                 .fixedSize()
         }
         .glassButtonStyle()
-        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model)))
-        .accessibilityLabel("Summarize with Copilot")
+        .help(SummarizeButton.help(for: ref, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+        .accessibilityLabel(summaries.actionTitle)
     }
 
     /// "Pull Request", "Copilot Session", "Sent to Copilot".

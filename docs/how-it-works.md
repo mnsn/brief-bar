@@ -248,6 +248,17 @@ changing `ItemState`, source classification, notifications or agent responses. R
 same row-height calculation in widget content and window sizing. Simple Layout Choices only exposes
 preset controls: choosing a preset is an explicit layout edit; enabling the appearance option is not.
 
+**Text Size in Windows** is a `TextSize` from 100% to 150%, saved as `interface.textSize`, which
+`AppServices` publishes apart from the options. Only a window's page sets the `textScale` environment
+value from it (`WindowView`), and views take their fonts from `.font(size:)` and `.font(style:)`, which
+multiply by it, so the same rows stay at their designed sizes in the menu bar's lists and the widgets.
+What holds that text, such as avatars, badges and rows' icon columns, grows by it too, and a layout
+that runs out of room moves a row's details under its headline rather than squeezing it. macOS has no
+Dynamic Type, so a text style scales from its fixed size there. ⌘-scrolling changes it through a local
+event monitor, only over a BriefBar window or a sheet over one (`WindowHost.owns`): `TextSizeScrolling`
+turns each notch of a wheel, or each 40 points of a swipe, into a step, ignores momentum, and takes up
+as bigger, as toward the top of a page, whichever way your scrolling goes.
+
 ## Everything by state
 
 ### Counts by state
@@ -425,7 +436,7 @@ title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); 
 while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
 stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
 a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
-`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
+`WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**
 and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
 to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
@@ -465,23 +476,35 @@ sent to Copilot says how it went, and Copilot what it recorded.
 - **GitHub**: one of its pull requests' latest reviews, conflicts, draft and branch, and its checks, from the one query
   it reads them with.
 
-### Summarize with Copilot
+### Summaries
 
-**Summarize with Copilot**, in Settings › General, under Show Links, is off until you turn it on, and works only while
-Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says, a line each, what it sends, where, what
-it costs and what Copilot can do, with the model it asks: Claude Haiku 5.5 (Recommended), Claude Sonnet 5.5, GPT-6.1 Sol
-or Gemini 4 Argon (`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may
-choose it; and, once it's on, whether the Copilot CLI is there, as your login shell finds it. While Show Links is off,
+**Summaries**, in Settings › General, under Show Links, is off until you turn it on, and works only while
+Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says, a line each, what it uses or sends, where,
+what it costs and what the model can do. Apple Intelligence (on this Mac) is the default when no model was chosen;
+existing model choices and the on/off setting stay as they were, under the same `summaries.copilot.*` preferences.
+The picker also offers Claude Haiku 5.5, Claude Sonnet 5.5, GPT-6.1 Sol and Gemini 4 Argon
+(`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may choose it.
+Apple Intelligence runs through `OnDeviceModel` and `SystemLanguageModel.default`, never Private Cloud Compute,
+with no tools, Copilot requests, sign-in or subscription. It needs a supported Mac, macOS 26 or later and Apple
+Intelligence enabled and ready. Settings explains when it isn't available; only a selected Copilot model checks
+whether the Copilot CLI is there. Local failures never fall back to Copilot. While Show Links is off,
 it's dimmed and can't be changed. Then, once there's something to sum up, two things linked to the work item or more,
 or one and its own tasks, as the sprint has them for a story or a bug (`LinkedItem.parts`), Where It Stands' header
-has **✨ Summarize with Copilot**, or just **Summarize** where that doesn't fit, while no summary shows; its tooltip says
-where it goes, and that it uses your Copilot plan. Only when you click it, it asks the Copilot CLI for a summary of the
+has **✨ Summarize with Apple Intelligence** or **✨ Summarize with Copilot**, or just **Summarize** where that doesn't
+fit, while no summary shows; its tooltip says whether it stays on this Mac or uses your Copilot plan.
+Only when you click it, it asks the selected provider for a summary of the
 work item and what's linked to it. Before it asks, the sources tell what they
 know of each, as for the details, the work item's description and latest comments too, and each of its tasks, with how
 the work sent to Copilot for it stands, and `StorySummaryPrompt` (in
 `Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
 model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
-first, and at most 14,000 characters. The data starts with your name, as your pull requests have it in Azure DevOps,
+first, and at most 14,000 characters for Copilot or 6,000 for Apple Intelligence, even when the subject alone is long.
+Local prompts cap each item's details at 1,800 characters so long discussions leave room for linked items' facts.
+The on-device session receives the instructions separately, reserves up to 500 response tokens and has a 45-second
+timeout. Character limits aren't token guarantees: if the model's context window is exceeded, the summary says so
+and offers a model change, never a cloud retry. Truncated data says details were left out, and the instructions
+require an incomplete-summary notice rather than treating missing data as no blockers or votes.
+The data starts with your name, as your pull requests have it in Azure DevOps,
 when that's known, and the model is told that's who reads it, to call you "you"; and that you already see each row's
 status, so it leads with what the rows don't say: blockers, what's left, contradictions. It asks for a headline, whom
 the next step is for (you, a person or Copilot) and what it is, and at most 120 words, which `StorySummary` reads,
@@ -492,10 +515,10 @@ that you answered them, the prompt says where it stands by its votes instead (`I
 status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
 
 The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
-what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
+what's left behind **Show More**. Its caption names Apple Intelligence or Copilot, with "2m ago", the time each minute and never cut
 short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
-has one control: **Stop** while it's written, after "Summarizing with Claude Haiku 5.5 · 1 request", or "Summarizing · 1
-request" where that doesn't fit, then **✕** only, in a 22-point target, which hides it (`StorySummaries.hide`): it's
+has one control: **Stop** while it's written, after the model's name and "on this Mac" or "1 request", shortened to
+"Summarizing" and the location or cost where that doesn't fit, then **✕** only, in a 22-point target, which hides it (`StorySummaries.hide`): it's
 kept, as long as summaries are, and **Show Summary** shows it again without asking Copilot; **Summarize Again**, **Copy
 Summary** and **Hide Summary** in its right-click menu. Out of date, its caption says so in bold, and **Summarize
 Again** joins **Show More** at its foot. VoiceOver says "Summary ready" and what it's of, once, however many places show
@@ -505,7 +528,7 @@ The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Cop
 (`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
 (`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and while it's written a
 spinner takes that place, so a second click there doesn't open the row. Its right-click and Actions menus have, in a
-group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
+group of its own right after opening it, **Summarize** with the chosen provider, then **Stop Summarizing**, **Hide Summary** or
 **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
 under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
 whom, two lines each at most, with **Show More** at its end, in the tint, as a link, and, out of date, **Summarize
@@ -516,22 +539,24 @@ page's; while it shows, what it summed up is read again each minute, as for Wher
 date. With nothing linked to it, it sums up what its source knows of it alone; a thing no source describes, or that
 nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries`).
 
-`CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
+When a Copilot model is selected, `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
 --no-ask-user --no-color --silent --name "BriefBar summary" -C <folder>`, through `ProcessRunner`, with your login
 shell's environment, for two minutes at most. No tool is called `briefbar_no_tools`, so the model has none: an empty
 `--available-tools` would leave it every tool, as the CLI takes that as no limit. The folder,
 `~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
-skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
+skills or MCP servers apply. Only the chosen model is used. The CLI keeps each run as a
 session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
 When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
 information found"), the model isn't on your plan, or your premium requests ran out, and the card says so in a
 sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
 **Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
 
-The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off,
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summaries goes off,
 or a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
-doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
+doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. Changing models also cancels
+in-flight summaries, without starting another; written summaries retain their original model attribution.
+The stories it was waiting for
 stop being read, unless the details asked for them too, and a story the details are reading already is waited for rather
 than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
 status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
@@ -2087,6 +2112,10 @@ when BriefBar does.
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
 - **Full Disk Access survives**, because every release is signed with the same certificate.
+- **Installed with Homebrew**, it updates itself all the same. The cask, in
+  [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), says so (`auto_updates`), so
+  `brew upgrade` leaves it to the updater unless you add `--greedy`. The release workflow points the
+  cask at each release, with its zip's SHA-256 (`scripts/update-homebrew-cask.sh`).
 
 ## Checks
 
@@ -2118,5 +2147,9 @@ when BriefBar does.
   designated requirement stays the same. CI runs it on every package.
 - `make signing-key-check` checks, in throwaway keychains, everything that keeps a signing key safe
   (above).
+- `scripts/test-homebrew-cask.sh` (`make homebrew-cask-check`) runs the release workflow's last step,
+  `scripts/update-homebrew-cask.sh`, against a tap of its own, with no network and no key: it sets the
+  cask's version and SHA-256 in one commit, the same release again changes nothing, an older release
+  never replaces a newer one, and it refuses another zip for the same version. CI runs it.
 - `scripts/appcast-dry-run.sh` signs a packaged app's update and appcast with a throwaway key, the way
   a release does, and checks them as the app would.

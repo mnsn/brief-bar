@@ -36,6 +36,9 @@ final class AppModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     /// Activates BriefBar again once the Dock is active, to take the menu bar (`showInDock`).
     private var takingMenuBar: AnyCancellable?
+    /// ⌘-scrolling in a window, which changes the text size of windows' pages.
+    private var scrollMonitor: Any?
+    private var textSizeScrolling = TextSizeScrolling()
 
     private static let launchedKey = "hasLaunched"
 
@@ -55,14 +58,14 @@ final class AppModel: ObservableObject {
         services = AppServices(defaults: defaults, isDemo: demo)
         // Only the app itself asks the Copilot CLI.
         agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
-        // Summaries: the app asks the Copilot CLI when you ask; the demo makes them up; `--render` of your own data writes
-        // none.
-        services.summaries.models = CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
+        // Summaries use the selected provider only when asked; the demo makes them up, and `--render` writes none.
+        services.summaries.models = [StorySummaries.appleIntelligence]
+            + CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
         if demo {
             services.summaries.write = DemoSummaries.write
         } else if !rendering {
             let summarizer = CopilotSummarizer()
-            services.summaries.write = AppModel.copilotSummaries(summarizer)
+            services.summaries.write = StorySummaries.writer(copilot: AppModel.copilotSummaries(summarizer))
             services.summaries.findCLI = { await summarizer.findsCLI() }
         }
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
@@ -553,6 +556,30 @@ final class AppModel: ObservableObject {
         overviewLink.update()
     }
 
+    /// ⌘-scrolling in a window, or a sheet over one, makes the text on windows' pages bigger or smaller, as Settings ›
+    /// Appearance does. Elsewhere, such as the menu bar's lists, the widgets and Settings, it scrolls as it always did.
+    private func watchTextSizeScrolling() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            // What the text size needs of the event goes to the main actor, rather than the event itself.
+            let scroll = ScrollEvent(event)
+            guard scroll.isCommandOnly else { return event }
+            let changesTextSize = MainActor.assumeIsolated { self?.scrollTextSize(scroll) ?? false }
+            return changesTextSize ? nil : event
+        }
+    }
+
+    /// Whether ⌘-scrolling is in a window, which then changes the text size instead of scrolling.
+    private func scrollTextSize(_ scroll: ScrollEvent) -> Bool {
+        guard let window = NSApp.window(withWindowNumber: scroll.windowNumber), windows.values.contains(where: { $0.owns(window) })
+        else { return false }
+        let steps = textSizeScrolling.steps(delta: scroll.delta, isPrecise: scroll.isPrecise, isMomentum: scroll.isMomentum, begins: scroll.begins)
+        if steps != 0 {
+            services.setTextSize(services.textSize.stepped(by: steps))
+        }
+        return true
+    }
+
     // MARK: Lifecycle
 
     func launch() {
@@ -561,6 +588,7 @@ final class AppModel: ObservableObject {
         }
         placeSections()
         updateSurfaces()
+        watchTextSizeScrolling()
 
         let firstLaunch = !services.defaults.bool(forKey: Self.launchedKey)
         services.defaults.set(true, forKey: Self.launchedKey)
@@ -615,5 +643,30 @@ extension AppModel {
                 ))
             }
         }
+    }
+}
+
+/// What ⌘-scrolling needs of a scroll event, read where the event arrives.
+private struct ScrollEvent: Sendable {
+    /// ⌘ is down, and no other modifier.
+    let isCommandOnly: Bool
+    /// The window it scrolls in, or 0 for none.
+    let windowNumber: Int
+    /// Up, as toward the top of a page; negative for down.
+    let delta: CGFloat
+    /// From a trackpad or a Magic Mouse, rather than a wheel's notches.
+    let isPrecise: Bool
+    /// Momentum, after you lifted your fingers.
+    let isMomentum: Bool
+    /// A new swipe begins.
+    let begins: Bool
+
+    init(_ event: NSEvent) {
+        isCommandOnly = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+        windowNumber = event.windowNumber
+        delta = event.scrollingDeltaY
+        isPrecise = event.hasPreciseScrollingDeltas
+        isMomentum = !event.momentumPhase.isEmpty
+        begins = !event.phase.isDisjoint(with: [.began, .mayBegin])
     }
 }

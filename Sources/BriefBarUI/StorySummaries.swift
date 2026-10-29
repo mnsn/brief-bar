@@ -3,17 +3,16 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
-/// never by itself, from what the details show (`StorySummaryPrompt`), with no tools at all. It's off until you turn it
-/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, Show
-/// Links or this goes off, or a source stops, and says when what it summed up changed since. One being written stops then,
-/// with Copilot.
+/// On-demand summaries from Apple Intelligence on this Mac, or a model you choose through Copilot, with no tools.
+/// Off until you turn it on, and only while Show Links is on. Summaries stay in memory and go away when either setting
+/// goes off or a source stops. The saved keys keep existing consent and model choices.
 @MainActor
 package final class StorySummaries: ObservableObject {
     package static let enabledKey = "summaries.copilot.enabled"
     package static let modelKey = "summaries.copilot.model"
-    /// A small, quick model: a summary needs little thinking.
-    package static let defaultModel = "claude-haiku-5.5"
+    nonisolated package static let appleIntelligenceModel = "apple-intelligence"
+    package static let defaultModel = appleIntelligenceModel
+    package static let appleIntelligence = Model(id: appleIntelligenceModel, name: "Apple Intelligence")
 
     /// The model, and how hard it thinks.
     package struct Options: Equatable, Sendable {
@@ -40,7 +39,7 @@ package final class StorySummaries: ObservableObject {
     /// Writes an answer to a prompt, or says why it can't, in a sentence.
     package typealias Writer = @Sendable (_ prompt: String, _ options: Options) async -> Result<String, Problem>
 
-    /// Why there's no summary, in a sentence; what the Copilot CLI said, as it said it, when the sentence says it in other
+    /// Why there's no summary, in a sentence; what the provider said, as it said it, when the sentence says it in other
     /// words; and what would help, beside trying again.
     package struct Problem: Error, Equatable, Sendable {
         /// What would help, beside trying again.
@@ -62,7 +61,7 @@ package final class StorySummaries: ObservableObject {
 
     /// A summary as it stands for one thing.
     package enum State: Equatable {
-        /// Copilot is writing it.
+        /// The selected model is writing it.
         case writing(since: Date)
         /// What it wrote, with what it summed up then, to tell when that changed.
         case written(StorySummary, at: Date, inputs: [Input], model: String)
@@ -108,13 +107,13 @@ package final class StorySummaries: ObservableObject {
     @Published package private(set) var isOn: Bool
     @Published package private(set) var model: String
     @Published private var states: [ItemRef: State] = [:]
-    /// The written ones you closed, kept to show again without asking Copilot.
+    /// The written ones you closed, kept to show again without generating another.
     @Published private var hidden: Set<ItemRef> = []
     /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
     @Published package private(set) var hasCLI: Bool?
     /// The models Settings offers; the app fills it in.
-    package var models: [Model] = [Model(id: StorySummaries.defaultModel, name: "Claude Haiku 5.5")]
-    /// Asks Copilot; nil until the app sets it, and then summaries can't be written.
+    package var models: [Model] = [appleIntelligence]
+    /// Asks the selected provider; nil until the app sets it, and then summaries can't be written.
     package var write: Writer?
     /// Looks for the Copilot CLI, nil when it couldn't tell; nil where nothing's looked for, as in the demo.
     package var findCLI: (@Sendable () async -> Bool?)?
@@ -178,14 +177,28 @@ package final class StorySummaries: ObservableObject {
         guard on != isOn else { return }
         isOn = on
         defaults.set(on, forKey: Self.enabledKey)
-        Log.app.info("Summarize with Copilot \(on ? "on" : "off", privacy: .public)")
+        Log.app.info("Summaries \(on ? "on" : "off", privacy: .public)")
         if !on { forgetAll() }
     }
 
     package func setModel(_ model: String) {
         guard !model.isEmpty, model != self.model else { return }
+        // Don't keep writing with a provider after the user switches away from it.
+        for subject in Array(writing.keys) { cancel(subject) }
         self.model = model
         defaults.set(model, forKey: Self.modelKey)
+    }
+
+    package var usesOnDeviceModel: Bool { model == Self.appleIntelligenceModel }
+
+    package var actionTitle: String {
+        usesOnDeviceModel ? "Summarize with Apple Intelligence" : "Summarize with Copilot"
+    }
+
+    package var requestDescription: String { usesOnDeviceModel ? "on this Mac" : "1 request" }
+
+    package func attribution(for model: String) -> String {
+        model == Self.appleIntelligenceModel ? "Apple Intelligence on this Mac" : "\(name(of: model)) through GitHub Copilot"
     }
 
     /// The model's name, as Settings says it.
@@ -195,7 +208,7 @@ package final class StorySummaries: ObservableObject {
 
     /// Looks for the Copilot CLI while this is on, for Settings to say when it isn't there.
     package func lookForCLI() async {
-        guard isOn, let findCLI, let found = await findCLI() else { return }
+        guard isAvailable, !usesOnDeviceModel, let findCLI, let found = await findCLI() else { return }
         hasCLI = found
     }
 
@@ -213,20 +226,20 @@ package final class StorySummaries: ObservableObject {
         return linked >= 2 || (linked == 1 && links.describe(subject).parts > 0)
     }
 
-    /// Whether a pull request's or a session's row offers ✨ Summarize with Copilot: this and Show Links are on, and a
+    /// Whether a pull request's or a session's row offers Summarize: this and Show Links are on, and a
     /// source says what it is. With nothing linked, its own story is what's summed up.
     package func canSummarize(_ subject: ItemRef) -> Bool {
         isAvailable && subject.kind != .workItem && links.isDescribed(subject)
     }
 
-    /// For `--render`: a summary as it would stand, without asking Copilot.
+    /// For `--render`: a summary as it would stand, without asking a model.
     package func useForRendering(_ subject: ItemRef, state: State?) {
         states[subject] = state
     }
 
-    /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
-    /// it has; of a pull request or a session with nothing linked, of what's known of it. Nothing unless this and Show
-    /// Links are on.
+    /// Asks the selected provider for a summary of a thing and what's linked to it, as the details show them now, in
+    /// place of the one it has; of a pull request or a session with nothing linked, of what's known of it. Nothing
+    /// unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
         guard isAvailable else { return }
         writing[subject]?.task.cancel()
@@ -234,7 +247,7 @@ package final class StorySummaries: ObservableObject {
         let token = nextToken
         hidden.remove(subject)
         states[subject] = .writing(since: now())
-        let options = Options(model: model, effort: "low")
+        let options = Options(model: model, effort: usesOnDeviceModel ? nil : "low")
         let task = Task { [weak self] in
             guard let self else { return }
             // What's known of it and of each, as it is now.
@@ -248,7 +261,7 @@ package final class StorySummaries: ObservableObject {
             let answer: Result<String, Problem> = if let write = self.write {
                 await write(input.prompt, options)
             } else {
-                .failure(Problem("BriefBar can't ask the Copilot CLI here."))
+                .failure(Problem("BriefBar can't write summaries here."))
             }
             self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model)
         }
@@ -278,7 +291,8 @@ package final class StorySummaries: ObservableObject {
                 // Once, wherever it shows.
                 AccessibilityNotification.Announcement("Summary ready: \(links.describe(subject).title)").post()
             } else {
-                states[subject] = .failed(Problem("Copilot answered nothing."), at: now())
+                Log.app.error("Summary response was empty")
+                states[subject] = .failed(Problem("\(name(of: model)) answered nothing."), at: now())
             }
         case .failure(let problem):
             Log.app.error("Summary not written")
@@ -370,9 +384,52 @@ package final class StorySummaries: ObservableObject {
         let prompt = StorySummaryPrompt.make(
             subject: item(described, nil),
             linked: connections.map { item($0.item, $0.reason) },
-            reader: yourName
+            reader: yourName,
+            limit: usesOnDeviceModel ? 6_000 : 14_000,
+            itemLimit: usesOnDeviceModel ? 1_800 : nil,
+            includeInstructions: !usesOnDeviceModel
         )
         return (prompt, inputs(for: subject))
+    }
+
+    /// Routes only to the selected provider. A local failure must never send the prompt to Copilot instead.
+    nonisolated package static func writer(
+        copilot: @escaping Writer, onDevice: @escaping Writer = writeOnDevice
+    ) -> Writer {
+        { prompt, options in
+            if options.model == appleIntelligenceModel {
+                return await onDevice(prompt, options)
+            }
+            return await copilot(prompt, options)
+        }
+    }
+
+    nonisolated package static func writeOnDevice(_ prompt: String, _ options: Options) async -> Result<String, Problem> {
+        let answer = await OnDeviceModel.respond(
+            to: prompt, instructions: StorySummaryPrompt.instructions, maximumTokens: 500, timeout: 45
+        )
+        return answer.mapError(onDeviceProblem)
+    }
+
+    nonisolated package static func onDeviceProblem(_ failure: OnDeviceModel.Failure) -> Problem {
+        switch failure {
+        case .unavailable(let reason):
+            return Problem(reason, fix: .chooseModel)
+        case .unsupportedLanguage:
+            return Problem("Apple Intelligence doesn't support the language of this item.", fix: .chooseModel)
+        case .refused:
+            return Problem("Apple Intelligence declined to summarize this item.", fix: .chooseModel)
+        case .tooLong:
+            return Problem("This item is too long for Apple Intelligence. Choose a Copilot model to summarize it.", fix: .chooseModel)
+        case .notReady:
+            return Problem("Apple Intelligence is still getting ready. Try again later, or choose a Copilot model.", fix: .chooseModel)
+        case .busy:
+            return Problem("Apple Intelligence is busy or took too long. Try again.")
+        case .empty:
+            return Problem("Apple Intelligence answered nothing. Try again.")
+        case .failed:
+            return Problem("Apple Intelligence couldn't write a summary. Try again, or choose a Copilot model.", fix: .chooseModel)
+        }
     }
 
     /// The thing and what's linked to it, each as it says now.

@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import BriefBarUI
 import SwiftUI
 
 /// "Updated 2m ago" for an Azure DevOps page, a spinner while it refreshes, and a button to refresh it now.
@@ -25,7 +26,7 @@ struct PageRefreshStatus: View {
                 let elapsed = Elapsed.short(since: refreshedAt, now: store.now)
                 Text(elapsed == "now" ? "Updated now" : "Updated \(elapsed) ago")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 11))
+                    .font(size: 11)
             }
             if store.mode == .live {
                 Button {

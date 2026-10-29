@@ -2,9 +2,7 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-/// ✨ Summarize with Copilot, in Where It Stands' header, while Summarize with Copilot and Show Links are on, there's
-/// something to sum up and no summary shows: asks Copilot for a short summary of the thing and what's linked to it. Never
-/// by itself.
+/// Summarize with the selected provider, in Where It Stands' header, only when asked.
 struct SummarizeButton: View {
     let subject: ItemRef
     @ObservedObject var summaries: StorySummaries
@@ -15,14 +13,14 @@ struct SummarizeButton: View {
                 summaries.show(subject)
             } label: {
                 Label("Show Summary", systemImage: "sparkles")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .fixedSize()
             }
             .buttonStyle(.borderless)
             .help("Shows the summary you closed, as it was written")
         } else if summaries.state(for: subject) == nil, summaries.hasSomethingToSum(subject) {
             ViewThatFits(in: .horizontal) {
-                button("Summarize with Copilot")
+                button(summaries.actionTitle)
                 button("Summarize")
             }
         }
@@ -33,28 +31,31 @@ struct SummarizeButton: View {
             summaries.summarize(subject)
         } label: {
             Label(title, systemImage: "sparkles")
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
                 .fixedSize()
         }
         .buttonStyle(.borderless)
-        .help(Self.help(for: subject, model: summaries.name(of: summaries.model)))
-        .accessibilityLabel("Summarize with Copilot")
+        .help(Self.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+        .accessibilityLabel(summaries.actionTitle)
     }
 
     /// "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5): 1 request on your Copilot plan."
-    static func help(for subject: ItemRef, model: String) -> String {
+    static func help(for subject: ItemRef, model: String, onDevice: Bool = false) -> String {
         let what = switch subject.kind {
         case .workItem: "work item"
         case .pullRequest, .gitHubPullRequest: "pull request"
         case .session: "Copilot session"
         }
+        if onDevice {
+            return "Summarizes this \(what) and what's linked to it with Apple Intelligence on this Mac. Nothing is sent to Copilot; no Copilot requests."
+        }
         return "Sends this \(what) and what's linked to it to GitHub Copilot (\(model)): 1 request on your Copilot plan."
     }
 }
 
-/// What Copilot summed up, at the top of Where It Stands: where it stands in a line and what's next, for whom, in the
-/// colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it couldn't, why, and
-/// what would help. One whose rows changed since says it's out of date, and what changed.
+/// What the selected model summed up, at the top of Where It Stands: where it stands in a line and what's next, for
+/// whom, in the colors of what a model wrote, with the rest on request; while it writes, a way to stop it; when it
+/// couldn't, why, and what would help. One whose rows changed since says it's out of date, and what changed.
 package struct SummaryCard: View {
     /// Where it shows: at the top of Where It Stands, or under a pull request's or a session's row in a list, where it's
     /// smaller and quieter.
@@ -111,7 +112,7 @@ package struct SummaryCard: View {
             EmptyView()
         case .writing:
             card {
-                header { Text(Self.title) } trailing: { EmptyView() }
+                header { Text(Self.title(for: summaries.model)) } trailing: { EmptyView() }
             } content: {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -121,7 +122,7 @@ package struct SummaryCard: View {
                     Button("Stop") { summaries.cancel(subject) }
                         .buttonStyle(.borderless)
                 }
-                .font(.system(size: 12))
+                .font(size: 12)
             }
         case .written(let summary, let at, let inputs, let model):
             written(summary, at: at, inputs: inputs, model: model)
@@ -135,21 +136,23 @@ package struct SummaryCard: View {
         return nil
     }
 
-    static let title = "Summary by Copilot"
-
-    /// "Summarizing with Claude Haiku 5.5 · 1 request": what it costs, while it's written, under "Summary by Copilot".
-    static func writing(_ summaries: StorySummaries) -> String {
-        "Summarizing with \(summaries.name(of: summaries.model)) · 1 request"
+    static func title(for model: String) -> String {
+        model == StorySummaries.appleIntelligenceModel ? "Summary by Apple Intelligence" : "Summary by Copilot"
     }
 
-    /// `writing`, on one line: "Summarizing · 1 request" where that doesn't fit, with the model in its tooltip.
+    /// The model and whether it runs locally or uses a Copilot request.
+    static func writing(_ summaries: StorySummaries) -> String {
+        "Summarizing with \(summaries.name(of: summaries.model)) · \(summaries.requestDescription)"
+    }
+
+    /// `writing`, shortened where needed, with the model in its tooltip.
     static func writingText(_ summaries: StorySummaries) -> some View {
         ViewThatFits(in: .horizontal) {
             Text(writing(summaries))
                 .fixedSize()
-            Text("Summarizing · 1 request")
+            Text("Summarizing · \(summaries.requestDescription)")
                 .fixedSize()
-                .help("With \(summaries.name(of: summaries.model)) through GitHub Copilot")
+                .help("With \(summaries.attribution(for: summaries.model))")
         }
         .foregroundStyle(.secondary)
     }
@@ -157,32 +160,32 @@ package struct SummaryCard: View {
     private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
         let changed = summaries.whatChanged(subject)
         let isStale = changed != nil
-        let written = "Written by \(summaries.name(of: model)) through GitHub Copilot at "
+        let written = "Written by \(summaries.attribution(for: model)) at "
             + "\(at.formatted(date: .omitted, time: .shortened)), from \(StorySummaries.source(of: inputs))."
         return card {
             // Narrower, it says less, but always when it was written and whether it's out of date.
             ViewThatFits(in: .horizontal) {
-                header { caption(Self.title, at: at, changed: changed, written: written) } trailing: { closeButton }
+                header { caption(Self.title(for: model), at: at, changed: changed, written: written) } trailing: { closeButton }
                 header { caption("Summary", at: at, changed: changed, written: written) } trailing: { closeButton }
             }
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
-                    .font(.system(size: isRow ? 12.5 : 13, weight: .medium))
+                    .font(size: isRow ? 12.5 : 13, weight: .medium)
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 let foldsNext = Self.foldsNext(summary, under: waitsAbove)
                 if let next = summary.next, !foldsNext || showsAll {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(.system(size: isRow ? 11.5 : 12))
+                        .font(size: isRow ? 11.5 : 12)
                         .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
                 if let paragraph = summary.paragraph, showsAll {
                     Text(paragraph)
-                        .font(.system(size: 12))
+                        .font(size: 12)
                         .foregroundStyle(.primary.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -200,7 +203,7 @@ package struct SummaryCard: View {
                         if isStale { againButton }
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                 }
             }
         }
@@ -216,7 +219,7 @@ package struct SummaryCard: View {
 
     private func failed(_ problem: StorySummaries.Problem) -> some View {
         card {
-            header { Text(Self.title) } trailing: { closeButton }
+            header { Text("Summary") } trailing: { closeButton }
         } content: {
             VStack(alignment: .leading, spacing: 8) {
                 Label(problem.message, systemImage: "exclamationmark.triangle")
@@ -236,7 +239,7 @@ package struct SummaryCard: View {
                 }
                 .buttonStyle(.borderless)
             }
-            .font(.system(size: 12))
+            .font(size: 12)
         }
     }
 
@@ -246,7 +249,7 @@ package struct SummaryCard: View {
             summaries.hide(subject)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .semibold))
+                .font(size: 10, weight: .semibold)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -281,7 +284,7 @@ package struct SummaryCard: View {
     private var againButton: some View {
         Button("Summarize Again") { summaries.summarize(subject) }
             .fixedSize()
-            .help("Asks Copilot again: 1 request")
+            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
     }
 
     /// The card's first line: ✨, its caption, gray, and what it does on its right.
@@ -290,11 +293,11 @@ package struct SummaryCard: View {
     ) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                 .accessibilityHidden(true)
             caption()
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 6)
             trailing()
@@ -327,7 +330,7 @@ package struct SummaryCard: View {
                 )
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Self.title)
+        .accessibilityLabel("Summary")
     }
 
     /// "just now", "2m ago".
@@ -339,47 +342,50 @@ package struct SummaryCard: View {
 
 // MARK: - The setting
 
-/// Summarize with Copilot, off by default: in Settings, under Show Links, with what it sends, where, what it costs and
-/// what Copilot can do with it, and the model it asks. While Show Links is off, it can't be changed.
+/// Summaries, off by default, with the selected provider's privacy, cost and availability.
 package struct StorySummariesSetting: View {
     @ObservedObject private var summaries: StorySummaries
     @ObservedObject private var links: Links
+    @LocalState private var unavailableReason: String?
 
     package init(summaries: StorySummaries, links: Links) {
         self.summaries = summaries
         self.links = links
     }
 
-    package static let title = "Summarize with Copilot"
+    package static let title = "Summaries"
     package static let explanation = """
-        Adds ✨ Summarize with Copilot to Where It Stands, and to pull requests' and Copilot sessions' rows (point at one, or \
-        right-click it) and pages. Nothing is sent until you click it.
+        Adds ✨ Summarize to Where It Stands, and to pull requests' and Copilot sessions' rows (point at one, or \
+        right-click it) and pages. Choose Apple Intelligence on this Mac or a model through Copilot. Nothing runs until you click it.
         """
-    /// What it sends, where, what it costs and what Copilot can do with it, a line each.
-    package static let lines: [(label: String, symbol: String, text: String)] = [
-        ("Sends", "arrow.up.doc", """
+    package static func lines(onDevice: Bool) -> [(label: String, symbol: String, text: String)] { [
+        (onDevice ? "Uses" : "Sends", "arrow.up.doc", """
             what's known of the work item, pull request or session and what's linked to it: descriptions and latest \
             comments, reviews, builds and their errors, and Copilot's notes. Never anything from Teams.
             """),
-        ("To", "network", """
+        ("Where", onDevice ? "desktopcomputer" : "network", onDevice ? """
+            on this Mac with Apple Intelligence, never Private Cloud Compute or Copilot. Needs macOS 26 or later and \
+            Apple Intelligence enabled and ready. BriefBar keeps summaries in memory only.
+            """ : """
             GitHub Copilot, through the Copilot CLI, which keeps a copy in its session history as “BriefBar summary”. \
             BriefBar keeps summaries in memory only.
             """),
-        ("Costs", "creditcard", "one request on your Copilot plan per summary, at the model's rate."),
+        ("Costs", "creditcard", onDevice ? "no Copilot requests or subscription needed."
+            : "one request on your Copilot plan per summary, at the model's rate."),
         ("Can do", "lock.shield", "only write. It gets no tools: no commands, files or web."),
-    ]
+    ] }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Toggle(Self.title, isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) }))
                 Text(Self.explanation)
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Self.lines, id: \.label) { line in
+                ForEach(Self.lines(onDevice: summaries.usesOnDeviceModel), id: \.label) { line in
                     labeled(line.label, symbol: line.symbol) {
                         Text(line.text)
                             .foregroundStyle(.secondary)
@@ -389,7 +395,8 @@ package struct StorySummariesSetting: View {
                 labeled("Model", symbol: "cpu") {
                     Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
                         ForEach(choices) { model in
-                            Text(model.id == StorySummaries.defaultModel ? "\(model.name) (Recommended)" : model.name).tag(model.id)
+                            Text(model.id == StorySummaries.appleIntelligenceModel
+                                 ? "\(model.name) (on this Mac)" : model.name).tag(model.id)
                         }
                     }
                     .labelsHidden()
@@ -397,13 +404,19 @@ package struct StorySummariesSetting: View {
                     .fixedSize()
                 }
             }
-            .font(.callout)
+            .font(style: .callout)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-            if summaries.isOn, summaries.hasCLI == false {
+            if summaries.isAvailable, summaries.usesOnDeviceModel, let unavailableReason {
+                Label(unavailableReason + " Choose a Copilot model to use it instead; BriefBar never switches automatically.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(style: .callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if summaries.isAvailable, !summaries.usesOnDeviceModel, summaries.hasCLI == false {
                 Label("Copilot CLI not found. Install it, or open the GitHub Copilot app once.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -411,7 +424,17 @@ package struct StorySummariesSetting: View {
         .padding(.leading, 20)
         .disabled(!links.isOn)
         .opacity(links.isOn ? 1 : 0.45)
-        .task(id: summaries.isOn) { await summaries.lookForCLI() }
+        .task(id: [summaries.isAvailable ? "on" : "off", summaries.model]) {
+            refreshOnDeviceAvailability()
+            await summaries.lookForCLI()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshOnDeviceAvailability()
+        }
+    }
+
+    private func refreshOnDeviceAvailability() {
+        unavailableReason = summaries.isAvailable && summaries.usesOnDeviceModel ? OnDeviceModel.unavailableReason : nil
     }
 
     /// A line with its label, after its symbol, as Settings' descriptions have them.
