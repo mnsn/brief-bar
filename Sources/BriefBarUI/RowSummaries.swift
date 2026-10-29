@@ -77,9 +77,7 @@ private struct RowSummaryContent: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
-                Text(SummaryCard.writing(summaries))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                SummaryCard.writingText(summaries)
                 Button("Stop") { summaries.cancel(subject) }
                     .buttonStyle(.borderless)
                 Spacer(minLength: 0)
@@ -149,6 +147,8 @@ private struct RowSummaryContent: View {
             }
             .buttonStyle(.borderless)
             .font(.system(size: 11))
+            // In the tint, as an inline link is, so it isn't read as the end of the sentence.
+            .foregroundStyle(.tint)
             .fixedSize()
             if let next = summary.next {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {

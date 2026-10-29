@@ -414,12 +414,14 @@ that's done or closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, wh
 once, and a session once, whether the work sent to Copilot in it or the session itself tells of it
 (`ItemStory.Wait.about`); two things in the same words, such as two sessions of the same name, are said once with how
 many, "(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it
-isn't said twice, or by other names. Its title, with its chevron and count, is one control, a disclosure to VoiceOver,
-that folds Where It Stands to that line, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing
-waiting, it says "Waiting on: no one", but only once the work item and all that's linked to it have said where they
-stand, and never while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it
-is, where it stands in a sentence, its opening words in its state's color, and since when; one that needs you or went
-wrong opens in a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
+isn't said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
+(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
+Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
+title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
+"Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
+while one can't. Pages don't show it. Each row shows its state as the lists by state draw it, what it is, where it
+stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
+a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
 `WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize with Copilot**
 and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
@@ -487,12 +489,12 @@ status as active or a draft (`LinkedItem.sharedStatus`). The details still show 
 The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
 what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
 short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
-has one control: **Stop** while it's written, after "Summarizing with Claude Haiku 5.5 · 1 request", then **✕** only, in
-a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long as summaries are, and **Show Summary**
-shows it again without asking Copilot; **Summarize Again**, **Copy Summary** and **Hide Summary** in its right-click
-menu. Out of date, its caption says so in bold, and **Summarize Again** joins **Show More** at its foot. VoiceOver says
-"Summary ready" and what it's of, once, however many places show it. Your name comes from Azure DevOps, or else from
-your GitHub login.
+has one control: **Stop** while it's written, after "Summarizing with Claude Haiku 5.5 · 1 request", or "Summarizing · 1
+request" where that doesn't fit, then **✕** only, in a 22-point target, which hides it (`StorySummaries.hide`): it's
+kept, as long as summaries are, and **Show Summary** shows it again without asking Copilot; **Summarize Again**, **Copy
+Summary** and **Hide Summary** in its right-click menu. Out of date, its caption says so in bold, and **Summarize
+Again** joins **Show More** at its foot. VoiceOver says "Summary ready" and what it's of, once, however many places show
+it. Your name comes from Azure DevOps, or else from your GitHub login.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
 (`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
@@ -501,13 +503,13 @@ spinner takes that place, so a second click there doesn't open the row. Its righ
 group of its own right after opening it, **Summarize with Copilot**, then **Stop Summarizing**, **Hide Summary** or
 **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
 under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
-whom, two lines each at most, with **Show More** at its end, and, out of date, **Summarize Again**; ✕ shows on the right
-while you point at it, over its first line, and the time it was written is in its tooltip, so that it isn't read as the
-row's; it ends where the row's time does, left of its actions. The prompt tells the model that the reader sees each
-item's Status line, so it leads with what that doesn't say. It's the same summary as its page's; while it shows, what it
-summed up is read again each minute, as for Where It Stands, so it says when it's out of date. With nothing linked to
-it, it sums up what its source knows of it alone; a thing no source describes, or that nothing's known of, isn't sent.
-Desktop widgets show none (`offersSummaries`).
+whom, two lines each at most, with **Show More** at its end, in the tint, as a link, and, out of date, **Summarize
+Again**; ✕ shows on the right while you point at it, over its first line, and the time it was written is in its tooltip,
+so that it isn't read as the row's; it ends where the row's time does, left of its actions. The prompt tells the model
+that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as its
+page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's out of
+date. With nothing linked to it, it sums up what its source knows of it alone; a thing no source describes, or that
+nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries`).
 
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions

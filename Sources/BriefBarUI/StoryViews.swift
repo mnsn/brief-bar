@@ -268,8 +268,7 @@ private struct StandingContent: View {
                     }
                 }
                 if links.isOn, showsSummary, !isFolded {
-                    // What's next is said by who it waits on, above it: it shows with the rest.
-                    SummaryCard(subject: subject, summaries: summaries, rows: rows, foldsNext: !waits.isEmpty)
+                    SummaryCard(subject: subject, summaries: summaries, rows: rows, waitsAbove: waits)
                 }
                 if !links.isOn {
                     off
@@ -315,28 +314,26 @@ private struct StandingContent: View {
     private func header(count: Int, canSummarize: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if showsSummary, links.isOn {
-                // The chevron, the title and the count fold it, as a disclosure.
-                Button {
-                    let fold = !isFolded
-                    withAnimation(.easeOut(duration: 0.15)) { folded = fold }
-                    defaults.set(fold, forKey: WhereItStandsSection.foldedKey)
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // The chevron, the title and the count fold it. To VoiceOver, the chevron is the disclosure button and
+                // the title stays a heading: an element has one role.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Button(action: toggleFolded) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isFolded ? 0 : 90))
                             .frame(width: 14, height: 14)
-                        titleAndCount(count)
+                            .contentShape(Rectangle().inset(by: -3))
                     }
-                    .contentShape(Rectangle().inset(by: -3))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(title)
+                    .accessibilityValue((isFolded ? "Collapsed" : "Expanded") + (count > 0 ? ", \(count) linked" : ""))
+                    .accessibilityHint(isFolded ? "Shows what's linked" : "Shows only who it waits on")
+                    titleAndCount(count)
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle().inset(by: -3))
+                .onTapGesture(perform: toggleFolded)
                 .help(isFolded ? "Show what's linked" : "Show only who it waits on")
-                .accessibilityLabel(title)
-                .accessibilityValue((isFolded ? "Collapsed" : "Expanded") + (count > 0 ? ", \(count) linked" : ""))
-                .accessibilityHint(isFolded ? "Shows what's linked" : "Shows only who it waits on")
-                .accessibilityAddTraits(.isHeader)
             } else {
                 titleAndCount(count)
             }
@@ -345,6 +342,12 @@ private struct StandingContent: View {
                 SummarizeButton(subject: subject, summaries: summaries)
             }
         }
+    }
+
+    private func toggleFolded() {
+        let fold = !isFolded
+        withAnimation(.easeOut(duration: 0.15)) { folded = fold }
+        defaults.set(fold, forKey: WhereItStandsSection.foldedKey)
     }
 
     @ViewBuilder
@@ -472,8 +475,10 @@ private struct WaitingLine: View {
     var body: some View {
         // What waits on you stands out by its weight: a color could clash with its row's, such as a ready pull request's.
         let parts = waits.isEmpty ? [Text("no one").foregroundStyle(.secondary)] : waits.enumerated().map { index, wait in
-            (index > 0 ? Text(" · ").foregroundStyle(.secondary) : Text(""))
-                + (wait.who == .you ? Text(wait.text).fontWeight(.semibold) : Text(wait.text))
+            // A short one doesn't break: the line does, after a "·".
+            let text = wait.text.count > 32 ? wait.text : wait.text.replacingOccurrences(of: " ", with: "\u{00A0}")
+            return (index > 0 ? Text(" · ").foregroundStyle(.secondary) : Text(""))
+                + (wait.who == .you ? Text(text).fontWeight(.semibold) : Text(text))
         }
         (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { $0 + $1 })
             .font(.system(size: 12))

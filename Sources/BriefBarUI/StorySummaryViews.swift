@@ -67,20 +67,30 @@ package struct SummaryCard: View {
     /// Re-checks whether it's out of date as the rows change.
     let rows: [String]
     var style: Style = .section
-    /// Whether what's next shows only with the rest, as when who it waits on shows above it.
-    var foldsNext = false
+    /// Who it waits on, as the line above it says: then what's next shows only with the rest, unless it's yours and the
+    /// line doesn't say anything waits on you.
+    var waitsAbove: [ItemStory.Wait] = []
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
     @LocalState private var showsAll = false
     @LocalState private var choosesModel = false
 
-    package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section, foldsNext: Bool = false) {
+    package init(
+        subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section, waitsAbove: [ItemStory.Wait] = []
+    ) {
         self.subject = subject
         self.summaries = summaries
         self.rows = rows
         self.style = style
-        self.foldsNext = foldsNext
+        self.waitsAbove = waitsAbove
+    }
+
+    /// Whether its next step shows only with the rest: another's, or yours, under a line that says what waits on you.
+    static func foldsNext(_ summary: StorySummary, under waits: [ItemStory.Wait]) -> Bool {
+        guard !waits.isEmpty, summary.next != nil else { return false }
+        let isYours = summary.nextFor?.caseInsensitiveCompare("you") == .orderedSame
+        return !isYours || waits.contains { $0.who == .you }
     }
 
     private var isRow: Bool { style == .row }
@@ -106,8 +116,7 @@ package struct SummaryCard: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(Self.writing(summaries))
-                        .foregroundStyle(.secondary)
+                    Self.writingText(summaries)
                     Spacer(minLength: 8)
                     Button("Stop") { summaries.cancel(subject) }
                         .buttonStyle(.borderless)
@@ -133,6 +142,18 @@ package struct SummaryCard: View {
         "Summarizing with \(summaries.name(of: summaries.model)) · 1 request"
     }
 
+    /// `writing`, on one line: "Summarizing · 1 request" where that doesn't fit, with the model in its tooltip.
+    static func writingText(_ summaries: StorySummaries) -> some View {
+        ViewThatFits(in: .horizontal) {
+            Text(writing(summaries))
+                .fixedSize()
+            Text("Summarizing · 1 request")
+                .fixedSize()
+                .help("With \(summaries.name(of: summaries.model)) through GitHub Copilot")
+        }
+        .foregroundStyle(.secondary)
+    }
+
     private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
         let changed = summaries.whatChanged(subject)
         let isStale = changed != nil
@@ -151,6 +172,7 @@ package struct SummaryCard: View {
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                let foldsNext = Self.foldsNext(summary, under: waitsAbove)
                 if let next = summary.next, !foldsNext || showsAll {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
                         .font(.system(size: isRow ? 11.5 : 12))
