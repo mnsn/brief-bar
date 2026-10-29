@@ -171,7 +171,7 @@ import Testing
             - Status: Waiting for reviewers
             """))
         #expect(story.contains("- Branch: saved-items → main"))
-        #expect(story.contains("Builds and comments aren't read for pull requests you're not on."))
+        #expect(story.contains("BriefBar reads builds and comments only on your pull requests."))
         // The work sent to Copilot for one of its tasks.
         #expect(story.contains("## Sent to Copilot (1)\n- Work item 5103 “Show saved items under the cart” in Storefront: working"))
 

@@ -188,7 +188,8 @@ final class WorkLinksStore {
             items.append(LinkedItem(
                 ref: .pullRequest(organization: item.key.organization, number: item.key.number), label: "!\(item.key.number)",
                 title: item.title, symbol: item.group == .done ? "arrow.triangle.merge" : "arrow.triangle.pull", color: item.rowColor,
-                state: item.group.state(showToReview: showToReview), status: item.group.title, place: item.repository,
+                state: item.group.state(showToReview: showToReview), status: item.group.title,
+                sharedStatus: PullRequestStory.sharedStatus(item), place: item.repository,
                 hint: record.map { Self.hint($0.pullRequest) }, date: item.since,
                 open: { [weak store] in
                     // As it is when you click it.
@@ -200,11 +201,13 @@ final class WorkLinksStore {
         for pullRequest in read.pullRequests.values {
             items.append(Self.item(pullRequest))
         }
+        let rows = sprint.board?.rows ?? []
         for workItem in sprintItems + read.workItems.values {
-            items.append(Self.item(workItem))
+            // A story's or a bug's tasks, in the sprint.
+            let tasks = rows.first { $0.parent?.key == workItem.key }?.tasks.count ?? 0
+            items.append(Self.item(workItem, tasks: tasks))
         }
         if copilot.isOn {
-            let now = Date()
             for entry in copilot.entries {
                 guard let session = ItemRef.session(entry.id) else { continue }
                 facts += Self.links(of: entry, session: session)
@@ -218,9 +221,10 @@ final class WorkLinksStore {
                 } else {
                     entry.workItem.flatMap { copilot.title($0) }
                 }
+                // Without how long it's been at it, which its date says: its row stays the same while it works.
                 items.append(LinkedItem(
                     ref: session, label: copilot.subject(of: entry), title: "Copilot: \(copilot.subject(of: entry))",
-                    symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: now),
+                    symbol: "paperplane.fill", color: phase.color, state: phase.state, status: entry.sentence(now: nil),
                     date: entry.status.since ?? entry.startedAt,
                     menu: { AnyView(CopilotRunMenuItems(entry: entry).environmentObject(copilot)) },
                     sent: SentToCopilot(action: entry.action?.title, from: from, label: fromLabel, title: fromTitle)
@@ -275,16 +279,17 @@ final class WorkLinksStore {
             return pullRequest.map { PullRequestStory.others($0, me: me) }
         case .session:
             guard copilot.isOn, let entry = copilot.entries.first(where: { ItemRef.session($0.id) == ref }) else { return nil }
-            return Self.story(of: entry, now: Date())
+            return Self.story(of: entry)
         case .gitHubPullRequest:
             return nil
         }
     }
 
-    /// A task sent to Copilot: how it went, the pull request it opened, the model it works with, and the summary it ended
-    /// with. What Copilot recorded of its work, its notes, comes from Copilot's own files, when that source is on.
-    static func story(of entry: CopilotTaskEntry, now: Date) -> ItemStory {
-        var sentence = entry.sentence(now: now)
+    /// A task sent to Copilot: how it went, without how long it's been at it, which its date says, the pull request it
+    /// opened, the model it works with, and the summary it ended with. What Copilot recorded of its work, its notes, comes
+    /// from Copilot's own files, when that source is on.
+    static func story(of entry: CopilotTaskEntry) -> ItemStory {
+        var sentence = entry.sentence(now: nil)
         if entry.status.phase == .finished, entry.action == nil, let url = entry.pullRequest,
            let opened = ItemRef.from(link: url.absoluteString), let number = opened.number {
             sentence = "Opened " + (opened.kind == .gitHubPullRequest ? "#\(number)" : "!\(number)")
@@ -322,11 +327,12 @@ final class WorkLinksStore {
         )
     }
 
-    static func item(_ workItem: WorkItem) -> LinkedItem {
+    /// A work item, with how many tasks it has in the sprint, for a story or a bug.
+    static func item(_ workItem: WorkItem, tasks: Int = 0) -> LinkedItem {
         LinkedItem(
             ref: .workItem(organization: workItem.organization, id: workItem.id), label: String(workItem.id), title: workItem.title,
             symbol: workItem.typeSymbol, color: workItem.typeColor, status: workItem.state, place: workItem.project,
-            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }, url: workItem.webURL
+            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }, url: workItem.webURL, parts: tasks
         )
     }
 }

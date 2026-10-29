@@ -5,26 +5,69 @@ import Foundation
 /// requests' comments, is only ever something to write about. It can't run a command, read or change a file, or reach a
 /// web page for it. It runs in a folder of BriefBar's own, without your custom instructions or the built-in MCP servers,
 /// in a session of its own named "BriefBar summary", which the CLI keeps, as it keeps every session, and which the
-/// Copilot app doesn't list. Nothing runs unless you ask for a summary.
+/// Copilot app doesn't list. Nothing runs unless you ask for a summary, and what runs stops when the summary's cancelled.
 public actor CopilotSummarizer {
     public enum Failure: Error, Sendable, Equatable {
         /// No `copilot` was found.
         case noCLI
-        /// It ended with an error: its first lines, as it said them.
+        /// The Copilot CLI isn't signed in: its first lines, as it said them.
+        case notSignedIn(String)
+        /// The model isn't one your Copilot plan offers, or the CLI knows: its first lines.
+        case modelUnavailable(String)
+        /// Your Copilot plan's premium requests ran out: its first lines.
+        case outOfRequests(String)
+        /// It ended with another error: its first lines.
         case failed(String)
         /// It answered nothing.
         case empty
         /// It took longer than `timeout`.
         case timedOut
+        /// It was cancelled: Copilot didn't start, or was stopped.
+        case cancelled
 
-        /// Why there's no summary, for you.
-        public var message: String {
+        /// Why there's no summary, for you, in a sentence, with what to do about it when there's something.
+        /// - Parameter model: the model's name, as you chose it.
+        public func message(model: String) -> String {
             switch self {
-            case .noCLI: return "BriefBar couldn't find the Copilot CLI. Install it, or open the GitHub Copilot app once."
+            case .noCLI: return "BriefBar can't find the Copilot CLI. Install it, or open the GitHub Copilot app once."
+            case .notSignedIn: return "The Copilot CLI isn't signed in. Run copilot in Terminal once."
+            case .modelUnavailable: return "\(model) isn't on your Copilot plan."
+            case .outOfRequests: return "You're out of premium requests this month."
             case .failed(let reason): return "Copilot couldn't write it: \(reason)"
             case .empty: return "Copilot answered nothing."
             case .timedOut: return "Copilot took too long to answer."
+            case .cancelled: return "The summary was cancelled."
             }
+        }
+
+        /// What the CLI said, as it said it, when the message says it in other words.
+        public var detail: String? {
+            switch self {
+            case .notSignedIn(let said), .modelUnavailable(let said), .outOfRequests(let said): return said
+            case .noCLI, .failed, .empty, .timedOut, .cancelled: return nil
+            }
+        }
+
+        /// What failed, by what the CLI said: its first lines, `reason`, and all of it, `said`, which tells. Not signed in:
+        /// "No authentication information found", "Run /login to sign in again". The model: `Model "x" from --model flag is
+        /// not available`. Out of requests: premium requests, a quota or AI credits that ran out, or payment required.
+        static func failure(said: String, reason: String) -> Failure {
+            let said = said.lowercased()
+            func says(_ pattern: String) -> Bool { said.range(of: pattern, options: .regularExpression) != nil }
+            if says(#"no authentication information|not (logged|signed) in|log ?in again|/login\b|copilot login|authentication token|not authenticated|unauthori[sz]ed|\b401\b"#) {
+                return .notSignedIn(reason)
+            }
+            let allowance = #"(premium (request|interaction)s?|quota|ai credits?|allowance|spending limit)"#
+            let spent = #"(exceed|exhaust|reached|used (up|all)|run out|ran out|out of|no (more|remaining)|insufficient)"#
+            if says(allowance + #"[^.\n]{0,80}"# + spent) || says(spent + #"[^.\n]{0,80}"# + allowance)
+                || says(#"payment required|\b402\b"#) {
+                return .outOfRequests(reason)
+            }
+            if says(#"\bmodel\b[^\n]{0,120}\b(is not available|isn'?t available|unavailable|not supported|isn'?t supported|not enabled|not found)"#)
+                || says(#"invalid_model|model_not_supported|unknown model"#) {
+                return .modelUnavailable(reason)
+            }
+            return .failed(reason)
         }
     }
 
@@ -74,11 +117,13 @@ public actor CopilotSummarizer {
         return arguments
     }
 
-    /// What the model answered to the prompt, or why there's no answer.
+    /// What the model answered to the prompt, or why there's no answer. Cancelled, it runs nothing more: Copilot doesn't
+    /// start, or it's stopped, with whatever it started.
     public func summarize(_ prompt: String, options: CopilotRunOptions) async -> Result<String, Failure> {
-        let environment = await self.loadedEnvironment()
+        guard let environment = await loadedEnvironment() else { return .failure(.cancelled) }
         guard let copilot = locate(environment) else { return .failure(.noCLI) }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard !Task.isCancelled else { return .failure(.cancelled) }
         let started = Date()
         let result: ProcessResult
         do {
@@ -86,29 +131,44 @@ public actor CopilotSummarizer {
                 copilot, arguments: Self.arguments(prompt: prompt, options: options, folder: folder), environment: environment,
                 timeout: Self.timeout
             )
+        } catch is CancellationError {
+            return .failure(.cancelled)
         } catch {
             return .failure(.failed(String(describing: error)))
         }
         if result.status != 0, Date().timeIntervalSince(started) >= Self.timeout { return .failure(.timedOut) }
         let answer = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard result.status == 0 else { return .failure(.failed(Self.reason(result))) }
+        guard result.status == 0 else { return .failure(Failure.failure(said: Self.said(result), reason: Self.reason(result))) }
         return answer.isEmpty ? .failure(.empty) : .success(answer)
     }
 
-    private func loadedEnvironment() async -> [String: String] {
+    /// Whether the Copilot CLI is there, as your login shell finds it, for Settings to say when it isn't; nil when the task
+    /// that asks is cancelled before it can tell.
+    public func findsCLI() async -> Bool? {
+        guard let environment = await loadedEnvironment() else { return nil }
+        return locate(environment) != nil
+    }
+
+    /// Your login shell's environment, asked for once; nil when the summary was cancelled meanwhile, and then it's asked
+    /// again next time, since the shell may have been stopped before it said it all.
+    private func loadedEnvironment() async -> [String: String]? {
         if let environment { return environment }
         let loaded = await loadEnvironment()
+        guard !Task.isCancelled else { return nil }
         environment = loaded
         return loaded
     }
 
-    /// Why it failed, in its own words: the first lines it printed to standard error, or else to its output, without
-    /// terminal escapes, at most 300 characters.
-    static func reason(_ result: ProcessResult) -> String {
-        let said = [result.stderr, result.stdout].lazy.map { String(decoding: $0, as: UTF8.self) }
+    /// What it printed to standard error, or else to its output, without terminal escapes.
+    static func said(_ result: ProcessResult) -> String {
+        [result.stderr, result.stdout].lazy.map { String(decoding: $0, as: UTF8.self) }
             .map { $0.replacing(/\u{1B}\[[0-9;?]*[A-Za-z]/, with: "") }
             .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
-        let lines = said.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// Why it failed, in its own words: the first lines it said (`said`), at most 300 characters.
+    static func reason(_ result: ProcessResult) -> String {
+        let lines = said(result).split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let text = StoryText.line(lines.prefix(3).joined(separator: " "), limit: 300)
         return text.isEmpty ? "It ended with status \(result.status)." : text
     }

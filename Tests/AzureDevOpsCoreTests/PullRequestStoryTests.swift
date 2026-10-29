@@ -80,6 +80,85 @@ import BriefBarCore
         // A headline without a detail is all it says.
         let draft = makePR(draft: true)
         #expect(try story(record(draft, details: makeDetails(for: draft))).sentence == "Draft")
+        // Not for how long, which its date says: "No activity for 20 days" says a day more each day.
+        let quiet = makePR(created: t(-20 * day))
+        let quietStory = try story(record(quiet, details: makeDetails(for: quiet, lastActivity: t(-20 * day))))
+        #expect(quietStory.sentence == "No recent activity")
+        #expect(quietStory.date == t(-20 * day))
+        // What a row says of the pull request itself can be shared as it is.
+        #expect(readyStory.sharedSentence == nil)
+        #expect(failingStory.sharedSentence == nil)
+    }
+
+    // MARK: Yours: sent in a chat
+
+    /// Dana sent it to you in Teams, as Notification Center has it.
+    private func sent(_ pr: PullRequest, at date: Date = t(-10 * minute)) -> ChatLink {
+        ChatLink(link: PullRequestLink(organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName,
+                                       number: pr.key.number),
+                 app: Chats.teams, sender: "Dana Whitfield", sentAt: date, notificationKey: "n1",
+                 conversation: Chats.dana, messageID: teamsMessageID(date))
+    }
+
+    /// What a summary of a work item with only this pull request linked to it sends Copilot, between `<data>` and `</data>`.
+    private func shared(_ pr: PullRequest, _ story: ItemStory, row: PRSnapshot) -> String {
+        let prompt = StorySummaryPrompt.make(
+            subject: StorySummaryPrompt.Item(kind: "Work item", label: "5110", title: "Coupon totals round down", status: "Active"),
+            linked: [StorySummaryPrompt.Item(
+                kind: "Pull request", label: "!\(pr.key.number)", title: pr.title,
+                status: PullRequestStory.sharedStatus(row) ?? row.group.rawValue, link: "Linked in Azure DevOps", story: story
+            )]
+        )
+        return String(prompt[prompt.range(of: "<data>\n")!.upperBound...])
+    }
+
+    @Test func whoSentItToYouInAChatStaysOnThisMac() throws {
+        let pr = makePR(author: People.alex, reviewers: [
+            Reviewer(person: People.priya, vote: .approved), Reviewer(person: People.sam, vote: .none, isRequired: true),
+        ])
+        let record = PRRecord(pullRequest: pr, role: .linked, details: makeDetails(for: pr, lastActivity: t(-hour)), me: me.id,
+                              chatLinks: [sent(pr)])
+        let row = try snapshot(record)
+        #expect(row.reason == .sentInChat)
+        let story = PullRequestStory.mine(row, record: record)
+        // You see who sent it, and where.
+        #expect(story.sentence == "Dana Whitfield sent this in Teams: By Alex Kim")
+        // What's shared says where it stands by its votes, as for a pull request you're not on.
+        #expect(story.sharedSentence == "Waiting for reviewers: Sam Rivera")
+        #expect(PullRequestStory.sharedStatus(row) == "Active")
+        let data = shared(pr, story, row: row)
+        #expect(data.contains("Status: Waiting for reviewers: Sam Rivera"))
+        for said in ["Dana", "Whitfield", "Teams", "sent this", "chat"] {
+            #expect(!data.contains(said))
+        }
+        // Without its record, what its row says of the pull request itself.
+        #expect(PullRequestStory.mine(row, record: nil).sharedSentence == "Active")
+    }
+
+    @Test func whoSentItToYouInAChatStaysOnThisMacOnceYouAnswered() throws {
+        let pr = makePR(author: People.alex, reviewers: [Reviewer(person: me, vote: .approved), Reviewer(person: People.priya, vote: .approved)])
+        let details = makeDetails(for: pr, activity: [Activity(threadId: 2, kind: .vote, at: t(-5 * minute), actor: me, vote: .approved)])
+        let record = PRRecord(pullRequest: pr, role: .reviewer, details: details, me: me.id, chatLinks: [sent(pr)])
+        let row = try snapshot(record)
+        #expect(row.reason == .answered)
+        let story = PullRequestStory.mine(row, record: record)
+        #expect(story.sentence == "You approved: Dana Whitfield sent this in Teams")
+        #expect(story.sharedSentence == "Approved by you and Priya Shah")
+        #expect(PullRequestStory.sharedStatus(row) == "Active")
+        let data = shared(pr, story, row: row)
+        #expect(data.contains("Status: Approved by you and Priya Shah"))
+        for said in ["Dana", "Whitfield", "Teams", "sent this", "chat", "answered"] {
+            #expect(!data.contains(said))
+        }
+
+        // Answering a comment, with nobody's message about it, is the pull request's own.
+        let thread = ReviewThread(id: 5, comments: [
+            comment(1, me, "Why?", at: t(-5 * hour)), comment(2, People.sam, "Because", at: t(-hour)), comment(3, me, "OK", at: t(-30 * minute)),
+        ])
+        let replied = try snapshot(PRRecord(pullRequest: pr, role: .reviewer, details: makeDetails(for: pr, threads: [thread]), me: me.id))
+        #expect(replied.reason == .answered)
+        #expect(PullRequestStory.mine(replied, record: nil).sharedSentence == nil)
+        #expect(PullRequestStory.sharedStatus(replied) == nil)
     }
 
     @Test func aLongDetailIsCutToALine() throws {
@@ -318,21 +397,23 @@ import BriefBarCore
         let story = PullRequestStory.others(pr)
         #expect(story.sentence == "Waiting for reviewers: Alex Kim")
         #expect(story.date == t(-5 * hour))
+        // A teammate's: who wrote it is one of its facts, for a summary too.
         #expect(story.facts == [
+            ItemStory.Fact("Author", "Sam Rivera"),
             ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on Alex Kim (required)"),
             ItemStory.Fact("Merge", "Conflicts with main · Completes by itself once it can"),
         ])
-        #expect(story.more == [ItemStory.Fact("Author", "Sam Rivera"), ItemStory.Fact("Branch", "fix-total → main")])
+        #expect(story.more == [ItemStory.Fact("Branch", "fix-total → main")])
         // It says why there are no builds or comments.
-        #expect(story.footnote == "Builds and comments aren't read for pull requests you're not on.")
+        #expect(story.footnote == "BriefBar reads builds and comments only on your pull requests.")
         #expect(story.runs.isEmpty)
         #expect(story.account == nil)
 
         var merged = pr
         merged.status = .completed
         merged.closedAt = t(-hour)
-        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Reviewers"])
-        #expect(PullRequestStory.others(merged).more.map(\.label) == ["Author", "Branch"])
+        #expect(PullRequestStory.others(merged).facts.map(\.label) == ["Author", "Reviewers"])
+        #expect(PullRequestStory.others(merged).more.map(\.label) == ["Branch"])
     }
 
     @Test func aLinkedPullRequestSaysYouRatherThanYourName() {
@@ -341,13 +422,15 @@ import BriefBarCore
         ])
         let story = PullRequestStory.others(waiting, me: me.id)
         #expect(story.sentence == "Waiting for your review")
-        #expect(story.facts.first == ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on you (required)"))
+        #expect(story.facts.first { $0.label == "Reviewers" } == ItemStory.Fact("Reviewers", "Approved by Priya Shah · Waiting on you (required)"))
         // Without knowing who you are, by name.
         #expect(PullRequestStory.others(waiting).sentence == "Waiting for reviewers: Robin Diaz")
 
         let yours = makePR(author: me, reviewers: [Reviewer(person: People.priya, vote: .waitingForAuthor)])
         #expect(PullRequestStory.others(yours, me: me.id).sentence == "Priya Shah is waiting for you")
+        // Yours: that you wrote it says less.
         #expect(PullRequestStory.others(yours, me: me.id).more.first == ItemStory.Fact("Author", "You"))
+        #expect(!PullRequestStory.others(yours, me: me.id).facts.contains { $0.label == "Author" })
         let approved = makePR(author: People.sam, reviewers: [Reviewer(person: People.priya, vote: .approved), Reviewer(person: me, vote: .approved)])
         #expect(PullRequestStory.others(approved, me: me.id).sentence == "Approved by you and Priya Shah")
     }

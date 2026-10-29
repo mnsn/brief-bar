@@ -199,6 +199,8 @@ package final class AzureDevOpsSource: BriefBarSource {
         pipelines?.start()
         copilot?.start()
         workLinks?.start()
+        // Your name, as your pull requests have it, for a summary to call you "you".
+        services.summaries.yourName = { [weak store] in store?.reader }
         // The tasks sent to Copilot, for its list to show with your sessions: as they go, and with the titles the lists
         // read.
         if let copilot, let sprint {
@@ -255,6 +257,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         workLinks?.stop()
         details?.stop()
         services.sentTasks.withdraw(.azureDevOps)
+        services.summaries.yourName = nil
         store = nil
         sprint = nil
         pipelines = nil

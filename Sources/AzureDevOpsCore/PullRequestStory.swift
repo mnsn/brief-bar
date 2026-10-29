@@ -6,7 +6,8 @@ import Foundation
 public enum PullRequestStory {
     /// One of the pull requests in your lists: you wrote it, review it or watch it, or someone sent it to you. Its row says
     /// where it stands; what was read for it, when it's there, says the rest: who reviews it, you among them, how its
-    /// comments and its merge stand, and the builds and checks that ran on it. Who wrote it and its branch say less.
+    /// comments and its merge stand, and the builds and checks that ran on it. Who wrote it and its branch say less. When
+    /// its row says who sent it to you in a chat, what's shared outside this Mac says where it stands by its votes instead.
     public static func mine(_ snapshot: PRSnapshot, record: PRRecord?) -> ItemStory {
         let pullRequest = record?.pullRequest
         var facts: [ItemStory.Fact] = []
@@ -30,28 +31,46 @@ public enum PullRequestStory {
             run(check, organization: snapshot.key.organization, project: snapshot.project)
         }
         if let merge = snapshot.merge { runs.append(run(merge)) }
+        // Who sent it to you in a chat, and in which app, stays on this Mac: what's shared says what the pull request says.
+        let shared = snapshot.isFromChat ? pullRequest.map { standing($0, me: record?.me) } ?? sharedStatus(snapshot) : nil
         return ItemStory(
-            sentence: sentence(snapshot.headline, snapshot.detail), date: snapshot.since, facts: facts, more: more,
+            sentence: sentence(of: snapshot), sharedSentence: shared, date: snapshot.since, facts: facts, more: more,
             runs: runs.sorted(by: ItemStory.Run.showsFirst)
         )
     }
 
+    /// Where one of your pull requests stands, in a word, to share outside this Mac when its row is there because someone
+    /// sent it to you in a chat (`PRSnapshot.isFromChat`): a draft, or active, as one that's only linked says. Nil when its
+    /// row can be shared.
+    public static func sharedStatus(_ snapshot: PRSnapshot) -> String? {
+        guard snapshot.isFromChat else { return nil }
+        return snapshot.isDraft ? "Draft" : "Active"
+    }
+
     /// A pull request that's linked but not in your lists, such as a teammate's on a sprint's work item. BriefBar reads only
-    /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say.
+    /// the pull request itself for these, not its comments or its checks, so where it stands is what its votes say. Who
+    /// wrote it is one of its facts, unless it's you.
     /// - Parameter me: your identity in its organization, to say "you" rather than your name.
     public static func others(_ pullRequest: PullRequest, me: String? = nil) -> ItemStory {
-        var facts: [ItemStory.Fact] = []
+        let yours = isMe(pullRequest.author, me)
+        var facts = yours ? [] : [ItemStory.Fact("Author", pullRequest.author.name)]
         if let reviewers = reviewers(pullRequest.reviewers, me: me) { facts.append(ItemStory.Fact("Reviewers", reviewers)) }
         if let merge = merge(pullRequest) { facts.append(ItemStory.Fact("Merge", merge)) }
-        var more = [ItemStory.Fact("Author", isMe(pullRequest.author, me) ? "You" : pullRequest.author.name)]
+        var more = yours ? [ItemStory.Fact("Author", "You")] : []
         if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
         return ItemStory(
             sentence: standing(pullRequest, me: me), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
-            footnote: pullRequest.status == .active ? "Builds and comments aren't read for pull requests you're not on." : nil
+            footnote: pullRequest.status == .active ? "BriefBar reads builds and comments only on your pull requests." : nil
         )
     }
 
     // MARK: Where it stands
+
+    /// Where one of your pull requests stands, as its row says it, without how long it's been so, which its date says:
+    /// "No activity for 15 days" says a day more each day.
+    static func sentence(of snapshot: PRSnapshot) -> String {
+        snapshot.reason == .inactive ? "No recent activity" : sentence(snapshot.headline, snapshot.detail)
+    }
 
     /// "Sam Rivera replied: Could we cap it?": a row's headline and its detail, in a line.
     static func sentence(_ headline: String, _ detail: String?) -> String {

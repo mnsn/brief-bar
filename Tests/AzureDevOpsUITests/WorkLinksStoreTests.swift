@@ -67,6 +67,9 @@ import Testing
         let bug = links.connections(of: .workItem(organization: organization, id: 5110))
         #expect(bug.first { $0.item.ref == session }?.via?.ref == .pullRequest(organization: organization, number: 4091))
         #expect(links.unknown([.workItem, .pullRequest]).isEmpty)
+        // A story's tasks, in the sprint, are something to sum up besides what's linked; a task has none.
+        #expect(links.describe(.workItem(organization: organization, id: 5101)).parts == 4)
+        #expect(links.describe(.workItem(organization: organization, id: 5103)).parts == 0)
 
         // What's linked that the lists and the sprint don't show stays looked up once it's been read, so the engine keeps
         // it rather than forgetting it and reading it again.
@@ -102,7 +105,7 @@ import Testing
         #expect(coupon.runs.first?.state == .done)
         // A teammate's, which the lists don't show: what the pull request says itself.
         let saved = try #require(workLinks.tell(.pullRequest(organization: organization, number: 4120)))
-        #expect(saved.more.first == ItemStory.Fact("Author", "Sam Rivera"))
+        #expect(saved.facts.first == ItemStory.Fact("Author", "Sam Rivera"))
         #expect(saved.runs.isEmpty)
         #expect(saved.footnote != nil)
         // A task sent to Copilot: how it went, what it opened, and the summary it ended with.
@@ -119,6 +122,64 @@ import Testing
         #expect(story.more == [ItemStory.Fact("Type", "User Story")])
         #expect(story.facts.contains(ItemStory.Fact("Work", "6 h left")))
         #expect(workLinks.tell(.workItem(organization: organization, id: 9999)) == nil)
+    }
+
+    @Test func whoSentAPullRequestInAChatIsntShared() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+
+        // Dana sent it in Teams, and it needs you; Priya sent the other, and you approved it.
+        for (number, status) in [(4113, "Needs You"), (4108, "Answered")] {
+            let ref = ItemRef.pullRequest(organization: organization, number: number)
+            let row = links.describe(ref)
+            #expect(row.status == status)
+            #expect(row.statusToShare == "Active")
+            let story = try #require(workLinks.tell(ref))
+            #expect(story.sentence.contains("sent this in Teams"))
+            let shared = try #require(story.sharedSentence)
+            #expect(!shared.isEmpty)
+            for said in ["Dana", "Priya", "Teams", "sent this"] {
+                #expect(!shared.contains(said))
+            }
+        }
+        // One that's there for itself says so as it is.
+        let coupon = links.describe(.pullRequest(organization: organization, number: 4091))
+        #expect(coupon.sharedStatus == nil)
+        #expect(try #require(workLinks.tell(coupon.ref)).sharedSentence == nil)
+    }
+
+    /// A task's row and story say how it works, not for how long, which its date says: a minute later, they're the same.
+    @Test func aTaskAtWorkSaysTheSameAsTimePasses() async throws {
+        let start = Date(timeIntervalSince1970: 1_792_000_000)
+        let working = try #require(CopilotTaskEntry.demo(now: start).first { $0.status.phase == .working && $0.workItem?.id == 5103 })
+        // The lists say for how long.
+        #expect(working.sentence(now: start) == "Working for 6m: Run the cart tests")
+        #expect(working.sentence(now: start.addingTimeInterval(60)) == "Working for 7m: Run the cart tests")
+        #expect(working.sentence(now: nil) == "Working: Run the cart tests")
+        #expect(WorkLinksStore.story(of: working).sentence == "Working: Run the cart tests")
+
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(
+            links: links, stories: ItemStories(links: links), store: store, sprint: sprint, copilot: copilot, settings: settings
+        )
+        await workLinks.loadOnce()
+        let row = links.describe(try #require(ItemRef.session(working.id)))
+        #expect(row.status == "Working: Run the cart tests")
     }
 
     @Test func looksUpWhatsLinkedButNotListedWhateverIsDescribed() {

@@ -179,6 +179,78 @@ import Testing
         #expect(!stories.isTelling(session))
     }
 
+    @Test func aSummaryCancelledWhileAStoryIsToldLeavesNothingBeingTold() async throws {
+        let (_, stories) = hub()
+        let gate = Gate()
+        let asked = Asked()
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            if asked.refs.count == 1 { await gate.wait() }
+            return ItemStory(sentence: "Finished")
+        }
+        stories.register(.azureDevOps, kinds: [.pullRequest]) { ref in
+            asked.refs.append(ref)
+            return ItemStory(sentence: "Waiting for reviewers")
+        }
+        let summary = Task { await stories.tell([item(session), item(pullRequest)]) }
+        for _ in 0..<200 where gate.continuation == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(stories.isTelling(session))
+        summary.cancel()
+        gate.open()
+        await summary.value
+        // What it asked is taken back, and it asks nothing more.
+        #expect(!stories.isTelling(session))
+        #expect(!stories.hasTold(session))
+        #expect(asked.refs == [session])
+        // Asked again for the same row, it's told.
+        await stories.tell([item(session)])
+        #expect(asked.refs == [session, session])
+        #expect(stories.story(for: session)?.sentence == "Finished")
+    }
+
+    @Test func tellingWaitsForAStoryBeingToldForTheSameRow() async throws {
+        let (_, stories) = hub()
+        let gate = Gate()
+        let asked = Asked()
+        stories.register(.copilot, kinds: [.session]) { ref in
+            asked.refs.append(ref)
+            let count = asked.refs.count
+            await gate.wait()
+            return ItemStory(sentence: "Told \(count)")
+        }
+        // The details ask first.
+        stories.request(item(session))
+        for _ in 0..<200 where gate.continuation == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let summary = Task { await stories.tell([item(session)]) }
+        try await Task.sleep(for: .milliseconds(30))
+        gate.open()
+        await summary.value
+        // Told once, and there for what waited.
+        #expect(asked.refs == [session])
+        #expect(stories.story(for: session)?.sentence == "Told 1")
+
+        // What waits for another's request doesn't take it back: that one goes on, for the details.
+        let next = item(session, status: "Working")
+        stories.request(next)
+        for _ in 0..<200 where gate.continuation == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let cancelled = Task { await stories.tell([next]) }
+        try await Task.sleep(for: .milliseconds(30))
+        cancelled.cancel()
+        gate.open()
+        await cancelled.value
+        for _ in 0..<200 where stories.isTelling(session) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(asked.refs == [session, session])
+        #expect(stories.story(for: session)?.sentence == "Told 2")
+    }
+
     // MARK: Where it stands
 
     private func connection(_ ref: ItemRef, state: ItemState?, minutesAgo: Double) -> LinkConnection {

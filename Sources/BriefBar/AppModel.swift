@@ -57,8 +57,14 @@ final class AppModel: ObservableObject {
         agents = AgentsModel(defaults: defaults, isLive: !demo && !rendering)
         // Summaries: the app asks the Copilot CLI when you ask; the demo makes them up; `--render` of your own data writes
         // none.
-        services.summaries.models = CopilotModel.suggestions.map { StorySummaries.Model(id: $0.id, name: $0.name) }
-        services.summaries.write = demo ? DemoSummaries.write : rendering ? nil : AppModel.copilotSummaries()
+        services.summaries.models = CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
+        if demo {
+            services.summaries.write = DemoSummaries.write
+        } else if !rendering {
+            let summarizer = CopilotSummarizer()
+            services.summaries.write = AppModel.copilotSummaries(summarizer)
+            services.summaries.findCLI = { await summarizer.findsCLI() }
+        }
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")
         // Only the app itself reads Notification Center for pull requests sent in chats.
@@ -595,13 +601,18 @@ final class AppModel: ObservableObject {
 }
 
 extension AppModel {
-    /// Asks the Copilot CLI for summaries, with no tools, one at a time as you ask.
-    static func copilotSummaries() -> StorySummaries.Writer {
-        let summarizer = CopilotSummarizer()
-        return { prompt, options in
+    /// Asks the Copilot CLI for summaries, with no tools, one at a time as you ask; and when one fails, says why in a
+    /// sentence, with what the CLI said for its tooltip.
+    static func copilotSummaries(_ summarizer: CopilotSummarizer) -> StorySummaries.Writer {
+        { prompt, options in
             switch await summarizer.summarize(prompt, options: CopilotRunOptions(model: options.model, effort: options.effort)) {
-            case .success(let answer): return .success(answer)
-            case .failure(let failure): return .failure(StorySummaries.Problem(failure.message))
+            case .success(let answer):
+                return .success(answer)
+            case .failure(let failure):
+                let fix: StorySummaries.Problem.Fix? = if case .modelUnavailable = failure { .chooseModel } else { nil }
+                return .failure(StorySummaries.Problem(
+                    failure.message(model: CopilotModel.name(of: options.model)), detail: failure.detail, fix: fix
+                ))
             }
         }
     }

@@ -4,8 +4,9 @@ import Foundation
 
 /// Summarize with Copilot: a short summary of a thing and what's linked to it, which the Copilot CLI writes when you ask,
 /// never by itself, from what the details show (`StorySummaryPrompt`), with no tools at all. It's off until you turn it
-/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, or
-/// Show Links or this goes off, and says when what it summed up changed since.
+/// on, and works only while Show Links is on. A summary is kept in memory only, until BriefBar quits, it's dismissed, Show
+/// Links or this goes off, or a source stops, and says when what it summed up changed since. One being written stops then,
+/// with Copilot.
 @MainActor
 package final class StorySummaries: ObservableObject {
     package static let enabledKey = "summaries.copilot.enabled"
@@ -38,12 +39,23 @@ package final class StorySummaries: ObservableObject {
     /// Writes an answer to a prompt, or says why it can't, in a sentence.
     package typealias Writer = @Sendable (_ prompt: String, _ options: Options) async -> Result<String, Problem>
 
-    /// Why there's no summary, in a sentence.
+    /// Why there's no summary, in a sentence; what the Copilot CLI said, as it said it, when the sentence says it in other
+    /// words; and what would help, beside trying again.
     package struct Problem: Error, Equatable, Sendable {
-        package var message: String
+        /// What would help, beside trying again.
+        package enum Fix: Equatable, Sendable {
+            /// Choosing another model, in the setting.
+            case chooseModel
+        }
 
-        package init(_ message: String) {
+        package var message: String
+        package var detail: String?
+        package var fix: Fix?
+
+        package init(_ message: String, detail: String? = nil, fix: Fix? = nil) {
             self.message = message
+            self.detail = detail
+            self.fix = fix
         }
     }
 
@@ -52,24 +64,61 @@ package final class StorySummaries: ObservableObject {
         /// Copilot is writing it.
         case writing(since: Date)
         /// What it wrote, with what it summed up then, to tell when that changed.
-        case written(StorySummary, at: Date, inputs: String, model: String)
+        case written(StorySummary, at: Date, inputs: [Input], model: String)
         case failed(Problem, at: Date)
+    }
+
+    /// One of the things a summary summed up, as it was then: the thing itself, or one linked to it. What it says leaves out
+    /// any date or how long ago, so time passing alone doesn't change it.
+    package struct Input: Equatable, Sendable {
+        package var ref: ItemRef
+        /// What a sentence calls it: "5101", "!4120", or a session's name.
+        package var label: String
+        /// What its row says: its state, its title and its status.
+        package var row: String
+        /// What its story said: where it stands, its facts, its runs' names and how they stand, and how many checkpoints
+        /// Copilot recorded and what it said last; nil when its story wasn't known.
+        package var story: String?
+
+        package init(ref: ItemRef, label: String, row: String, story: String?) {
+            self.ref = ref
+            self.label = label
+            self.row = row
+            self.story = story
+        }
+
+        /// Whether it says something else now: its row, or its story, when it's known both then and now. A story known only
+        /// then or only now, such as one that's been forgotten since, says nothing either way.
+        func differs(from now: Input) -> Bool {
+            if row != now.row { return true }
+            guard let then = story, let now = now.story else { return false }
+            return then != now
+        }
     }
 
     @Published package private(set) var isOn: Bool
     @Published package private(set) var model: String
     @Published private var states: [ItemRef: State] = [:]
+    /// Whether the Copilot CLI is there, as it was last looked for (`lookForCLI`); nil until then.
+    @Published package private(set) var hasCLI: Bool?
     /// The models Settings offers; the app fills it in.
     package var models: [Model] = [Model(id: StorySummaries.defaultModel, name: "Claude Haiku 5.5")]
     /// Asks Copilot; nil until the app sets it, and then summaries can't be written.
     package var write: Writer?
+    /// Looks for the Copilot CLI, nil when it couldn't tell; nil where nothing's looked for, as in the demo.
+    package var findCLI: (@Sendable () async -> Bool?)?
+    /// Your name as a source knows it, for a summary to call you "you": Azure DevOps sets it, once it read your pull
+    /// requests, while it's on.
+    package var yourName: (@MainActor () -> String?)?
     /// For tests: what "now" is.
     var now: () -> Date = Date.init
 
     private let defaults: UserDefaults
     private let links: Links
     private let stories: ItemStories
-    private var tasks: [ItemRef: Task<Void, Never>] = [:]
+    /// The summaries being written: which request writes each, which alone may say what was written, and its task.
+    private var writing: [ItemRef: (token: Int, task: Task<Void, Never>)] = [:]
+    private var nextToken = 0
     private var cancellables: Set<AnyCancellable> = []
 
     /// - Parameter isDemo: the demo shows made-up summaries, in preferences that are thrown away.
@@ -83,6 +132,19 @@ package final class StorySummaries: ObservableObject {
         links.$isOn.removeDuplicates().filter { !$0 }
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
             .store(in: &cancellables)
+        // So does a source that stops: what it said goes with it, and any summary may say it.
+        links.withdrawn.merge(with: stories.withdrawn)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
+            .store(in: &cancellables)
+        // Whether one written is out of date changes with what's linked, and what's told of each: what shows it looks again.
+        links.objectWillChange.merge(with: stories.objectWillChange)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.lookAgain() } }
+            .store(in: &cancellables)
+    }
+
+    private func lookAgain() {
+        guard states.values.contains(where: { if case .written = $0 { true } else { false } }) else { return }
+        objectWillChange.send()
     }
 
     /// Whether ✨ Summarize shows: this is on, and so is Show Links.
@@ -107,26 +169,47 @@ package final class StorySummaries: ObservableObject {
         models.first { $0.id == model }?.name ?? model
     }
 
+    /// Looks for the Copilot CLI while this is on, for Settings to say when it isn't there.
+    package func lookForCLI() async {
+        guard isOn, let findCLI, let found = await findCLI() else { return }
+        hasCLI = found
+    }
+
     // MARK: Summaries
 
     package func state(for subject: ItemRef) -> State? {
         states[subject]
     }
 
+    /// Whether there's something to sum up: two things linked to it or more, or one and parts of its own, such as a story's
+    /// tasks. Nothing while this or Show Links is off.
+    package func hasSomethingToSum(_ subject: ItemRef) -> Bool {
+        guard isAvailable else { return false }
+        let linked = links.connections(of: subject).count
+        return linked >= 2 || (linked == 1 && links.describe(subject).parts > 0)
+    }
+
+    /// For `--render`: a summary as it would stand, without asking Copilot.
+    package func useForRendering(_ subject: ItemRef, state: State?) {
+        states[subject] = state
+    }
+
     /// Asks Copilot for a summary of a thing and what's linked to it, as the details show them now, in place of the one
     /// it has. Nothing unless this and Show Links are on.
     package func summarize(_ subject: ItemRef) {
         guard isAvailable, !links.connections(of: subject).isEmpty else { return }
-        tasks[subject]?.cancel()
-        let started = now()
-        states[subject] = .writing(since: started)
+        writing[subject]?.task.cancel()
+        nextToken += 1
+        let token = nextToken
+        states[subject] = .writing(since: now())
         let options = Options(model: model, effort: "low")
-        tasks[subject] = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
             // What's known of it and of each, as it is now.
             await self.stories.tell([self.links.describe(subject)] + self.links.connections(of: subject).map(\.item))
-            guard self.isCurrent(subject, started: started) else { return }
+            guard self.isCurrent(subject, token: token) else { return }
             guard let input = self.input(for: subject) else {
+                self.writing[subject] = nil
                 self.states[subject] = nil
                 return
             }
@@ -135,26 +218,27 @@ package final class StorySummaries: ObservableObject {
             } else {
                 .failure(Problem("BriefBar can't ask the Copilot CLI here."))
             }
-            self.finish(subject, started: started, answer: answer, inputs: input.inputs, model: options.model)
+            self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model)
         }
+        writing[subject] = (token, task)
     }
 
-    /// Whether the summary started then is still the one being written.
-    private func isCurrent(_ subject: ItemRef, started: Date) -> Bool {
-        guard isAvailable, !Task.isCancelled, case .writing(let since)? = states[subject] else { return false }
-        return since == started
+    /// Whether a request is still the one writing a summary: not cancelled, dismissed, asked again, taken back by a source
+    /// that stopped, or turned off.
+    private func isCurrent(_ subject: ItemRef, token: Int) -> Bool {
+        isAvailable && !Task.isCancelled && writing[subject]?.token == token
     }
 
     /// Writes one and waits, for `--render`.
     package func summarizeAndWait(_ subject: ItemRef) async {
         summarize(subject)
-        await tasks[subject]?.value
+        await writing[subject]?.task.value
     }
 
-    private func finish(_ subject: ItemRef, started: Date, answer: Result<String, Problem>, inputs: String, model: String) {
+    private func finish(_ subject: ItemRef, token: Int, answer: Result<String, Problem>, inputs: [Input], model: String) {
         // Taken back meanwhile: cancelled, dismissed, asked again, or turned off.
-        guard isCurrent(subject, started: started) else { return }
-        tasks[subject] = nil
+        guard isCurrent(subject, token: token) else { return }
+        writing[subject] = nil
         switch answer {
         case .success(let text):
             if let summary = StorySummary.parse(text) {
@@ -170,33 +254,50 @@ package final class StorySummaries: ObservableObject {
 
     /// Stops writing one.
     package func cancel(_ subject: ItemRef) {
-        tasks.removeValue(forKey: subject)?.cancel()
+        writing.removeValue(forKey: subject)?.task.cancel()
         if case .writing? = states[subject] { states[subject] = nil }
     }
 
     /// Forgets one.
     package func dismiss(_ subject: ItemRef) {
-        tasks.removeValue(forKey: subject)?.cancel()
+        writing.removeValue(forKey: subject)?.task.cancel()
         states[subject] = nil
     }
 
-    /// Whether what a written summary summed up changed since: what's linked, or where one of them stands.
+    /// Whether what a written summary summed up changed since: what's linked, or what one of them says.
     package func isOutOfDate(_ subject: ItemRef) -> Bool {
-        guard case .written(_, _, let inputs, _)? = states[subject] else { return false }
-        return input(for: subject).map { $0.inputs != inputs } ?? true
+        whatChanged(subject) != nil
+    }
+
+    /// What changed since a written summary, in a sentence: "!4120 changed", "!4120 and 5103 changed; !4130 was linked".
+    /// Nil while it's current, and for one that isn't written.
+    package func whatChanged(_ subject: ItemRef) -> String? {
+        guard case .written(_, _, let then, _)? = states[subject] else { return nil }
+        let now = inputs(for: subject)
+        let before = Dictionary(then.map { ($0.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        let after = Set(now.map(\.ref))
+        let changed = now.filter { input in before[input.ref]?.differs(from: input) ?? false }
+        let linked = now.filter { before[$0.ref] == nil }
+        let unlinked = then.filter { !after.contains($0.ref) }
+        let said = [
+            changed.isEmpty ? nil : Self.list(changed.map(Self.name)) + " changed",
+            linked.isEmpty ? nil : Self.list(linked.map(Self.name)) + (linked.count == 1 ? " was linked" : " were linked"),
+            unlinked.isEmpty ? nil : Self.list(unlinked.map(Self.name)) + (unlinked.count == 1 ? " was unlinked" : " were unlinked"),
+        ].compactMap { $0 }
+        return said.isEmpty ? nil : said.joined(separator: "; ")
     }
 
     private func forgetAll() {
-        for task in tasks.values { task.cancel() }
-        tasks = [:]
+        for writing in writing.values { writing.task.cancel() }
+        writing = [:]
         states = [:]
     }
 
     // MARK: What's summed up
 
-    /// The prompt for a thing and what's linked to it, as the details show them, the most pressing first; and what
-    /// tells when that changes: each one's row as it is. Nil when nothing's linked to it.
-    func input(for subject: ItemRef) -> (prompt: String, inputs: String)? {
+    /// The prompt for a thing and what's linked to it, as the details show them, the most pressing first; and what tells
+    /// when that changes: what each one says. Nil when nothing's linked to it.
+    func input(for subject: ItemRef) -> (prompt: String, inputs: [Input])? {
         let connections = links.connections(of: subject).sorted { lhs, rhs in
             ItemState.rank(lhs.item.state) < ItemState.rank(rhs.item.state)
         }
@@ -204,16 +305,59 @@ package final class StorySummaries: ObservableObject {
         let described = links.describe(subject)
         let item = { (linked: LinkedItem, link: String?) in
             StorySummaryPrompt.Item(
-                kind: Self.kind(of: linked), label: linked.label, title: linked.title, status: linked.status, link: link,
+                kind: Self.kind(of: linked), label: linked.label, title: linked.title, status: linked.statusToShare, link: link,
                 story: self.stories.story(for: linked.ref)
             )
         }
         let prompt = StorySummaryPrompt.make(
             subject: item(described, nil),
-            linked: connections.map { item($0.item, $0.reason) }
+            linked: connections.map { item($0.item, $0.reason) },
+            reader: yourName?()
         )
-        let inputs = ([described] + connections.map(\.item)).map { "\($0.ref)#\(ItemStories.version(of: $0))" }.joined(separator: ",")
-        return (prompt, inputs)
+        return (prompt, inputs(for: subject))
+    }
+
+    /// The thing and what's linked to it, each as it says now.
+    private func inputs(for subject: ItemRef) -> [Input] {
+        ([links.describe(subject)] + links.connections(of: subject).map(\.item)).map { item in
+            Self.input(item, story: stories.story(for: item.ref))
+        }
+    }
+
+    /// What a thing says, as the prompt has it, to tell when that changes: its row's state, title and status, as it may be
+    /// shared; and its story's sentence, facts, runs' names and how they stand, and how many checkpoints Copilot recorded
+    /// and what it said last. No date goes in, nor do its notes or a failed run's error.
+    static func input(_ item: LinkedItem, story: ItemStory?) -> Input {
+        let story = story.map { story in
+            var lines = [story.sentenceToShare]
+            lines += story.facts.map { "\($0.label): \($0.value)" }
+            lines += story.runs.map { "\($0.name): \($0.status)" }
+            if let account = story.account, !account.isEmpty {
+                lines += ["\(account.milestoneCount) checkpoints", account.lastMessage ?? ""]
+            }
+            return lines.joined(separator: "\n")
+        }
+        let row = [item.state?.rawValue ?? "", item.title, item.statusToShare ?? ""]
+        return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: story)
+    }
+
+    /// What a sentence calls it: a work item's or a pull request's number, a session's name in quotes.
+    static func name(_ input: Input) -> String {
+        input.ref.kind == .session ? "“\(input.label)”" : input.label
+    }
+
+    /// What a summary was written from, as a sentence says it: the thing's and its pull requests' numbers, then how many
+    /// Copilot sessions: "5101, !4120 and 1 Copilot session".
+    package static func source(of inputs: [Input]) -> String {
+        let sessions = inputs.filter { $0.ref.kind == .session }.count
+        let counted = sessions == 0 ? [] : [sessions == 1 ? "1 Copilot session" : "\(sessions) Copilot sessions"]
+        return list(inputs.filter { $0.ref.kind != .session }.map(\.label) + counted)
+    }
+
+    /// "!4120", "!4120 and 5103", "!4120, 5103 and #12".
+    static func list(_ names: [String]) -> String {
+        guard names.count > 1, let last = names.last else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + last
     }
 
     /// "Work item", "Pull request", "Copilot session", "Task sent to Copilot".

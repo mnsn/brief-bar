@@ -440,14 +440,34 @@ order: a task Azure DevOps sent to Copilot says how it went, and Copilot what it
 
 ### Summarize with Copilot
 
-**Summarize with Copilot**, in Settings › General, is off until you turn it on, and works only while Show Links is on
-(`StorySummaries` in `Sources/BriefBarUI`). Then Where It Stands has **✨ Summarize**, which, only when you click it,
-asks the Copilot CLI for a summary of the work item and what's linked to it. Before it asks, the sources tell what they
+**Summarize with Copilot**, in Settings › General, under Show Links, is off until you turn it on, and works only while
+Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says, a line each, what it sends, where, what
+it costs and what Copilot can do, with the model it asks: Claude Haiku 5.5 (Recommended), Claude Sonnet 5.5, GPT-6.1 Sol
+or Gemini 4 Argon (`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may
+choose it; and, once it's on, whether the Copilot CLI is there, as your login shell finds it. While Show Links is off,
+it's dimmed and can't be changed. Then, once there's something to sum up, two things linked to the work item or more,
+or one and its own tasks, as the sprint has them for a story or a bug (`LinkedItem.parts`), Where It Stands' header
+has **✨ Summarize with Copilot**, or just **Summarize** where that doesn't fit, while no summary shows; its tooltip says
+where it goes, and that it uses your Copilot plan. Only when you click it, it asks the Copilot CLI for a summary of the
+work item and what's linked to it. Before it asks, the sources tell what they
 know of each, as for the details, the work item's description and latest comments too, and `StorySummaryPrompt` (in
 `Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
 model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
-first, and at most 14,000 characters. It asks for a headline, what's next and who for, and at most 120 words, which
-`StorySummary` reads, whatever Markdown is around them.
+first, and at most 14,000 characters. The data starts with your name, as your pull requests have it in Azure DevOps,
+when that's known, and the model is told that's who reads it, to call you "you"; and that you already see each row's
+status, so it leads with what the rows don't say: blockers, what's left, contradictions. It asks for a headline, whom
+the next step is for (you, a person or Copilot) and what it is, and at most 120 words, which `StorySummary` reads,
+whatever Markdown is around them, and a next step that names whom it's for first, as in "Sam Rivera: get !4120
+reviewed". A teammate's pull request says who wrote it as one of its facts. Nothing from Teams goes in it, nor anything
+from the notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or
+that you answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its
+status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
+
+The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
+what's left behind **Show More**. Its caption says "Summary by Copilot · 2m ago", the time each minute and never cut
+short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
+has one control: **Cancel** while it's written, then **✕** only, in a 22-point target; **Summarize Again** and **Copy
+Summary** in its right-click menu. VoiceOver says "Summary ready" once it's written.
 
 `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
@@ -457,11 +477,24 @@ shell's environment, for two minutes at most. No tool is called `briefbar_no_too
 `~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
 skills or MCP servers apply. The model is Claude Haiku 5.5 unless you choose another. The CLI keeps each run as a
 session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
+When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
+information found"), the model isn't on your plan, or your premium requests ran out, and the card says so in a
+sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
+**Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
 
-The summary is kept in memory only, until BriefBar quits, you close it, or Show Links or Summarize with Copilot goes off;
-one being written is stopped then, and **Cancel** stops it too. Once what it summed up changes, each row's state, status,
-title or date, it says it's out of date, with **Summarize Again**. The demo makes summaries up (`DemoSummaries`) and never
-runs Copilot, and `--render` of your own data writes none.
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summarize with Copilot goes off, or
+a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
+doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. The stories it was waiting for
+stop being read, unless the details asked for them too, and a story the details are reading already is waited for
+rather than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state,
+title or status, or what its story says, where it stands, its facts, how its runs stand and how many checkpoints Copilot
+recorded and what it said last (`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and
+story say "Working" rather than for how long, which its date says, and a pull request without recent activity says
+just that; and a story that's been forgotten since, a quarter of an hour on, makes no difference until it's told again.
+Its caption then says **Out of date**, in orange, with what changed in its tooltip, "!4120 changed", and **Summarize
+Again** on its right; the headline and the next step turn gray. The demo makes summaries up (`DemoSummaries`) and never
+runs Copilot, and `--render` of your own data writes none; the demo's pictures show a summary as it's written, once it
+is, out of date and failed (`summary-*`), and the setting with Show Links off.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
 BriefBar until you choose **Show Hidden Links**; hiding a pull request's link hides what's linked through it too.
