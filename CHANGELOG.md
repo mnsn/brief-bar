@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.5 - 2026-10-29
 
 - **Answer a Copilot question once, where it's passed on.** When a session that another session
   coordinates asks a question or has a plan for you, the coordinating session asks you too, and a plan
