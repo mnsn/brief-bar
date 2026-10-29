@@ -19,7 +19,7 @@ package struct WhereItStandsSection: View {
     ///   - excluding: what it leaves out, such as, on a page, the work item and the pages you came from.
     ///   - hidesWhenEmpty: whether it shows nothing at all while nothing's linked, as on a page.
     ///   - showsSummary: whether ✨ Summarize with Copilot and its summary are here, rather than, on a page, under its
-    ///     heading.
+    ///     heading; and whether it says who it all waits on, and folds to that.
     package init(
         subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false,
         showsSummary: Bool = true
@@ -36,6 +36,15 @@ package struct WhereItStandsSection: View {
             subject: subject, excluding: excluding, title: title, hidesWhenEmpty: hidesWhenEmpty, showsSummary: showsSummary,
             links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults
         )
+    }
+
+    /// The preferences' key for Where It Stands folded to who it waits on.
+    static let foldedKey = "links.whereItStandsFolded"
+
+    /// Who it all waits on: the thing's own, such as Copilot at work on a story's task, and what's linked to it; you first,
+    /// then other people, then Copilot, each once.
+    static func waits(of subject: ItemStory?, _ connections: [ItemStory?]) -> [ItemStory.Wait] {
+        ItemStory.Wait.ordered((subject?.waits ?? []) + connections.flatMap { $0?.waits ?? [] })
     }
 
     /// The preferences' key for the line that says how to see what's linked, once you dismissed it.
@@ -194,11 +203,21 @@ private struct ItemNavigationKey: EnvironmentKey {
     static var defaultValue: ItemNavigation? { nil }
 }
 
+private struct WhereItStandsFoldedKey: EnvironmentKey {
+    static var defaultValue: Bool? { nil }
+}
+
 extension EnvironmentValues {
     /// Where a linked thing opens, when there's somewhere: the Sprint page's details.
     package var itemNavigation: ItemNavigation? {
         get { self[ItemNavigationKey.self] }
         set { self[ItemNavigationKey.self] = newValue }
+    }
+
+    /// Whether Where It Stands is folded, whatever you left it at: for a picture of it.
+    package var whereItStandsFolded: Bool? {
+        get { self[WhereItStandsFoldedKey.self] }
+        set { self[WhereItStandsFoldedKey.self] = newValue }
     }
 }
 
@@ -216,12 +235,19 @@ private struct StandingContent: View {
     @LocalState private var expanded: Set<ItemRef> = []
     @LocalState private var showsEverything = false
     @LocalState private var hintHidden: Bool?
+    @LocalState private var folded: Bool?
     @LocalState private var showsSetting = false
     @Environment(\.isRendering) private var isRendering
     @Environment(\.itemNavigation) private var navigation
+    @Environment(\.whereItStandsFolded) private var foldedToShow
 
     private var isHintHidden: Bool {
         hintHidden ?? defaults.bool(forKey: WhereItStandsSection.hintHiddenKey)
+    }
+
+    /// Folded to who it waits on, as you left it; never where it doesn't say that.
+    private var isFolded: Bool {
+        showsSummary && (folded ?? foldedToShow ?? defaults.bool(forKey: WhereItStandsSection.foldedKey))
     }
 
     var body: some View {
@@ -230,11 +256,21 @@ private struct StandingContent: View {
         let rows = connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }
         if (links.isOn || !isHintHidden) && !(hidesWhenEmpty && groups.isEmpty) {
             VStack(alignment: .leading, spacing: 8) {
-                header(count: connections.count, canSummarize: showsSummary && !groups.isEmpty)
-                if links.isOn, showsSummary {
+                header(count: connections.count, canSummarize: showsSummary && !groups.isEmpty && !isFolded)
+                let waits = WhereItStandsSection.waits(of: stories.story(for: subject), connections.map { stories.story(for: $0.item.ref) })
+                if links.isOn, showsSummary, !waits.isEmpty {
+                    WaitingLine(waits: waits)
+                }
+                if links.isOn, showsSummary, !isFolded {
                     SummaryCard(subject: subject, summaries: summaries, rows: rows)
                 }
-                if !links.isOn {
+                if isFolded, links.isOn {
+                    if waits.isEmpty {
+                        Text("Nothing waits on anyone.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                } else if !links.isOn {
                     off
                 } else if groups.isEmpty {
                     HStack(spacing: 8) {
@@ -268,11 +304,30 @@ private struct StandingContent: View {
     }
 
     private func request(_ connections: [LinkConnection]) {
+        // Its own, for who it waits on, such as Copilot at work on one of its tasks.
+        if showsSummary { stories.request(links.describe(subject)) }
         for connection in connections { stories.request(connection.item) }
     }
 
     private func header(count: Int, canSummarize: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if showsSummary, links.isOn {
+                Button {
+                    let fold = !isFolded
+                    withAnimation(.easeOut(duration: 0.15)) { folded = fold }
+                    defaults.set(fold, forKey: WhereItStandsSection.foldedKey)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isFolded ? 0 : 90))
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(isFolded ? "Show what's linked" : "Show only who it waits on")
+                .accessibilityLabel(isFolded ? "Show What's Linked" : "Show Only Who It Waits On")
+            }
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
@@ -390,6 +445,24 @@ private struct StandingContent: View {
             }
         }
         .font(.system(size: 11.5))
+    }
+}
+
+/// "Waiting on: you, to complete !4091 · Copilot, on 5103", what waits on you in the color of what needs you.
+private struct WaitingLine: View {
+    let waits: [ItemStory.Wait]
+
+    var body: some View {
+        let parts = waits.enumerated().map { index, wait in
+            (index > 0 ? Text(" · ").foregroundStyle(.secondary) : Text(""))
+                + Text(wait.text).foregroundStyle(wait.who == .you ? AnyShapeStyle(ItemState.needsYou.textColor) : AnyShapeStyle(.primary))
+        }
+        (parts.reduce(Text("Waiting on: ").fontWeight(.semibold).foregroundStyle(.secondary)) { $0 + $1 })
+            .font(.system(size: 12))
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .accessibilityLabel("Waiting on " + waits.map(\.text).joined(separator: ", "))
     }
 }
 

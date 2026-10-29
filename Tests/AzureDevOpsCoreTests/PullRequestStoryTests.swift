@@ -215,6 +215,17 @@ import BriefBarCore
         #expect(PullRequestStory.mine(try snapshot(record(makePR())), record: nil).facts.isEmpty)
     }
 
+    @Test func aPullRequestsStorySaysWhoItWaitsOn() throws {
+        // A teammate's, without a vote yet from the reviewer it waits on.
+        let waiting = makePR(author: People.sam, reviewers: [Reviewer(person: People.priya, vote: .none)])
+        #expect(PullRequestStory.others(waiting).waits == [ItemStory.Wait(.people, "Priya Shah, to review Sam Rivera's !\(waiting.key.number)")])
+        // Merged: nothing waits.
+        #expect(PullRequestStory.others(makePR(status: .completed, closed: t(-hour))).waits.isEmpty)
+        // One of yours, as its row says it.
+        let mine = try story(record(makePR(draft: true)))
+        #expect(mine.waits.isEmpty)
+    }
+
     @Test func approvalsItsSentenceSaysArentSaidAgain() {
         let approved = ItemStory.Fact("Reviewers", "Approved by Chen Wei and Priya Shah")
         let comments = ItemStory.Fact("Comments", "No open threads")

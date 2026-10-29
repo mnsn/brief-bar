@@ -592,13 +592,16 @@ package final class AzureDevOpsSource: BriefBarSource {
                     trail.append(next.item.ref)
                 }
             }
-            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one.
+            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; and with Where It
+            // Stands folded to who it waits on.
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),
+                ("-folded", CGSize(width: 1_000, height: 720)),
             ] {
                 guard suffix.isEmpty || name == "sprint-details" || (name == "sprint-pull-request-page" && suffix == "-medium") else { continue }
                 let page = SprintPage()
                     .environmentObject(details)
+                    .environment(\.whereItStandsFolded, suffix == "-folded" ? true : nil)
                     .environment(\.panelStyle, .page)
                     .frame(width: size.width, height: size.height)
                     .background(WindowBackdrop())

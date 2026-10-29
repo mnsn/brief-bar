@@ -401,7 +401,15 @@ A work item's details start with **Where It Stands** (`WhereItStandsSection` in 
 Links links to it, in a card, the one that needs you most first (needs you, then what's wrong, what's at work, what's
 done or ready, then the rest, the newest first in each), a session linked through a pull request under that pull
 request, and a task you sent to Copilot under the work item it was sent from, where that's listed; four at first, then
-**Show More**, with a tally of their states once there are five or more. A task with nothing linked shows none of it. Each row shows
+**Show More**, with a tally of their states once there are five or more. A task with nothing linked shows none of it.
+Over the card, **Waiting on:** says who the work item and what's linked to it wait on, and for what (`ItemStory.waits`):
+you first, in the color of what needs you, saying what to do, such as "you, to complete !4091"; then other people, such
+as "reviewers of Sam Rivera's !4120"; then Copilot, such as "Copilot, on 5103". A pull request's come from
+`PullRequestWait` (in `Sources/AzureDevOpsCore`), as `work_item`'s do; a session waits on you while it asks, and on
+Copilot while it's at work; the work sent to Copilot, on Copilot while it goes, and on you once it failed. Each is said
+once, and a session once, whether the work sent to Copilot in it or the session itself tells of it
+(`ItemStory.Wait.about`). The chevron by the title folds Where It Stands to that line, and BriefBar remembers it
+(`links.whereItStandsFolded`); folded, with nothing waiting, it says so. Pages don't show it. Each row shows
 its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
 color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
 item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
@@ -1707,11 +1715,14 @@ CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see
 [Where it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a
 few lines: its state and why, who has it, its sprint, with the day it ends and the days left when it's
-the sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, and
-who it waits on. Then its tasks in the sprint, or its children when it isn't there, each with the
+the sprint going on, whose dates the sprint has, how many of its tasks are done, the hours left, who
+it waits on, and what you can do now: what waits on you, without "you, to", and your tasks that aren't
+started, unless Copilot works on one, such as "complete !4091 · start task 5104", or that nothing waits
+on you. Then its tasks in the sprint, or its children when it isn't there, each with the
 latest work sent to Copilot for it; each pull request it links to, told by `PullRequestStory` as the
-panel's rows are: yours as your lists have them, with their checks and merge pipelines, and the others
-as they say themselves, with what isn't read of them; what the other sources know of those pull
+panel's rows are: yours as your lists have them, with their checks and merge pipelines, and with
+`pull_request` to call for their threads while one is open, and the others as they say themselves, with
+what isn't read of them; what the other sources know of those pull
 requests, such as the Copilot sessions on them; the rest of the work sent to Copilot for it; and last,
 its description, its other long texts, such as acceptance criteria or repro steps, and its latest
 comments, each quoted, since what people wrote is data. Who it waits on comes from the same data: each
@@ -1732,7 +1743,8 @@ its repository (`BranchLinks`), or recorded by the app as the pull request a ses
 opened (`SessionSnapshot.recordedLinks`); the ones that need you first, then the newest. For the first
 five, it reads what Copilot recorded of their work (`SessionAccount`) and tells it briefly: the latest
 checkpoint's overview, cut to its first sentences, its first next step, and what the session said last
-when that came after. The rest are named. A session BriefBar sent work to is told with that work. When
+when that came after; once it stopped, what it said then is how it ended, and the next step it planned
+at its checkpoint is left out. The rest are named. A session BriefBar sent work to is told with that work. When
 Copilot is off in the app, the answer says so in a line; with `--source ado`, there's no Copilot to ask.
 
 The tools that change something change only BriefBar's own lists, as its menus do:

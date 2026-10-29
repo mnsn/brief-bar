@@ -44,6 +44,22 @@ import Testing
 
     /// What it asks you to choose from; and, saying less, where it works, its mode, and, while it's at work or waits for
     /// you, its context, each only when it's known.
+    @Test func saysWhoASessionWaitsOn() {
+        var asking = session(.question)
+        asking.phase = .needsYou
+        let ref = ItemRef.session(asking.id)
+        #expect(SessionStory.waits(of: asking) == [ItemStory.Wait(.you, "you, to answer in session “Add dark mode to settings”", about: ref)])
+        // Saying what to do.
+        var plan = session(.planApproval)
+        plan.phase = .needsYou
+        #expect(SessionStory.waits(of: plan).map(\.text) == ["you, to review the plan in session “Add dark mode to settings”"])
+        var working = session(.working)
+        working.phase = .running
+        #expect(SessionStory.waits(of: working) == [ItemStory.Wait(.copilot, "Copilot, in session “Add dark mode to settings”", about: ref)])
+        // Once it's done, stopped or idle, nothing waits on it.
+        #expect(SessionStory.waits(of: session(.finished)).isEmpty)
+    }
+
     @Test func listsWhatsKnownOfASessionInOrder() throws {
         let asking = session(
             .question, detail: "Should dark mode follow the system appearance?", choices: ["Yes, follow the system", "No, add a switch"],

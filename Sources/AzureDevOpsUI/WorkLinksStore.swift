@@ -267,10 +267,12 @@ final class WorkLinksStore {
             let shown = details?.selected.flatMap { $0.linkRef == ref ? $0 : nil }
             guard let item = shown ?? (sprintItems + read.workItems.values).first(where: { $0.linkRef == ref }) else { return nil }
             let tasks = rows.first { $0.parent?.linkRef == ref }?.tasks ?? []
-            // How the work you sent to Copilot for each stands, without for how long.
-            let runs = copilot.isOn ? Dictionary(tasks.compactMap { task in copilot.latest(for: task).map { (task.id, $0.sentence(now: nil)) } },
-                                                 uniquingKeysWith: { first, _ in first }) : [:]
-            return WorkItemStory.make(item, details: details?.details, tasks: tasks, taskRuns: runs)
+            // How the work you sent to Copilot for each stands, without for how long; and Copilot, while it's at it.
+            let entries = copilot.isOn ? tasks.compactMap { task in copilot.latest(for: task).map { (task, $0) } } : []
+            let runs = Dictionary(entries.map { ($0.0.id, $0.1.sentence(now: nil)) }, uniquingKeysWith: { first, _ in first })
+            var story = WorkItemStory.make(item, details: details?.details, tasks: tasks, taskRuns: runs)
+            story.waits = ItemStory.Wait.ordered(entries.flatMap { Self.waits(of: $0.1) })
+            return story
         case .pullRequest:
             if let snapshot = store.items.first(where: { $0.key.linkRef == ref }) {
                 return PullRequestStory.mine(snapshot, record: store.record(for: snapshot.key))
@@ -305,8 +307,19 @@ final class WorkLinksStore {
         }
         return ItemStory(
             sentence: sentence, date: entry.status.since ?? entry.startedAt, facts: [ItemStory.Fact("Model", entry.options.title)],
-            account: account
+            account: account, waits: waits(of: entry)
         )
+    }
+
+    /// Copilot, while the work sent to it goes on; you, once it failed: "Copilot, on 5103".
+    static func waits(of entry: CopilotTaskEntry) -> [ItemStory.Wait] {
+        let on = entry.onPullRequest.map { "!\($0.id)" } ?? entry.workItem.map { "\($0.id)" } ?? "its task"
+        let session = ItemRef.session(entry.id)
+        if entry.status.phase.isActive { return [ItemStory.Wait(.copilot, "Copilot, on \(on)", about: session)] }
+        if entry.status.phase == .failed {
+            return [ItemStory.Wait(.you, "you, to look at Copilot's work on \(on), which failed", about: session)]
+        }
+        return []
     }
 
     static func hint(_ pullRequest: PullRequest) -> BranchHint {

@@ -12,8 +12,24 @@ public enum SessionStory {
         guard let snapshot else { return account.map { ItemStory(sentence: "", account: $0) } }
         return ItemStory(
             sentence: snapshot.storySentence, date: snapshot.since, facts: facts(of: snapshot), more: more(of: snapshot),
-            account: account
+            account: account, waits: waits(of: snapshot)
         )
+    }
+
+    /// You, while it waits for you; Copilot, while it works.
+    static func waits(of snapshot: SessionSnapshot) -> [ItemStory.Wait] {
+        switch snapshot.phase {
+        case .needsYou:
+            let what = switch snapshot.reason {
+            case .planApproval: "to review the plan"
+            case .permission: "to answer a permission request"
+            default: "to answer"
+            }
+            return [ItemStory.Wait(.you, "you, \(what) in session “\(snapshot.displayName)”", about: ItemRef.session(snapshot.id))]
+        case .running:
+            return [ItemStory.Wait(.copilot, "Copilot, in session “\(snapshot.displayName)”", about: ItemRef.session(snapshot.id))]
+        case .done, .stopped, .idle: return []
+        }
     }
 
     /// What it asks you to choose from, when it asks.

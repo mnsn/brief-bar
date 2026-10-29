@@ -36,7 +36,8 @@ public enum PullRequestStory {
         let sentence = sentence(of: snapshot)
         return ItemStory(
             sentence: sentence, sharedSentence: shared, date: snapshot.since, facts: withoutApprovals(facts, saidIn: sentence),
-            more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst)
+            more: more, runs: runs.sorted(by: ItemStory.Run.showsFirst),
+            waits: [PullRequestWait.waiting(on: snapshot, record: record)].compactMap { $0 }
         )
     }
 
@@ -70,7 +71,8 @@ public enum PullRequestStory {
         if let branch = branch(pullRequest) { more.append(ItemStory.Fact("Branch", branch)) }
         return ItemStory(
             sentence: standing(pullRequest, me: me), date: pullRequest.closedAt ?? pullRequest.createdAt, facts: facts, more: more,
-            footnote: pullRequest.status == .active ? "BriefBar reads builds and comments only on your pull requests." : nil
+            footnote: pullRequest.status == .active ? "BriefBar reads builds and comments only on your pull requests." : nil,
+            waits: [PullRequestWait.waiting(on: pullRequest, me: me)].compactMap { $0 }
         )
     }
 

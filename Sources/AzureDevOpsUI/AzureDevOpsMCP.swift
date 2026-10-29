@@ -1051,8 +1051,9 @@ enum AgentText {
         if let parent = read.parent { lines.append("- Under \(parent.type.lowercased()) \(parent.id) “\(parent.title)”") }
         lines.append("- " + standing(item, details: read.details, me: me, now: now))
         if let progress = progress(read, now: now) { lines.append("- " + progress) }
-        let waiting = waitingOn(read, tasks: tasks, related: parts.flatMap(\.items), me: me)
-        if !waiting.isEmpty { lines.append("- Waiting on: " + waiting.joined(separator: " · ")) }
+        let waits = Self.waits(read, tasks: tasks, related: parts.flatMap(\.items), me: me)
+        if !waits.isEmpty { lines.append("- Waiting on: " + waits.map(\.text).joined(separator: " · ")) }
+        lines.append("- You can: " + youCan(waits, read: read, tasks: tasks, me: me))
 
         if !read.tasks.isEmpty {
             lines += ["", read.tasksAreInSprint ? "## Tasks" : "## Children"]
@@ -1209,7 +1210,7 @@ enum AgentText {
         }
         if record == nil {
             if pullRequest.status == .active { lines.append("- Not read: builds and comment threads (you're not on it)") }
-        } else {
+        } else if record?.details?.threads.contains(where: { !$0.isResolved }) == true {
             lines.append("- Threads: pull_request \(key.number)")
         }
         return lines
@@ -1292,103 +1293,65 @@ enum AgentText {
 
     // MARK: Who a work item waits on
 
-    /// Who something waits on, and for what: you, other people, or Copilot.
-    enum Wait: Equatable {
-        case you(String)
-        case people(String)
-        case copilot(String)
+    /// What you can do now: what waits on you, "complete !4091"; and what's yours and not started, unless Copilot works on
+    /// it, "start task 5104", or "start it" for a work item without tasks. Otherwise, that nothing waits on you.
+    static func youCan(
+        _ waits: [ItemStory.Wait], read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], me: String?
+    ) -> String {
+        var things = waits.filter { $0.who == .you }.map { wait in
+            var text = Substring(wait.text)
+            if text.hasPrefix("you, ") { text = text.dropFirst(5) }
+            if text.hasPrefix("to ") { text = text.dropFirst(3) }
+            return String(text)
+        }
+        func toStart(_ item: WorkItem) -> Bool {
+            item.category == .proposed && item.assignedTo.map { isMe($0, me) } == true
+                && !tasks.contains { $0.status.phase.isActive && $0.workItem?.id == item.id && $0.onPullRequest == nil }
+        }
+        let yours = read.tasks.filter(toStart).map { "\($0.id)" }
+        if yours.count == 1 { things.append("start task \(yours[0])") }
+        if yours.count > 1 { things.append("start tasks " + names(yours)) }
+        if read.tasks.isEmpty, toStart(read.item) { things.append("start it") }
+        return things.isEmpty ? "nothing waits on you" : things.joined(separator: " · ")
     }
 
     /// Who a work item waits on, and for what: "you, to complete !4091", "reviewers of Sam Rivera's !4120", "Copilot, on
-    /// 5103". From its pull requests, the work sent to Copilot that's going on, and what the other sources told, such as a
-    /// Copilot session that waits for you or stopped; you first, then other people, then Copilot. Empty when nothing waits.
-    static func waitingOn(
+    /// 5103". From its pull requests (`PullRequestWait`), the work sent to Copilot that's going on, and what the other
+    /// sources told, such as a Copilot session that waits for you or stopped; you first, then other people, then Copilot.
+    /// Empty when nothing waits.
+    static func waits(
         _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Item], me: String?
-    ) -> [String] {
-        var waits: [Wait] = []
+    ) -> [ItemStory.Wait] {
+        var waits: [ItemStory.Wait] = []
         for key in read.pullRequests {
             if let snapshot = read.lists.items.first(where: { $0.key.linkRef == key.linkRef }) {
-                waits += [waiting(on: snapshot, record: read.lists.records.first { $0.id.linkRef == key.linkRef })].compactMap { $0 }
+                waits += [PullRequestWait.waiting(on: snapshot, record: read.lists.records.first { $0.id.linkRef == key.linkRef })]
+                    .compactMap { $0 }
             } else if let pullRequest = read.pullRequest(key) {
-                waits += [waiting(on: pullRequest, me: me)].compactMap { $0 }
+                waits += [PullRequestWait.waiting(on: pullRequest, me: me)].compactMap { $0 }
             }
         }
         for task in tasks where task.status.phase.isActive {
             let on = task.onPullRequest.map { "!\($0.id)" } ?? task.workItem.map { "\($0.id)" }
-            waits.append(.copilot("Copilot, " + (on.map { "on \($0)" } ?? "at work")))
+            waits.append(ItemStory.Wait(.copilot, "Copilot, " + (on.map { "on \($0)" } ?? "at work")))
         }
         for item in related {
-            let place = item.ref.kind == .session ? "in session “\(item.title)”" : "on “\(item.title)”"
+            let session = item.ref.kind == .session
+            let name = session ? "session “\(item.title)”" : "“\(item.title)”"
             switch item.state {
-            case .needsYou?: waits.append(.you("you, \(place)"))
-            case .failing?: waits.append(.you("you, \(place), which stopped"))
-            case .running?: waits.append(.copilot("Copilot, \(place)"))
+            case .needsYou?: waits.append(ItemStory.Wait(.you, session ? "you, to answer in \(name)" : "you, to look at \(name)"))
+            case .failing?: waits.append(ItemStory.Wait(.you, "you, to look at \(name), which stopped"))
+            case .running?: waits.append(ItemStory.Wait(.copilot, "Copilot, " + (session ? "in \(name)" : "on \(name)")))
             case .done?, nil: break
             }
         }
-        var said: Set<String> = []
-        var you: [String] = [], people: [String] = [], copilot: [String] = []
-        for wait in waits {
-            switch wait {
-            case .you(let text): if said.insert(text).inserted { you.append(text) }
-            case .people(let text): if said.insert(text).inserted { people.append(text) }
-            case .copilot(let text): if said.insert(text).inserted { copilot.append(text) }
-            }
-        }
-        return you + people + copilot
+        return ItemStory.Wait.ordered(waits)
     }
 
-    /// Who one of your lists' pull requests waits on, by why it's where it is: "you, to complete !4091", "you, to fix !4088's
-    /// build", "Priya Shah, to review your !4093". Nil when it waits on nobody, such as once it's merged.
-    static func waiting(on snapshot: PRSnapshot, record: PRRecord?) -> Wait? {
-        let number = "!\(snapshot.key.number)"
-        let yours = snapshot.role == .author
-        let whose = yours ? "your \(number)" : "\(snapshot.author)'s \(number)"
-        func author(_ what: String) -> Wait { yours ? .you("you, \(what)") : .people("\(snapshot.author), \(what)") }
-        switch snapshot.reason {
-        case .mentioned, .replied, .commented: return .you("you, to answer on \(number)")
-        case .sentInChat: return .you("you, to look at \(number)")
-        case .reviewRequested, .reviewPending: return .you("you, to review \(whose)")
-        case .newCommits: return .you("you, to review \(number)'s new commits")
-        case .changesRequested: return author("to make the changes asked for on \(number)")
-        case .rejected: return author("on \(number), which was rejected")
-        case .buildFailed: return author("to fix \(number)'s build")
-        case .checkFailed: return author("to fix \(number)'s checks")
-        case .conflicts: return author("to resolve \(number)'s conflicts")
-        case .buildExpired: return author("to queue \(number)'s build again")
-        case .failedAfterMerge: return author("to fix the pipeline that failed after \(number) merged")
-        case .readyToComplete: return author("to complete \(number)")
-        case .requirementsPending: return author("to meet \(number)'s policies")
-        case .waitingForReviewers:
-            let waiting = (record?.pullRequest.reviewers ?? []).filter { !$0.isGroup && !$0.hasDeclined && $0.vote == .none }
-            return .people(waiting.isEmpty ? "reviewers of \(whose)" : "\(names(waiting.map(\.person.name))), to review \(whose)")
-        case .checksRunning: return .people("the checks on \(number)")
-        case .waitingForAuthor: return .people("\(snapshot.author), to update \(number)")
-        case .waitingForApproval: return .people("an approval for the pipeline after \(number) merged")
-        case .answered, .autoComplete, .completed, .abandoned, .draft, .inactive, .youApproved, .declined: return nil
-        }
-    }
-
-    /// Who a pull request that isn't in your lists waits on, from what it says itself, since BriefBar reads neither its
-    /// policies nor its checks: its author while it's a draft, has conflicts or has changes asked for, and once every
-    /// required reviewer approved, people and groups alike, without saying it's ready to complete; otherwise whoever
-    /// hasn't voted. Nil once it's closed.
-    static func waiting(on pullRequest: PullRequest, me: String?) -> Wait? {
-        guard pullRequest.status == .active else { return nil }
-        let number = "!\(pullRequest.key.number)"
-        let yours = isMe(pullRequest.author, me)
-        let whose = yours ? "your \(number)" : "\(pullRequest.author.name)'s \(number)"
-        func author(_ what: String) -> Wait { yours ? .you("you, \(what)") : .people("\(pullRequest.author.name), \(what)") }
-        if pullRequest.isDraft { return author("to publish \(number), a draft") }
-        if pullRequest.hasConflicts { return author("to resolve \(number)'s conflicts") }
-        let reviewers = pullRequest.reviewers.filter { !$0.hasDeclined }
-        let people = reviewers.filter { !$0.isGroup }
-        if people.contains(where: \.vote.wantsChanges) { return author("to make the changes asked for on \(number)") }
-        if people.contains(where: \.vote.isApproval), reviewers.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
-            return author("author of \(number) (approved; its checks aren't read)")
-        }
-        let notVoted = people.filter { $0.vote == .none }
-        if notVoted.contains(where: { isMe($0.person, me) }) { return .you("you, to review \(whose)") }
-        return .people(notVoted.isEmpty ? "reviewers of \(whose)" : "\(names(notVoted.map(\.person.name))), to review \(whose)")
+    /// What `waits` says, as the "Waiting on:" line has it.
+    static func waitingOn(
+        _ read: AzureDevOpsReader.WorkItemRead, tasks: [CopilotTaskEntry], related: [MCPRelated.Item], me: String?
+    ) -> [String] {
+        waits(read, tasks: tasks, related: related, me: me).map(\.text)
     }
 }

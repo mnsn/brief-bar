@@ -349,7 +349,8 @@ way, and **‹** goes back.
 
 With [Show Links](#links) on, the details start with **Where It Stands**: the pull requests, their
 pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
-it stands in a sentence. Click one, and its page shows what's known of it, right in the details: a pull
+it stands in a sentence. Over them, **Waiting on** says who it all waits on, you first, such as **you,
+to complete !4091 · Copilot, on 5103**; the chevron by its title folds it to just that line. Click one, and its page shows what's known of it, right in the details: a pull
 request's reviewers and their votes, its open comments and the ones waiting on you, conflicts, and each
 build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
 and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,

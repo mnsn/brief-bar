@@ -4,8 +4,8 @@
 
 - **See where a work item stands, without leaving BriefBar.** With **Show Links** on, a work item's
   details on the Sprint page start with **Where It Stands**: the pull requests, their pipelines and the
-  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence.
-  Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
+  Copilot sessions that go with it, what needs you first, each saying where it stands in a sentence,
+  and **Waiting on** says who it all waits on, you first; fold it to just that line. Click one to see what's known of it: a pull request's reviewers and votes, its open comments and the
   ones waiting on you, conflicts, and each build or check that ran on it, with where a failed one
   failed; a Copilot session's question or plan, and what Copilot recorded of its work as it went, its
   notes, what it did, what's next and what it said last. It's all from what BriefBar already reads,

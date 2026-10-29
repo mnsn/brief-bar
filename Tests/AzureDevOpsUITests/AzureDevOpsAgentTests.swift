@@ -161,6 +161,8 @@ import Testing
         ])
         #expect(lines[3].hasPrefix("- Sprint 42 ends ") && lines[3].hasSuffix(" (5 days left) · 1 of 4 tasks done · 6 h left"))
         #expect(lines[4] == "- Waiting on: reviewers of Sam Rivera's !4120 · Copilot, on 5103")
+        // Your task that isn't started; not 5103, which Copilot works on.
+        #expect(lines[5] == "- You can: start task 5104")
         // Its tasks in work order, each with its state, who has it and its hours, and the work sent to Copilot for one.
         #expect(story.contains("""
             ## Tasks
@@ -201,14 +203,16 @@ import Testing
             - Under bug 5110 “Coupon totals round down instead of to the nearest cent”
             - State: Active (work started), changed 1h 30m ago · assigned to you (Robin Diaz)
             """))
-        #expect(task.contains(" (5 days left) · 2 h left\n- Waiting on: you, to complete !4091\n"))
+        #expect(task.contains(" (5 days left) · 2 h left\n- Waiting on: you, to complete !4091\n- You can: complete !4091\n"))
         #expect(!task.contains("## Tasks"))
         #expect(task.contains("""
             ### !4091 “Fix the coupon rounding error”
             https://dev.azure.com/contoso/Storefront/_git/payments-api/pullrequest/4091
             - Ready to complete: Approved by Priya Shah, Chen Wei · coupon-rounding → main, in payments-api
             """))
-        #expect(task.contains("- Author: you\n- Pipelines:\n  - payments-api CI: Passed\n- Threads: pull_request 4091"))
+        // Its threads are all resolved, so nothing points to them.
+        #expect(task.contains("- Author: you\n- Pipelines:\n  - payments-api CI: Passed\n\n"))
+        #expect(!task.contains("- Threads:"))
         #expect(task.contains("""
             ## Sent to Copilot
             - This task: Copilot finished 12m ago. Coupon totals now round half up, with tests for every currency. Opened pull request 4091.
@@ -220,7 +224,7 @@ import Testing
         // Its bug: the work sent for the task goes on the task's line, and its repro steps are under their name.
         let bug = try await call("work_item", ["work_item": .int(5110)])
         #expect(bug.contains("- State: Active (work started), changed 1h ago · assigned to Priya Shah\n"))
-        #expect(bug.contains("- Waiting on: you, to complete !4091\n"))
+        #expect(bug.contains("- Waiting on: you, to complete !4091\n- You can: complete !4091\n"))
         #expect(bug.contains("""
             - 5112 Round half up in the coupon service: Active · you · 2 h left · Copilot finished 12m ago. Coupon totals now round \
             half up, with tests for every currency. Opened pull request 4091.
@@ -264,7 +268,8 @@ import Testing
         #expect(query.branches == [savedItems: BranchHint(branch: "saved-items", target: "main", repositories: ["shop-web"])])
         #expect(query.limit == AgentText.relatedShown)
         #expect(story.contains("""
-            - Waiting on: you, in session “Show the saved items” · reviewers of Sam Rivera's !4120 · Copilot, on 5103
+            - Waiting on: you, to answer in session “Show the saved items” · reviewers of Sam Rivera's !4120 · Copilot, on 5103
+            - You can: answer in session “Show the saved items” · start task 5104
 
             """))
         #expect(story.contains("""
@@ -297,9 +302,9 @@ import Testing
     /// votes.
     @Test func saysWhoAPullRequestWaitsOn() async throws {
         let read = await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).pullRequests()
-        var waits: [Int: AgentText.Wait] = [:]
+        var waits: [Int: ItemStory.Wait] = [:]
         for item in read.items {
-            waits[item.key.number] = AgentText.waiting(on: item, record: read.records.first { $0.id == item.key })
+            waits[item.key.number] = PullRequestWait.waiting(on: item, record: read.records.first { $0.id == item.key })
         }
         #expect(waits == [
             4113: .you("you, to look at !4113"),
@@ -325,19 +330,19 @@ import Testing
                 reviewers: reviewers
             )
         }
-        #expect(AgentText.waiting(on: pullRequest(), me: "me") == .people("reviewers of Sam Rivera's !4120"))
-        #expect(AgentText.waiting(on: pullRequest([Reviewer(person: priya, vote: .none)]), me: "me")
+        #expect(PullRequestWait.waiting(on: pullRequest(), me: "me") == .people("reviewers of Sam Rivera's !4120"))
+        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .none)]), me: "me")
             == .people("Priya Shah, to review Sam Rivera's !4120"))
-        #expect(AgentText.waiting(on: pullRequest([Reviewer(person: me, vote: .none)]), me: "me") == .you("you, to review Sam Rivera's !4120"))
-        #expect(AgentText.waiting(on: pullRequest([Reviewer(person: priya, vote: .approved)]), me: "me")
+        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: me, vote: .none)]), me: "me") == .you("you, to review Sam Rivera's !4120"))
+        #expect(PullRequestWait.waiting(on: pullRequest([Reviewer(person: priya, vote: .approved)]), me: "me")
             == .people("Sam Rivera, author of !4120 (approved; its checks aren't read)"))
-        #expect(AgentText.waiting(on: pullRequest(by: me, [Reviewer(person: priya, vote: .waitingForAuthor)]), me: "me")
+        #expect(PullRequestWait.waiting(on: pullRequest(by: me, [Reviewer(person: priya, vote: .waitingForAuthor)]), me: "me")
             == .you("you, to make the changes asked for on !4120"))
-        #expect(AgentText.waiting(on: pullRequest(draft: true), me: "me") == .people("Sam Rivera, to publish !4120, a draft"))
-        #expect(AgentText.waiting(on: pullRequest(merge: "conflicts"), me: "me") == .people("Sam Rivera, to resolve !4120's conflicts"))
+        #expect(PullRequestWait.waiting(on: pullRequest(draft: true), me: "me") == .people("Sam Rivera, to publish !4120, a draft"))
+        #expect(PullRequestWait.waiting(on: pullRequest(merge: "conflicts"), me: "me") == .people("Sam Rivera, to resolve !4120's conflicts"))
         var merged = pullRequest()
         merged.status = .completed
-        #expect(AgentText.waiting(on: merged, me: "me") == nil)
+        #expect(PullRequestWait.waiting(on: merged, me: "me") == nil)
     }
 
     /// The demo's work item 5101, whose teammate's pull request, !4120, isn't in your lists, with these reviewers.
@@ -373,6 +378,31 @@ import Testing
             == ["Sam Rivera, author of !4120 (approved; its checks aren't read)"])
     }
 
+    /// A pull request with a thread that's open points to `pull_request` for it.
+    @Test func pointsToTheThreadsOfAPullRequestWithOneOpen() async throws {
+        var read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5112, organization: nil)
+        let index = try #require(read.lists.records.firstIndex { $0.id.number == 4091 })
+        read.lists.records[index].details?.threads.append(ReviewThread(id: 63, comments: [
+            ReviewComment(id: 1, author: Person(id: "priya", name: "Priya Shah"), text: "A test for a negative total?", publishedAt: Date()),
+        ]))
+        #expect(AgentText.workItem(read, tasks: [], now: Date()).contains("- payments-api CI: Passed\n- Threads: pull_request 4091\n"))
+    }
+
+    /// What you can do: what waits on you, then your tasks that aren't started, unless Copilot works on one; or nothing.
+    @Test func saysWhatYouCanDo() async throws {
+        let read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5101, organization: nil)
+        let waits = [ItemStory.Wait(.people, "Priya Shah, to review !1"), ItemStory.Wait(.you, "you, to fix !2's build")]
+        #expect(AgentText.youCan(waits, read: read, tasks: [], me: read.me) == "fix !2's build · start task 5104")
+        let working = CopilotTaskEntry(
+            id: "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b09", workItem: WorkItemReference(organization: "contoso", project: "Storefront", id: 5104),
+            options: CopilotModel.standard, startedAt: Date(), status: RunStatus(phase: .working)
+        )
+        #expect(AgentText.youCan(waits, read: read, tasks: [working], me: read.me) == "fix !2's build")
+        var done = read
+        done.tasks = done.tasks.filter { $0.isDone }
+        #expect(AgentText.youCan([], read: done, tasks: [], me: read.me) == "nothing waits on you")
+    }
+
     /// One of your pull requests in your lists waits on you to complete it once it's ready by its policies, as the
     /// classifier has it, rather than by its votes.
     @Test func yourReadyPullRequestWaitsOnYouToCompleteIt() async throws {
@@ -383,7 +413,7 @@ import Testing
         // Read by its votes alone, as one that isn't in your lists is, it's only approved.
         let pullRequest = try #require(read.pullRequest(snapshot.key))
         let me = read.lists.records.first { $0.id == snapshot.key }?.me
-        #expect(AgentText.waiting(on: pullRequest, me: me) == .you("you, author of !4091 (approved; its checks aren't read)"))
+        #expect(PullRequestWait.waiting(on: pullRequest, me: me) == .you("you, to complete !4091 once its checks pass"))
     }
 
     @Test func saysWhenItsSprintEnds() throws {

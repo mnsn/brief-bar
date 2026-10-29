@@ -227,7 +227,7 @@ struct CopilotAgent: Sendable {
         if session.detail != nil, says.contains(session.reason), !story.sentence.isEmpty { lines.append(story.sentence) }
         lines += story.facts.map { "\($0.label): \($0.value)" }
         if let account = story.account {
-            lines += recorded(account)
+            lines += recorded(account, stopped: session.phase != .needsYou && session.phase != .running)
         } else if session.reason == .finished, let detail = session.detail {
             lines.append("Did: \(brief(detail))")
         }
@@ -236,7 +236,9 @@ struct CopilotAgent: Sendable {
 
     /// What Copilot recorded, briefly, a line each: what the session did, from its latest checkpoint or the summary it
     /// finished with; its first next step; and what it said last, when that came after.
-    static func recorded(_ account: ItemStory.Account) -> [String] {
+    /// - Parameter stopped: whether it's no longer at work: then, what it said after its last checkpoint is how it ended,
+    ///   and that checkpoint's next step what it planned then, which is left out.
+    static func recorded(_ account: ItemStory.Account, stopped: Bool = false) -> [String] {
         if account.source == SessionAccount.fromLastMessage {
             return account.overview.map { ["Said last: \(brief($0))"] } ?? []
         }
@@ -246,7 +248,7 @@ struct CopilotAgent: Sendable {
         } else if !account.done.isEmpty {
             lines.append("Did: " + account.done.prefix(3).joined(separator: "; "))
         }
-        if let next = account.next.first { lines.append("Next: \(next)") }
+        if let next = account.next.first, !(stopped && account.lastMessage != nil) { lines.append("Next: \(next)") }
         if let last = account.lastMessage { lines.append("Said last: \(brief(last))") }
         return lines
     }

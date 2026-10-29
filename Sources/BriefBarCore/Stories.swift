@@ -26,10 +26,12 @@ public struct ItemStory: Sendable, Equatable {
     public var notes: [Fact]
     /// What it doesn't say, and why: "BriefBar reads builds and comments only on your pull requests."
     public var footnote: String?
+    /// Who it waits on, and for what: "you, to complete !4091", "Copilot, on 5103".
+    public var waits: [Wait]
 
     public init(
         sentence: String, sharedSentence: String? = nil, date: Date? = nil, facts: [Fact] = [], more: [Fact] = [], runs: [Run] = [],
-        account: Account? = nil, notes: [Fact] = [], footnote: String? = nil
+        account: Account? = nil, notes: [Fact] = [], footnote: String? = nil, waits: [Wait] = []
     ) {
         self.sentence = sentence
         self.sharedSentence = sharedSentence
@@ -40,6 +42,48 @@ public struct ItemStory: Sendable, Equatable {
         self.account = account
         self.notes = notes
         self.footnote = footnote
+        self.waits = waits
+    }
+
+    /// Who something waits on, and for what.
+    public struct Wait: Sendable, Equatable, Hashable {
+        /// You first, then other people, then Copilot.
+        public enum Who: Int, Sendable, Comparable {
+            case you, people, copilot
+
+            public static func < (lhs: Who, rhs: Who) -> Bool { lhs.rawValue < rhs.rawValue }
+        }
+
+        public var who: Who
+        /// Who, then what for: "you, to complete !4091", "reviewers of Sam Rivera's !4120", "Copilot, on 5103".
+        public var text: String
+        /// What waits, when two sources can tell of it in their own words, as a Copilot session: the work sent to Copilot
+        /// in it, and the session itself. It's said once.
+        public var about: ItemRef?
+
+        public init(_ who: Who, _ text: String, about: ItemRef? = nil) {
+            self.who = who
+            self.text = text
+            self.about = about
+        }
+
+        public static func you(_ text: String) -> Wait { Wait(.you, text) }
+        public static func people(_ text: String) -> Wait { Wait(.people, text) }
+        public static func copilot(_ text: String) -> Wait { Wait(.copilot, text) }
+
+        /// Several things' waits, you first, then other people, then Copilot, each once, in the order they came: a thing
+        /// that waits, by the first words for it.
+        public static func ordered(_ waits: [Wait]) -> [Wait] {
+            var said: Set<String> = []
+            var told: Set<ItemRef> = []
+            return waits.enumerated()
+                .sorted { ($0.element.who, $0.offset) < ($1.element.who, $1.offset) }
+                .map(\.element)
+                .filter { wait in
+                    if let about = wait.about, !told.insert(about).inserted { return false }
+                    return said.insert(wait.text).inserted
+                }
+        }
     }
 
     /// A fact in a word or a few: "Reviewers": "Priya approved · Sam hasn't voted".
@@ -156,6 +200,7 @@ public struct ItemStory: Sendable, Equatable {
             }
         }
         merged.notes += other.notes.filter { note in !self.notes.contains { $0.label == note.label } }
+        merged.waits = Wait.ordered(merged.waits + other.waits)
         if let date = other.date { merged.date = max(merged.date ?? date, date) }
         return merged
     }

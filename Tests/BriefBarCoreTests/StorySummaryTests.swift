@@ -130,6 +130,26 @@ import Testing
             """)
     }
 
+    @Test func whoThingsWaitOnIsSaidYouFirstThenPeopleThenCopilotOnce() {
+        let copilot = ItemStory.Wait(.copilot, "Copilot, on 5103")
+        let you = ItemStory.Wait(.you, "you, to complete !4091")
+        let people = ItemStory.Wait(.people, "reviewers of Sam Rivera's !4120")
+        #expect(ItemStory.Wait.ordered([copilot, people, you, copilot]) == [you, people, copilot])
+        // Two sources telling about the same thing: both's, once.
+        let sent = ItemStory(sentence: "Working", waits: [copilot])
+        let recorded = ItemStory(sentence: "", waits: [ItemStory.Wait(.copilot, "Copilot, on 5103"), you])
+        #expect(sent.merged(with: recorded).waits == [you, copilot])
+        // One session, in the words of the work sent to Copilot in it and of the session itself: the first words.
+        let session = ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b02")
+        let onTask = ItemStory.Wait(.copilot, "Copilot, on 5103", about: session)
+        let inSession = ItemStory.Wait(.copilot, "Copilot, in session “Work Item 5103”", about: session)
+        let other = ItemStory.Wait(.copilot, "Copilot, in session “Dark mode”", about: ItemRef.session("0b6c1f44-6a1e-4c55-9d0e-3f0a6f1c2a01"))
+        #expect(ItemStory.Wait.ordered([onTask, inSession, other]) == [onTask, other])
+        // Waiting on you comes first, whichever source said it.
+        let asks = ItemStory.Wait(.you, "you, to answer in session “Work Item 5103”", about: session)
+        #expect(ItemStory.Wait.ordered([onTask, asks]) == [asks])
+    }
+
     @Test func thePromptSaysWhoReadsItWhenThatsKnown() {
         let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
         #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))

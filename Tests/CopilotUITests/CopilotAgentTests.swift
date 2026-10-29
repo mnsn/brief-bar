@@ -140,6 +140,10 @@ import Testing
             "Next: Push the saved-items branch to Sam's pull request !4120",
             "Said last: Pushed the saved-items branch, so Sam's pull request !4120 has all of it.",
         ])
+        // Once it's no longer at work, what it said after its last checkpoint is how it ended, and the next step planned at
+        // that checkpoint is left out.
+        let ended = session("s", phase: .done, reason: .finished, detail: "Pushed it.", since: Date())
+        #expect(CopilotAgent.lines(ended, account: notes).map { String($0.prefix(10)) } == ["Did: Each ", "Said last:"])
         // Without checkpoints: the summary it finished with is what it did, and a last message is only what it said.
         let finished = session("s", phase: .done, reason: .finished, detail: "Replaced the screenshots.", since: Date())
         #expect(CopilotAgent.lines(finished, account: ItemStory.Account(source: SessionAccount.fromReport, overview: "Replaced them."))
