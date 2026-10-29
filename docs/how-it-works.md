@@ -1690,13 +1690,14 @@ requests, such as the Copilot sessions on them; the rest of the work sent to Cop
 its description, its other long texts, such as acceptance criteria or repro steps, and its latest
 comments, each quoted, since what people wrote is data. Who it waits on comes from the same data: each
 of your pull requests' group and reason in your lists, such as you, to complete one that's ready, or to
-fix one whose build failed; another's votes, such as its reviewers, or its author once it's approved;
-the work sent to Copilot that's going on; and a session that waits for you. It reads the work item with
-the same GETs as its details, whose `$expand=relations` already names its pull requests, so it works
-whether Show Links is on or not, then one GET for each of those pull requests your lists don't have,
-one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow down: one it didn't
-get to says so, rather than that it couldn't be read. Without a link, it looks in the sprint, then in
-each of your organizations.
+fix one whose build failed; another's votes, such as its reviewers until every required one approved,
+people and groups alike, then its author, without saying it's ready to complete, since its policies and
+checks aren't read; the work sent to Copilot that's going on; and a session that waits for you. It
+reads the work item with the same GETs as its details, whose `$expand=relations` already names its pull
+requests, so it works whether Show Links is on or not, then one GET for each of those pull requests your
+lists don't have, one after another (`LinkEngine.lookUp`), stopping only if Azure DevOps asks to slow
+down: one it didn't get to says so, rather than that it couldn't be read. Without a link, it looks in
+the sprint, then in each of your organizations.
 
 It asks the other sources about its pull requests (`MCPRelated.ask`), with what links each to a session
 by its branch: its branch, its target and its repository (`BranchHint`). Copilot (`CopilotAgent.related`)

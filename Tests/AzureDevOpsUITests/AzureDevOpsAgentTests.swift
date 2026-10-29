@@ -330,7 +330,7 @@ import Testing
             == .people("Priya Shah, to review Sam Rivera's !4120"))
         #expect(AgentText.waiting(on: pullRequest([Reviewer(person: me, vote: .none)]), me: "me") == .you("you, to review Sam Rivera's !4120"))
         #expect(AgentText.waiting(on: pullRequest([Reviewer(person: priya, vote: .approved)]), me: "me")
-            == .people("Sam Rivera, to complete !4120"))
+            == .people("Sam Rivera, author of !4120 (approved; its checks aren't read)"))
         #expect(AgentText.waiting(on: pullRequest(by: me, [Reviewer(person: priya, vote: .waitingForAuthor)]), me: "me")
             == .you("you, to make the changes asked for on !4120"))
         #expect(AgentText.waiting(on: pullRequest(draft: true), me: "me") == .people("Sam Rivera, to publish !4120, a draft"))
@@ -338,6 +338,52 @@ import Testing
         var merged = pullRequest()
         merged.status = .completed
         #expect(AgentText.waiting(on: merged, me: "me") == nil)
+    }
+
+    /// The demo's work item 5101, whose teammate's pull request, !4120, isn't in your lists, with these reviewers.
+    private func readWithTeammatesReviewers(_ reviewers: [Reviewer]) async throws -> AzureDevOpsReader.WorkItemRead {
+        var read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5101, organization: nil)
+        let key = try #require(read.others.read.keys.first { $0.number == 4120 })
+        #expect(read.pullRequests.map(\.number) == [4120])
+        #expect(!read.lists.items.contains { $0.key.number == 4120 })
+        read.others.read[key]?.reviewers = reviewers
+        return read
+    }
+
+    /// A required group, such as a team a policy adds, holds a teammate's pull request up as a required person does,
+    /// however many others approved.
+    @Test func aRequiredGroupThatHasntApprovedHoldsUpATeammatesPullRequest() async throws {
+        let read = try await readWithTeammatesReviewers([
+            Reviewer(person: Person(id: "priya", name: "Priya Shah"), vote: .approved),
+            Reviewer(person: Person(id: "team", name: "[Storefront]\\Storefront Team"), vote: .none, isRequired: true, isGroup: true),
+        ])
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me) == ["reviewers of Sam Rivera's !4120"])
+        #expect(AgentText.workItem(read, tasks: [], now: Date()).contains("\n- Waiting on: reviewers of Sam Rivera's !4120\n"))
+    }
+
+    /// Once every required reviewer approved one, it waits on its author, but whether it's ready to complete is up to its
+    /// policies and checks, which BriefBar doesn't read for a pull request that isn't in your lists.
+    @Test func aTeammatesPullRequestThatsApprovedIsntSaidToBeReady() async throws {
+        let read = try await readWithTeammatesReviewers([
+            Reviewer(person: Person(id: "priya", name: "Priya Shah"), vote: .approved, isRequired: true),
+            Reviewer(person: Person(id: "team", name: "[Storefront]\\Storefront Team"), vote: .approved, isRequired: true, isGroup: true),
+            Reviewer(person: Person(id: "chen", name: "Chen Wei"), vote: .none),
+        ])
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me)
+            == ["Sam Rivera, author of !4120 (approved; its checks aren't read)"])
+    }
+
+    /// One of your pull requests in your lists waits on you to complete it once it's ready by its policies, as the
+    /// classifier has it, rather than by its votes.
+    @Test func yourReadyPullRequestWaitsOnYouToCompleteIt() async throws {
+        let read = try await AzureDevOpsReader(demo: true, organizations: [], defaults: defaults).workItem(5112, organization: nil)
+        let snapshot = try #require(read.lists.items.first { $0.key.number == 4091 })
+        #expect(snapshot.role == .author && snapshot.group == .ready && snapshot.reason == .readyToComplete)
+        #expect(AgentText.waitingOn(read, tasks: [], related: [], me: read.me) == ["you, to complete !4091"])
+        // Read by its votes alone, as one that isn't in your lists is, it's only approved.
+        let pullRequest = try #require(read.pullRequest(snapshot.key))
+        let me = read.lists.records.first { $0.id == snapshot.key }?.me
+        #expect(AgentText.waiting(on: pullRequest, me: me) == .you("you, author of !4091 (approved; its checks aren't read)"))
     }
 
     @Test func saysWhenItsSprintEnds() throws {
