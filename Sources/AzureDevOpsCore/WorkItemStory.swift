@@ -37,11 +37,12 @@ public enum WorkItemStory {
         let comments = (current?.comments ?? []).prefix(5).compactMap(comment)
         if !comments.isEmpty { notes.append(ItemStory.Fact("Latest comments", comments.joined(separator: "\n"))) }
 
-        let reason = current?.reason.flatMap { $0.caseInsensitiveCompare(item.state) == .orderedSame ? nil : $0 }
-        return ItemStory(
-            sentence: [item.state, reason].compactMap { $0 }.joined(separator: ": "), date: item.changedAt, facts: facts, more: more,
-            notes: notes
-        )
+        // Why it's in its state comes with its details only, so it's a note, as they are: its sentence is the same with or
+        // without them.
+        if let reason = current?.reason.flatMap({ $0.caseInsensitiveCompare(item.state) == .orderedSame ? nil : $0 }) {
+            notes.insert(ItemStory.Fact("Why it's \(item.state)", reason), at: 0)
+        }
+        return ItemStory(sentence: item.state, date: item.changedAt, facts: facts, more: more, notes: notes)
     }
 
     /// "Show saved items under the cart: Active · Robin Diaz · 3 h left · Copilot: Working: Run the cart tests".

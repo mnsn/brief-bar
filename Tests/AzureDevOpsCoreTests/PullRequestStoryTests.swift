@@ -391,6 +391,11 @@ import BriefBarCore
         ]) == "Approved by Alex Kim and Priya Shah")
         #expect(sentence([Reviewer(person: People.priya, vote: .approved), Reviewer(person: People.alex, vote: .none, isRequired: true)])
             == "Waiting for reviewers: Alex Kim")
+        // A required group that hasn't approved holds it up too.
+        #expect(sentence([Reviewer(person: People.priya, vote: .approved), Reviewer(person: team, vote: .none, isRequired: true, isGroup: true)])
+            == "Waiting for reviewers: [Shop]\\Checkout Team")
+        #expect(sentence([Reviewer(person: People.priya, vote: .approved), Reviewer(person: team, vote: .approved, isRequired: true, isGroup: true)])
+            == "Approved by Priya Shah")
         #expect(sentence([]) == "Waiting for reviewers")
         #expect(sentence([Reviewer(person: maria, vote: .none, hasDeclined: true)]) == "Waiting for reviewers")
         let five = [People.priya, People.alex, chen, maria, jordan].map { Reviewer(person: $0, vote: .none) }

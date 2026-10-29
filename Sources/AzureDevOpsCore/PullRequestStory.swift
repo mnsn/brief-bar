@@ -104,10 +104,16 @@ public enum PullRequestStory {
             return isMe(pullRequest.author, me) ? "\(first.person.name) is waiting for you" : "\(first.person.name) wants changes"
         }
         let approved = people.filter(\.vote.isApproval)
-        if !approved.isEmpty, people.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
+        // A required group, such as a team a policy adds, holds it up as a required person does.
+        let requiredWaiting = pullRequest.reviewers.contains { $0.isRequired && !$0.vote.isApproval }
+        if !approved.isEmpty, !requiredWaiting {
             return "Approved by " + names(approved.map(\.person), me: me)
         }
         let notVoted = people.filter { $0.vote == .none && !$0.hasDeclined }
+        let groups = pullRequest.reviewers.filter { $0.isGroup && $0.isRequired && $0.vote == .none }
+        if notVoted.isEmpty, let group = groups.first {
+            return "Waiting for reviewers: " + group.person.name
+        }
         if notVoted.contains(where: { isMe($0.person, me) }) { return "Waiting for your review" }
         return notVoted.isEmpty ? "Waiting for reviewers" : "Waiting for reviewers: " + names(notVoted.map(\.person), me: me)
     }
