@@ -1369,8 +1369,10 @@ enum AgentText {
         }
     }
 
-    /// Who a pull request that isn't in your lists waits on, from what it says itself: its author while it's a draft, has
-    /// conflicts, has changes asked for or is approved; otherwise whoever hasn't voted. Nil once it's closed.
+    /// Who a pull request that isn't in your lists waits on, from what it says itself, since BriefBar reads neither its
+    /// policies nor its checks: its author while it's a draft, has conflicts or has changes asked for, and once every
+    /// required reviewer approved, people and groups alike, without saying it's ready to complete; otherwise whoever
+    /// hasn't voted. Nil once it's closed.
     static func waiting(on pullRequest: PullRequest, me: String?) -> Wait? {
         guard pullRequest.status == .active else { return nil }
         let number = "!\(pullRequest.key.number)"
@@ -1379,10 +1381,11 @@ enum AgentText {
         func author(_ what: String) -> Wait { yours ? .you("you, \(what)") : .people("\(pullRequest.author.name), \(what)") }
         if pullRequest.isDraft { return author("to publish \(number), a draft") }
         if pullRequest.hasConflicts { return author("to resolve \(number)'s conflicts") }
-        let people = pullRequest.reviewers.filter { !$0.isGroup && !$0.hasDeclined }
+        let reviewers = pullRequest.reviewers.filter { !$0.hasDeclined }
+        let people = reviewers.filter { !$0.isGroup }
         if people.contains(where: \.vote.wantsChanges) { return author("to make the changes asked for on \(number)") }
-        if people.contains(where: \.vote.isApproval), people.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
-            return author("to complete \(number)")
+        if people.contains(where: \.vote.isApproval), reviewers.allSatisfy({ !$0.isRequired || $0.vote.isApproval }) {
+            return author("author of \(number) (approved; its checks aren't read)")
         }
         let notVoted = people.filter { $0.vote == .none }
         if notVoted.contains(where: { isMe($0.person, me) }) { return .you("you, to review \(whose)") }
