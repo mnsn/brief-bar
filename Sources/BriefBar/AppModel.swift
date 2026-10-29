@@ -36,6 +36,9 @@ final class AppModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     /// Activates BriefBar again once the Dock is active, to take the menu bar (`showInDock`).
     private var takingMenuBar: AnyCancellable?
+    /// ⌘-scrolling in a window, which changes the text size of windows' pages.
+    private var scrollMonitor: Any?
+    private var textSizeScrolling = TextSizeScrolling()
 
     private static let launchedKey = "hasLaunched"
 
@@ -553,6 +556,30 @@ final class AppModel: ObservableObject {
         overviewLink.update()
     }
 
+    /// ⌘-scrolling in a window, or a sheet over one, makes the text on windows' pages bigger or smaller, as Settings ›
+    /// Appearance does. Elsewhere, such as the menu bar's lists, the widgets and Settings, it scrolls as it always did.
+    private func watchTextSizeScrolling() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            // What the text size needs of the event goes to the main actor, rather than the event itself.
+            let scroll = ScrollEvent(event)
+            guard scroll.isCommandOnly else { return event }
+            let changesTextSize = MainActor.assumeIsolated { self?.scrollTextSize(scroll) ?? false }
+            return changesTextSize ? nil : event
+        }
+    }
+
+    /// Whether ⌘-scrolling is in a window, which then changes the text size instead of scrolling.
+    private func scrollTextSize(_ scroll: ScrollEvent) -> Bool {
+        guard let window = NSApp.window(withWindowNumber: scroll.windowNumber), windows.values.contains(where: { $0.owns(window) })
+        else { return false }
+        let steps = textSizeScrolling.steps(delta: scroll.delta, isPrecise: scroll.isPrecise, isMomentum: scroll.isMomentum, begins: scroll.begins)
+        if steps != 0 {
+            services.setTextSize(services.textSize.stepped(by: steps))
+        }
+        return true
+    }
+
     // MARK: Lifecycle
 
     func launch() {
@@ -561,6 +588,7 @@ final class AppModel: ObservableObject {
         }
         placeSections()
         updateSurfaces()
+        watchTextSizeScrolling()
 
         let firstLaunch = !services.defaults.bool(forKey: Self.launchedKey)
         services.defaults.set(true, forKey: Self.launchedKey)
@@ -615,5 +643,30 @@ extension AppModel {
                 ))
             }
         }
+    }
+}
+
+/// What ⌘-scrolling needs of a scroll event, read where the event arrives.
+private struct ScrollEvent: Sendable {
+    /// ⌘ is down, and no other modifier.
+    let isCommandOnly: Bool
+    /// The window it scrolls in, or 0 for none.
+    let windowNumber: Int
+    /// Up, as toward the top of a page; negative for down.
+    let delta: CGFloat
+    /// From a trackpad or a Magic Mouse, rather than a wheel's notches.
+    let isPrecise: Bool
+    /// Momentum, after you lifted your fingers.
+    let isMomentum: Bool
+    /// A new swipe begins.
+    let begins: Bool
+
+    init(_ event: NSEvent) {
+        isCommandOnly = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+        windowNumber = event.windowNumber
+        delta = event.scrollingDeltaY
+        isPrecise = event.hasPreciseScrollingDeltas
+        isMomentum = !event.momentumPhase.isEmpty
+        begins = !event.phase.isDisjoint(with: [.began, .mayBegin])
     }
 }

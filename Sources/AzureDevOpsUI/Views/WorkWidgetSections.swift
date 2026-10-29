@@ -38,14 +38,14 @@ struct SprintWidgetSection: View {
             PageLink(.azureDevOpsSprint, name: AzureDevOpsPage.sprint.title) {
                 HStack(spacing: 6) {
                     Image(systemName: AzureDevOpsPage.sprint.symbol)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(options.quietAppearance ? Color.secondary : AzureDevOpsPage.sprint.color)
                     Text(sprint.board?.sprint.name ?? "Sprint")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                         .lineLimit(1)
                     if let days = sprint.board?.sprint.daysLeft(now: store.now) {
                         Text(days == 1 ? "· last day" : "· \(days)d left")
-                            .font(.system(size: 11))
+                            .font(size: 11)
                             .foregroundStyle(days <= 2 ? Color.orange : .secondary)
                             .fixedSize()
                     }
@@ -53,7 +53,7 @@ struct SprintWidgetSection: View {
             }
             if let problem = sprint.problem {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem.message)
             }
@@ -62,7 +62,7 @@ struct SprintWidgetSection: View {
                 let mine = board.myWork
                 if options.clearerStates {
                     Text("\(mine.count) left")
-                        .font(.system(size: 11).monospacedDigit())
+                        .font(size: 11).monospacedDigit()
                         .foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
@@ -83,7 +83,7 @@ struct SprintWidgetSection: View {
             Text("\(count)")
                 .monospacedDigit()
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(size: 11, weight: .semibold)
     }
 
     @ViewBuilder
@@ -146,15 +146,15 @@ struct PipelinesWidgetSection: View {
             PageLink(.azureDevOpsPipelines, name: AzureDevOpsPage.pipelines.title) {
                 HStack(spacing: 6) {
                     Image(systemName: AzureDevOpsPage.pipelines.symbol)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(options.quietAppearance ? Color.secondary : AzureDevOpsPage.pipelines.color)
                     Text(AzureDevOpsPage.pipelines.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                 }
             }
             if let problem = pipelines.problem {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem.message)
             }
@@ -179,7 +179,7 @@ struct PipelinesWidgetSection: View {
             Text("\(count)")
                 .monospacedDigit()
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(size: 11, weight: .semibold)
         .help("\(count) \(status.title.lowercased())")
     }
 
@@ -212,7 +212,7 @@ private struct WorkWidgetPlaceholder: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(size: 11)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -236,31 +236,31 @@ private struct WidgetWorkRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: item.stateSymbol)
-                    .font(.system(size: 15))
+                    .font(size: 15)
                     .foregroundStyle(item.stateColor)
                     .frame(width: options.rowIconWidth, height: 20)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(size: 13, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         if copilot.isOn, let entry = copilot.latest(for: item) {
                             let phase = entry.status.phase
                             Image(systemName: phase == .finished && entry.pullRequest != nil ? "arrow.triangle.pull" : phase.symbol)
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .font(size: 10.5, weight: .semibold)
                                 .foregroundStyle(phase.color)
                                 .help("Copilot: \(entry.sentence(now: Date()))")
                         }
                         if let remaining = item.remainingText {
                             Text(remaining)
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(size: 11).monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .fixedSize()
                         }
                     }
                     Text([item.state, parent?.title].compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: options.rowDetailSize))
+                        .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -315,17 +315,17 @@ struct WidgetPipelineRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(status.pipeline.name)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(size: 13, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Text(Elapsed.short(since: status.latest?.changedAt, now: now))
-                            .font(.system(size: 11).monospacedDigit())
+                            .font(size: 11).monospacedDigit()
                             .foregroundStyle(.secondary)
                             .fixedSize()
                     }
                     HStack(spacing: 6) {
                         Text(status.headline)
-                            .font(.system(size: options.rowDetailSize, weight: .medium))
+                            .font(size: options.rowDetailSize, weight: .medium)
                             .foregroundStyle(options.quietAppearance ? Color.secondary : status.headlineColor)
                             .lineLimit(1)
                         Spacer(minLength: 4)

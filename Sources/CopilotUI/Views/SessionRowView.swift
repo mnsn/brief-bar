@@ -23,13 +23,14 @@ struct SessionRowView: View {
     @EnvironmentObject private var store: SessionStore
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         let task = store.task(for: session.id)
         VStack(alignment: .leading, spacing: 0) {
             row(task)
             RowSummary(subject: ref)
-                .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                 .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
@@ -67,21 +68,21 @@ struct SessionRowView: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
                 Image(systemName: session.rowSymbol)
-                    .font(.system(size: compact ? 15 : 17))
+                    .font(size: compact ? 15 : 17)
                     .foregroundStyle(session.rowColor)
-                    .frame(width: options.rowIconWidth, height: 20)
+                    .frame(width: options.rowIconWidth * textScale, height: 20 * textScale)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         if task != nil {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 10))
+                                .font(size: 10)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                         }
                         Text(session.displayName)
-                            .font(.system(size: 13, weight: session.phase == .idle ? .regular : .semibold))
+                            .font(size: 13, weight: session.phase == .idle ? .regular : .semibold)
                             .foregroundStyle(session.phase == .idle ? .secondary : .primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -133,7 +134,7 @@ struct SessionRowView: View {
                         }
                         if let detail = session.detail {
                             Text(detail)
-                                .font(.system(size: options.rowDetailSize))
+                                .font(size: options.rowDetailSize)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(session.phase == .needsYou ? 3 : 2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -196,7 +197,7 @@ struct SessionRowView: View {
     /// What it's doing and where, colored by its state.
     private var subtitle: some View {
         Text(session.subtitle)
-            .font(.system(size: options.rowReasonSize, weight: .medium))
+            .font(size: options.rowReasonSize, weight: .medium)
             .foregroundStyle(options.quietAppearance || session.phase == .idle ? Color.secondary : session.rowColor)
             .lineLimit(1)
     }
@@ -211,7 +212,7 @@ struct SessionRowView: View {
 
     private func compactText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: options.rowDetailSize))
+            .font(size: options.rowDetailSize)
             .foregroundStyle(.secondary)
             .lineLimit(1)
     }
@@ -292,7 +293,7 @@ struct ParentTag: View {
 
     var body: some View {
         Text(verbatim: "↳ " + Self.shortName(parent.name))
-            .font(.system(size: 10, weight: .semibold))
+            .font(size: 10, weight: .semibold)
             .lineLimit(1)
             .truncationMode(.tail)
             .foregroundStyle(.secondary)
@@ -342,6 +343,7 @@ struct ParentTag: View {
 /// conversation nears the size at which Copilot compacts it (about 80% of the window).
 struct ContextUsageView: View {
     let usage: ContextUsage
+    @Environment(\.textScale) private var textScale
 
     static let warningFraction = 0.7
 
@@ -355,9 +357,9 @@ struct ContextUsageView: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            .frame(width: 9, height: 9)
+            .frame(width: 9 * textScale, height: 9 * textScale)
             Text("\(usage.percent)%")
-                .font(.system(size: 11).monospacedDigit())
+                .font(size: 11).monospacedDigit()
                 .foregroundStyle(color)
         }
         .fixedSize()
@@ -393,7 +395,7 @@ struct CountChips: View {
                             Text("\(counts[phase])")
                                 .monospacedDigit()
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .help("\(counts[phase]) \(phase.title.lowercased())")
                     }
                 }

@@ -13,7 +13,7 @@ struct SummarizeButton: View {
                 summaries.show(subject)
             } label: {
                 Label("Show Summary", systemImage: "sparkles")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .fixedSize()
             }
             .buttonStyle(.borderless)
@@ -31,7 +31,7 @@ struct SummarizeButton: View {
             summaries.summarize(subject)
         } label: {
             Label(title, systemImage: "sparkles")
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
                 .fixedSize()
         }
         .buttonStyle(.borderless)
@@ -122,7 +122,7 @@ package struct SummaryCard: View {
                     Button("Stop") { summaries.cancel(subject) }
                         .buttonStyle(.borderless)
                 }
-                .font(.system(size: 12))
+                .font(size: 12)
             }
         case .written(let summary, let at, let inputs, let model):
             written(summary, at: at, inputs: inputs, model: model)
@@ -171,21 +171,21 @@ package struct SummaryCard: View {
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
-                    .font(.system(size: isRow ? 12.5 : 13, weight: .medium))
+                    .font(size: isRow ? 12.5 : 13, weight: .medium)
                     .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 let foldsNext = Self.foldsNext(summary, under: waitsAbove)
                 if let next = summary.next, !foldsNext || showsAll {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(.system(size: isRow ? 11.5 : 12))
+                        .font(size: isRow ? 11.5 : 12)
                         .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
                 if let paragraph = summary.paragraph, showsAll {
                     Text(paragraph)
-                        .font(.system(size: 12))
+                        .font(size: 12)
                         .foregroundStyle(.primary.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -203,7 +203,7 @@ package struct SummaryCard: View {
                         if isStale { againButton }
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                 }
             }
         }
@@ -239,7 +239,7 @@ package struct SummaryCard: View {
                 }
                 .buttonStyle(.borderless)
             }
-            .font(.system(size: 12))
+            .font(size: 12)
         }
     }
 
@@ -249,7 +249,7 @@ package struct SummaryCard: View {
             summaries.hide(subject)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .semibold))
+                .font(size: 10, weight: .semibold)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -293,11 +293,11 @@ package struct SummaryCard: View {
     ) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                 .accessibilityHidden(true)
             caption()
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 6)
             trailing()
@@ -380,7 +380,7 @@ package struct StorySummariesSetting: View {
             VStack(alignment: .leading, spacing: 4) {
                 Toggle(Self.title, isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) }))
                 Text(Self.explanation)
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -404,19 +404,19 @@ package struct StorySummariesSetting: View {
                     .fixedSize()
                 }
             }
-            .font(.callout)
+            .font(style: .callout)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             if summaries.isAvailable, summaries.usesOnDeviceModel, let unavailableReason {
                 Label(unavailableReason + " Choose a Copilot model to use it instead; BriefBar never switches automatically.",
                       systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             } else if summaries.isAvailable, !summaries.usesOnDeviceModel, summaries.hasCLI == false {
                 Label("Copilot CLI not found. Install it, or open the GitHub Copilot app once.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }

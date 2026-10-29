@@ -39,7 +39,7 @@ struct MenuPanelView: View {
                     Image(systemName: "arrow.triangle.merge")
                         .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text("Pull Requests")
-                        .font(.headline)
+                        .font(style: .headline)
                 }
             }
             Spacer()
@@ -62,7 +62,7 @@ struct MenuPanelView: View {
             }
             if let notice = store.notice {
                 Label(notice, systemImage: "info.circle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -88,7 +88,7 @@ struct MenuPanelView: View {
                     Label("More on GitHub", systemImage: "arrow.up.forward")
                 }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
+                .font(size: 11)
                 .padding(.horizontal, 8)
                 .help("BriefBar shows your 50 most recently changed pull requests of each kind")
             }
@@ -98,7 +98,7 @@ struct MenuPanelView: View {
     private func section(_ group: GitHubPRGroup, _ items: [GitHubPRSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(group.title) (\(items.count))")
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? Color.primary : group.color)
                 .padding(.horizontal, 8)
             ForEach(items) { item in
@@ -133,7 +133,7 @@ struct MenuPanelView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -160,13 +160,13 @@ struct ProblemView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label {
                     Text(problem.message)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(size: 12, weight: .semibold)
                 } icon: {
                     Image(systemName: "person.crop.circle.badge.exclamationmark")
                         .foregroundStyle(.orange)
                 }
                 Text(explanation)
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(problem == .cliNotFound ? "Install the GitHub CLI…" : "Sign In…", action: signIn)
@@ -179,7 +179,7 @@ struct ProblemView: View {
             .padding(.horizontal, 4)
         } else {
             Label(problem.message, systemImage: "exclamationmark.triangle")
-                .font(.callout)
+                .font(style: .callout)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .fixedSize(horizontal: false, vertical: true)
@@ -199,12 +199,12 @@ struct QuietView: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: "checkmark.seal")
-                .font(.system(size: 22))
+                .font(size: 22)
                 .foregroundStyle(.secondary)
             Text("All quiet")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             Text("No open pull requests for you")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
         }
     }

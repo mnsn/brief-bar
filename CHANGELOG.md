@@ -7,6 +7,10 @@
   already chosen a model, needs no Copilot subscription, and keeps the summary on your Mac. Summaries
   still start off and run only when you ask. If Apple Intelligence isn't ready or can't summarize
   an item, BriefBar explains why and never switches to Copilot automatically.
+- **Make the text in BriefBar's windows bigger.** **Text Size in Windows**, in **Settings ›
+  Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
+  descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it
+  smaller. The menu bar's lists, the widgets and Settings keep their size.
 
 ## 0.9.0 - 2026-10-29
 
