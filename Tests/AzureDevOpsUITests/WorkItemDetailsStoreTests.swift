@@ -216,6 +216,43 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(gate.asked.map(\.id) == [5103, 5101])
     }
 
+    @Test func aWorkItemThatCouldntBeReadIsReadAgainWhenItChanges() async throws {
+        let gate = ReadGate()
+        let store = makeStore(reader: gate.reader)
+        let task = try item(5103)
+        let before = try #require(task.changedAt)
+        store.show(task)
+        try await gate.answer(WorkItemDetailsStore.Read(result: .failure(.http(500)), account: nil))
+        try await until("the failure") { store.failure != nil }
+        #expect(store.details == nil)
+        // The sprint refreshes without a change to it: nothing more.
+        store.boardChanged(board)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(gate.asked.count == 1)
+        // It changed: read again.
+        store.boardChanged(board(changing: 5103, at: before + 60))
+        try await until("the second read") { gate.asked.count == 2 }
+        try await gate.answer(read(5103, changedAt: before + 60))
+        try await until("the details") { store.details != nil }
+        #expect(store.failure == nil)
+    }
+
+    @Test func aReadThatFailsWhileTheWorkItemChangesIsTriedAgain() async throws {
+        let gate = ReadGate()
+        let store = makeStore(reader: gate.reader)
+        let task = try item(5103)
+        let before = try #require(task.changedAt)
+        store.show(task)
+        try await until("the read") { gate.asked.count == 1 }
+        store.boardChanged(board(changing: 5103, at: before + 60))
+        try await gate.answer(WorkItemDetailsStore.Read(result: .failure(.http(500)), account: nil))
+        try await until("the second read") { gate.asked.count == 2 }
+        try await gate.answer(read(5103, changedAt: before + 60))
+        try await until("the details") { store.details != nil }
+        #expect(store.failure == nil)
+        #expect(gate.asked.count == 2)
+    }
+
     @Test func aNewerCopyOfAWorkItemIsReadAgain() throws {
         let store = makeStore()
         let task = try item(5103)

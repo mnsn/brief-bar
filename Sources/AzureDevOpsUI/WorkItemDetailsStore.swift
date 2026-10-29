@@ -285,6 +285,8 @@ final class WorkItemDetailsStore: ObservableObject {
             guard selected?.key == key else { return }
             failure = error
             Log.app.error("Couldn't read a work item's details: \(error.description, privacy: .public)")
+            // The sprint showed it changed while it was read: try again, while it's on screen.
+            if current.changedMeanwhile, !viewers.isEmpty, let selected { load(selected) }
         }
     }
 
@@ -338,7 +340,8 @@ final class WorkItemDetailsStore: ObservableObject {
         if loading?.key == fresh.key {
             // Being read: what comes may be from before the change, which its end checks.
             if changed { loading?.changedMeanwhile = true }
-        } else if !viewers.isEmpty, let details, Self.isNewer(fresh.changedAt, than: details.item.changedAt) {
+        } else if !viewers.isEmpty, Self.isNewer(fresh.changedAt, than: details?.item.changedAt ?? selected.changedAt) {
+            // It changed since it was read, or, when it couldn't be, since it showed: read it again.
             load(fresh)
         }
     }
