@@ -153,11 +153,15 @@ package final class CopilotSource: BriefBarSource {
         store.$counts.removeDuplicates().map { _ in () }.eraseToAnyPublisher()
     }
 
-    /// Sessions that need you, are running, finished or stopped. Idle ones aren't in any state.
+    /// Sessions that need you, are running, finished or stopped. Idle ones aren't in any state. That list mixes every
+    /// source's, newest first, so it doesn't nest them: one that another started has its ↳ tag there.
     package func stateRows(for section: SectionID) -> [StateRow] {
         store.sessions.compactMap { session in
             session.phase.state.map { state in
-                StateRow(id: session.id, state: state, date: session.since, view: AnyView(environment(SessionRow(session: session))))
+                StateRow(
+                    id: session.id, state: state, date: session.since,
+                    view: AnyView(environment(SessionRow(session: session, nests: false)))
+                )
             }
         }
     }
@@ -226,23 +230,37 @@ package final class CopilotSource: BriefBarSource {
     }
 
     /// The list again with each option that changes what it shows turned on, unless it's on already: Show Relayed
-    /// Questions Once.
+    /// Questions Once, Nest Sessions Under Their Parents, and both.
     package func extraRenderings() -> [(name: String, view: AnyView)] {
-        guard let rendered, !settings.showRelayedQuestionsOnce else { return [] }
-        let relayed = AppSettings(defaults: MemoryDefaults())
-        relayed.keepEndedMinutes = settings.keepEndedMinutes
-        relayed.moveViewedToIdle = settings.moveViewedToIdle
-        relayed.showContextUsage = settings.showContextUsage
-        relayed.showRelayedQuestionsOnce = true
-        let store = SessionStore(settings: relayed, paths: nil, sentTasks: services.sentTasks)
-        store.receive(rendered)
+        guard let rendered else { return [] }
+        let relayed = settings.showRelayedQuestionsOnce
+        let nested = settings.nestSessions
+        var options: [(name: String, relayed: Bool, nested: Bool)] = []
+        if !relayed { options.append(("sessions-relayed-questions-once", true, nested)) }
+        if !nested { options.append(("sessions-nested", relayed, true)) }
+        if !relayed, !nested { options.append(("sessions-nested-relayed-questions-once", true, true)) }
+        return options.map { option in
+            (name: option.name, view: panel(rendering: rendered, relayed: option.relayed, nested: option.nested))
+        }
+    }
+
+    /// The list from what `--render` read, with these options, and the others as they are.
+    private func panel(rendering state: EngineSnapshot, relayed: Bool, nested: Bool) -> AnyView {
+        let options = AppSettings(defaults: MemoryDefaults())
+        options.keepEndedMinutes = settings.keepEndedMinutes
+        options.moveViewedToIdle = settings.moveViewedToIdle
+        options.showContextUsage = settings.showContextUsage
+        options.showRelayedQuestionsOnce = relayed
+        options.nestSessions = nested
+        let store = SessionStore(settings: options, paths: nil, sentTasks: services.sentTasks)
+        store.receive(state)
         let panel = MenuPanelView()
             .interfaceOptions(from: services)
             .environmentObject(store)
-            .environmentObject(relayed)
+            .environmentObject(options)
             .environmentObject(services)
             .environmentObject(services.loginItem)
             .background(Color(nsColor: .windowBackgroundColor))
-        return [(name: "sessions-relayed-questions-once", view: AnyView(panel))]
+        return AnyView(panel)
     }
 }
