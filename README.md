@@ -17,12 +17,12 @@ the next step to Copilot without piecing the story together across tabs.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-sprint-details-dark.jpg">
-    <img src="docs/images/azureDevOps-sprint-details-light.jpg" width="900" alt="BriefBar's Sprint page with a story open beside the board: Where It Stands connects its tasks, pull request and Copilot sessions, with a summary and who the work is waiting on">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-tour-dark.gif">
+    <img src="docs/images/readme-tour-light.gif" width="900" alt="A 20-second tour of BriefBar: from the Overview to the Sprint page, a story's details with Copilot's summary of where it stands, a bug's pull request and the Copilot session that opened it, pull requests with AI summaries, and a task sent to Copilot">
   </picture>
 </p>
 
-<p align="center"><em>A work item's story in one place: what's done, what's still moving, and who needs to act.</em></p>
+<p align="center"><em>From your sprint to a story, its pull request and the Copilot session behind it, summarized by AI, then the next task handed to Copilot.</em></p>
 
 Screenshots use made-up demo data, including example Copilot summaries, in light and dark mode.
 They show optional features enabled. **Every source starts off**, and links, Copilot summaries,
@@ -38,6 +38,13 @@ menu or by pasting a link.
 Open a story, bug or task on the **Sprint** page. **Where It Stands** brings together its linked pull
 requests, their builds and Copilot sessions, with what needs you first. **Waiting on** names the next
 person to act: you, a reviewer or Copilot.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-sprint-details-dark.jpg">
+    <img src="docs/images/azureDevOps-sprint-details-light.jpg" width="900" alt="BriefBar's Sprint page with a story open beside the board: Where It Stands connects its tasks, pull request and Copilot sessions, with a summary and who the work is waiting on">
+  </picture>
+</p>
 
 Click through without leaving BriefBar:
 

@@ -38,7 +38,8 @@ make signing-key-check  # check what keeps signing keys safe, in throwaway keych
 make updater-check      # check, on a copy of build/BriefBar.app, that its updater can't use its permissions
 make update-rehearsal   # install an update through the updater, in copies of build/BriefBar.app
 make render             # draw the menu bar, lists, widgets, window and Settings from your own data into render/
-make screenshots        # render the README's pictures from the demo data
+make screenshots        # render the README's pictures from the demo data, and its tour if ffmpeg is installed
+make readme-tour        # redraw the README's animated tour from those pictures (brew install ffmpeg)
 make app                # build BriefBar.app into ./build, signed ad hoc
 make install            # build the app, copy it to ~/Applications and open it
 make signing-identity   # optional: a certificate that builds are then signed with, to keep Full Disk Access
