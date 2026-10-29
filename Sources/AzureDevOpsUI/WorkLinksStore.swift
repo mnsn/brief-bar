@@ -8,9 +8,9 @@ import SwiftUI
 
 /// Tells Show Links what Azure DevOps knows: the work items linked to your pull requests, the pull requests linked to the
 /// sprint's work items, the work items and pull requests you sent to Copilot and the pull requests it opened; and what each
-/// of them is, for other rows to show, and what's known of each beyond its row, for the details (`ItemStories`). It reads
-/// Azure DevOps for it only while Show Links is on, with the pull requests' client, after each of their refreshes
-/// (`LinkEngine`).
+/// of them is, for other rows to show, what's known of each beyond its row, for the details, and more of each for a summary,
+/// as one is written (`ItemStories`). It reads Azure DevOps for it only while Show Links is on, with the pull requests'
+/// client: after each of their refreshes (`LinkEngine`), and for a summary (`context`).
 @MainActor
 final class WorkLinksStore {
     private let links: Links
@@ -296,10 +296,12 @@ final class WorkLinksStore {
         if tellsStories { tellStories() }
     }
 
-    /// Tells the details what's known of its work items, pull requests and tasks, when they ask.
+    /// Tells the details what's known of its work items, pull requests and tasks, when they ask; and reads more of its work
+    /// items and pull requests for a summary, as one is written.
     private func tellStories() {
         tellsStories = true
         stories.register(.azureDevOps, kinds: [.workItem, .pullRequest, .session]) { [weak self] ref in self?.tell(ref) }
+        stories.registerContext(.azureDevOps, kinds: [.workItem, .pullRequest]) { [weak self] ref in await self?.context(ref) ?? [] }
     }
 
     /// What Azure DevOps knows of one of its things beyond its row, from what it read already: a work item from the sprint,
@@ -337,6 +339,71 @@ final class WorkLinksStore {
         case .gitHubPullRequest:
             return nil
         }
+    }
+
+    // MARK: More, for a summary
+
+    /// What Azure DevOps reads of one of its things for a summary, as one is written, while Show Links is on: a pull
+    /// request's description and comment threads, from Azure DevOps, but for your pull requests' threads, which it has; a
+    /// work item's texts and latest comments, from its details on screen, or read for it. The demo reads nothing: it has its
+    /// pull requests' threads, a few made-up descriptions, and its sprint's details. Nothing is kept, and nothing read as
+    /// someone other than who's signed in, as far as it knows, is taken.
+    func context(_ ref: ItemRef) async -> [ItemStory.Fact] {
+        guard links.isOn, !Task.isCancelled else { return [] }
+        let parts: [ItemStory.Fact]
+        switch ref.kind {
+        case .pullRequest: parts = await pullRequestContext(ref)
+        case .workItem: parts = await workItemContext(ref)
+        case .gitHubPullRequest, .session: return []
+        }
+        // Show Links went off, or the summary was taken back, meanwhile.
+        guard links.isOn, !Task.isCancelled else { return [] }
+        return parts
+    }
+
+    /// A pull request's description and comment threads: one of yours, or one that's only linked.
+    private func pullRequestContext(_ ref: ItemRef) async -> [ItemStory.Fact] {
+        let record = store.records.first { $0.id.linkRef == ref }
+        guard let pullRequest = record?.pullRequest ?? read.pullRequests.values.first(where: { $0.key.linkRef == ref }) else {
+            return []
+        }
+        // You, in its organization, as your pull requests have you.
+        let me = record?.me ?? store.records.first { $0.id.organization.lowercased() == ref.scope }?.me
+        let threads = record?.details?.threads
+        switch store.mode {
+        case .demo:
+            let description = DemoData.pullRequestDescription(pullRequest.key)
+            return PullRequestContext.parts(of: pullRequest, description: description, threads: threads, me: me)
+        case .live:
+            let parts = await PullRequestContext.read(pullRequest, threads: threads, me: me, client: store.client)
+            guard !parts.isEmpty else { return [] }
+            // The sign-in its requests went with, which the client keeps.
+            return isCurrentAccount(try? await store.client.tokens.token().account) ? parts : []
+        }
+    }
+
+    /// A work item's texts and latest comments, from its details on screen when they're its own, or else read, for one of
+    /// the sprint's, or one read for what's linked.
+    private func workItemContext(_ ref: ItemRef) async -> [ItemStory.Fact] {
+        if let shown = details?.details, shown.item.linkRef == ref {
+            return WorkItemStory.context(shown)
+        }
+        guard let item = details?.selected.flatMap({ $0.linkRef == ref ? $0 : nil }) ?? workItem(ref) else { return [] }
+        switch store.mode {
+        case .demo:
+            return DemoData.workItemDetails(organization: item.organization, id: item.id).map(WorkItemStory.context) ?? []
+        case .live:
+            let outcome = await WorkItemDetailsStore.read(item, client: store.client)
+            guard isCurrentAccount(outcome.account) else { return [] }
+            return (try? outcome.result.get()).map(WorkItemStory.context) ?? []
+        }
+    }
+
+    /// Whether what was read as `account` was read as who's signed in to the Azure CLI, as the pull requests' refresh last
+    /// told: when either isn't known, it's taken.
+    private func isCurrentAccount(_ account: String?) -> Bool {
+        guard let account, let known = self.account else { return true }
+        return account == known
     }
 
     /// Whether what work was sent to Copilot for is done, as last read: a work item that's done, a pull request that's

@@ -34,8 +34,8 @@ public enum WorkItemStory {
             let plain = StoryText.paragraph(text.text.plainText, limit: 1_500)
             if !plain.isEmpty { notes.append(ItemStory.Fact(text.title, plain)) }
         }
-        let comments = (current?.comments ?? []).prefix(5).compactMap(comment)
-        if !comments.isEmpty { notes.append(ItemStory.Fact("Latest comments", comments.joined(separator: "\n"))) }
+        let comments = (current?.comments ?? []).prefix(5).compactMap { comment($0) }
+        if !comments.isEmpty { notes.append(ItemStory.Fact(commentsLabel, comments.joined(separator: "\n"))) }
 
         // Why it's in its state comes with its details only, so it's a note, as they are: its sentence is the same with or
         // without them.
@@ -68,9 +68,40 @@ public enum WorkItemStory {
     }
 
     /// "Sam Rivera: Can we keep them for 30 days?", the newest first; nil for one that says nothing.
-    static func comment(_ comment: WorkItemDetails.Comment) -> String? {
-        let text = StoryText.line(comment.text.plainText, limit: 400)
+    static func comment(_ comment: WorkItemDetails.Comment, limit: Int = 400) -> String? {
+        let text = StoryText.line(comment.text.plainText, limit: limit)
         guard !text.isEmpty else { return nil }
         return "\(comment.author?.name ?? "Someone"): \(text)"
+    }
+
+    /// The label of its latest comments, in its story's notes and in a summary.
+    static let commentsLabel = "Latest comments"
+
+    // MARK: For a summary
+
+    /// How long each of its texts, and its latest comments all told, are in a summary, at most; and how many comments, and
+    /// how long each.
+    static let contextLimit = 3_000
+    static let contextComments = 10
+    static let contextCommentLimit = 600
+
+    /// What a work item's details add to a summary of it, for Summarize with Copilot: each of its texts, and up to ten of its
+    /// latest comments, newest first, each on a line: more than its story's notes say, by their labels, so they take the
+    /// notes' places.
+    public static func context(_ details: WorkItemDetails) -> [ItemStory.Fact] {
+        var parts: [ItemStory.Fact] = []
+        for text in details.texts {
+            let plain = StoryText.paragraph(text.text.plainText, limit: contextLimit)
+            if !plain.isEmpty { parts.append(ItemStory.Fact(text.title, plain)) }
+        }
+        var comments: [String] = []
+        var used = 0
+        for said in details.comments.prefix(contextComments).compactMap({ comment($0, limit: contextCommentLimit) }) {
+            guard used + said.count <= contextLimit else { break }
+            comments.append(said)
+            used += said.count + 1
+        }
+        if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.joined(separator: "\n"))) }
+        return parts
     }
 }
