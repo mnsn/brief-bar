@@ -175,12 +175,18 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 
 ## Get started
 
-1. Download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
+1. Install with [Homebrew](https://brew.sh):
+
+   ```sh
+   brew install --cask mnsn/tap/briefbar
+   ```
+
+   Or download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
    from the [latest release](https://github.com/mnsn/brief-bar/releases/latest), unzip it and move
    **BriefBar** to **Applications** before opening it.
-2. The app isn't notarized by Apple. If macOS blocks the first launch, click **Done**, then go to
-   **System Settings › Privacy & Security › Open Anyway** and confirm. On a managed Mac, check your
-   organization's policy first.
+2. The app isn't notarized by Apple, so either way macOS blocks the first launch: click **Done**, then
+   go to **System Settings › Privacy & Security › Open Anyway** and confirm. On a managed Mac, check
+   your organization's policy first.
 3. In BriefBar's Settings, turn on only the sources you want. Each explains what it reads before
    you consent.
 
@@ -193,7 +199,8 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Apple Intelligence (macOS 26+) unless you choose a Copilot model, which requires the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in with access to that model. |
 
 You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
-through the built-in updater and keep Full Disk Access.
+through the built-in updater, even if you installed with Homebrew (`brew upgrade` skips BriefBar
+unless you add `--greedy`), and keep Full Disk Access.
 [Full installation guide, managed Macs and building from source →](docs/user-guide.md#install)
 
 ## Your data and your choices

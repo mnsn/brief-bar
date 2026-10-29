@@ -595,13 +595,24 @@ bundle identifier of the app it's in, and leaves any other named `briefbar`, wit
 
 BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
 
+To install it with [Homebrew](https://brew.sh), run:
+
+```sh
+brew install --cask mnsn/tap/briefbar
+```
+
+Use this full name: Homebrew 6 and later refuse third-party taps you haven't trusted, and installing
+by the full name trusts just this cask. It puts BriefBar in Applications, so continue from step 3.
+Or download it yourself:
+
 1. Download [**BriefBar.zip**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip)
    from the [latest release](https://github.com/mnsn/brief-bar/releases/latest) and unzip it.
 2. Drag **BriefBar** to your Applications folder before you open it. Opened from Downloads, macOS runs
    it from a temporary location, and Full Disk Access, Launch at Login and updates may not work.
 3. Open it. The app isn't notarized by Apple, so the first time, macOS won't open it because it can't
-   verify it. Click **Done**, then go to **System Settings › Privacy & Security**, scroll down to the
-   message that BriefBar was blocked, click **Open Anyway** and confirm.
+   verify it, whether you installed it with Homebrew or downloaded it. Click **Done**, then go to
+   **System Settings › Privacy & Security**, scroll down to the message that BriefBar was blocked,
+   click **Open Anyway** and confirm.
 4. Settings opens: turn on the sources you want, as [above](#turning-a-source-on). Changing the Full
    Disk Access list asks for your password or Touch ID, and an administrator's on a standard account.
 5. Turn on **Launch BriefBar at Login** in Settings. If macOS asks you to allow it, use
@@ -610,8 +621,12 @@ BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs are
 The second time you open it, BriefBar asks whether to check for updates automatically. If you allow
 it, it checks once a day and offers each new version, which it installs and reopens without the
 Gatekeeper step. Updates keep its Full Disk Access. **Check for Updates…**, in Settings and in each
-list's gear menu, checks right away. To remove BriefBar, quit it, move it to the Trash and remove it
-from the Full Disk Access list.
+list's gear menu, checks right away. If you installed it with Homebrew, BriefBar still updates itself,
+so `brew upgrade` skips it unless you add `--greedy`.
+
+To remove BriefBar, quit it, move it to the Trash and remove it from the Full Disk Access list. If you
+installed it with Homebrew, run `brew uninstall --cask briefbar` instead of moving it to the Trash;
+`brew uninstall --zap --cask briefbar` also deletes its settings and saved data.
 
 On a Mac that your organization manages, check your organization's policy first: security software
 may flag an app that reads Notification Center's database. If **Open Anyway** is missing, [build
