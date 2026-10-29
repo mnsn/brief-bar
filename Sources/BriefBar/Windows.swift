@@ -24,6 +24,17 @@ final class WindowHost: NSObject, NSWindowDelegate {
         window?.isVisible == true
     }
 
+    /// Whether `other` is the window, or a sheet or another window over it.
+    func owns(_ other: NSWindow) -> Bool {
+        guard let window else { return false }
+        var current: NSWindow? = other
+        while let candidate = current {
+            if candidate === window { return true }
+            current = candidate.sheetParent ?? candidate.parent
+        }
+        return false
+    }
+
     func update(sections: [SectionID]) {
         content.update(sections: sections)
         if let window {
@@ -267,9 +278,11 @@ struct WindowView: View {
                     .floatingPanel(cornerRadius: 18)
                     .padding(Self.inset)
             }
-            // The page takes the rest of the window's width, so a wide one, such as full screen, gets longer lines.
+            // The page takes the rest of the window's width, so a wide one, such as full screen, gets longer lines. Its text
+            // is as big as you chose; the sidebar keeps its size.
             page
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .textSize(from: content.model.services)
         }
         .background(WindowBackdrop().ignoresSafeArea())
         .interfaceOptions(from: content.model.services)
@@ -288,11 +301,12 @@ struct WindowView: View {
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "macwindow")
-                    .font(.system(size: 30, weight: .light))
+                    .font(size: 30, weight: .light)
                     .foregroundStyle(.secondary)
                 Text("Nothing to show")
-                    .font(.headline)
+                    .font(style: .headline)
                 Text("Turn on a source, or show its pages in Settings › Windows.")
+                    .font(style: .body)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -331,7 +345,7 @@ struct WindowSidebar: View {
                         if let source = model.source(for: section), let info = source.info(for: section) {
                             if index == 0 || model.source(for: content.sections[index - 1])?.id != source.id {
                                 Text(source.name)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(size: 11, weight: .semibold)
                                     .foregroundStyle(.secondary)
                                     .padding(.leading, 8)
                                     .padding(.top, index == 0 && first == 0 ? 2 : 12)
@@ -368,7 +382,7 @@ struct WindowSidebar: View {
                 .fixedSize()
                 .help("Settings")
             }
-            .font(.system(size: 12))
+            .font(size: 12)
             .padding(.horizontal, 8)
             .padding(.bottom, 12)
         }
@@ -388,7 +402,7 @@ private struct WindowUpdateButton: View {
                 updates.check()
             } label: {
                 Label("BriefBar \(version) is available", systemImage: "arrow.down.circle")
-                    .font(.system(size: 12))
+                    .font(size: 12)
             }
             .buttonStyle(.borderless)
             .help("Update BriefBar")
@@ -414,7 +428,7 @@ private struct SidebarItem: View {
             HStack(spacing: 10) {
                 if options.quietAppearance {
                     Image(systemName: info.symbol)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(size: 15, weight: .medium)
                         .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                         .frame(width: 26, height: 26)
                 } else {
@@ -424,20 +438,20 @@ private struct SidebarItem: View {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.5)
                         Image(systemName: info.symbol)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(size: 12, weight: .semibold)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 26, height: 26)
                 }
                 Text(info.title)
-                    .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
+                    .font(size: 13.5, weight: isSelected ? .semibold : .regular)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 let clearer = options.clearerStates && !countsNew
                 let count = clearer ? segment.attentionCount : segment.count
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .font(size: 11, weight: .semibold).monospacedDigit()
                         .foregroundStyle(clearer ? Color.primary : .white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 18)
@@ -447,7 +461,7 @@ private struct SidebarItem: View {
                         ))
                 } else if clearer, info.states.isEmpty, segment.count > 0 {
                     Text("\(segment.count) left")
-                        .font(.system(size: 11).monospacedDigit())
+                        .font(size: 11).monospacedDigit()
                         .foregroundStyle(.secondary)
                         .help(segment.summary)
                 }

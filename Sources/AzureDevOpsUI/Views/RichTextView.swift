@@ -1,4 +1,5 @@
 import AzureDevOpsCore
+import BriefBarUI
 import SwiftUI
 
 /// Formatted text from Azure DevOps, such as a description or a comment, drawn by BriefBar: its text can be selected, and
@@ -6,6 +7,7 @@ import SwiftUI
 struct RichTextView: View {
     let text: RichText
     var size: CGFloat = 12.5
+    @Environment(\.textScale) private var scale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -42,7 +44,7 @@ struct RichTextView: View {
         case .code(let code):
             ScrollView(.horizontal) {
                 Text(code)
-                    .font(.system(size: size - 1, design: .monospaced))
+                    .font(size: size - 1, design: .monospaced)
                     .fixedSize()
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -77,7 +79,8 @@ struct RichTextView: View {
     }
 
     private func lines(_ runs: [RichText.Run], size: CGFloat? = nil, weight: Font.Weight = .regular) -> some View {
-        Text(Self.attributed(runs, size: size ?? self.size, weight: weight))
+        // Its fonts are the text's own, so they follow the text size here.
+        Text(Self.attributed(runs, size: (size ?? self.size) * scale, weight: weight))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -111,15 +114,15 @@ private struct ListMarkerView: View {
         switch marker {
         case .bullet:
             Text("•")
-                .font(.system(size: size, weight: .bold))
+                .font(size: size, weight: .bold)
                 .foregroundStyle(.secondary)
         case .number(let number):
             Text(String(number) + ".")
-                .font(.system(size: size).monospacedDigit())
+                .font(size: size).monospacedDigit()
                 .foregroundStyle(.secondary)
         case .checkbox(let checked):
             Image(systemName: checked ? "checkmark.square.fill" : "square")
-                .font(.system(size: size))
+                .font(size: size)
                 .foregroundStyle(checked ? Color.accentColor : .secondary)
                 .accessibilityLabel(checked ? "Done" : "Not done")
         }
@@ -134,7 +137,7 @@ private struct ImageLink: View {
 
     var body: some View {
         let label = Label(alt, systemImage: "photo")
-            .font(.system(size: size - 0.5))
+            .font(size: size - 0.5)
             .lineLimit(1)
             .truncationMode(.middle)
         if let url {

@@ -60,6 +60,11 @@ jobs:
       - name: Check the signing keys' protection
         run: make signing-key-check
 
+      # The release workflow's last step, which points the Homebrew cask at a release, against a tap of its own
+      # on the runner, with no key.
+      - name: Check the Homebrew cask update
+        run: make homebrew-cask-check
+
       # A throwaway certificate in a keychain of its own, on the search list. Only the release workflow's
       # approved job has the release certificate.
       - name: Create a signing certificate

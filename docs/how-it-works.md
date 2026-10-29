@@ -248,6 +248,17 @@ changing `ItemState`, source classification, notifications or agent responses. R
 same row-height calculation in widget content and window sizing. Simple Layout Choices only exposes
 preset controls: choosing a preset is an explicit layout edit; enabling the appearance option is not.
 
+**Text Size in Windows** is a `TextSize` from 100% to 150%, saved as `interface.textSize`, which
+`AppServices` publishes apart from the options. Only a window's page sets the `textScale` environment
+value from it (`WindowView`), and views take their fonts from `.font(size:)` and `.font(style:)`, which
+multiply by it, so the same rows stay at their designed sizes in the menu bar's lists and the widgets.
+What holds that text, such as avatars, badges and rows' icon columns, grows by it too, and a layout
+that runs out of room moves a row's details under its headline rather than squeezing it. macOS has no
+Dynamic Type, so a text style scales from its fixed size there. ⌘-scrolling changes it through a local
+event monitor, only over a BriefBar window or a sheet over one (`WindowHost.owns`): `TextSizeScrolling`
+turns each notch of a wheel, or each 40 points of a swipe, into a step, ignores momentum, and takes up
+as bigger, as toward the top of a page, whichever way your scrolling goes.
+
 ## Everything by state
 
 ### Counts by state
@@ -2174,6 +2185,10 @@ when BriefBar does.
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
 - **Full Disk Access survives**, because every release is signed with the same certificate.
+- **Installed with Homebrew**, it updates itself all the same. The cask, in
+  [mnsn/homebrew-tap](https://github.com/mnsn/homebrew-tap), says so (`auto_updates`), so
+  `brew upgrade` leaves it to the updater unless you add `--greedy`. The release workflow points the
+  cask at each release, with its zip's SHA-256 (`scripts/update-homebrew-cask.sh`).
 
 ## Checks
 
@@ -2205,5 +2220,9 @@ when BriefBar does.
   designated requirement stays the same. CI runs it on every package.
 - `make signing-key-check` checks, in throwaway keychains, everything that keeps a signing key safe
   (above).
+- `scripts/test-homebrew-cask.sh` (`make homebrew-cask-check`) runs the release workflow's last step,
+  `scripts/update-homebrew-cask.sh`, against a tap of its own, with no network and no key: it sets the
+  cask's version and SHA-256 in one commit, the same release again changes nothing, an older release
+  never replaces a newer one, and it refuses another zip for the same version. CI runs it.
 - `scripts/appcast-dry-run.sh` signs a packaged app's update and appcast with a throwaway key, the way
   a release does, and checks them as the app would.

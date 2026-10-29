@@ -221,7 +221,7 @@ package struct FullDiskAccessView: View {
                 AppIconView(isBundled: access.isBundled)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Allow Full Disk Access")
-                        .font(.title2.weight(.semibold))
+                        .font(style: .title2, weight: .semibold)
                     Text("So BriefBar can read Notification Center for \(names)")
                         .foregroundStyle(.secondary)
                 }

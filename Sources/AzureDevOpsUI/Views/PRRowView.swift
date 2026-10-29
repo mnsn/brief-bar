@@ -20,6 +20,7 @@ struct PRRowView: View {
 
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     /// Needs you with something you haven't seen; without it, it's what you've seen and haven't answered.
     private var isNew: Bool { item.group == .needsYou && item.hasNews }
@@ -42,7 +43,7 @@ struct PRRowView: View {
                 .accessibilityHint("Opens the pull request in Azure DevOps")
                 .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
                 RowSummary(subject: item.key.linkRef)
-                    .padding(.leading, 8 + options.rowIconWidth + (options.readableRows ? 10 : 9))
+                    .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
                     .padding(.trailing, 8)
                     .padding(.bottom, 6)
             }
@@ -53,7 +54,7 @@ struct PRRowView: View {
                     menuItems
                 } label: {
                     Label("Actions", systemImage: "ellipsis.circle")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(size: 11.5, weight: .medium)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -76,13 +77,13 @@ struct PRRowView: View {
     private var content: some View {
         HStack(alignment: .top, spacing: options.readableRows ? 10 : 9) {
             RowIcon(item: item, size: compact ? 15 : 17)
-                .frame(width: options.rowIconWidth, height: 20)
+                .frame(width: options.rowIconWidth * textScale, height: 20 * textScale)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(item.title)
-                        .font(.system(size: 13, weight: item.group == .idle ? .regular : .semibold))
+                        .font(size: 13, weight: item.group == .idle ? .regular : .semibold)
                         .foregroundStyle(item.group == .idle ? .secondary : .primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -97,13 +98,13 @@ struct PRRowView: View {
                 }
                 if compact {
                     Text(compactLine)
-                        .font(.system(size: options.rowDetailSize))
+                        .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
                     HStack(spacing: 6) {
                         Text(item.subtitle)
-                            .font(.system(size: options.rowReasonSize, weight: .medium))
+                            .font(size: options.rowReasonSize, weight: .medium)
                             .foregroundStyle(options.quietAppearance ? Color.secondary : item.rowColor)
                             .lineLimit(1)
                         PullRequestCopilotStatus(key: item.key, showsActions: showsActions)
@@ -111,7 +112,7 @@ struct PRRowView: View {
                     }
                     if let detail = item.detail {
                         Text(detail)
-                            .font(.system(size: options.rowDetailSize))
+                            .font(size: options.rowDetailSize)
                             .foregroundStyle(.secondary)
                             .lineLimit(item.group == .needsYou ? 3 : 2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -177,6 +178,7 @@ struct PRRowView: View {
 struct RowIcon: View {
     let item: PRSnapshot
     let size: CGFloat
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         if item.reason.needsBadge && item.group != .idle {
@@ -184,13 +186,13 @@ struct RowIcon: View {
                 Circle()
                     .fill(item.rowColor)
                 Image(systemName: item.rowSymbol)
-                    .font(.system(size: size * 0.52, weight: .bold))
+                    .font(size: size * 0.52, weight: .bold)
                     .foregroundStyle(.white)
             }
-            .frame(width: size * 1.06, height: size * 1.06)
+            .frame(width: size * 1.06 * textScale, height: size * 1.06 * textScale)
         } else {
             Image(systemName: item.rowSymbol)
-                .font(.system(size: size))
+                .font(size: size)
                 .foregroundStyle(item.rowColor)
         }
     }
@@ -216,7 +218,7 @@ struct CountChips: View {
                             Text("\(counts[group])")
                                 .monospacedDigit()
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .help("\(counts[group]) \(group.countLabel)")
                     }
                 }

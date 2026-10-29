@@ -34,7 +34,7 @@ struct PipelinesPage: View {
                 } else {
                     VStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Loading your pipelines…").foregroundStyle(.secondary)
+                        Text("Loading your pipelines…").font(style: .body).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -110,7 +110,7 @@ private struct PullRequestPipelinesCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 if pullRequest.pipelines.isEmpty {
                     Text(pullRequest.headline)
-                        .font(.system(size: 12))
+                        .font(size: 12)
                         .foregroundStyle(.secondary)
                 }
                 ForEach(pullRequest.pipelines) { status in
@@ -130,7 +130,7 @@ private struct PullRequestPipelinesCard: View {
                             StageFlow(stages: status.stages, now: now)
                         }
                     }
-                    .font(.system(size: 11))
+                    .font(size: 11)
                 }
             }
             .padding(.top, 8)
@@ -140,13 +140,13 @@ private struct PullRequestPipelinesCard: View {
                     AzureDevOps.open(pullRequest.url)
                 } label: {
                     Text(pullRequest.pullRequest.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(size: 14, weight: .semibold)
                         .lineLimit(1)
                 }
                 .buttonStyle(.plain)
                 .help("Open pull request in Azure DevOps")
                 Text("\(pullRequest.pullRequest.repositoryName) · !\(pullRequest.id.number) · \(pullRequest.headline)")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -169,12 +169,12 @@ private struct PipelinesTitle: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(size: 14, weight: .semibold)
             Text("\(count)")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .font(size: 12, weight: .semibold).monospacedDigit()
                 .foregroundStyle(.secondary)
         }
         .padding(.leading, 4)
@@ -198,16 +198,16 @@ private struct MergeCard: View {
                 ZStack {
                     Circle().fill(color.gradient)
                     Image(systemName: "arrow.triangle.merge")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(size: 13, weight: .bold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(merge.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(size: 14, weight: .semibold)
                         .lineLimit(1)
                     Text(meta)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -279,10 +279,10 @@ private struct MergeRunRow: View {
             HStack(spacing: 9) {
                 RunStatusBadge(status: status.latest?.status, size: 20)
                 Text(status.pipeline.name)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(size: 12.5, weight: .semibold)
                     .lineLimit(1)
                 Text(status.headline)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(size: 12, weight: .medium)
                     .foregroundStyle(status.headlineColor)
                     .lineLimit(1)
                 Spacer(minLength: 8)
@@ -293,7 +293,7 @@ private struct MergeRunRow: View {
                             MetaItem(symbol: "timer", text: RunDuration.short(duration))
                         }
                     }
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                 }
             }
@@ -328,6 +328,7 @@ private struct PipelineCard: View {
     @EnvironmentObject private var pipelines: PipelinesStore
     @LocalState private var isHovered = false
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -336,7 +337,7 @@ private struct PipelineCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(status.pipeline.name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(size: 14, weight: .semibold)
                             .lineLimit(1)
                         meta
                     }
@@ -346,7 +347,7 @@ private struct PipelineCard: View {
                         menuItems
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 14))
+                            .font(size: 14)
                             .foregroundStyle(.secondary)
                             .frame(minWidth: options.visibleActions ? 28 : nil, minHeight: options.visibleActions ? 28 : nil)
                     }
@@ -409,32 +410,57 @@ private struct PipelineCard: View {
         return seen
     }
 
-    /// "Failed in Test · 20261021.3 · main · Robin Diaz · 1h ago · 6m 12s"
+    /// "Failed in Test · 20261021.3 · main · Robin Diaz · 1h ago · 6m 12s": the run's details beside the headline, or under
+    /// it, on as many lines as they need, when they'd leave it too little room, as bigger text can.
     private var meta: some View {
-        HStack(spacing: 10) {
-            Text(status.headline)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(status.headlineColor)
-            if let run = status.latest {
-                HStack(spacing: 10) {
-                    MetaItem(symbol: "number", text: run.number)
-                    if !run.branch.isEmpty {
-                        MetaItem(symbol: run.branch.hasPrefix("!") ? "arrow.triangle.pull" : "arrow.triangle.branch", text: run.branch)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                // With less room, it would wrap a few letters at a time.
+                headline
+                    .frame(idealWidth: 80 * textScale)
+                if let run = status.latest {
+                    HStack(spacing: 10) {
+                        details(of: run)
                     }
-                    if let who = run.requestedFor ?? (run.trigger == .schedule ? "Scheduled" : nil) {
-                        MetaItem(symbol: run.trigger.symbol, text: who)
-                    }
-                    if let at = run.changedAt {
-                        MetaItem(symbol: "clock", text: Elapsed.short(since: at, now: now) == "now" ? "now" : "\(Elapsed.short(since: at, now: now)) ago")
-                    }
-                    if let duration = run.duration(now: now) {
-                        MetaItem(symbol: "timer", text: RunDuration.short(duration))
-                    }
+                    .font(size: 11)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
+            VStack(alignment: .leading, spacing: 3) {
+                headline
+                if let run = status.latest {
+                    FlowLayout(spacing: 10, lineSpacing: 3) {
+                        details(of: run)
+                    }
+                    .font(size: 11)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var headline: some View {
+        Text(status.headline)
+            .font(size: 12, weight: .semibold)
+            .foregroundStyle(status.headlineColor)
+    }
+
+    @ViewBuilder
+    private func details(of run: PipelineRun) -> some View {
+        MetaItem(symbol: "number", text: run.number)
+        if !run.branch.isEmpty {
+            MetaItem(symbol: run.branch.hasPrefix("!") ? "arrow.triangle.pull" : "arrow.triangle.branch", text: run.branch)
+        }
+        if let who = run.requestedFor ?? (run.trigger == .schedule ? "Scheduled" : nil) {
+            MetaItem(symbol: run.trigger.symbol, text: who)
+        }
+        if let at = run.changedAt {
+            MetaItem(symbol: "clock", text: Elapsed.short(since: at, now: now) == "now" ? "now" : "\(Elapsed.short(since: at, now: now)) ago")
+        }
+        if let duration = run.duration(now: now) {
+            MetaItem(symbol: "timer", text: RunDuration.short(duration))
         }
     }
 }
@@ -459,7 +485,7 @@ private struct MetaItem: View {
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: symbol)
-                .font(.system(size: 9.5, weight: .medium))
+                .font(size: 9.5, weight: .medium)
             Text(text)
                 .monospacedDigit()
         }
@@ -471,16 +497,17 @@ private struct MetaItem: View {
 struct RunStatusBadge: View {
     let status: PipelineRun.Status?
     var size: CGFloat = 34
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         let color = status?.color ?? Color(nsColor: .systemGray)
         ZStack {
             Circle().fill(color.gradient)
             Image(systemName: status?.symbol ?? "questionmark")
-                .font(.system(size: size * 0.42, weight: .bold))
+                .font(size: size * 0.42, weight: .bold)
                 .foregroundStyle(.white)
         }
-        .frame(width: size, height: size)
+        .frame(width: size * textScale, height: size * textScale)
         .shadow(color: color.opacity(0.35), radius: 4, y: 1)
         .accessibilityLabel(status?.title ?? "No runs")
     }
@@ -544,14 +571,14 @@ private struct StagePill: View {
         let quiet = stage.state == .pending || stage.state == .skipped || stage.state == .canceled
         HStack(spacing: 5) {
             Image(systemName: stage.state.symbol)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(size: 11.5, weight: .semibold)
                 .foregroundStyle(stage.state.color)
             Text(stage.name)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(size: 11.5, weight: .medium)
                 .foregroundStyle(quiet ? .secondary : .primary)
             if let duration {
                 Text(duration)
-                    .font(.system(size: 10.5).monospacedDigit())
+                    .font(size: 10.5).monospacedDigit()
                     .foregroundStyle(.secondary)
             }
         }
@@ -576,10 +603,10 @@ private struct FailureNote: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: "exclamationmark.octagon.fill")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.red)
             (Text(failure.step).fontWeight(.semibold) + Text(failure.message.map { ": \($0)" } ?? " failed"))
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
                 .foregroundStyle(.primary.opacity(0.85))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -612,9 +639,9 @@ private struct AddPipelineSheet: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add Pipelines")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(size: 20, weight: .bold)
                     Text("Pin the pipelines to follow in the window and the widget. Search by name or number, or paste a link to a pipeline or a run.")
-                        .font(.system(size: 12))
+                        .font(size: 12)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -677,14 +704,17 @@ private struct AddPipelineSheet: View {
     private var list: some View {
         if let error {
             Label(error, systemImage: "exclamationmark.triangle")
+                .font(style: .body)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {
             Text("Choose a project to search in.")
+                .font(style: .body)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if results.isEmpty && !isSearching {
             Text(link != nil ? "No pipeline at that link." : noResults)
+                .font(style: .body)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -769,15 +799,15 @@ private struct ResultRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: AzureDevOpsPage.pipelines.symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(AzureDevOpsPage.pipelines.color)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(pipeline.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(size: 13, weight: .medium)
                     .lineLimit(1)
                 Text(details)
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

@@ -131,7 +131,7 @@ struct WorkItemDetailsPanel: View {
             if details.canGoBack {
                 Button(action: goBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
@@ -177,7 +177,7 @@ struct WorkItemDetailsPanel: View {
                 withAnimation(.easeOut(duration: 0.2)) { details.close() }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(size: 12, weight: .semibold)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
@@ -209,7 +209,7 @@ struct WorkItemDetailsPanel: View {
         let pages = details.pages
         if pages.isEmpty {
             Text(item.type + " " + String(item.id))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .font(size: 12, weight: .medium).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .textSelection(.enabled)
@@ -229,7 +229,7 @@ struct WorkItemDetailsPanel: View {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
                     let linked = services.links.describe(page)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 8.5, weight: .semibold))
+                        .font(size: 8.5, weight: .semibold)
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                     if index == pages.count - 1 {
@@ -254,7 +254,7 @@ struct WorkItemDetailsPanel: View {
                     }
                 }
             }
-            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .font(size: 12, weight: .medium).monospacedDigit()
         }
     }
 
@@ -307,7 +307,7 @@ struct WorkItemDetailsPanel: View {
             if let read = details.details {
                 if let failure = details.failure {
                     Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -326,7 +326,7 @@ struct WorkItemDetailsPanel: View {
                     Text("Reading its details…")
                         .foregroundStyle(.secondary)
                 }
-                .font(.system(size: 12))
+                .font(size: 12)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 28)
             }
@@ -336,14 +336,14 @@ struct WorkItemDetailsPanel: View {
     private func heading(_ item: WorkItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(item.title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(size: 17, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
                 Chip(text: item.state, color: item.stateColor, symbol: item.stateSymbol, fitsWidth: true)
                 if let reason = details.details?.reason, reason.caseInsensitiveCompare(item.state) != .orderedSame {
                     Text(reason)
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -449,7 +449,7 @@ struct WorkItemDetailsPanel: View {
                 }
             }
         }
-        .font(.system(size: 12.5))
+        .font(size: 12.5)
         .textSelection(.enabled)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -483,7 +483,7 @@ struct WorkItemDetailsPanel: View {
         if read.texts.isEmpty {
             section("Description") {
                 Text("No description")
-                    .font(.system(size: 12.5))
+                    .font(size: 12.5)
                     .foregroundStyle(.tertiary)
             }
         } else {
@@ -516,7 +516,7 @@ struct WorkItemDetailsPanel: View {
                         )
                         let done = readable.filter(\.isDone).count
                         Text("\(done) of \(readable.count) done")
-                            .font(.system(size: 11))
+                            .font(size: 11)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.bottom, 2)
@@ -572,7 +572,7 @@ struct WorkItemDetailsPanel: View {
                     ForEach(read.resources) { resource in
                         Link(destination: resource.url) {
                             Label(resource.name, systemImage: resource.kind == .attachment ? "paperclip" : "link")
-                                .font(.system(size: 12.5))
+                                .font(size: 12.5)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -592,12 +592,12 @@ struct WorkItemDetailsPanel: View {
         section("Discussion", count: read.commentCount > 0 ? read.commentCount : nil) {
             if let problem = read.commentsProblem {
                 Label("Couldn't read its comments. \(problem)", systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if read.comments.isEmpty {
                 Text("No comments yet")
-                    .font(.system(size: 12.5))
+                    .font(size: 12.5)
                     .foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -607,7 +607,7 @@ struct WorkItemDetailsPanel: View {
                     if read.commentCount > read.comments.count {
                         Button("See all \(read.commentCount) comments in Azure DevOps") { details.openInAzureDevOps() }
                             .buttonStyle(.borderless)
-                            .font(.system(size: 11.5))
+                            .font(size: 11.5)
                     }
                 }
             }
@@ -625,7 +625,7 @@ struct WorkItemDetailsPanel: View {
                     .help(changed.formatted(date: .complete, time: .shortened))
             }
         }
-        .font(.system(size: 11))
+        .font(size: 11)
         .foregroundStyle(.secondary)
     }
 
@@ -635,10 +635,10 @@ struct WorkItemDetailsPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(size: 13, weight: .semibold)
                 if let count {
                     Text(String(count))
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .font(size: 11, weight: .semibold).monospacedDigit()
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -717,7 +717,7 @@ private struct FailureView: View {
                 Image(systemName: problem.needsSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
-            .font(.system(size: 12))
+            .font(size: 12)
             HStack(spacing: 8) {
                 if problem.needsSignIn {
                     Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
@@ -762,18 +762,18 @@ private struct LinkedItemRow: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: item?.stateSymbol ?? "circle.dashed")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(size: 12.5, weight: .medium)
                     .foregroundStyle(item?.stateColor ?? .secondary)
                     .frame(width: 16)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 if let item, item.type.caseInsensitiveCompare("Task") != .orderedSame {
                     Image(systemName: item.typeSymbol)
-                        .font(.system(size: 10))
+                        .font(size: 10)
                         .foregroundStyle(item.typeColor)
                         .help(item.type)
                 }
                 Text(item?.title ?? "Work item \(link.workItemId)")
-                    .font(.system(size: 12.5))
+                    .font(size: 12.5)
                     .foregroundStyle(item == nil || item?.isDone == true ? .secondary : .primary)
                     .strikethrough(item?.isDone == true && !compact, color: .secondary.opacity(0.6))
                     .multilineTextAlignment(.leading)
@@ -781,14 +781,14 @@ private struct LinkedItemRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if showsLinkName {
                     Text(link.name)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(size: 10.5, weight: .medium)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
                 }
                 if !compact, let remaining = item?.remainingText {
                     Text(remaining)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .font(size: 11, weight: .medium).monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
                 if !compact, let item {
@@ -832,11 +832,11 @@ private struct CommentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(comment.author?.name ?? "Someone")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(size: 12, weight: .semibold)
                         .lineLimit(1)
                     if let created = comment.createdAt {
                         Text(WorkItemDetailsPanel.ago(created, now: now) + (comment.isEdited ? " · edited" : ""))
-                            .font(.system(size: 11))
+                            .font(size: 11)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .help(created.formatted(date: .complete, time: .shortened))
@@ -854,6 +854,8 @@ private struct CommentView: View {
 /// Views side by side, on as many lines as they need.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    /// Between lines: `spacing` for nil.
+    var lineSpacing: CGFloat?
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         arrange(width: proposal.width ?? .infinity, subviews: subviews).size
@@ -877,7 +879,7 @@ struct FlowLayout: Layout {
             size.width = min(size.width, width)
             if x > 0, x + size.width > width {
                 x = 0
-                y += lineHeight + spacing
+                y += lineHeight + (lineSpacing ?? spacing)
                 lineHeight = 0
             }
             frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))

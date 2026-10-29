@@ -76,7 +76,7 @@ struct LinkCapsule: View {
                 Text(first.label).monospacedDigit()
             }
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(size: 10, weight: .semibold)
         .lineLimit(1)
         .foregroundStyle(first.color)
         .padding(.horizontal, 5)
@@ -242,15 +242,15 @@ package struct LinkPickerView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 18))
+                    .font(size: 18)
                     .foregroundStyle(item.color)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)
-                        .font(.headline)
+                        .font(style: .headline)
                         .lineLimit(2)
                     Text("Links you add or take away here stay in BriefBar. Azure DevOps, GitHub and Copilot don't see them.")
-                        .font(.callout)
+                        .font(style: .callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -316,7 +316,7 @@ package struct LinkPickerView: View {
     private func section(_ title: String, _ items: [LinkedItem]) -> some View {
         if !items.isEmpty {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
@@ -350,21 +350,21 @@ private struct LinkPickerRow: View {
         Button(action: toggle) {
             HStack(spacing: 9) {
                 Image(systemName: isLinked ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14))
+                    .font(size: 14)
                     .foregroundStyle(isLinked ? Color.accentColor : .secondary)
                 Image(systemName: item.symbol)
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .foregroundStyle(item.color)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.label == item.title ? item.title : "\(item.label)  \(item.title)")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(size: 12.5, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     let detail = [item.place, item.status].compactMap { $0 }.joined(separator: " · ")
                     if !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 11))
+                            .font(size: 11)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -414,7 +414,7 @@ package struct LinksSetting: View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle(Self.title, isOn: Binding(get: { links.isOn }, set: { links.setOn($0) }))
             Text(isBrief ? Self.brief : Self.explanation)
-                .font(.callout)
+                .font(style: .callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

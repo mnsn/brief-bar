@@ -41,7 +41,7 @@ struct MenuPanelView: View {
                     Image(systemName: "waveform.path.ecg")
                         .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(TintShapeStyle()))
                     Text("Sessions")
-                        .font(.headline)
+                        .font(style: .headline)
                 }
             }
             Spacer()
@@ -56,7 +56,7 @@ struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let problem = store.problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
             }
@@ -84,7 +84,7 @@ struct MenuPanelView: View {
                     }
                 } label: {
                     Text("Idle (\(idle.count))")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -99,13 +99,13 @@ struct MenuPanelView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("\(phase.title) (\(sessions.count))")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? Color.primary : phase.color)
                 Spacer()
                 if phase == .done || phase == .stopped {
                     Button("Clear") { store.clear(phase) }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .help("Move these sessions to Idle")
                 }
             }
@@ -138,7 +138,7 @@ struct MenuPanelView: View {
             .fixedSize()
             .help("Settings")
         }
-        .font(.system(size: 12))
+        .font(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -164,12 +164,12 @@ struct QuietView: View {
     var body: some View {
         VStack(spacing: 4) {
             Image(systemName: "checkmark.seal")
-                .font(.system(size: 22))
+                .font(size: 22)
                 .foregroundStyle(.secondary)
             Text("All quiet")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             Text(idleCount == 0 ? "No sessions yet" : idleCount == 1 ? "1 idle session" : "\(idleCount) idle sessions")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
         }
     }

@@ -72,15 +72,15 @@ struct AvatarView: View {
             switch conversation.kind {
             case .oneOnOne:
                 Text(Self.initials(conversation.name))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             case .meeting:
                 Image(systemName: "calendar")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(size: 12, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             case .group, .channel:
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             }
         }
@@ -111,7 +111,7 @@ struct CountBadge: View {
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .font(size: 11, weight: .semibold).monospacedDigit()
             .foregroundStyle(options.quietAppearance ? Color.primary : .white)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)

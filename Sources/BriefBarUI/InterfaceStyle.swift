@@ -56,7 +56,7 @@ private struct RowActions<Actions: View>: ViewModifier {
                     actions()
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(size: 13, weight: .semibold)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -104,17 +104,17 @@ package struct BriefContainer<Content: View>: View {
             HStack(spacing: 5) {
                 if isWritten {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(size: 11, weight: .semibold)
                         .foregroundStyle(colorful ? AnyShapeStyle(Self.gradient) : AnyShapeStyle(Color.secondary))
                 }
                 Text("Brief")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                 if options.compactBriefs, count > 0 {
                     Spacer()
                     Button(expanded ? "Show Less" : count > 2 ? "Show All \(count)" : "Expand") { expanded.toggle() }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .frame(minHeight: 28)
                         .accessibilityLabel(expanded ? "Show fewer brief highlights" : "Show the full brief")
                 }
@@ -166,7 +166,7 @@ package struct WidgetMore: View {
                 Text("+\(hidden) more")
             }
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(size: 11, weight: .medium)
         .foregroundStyle(options.visibleActions ? Color.accentColor : .secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, options.readableRows ? 47 : 37)
@@ -189,7 +189,7 @@ package struct AttentionSummary: View {
             Text(count == 1 ? "1 needs attention" : "\(count) need attention")
                 .monospacedDigit()
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(size: 11, weight: .semibold)
         .fixedSize()
         .help("\(states.needsYou) need you; \(states.failing) failing")
         .accessibilityElement(children: .combine)

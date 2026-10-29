@@ -69,20 +69,20 @@ struct WidgetSectionView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.pull")
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("Pull Requests")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if let problem = store.problem {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem.message)
             }
             Spacer()
             if store.hasLoaded && store.counts.active == 0 {
                 Text("All clear")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
             } else {
                 CountChips(counts: store.counts, groups: size == .compact ? [.needsYou, .failing, .ready] : [.needsYou, .failing, .ready, .toReview],
@@ -96,7 +96,7 @@ struct WidgetSectionView: View {
         if let problem = store.problem {
             VStack(alignment: .leading, spacing: 6) {
                 Label(problem.message, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if problem.needsSignIn {
@@ -107,7 +107,7 @@ struct WidgetSectionView: View {
             .padding(.horizontal, 14)
         } else if store.mode == .live && settings.organizations.isEmpty {
             Text(settings.hasDiscovered ? "No organizations to watch" : "Finding your organizations…")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
         } else if store.hasLoaded {
             QuietView(idleCount: store.counts.idle)

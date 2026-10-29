@@ -375,7 +375,7 @@ struct ItemPanelView: View {
                     panel.select(section)
                 } label: {
                     panel.shortTitle(for: section)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(size: 12, weight: .medium)
                         .lineLimit(1)
                         .fixedSize()
                         .frame(maxWidth: .infinity)
@@ -424,7 +424,7 @@ struct UpdateBanner: View {
                     Button("Update…") { updates.check() }
                         .buttonStyle(.borderless)
                 }
-                .font(.system(size: 12))
+                .font(size: 12)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 Divider()

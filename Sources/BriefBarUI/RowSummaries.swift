@@ -45,13 +45,14 @@ private struct RowSummaryContent: View {
     let stories: ItemStories
 
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
     @LocalState private var showsMore = false
     @LocalState private var isHovered = false
     /// How tall its paragraph is as it shows, and all of it.
     @LocalState private var paragraphHeight: (shown: CGFloat, full: CGFloat) = (0, 0)
 
-    /// Under the sparkles, where the headline starts.
-    private static let indent: CGFloat = 17
+    /// Under the sparkles, where the headline starts: their column, as big as the text, then 5 points.
+    private var indent: CGFloat { 12 * textScale + 5 }
     /// How many lines of what's been done and what's left show at first.
     static let paragraphLines = 3
 
@@ -107,7 +108,7 @@ private struct RowSummaryContent: View {
                 .foregroundStyle(.tint)
             Spacer(minLength: 0)
         }
-        .font(.system(size: options.rowDetailSize))
+        .font(size: options.rowDetailSize)
     }
 
     private func failedLine(_ problem: StorySummaries.Problem) -> some View {
@@ -130,7 +131,7 @@ private struct RowSummaryContent: View {
                 .buttonStyle(.borderless)
                 .fixedSize()
         }
-        .font(.system(size: options.rowDetailSize))
+        .font(size: options.rowDetailSize)
     }
 
     /// A written one; while another is written in its place, dimmed, with Stop; or, when that one couldn't be written, as
@@ -144,12 +145,12 @@ private struct RowSummaryContent: View {
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: options.rowReasonSize - 1, weight: .semibold))
+                    .font(size: options.rowReasonSize - 1, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
-                    .frame(width: Self.indent - 5, alignment: .leading)
+                    .frame(width: indent - 5, alignment: .leading)
                     .accessibilityHidden(true)
                 Text(summary.headline)
-                    .font(.system(size: options.rowReasonSize, weight: .medium))
+                    .font(size: options.rowReasonSize, weight: .medium)
                     .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                     // Never cut short, nor what's next: a sentence each, and what the rest is cut to make room for.
                     .fixedSize(horizontal: false, vertical: true)
@@ -167,7 +168,7 @@ private struct RowSummaryContent: View {
                         Button("Stop") { summaries.cancel(subject) }
                             .buttonStyle(.borderless)
                             .foregroundStyle(.tint)
-                            .font(.system(size: 11))
+                            .font(size: 11)
                             .help("Stop, and keep the summary from \(at.formatted(date: .omitted, time: .shortened))")
                     }
                     .help(SummaryCard.writing(summaries))
@@ -176,7 +177,7 @@ private struct RowSummaryContent: View {
                         summaries.hide(subject)
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(size: 9.5, weight: .semibold)
                             .frame(width: 20, height: 20)
                             .contentShape(Rectangle())
                     }
@@ -192,23 +193,23 @@ private struct RowSummaryContent: View {
                 withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
             }
             .buttonStyle(.borderless)
-            .font(.system(size: 11))
+            .font(size: 11)
             // In the tint, as an inline link is, so it isn't read as the end of the sentence.
             .foregroundStyle(.tint)
             .fixedSize()
             if let next = summary.next {
                 (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                    .font(.system(size: options.rowDetailSize))
+                    .font(size: options.rowDetailSize)
                     .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .padding(.leading, Self.indent)
+                    .padding(.leading, indent)
             }
             if let paragraph = summary.paragraph {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     // Quieter than what's next, and than the row: it's what explains the rest.
                     Text(paragraph)
-                        .font(.system(size: options.rowDetailSize))
+                        .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
                         .lineLimit(showsMore ? nil : Self.paragraphLines)
                         .fixedSize(horizontal: false, vertical: true)
@@ -217,14 +218,14 @@ private struct RowSummaryContent: View {
                         // All of it, unseen, to tell whether three lines cut it short.
                         .background(alignment: .topLeading) {
                             Text(paragraph)
-                                .font(.system(size: options.rowDetailSize))
+                                .font(size: options.rowDetailSize)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .hidden()
                                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.full = $0 }
                         }
                     if let more { more }
                 }
-                .padding(.leading, Self.indent)
+                .padding(.leading, indent)
                 .padding(.top, 2)
             }
             if let failure {
@@ -240,8 +241,8 @@ private struct RowSummaryContent: View {
                         .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
                 }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
-                .padding(.leading, Self.indent)
+                .font(size: 11)
+                .padding(.leading, indent)
             } else if let changed {
                 HStack(spacing: 12) {
                     Text("Out of date")
@@ -253,8 +254,8 @@ private struct RowSummaryContent: View {
                         .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
                 }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
-                .padding(.leading, Self.indent)
+                .font(size: 11)
+                .padding(.leading, indent)
             }
         }
         .contentShape(Rectangle())
@@ -382,7 +383,7 @@ private struct RowTimeContent: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11).monospacedDigit())
+            .font(size: 11).monospacedDigit()
             .foregroundStyle(.secondary)
             .fixedSize()
             .opacity(givesUpItsPlace ? 0 : 1)
@@ -445,7 +446,7 @@ private struct RowSummarizeButtonContent: View {
                 summaries.summarize(subject)
             } label: {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())

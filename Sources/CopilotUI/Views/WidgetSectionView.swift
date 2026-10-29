@@ -62,20 +62,20 @@ struct WidgetSectionView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform.path.ecg")
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("Copilot")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if let problem = store.problem {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem)
             }
             Spacer()
             if store.hasLoaded && store.counts.active == 0 {
                 Text("All quiet")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
             } else {
                 CountChips(counts: store.counts)
@@ -87,7 +87,7 @@ struct WidgetSectionView: View {
     private var placeholder: some View {
         if let problem = store.problem {
             Label(problem, systemImage: "exclamationmark.triangle")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
         } else if store.hasLoaded {

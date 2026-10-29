@@ -126,7 +126,7 @@ struct SidebarSourceRow: View {
             switch state {
             case .on:
                 Text("On")
-                    .font(.caption)
+                    .font(style: .caption)
                     .foregroundStyle(.secondary)
             case .needsReview:
                 Image(systemName: "exclamationmark.circle.fill")
@@ -152,7 +152,7 @@ struct GeneralPage: View {
                 AppIconView(isBundled: AppIdentity.isBundled, size: 56)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("BriefBar")
-                        .font(.title.weight(.semibold))
+                        .font(style: .title, weight: .semibold)
                     Text("What needs you, from the apps you choose, in the menu bar")
                         .foregroundStyle(.secondary)
                 }
@@ -223,7 +223,7 @@ struct NotificationsSetting: View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle(Self.title, isOn: Binding(get: { recent.isOn }, set: { recent.setOn($0) }))
             Text(Self.explanation)
-                .font(.callout)
+                .font(style: .callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if recent.isOn {
@@ -265,12 +265,12 @@ struct SourceSummaryRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: source.symbol)
-                .font(.title2)
+                .font(style: .title2)
                 .frame(width: 30)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(source.name)
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(source.description.summary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -307,11 +307,11 @@ struct SourcePage: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Image(systemName: source.symbol)
-                    .font(.largeTitle)
+                    .font(style: .largeTitle)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(source.name)
-                        .font(.title2.weight(.semibold))
+                        .font(style: .title2, weight: .semibold)
                     Text(source.description.summary)
                         .foregroundStyle(.secondary)
                 }
@@ -322,7 +322,7 @@ struct SourcePage: View {
                 DescriptionBox(description: source.description)
                 turnOnButton(title: "Turn On \(source.name)")
                 Text("You can turn it off at any time. Turning it off deletes what BriefBar saved for it.")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
             case .needsReview:
                 Label("\(source.name) is paused: since you turned it on, an update changed what it reads. Here's what it reads now.", systemImage: "exclamationmark.circle.fill")
@@ -424,7 +424,7 @@ struct DescriptionBox: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    .font(style: .headline)
                 Text(text)
                     .fixedSize(horizontal: false, vertical: true)
             }

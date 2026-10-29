@@ -90,7 +90,7 @@ struct CopilotSendButton: View {
             copilot.compose(item)
         } label: {
             Image(systemName: "paperplane")
-                .font(.system(size: 11.5, weight: .medium))
+                .font(size: 11.5, weight: .medium)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
@@ -118,7 +118,7 @@ struct CopilotRunBadge: View {
                     Text(entry.opensPullRequest ? "PR" : phase.title)
                 }
             }
-            .font(.system(size: 10.5, weight: .semibold))
+            .font(size: 10.5, weight: .semibold)
             .foregroundStyle(phase.color)
             .padding(.horizontal, compact ? 4 : 6)
             .padding(.vertical, 2)
@@ -367,7 +367,7 @@ struct PullRequestCopilotStatus: View {
                 Text(entry.action?.title ?? "Copilot")
                 Image(systemName: phase.symbol)
             }
-            .font(.system(size: 10, weight: .semibold))
+            .font(size: 10, weight: .semibold)
             .foregroundStyle(phase.color)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
@@ -444,10 +444,10 @@ private struct CopilotOptionsForm: View {
                 get: { settings.copilotPromptTemplate },
                 set: { settings.copilotPrompt = $0 == PromptTemplate.standard ? nil : $0 }
             ))
-            .font(.system(size: 12))
+            .font(size: 12)
             .frame(height: 190)
             Text("{id}, {type}, {title}, {url}, {organization} and {project} become the work item's; {baseBranch}, the branch its worktree starts from.")
-                .font(.caption)
+                .font(style: .caption)
                 .foregroundStyle(.secondary)
         }
         LabeledContent("Worktrees") {

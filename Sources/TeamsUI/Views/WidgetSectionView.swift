@@ -67,13 +67,13 @@ struct WidgetSectionView: View {
     private func header(count: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: group.symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? Color.secondary : count > 0 ? group.color : Color.accentColor)
             Text(group.title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if let problem = store.problem, problem.isBlocking {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem.title)
             }
@@ -83,7 +83,7 @@ struct WidgetSectionView: View {
                     .help(group.unreadDescription(count))
             } else if store.hasLoaded {
                 Text("All read")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
             }
         }
@@ -93,12 +93,12 @@ struct WidgetSectionView: View {
     private var placeholder: some View {
         if let problem = store.problem, problem.isBlocking {
             Label(problem.title, systemImage: "exclamationmark.triangle")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
         } else if store.hasLoaded {
             Text(group.unreadDescription(0))
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
         }
     }
@@ -128,17 +128,17 @@ struct CompactConversationRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(conversation.name)
-                            .font(.system(size: options.readableRows ? 13 : 12, weight: conversation.isUnread ? .semibold : .regular))
+                            .font(size: options.readableRows ? 13 : 12, weight: conversation.isUnread ? .semibold : .regular)
                             .foregroundStyle(conversation.isUnread ? .primary : .secondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Text(RelativeTime.short(lastMessageDate, now: now))
-                            .font(.system(size: 10.5).monospacedDigit())
+                            .font(size: 10.5).monospacedDigit()
                             .foregroundStyle(.secondary)
                             .fixedSize()
                     }
                     Text(previewText)
-                        .font(.system(size: options.rowDetailSize))
+                        .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

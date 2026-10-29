@@ -27,6 +27,7 @@ struct NotificationsPage: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if recent.history.isEmpty {
                         Text("Nothing to show")
+                            .font(style: .body)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)
@@ -87,7 +88,7 @@ struct NotificationsPage: View {
                     .monospacedDigit()
                 Spacer()
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(size: 12, weight: .semibold)
             .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(day.entries.enumerated()), id: \.element.id) { index, entry in
@@ -117,7 +118,7 @@ struct NotificationsPage: View {
                 .buttonStyle(.borderless)
                 .help("Choose how long, in Settings › General")
         }
-        .font(.system(size: 11.5))
+        .font(size: 11.5)
         .padding(.horizontal, 4)
     }
 
@@ -156,18 +157,18 @@ private struct NotificationRow: View {
         Button(action: open) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: entry.state?.symbol ?? source?.symbol ?? NotificationsPage.symbol)
-                    .font(.system(size: 15))
+                    .font(size: 15)
                     .foregroundStyle(options.quietAppearance ? Color.secondary : entry.state?.color ?? .secondary)
                     .frame(width: 22)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(entry.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(size: 13, weight: .semibold)
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         Text(Elapsed.short(since: entry.date, now: now))
-                            .font(.system(size: 11).monospacedDigit())
+                            .font(size: 11).monospacedDigit()
                             .foregroundStyle(.secondary)
                         if !entry.isSeen {
                             Circle()
@@ -178,12 +179,12 @@ private struct NotificationRow: View {
                     }
                     if let subtitle = entry.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 12))
+                            .font(size: 12)
                             .lineLimit(1)
                     }
                     if !entry.body.isEmpty {
                         Text(entry.body)
-                            .font(.system(size: 12))
+                            .font(size: 12)
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)

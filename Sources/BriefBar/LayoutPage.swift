@@ -54,11 +54,11 @@ struct LayoutPage: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: surface.symbol)
-                    .font(.largeTitle)
+                    .font(style: .largeTitle)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(surface.title)
-                        .font(.title2.weight(.semibold))
+                        .font(style: .title2, weight: .semibold)
                     Text(surface.subtitle)
                         .foregroundStyle(.secondary)
                 }
@@ -257,7 +257,7 @@ struct LayoutPage: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "plus.circle.fill")
-                        .font(.title2)
+                        .font(style: .title2)
                         .foregroundStyle(canMove ? Color.accentColor : Color.secondary)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("New \(surface.itemNoun)")
@@ -265,7 +265,7 @@ struct LayoutPage: View {
                         Text(canMove
                              ? "Drop a \(surface.sectionNoun) here, or click to choose one"
                              : "Every \(surface.sectionNoun) has \(surface.anItem) of its own")
-                            .font(.subheadline)
+                            .font(style: .subheadline)
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
@@ -465,7 +465,7 @@ private struct SectionChip: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(LinearGradient(colors: [tint.opacity(0.85), tint], startPoint: .top, endPoint: .bottom))
                     Image(systemName: symbol)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(size: 10, weight: .semibold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 20, height: 20)
@@ -512,7 +512,7 @@ private struct MenuBarLine: View {
         let items = model.menuBarItemsInOrder()
         VStack(alignment: .leading, spacing: 6) {
             Text("In your menu bar now")
-                .font(.callout)
+                .font(style: .callout)
                 .foregroundStyle(.secondary)
             LiveCounts(model: model, sections: items.flatMap(\.sections)) {
                 let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)

@@ -204,13 +204,13 @@ package struct PageHeader<Trailing: View>: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 26, weight: .bold))
+                    .font(size: 26, weight: .bold)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
                     .help(title)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(size: 12.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -265,12 +265,12 @@ package struct EmptyPage<Actions: View>: View {
     package var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 34, weight: .light))
+                .font(size: 34, weight: .light)
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(size: 15, weight: .semibold)
             Text(message)
-                .font(.system(size: 12))
+                .font(size: 12)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)

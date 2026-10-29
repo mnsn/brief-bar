@@ -65,6 +65,7 @@ struct PullRequestsPage: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Loading your pull requests…")
+                    .font(style: .body)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -90,11 +91,11 @@ struct PullRequestsPage: View {
                 if group == .done || group == .needsYou && items.contains(where: \.hasNews) {
                     Button(group == .needsYou ? "Mark as Seen" : "Clear") { store.clear(group) }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(size: 11)
                         .help(group == .needsYou ? MenuPanelView.markAsSeenHelp : "Remove these from the list")
                 }
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(size: 12, weight: .semibold)
             .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -124,12 +125,12 @@ struct PullRequestsPage: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(size: 9, weight: .bold)
                             .rotationEffect(.degrees(showIdle ? 90 : 0))
                         Text("Idle")
                         Text("\(idle.count)").monospacedDigit()
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(size: 12, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
                 }

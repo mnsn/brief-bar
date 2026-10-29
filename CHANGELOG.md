@@ -23,6 +23,13 @@
   once.
 - **Read more of a summary under a row:** its headline, the next step and the first three lines of the
   rest, with **Show More** for all of it; written again, the one before stays until the new one's ready.
+- **Make the text in BriefBar's windows bigger.** **Text Size in Windows**, in **Settings ›
+  Appearance**, enlarges the text on the pages of BriefBar's windows, up to 150%, for reading long
+  descriptions and comments. In a window, hold ⌘ and scroll up to make it bigger, or down to make it
+  smaller. The menu bar's lists, the widgets and Settings keep their size.
+- **Install it with Homebrew.** `brew install --cask mnsn/tap/briefbar` puts BriefBar in your
+  Applications folder, and each release updates the cask. BriefBar still updates itself, and since it
+  isn't notarized, macOS still asks you to allow it the first time you open it.
 
 ## 0.9.0 - 2026-10-29
 

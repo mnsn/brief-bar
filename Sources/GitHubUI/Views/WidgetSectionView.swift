@@ -47,20 +47,20 @@ struct WidgetSectionView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.merge")
-                .font(.system(size: 12, weight: .semibold))
+                .font(size: 12, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? Color.secondary : store.counts.needsYou > 0 ? Color.orange : Color.accentColor)
             Text("GitHub")
-                .font(.system(size: 13, weight: .semibold))
+                .font(size: 13, weight: .semibold)
             if let problem = store.problem, !problem.needsSignIn {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                     .help(problem.message)
             }
             Spacer()
             if store.hasLoaded && store.problem?.needsSignIn != true && store.counts.total == 0 {
                 Text("All quiet")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
             } else {
                 CountChips(counts: store.counts)
@@ -73,7 +73,7 @@ struct WidgetSectionView: View {
         if let problem = store.problem {
             VStack(spacing: 6) {
                 Label(problem.message, systemImage: problem.needsSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(size: 11)
                     .foregroundStyle(.secondary)
                 if problem.needsSignIn {
                     Button(problem == .cliNotFound ? "Install the GitHub CLI…" : "Sign In…") { store.signIn() }

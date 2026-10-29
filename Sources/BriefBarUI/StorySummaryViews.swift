@@ -15,7 +15,7 @@ struct SummarizeButton: View {
                 summaries.show(subject)
             } label: {
                 Label("Show Summary", systemImage: "sparkles")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .fixedSize()
             }
             .buttonStyle(.borderless)
@@ -33,7 +33,7 @@ struct SummarizeButton: View {
             summaries.summarize(subject)
         } label: {
             Label(title, systemImage: "sparkles")
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
                 .fixedSize()
         }
         .buttonStyle(.borderless)
@@ -74,6 +74,7 @@ package struct SummaryCard: View {
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.interfaceOptions) private var options
+    @Environment(\.textScale) private var textScale
     @LocalState private var choosesModel = false
 
     package init(subject: ItemRef, summaries: StorySummaries, rows: [String], style: Style = .section) {
@@ -167,11 +168,11 @@ package struct SummaryCard: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tint)
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
             }
         } content: {
             VStack(alignment: .leading, spacing: 10) {
-                Self.lines
+                lines
                 HStack(spacing: 6) {
                     if isWriting {
                         ProgressView()
@@ -183,26 +184,27 @@ package struct SummaryCard: View {
                             .lineLimit(1)
                     }
                 }
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
             }
         }
     }
 
-    /// Gray bars where its headline, next step and the rest will be.
-    private static var lines: some View {
+    /// Gray bars where its headline, next step and the rest will be, as big as the text.
+    private var lines: some View {
         let widths: [(fraction: CGFloat, height: CGFloat)] = [
             (0.82, 11), (0.58, 8), (1, 8), (0.97, 8), (0.93, 8), (0.98, 8), (0.52, 8),
         ]
+        let scale = textScale
         return GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 7 * scale) {
                 ForEach(widths.indices, id: \.self) { index in
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.primary.opacity(0.08))
-                        .frame(width: proxy.size.width * widths[index].fraction, height: widths[index].height)
+                        .frame(width: proxy.size.width * widths[index].fraction, height: widths[index].height * scale)
                 }
             }
         }
-        .frame(height: widths.reduce(0) { $0 + $1.height } + CGFloat(widths.count - 1) * 7)
+        .frame(height: (widths.reduce(0) { $0 + $1.height } + CGFloat(widths.count - 1) * 7) * scale)
         .accessibilityHidden(true)
     }
 
@@ -235,7 +237,7 @@ package struct SummaryCard: View {
                     Button("Stop") { summaries.cancel(subject) }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.tint)
-                        .font(.system(size: 11.5))
+                        .font(size: 11.5)
                         .help("Stop, and keep the summary from \(at.formatted(date: .omitted, time: .shortened))")
                 }
             } else {
@@ -248,13 +250,13 @@ package struct SummaryCard: View {
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.headline)
-                    .font(.system(size: isRow ? 12.5 : 13, weight: .semibold))
+                    .font(size: isRow ? 12.5 : 13, weight: .semibold)
                     .foregroundStyle(strong)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let next = summary.next {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(.system(size: isRow ? 11.5 : 12))
+                        .font(size: isRow ? 11.5 : 12)
                         .foregroundStyle(strong)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -262,7 +264,7 @@ package struct SummaryCard: View {
                 // All of it: it's what explains where things stand, so it never hides behind Show More.
                 if let paragraph = summary.paragraph {
                     Text(paragraph)
-                        .font(.system(size: 12.5))
+                        .font(size: 12.5)
                         .lineSpacing(2)
                         .foregroundStyle(rest)
                         .fixedSize(horizontal: false, vertical: true)
@@ -279,7 +281,7 @@ package struct SummaryCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                         againButton
                     }
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .padding(.top, 2)
                 }
             }
@@ -308,7 +310,7 @@ package struct SummaryCard: View {
                 .help(problem.detail ?? "")
             fixes(for: problem)
         }
-        .font(.system(size: 11.5))
+        .font(size: 11.5)
         .padding(.top, 2)
     }
 
@@ -343,7 +345,7 @@ package struct SummaryCard: View {
                     .help(problem.detail ?? "")
                 fixes(for: problem)
             }
-            .font(.system(size: 12))
+            .font(size: 12)
         }
     }
 
@@ -354,7 +356,7 @@ package struct SummaryCard: View {
                 summaries.summarize(subject)
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(size: 10, weight: .semibold)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
@@ -371,7 +373,7 @@ package struct SummaryCard: View {
             summaries.hide(subject)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .semibold))
+                .font(size: 10, weight: .semibold)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -417,11 +419,11 @@ package struct SummaryCard: View {
     ) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                 .accessibilityHidden(true)
             caption()
-                .font(.system(size: 11, weight: .semibold))
+                .font(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 6)
             trailing()
@@ -505,7 +507,7 @@ package struct SummaryOffer: View {
         if links.isOn, !summaries.isOn || showsSetting, !(hidden ?? defaults.bool(forKey: Self.hiddenKey)) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(size: 11, weight: .semibold)
                     .foregroundStyle(options.quietAppearance ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(BriefContainer<EmptyView>.gradient))
                     .accessibilityHidden(true)
                 Text(Self.text(summaries))
@@ -527,7 +529,7 @@ package struct SummaryOffer: View {
                     hidden = true
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(size: 9.5, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -536,7 +538,7 @@ package struct SummaryOffer: View {
                 .help("Don't show this again: Summaries are in Settings › General")
                 .accessibilityLabel("Dismiss")
             }
-            .font(.system(size: 12))
+            .font(size: 12)
             .accessibilityElement(children: .contain)
         }
     }
@@ -597,7 +599,7 @@ package struct StorySummariesSetting: View {
             VStack(alignment: .leading, spacing: 6) {
                 Toggle(Self.title, isOn: Binding(get: { summaries.isOn }, set: { summaries.setOn($0) }))
                 Text(Self.explanation(writesWhenOpened: summaries.writesWhenOpened))
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // When it writes them, which is what it costs, where it's chosen first.
@@ -612,7 +614,7 @@ package struct StorySummariesSetting: View {
                     .fixedSize()
                     .help("As you open a work item's details, or a pull request's or a Copilot session's page, unless one that's current is there; or only when you click ✨")
                 }
-                .font(.callout)
+                .font(style: .callout)
             }
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Self.lines(onDevice: summaries.usesOnDeviceModel, writesWhenOpened: summaries.writesWhenOpened), id: \.label) { line in
@@ -634,19 +636,19 @@ package struct StorySummariesSetting: View {
                     .fixedSize()
                 }
             }
-            .font(.callout)
+            .font(style: .callout)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             if summaries.isAvailable, summaries.usesOnDeviceModel, let unavailableReason {
                 Label(unavailableReason + " Choose a Copilot model to use it instead; BriefBar never switches automatically.",
                       systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             } else if summaries.isAvailable, !summaries.usesOnDeviceModel, summaries.hasCLI == false {
                 Label("Copilot CLI not found. Install it, or open the GitHub Copilot app once.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(style: .callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }

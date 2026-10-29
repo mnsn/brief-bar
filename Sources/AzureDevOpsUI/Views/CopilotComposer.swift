@@ -250,19 +250,19 @@ struct CopilotComposerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
-                .font(.system(size: 20, weight: .bold))
+                .font(size: 20, weight: .bold)
             HStack(spacing: 6) {
                 Text(verbatim: workItem.map { "\($0.type) \($0.id)" } ?? pullRequest.map { "!\($0.0.id)" } ?? "")
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .font(size: 12, weight: .medium).monospacedDigit()
                     .foregroundStyle(.secondary)
                 Text(workItem?.title ?? pullRequest?.0.title ?? "")
-                    .font(.system(size: 12))
+                    .font(size: 12)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             if isBusy {
                 Label("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").", systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.orange)
             }
         }
@@ -301,7 +301,7 @@ struct CopilotComposerView: View {
                 }
             }
             Text(sessionCaption)
-                .font(.system(size: 11.5))
+                .font(size: 11.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -418,7 +418,7 @@ struct CopilotComposerView: View {
             .help("Open in Copilot copies the prompt and opens the session in the Copilot app, to paste and send. Run with the CLI goes on with it now, on its own.")
             ForEach([cliProblem, appProblem].compactMap { $0 }, id: \.self) { problem in
                 Text(problem)
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -443,18 +443,18 @@ struct CopilotComposerView: View {
                 ProgressView().controlSize(.small)
             } else if let repositoryProblem {
                 Label(repositoryProblem, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             } else if let repository {
                 Text("\(UserPath.abbreviate(repository.root.path)), from origin/\(pullRequest?.0.sourceBranch ?? repository.baseBranch)")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } else if pullRequest != nil {
                 Text("Choose its folder on this Mac once. BriefBar will remember it.")
-                    .font(.system(size: 11.5))
+                    .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -464,7 +464,7 @@ struct CopilotComposerView: View {
     private var promptEditor: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Prompt").font(.headline)
+                Text("Prompt").font(style: .headline)
                 Spacer()
                 Button("Reset") { prompt = filledIn }
                     .buttonStyle(.borderless)
@@ -472,7 +472,7 @@ struct CopilotComposerView: View {
                     .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
             }
             TextEditor(text: $prompt)
-                .font(.system(size: 12.5))
+                .font(size: 12.5)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .frame(height: 250)
@@ -483,7 +483,7 @@ struct CopilotComposerView: View {
     private var footer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             Text(store.canSend ? footnote : "The demo doesn't send anything.")
-                .font(.system(size: 11))
+                .font(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
