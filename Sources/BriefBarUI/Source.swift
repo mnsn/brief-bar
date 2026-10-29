@@ -372,7 +372,7 @@ package final class AppServices: ObservableObject {
     package let links: Links
     /// What each source tells about its things beyond their rows, for the details, while Show Links is on.
     package let stories: ItemStories
-    /// Summarize with Copilot: summaries of what the details show, when you ask, once you turn it on.
+    /// Summaries of what the details show, from Apple Intelligence or Copilot, when you ask, once you turn it on.
     package let summaries: StorySummaries
     /// The tasks Azure DevOps sent to the Copilot CLI, for Copilot's list to show with the app's sessions.
     package let sentTasks = SentTasks()

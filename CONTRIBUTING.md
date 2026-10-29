@@ -245,10 +245,12 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - **Summaries stay on the Mac.** Use `SystemLanguageModel.default`, through `OnDeviceModel`, never
   Private Cloud Compute or any other model. A brief across sources says a chat's text only while Teams
   shows message previews, and asks the model only as each source's settings allow. The one exception
-  is **Summarize with Copilot** (`StorySummaries`), off until you turn it on, which asks the Copilot
+  is a Copilot model explicitly chosen in **Summaries** (`StorySummaries`), off until you turn it on,
+  which defaults to Apple Intelligence without replacing saved model choices. It asks the Copilot
   CLI only when you click **✨ Summarize with Copilot**, with no tools at all (`CopilotSummarizer`), and
   never with anything from Teams, or from the notifications that sent you a pull request
-  (`ItemStory.sharedSentence`, `LinkedItem.sharedStatus`); keep it that way.
+  (`ItemStory.sharedSentence`, `LinkedItem.sharedStatus`); keep it that way. A local summary failure
+  must never fall back to Copilot. The demo uses made-up answers for both providers.
 - **No content in logs.** Log counts, states and errors, never names, messages, titles or IDs.
 - **Use made-up data.** Real chats, pull requests and sessions are private, and often confidential.
   Don't put them in tests, screenshots, issues or pull requests. `--diagnose` output is safe to share,

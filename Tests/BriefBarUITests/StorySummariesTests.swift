@@ -4,7 +4,7 @@ import SwiftUI
 import Testing
 @testable import BriefBarUI
 
-/// Summarize with Copilot: off until you turn it on, only with Show Links, only when you ask, kept in memory, and saying
+/// Summaries: off until you turn it on, only with Show Links, only when you ask, kept in memory, and saying
 /// when what it summed up changed since.
 @MainActor
 @Suite struct StorySummariesTests {
@@ -52,7 +52,7 @@ import Testing
         let summaries = StorySummaries(defaults: defaults, links: links, stories: ItemStories(links: links), isDemo: false)
         #expect(!summaries.isOn)
         #expect(!summaries.isAvailable)
-        #expect(summaries.model == "claude-haiku-5.5")
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
         summaries.setOn(true)
         // Without Show Links, there's nothing to summarize.
         #expect(!summaries.isAvailable)
@@ -66,6 +66,10 @@ import Testing
         let again = StorySummaries(defaults: defaults, links: links, stories: ItemStories(links: links), isDemo: false)
         #expect(again.isOn)
         #expect(again.model == "gpt-6.1-sol")
+        // Existing choices, including the former default, aren't migrated to Apple Intelligence.
+        defaults.set("claude-haiku-5.5", forKey: StorySummaries.modelKey)
+        let previous = StorySummaries(defaults: defaults, links: links, stories: ItemStories(links: links), isDemo: false)
+        #expect(previous.model == "claude-haiku-5.5")
         // The demo shows made-up ones.
         #expect(StorySummaries(defaults: MemoryDefaults(), links: links, stories: ItemStories(links: links), isDemo: true).isOn)
     }
@@ -95,7 +99,7 @@ import Testing
             return
         }
         #expect(summary == StorySummary(headline: "Fixed in !4091.", nextFor: "you", next: "Complete !4091.", paragraph: "Approved."))
-        #expect(model == "claude-haiku-5.5")
+        #expect(model == StorySummaries.appleIntelligenceModel)
         #expect(!summaries.isOutOfDate(workItem))
 
         // What it summed up changed since.
@@ -123,7 +127,7 @@ import Testing
             Issue.record("Didn't fail")
             return
         }
-        #expect(empty.message == "Copilot answered nothing.")
+        #expect(empty.message == "Apple Intelligence answered nothing.")
 
         // Without a way to ask Copilot.
         summaries.write = nil
@@ -651,6 +655,11 @@ import Testing
         #expect(looks.count == 0)
         #expect(summaries.hasCLI == nil)
         summaries.setOn(true)
+        // Apple Intelligence needs neither a CLI lookup nor a Copilot sign-in.
+        await summaries.lookForCLI()
+        #expect(looks.count == 0)
+        #expect(summaries.hasCLI == nil)
+        summaries.setModel("claude-haiku-5.5")
         await summaries.lookForCLI()
         #expect(looks.count == 1)
         #expect(summaries.hasCLI == false)
@@ -658,6 +667,151 @@ import Testing
         summaries.findCLI = { nil }
         await summaries.lookForCLI()
         #expect(summaries.hasCLI == false)
+    }
+
+    @Test func selectedProviderIsTheOnlyOneAskedAndLocalFailuresNeverFallBack() async {
+        let local = Asked()
+        let cloud = Asked()
+        let failure = StorySummaries.onDeviceProblem(.unavailable("Turn on Apple Intelligence."))
+        let write = StorySummaries.writer(copilot: { prompt, options in
+            cloud.add("\(options.model): \(prompt)")
+            return .success("HEADLINE: Copilot summary.")
+        }, onDevice: { prompt, _ in
+            local.add(prompt)
+            return .failure(failure)
+        })
+        let localResult = await write("Local input", .init(model: StorySummaries.appleIntelligenceModel))
+        #expect(localResult == .failure(failure))
+        #expect(local.prompts == ["Local input"])
+        #expect(cloud.prompts.isEmpty)
+        let cloudResult = await write("Cloud input", .init(model: "claude-haiku-5.5"))
+        #expect(cloudResult == .success("HEADLINE: Copilot summary."))
+        #expect(cloud.prompts == ["claude-haiku-5.5: Cloud input"])
+        #expect(local.prompts.count == 1)
+    }
+
+    @Test func localSummaryUsesItsOwnPromptBudgetAndNoReasoningEffort() async throws {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        stories.register(.azureDevOps, kinds: [.workItem, .pullRequest]) { _ in
+            ItemStory(sentence: "Active", notes: (0..<20).map {
+                ItemStory.Fact("Comment \($0)", String(repeating: "A detail. ", count: 100))
+            })
+        }
+        let local = Asked()
+        let cloud = Asked()
+        summaries.write = StorySummaries.writer(copilot: { prompt, options in
+            #expect(options.model == "claude-haiku-5.5")
+            #expect(options.effort == "low")
+            cloud.add(prompt)
+            return .success("HEADLINE: Cloud summary.")
+        }, onDevice: { prompt, options in
+            #expect(options.model == StorySummaries.appleIntelligenceModel)
+            #expect(options.effort == nil)
+            local.add(prompt)
+            return .success("HEADLINE: Local summary.")
+        })
+        await summaries.summarizeAndWait(workItem)
+        let localPrompt = try #require(local.prompts.first)
+        #expect(localPrompt.hasPrefix("<data>\n"))
+        #expect(localPrompt.hasSuffix("\n</data>"))
+        #expect(localPrompt.count <= 6_000 + "<data>\n\n</data>".count)
+        #expect(localPrompt.contains("Details left out for length."))
+        #expect(localPrompt.contains("PULL REQUEST !4091"))
+        #expect(cloud.prompts.isEmpty)
+        summaries.setModel("claude-haiku-5.5")
+        await summaries.summarizeAndWait(workItem)
+        let cloudPrompt = try #require(cloud.prompts.first)
+        #expect(cloudPrompt.hasPrefix(StorySummaryPrompt.instructions))
+        #expect(cloudPrompt.count > localPrompt.count)
+        #expect(local.prompts.count == 1)
+        guard case .written(let summary, _, _, let model)? = summaries.state(for: workItem) else {
+            Issue.record("Not written")
+            return
+        }
+        #expect(summary.headline == "Cloud summary.")
+        #expect(model == "claude-haiku-5.5")
+    }
+
+    @Test func switchingModelsStopsTheOldRequestButKeepsWrittenAttribution() async throws {
+        let (links, _, summaries) = hub()
+        publish(links)
+        summaries.write = writer(Asked())
+        await summaries.summarizeAndWait(workItem)
+        summaries.setModel("claude-haiku-5.5")
+        guard case .written(_, _, _, let model)? = summaries.state(for: workItem) else {
+            Issue.record("Written summary was lost")
+            return
+        }
+        #expect(model == StorySummaries.appleIntelligenceModel)
+        #expect(summaries.attribution(for: model) == "Apple Intelligence on this Mac")
+
+        let gate = Gate()
+        let finished = Asked()
+        summaries.write = { _, _ in
+            await gate.wait()
+            finished.add(Task.isCancelled ? "cancelled" : "not cancelled")
+            return .success("HEADLINE: Late cloud response.")
+        }
+        summaries.summarize(workItem)
+        for _ in 0..<200 where !gate.isWaiting { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(gate.isWaiting)
+        summaries.setModel(StorySummaries.appleIntelligenceModel)
+        #expect(summaries.state(for: workItem) == nil)
+        gate.open()
+        for _ in 0..<200 where finished.prompts.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(finished.prompts == ["cancelled"])
+        #expect(summaries.state(for: workItem) == nil)
+    }
+
+    @Test func providerLabelsPrivacyAndCostsMatchTheSelectedModel() {
+        let (_, _, summaries) = hub()
+        #expect(summaries.actionTitle == "Summarize with Apple Intelligence")
+        #expect(SummaryCard.writing(summaries) == "Summarizing with Apple Intelligence · on this Mac")
+        #expect(SummaryCard.title(for: summaries.model) == "Summary by Apple Intelligence")
+        let localHelp = SummarizeButton.help(for: workItem, model: "Apple Intelligence", onDevice: true)
+        #expect(localHelp.contains("on this Mac"))
+        #expect(localHelp.contains("no Copilot requests"))
+        #expect(!localHelp.contains("1 request"))
+        let localLines = StorySummariesSetting.lines(onDevice: true)
+        #expect(localLines.first { $0.label == "Costs" }?.text == "no Copilot requests or subscription needed.")
+        #expect(localLines.first { $0.label == "Where" }?.text.contains("never Private Cloud Compute or Copilot") == true)
+
+        summaries.models.append(.init(id: "claude-haiku-5.5", name: "Claude Haiku 5.5"))
+        summaries.setModel("claude-haiku-5.5")
+        #expect(summaries.actionTitle == "Summarize with Copilot")
+        #expect(SummaryCard.writing(summaries) == "Summarizing with Claude Haiku 5.5 · 1 request")
+        #expect(summaries.attribution(for: summaries.model) == "Claude Haiku 5.5 through GitHub Copilot")
+        #expect(StorySummariesSetting.lines(onDevice: false).first { $0.label == "Where" }?.text.contains("session history") == true)
+    }
+
+    @Test(arguments: [
+        OnDeviceModel.Failure.unavailable("Apple Intelligence is off."),
+        .unsupportedLanguage, .refused, .tooLong, .notReady, .busy, .empty, .failed,
+    ])
+    func everyLocalFailureHasAnActionableMessage(_ failure: OnDeviceModel.Failure) {
+        let problem = StorySummaries.onDeviceProblem(failure)
+        #expect(!problem.message.isEmpty)
+        #expect(problem.message.contains("Apple Intelligence"))
+        #expect(problem.fix == (failure == .busy || failure == .empty ? nil : .chooseModel))
+        if case .unavailable(let reason) = failure { #expect(problem.message == reason) }
+    }
+
+    /// Where Apple Intelligence isn't there, as on macOS before 26, on a Mac that can't run it, or with it off, asking
+    /// it is a failure that says why, never a crash. Where it is there, the test is skipped: asking would run the model.
+    @Test(.enabled(if: OnDeviceModel.unavailableReason != nil, "Apple Intelligence is available here, and asking would run it."))
+    func askingAppleIntelligenceWhereItIsNotAvailableSaysWhy() async {
+        let answer = await StorySummaries.writeOnDevice(
+            "<data>\nWORK ITEM 5110: Coupon totals round down\n</data>", .init(model: StorySummaries.appleIntelligenceModel)
+        )
+        // It can become available while the test runs, and then asking is allowed to work.
+        guard OnDeviceModel.unavailableReason != nil else { return }
+        guard case .failure(let problem) = answer else {
+            Issue.record("Asking succeeded where Apple Intelligence isn't available.")
+            return
+        }
+        #expect(!problem.message.isEmpty)
+        #expect(problem.fix == .chooseModel)
     }
 
     /// Holds the writer until it's let go.
