@@ -2,8 +2,9 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-/// A pull request's or a Copilot session's page, where a work item's details show: what it is and where it stands,
-/// everything its source knows of it, and what's linked to it, Where It Stands, with Summarize with Copilot for it.
+/// A pull request's or a Copilot session's page, where a work item's details show: what it is and where it stands, how
+/// it's linked to what you opened it from, its facts and pipelines, what else is linked to it, with Summarize with Copilot
+/// for it, and Copilot's notes.
 package struct ItemPageView: View {
     private let ref: ItemRef
 
@@ -16,6 +17,25 @@ package struct ItemPageView: View {
     package var body: some View {
         PageContent(ref: ref, links: services.links, stories: services.stories)
     }
+
+    /// What a page is called where it's named, for VoiceOver: "Pull request 4091", "Copilot session Save items for later".
+    package static func spokenName(of item: LinkedItem) -> String {
+        let kind = PageContent.kind(of: item)
+        let name = kind.prefix(1) + kind.dropFirst().lowercased()
+        switch item.ref.kind {
+        case .pullRequest, .gitHubPullRequest: return "\(name) \(item.ref.id)"
+        case .session: return item.sent != nil ? String(name) : "\(name) \(item.label)"
+        case .workItem: return "\(name) \(item.label)"
+        }
+    }
+
+    /// Its crumb in the details' header: "!4091", "Session", "Sent to Copilot".
+    package static func crumb(of item: LinkedItem) -> String {
+        switch item.ref.kind {
+        case .pullRequest, .gitHubPullRequest, .workItem: return item.label
+        case .session: return item.sent != nil ? "Sent to Copilot" : "Session"
+        }
+    }
 }
 
 private struct PageContent: View {
@@ -23,15 +43,28 @@ private struct PageContent: View {
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
 
+    @Environment(\.itemNavigation) private var navigation
+    @AccessibilityFocusState private var isTitleFocused: Bool
+
+    /// What shows under it: the work item, and the pages you came through.
+    private var trail: [ItemRef] {
+        guard let navigation, let index = navigation.trail.lastIndex(of: ref) else { return [] }
+        return Array(navigation.trail[..<index])
+    }
+
     var body: some View {
         let item = links.describe(ref)
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
             StoryDetails(
-                item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page
+                item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page,
+                linkFact: linkFact
             )
-            WhereItStandsSection(subject: ref)
+            WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Linked", hidesWhenEmpty: true)
+            if let account = story?.account, !account.isEmpty {
+                StoryNotesSection(item: item, account: account)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Its own story, as it is now, as the page shows and whenever its row changes.
@@ -44,15 +77,26 @@ private struct PageContent: View {
                 Color.clear.onChange(of: context.date) { stories.request(links.describe(ref)) }
             }
         }
+        .onAppear { isTitleFocused = true }
+    }
+
+    /// How it's linked to what you opened it from.
+    private var linkFact: ItemStory.Fact? {
+        guard let previous = trail.last,
+              let connection = links.connections(of: previous).first(where: { $0.item.ref == ref })
+        else { return nil }
+        return WhereItStandsSection.linkFact(connection, from: links.describe(previous))
     }
 
     private func heading(_ item: LinkedItem, story: ItemStory?) -> some View {
-        let sentence = story?.sentence.isEmpty == false ? story?.sentence ?? "" : item.status ?? ""
+        let sentence = WhereItStandsSection.sentence(
+            story?.sentence.isEmpty == false ? story?.sentence ?? "" : item.status ?? "", on: ref
+        )
+        let date = story?.date ?? item.date
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: Self.symbol(of: item))
                     .foregroundStyle(item.state?.color ?? item.color)
-                    .accessibilityHidden(true)
                 Text(Self.kind(of: item))
                 if item.ref.kind != .session {
                     Text(item.label)
@@ -66,14 +110,17 @@ private struct PageContent: View {
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.description(of: item))
             Text(item.ref.kind == .session ? item.label : item.title)
                 .font(.system(size: 17, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            if !sentence.isEmpty {
-                let (lead, rest) = WhereItStandsSection.phrase(sentence)
-                (Text(lead).foregroundStyle(item.state.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
-                    + Text(rest.isEmpty ? "" : " " + rest).foregroundStyle(.secondary))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityFocused($isTitleFocused)
+            if !sentence.isEmpty || date != nil {
+                (WhereItStandsSection.sentenceText(sentence, state: item.state)
+                    + Text(date.map { (sentence.isEmpty ? "" : " · ") + StoryTime.ago($0) } ?? "").foregroundStyle(.secondary))
                     .font(.system(size: 12.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -84,9 +131,17 @@ private struct PageContent: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// "Pull Request", "Copilot Session", "Task Sent to Copilot".
+    /// "Pull Request", "Copilot Session", "Sent to Copilot".
     static func kind(of item: LinkedItem) -> String {
-        item.sent != nil ? "Task Sent to Copilot" : item.ref.kind.title
+        item.sent != nil ? "Sent to Copilot" : item.ref.kind.title
+    }
+
+    /// "Pull request 4091 in payments-api", for VoiceOver.
+    static func description(of item: LinkedItem) -> String {
+        var text = kind(of: item).prefix(1) + kind(of: item).dropFirst().lowercased()
+        if item.ref.kind.isPullRequest { text += " " + item.ref.id }
+        if let place = item.place, !place.isEmpty { text += " in " + place }
+        return String(text)
     }
 
     static func symbol(of item: LinkedItem) -> String {

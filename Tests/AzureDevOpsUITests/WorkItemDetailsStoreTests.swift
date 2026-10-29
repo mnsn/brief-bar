@@ -120,10 +120,10 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.show(story)
         store.follow(task)
         #expect(store.selected?.id == 5103)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
         // The one that shows already: nothing to go back to.
         store.follow(task)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
         store.back()
         #expect(store.selected?.id == 5101)
         #expect(store.details?.item.id == 5101)
@@ -155,6 +155,10 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         // A work item is followed, not opened as a page.
         store.open(page: .workItem(organization: DemoData.organization, id: 5103))
         #expect(store.pages == [pullRequest, session])
+        // One that shows under the one on top: back to it, rather than once more.
+        store.open(page: pullRequest)
+        #expect(store.pages == [pullRequest])
+        store.open(page: session)
         store.back()
         #expect(store.pages == [pullRequest])
         #expect(store.selected?.id == 5101)
@@ -163,19 +167,39 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(store.selected?.id == 5101)
         #expect(!store.canGoBack)
 
-        // A work item followed from a page leaves the pages behind: back goes to the work item, not the page.
+        // By its crumbs: to a page, or to the work item under them.
+        store.open(page: pullRequest)
+        store.open(page: session)
+        store.back(toPage: 0)
+        #expect(store.pages == [pullRequest])
+        store.back(toPage: 3)
+        #expect(store.pages == [pullRequest])
+        store.back(toPage: nil)
+        #expect(store.pages.isEmpty)
+
+        // A work item followed from a page: back goes to the page it was followed from.
         store.open(page: pullRequest)
         store.follow(try item(5103))
         #expect(store.pages.isEmpty)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history == [WorkItemDetailsStore.Visit(item: try #require(store.history.first?.item), pages: [pullRequest])])
+        #expect(store.history.map(\.item.id) == [5101])
         store.back()
         #expect(store.selected?.id == 5101)
-        #expect(store.pages.isEmpty)
+        #expect(store.pages == [pullRequest])
         // The work item that shows, from a page over it: back to it, with nothing to come back from.
-        store.open(page: pullRequest)
         store.follow(story)
         #expect(store.pages.isEmpty)
         #expect(store.history.isEmpty)
+
+        // Without Show Links, the pages go, those to go back to too.
+        store.open(page: pullRequest)
+        store.follow(try item(5103))
+        store.open(page: session)
+        store.closePages()
+        #expect(store.pages.isEmpty)
+        store.back()
+        #expect(store.selected?.id == 5101)
+        #expect(store.pages.isEmpty)
 
         // From the sprint, or closed, the pages go.
         store.open(page: session)
@@ -318,7 +342,7 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         try await until("the story's details") { store.details?.item.id == 5101 }
         store.follow(try item(5103))
         #expect(store.keptWorkItems.count == 2)
-        #expect(store.history.map(\.id) == [5101])
+        #expect(store.history.map(\.item.id) == [5101])
 
         // The same account, or none the refresh can tell: nothing changes.
         store.accountChanged("tenant/robin")

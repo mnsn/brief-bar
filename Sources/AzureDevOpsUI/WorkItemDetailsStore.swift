@@ -15,8 +15,14 @@ final class WorkItemDetailsStore: ObservableObject {
     @Published private(set) var isLoading = false
     /// Why its details couldn't be read, the last time they were.
     @Published private(set) var failure: ADOError?
+    /// A work item you went on from, and the pages that showed over it then, to go back to.
+    struct Visit: Equatable {
+        var item: WorkItem
+        var pages: [ItemRef] = []
+    }
+
     /// The work items you went to from the details, to go back to: the latest last.
-    @Published private(set) var history: [WorkItem] = []
+    @Published private(set) var history: [Visit] = []
     /// The pages of pull requests and Copilot sessions opened over the work item's details from what's linked to it, the
     /// latest last: ‹ goes back through them first.
     @Published private(set) var pages: [ItemRef] = []
@@ -81,7 +87,7 @@ final class WorkItemDetailsStore: ObservableObject {
         select(item)
     }
 
-    /// Shows a work item the details link to, such as a story's task, to come back from.
+    /// Shows a work item the details link to, such as a story's task, to come back from, with the pages that showed.
     func follow(_ item: WorkItem) {
         guard let selected else { return }
         guard selected.key != item.key else {
@@ -89,25 +95,47 @@ final class WorkItemDetailsStore: ObservableObject {
             pages = []
             return
         }
-        history.append(selected)
+        history.append(Visit(item: selected, pages: pages))
         pages = []
         select(item)
     }
 
-    /// Shows the page of a pull request or a Copilot session linked to the work item, over its details, to come back from.
+    /// Shows the page of a pull request or a Copilot session linked to the work item, over its details, to come back from;
+    /// one that shows already, under the one on top, by going back to it.
     func open(page ref: ItemRef) {
-        guard selected != nil, ref.kind != .workItem, pages.last != ref else { return }
-        pages.append(ref)
+        guard selected != nil, ref.kind != .workItem else { return }
+        if let index = pages.firstIndex(of: ref) {
+            pages = Array(pages.prefix(through: index))
+        } else {
+            pages.append(ref)
+        }
     }
 
-    /// Back from a page, then to the work item you came from.
+    /// Back from a page, then to the work item you came from, with the pages that showed over it.
     func back() {
         if !pages.isEmpty {
             pages.removeLast()
             return
         }
         guard let previous = history.popLast() else { return }
-        select(previous)
+        select(previous.item)
+        pages = previous.pages
+    }
+
+    /// Back to one of the pages that show, or, for nil, to the work item under them.
+    func back(toPage index: Int?) {
+        guard let index else {
+            pages = []
+            return
+        }
+        guard pages.indices.contains(index) else { return }
+        pages = Array(pages.prefix(through: index))
+    }
+
+    /// Takes the pages away, those to go back to too: when Show Links goes off, which they come from.
+    func closePages() {
+        pages = []
+        history = history.map { Visit(item: $0.item) }
     }
 
     /// Whether ‹ goes anywhere.

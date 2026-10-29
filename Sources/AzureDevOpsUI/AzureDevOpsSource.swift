@@ -549,7 +549,8 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     /// The Sprint page with the details of your first story, of your first task, and of the first bug, read once, each in
     /// its own store, so the window's own picture of the page shows none; and, in the demo, the page of the bug's first
-    /// pull request, and of the story's first Copilot session.
+    /// pull request, of the story's first Copilot session, and of a session linked to the bug's pull request, over that
+    /// pull request's page.
     private func loadDetailsForRendering(store: PRStore) async {
         guard let sprint, let board = sprint.board else { return }
         let story = board.rows.compactMap(\.parent).first { $0.isAssigned(to: board.me) } ?? board.rows.compactMap(\.parent).first
@@ -557,7 +558,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         let bug = board.rows.compactMap(\.parent).first { $0.type.caseInsensitiveCompare("Bug") == .orderedSame }
         renderedDetails = []
         var rendered = [("sprint-details", story), ("sprint-task-details", task), ("sprint-bug-details", bug)]
-        if store.mode == .demo { rendered += [("sprint-pull-request-page", bug), ("sprint-session-page", story)] }
+        if store.mode == .demo {
+            rendered += [("sprint-pull-request-page", bug), ("sprint-session-page", story), ("sprint-deep-page", bug)]
+        }
         for (name, item) in rendered {
             guard let item else { continue }
             let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
@@ -573,18 +576,24 @@ package final class AzureDevOpsSource: BriefBarSource {
     package func extraRenderings() -> [(name: String, view: AnyView)] {
         var renderings: [(name: String, view: AnyView)] = []
         for (name, details) in renderedDetails {
-            // A page over the details, of what Show Links links to them, now that every source told it.
+            // A page over the details, of what Show Links links to them, now that every source told it; or a page over
+            // another.
             if let item = details.selected, details.pages.isEmpty, name.hasSuffix("-page") {
-                let kinds: Set<ItemRef.Kind> = name.contains("pull-request") ? [.pullRequest] : [.session]
-                if let page = services.links.connections(of: item.linkRef).first(where: { kinds.contains($0.item.ref.kind) }) {
-                    details.open(page: page.item.ref)
+                let path: [ItemRef.Kind] = name.contains("deep") ? [.pullRequest, .session] : name.contains("pull-request") ? [.pullRequest] : [.session]
+                var trail = [item.linkRef]
+                for kind in path {
+                    guard let from = trail.last,
+                          let next = services.links.connections(of: from).first(where: { $0.item.ref.kind == kind && !trail.contains($0.item.ref) })
+                    else { break }
+                    details.open(page: next.item.ref)
+                    trail.append(next.item.ref)
                 }
             }
             // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one.
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),
             ] {
-                guard suffix.isEmpty || name == "sprint-details" else { continue }
+                guard suffix.isEmpty || name == "sprint-details" || (name == "sprint-pull-request-page" && suffix == "-medium") else { continue }
                 let page = SprintPage()
                     .environmentObject(details)
                     .environment(\.panelStyle, .page)

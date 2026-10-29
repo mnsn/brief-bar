@@ -193,7 +193,8 @@ final class WorkLinksStore {
                 open: { [weak store] in
                     // As it is when you click it.
                     store?.open(store?.items.first { $0.key == item.key } ?? item)
-                }
+                },
+                url: item.url
             ))
         }
         for pullRequest in read.pullRequests.values {
@@ -317,7 +318,7 @@ final class WorkLinksStore {
             label: "!\(pullRequest.key.number)", title: pullRequest.title,
             symbol: pullRequest.status == .completed ? "arrow.triangle.merge" : "arrow.triangle.pull", color: color, status: status,
             place: pullRequest.repositoryName, hint: hint(pullRequest), date: pullRequest.closedAt ?? pullRequest.createdAt,
-            open: { AzureDevOps.open(pullRequest.webURL) }
+            open: { AzureDevOps.open(pullRequest.webURL) }, url: pullRequest.webURL
         )
     }
 
@@ -325,7 +326,7 @@ final class WorkLinksStore {
         LinkedItem(
             ref: .workItem(organization: workItem.organization, id: workItem.id), label: String(workItem.id), title: workItem.title,
             symbol: workItem.typeSymbol, color: workItem.typeColor, status: workItem.state, place: workItem.project,
-            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }
+            date: workItem.changedAt, open: { AzureDevOps.open(workItem.webURL) }, url: workItem.webURL
         )
     }
 }

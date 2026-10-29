@@ -8,16 +8,26 @@ import SwiftUI
 /// request. While Show Links is off it reads nothing, and a line you can dismiss says how to see them.
 package struct WhereItStandsSection: View {
     private let subject: ItemRef
+    private let excluding: Set<ItemRef>
+    private let title: String
+    private let hidesWhenEmpty: Bool
 
     @EnvironmentObject private var services: AppServices
 
-    package init(subject: ItemRef) {
+    /// - Parameters:
+    ///   - excluding: what it leaves out, such as, on a page, the work item and the pages you came from.
+    ///   - hidesWhenEmpty: whether it shows nothing at all while nothing's linked, as on a page.
+    package init(subject: ItemRef, excluding: Set<ItemRef> = [], title: String = "Where It Stands", hidesWhenEmpty: Bool = false) {
         self.subject = subject
+        self.excluding = excluding
+        self.title = title
+        self.hidesWhenEmpty = hidesWhenEmpty
     }
 
     package var body: some View {
         StandingContent(
-            subject: subject, links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults
+            subject: subject, excluding: excluding, title: title, hidesWhenEmpty: hidesWhenEmpty, links: services.links,
+            stories: services.stories, summaries: services.summaries, defaults: services.defaults
         )
     }
 
@@ -89,6 +99,36 @@ package struct WhereItStandsSection: View {
         sent.from == subject || (parent != nil && sent.from == parent)
     }
 
+    /// A row's sentence, as it reads where it shows: "Opened !4091" is "Opened this pull request" on !4091's page.
+    static func sentence(_ sentence: String, on subject: ItemRef) -> String {
+        guard subject.kind == .pullRequest, sentence == "Opened !\(subject.id)" else { return sentence }
+        return "Opened this pull request"
+    }
+
+    /// How a page's thing is linked to what you opened it from, as its first fact: "In Azure DevOps, to Bug 5110".
+    static func linkFact(_ connection: LinkConnection, from subject: LinkedItem) -> ItemStory.Fact {
+        let what = switch subject.ref.kind {
+        case .workItem: "work item \(subject.label)"
+        case .pullRequest, .gitHubPullRequest: subject.label
+        case .session: "“\(subject.label)”"
+        }
+        let value: String
+        if let via = connection.via {
+            value = "Through \(via.label)"
+        } else if let sent = connection.item.sent, sent.from == subject.ref {
+            value = "Sent to Copilot from \(what)"
+        } else {
+            switch connection.origins.first {
+            case .azureDevOps?: value = "In Azure DevOps, to \(what)"
+            case .copilot?: value = "By Copilot, to \(what)"
+            case .branch?: value = "On the same branch as \(what)"
+            case .you?: value = "By you, to \(what)"
+            case nil: value = "To \(what)"
+            }
+        }
+        return ItemStory.Fact("Linked", value)
+    }
+
     /// Why it's here, in a few words.
     static func reason(_ connection: LinkConnection, subject: ItemRef) -> String {
         if let via = connection.via { return "Linked through \(via.label)" }
@@ -100,6 +140,13 @@ package struct WhereItStandsSection: View {
         case .you?: return "Linked by you"
         case nil: return ""
         }
+    }
+
+    /// A sentence, its opening phrase in its state's color for words, the rest gray.
+    static func sentenceText(_ sentence: String, state: ItemState?) -> Text {
+        let (lead, rest) = phrase(sentence)
+        let opening = Text(lead).foregroundStyle(state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary))
+        return rest.isEmpty ? opening : opening + Text(" " + rest).foregroundStyle(.secondary)
     }
 
     /// A sentence's opening phrase, which takes its state's color, and the rest: "Ready to complete:" and "Approved by…".
@@ -124,9 +171,12 @@ struct StandingGroup: Identifiable {
 /// Opens a linked thing where the details show, rather than its preview in place: a work item's details, or a pull
 /// request's or a Copilot session's page, to come back from. False when it can't, and the row opens its preview then.
 package struct ItemNavigation {
+    /// What shows, from the work item to the page on top: what a page's own links leave out, since you came from there.
+    package var trail: [ItemRef]
     package var open: @MainActor (ItemRef) -> Bool
 
-    package init(open: @escaping @MainActor (ItemRef) -> Bool) {
+    package init(trail: [ItemRef] = [], open: @escaping @MainActor (ItemRef) -> Bool) {
+        self.trail = trail
         self.open = open
     }
 }
@@ -145,6 +195,9 @@ extension EnvironmentValues {
 
 private struct StandingContent: View {
     let subject: ItemRef
+    let excluding: Set<ItemRef>
+    let title: String
+    let hidesWhenEmpty: Bool
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
     @ObservedObject var summaries: StorySummaries
@@ -162,10 +215,10 @@ private struct StandingContent: View {
     }
 
     var body: some View {
-        let connections = WhereItStandsSection.ordered(links.connections(of: subject))
+        let connections = WhereItStandsSection.ordered(links.connections(of: subject).filter { !excluding.contains($0.item.ref) })
         let groups = WhereItStandsSection.groups(connections)
         let rows = connections.map { "\($0.item.ref)#\(ItemStories.version(of: $0.item))" }
-        if links.isOn || !isHintHidden {
+        if (links.isOn || !isHintHidden) && !(hidesWhenEmpty && groups.isEmpty) {
             VStack(alignment: .leading, spacing: 8) {
                 header(count: connections.count, canSummarize: !groups.isEmpty)
                 if links.isOn {
@@ -210,7 +263,7 @@ private struct StandingContent: View {
 
     private func header(count: Int, canSummarize: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Where It Stands")
+            Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
             if count > 0 {
@@ -375,17 +428,18 @@ private struct StoryRow: View {
 
     /// Where it stands: as its source tells it, or its row's status until then.
     private var sentence: String {
-        if let sentence = story?.sentence, !sentence.isEmpty { return sentence }
-        return item.status ?? ""
+        let sentence = story?.sentence.isEmpty == false ? story?.sentence ?? "" : item.status ?? ""
+        return WhereItStandsSection.sentence(sentence, on: subject)
     }
 
-    /// The state, as the lists by state draw it; a session of the app's own, by what it waits for; without a state, what
-    /// kind of thing it is.
+    /// The state, as the lists by state draw it; a session of the app's own, by what it waits for; a work item by its type,
+    /// as its details do; without a state, what kind of thing it is.
     private var symbol: (name: String, color: Color) {
         if item.ref.kind == .session, item.sent == nil { return (item.symbol, item.state?.color ?? item.color) }
         if let state = item.state {
             return (state == .done && item.ref.kind.isPullRequest ? "arrow.triangle.merge" : state.symbol, state.color)
         }
+        if item.ref.kind == .workItem { return (item.symbol, item.color) }
         return (Self.kindSymbol(of: item), .secondary)
     }
 
@@ -488,6 +542,8 @@ private struct StoryRow: View {
             .accessibilityHint(navigates ? "Shows its page" : isExpanded ? "Hides what's known of it" : "Shows what's known of it")
             .accessibilityAction(named: "Open") { open() }
             .accessibilityAction(named: connection.isKnownElsewhere ? "Hide Link" : "Unlink") { links.unlink(subject, item.ref) }
+            // To come back to it from its page.
+            .id(item.ref)
             if isExpanded {
                 StoryDetails(
                     item: item, story: story, isTelling: isTelling, mode: .preview
@@ -537,10 +593,7 @@ private struct StoryRow: View {
 
     /// The sentence, its opening phrase in its state's color.
     private var sentenceText: Text {
-        let (lead, rest) = WhereItStandsSection.phrase(sentence)
-        let color = item.state?.color
-        let opening = Text(lead).foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
-        return rest.isEmpty ? opening : opening + Text(" " + rest).foregroundStyle(.secondary)
+        WhereItStandsSection.sentenceText(sentence, state: item.state)
     }
 
     /// Opens it where it lives in one click: in the spot its row keeps for it (`QuickOpenSpot`).
@@ -604,7 +657,8 @@ private struct StoryRow: View {
 
 /// What's known of one thing. As a preview, in short: what to do with it first, what it said last when it's at work or
 /// waits for you, a few facts, its pipelines, Copilot's own notes and what's next; then, when you ask, everything else. On
-/// its page, everything, its actions being in the page's heading.
+/// its page, what it said last while it's at work or waits for you, all its facts in a card, then its pipelines, its
+/// actions being in the page's heading, and Copilot's notes after what's linked to it (`StoryNotesSection`).
 struct StoryDetails: View {
     enum Mode {
         case preview, page
@@ -613,17 +667,22 @@ struct StoryDetails: View {
     let item: LinkedItem
     let story: ItemStory?
     let isTelling: Bool
-    /// Why it's here, beside its actions in a preview.
     let mode: Mode
+    /// On a page, how it's linked to what you opened it from, its first fact.
+    var linkFact: ItemStory.Fact?
 
     @LocalState private var showsMore = false
 
     private var showsAll: Bool { mode == .page || showsMore }
     private var account: ItemStory.Account? { story?.account.flatMap { $0.isEmpty ? nil : $0 } }
     /// What it said last comes first while it's at work or waits for you: it's what it's doing now.
-    private var lastWordsFirst: Bool { item.state == .needsYou || item.state == .running }
+    private var lastWordsFirst: Bool { Self.lastWordsFirst(item) }
     private static let previewRuns = 3
     private static let previewNext = 3
+
+    static func lastWordsFirst(_ item: LinkedItem) -> Bool {
+        item.state == .needsYou || item.state == .running
+    }
 
     private var hasMore: Bool {
         guard mode == .preview, let story else { return false }
@@ -634,14 +693,19 @@ struct StoryDetails: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: mode == .page ? 16 : 10) {
-            if mode == .preview {
-                actions
-            }
+        switch mode {
+        case .preview: preview
+        case .page: page
+        }
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            actions
             if let story {
                 if lastWordsFirst, let last = account?.lastMessage {
                     CopilotWords(caption: "What it said last") {
-                        ClampedText(text: last, lines: mode == .page ? 4 : 2)
+                        ClampedText(text: last, lines: 2)
                     }
                 }
                 if !story.facts.isEmpty || (showsAll && !story.more.isEmpty) {
@@ -653,12 +717,7 @@ struct StoryDetails: View {
                 if let account {
                     notes(account)
                 }
-                if let footnote = story.footnote {
-                    Text(footnote)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                footnote(story)
                 if hasMore {
                     Button(showsMore ? "Show Less" : "Show All") {
                         withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
@@ -667,15 +726,67 @@ struct StoryDetails: View {
                     .font(.system(size: 11))
                 }
             } else if isTelling {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text("Reading what's known of it…")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.system(size: 11.5))
+                reading
             }
         }
+    }
+
+    private var page: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let story {
+                if lastWordsFirst, let last = account?.lastMessage {
+                    CopilotWords(caption: "What it said last") {
+                        ClampedText(text: last, lines: 4)
+                    }
+                }
+                let facts = pageFacts(story)
+                if !facts.isEmpty {
+                    PageFacts(facts: facts)
+                }
+                if !story.runs.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PageSectionHeader(title: story.runs.count == 1 ? "Pipeline" : "Pipelines", count: story.runs.count)
+                        RunsView(runs: story.runs, showsCaption: false)
+                    }
+                }
+                footnote(story)
+            } else if isTelling {
+                reading
+            } else if let linkFact {
+                PageFacts(facts: [linkFact])
+            }
+        }
+    }
+
+    /// All its facts, how it's linked first, but where it is, which the page's heading says.
+    private func pageFacts(_ story: ItemStory) -> [ItemStory.Fact] {
+        let place = item.place.map(Self.plain)
+        return (linkFact.map { [$0] } ?? []) + (story.facts + story.more).filter { Self.plain($0.value) != place }
+    }
+
+    /// "shop-web · saved-items" and "shop-web saved-items" alike.
+    private static func plain(_ text: String) -> String {
+        text.replacingOccurrences(of: "·", with: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+    }
+
+    @ViewBuilder
+    private func footnote(_ story: ItemStory) -> some View {
+        if let footnote = story.footnote {
+            Text(footnote)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var reading: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text("Reading what's known of it…")
+                .foregroundStyle(.secondary)
+        }
+        .font(.system(size: 11.5))
     }
 
     /// Opening it, or its own actions; why it's here is in its row's tooltip.
@@ -687,10 +798,10 @@ struct StoryDetails: View {
     /// Copilot's notes, as it wrote them: its overview, what's next, and, when you ask, what it did, the story so far a
     /// line a checkpoint, and what it said last.
     private func notes(_ account: ItemStory.Account) -> some View {
-        CopilotWords(caption: caption(account)) {
+        CopilotWords(caption: Self.caption(account)) {
             VStack(alignment: .leading, spacing: 8) {
                 if let overview = account.overview, !overview.isEmpty {
-                    ClampedText(text: overview, lines: mode == .page ? 6 : 3)
+                    ClampedText(text: overview, lines: 3)
                 }
                 if !account.next.isEmpty {
                     StoryList(title: "What's next", lines: showsAll ? account.next : Array(account.next.prefix(Self.previewNext)), symbol: "arrow.right")
@@ -714,19 +825,150 @@ struct StoryDetails: View {
     }
 
     /// "Copilot's notes · 3h ago".
-    private func caption(_ account: ItemStory.Account) -> String {
+    static func caption(_ account: ItemStory.Account) -> String {
         guard let date = account.date else { return account.source }
-        let elapsed = Elapsed.short(since: date, now: Date())
-        return "\(account.source) · \(elapsed == "now" ? "just now" : "\(elapsed) ago")"
+        return "\(account.source) · \(StoryTime.ago(date))"
     }
 
     /// "Open in Azure DevOps", for what opens a thing of this kind.
     static func openTitle(for kind: ItemRef.Kind) -> String {
-        switch kind {
+        kind.openTitle
+    }
+}
+
+extension ItemRef.Kind {
+    /// "Open in Azure DevOps", for what opens a thing of this kind where it lives.
+    package var openTitle: String {
+        switch self {
         case .workItem, .pullRequest: return "Open in Azure DevOps"
         case .gitHubPullRequest: return "Open on GitHub"
         case .session: return "Open in Copilot"
         }
+    }
+}
+
+/// Copilot's notes on a page, after what's linked to it: its overview and what's next, and, when you ask, what it did,
+/// the story so far and what it said last.
+struct StoryNotesSection: View {
+    let item: LinkedItem
+    let account: ItemStory.Account
+
+    @LocalState private var showsAll = false
+
+    private static let shownNext = 3
+
+    /// What it said last shows at the top of the page while it's at work or waits for you.
+    private var lastMessage: String? { StoryDetails.lastWordsFirst(item) ? nil : account.lastMessage }
+
+    private var hasMore: Bool {
+        account.next.count > Self.shownNext || !account.done.isEmpty || account.milestones.count > 1 || lastMessage != nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PageSectionHeader(title: Self.title(account.source), trailing: account.date.map { StoryTime.ago($0) })
+            CopilotWords(caption: nil) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let overview = account.overview, !overview.isEmpty {
+                        ClampedText(text: overview, lines: 3)
+                    }
+                    if !account.next.isEmpty {
+                        let next = showsAll ? account.next : Array(account.next.prefix(Self.shownNext))
+                        StoryList(title: "What's next", lines: next, symbol: "arrow.right")
+                    }
+                    if showsAll {
+                        if !account.done.isEmpty {
+                            StoryList(title: "What it did", lines: account.done, symbol: "checkmark")
+                        }
+                        if account.milestones.count > 1 {
+                            Milestones(account: account)
+                        }
+                        if let lastMessage {
+                            VStack(alignment: .leading, spacing: 3) {
+                                StoryCaption(text: "What it said last")
+                                ClampedText(text: lastMessage, lines: 4)
+                            }
+                        }
+                    }
+                    if hasMore {
+                        Button(showsAll ? "Show Less" : "Show All Notes") {
+                            withAnimation(.easeOut(duration: 0.15)) { showsAll.toggle() }
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11))
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Copilot's notes" as a heading: "Copilot's Notes".
+    static func title(_ source: String) -> String {
+        source.split(separator: " ").map { word in word.prefix(1).uppercased() + word.dropFirst() }.joined(separator: " ")
+    }
+}
+
+/// A part's heading on a page, as the work item's details have them: "Pipelines 2", "Copilot's Notes   3h ago".
+struct PageSectionHeader: View {
+    let title: String
+    var count: Int?
+    var trailing: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+            if let count {
+                Text(String(count))
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.07)))
+            }
+            if let trailing {
+                Spacer(minLength: 8)
+                Text(trailing)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A page's facts, as the work item's details show its fields: labels on the right of their column, in a card.
+private struct PageFacts: View {
+    let facts: [ItemStory.Fact]
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 9) {
+            ForEach(facts, id: \.self) { fact in
+                GridRow {
+                    Text(fact.label)
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.trailing)
+                        .lineLimit(1)
+                    Text(fact.value)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .font(.system(size: 12.5))
+        .textSelection(.enabled)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GlassCard(cornerRadius: 12, raised: true))
+    }
+}
+
+/// When something happened, in one unit: "just now", "41m ago", "3h ago", "2d ago".
+enum StoryTime {
+    static func ago(_ date: Date, now: Date = Date()) -> String {
+        let short = StoryRow.ago(date, now: now)
+        return short == "now" ? "just now" : "\(short) ago"
     }
 }
 
@@ -739,13 +981,19 @@ struct StoryActions: View {
             Menu {
                 menu()
             } label: {
-                Label("Actions", systemImage: "ellipsis.circle")
+                if item.sent != nil {
+                    Label("Copilot", systemImage: "paperplane")
+                } else {
+                    Label("Actions", systemImage: "ellipsis.circle")
+                }
             }
             .menuStyle(.button)
             .fixedSize()
         } else if let open = item.open {
-            Button(StoryDetails.openTitle(for: item.ref.kind), action: open)
-                .fixedSize()
+            Button(action: open) {
+                Label(StoryDetails.openTitle(for: item.ref.kind), systemImage: "arrow.up.forward.app")
+            }
+            .fixedSize()
         }
     }
 }
@@ -784,12 +1032,14 @@ private struct FactsGrid: View {
 
 /// What Copilot wrote, set apart by a thin rule along its edge, so its words read as its own, not BriefBar's.
 private struct CopilotWords<Content: View>: View {
-    let caption: String
+    let caption: String?
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            StoryCaption(text: caption)
+            if let caption {
+                StoryCaption(text: caption)
+            }
             content()
         }
         .padding(.leading, 9)
@@ -840,10 +1090,14 @@ struct ClampedText: View {
 /// The pipelines that ran on a pull request, the one that needs you most first: a click opens its run.
 private struct RunsView: View {
     let runs: [ItemStory.Run]
+    /// Whether it says what it is, where no heading does.
+    var showsCaption = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            StoryCaption(text: runs.count == 1 ? "Pipeline" : "Pipelines")
+            if showsCaption {
+                StoryCaption(text: runs.count == 1 ? "Pipeline" : "Pipelines")
+            }
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(Array(runs.enumerated()), id: \.offset) { _, run in
                     RunRow(run: run)
@@ -860,56 +1114,78 @@ private struct RunRow: View {
     @LocalState private var isHovered = false
 
     var body: some View {
-        Button {
-            if let url = run.url { NSWorkspace.shared.open(url) }
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 14)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(run.name)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(status)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(run.state == .failing ? AnyShapeStyle(color) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
-                    if let detail = run.detail {
-                        Text(detail)
-                            .font(.system(size: 11).monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // One with a page opens it; one without reads as text, not as a button that's off.
+        if let url = run.url {
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                content(opens: true)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(isHovered && run.url != nil ? 0.06 : 0))
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .help("Open \(run.name)'s run")
+            .accessibilityLabel(accessibilityText)
+            .accessibilityHint("Opens its run")
+        } else {
+            content(opens: false)
+                .help(run.name)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityText)
         }
-        .buttonStyle(.plain)
-        .disabled(run.url == nil)
-        .onHover { isHovered = $0 }
-        .help(run.url == nil ? run.name : "Open \(run.name)'s run")
-        .accessibilityLabel("\(run.name): \(status)" + (run.detail.map { ". \($0)" } ?? ""))
+    }
+
+    private func content(opens: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 14)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(run.name)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(status)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(run.state == .failing ? AnyShapeStyle(ItemState.failing.textColor) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+                if let detail = run.detail {
+                    Text(detail)
+                        .font(.system(size: 11).monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if opens {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovered ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(opens && isHovered ? 0.06 : 0))
+        )
+        .contentShape(Rectangle())
+    }
+
+    private var accessibilityText: String {
+        "\(run.name): \(status)" + (run.detail.map { ". \($0)" } ?? "")
     }
 
     /// "Failed at Run tests · 12m ago".
     private var status: String {
         guard let date = run.date, run.state != .running else { return run.status }
-        let elapsed = Elapsed.short(since: date, now: Date())
-        return "\(run.status) · \(elapsed == "now" ? "just now" : "\(elapsed) ago")"
+        return "\(run.status) · \(StoryTime.ago(date))"
     }
 
     /// As the Pipelines page draws them.

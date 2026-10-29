@@ -15,35 +15,70 @@ struct WorkItemDetailsPanel: View {
     @EnvironmentObject private var copilot: CopilotTasksStore
     @EnvironmentObject private var services: AppServices
 
+    /// What you went back from, to show its row again where you return.
+    @LocalState private var returnTo: ItemRef?
+
     var body: some View {
         if let item = details.selected {
             VStack(spacing: 0) {
                 topBar(item)
                 Divider()
                     .opacity(0.6)
-                ScrollView {
-                    Group {
-                        if let page = details.pages.last {
-                            ItemPageView(ref: page)
-                        } else {
-                            content(item)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Group {
+                            if let page = details.pages.last {
+                                ItemPageView(ref: page)
+                            } else {
+                                content(item)
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // A pull request or a session linked to it opens its page here, a work item its details.
+                        .environment(\.itemNavigation, ItemNavigation(trail: [item.linkRef] + details.pages) { ref in navigate(to: ref) })
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    // A pull request or a session linked to it opens its page here, a work item its details.
-                    .environment(\.itemNavigation, ItemNavigation { ref in navigate(to: ref) })
+                    .scrollBounceBehavior(.basedOnSize)
+                    // Each work item, and each page, from the top, but where you came back to.
+                    .id(scrollKey(item))
+                    .onChange(of: scrollKey(item)) { scrollBack(proxy) }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                // Each work item, and each page, from the top.
-                .id("\(item.key)/\(details.pages.last.map(String.init(describing:)) ?? "")")
             }
             .onAppear { details.refreshIfStale() }
+            // Pages come from Show Links: without it, they go.
+            .onReceive(services.links.$isOn) { isOn in
+                if !isOn { details.closePages() }
+            }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Details of \(item.type) \(item.id)")
+            .accessibilityLabel(accessibilityName(item))
         }
+    }
+
+    private func scrollKey(_ item: WorkItem) -> String {
+        "\(item.key)/\(details.pages.last.map(String.init(describing:)) ?? "")"
+    }
+
+    /// Back to the row of what you came back from, once it shows.
+    private func scrollBack(_ proxy: ScrollViewProxy) {
+        guard let target = returnTo else { return }
+        returnTo = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(30))
+            proxy.scrollTo(target, anchor: .center)
+        }
+    }
+
+    /// "Details of Bug 5110", or, on a page, "Pull request 4091, from Bug 5110".
+    private func accessibilityName(_ item: WorkItem) -> String {
+        guard let page = details.pages.last else { return "Details of \(item.type) \(item.id)" }
+        return "\(ItemPageView.spokenName(of: services.links.describe(page))), from \(item.type) \(item.id)"
+    }
+
+    private func goBack() {
+        returnTo = details.pages.last ?? details.selected?.linkRef
+        withAnimation(.easeOut(duration: 0.15)) { details.back() }
     }
 
     private var me: String { sprint.board?.me ?? "" }
@@ -55,16 +90,26 @@ struct WorkItemDetailsPanel: View {
         }
         if !details.pages.isEmpty { return "Back to \(item.type) \(item.id): \(item.title)" }
         guard let previous = details.history.last else { return "Back" }
-        return "Back to \(previous.type) \(previous.id): \(previous.title)"
+        if let page = previous.pages.last { return "Back to \(services.links.describe(page).menuTitle)" }
+        return "Back to \(previous.item.type) \(previous.item.id): \(previous.item.title)"
     }
 
-    /// Opens something linked to the work item: a work item of the sprint, its details; a pull request or a session, its
-    /// page. False for a work item the sprint doesn't have, which opens its preview instead.
+    /// Opens something linked to the work item: a work item, its details, as the sprint knows it or as its link says it
+    /// until they're read; a pull request or a session, its page.
     private func navigate(to ref: ItemRef) -> Bool {
         switch ref.kind {
         case .workItem:
             let items = (sprint.board?.rows ?? []).flatMap { ($0.parent.map { [$0] } ?? []) + $0.tasks }
-            guard let item = items.first(where: { $0.linkRef == ref }) else { return false }
+            if let item = items.first(where: { $0.linkRef == ref }) {
+                withAnimation(.easeOut(duration: 0.15)) { details.follow(item) }
+                return true
+            }
+            guard let id = Int(ref.id) else { return false }
+            let linked = services.links.describe(ref)
+            let item = WorkItem(
+                id: id, organization: ref.scope, project: linked.place ?? "", type: "Work Item", title: linked.title,
+                state: linked.status ?? "", category: .proposed
+            )
             withAnimation(.easeOut(duration: 0.15)) { details.follow(item) }
             return true
         case .pullRequest, .gitHubPullRequest, .session:
@@ -78,24 +123,19 @@ struct WorkItemDetailsPanel: View {
     private func topBar(_ item: WorkItem) -> some View {
         HStack(spacing: 8) {
             if details.canGoBack {
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) { details.back() }
-                } label: {
+                Button(action: goBack) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help(backHelp(item))
-                .accessibilityLabel("Back")
+                .keyboardShortcut("[", modifiers: .command)
+                .help(backHelp(item) + " (⌘[)")
+                .accessibilityLabel(backHelp(item))
             }
             TypeBadge(item: item, size: 20)
-            Text(item.type + " " + String(item.id))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .textSelection(.enabled)
+            crumbs(item)
             Spacer(minLength: 6)
             if details.isLoading {
                 ProgressView()
@@ -115,7 +155,11 @@ struct WorkItemDetailsPanel: View {
                 .help("Read it again")
             }
             Menu {
-                menuItems(item)
+                if let page = details.pages.last {
+                    pageMenuItems(page)
+                } else {
+                    menuItems(item)
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -132,13 +176,101 @@ struct WorkItemDetailsPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .keyboardShortcut(.cancelAction)
-            .help("Close (Esc)")
+            // On a page, Esc goes back to what's under it.
+            .keyboardShortcut(details.pages.isEmpty ? .cancelAction : nil)
+            .help(details.pages.isEmpty ? "Close (Esc)" : "Close")
             .accessibilityLabel("Close Details")
         }
         .padding(.leading, 12)
         .padding(.trailing, 10)
         .frame(height: 44)
+        .background {
+            if !details.pages.isEmpty {
+                Button("Back", action: goBack)
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    /// "Bug 5110", or, on a page, the way there: "Bug 5110 › !4091", the work item and each page but the last one going
+    /// back to it.
+    @ViewBuilder
+    private func crumbs(_ item: WorkItem) -> some View {
+        let pages = details.pages
+        if pages.isEmpty {
+            Text(item.type + " " + String(item.id))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .textSelection(.enabled)
+        } else {
+            HStack(spacing: 5) {
+                Button {
+                    returnTo = pages.first
+                    withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: nil) }
+                } label: {
+                    Text(pages.count > 1 ? String(item.id) : item.type + " " + String(item.id))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Back to \(item.type) \(item.id): \(item.title)")
+                .layoutPriority(1)
+                ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
+                    let linked = services.links.describe(page)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                    if index == pages.count - 1 {
+                        Text(ItemPageView.crumb(of: linked))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .help(linked.menuTitle)
+                            .layoutPriority(1)
+                    } else {
+                        Button {
+                            returnTo = pages[index + 1]
+                            withAnimation(.easeOut(duration: 0.15)) { details.back(toPage: index) }
+                        } label: {
+                            Text(ItemPageView.crumb(of: linked))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Back to \(linked.menuTitle)")
+                    }
+                }
+            }
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+        }
+    }
+
+    /// The page's own: opening it, copying it, and linking it to more.
+    @ViewBuilder
+    private func pageMenuItems(_ ref: ItemRef) -> some View {
+        let item = services.links.describe(ref)
+        if let menu = item.menu {
+            menu()
+            Divider()
+        } else if let open = item.open {
+            Button(ref.kind.openTitle, action: open)
+        }
+        if let link = item.link {
+            Button("Copy Link") { Self.copy(link.absoluteString) }
+        }
+        if ref.kind == .session {
+            Button("Copy Name") { Self.copy(item.label) }
+        } else {
+            Button("Copy Number and Title") { Self.copy("\(item.label) \(item.title)") }
+        }
+        LinkMenuItems(ref)
     }
 
     @ViewBuilder

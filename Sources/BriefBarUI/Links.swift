@@ -28,11 +28,13 @@ package struct LinkedItem {
     package var menu: (() -> AnyView)?
     /// A task you sent to Copilot: what for, and where from.
     package var sent: SentToCopilot?
+    /// Its page on the web, for Copy Link, where its reference doesn't say it: an Azure DevOps pull request's or work item's.
+    package var url: URL?
 
     package init(
         ref: ItemRef, label: String, title: String, symbol: String, color: Color, state: ItemState? = nil, status: String? = nil,
         place: String? = nil, hint: BranchHint? = nil, date: Date? = nil, open: (() -> Void)? = nil, menu: (() -> AnyView)? = nil,
-        sent: SentToCopilot? = nil
+        sent: SentToCopilot? = nil, url: URL? = nil
     ) {
         self.ref = ref
         self.label = label
@@ -47,6 +49,18 @@ package struct LinkedItem {
         self.open = open
         self.menu = menu
         self.sent = sent
+        self.url = url
+    }
+
+    /// Its link, for Copy Link: its page, or what its reference says, a GitHub pull request's page or a session's link in
+    /// the GitHub Copilot app.
+    package var link: URL? {
+        if let url { return url }
+        switch ref.kind {
+        case .gitHubPullRequest: return URL(string: "https://github.com/\(ref.scope)/pull/\(ref.id)")
+        case .session: return sent == nil ? URL(string: "ghapp://sessions/\(ref.id)") : nil
+        case .workItem, .pullRequest: return nil
+        }
     }
 
     /// "Work Item 5101 · Save items for later", "Pull Request !4071 · Add retry…", or a session's name, for menus.
@@ -90,7 +104,7 @@ extension LinkedItem: Equatable {
         lhs.ref == rhs.ref && lhs.label == rhs.label && lhs.title == rhs.title && lhs.symbol == rhs.symbol
             && lhs.color == rhs.color && lhs.state == rhs.state && lhs.status == rhs.status && lhs.place == rhs.place
             && lhs.hint == rhs.hint && lhs.date == rhs.date && (lhs.menu == nil) == (rhs.menu == nil)
-            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent
+            && (lhs.open == nil) == (rhs.open == nil) && lhs.sent == rhs.sent && lhs.url == rhs.url
     }
 }
 

@@ -353,9 +353,10 @@ it stands in a sentence. Click one, and its page shows what's known of it, right
 request's reviewers and their votes, its open comments and the ones waiting on you, conflicts, and each
 build or check that ran on it, with where a failed one failed; a Copilot session's question or plan,
 and what Copilot recorded of its work as it went: the story so far, a line for each of its checkpoints,
-what it did, what's next, and what it said last. Its own Where It Stands follows, such as a pull
-request's sessions, and **‹** goes back to the work item. BriefBar doesn't write or reword any of it:
-Copilot's notes show as Copilot wrote them, and nothing more is read from Azure DevOps for it.
+what it did, what's next, and what it said last, with what else is linked to it, such as a pull
+request's sessions. The header shows the way back, such as **Bug 5110 › !4091**, and **‹**, **⌘[** or
+**Esc** goes back. BriefBar doesn't write or reword any of it: Copilot's notes show as Copilot wrote
+them, and nothing more is read from Azure DevOps for it.
 
 Turn on **Summarize with Copilot** in **Settings › General**, and **✨ Summarize** asks the Copilot CLI
 for a short summary of the work item and everything linked to it: where it stands in a line, what's

@@ -403,13 +403,19 @@ done or ready, then the rest, the newest first in each), and a session linked th
 request; four at first, then **Show More**, with a tally of their states once there are five or more. Each row shows
 its state as the lists by state draw it, what it is, where it stands in a sentence, its opening words in its state's
 color, and since when; one that needs you or went wrong opens in a click. Clicking a row opens its page over the work
-item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and its actions,
-then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`): its facts, the pipelines that ran on it, and
-what Copilot wrote of a session's work, set apart by a thin rule, since those are Copilot's words, not BriefBar's;
-then its own Where It Stands. **‹** goes back through the pages, then to the work items you came from; a work item on
-a page is followed, as a link in the details is. A view with nowhere to open pages (no `itemNavigation`) shows a short
-preview under the row instead, with **Show All** for the rest. While Show Links is off it reads nothing and shows one
-line, with **Turn On…**, which shows Show Links' setting, until you dismiss it.
+item's details (`ItemPageView`, the `pages` of `WorkItemDetailsStore`): what it is, where it stands and since when, and
+its actions; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked to what you
+opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Linked**, what
+else is linked to it, without the work item and the pages you came through (the `trail` of `itemNavigation`), so it
+never leads back; and last what Copilot wrote of a session's work, its overview and what's next, the rest behind
+**Show All Notes**, set apart by a thin rule, since those are Copilot's words, not BriefBar's. The header says where you
+are, `‹ 🐞 Bug 5110 › !4091`, each crumb going back to it, and its **⋯** acts on the page. **‹**, **⌘[**, and **Esc** on a
+page go back through the pages, then to the work items you came from, each with the pages that showed over it, and
+scroll back to the row you opened; opening a page that shows already goes back to it. A work item on a page is
+followed, as a link in the details is, read from Azure DevOps when the sprint doesn't have it. Turning Show Links off
+takes the pages away. A view with nowhere to open pages (no `itemNavigation`) shows a short preview under the row
+instead, with **Show All** for the rest. While Show Links is off it reads nothing and shows one line, with **Turn On…**,
+which shows Show Links' setting, until you dismiss it.
 
 Each source tells about its own things (`ItemStories`, the sources' tellers), only when a view asks and only while
 Show Links is on, from what it already read, and BriefBar keeps what they tell in memory only: a story is told again
