@@ -1,0 +1,41 @@
+name: Windows
+
+# BriefBar for Windows (windows/), on pushes to main and pull requests that change it, and when started by hand.
+# Builds the WinUI 3 app on Windows. The macOS CI doesn't build it, and this doesn't build the Mac app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new run cancels the one in progress on the same pull request or branch, main included.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (windows-2025)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 9.0.x
+
+      # The Windows App SDK comes from NuGet with the first restore, and ships inside the app.
+      - name: Build
+        run: dotnet build windows/BriefBar.Windows.sln --configuration Release
