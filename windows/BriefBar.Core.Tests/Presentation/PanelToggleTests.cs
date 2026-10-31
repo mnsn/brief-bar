@@ -44,11 +44,35 @@ public sealed class PanelToggleTests
         var toggle = new PanelToggle();
         Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: copilot, open: null, now: 1_000));
         // The press moved focus from the panel, which closed, before it reached its item.
-        toggle.Closed(target: copilot, now: 5_000);
+        toggle.Closed(target: copilot, reason: PanelCloseReason.OtherApp, now: 5_000);
         Assert.Equal(expected: PanelToggleAction.Ignore, actual: toggle.Press(target: copilot, open: null, now: 5_100));
         // Another item still opens.
         Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: github, open: null, now: 5_150));
         // And so does the same one, a moment later.
         Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: copilot, open: null, now: 5_000 + 600));
+    }
+
+    [Fact]
+    public void DoesntReopenAPanelThatSeemedClickedElsewhere()
+    {
+        var toggle = new PanelToggle();
+        Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: copilot, open: null, now: 1_000));
+        toggle.Closed(target: copilot, reason: PanelCloseReason.ClickElsewhere, now: 5_000);
+        Assert.Equal(expected: PanelToggleAction.Ignore, actual: toggle.Press(target: copilot, open: null, now: 5_100));
+    }
+
+    [Theory]
+    [InlineData(PanelCloseReason.PressedAgain)]
+    [InlineData(PanelCloseReason.Keyboard)]
+    [InlineData(PanelCloseReason.EmptySpace)]
+    [InlineData(PanelCloseReason.FullScreen)]
+    [InlineData(PanelCloseReason.DisplaysChanged)]
+    [InlineData(PanelCloseReason.Quitting)]
+    public void ReopensAPanelThatClosedForAReasonAPressCantCause(PanelCloseReason reason)
+    {
+        var toggle = new PanelToggle();
+        Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: copilot, open: null, now: 1_000));
+        toggle.Closed(target: copilot, reason: reason, now: 5_000);
+        Assert.Equal(expected: PanelToggleAction.Open, actual: toggle.Press(target: copilot, open: null, now: 5_100));
     }
 }

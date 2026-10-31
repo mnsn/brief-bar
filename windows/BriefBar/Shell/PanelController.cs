@@ -34,7 +34,7 @@ internal sealed class PanelController(AppShell shell)
                 Show(bar: bar, target: target, itemAnchor: itemAnchor);
                 break;
             case PanelToggleAction.Close:
-                Dismiss();
+                Dismiss(reason: PanelCloseReason.PressedAgain);
                 break;
             case PanelToggleAction.Ignore:
                 break;
@@ -67,7 +67,8 @@ internal sealed class PanelController(AppShell shell)
         });
     }
 
-    public void Dismiss()
+    /// Closes it, for `reason`, which the log says.
+    public void Dismiss(PanelCloseReason reason)
     {
         if (OpenTarget is not { } target)
         {
@@ -76,9 +77,9 @@ internal sealed class PanelController(AppShell shell)
         OpenTarget = null;
         Owner = null;
         window?.HideWindow();
-        toggle.Closed(target: target, now: Environment.TickCount64);
+        toggle.Closed(target: target, reason: reason, now: Environment.TickCount64);
         shell.ShowOpen(owner: null, target: null);
-        Log.Write(line: $"panel: {target} closed");
+        Log.Write(line: $"panel: {target} closed, {reason}");
     }
 
     /// Shows what the sources show now, in place, if it's open, as tall as that needs.
@@ -97,7 +98,7 @@ internal sealed class PanelController(AppShell shell)
     /// Closes it for good, as BriefBar quits: closed first, then its window.
     public void Shutdown()
     {
-        Dismiss();
+        Dismiss(reason: PanelCloseReason.Quitting);
         var closing = window;
         window = null;
         closing?.CloseForGood();
@@ -149,11 +150,10 @@ internal sealed class PanelController(AppShell shell)
         }
         window = null;
         Log.Write(line: $"panel: its window is gone");
-        if (OpenTarget is { } target)
+        if (OpenTarget is not null)
         {
             OpenTarget = null;
             Owner = null;
-            toggle.Closed(target: target, now: Environment.TickCount64);
             shell.ShowOpen(owner: null, target: null);
         }
     }

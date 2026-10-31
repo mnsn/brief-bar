@@ -53,7 +53,7 @@ internal sealed partial class PanelWindow : Window
         WindowMenu.Remove(hwnd: Hwnd);
         mouseCallback = OnMouse;
         view = new PanelView(viewModel: ViewModel);
-        view.EscapePressed += (_, _) => controller.Dismiss();
+        view.EscapePressed += (_, _) => controller.Dismiss(reason: PanelCloseReason.Keyboard);
         view.QuitRequested += (_, _) => controller.QuitRequested();
         Content = view;
         SystemBackdrop = new ActiveAcrylic(kind: DesktopAcrylicKind.Base);
@@ -64,7 +64,7 @@ internal sealed partial class PanelWindow : Window
             if (!closingForGood)
             {
                 args.Cancel = true;
-                controller.Dismiss();
+                controller.Dismiss(reason: PanelCloseReason.Keyboard);
             }
         };
         // WinUI says when a window closes, but not when Windows destroys it, as it does an owned window with its owner.
@@ -161,7 +161,7 @@ internal sealed partial class PanelWindow : Window
             });
             return;
         }
-        controller.Dismiss();
+        controller.Dismiss(reason: PanelCloseReason.OtherApp);
     }
 
     nint WindowProc(nint hWnd, uint message, nint wParam, nint lParam, nuint id, nuint data)
@@ -234,7 +234,7 @@ internal sealed partial class PanelWindow : Window
                 {
                     if (shown == showing)
                     {
-                        controller.Dismiss();
+                        controller.Dismiss(reason: PanelCloseReason.ClickElsewhere);
                     }
                 });
             }

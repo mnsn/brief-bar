@@ -34,7 +34,8 @@ errors; `.github/workflows/windows.yml` checks the formatting, runs the tests an
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words, the Overview's panel, the same item on another display, Alt+F4, displays
 changing, and the space given back within a second of quitting or of another program asking BriefBar to close. Run
-it before you open a pull request; it works over a disconnected remote session too.
+it before you open a pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere
+closes the panel it's checking; it works over a disconnected remote session too.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,

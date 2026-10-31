@@ -3,7 +3,8 @@
 # another display's bar; Alt+F4 leaving a bar alone; the bars coming back after displays change, still opening panels;
 # and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or because
 # another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own with --demo.
-# It works over a disconnected remote session too, which has one display.
+# It works over a disconnected remote session too, which has one display. Leave the mouse and keyboard alone while it
+# runs: a click anywhere but BriefBar closes the panel it's checking, as it should.
 param(
     [string] $Exe = (Join-Path -Path $PSScriptRoot -ChildPath '..\BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64\BriefBar.exe')
 )
@@ -88,11 +89,15 @@ function Start-BriefBar {
     $started
 }
 
-# The process's bars, each found by its Overview's item, or nothing until there's one per display.
+# The process's bars, each found by its Overview's item, or nothing until there's one per display, each a window of its
+# own placed at the top of its display.
 function Find-Bars($process, [int] $count) {
     $found = @($A::RootElement.FindAll($Scope::Children, (Condition $A::ProcessIdProperty $process.Id)) |
         Where-Object { $_.FindFirst($Scope::Descendants, (Condition $A::AutomationIdProperty 'OverviewButton')) })
-    if ($found.Count -eq $count) { $found }
+    $windows = @($found | ForEach-Object { $_.Current.NativeWindowHandle } | Sort-Object -Unique)
+    $tops = @([SmokeNative]::Displays() | ForEach-Object { (($_ -split '\|')[0] -split ',')[0..1] -join ',' })
+    $placed = @($found | Where-Object { $tops -contains ('{0},{1}' -f [int]$_.Current.BoundingRectangle.Left, [int]$_.Current.BoundingRectangle.Top) })
+    if ($found.Count -eq $count -and $windows.Count -eq $count -and $placed.Count -eq $count) { $found }
 }
 
 function Invoke-Item($element) {
@@ -166,6 +171,12 @@ function Test-Running($process, $before) {
     # The same item on another display's bar opens the panel there, rather than closing it here.
     if (@($bars).Count -ge 2) {
         $second = @($bars)[1]
+        if (-not (Get-PanelList $first)) {
+            # Past the 600 ms in which a press counts as the one that closed it, should it have closed.
+            Start-Sleep -Milliseconds 700
+            Invoke-Item (Get-OverviewItem $first)
+            [void](Wait-Until { Get-PanelList $first } 5)
+        }
         # Past the 350 ms in which a second press on the same item counts as the same press.
         Start-Sleep -Milliseconds 600
         Invoke-Item (Get-OverviewItem $second)

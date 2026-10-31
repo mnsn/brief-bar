@@ -60,7 +60,7 @@ internal sealed class AppShell : IDisposable
     public void Start()
     {
         sources.Changed += (_, _) => Refresh();
-        desktop.ForegroundChanged += (_, _) => panel.Dismiss();
+        desktop.ForegroundChanged += (_, _) => panel.Dismiss(reason: PanelCloseReason.OtherApp);
         desktop.FullScreenChanged += (_, _) => ApplyFullScreen();
         uiSettings.TextScaleFactorChanged += (_, _) => queue.TryEnqueue(callback: () => PlaceBars(force: true));
         // Light, dark, accent and High Contrast changes; AccessibilitySettings' own event needs a UWP window.
@@ -144,7 +144,7 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    public void EmptySpacePressed() => panel.Dismiss();
+    public void EmptySpacePressed() => panel.Dismiss(reason: PanelCloseReason.EmptySpace);
 
     /// Displays were added, removed or rearranged, or the computer woke: once they settle, a bar for each again.
     public void DisplaysChanged()
@@ -231,7 +231,7 @@ internal sealed class AppShell : IDisposable
         {
             return;
         }
-        panel.Dismiss();
+        panel.Dismiss(reason: PanelCloseReason.DisplaysChanged);
         foreach (var bar in bars)
         {
             bar.GiveSpaceBack();
@@ -272,7 +272,7 @@ internal sealed class AppShell : IDisposable
             var hidden = desktop.HasFullScreen(monitor: bar.Display.Handle);
             if (hidden && panel.Owner == bar)
             {
-                panel.Dismiss();
+                panel.Dismiss(reason: PanelCloseReason.FullScreen);
             }
             bar.SetHiddenForFullScreen(hidden: hidden);
         }
