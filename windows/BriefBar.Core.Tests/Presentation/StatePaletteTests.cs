@@ -19,6 +19,42 @@ public sealed class StatePaletteTests
         }
         AssertContrast(foreground: StatePalette.Caution(dark: dark), background: background, least: Wcag.TextContrast);
         AssertContrast(foreground: StatePalette.PillText(dark: dark), background: StatePalette.PillFill(dark: dark), least: Wcag.TextContrast);
+        // Quiet is for words too: a chat's preview, or the heading of a group that isn't counted.
+        AssertContrast(foreground: StatePalette.Quiet(dark: dark), background: background, least: Wcag.TextContrast);
+    }
+
+    [Theory]
+    [MemberData(memberName: nameof(Themes))]
+    public void ChipsWordsAreReadableOnTheChipAsItShows(bool dark)
+    {
+        foreach (var kind in Enum.GetValues<RowChipKind>())
+        {
+            var chip = StatePalette.Over(argb: StatePalette.ChipBackground(kind: kind, dark: dark), background: StatePalette.Background(dark: dark));
+            AssertContrast(foreground: StatePalette.ChipText(kind: kind, dark: dark), background: chip, least: Wcag.TextContrast);
+        }
+    }
+
+    [Fact]
+    public void KeepsAChipsColorWhereItsReadableAlready()
+    {
+        // A work item's blue reads well enough on its chip as it is; a pull request's green is darkened.
+        Assert.Equal(
+            expected: StatePalette.Text(state: ItemState.Running, dark: false),
+            actual: StatePalette.ChipText(kind: RowChipKind.WorkItem, dark: false));
+        Assert.NotEqual(
+            expected: StatePalette.Text(state: ItemState.Done, dark: false),
+            actual: StatePalette.ChipText(kind: RowChipKind.PullRequest, dark: false));
+        // Faint behind its words: the same color, at 14%.
+        Assert.Equal(expected: 0x24u, actual: StatePalette.ChipBackground(kind: RowChipKind.PullRequest, dark: false) >> 24);
+    }
+
+    [Fact]
+    public void ShowsATranslucentColorAsTheScreenDoes()
+    {
+        Assert.Equal(expected: 0xFF123456u, actual: StatePalette.Over(argb: 0xFF123456u, background: 0xFFFFFFFFu));
+        Assert.Equal(expected: 0xFFF3F3F3u, actual: StatePalette.Over(argb: 0x00123456u, background: 0xFFF3F3F3u));
+        // Black at 128 of 255 over white leaves 127 of white.
+        Assert.Equal(expected: 0xFF7F7F7Fu, actual: StatePalette.Over(argb: 0x80000000u, background: 0xFFFFFFFFu));
     }
 
     [Theory]

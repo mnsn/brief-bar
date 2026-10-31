@@ -7,7 +7,8 @@ public static class Briefing
     /// The few lines worth reading first, at most `limit`, so that the brief covers every source with something to say:
     /// each source's most pressing line, then the newest of each state not in it yet, then the most pressing of the
     /// rest. Most pressing is what needs you, then what's wrong, then what's done or ready, the newest first; that's
-    /// the order they show in too. What's running isn't in it.
+    /// the order they show in too. What's running isn't in it. A line is the same thing as another with its section and
+    /// ID, where the Mac's IDs start with their source.
     public static IReadOnlyList<BriefLine> Pick(IReadOnlyList<BriefLine> lines, int limit = 5)
     {
         ArgumentNullException.ThrowIfNull(argument: lines);
@@ -34,7 +35,8 @@ public static class Briefing
         {
             Take(picked: picked, line: line, limit: limit);
         }
-        return ranked.Where(predicate: line => picked.Exists(match: chosen => chosen.Id == line.Id)).ToList();
+        // What was picked, in the order the lines show.
+        return picked.OrderBy(keySelector: line => ranked.IndexOf(item: line)).ToList();
     }
 
     /// The lines that can be in a brief, the most pressing first: by state, then the newest first, then as given.
@@ -50,10 +52,12 @@ public static class Briefing
 
     static void Take(List<BriefLine> picked, BriefLine? line, int limit)
     {
-        if (line is null || picked.Count >= limit || picked.Exists(match: chosen => chosen.Id == line.Id))
+        if (line is null || picked.Count >= limit || picked.Exists(match: chosen => IsSameThing(first: chosen, second: line)))
         {
             return;
         }
         picked.Add(item: line);
     }
+
+    static bool IsSameThing(BriefLine first, BriefLine second) => first.Section == second.Section && first.Id == second.Id;
 }

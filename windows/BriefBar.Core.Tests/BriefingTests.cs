@@ -70,4 +70,35 @@ public sealed class BriefingTests
         ]);
         Assert.Equal(expected: ["dated", "first", "second"], actual: Ids(lines: picked));
     }
+
+    [Fact]
+    public void TellsLinesOfDifferentSectionsApartThoughTheirIdsMatch()
+    {
+        // An Azure DevOps pull request and a GitHub one can have the same number: each is its source's first line.
+        var picked = Briefing.Pick(
+            lines:
+            [
+                Line(source: SourceId.AzureDevOps, id: "42", state: ItemState.NeedsYou, minutesAgo: 1),
+                Line(source: SourceId.GitHub, id: "42", state: ItemState.NeedsYou, minutesAgo: 2),
+                Line(source: SourceId.Copilot, id: "release", state: ItemState.NeedsYou, minutesAgo: 3),
+            ],
+            limit: 2);
+        Assert.Equal(expected: [SectionId.AzureDevOpsPullRequests, SectionId.GitHubPullRequests], actual: picked.Select(selector: line => line.Section));
+    }
+
+    [Fact]
+    public void NeverGivesMoreThanItsLimitNorTheSameThingTwice()
+    {
+        var twice = Line(source: SourceId.Copilot, id: "release", state: ItemState.NeedsYou, minutesAgo: 1);
+        var picked = Briefing.Pick(
+            lines:
+            [
+                twice,
+                twice with { Sentence = "The same session, said again." },
+                Line(source: SourceId.Copilot, id: "plan", state: ItemState.NeedsYou, minutesAgo: 2),
+                Line(source: SourceId.Copilot, id: "question", state: ItemState.NeedsYou, minutesAgo: 3),
+            ],
+            limit: 2);
+        Assert.Equal(expected: ["release", "plan"], actual: Ids(lines: picked));
+    }
 }

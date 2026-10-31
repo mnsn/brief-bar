@@ -47,7 +47,7 @@ internal sealed class AppShell : IDisposable
         ticker.Interval = TimeSpan.FromSeconds(value: 15);
         ticker.Tick += (_, _) => Refresh();
         var theme = Application.Current.RequestedTheme == ApplicationTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
-        Palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast);
+        Palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
     }
 
     public bool IsDemo { get; }
@@ -188,11 +188,12 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// Windows changed between light and dark, or High Contrast: everything's colors follow.
+    /// Windows changed between light and dark, turned High Contrast on or off, or changed its contrast theme:
+    /// everything's colors follow.
     public void ThemeChanged(ElementTheme theme)
     {
-        var palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast);
-        if (palette.IsDark == Palette.IsDark && palette.IsHighContrast == Palette.IsHighContrast)
+        var palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
+        if (palette.Matches(other: Palette))
         {
             return;
         }
