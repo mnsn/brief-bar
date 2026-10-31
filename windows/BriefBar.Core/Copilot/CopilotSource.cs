@@ -130,6 +130,11 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         }
         lock (gate)
         {
+            if (engine is null)
+            {
+                // Stopped, or not started: it saves nothing, so what it saved stays deleted once it's off.
+                return;
+            }
             var now = time.GetUtcNow();
             var session = request.RowId is { } id ? store.Sessions.FirstOrDefault(predicate: listed => listed.Id == id) : null;
             switch (request.Command)

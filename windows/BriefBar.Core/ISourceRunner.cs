@@ -6,6 +6,7 @@ public interface ISourceRunner
     /// Adds `source` and starts it.
     Task AddAsync(ISectionSource source);
 
-    /// Stops the source `source` and removes it, returning it, stopped; or null when it isn't running.
-    Task<ISectionSource?> RemoveAsync(SourceId source);
+    /// Takes the source `source` off the bar and returns it, still running, for the caller to stop; or null when it
+    /// isn't running.
+    ISectionSource? Remove(SourceId source);
 }

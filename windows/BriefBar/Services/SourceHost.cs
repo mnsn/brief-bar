@@ -73,9 +73,9 @@ internal sealed class SourceHost : ISourceRunner, IDisposable
         Log.Write(line: $"sources: {source.Source} added");
     }
 
-    /// Stops `source` and takes its sections off the bar, as you turn it off, and returns it, stopped; or null when it
-    /// isn't running.
-    public async Task<ISectionSource?> RemoveAsync(SourceId source)
+    /// Takes `source`'s sections off the bar, as you turn it off, and returns it, still running, for the caller to stop;
+    /// or null when it isn't running.
+    public ISectionSource? Remove(SourceId source)
     {
         var running = sources.Find(match: candidate => candidate.Source == source);
         if (running is null)
@@ -85,7 +85,6 @@ internal sealed class SourceHost : ISourceRunner, IDisposable
         sources.Remove(item: running);
         running.Changed -= OnSourceChanged;
         OnSourceChanged(sender: running, e: EventArgs.Empty);
-        await running.StopAsync().ConfigureAwait(continueOnCapturedContext: true);
         Log.Write(line: $"sources: {source} removed");
         return running;
     }

@@ -33,7 +33,8 @@ internal sealed class AppShell : IDisposable
     readonly DispatcherQueueTimer ticker;
     readonly UISettings uiSettings = new();
     readonly AccessibilitySettings accessibility = new();
-    /// Sources being turned on or off: quitting waits for them, so that one turned off has deleted what it saved.
+    /// Sources being turned on or off: quitting waits a while for them to start or stop. One turned off has deleted what
+    /// it saved by then, as that doesn't wait for it to stop.
     readonly List<Task> switching = [];
     SettingsWindow? settings;
     bool quitting;

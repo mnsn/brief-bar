@@ -17,7 +17,8 @@ public interface ISectionSource
     /// Starts reading. Returns once it's started, not once it has read.
     Task StartAsync(CancellationToken cancellationToken);
 
-    /// Stops reading, and gives back whatever it holds open.
+    /// Stops reading, and gives back whatever it holds open, which may take a while. It saves nothing more once it
+    /// returns, before its task completes: what it saved can be deleted then (`DeleteSavedData`).
     Task StopAsync();
 
     /// What `section` shows now. Safe to call from any thread.
@@ -27,6 +28,7 @@ public interface ISectionSource
     /// offers. One it doesn't offer now, as for a row that's gone, does nothing.
     void Perform(CommandRequest request);
 
-    /// Deletes what it saved about your data, but not its settings: as you turn it off, once it's stopped.
+    /// Deletes what it saved about your data, but not its settings: as you turn it off, once `StopAsync` has returned,
+    /// without waiting for its task, or on a source that never started.
     void DeleteSavedData();
 }

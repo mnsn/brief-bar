@@ -12,6 +12,12 @@ public static partial class AppDatabase
     /// SQLite's `SQLITE_CANTOPEN`.
     const int CantOpen = 14;
 
+    /// SQLite's "database is busy": here, the app opened it as it was read, again and again.
+    const int Busy = 5;
+
+    /// How many times the database is read when the app opens or closes it as it's read.
+    const int ReadAttempts = 3;
+
     /// Sessions the app shows: unarchived chats, plus project sessions with a live workspace. The workspace's name, which
     /// the sidebar shows, wins over the session's title.
     internal const string VisibleSessionsQuery = """
@@ -99,27 +105,33 @@ public static partial class AppDatabase
 
     /// Sessions, plus the app's view state. Only the session list is required; the rest is best effort. Throws
     /// `AppDatabaseException` when the database can't be opened or its sessions can't be read.
-    public static DatabaseSnapshot Load(string path)
+    public static DatabaseSnapshot Load(string path) => Load(path: path, afterClosedRead: null);
+
+    /// `Load`, with `afterClosedRead` run after each read of the database as the app closed it: for tests, the app
+    /// opening it as it's read.
+    internal static DatabaseSnapshot Load(string path, Action? afterClosedRead)
     {
-        // SQLite removes the write-ahead log when the app closes the database. On Windows, a read-only connection would
-        // make a new one, and its shared-memory index, in the app's folder: without a log or journal, the file holds every
-        // committed change, and the app only writes to it again through a new log, so it's read as it is.
-        if (IsClosedWalDatabase(path: path))
+        for (var attempt = 1; ; attempt++)
         {
-            return LoadFrom(path: path, immutable: true);
-        }
-        try
-        {
-            return LoadFrom(path: path, immutable: false);
-        }
-        catch (AppDatabaseException error) when (error.Code == CantOpen && IsClosedWalDatabase(path: path))
-        {
-            // The app closed it between the two looks, as the Mac finds out.
-            if (LoadImmutable(path: path) is { } snapshot)
+            var lastAttempt = attempt == ReadAttempts;
+            // SQLite removes the write-ahead log when the app closes the database. On Windows, a read-only connection would
+            // make a new one, and its shared-memory index, in the app's folder, so it's read as it is, without locks.
+            if (ClosedWalStamp(path: path) is { } closed)
             {
-                return snapshot;
+                if (ReadClosed(path: path, closed: closed, afterRead: afterClosedRead, lastAttempt: lastAttempt) is { } snapshot)
+                {
+                    return snapshot;
+                }
+                continue;
             }
-            throw;
+            try
+            {
+                return LoadFrom(path: path, immutable: false);
+            }
+            catch (AppDatabaseException error) when (error.Code == CantOpen && !lastAttempt && ClosedWalStamp(path: path) is not null)
+            {
+                // The app closed it between the two looks, as the Mac finds out: it's read as it is, next time round.
+            }
         }
     }
 
@@ -229,19 +241,6 @@ public static partial class AppDatabase
     [GeneratedRegex(pattern: "^SQLite Error -?[0-9]+: '(?<message>.*)'\\.?$", options: RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex NativeError();
 
-    static DatabaseSnapshot? LoadImmutable(string path)
-    {
-        try
-        {
-            return LoadFrom(path: path, immutable: true);
-        }
-        catch (AppDatabaseException)
-        {
-            // The error that matters is the one reading it the usual way, which the caller throws.
-            return null;
-        }
-    }
-
     static DatabaseSnapshot LoadFrom(string path, bool immutable)
     {
         SQLiteConnection connection;
@@ -266,11 +265,43 @@ public static partial class AppDatabase
         }
     }
 
-    /// A database in WAL mode, as its header says (bytes 18 and 19 are 2), without its log or a journal: closed by the
-    /// app that writes it.
-    static bool IsClosedWalDatabase(string path) =>
-        File.Exists(path: path) && !File.Exists(path: path + "-wal") && !File.Exists(path: path + "-journal")
-        && SharedFile.Read(path: path, start: 18, end: 20) is [2, 2];
+    /// The database as the app closed it, read without locks. Without a log or journal, the file holds every committed
+    /// change, but only while the app leaves it alone: a checkpoint could change it under the read. Null when the app
+    /// opened or changed it meanwhile, to read it again, the usual way once the app has it open; on the last attempt,
+    /// that throws instead.
+    static DatabaseSnapshot? ReadClosed(string path, FileStamp closed, Action? afterRead, bool lastAttempt)
+    {
+        DatabaseSnapshot? snapshot;
+        AppDatabaseException? failure = null;
+        try
+        {
+            snapshot = LoadFrom(path: path, immutable: true);
+        }
+        catch (AppDatabaseException error) when (ClosedWalStamp(path: path) != closed)
+        {
+            // A file that changes under the read can look damaged.
+            snapshot = null;
+            failure = error;
+        }
+        afterRead?.Invoke();
+        if (snapshot is not null && ClosedWalStamp(path: path) == closed)
+        {
+            return snapshot;
+        }
+        return lastAttempt
+            ? throw new AppDatabaseException(failure: AppDatabaseFailure.Query, detail: "it kept changing as it was read", code: Busy, innerException: failure)
+            : null;
+    }
+
+    /// The database's stamp while it's in WAL mode, as its header says (bytes 18 and 19 are 2), without its log or a
+    /// journal: closed by the app that writes it. Null otherwise. A checkpoint changes it, and needs the log, which stays
+    /// until the app closes the database, so an unchanged stamp means no write reached the file between two looks.
+    static FileStamp? ClosedWalStamp(string path) =>
+        !File.Exists(path: path + "-wal") && !File.Exists(path: path + "-journal")
+        && FileStamp.Of(path: path) is { } stamp
+        && SharedFile.Read(path: path, start: 18, end: 20) is [2, 2]
+            ? stamp
+            : null;
 
     static DatabaseSnapshot Read(SQLiteConnection connection)
     {

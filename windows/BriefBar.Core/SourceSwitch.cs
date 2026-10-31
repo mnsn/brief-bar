@@ -75,16 +75,21 @@ public sealed class SourceSwitch
         choices.TurnOn(source: entry.Id, version: entry.Description.Version, date: time.GetUtcNow());
         choices.Save(settings: settings);
         Log.Write(line: $"sources: {entry.Id} turned on, version {entry.Description.Version}");
-        Release(source: await runner.RemoveAsync(source: entry.Id).ConfigureAwait(continueOnCapturedContext: true));
+        if (runner.Remove(source: entry.Id) is { } paused)
+        {
+            await paused.StopAsync().ConfigureAwait(continueOnCapturedContext: true);
+            Release(source: paused);
+        }
         await runner.AddAsync(source: make(arg: entry)).ConfigureAwait(continueOnCapturedContext: true);
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
         return Saved();
     }
 
-    /// Turns `entry` off: saved first, then it stops, and what it saved for you is deleted, whether it ran or waited,
-    /// paused. Its settings stay. Nothing for one that's off. Returns whether your choices are saved, to last after
-    /// BriefBar quits: when not, it's off until BriefBar quits, but what's saved still has your consent, so it may be on
-    /// again after.
+    /// Turns `entry` off: saved first, then it leaves the bar and stops, and what it saved for you is deleted, whether it
+    /// ran or waited, paused. That's at once, before anything else can happen, such as quitting, rather than once it has
+    /// stopped, which can take a while. Its settings stay. Nothing for one that's off. Returns whether your choices are
+    /// saved, to last after BriefBar quits: when not, it's off until BriefBar quits, but what's saved still has your
+    /// consent, so it may be on again after.
     public async Task<bool> TurnOffAsync(SourceEntry entry, ISourceRunner runner)
     {
         ArgumentNullException.ThrowIfNull(argument: runner);
@@ -95,17 +100,27 @@ public sealed class SourceSwitch
         choices.TurnOff(source: entry.Id);
         choices.Save(settings: settings);
         Log.Write(line: $"sources: {entry.Id} turned off");
-        var stopped = await runner.RemoveAsync(source: entry.Id).ConfigureAwait(continueOnCapturedContext: true);
+        var removed = runner.Remove(source: entry.Id);
+        // Told to stop, it saves nothing more, even before it has stopped.
+        var stopping = removed?.StopAsync() ?? Task.CompletedTask;
         // A paused source saved nothing, but what the source saved before it was paused is still there.
-        var owner = stopped is null or PausedSource ? make(arg: entry) : stopped;
+        var owner = removed is null or PausedSource ? make(arg: entry) : removed;
         owner.DeleteSavedData();
-        Release(source: owner);
-        if (!ReferenceEquals(objA: owner, objB: stopped))
+        var saved = Saved();
+        try
         {
-            Release(source: stopped);
+            await stopping.ConfigureAwait(continueOnCapturedContext: true);
+        }
+        finally
+        {
+            Release(source: owner);
+            if (!ReferenceEquals(objA: owner, objB: removed))
+            {
+                Release(source: removed);
+            }
         }
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
-        return Saved();
+        return saved;
     }
 
     static void Release(ISectionSource? source) => (source as IDisposable)?.Dispose();

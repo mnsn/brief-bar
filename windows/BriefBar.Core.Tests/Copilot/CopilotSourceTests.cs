@@ -136,6 +136,39 @@ public sealed class CopilotSourceTests
         }
     }
 
+    /// Told to stop while its engine's first read still runs, it saves nothing more from then on, whatever its engine or
+    /// a late click asks: what it saved can be deleted at once, as turning it off does, without waiting for that read.
+    [Fact]
+    public async Task SavesNothingMoreOnceToldToStop()
+    {
+        using var holdStart = new ManualResetEventSlim(initialState: false);
+        var settings = new CopilotSettings(settings: new MemorySettings(), now: DateTimeOffset.UtcNow);
+        var (source, engines, _, _) = Make(settings: settings, holdStart: holdStart);
+        using (source)
+        {
+            await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+            FakeSessionEngine engine;
+            lock (engines)
+            {
+                engine = Assert.Single(collection: engines);
+            }
+            var changed = Changes(source: source);
+            engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
+            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+
+            var stopping = source.StopAsync();
+            source.DeleteSavedData();
+            engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -1))));
+            source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Clear, GroupKey: "done"));
+
+            Assert.False(condition: stopping.IsCompleted);
+            Assert.Empty(collection: settings.Cleared);
+            holdStart.Set();
+            await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Empty(collection: settings.Cleared);
+        }
+    }
+
     /// Its engine failed to start: stopping it still gives back whatever it got to hold.
     [Fact]
     public async Task StopsAnEngineThatFailedToStart()

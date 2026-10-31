@@ -70,6 +70,59 @@ public sealed class SourceSwitchTests
         Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
     }
 
+    /// What it saved is deleted as it's turned off, without waiting for it to stop, which can take a while, as while its
+    /// first read runs: BriefBar may quit meanwhile, waiting only so long.
+    [Fact]
+    public async Task DeletesWhatItSavedWithoutWaitingForItToStop()
+    {
+        var settings = new MemorySettings();
+        var made = new List<FakeSource>();
+        var runner = new FakeRunner();
+        var sources = Switch(settings: settings, made: made);
+        await sources.TurnOnAsync(entry: entry, runner: runner);
+        var running = Assert.Single(collection: made);
+        var stopped = new TaskCompletionSource();
+        running.Stopping = stopped.Task;
+        var changes = 0;
+        sources.Changed += (_, _) => changes++;
+
+        var turningOff = sources.TurnOffAsync(entry: entry, runner: runner);
+
+        Assert.False(condition: turningOff.IsCompleted);
+        Assert.Empty(collection: runner.Running);
+        Assert.True(condition: running.Stopped);
+        Assert.Equal(expected: 1, actual: running.Deletions);
+        Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+        Assert.False(condition: running.Disposed);
+        Assert.Equal(expected: 0, actual: changes);
+
+        stopped.SetResult();
+        Assert.True(condition: await turningOff.WaitAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(condition: running.Disposed);
+        Assert.Equal(expected: 1, actual: changes);
+    }
+
+    /// One that fails to stop has still deleted what it saved, and turning it off says it failed.
+    [Fact]
+    public async Task DeletesWhatItSavedWhenItFailsToStop()
+    {
+        var settings = new MemorySettings();
+        var made = new List<FakeSource>();
+        var runner = new FakeRunner();
+        var sources = Switch(settings: settings, made: made);
+        await sources.TurnOnAsync(entry: entry, runner: runner);
+        var running = Assert.Single(collection: made);
+        running.Stopping = Task.FromException(exception: new InvalidOperationException(message: "Made-up failure."));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(testCode: () => sources.TurnOffAsync(entry: entry, runner: runner));
+
+        Assert.Equal(expected: SourceState.Off, actual: sources.State(entry: entry));
+        Assert.Empty(collection: runner.Running);
+        Assert.Equal(expected: 1, actual: running.Deletions);
+        Assert.True(condition: running.Disposed);
+        Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+    }
+
     /// A choice that can't be saved, as on a full disk, holds until BriefBar quits, and it says so, for Settings to tell
     /// you: a source you turned off would otherwise be on again after a restart, with what's saved still your consent.
     /// The next save that works saves it.
@@ -233,15 +286,13 @@ public sealed class SourceSwitchTests
             await source.StartAsync(cancellationToken: CancellationToken.None);
         }
 
-        public async Task<ISectionSource?> RemoveAsync(SourceId source)
+        public ISectionSource? Remove(SourceId source)
         {
             var found = Running.Find(match: candidate => candidate.Source == source);
-            if (found is null)
+            if (found is not null)
             {
-                return null;
+                Running.Remove(item: found);
             }
-            Running.Remove(item: found);
-            await found.StopAsync();
             return found;
         }
     }
@@ -260,6 +311,9 @@ public sealed class SourceSwitchTests
 
         public bool Disposed { get; private set; }
 
+        /// What its stop returns: done at once, unless a test says otherwise.
+        public Task Stopping { get; set; } = Task.CompletedTask;
+
         public event EventHandler? Changed
         {
             add { }
@@ -275,7 +329,7 @@ public sealed class SourceSwitchTests
         public Task StopAsync()
         {
             Stopped = true;
-            return Task.CompletedTask;
+            return Stopping;
         }
 
         public SectionSnapshot Snapshot(SectionId section) => SectionSnapshot.Starting(info: Core.Sections.CopilotSessions);

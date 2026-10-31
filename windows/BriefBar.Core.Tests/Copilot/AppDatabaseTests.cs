@@ -359,6 +359,81 @@ public sealed class AppDatabaseTests
         Assert.Equal(expected: ["data.db"], actual: Directory.GetFiles(path: data).Select(selector: Path.GetFileName));
     }
 
+    /// Read as the app closed it, without locks, the database is only what the app committed while the app leaves it
+    /// alone, as a checkpoint could change the file under the read. When the app opens it as it's read, its log appears,
+    /// and the database is read again, the usual way.
+    [Fact]
+    public void ReadsAgainTheUsualWayWhenTheAppOpensTheDatabaseAsItsRead()
+    {
+        using var folder = new TemporaryFolder();
+        var path = ClosedDatabase(folder: folder);
+        TestDatabase? app = null;
+        var closedReads = 0;
+        try
+        {
+            var snapshot = AppDatabase.Load(path: path, afterClosedRead: () =>
+            {
+                closedReads++;
+                if (app is null)
+                {
+                    app = new TestDatabase(path: path, journalMode: "WAL");
+                    app.AddSession(id: "added", title: "Added", type: "general_chat");
+                }
+            });
+
+            Assert.Equal(expected: 1, actual: closedReads);
+            Assert.True(condition: File.Exists(path: path + "-wal"));
+            Assert.Equal(expected: new[] { ChatId, "added" }.Order(), actual: snapshot.Sessions.Select(selector: session => session.Id).Order());
+        }
+        finally
+        {
+            app?.Dispose();
+        }
+    }
+
+    /// The app opened the database, wrote to it and closed it again, all as it was read: the file changed under the
+    /// read, so it's read again. Its size didn't change, only its time.
+    [Fact]
+    public void ReadsAgainWhenTheAppChangesTheDatabaseAsItsRead()
+    {
+        using var folder = new TemporaryFolder();
+        var path = ClosedDatabase(folder: folder);
+        var size = new FileInfo(fileName: path).Length;
+        var closedReads = 0;
+
+        var snapshot = AppDatabase.Load(path: path, afterClosedRead: () =>
+        {
+            if (++closedReads == 1)
+            {
+                WriteAsTheApp(path: path, id: "added", title: "Added");
+            }
+        });
+
+        Assert.Equal(expected: 2, actual: closedReads);
+        Assert.Equal(expected: size, actual: new FileInfo(fileName: path).Length);
+        Assert.Equal(expected: new[] { ChatId, "added" }.Order(), actual: snapshot.Sessions.Select(selector: session => session.Id).Order());
+    }
+
+    /// The app wrote to the database each time it was read: after three reads, BriefBar says so.
+    [Fact]
+    public void SaysWhenTheDatabaseKeepsChangingAsItsRead()
+    {
+        using var folder = new TemporaryFolder();
+        var path = ClosedDatabase(folder: folder);
+        var closedReads = 0;
+
+        var error = Assert.Throws<AppDatabaseException>(testCode: () => AppDatabase.Load(path: path, afterClosedRead: () =>
+        {
+            closedReads++;
+            // A long title takes new pages, so the file grows each time, however close together the writes.
+            WriteAsTheApp(path: path, id: "added " + closedReads, title: new string(c: 'x', count: 20_000));
+        }));
+
+        Assert.Equal(expected: 3, actual: closedReads);
+        Assert.Equal(expected: AppDatabaseFailure.Query, actual: error.Failure);
+        Assert.Equal(expected: "Copilot database query failed: it kept changing as it was read", actual: error.Message);
+    }
+
     [Fact]
     public void AMissingDatabaseIsAnErrorAndIsNotCreated()
     {
@@ -404,5 +479,38 @@ public sealed class AppDatabaseTests
         // With the writer gone too, nothing holds the files: they can be renamed, as an update would.
         File.Move(sourceFileName: path, destFileName: path + ".moved");
         Assert.True(condition: File.Exists(path: path + ".moved"));
+    }
+
+    /// A database in WAL mode with one session, as the app leaves it when it quits, an hour ago: without its log.
+    static string ClosedDatabase(TemporaryFolder folder)
+    {
+        var path = folder.Combine("data.db");
+        using (var db = new TestDatabase(path: path, journalMode: "WAL"))
+        {
+            db.CreateAppSchema();
+            db.AddSession(id: ChatId, title: "Saved", type: "general_chat");
+        }
+        DeleteLogs(path: path);
+        File.SetLastWriteTimeUtc(path: path, lastWriteTimeUtc: DateTime.UtcNow.AddHours(value: -1));
+        return path;
+    }
+
+    /// Opens the database, adds a chat and closes it again, as the app does when it starts, writes and quits.
+    static void WriteAsTheApp(string path, string id, string title)
+    {
+        using (var app = new TestDatabase(path: path, journalMode: "WAL"))
+        {
+            app.AddSession(id: id, title: title, type: "general_chat");
+        }
+        DeleteLogs(path: path);
+    }
+
+    /// Removes the write-ahead log and its index, as SQLite does when the app closes the database.
+    static void DeleteLogs(string path)
+    {
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            File.Delete(path: path + suffix);
+        }
     }
 }
