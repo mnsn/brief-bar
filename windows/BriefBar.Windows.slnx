@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="BriefBar.Core.Tests/BriefBar.Core.Tests.csproj" />
+  <Project Path="BriefBar.Core/BriefBar.Core.csproj" />
+  <Project Path="BriefBar/BriefBar.csproj" />
+</Solution>

@@ -1,167 +1,80 @@
+using BriefBar.Core;
+using BriefBar.Core.Demo;
+using BriefBar.Core.Logging;
+using BriefBar.Services;
+using BriefBar.Shell;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
 namespace BriefBar;
 
-/// Puts a bar at the top of every display, keeps them out of the way of full-screen apps, and gives the space back
-/// when it quits.
-public partial class App : Application
+/// BriefBar for Windows: a bar on every display, and a panel under each of its items. It quits only when you ask, from
+/// a menu or windows/scripts/quit.ps1, and gives the bars' space back on every way out.
+public sealed partial class App : Application
 {
-    public static new App Current => (App)Application.Current;
-    /// What Explorer broadcasts when it restarts, having forgotten every bar.
-    public static readonly uint TaskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
+    readonly LaunchOptions options;
+    readonly SingleInstance instance;
+    /// Gives every bar's space back, should BriefBar end unexpectedly. The shell disposes itself as it quits.
+    Action? giveSpaceBack;
 
-    static readonly string[] desktopClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
-
-    readonly List<BarWindow> bars = [];
-    /// Each display's full-screen window, which keeps its bar hidden until another window on that display comes forward.
-    readonly Dictionary<IntPtr, IntPtr> fullScreen = [];
-    readonly uint processId = (uint)Environment.ProcessId;
-    Native.WinEventProc? winEvents;
-    readonly List<IntPtr> hooks = [];
-    DispatcherQueueTimer? timer, displaysTimer;
-    Mutex? instance;
-    EventWaitHandle? quitSignal;
-
-    public App()
+    internal App(LaunchOptions options, SingleInstance instance)
     {
+        this.options = options;
+        this.instance = instance;
         InitializeComponent();
-        // Bars come and go with displays; the app quits only from its Quit button.
+        // Bars come and go with displays, and the panel hides rather than closes: BriefBar quits only when asked.
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
-        UnhandledException += (_, _) => RemoveBars();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => RemoveBars();
+        UnhandledException += OnUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        instance = new Mutex(true, "BriefBar.Windows", out bool first);
-        if (!first)
-        {
-            Exit();
-            return;
-        }
-        Log.Write($"started, pid {processId}");
+        UseLogFile();
+        Log.Write(line: $"started: demo {options.IsDemo}, process {Environment.ProcessId}");
         var queue = DispatcherQueue.GetForCurrentThread();
-        // Lets a script quit it cleanly: quit.ps1 sets this event.
-        quitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "BriefBar.Windows.Quit");
-        ThreadPool.RegisterWaitForSingleObject(quitSignal, (_, _) => queue.TryEnqueue(Quit), null, Timeout.Infinite, true);
-        CreateBars();
-
-        winEvents = OnWinEvent;
-        foreach (var kind in new[] { Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_OBJECT_LOCATIONCHANGE })
-        {
-            hooks.Add(Native.SetWinEventHook(kind, kind, IntPtr.Zero, winEvents, 0, 0,
-                Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS));
-        }
-        timer = queue.CreateTimer();
-        timer.Interval = TimeSpan.FromSeconds(1);
-        timer.Tick += (_, _) => CheckFullScreen();
-        timer.Start();
-        displaysTimer = queue.CreateTimer();
-        displaysTimer.Interval = TimeSpan.FromMilliseconds(800);
-        displaysTimer.IsRepeating = false;
-        displaysTimer.Tick += (_, _) => RecreateBars();
-        CheckFullScreen();
+        IReadOnlyList<ISectionSource> sources = options.IsDemo ? DemoSource.All(madeAt: DateTimeOffset.Now) : [];
+        var shell = new AppShell(queue: queue, sources: sources, isDemo: options.IsDemo, exit: Exit);
+        giveSpaceBack = shell.GiveSpaceBack;
+        instance.Listen(queue: queue, quit: shell.Quit, show: shell.ShowOverview);
+        shell.Start();
     }
 
-    void CreateBars()
+    /// Logs to `%LOCALAPPDATA%\BriefBar\Logs`, or nowhere when that folder can't be made: BriefBar runs either way.
+    static void UseLogFile()
     {
-        foreach (var display in Display.All())
+        try
         {
-            var bar = new BarWindow(display);
-            bars.Add(bar);
-            bar.Place();
+            Log.UseSink(newSink: FileLogSink.Open());
+        }
+        catch (IOException)
+        {
+            Log.UseSink(newSink: null);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Log.UseSink(newSink: null);
         }
     }
 
-    /// Displays were added, removed or rearranged: once they settle, a bar for each again.
-    public void DisplaysChanged()
+    void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
-        displaysTimer?.Stop();
-        displaysTimer?.Start();
+        Log.Write(error: e.Exception, context: $"unhandled on the UI thread; quitting");
+        // BriefBar can't know what state that left it in: every bar gives its space back at once, and it ends, rather
+        // than run on without its windows.
+        giveSpaceBack?.Invoke();
+        Environment.Exit(exitCode: 1);
     }
 
-    void RecreateBars()
+    static void OnDomainUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
     {
-        foreach (var bar in bars) bar.Shutdown();
-        bars.Clear();
-        fullScreen.Clear();
-        CreateBars();
-        CheckFullScreen();
-    }
-
-    void OnWinEvent(IntPtr hook, uint kind, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
-    {
-        if (kind == Native.EVENT_SYSTEM_FOREGROUND)
+        if (e.ExceptionObject is Exception error)
         {
-            // Another app came to the front, so a panel's no longer what you're looking at.
-            DismissPanels();
-            CheckFullScreen();
-        }
-        else if (idObject == 0 && idChild == 0 && hwnd == Native.GetForegroundWindow())
-        {
-            // The window in front changed size, such as a video going full screen.
-            CheckFullScreen();
+            Log.Write(error: error, context: $"unhandled; quitting");
         }
     }
 
-    /// Hides the bar on any display with a full-screen window, as the taskbar does.
-    public void CheckFullScreen()
-    {
-        var front = Native.GetForegroundWindow();
-        if (front != IntPtr.Zero && !IsOurs(front))
-        {
-            var monitor = Native.MonitorFromWindow(front, Native.MONITOR_DEFAULTTONEAREST);
-            if (IsFullScreen(front, monitor)) fullScreen[monitor] = front;
-            else fullScreen.Remove(monitor);
-        }
-        foreach (var (monitor, window) in fullScreen.ToList())
-        {
-            if (!IsFullScreen(window, monitor)) fullScreen.Remove(monitor);
-        }
-        foreach (var bar in bars) bar.SetHiddenForFullScreen(fullScreen.ContainsKey(bar.Display.Handle));
-    }
-
-    public bool IsOurs(IntPtr hwnd)
-    {
-        if (hwnd == IntPtr.Zero) return false;
-        Native.GetWindowThreadProcessId(hwnd, out var owner);
-        return owner == processId;
-    }
-
-    internal void DismissPanels(BarWindow? except = null)
-    {
-        foreach (var bar in bars)
-        {
-            if (bar != except) bar.DismissPanel();
-        }
-    }
-
-    static bool IsFullScreen(IntPtr hwnd, IntPtr monitor)
-    {
-        if (!Native.IsWindow(hwnd) || !Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd)) return false;
-        if (Native.MonitorFromWindow(hwnd, Native.MONITOR_DEFAULTTONEAREST) != monitor) return false;
-        if (Native.DwmGetWindowAttribute(hwnd, Native.DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0) return false;
-        if (desktopClasses.Contains(Native.ClassName(hwnd))) return false;
-        return Display.Of(monitor) is { } display && Native.GetWindowRect(hwnd, out var rect) && rect.Covers(display.Bounds);
-    }
-
-    void RemoveBars()
-    {
-        foreach (var bar in bars)
-        {
-            try { bar.Shutdown(); } catch { }
-        }
-        bars.Clear();
-    }
-
-    public void Quit()
-    {
-        Log.Write("quitting");
-        timer?.Stop();
-        foreach (var hook in hooks) Native.UnhookWinEvent(hook);
-        RemoveBars();
-        instance?.ReleaseMutex();
-        Exit();
-    }
+    static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e) =>
+        Log.Write(error: e.Exception, context: $"a task failed and nothing waited for it");
 }

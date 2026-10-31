@@ -334,8 +334,9 @@ to `main`, weekly, and when started by hand, never on pull requests, since the S
 macOS runner for twenty to thirty minutes. A new scan cancels the one in progress. Its alerts are
 under **Security**, so check them before you approve a release.
 
-`.github/workflows/windows.yml` builds BriefBar for Windows (`windows/`) on Windows, on pushes to `main`
-and pull requests that change it, and when started by hand. It isn't a required check.
+`.github/workflows/windows.yml` checks BriefBar for Windows' (`windows/`) formatting, runs its tests and builds it
+for x64 and Arm64 on Windows, on pushes to `main` and pull requests that change it, and when started by hand. It
+isn't a required check.
 
 ## Releasing
 
