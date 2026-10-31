@@ -19,6 +19,8 @@ public sealed class TimestampTests
         { "2026-10-18T19:30:07+0230", 0 },
         { "2026-10-18T19:00:07+02", 0 },
         { "2026-10-18T12:30:07.250-04:30", 0.25 },
+        { "2026-10-18T17:00:07-00:00", 0 },
+        { "2026-10-19T16:59:07+23:59", 0 },
     };
 
     public static TheoryData<string> Malformed { get; } = new()
@@ -29,6 +31,9 @@ public sealed class TimestampTests
         // Days past their month's end, which aren't dates in the next month.
         "2026-02-31T00:00:00Z", "2026-04-31T00:00:00Z", "2026-02-29T00:00:00Z", "1900-02-29T00:00:00Z", "2026-00-10T00:00:00Z",
         "2026-10-00T00:00:00Z",
+        // Offsets out of range, or with a colon but no minutes, which aren't other offsets.
+        "2026-10-18T17:00:07+01:60", "2026-10-18T17:00:07+0160", "2026-10-18T17:00:07+24:00", "2026-10-18T17:00:07+02:",
+        "2026-10-18T17:00:07+02:3", "2026-10-18T17:00:07+023", "2026-10-18T17:00:07+02:300", "2026-10-18T17:00:07-",
     };
 
     [Theory]

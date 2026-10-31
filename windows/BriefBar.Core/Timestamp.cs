@@ -20,7 +20,8 @@ public static class Timestamp
         return Parse(bytes: bytes[..count]);
     }
 
-    /// Accepts `YYYY-MM-DD(T| )HH:MM:SS[.fraction][Z|±HH[:MM]]`, as UTF-8.
+    /// Accepts `YYYY-MM-DD(T| )HH:MM:SS[.fraction][Z|±HH[[:]MM]]`, with a day that's in its month and an offset under a
+    /// day, as UTF-8.
     public static DateTimeOffset? Parse(ReadOnlySpan<byte> bytes)
     {
         var count = bytes.Length;
@@ -72,24 +73,12 @@ public static class Timestamp
                     index++;
                     break;
                 case (byte)'+' or (byte)'-':
-                    var sign = bytes[index] == (byte)'-' ? -1 : 1;
-                    index++;
-                    if (index + 2 > count || Number(bytes: bytes, start: index, length: 2) is not { } offsetHours)
+                    if (Offset(bytes: bytes[index..]) is not { } offset)
                     {
                         return null;
                     }
-                    index += 2;
-                    if (index < count && bytes[index] == (byte)':')
-                    {
-                        index++;
-                    }
-                    var offsetMinutes = 0;
-                    if (index + 2 <= count && Number(bytes: bytes, start: index, length: 2) is { } minutes)
-                    {
-                        offsetMinutes = minutes;
-                        index += 2;
-                    }
-                    offsetSeconds = sign * ((offsetHours * 3_600L) + (offsetMinutes * 60L));
+                    offsetSeconds = offset;
+                    index = count;
                     break;
                 default:
                     return null;
@@ -131,7 +120,29 @@ public static class Timestamp
         _ => 31,
     };
 
+    /// Every fourth year, but not every hundredth, unless it's every four hundredth.
     static bool IsLeapYear(int year) => year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+
+    /// The seconds east of UTC that `bytes`, the rest of the timestamp from its sign, says: `±HH`, `±HHMM` or `±HH:MM`,
+    /// with hours under 24 and minutes under 60. Null for anything else, such as `+01:60`, rather than `+02:00`, or a
+    /// colon without minutes.
+    static long? Offset(ReadOnlySpan<byte> bytes)
+    {
+        int? minutes = bytes.Length switch
+        {
+            3 => 0,
+            5 => Number(bytes: bytes, start: 3, length: 2),
+            6 when bytes[3] == (byte)':' => Number(bytes: bytes, start: 4, length: 2),
+            _ => null,
+        };
+        if (minutes is not { } offsetMinutes || Number(bytes: bytes, start: 1, length: 2) is not { } offsetHours
+            || offsetHours >= 24 || offsetMinutes >= 60)
+        {
+            return null;
+        }
+        var sign = bytes[0] == (byte)'-' ? -1 : 1;
+        return sign * ((offsetHours * 3_600L) + (offsetMinutes * 60L));
+    }
 
     static int? Digit(byte value) => value is >= (byte)'0' and <= (byte)'9' ? value - '0' : null;
 
