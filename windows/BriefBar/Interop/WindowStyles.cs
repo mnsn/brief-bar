@@ -22,6 +22,10 @@ internal static class WindowStyles
     public const uint SWP_SHOWWINDOW = 0x0040;
 
     public const int SW_HIDE = 0;
+    public const int SW_RESTORE = 9;
+
+    /// `GetWindow`'s owner.
+    public const uint GW_OWNER = 4;
 
     public const uint MONITOR_DEFAULTTONEAREST = 2;
 }

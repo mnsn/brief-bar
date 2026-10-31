@@ -1,3 +1,4 @@
+using BriefBar.Core;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
 using Microsoft.UI.Dispatching;
@@ -47,6 +48,7 @@ internal sealed class PanelController(AppShell shell)
     public void Show(BarWindow bar, PanelTarget target, PixelRect itemAnchor)
     {
         var panel = window ??= CreateWindow();
+        panel.ViewModel.FoldAll();
         panel.ViewModel.Update(target: target, snapshots: shell.Snapshots(), palette: shell.Palette, now: DateTimeOffset.Now, isDemo: shell.IsDemo);
         anchor = itemAnchor;
         shownAt = PlaceUnder(bar: bar, panel: panel);
@@ -122,6 +124,34 @@ internal sealed class PanelController(AppShell shell)
     }
 
     public void QuitRequested() => shell.Quit();
+
+    /// Does what the panel asked: something that opens elsewhere closes the panel first, as on the Mac, so the app it
+    /// opens comes to the front over it.
+    public void Perform(CommandRequest request, bool opens)
+    {
+        if (opens)
+        {
+            Dismiss(reason: PanelCloseReason.Opened);
+        }
+        shell.Perform(request: request);
+    }
+
+    /// Opens Settings, at `source`'s page or at General, in place of the panel.
+    public void OpenSettings(SourceId? source)
+    {
+        Dismiss(reason: PanelCloseReason.Opened);
+        shell.OpenSettings(source: source);
+    }
+
+    /// Fits it again, once what it shows has changed on screen, as a group folds.
+    public void Refit()
+    {
+        if (window is not { } panel)
+        {
+            return;
+        }
+        panel.DispatcherQueue.TryEnqueue(priority: DispatcherQueuePriority.Low, callback: Fit);
+    }
 
     /// Closes it for good, as BriefBar quits: closed first, then its window.
     public void Shutdown()

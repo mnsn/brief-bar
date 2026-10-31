@@ -61,6 +61,7 @@ internal sealed partial class BarWindow : Window
         view.ItemPressed += (_, args) => shell.ItemPressed(bar: this, target: args.Target, anchor: AnchorOf(item: args.Item));
         view.EmptySpacePressed += (_, _) => shell.EmptySpacePressed();
         view.QuitRequested += (_, _) => shell.Quit();
+        view.SettingsRequested += (_, _) => shell.OpenSettings(source: null);
         view.ActualThemeChanged += (_, _) => shell.ThemeChanged(theme: view.ActualTheme);
         Content = view;
         SystemBackdrop = new ActiveAcrylic(kind: DesktopAcrylicKind.Base);

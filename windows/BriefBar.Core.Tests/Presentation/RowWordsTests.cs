@@ -81,4 +81,20 @@ public sealed class RowWordsTests
             expected: "Made-up pr, Made-up status, 1 unread message, 1 hour ago",
             actual: RowWords.SpokenName(row: one, sourceName: null, now: now));
     }
+
+    /// As the Mac's VoiceOver value: what it's about, then how full its context is, then the session that started it.
+    [Fact]
+    public void SaysHowFullItIsAndWhatItsTagNames()
+    {
+        var row = Snapshots.Row(id: "ask", section: SectionId.CopilotSessions, group: "running", state: ItemState.Running, minutesAgo: 2) with
+        {
+            Detail = "Made-up detail",
+            Meter = new RowMeter(Fraction: 0.5, Text: "50%", IsHigh: false, Spoken: "Context: 50% full (100K of 200K tokens)"),
+            Tag = new RowTag(Text: "↳ Made-up lead", ToolTip: "Started by “Made-up lead”", Spoken: "Started by “Made-up lead”", Command: null),
+        };
+
+        Assert.Equal(
+            expected: "Made-up ask, Made-up status, Made-up detail, Context: 50% full (100K of 200K tokens), Started by “Made-up lead”, 2 minutes ago",
+            actual: RowWords.SpokenName(row: row, sourceName: null, now: now));
+    }
 }

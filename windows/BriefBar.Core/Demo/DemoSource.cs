@@ -40,4 +40,14 @@ public sealed class DemoSource : ISectionSource
         snapshots.TryGetValue(key: section, value: out var snapshot)
             ? snapshot
             : throw new ArgumentException(message: "Not one of this source's sections.", paramName: nameof(section));
+
+    /// Its rows offer nothing to do: made-up data opens nothing.
+    public void Perform(CommandRequest request)
+    {
+    }
+
+    /// It saves nothing.
+    public void DeleteSavedData()
+    {
+    }
 }

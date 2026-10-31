@@ -58,6 +58,9 @@ internal sealed partial class PanelWindow : Window
         view.NumberKeyPressed += (_, number) => controller.ShowNumbered(number: number);
         view.NextKeyPressed += (_, _) => controller.ShowNext(backward: false);
         view.PreviousKeyPressed += (_, _) => controller.ShowNext(backward: true);
+        view.CommandRequested += (_, args) => controller.Perform(request: args.Request, opens: args.Opens);
+        view.SettingsRequested += (_, _) => controller.OpenSettings(source: ViewModel.Source);
+        view.ContentResized += (_, _) => controller.Refit();
         Content = view;
         SystemBackdrop = new ActiveAcrylic(kind: DesktopAcrylicKind.Base);
         Activated += OnActivated;

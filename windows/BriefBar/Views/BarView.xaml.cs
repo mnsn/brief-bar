@@ -41,6 +41,8 @@ public sealed partial class BarView : UserControl
 
     public event EventHandler? QuitRequested;
 
+    public event EventHandler? SettingsRequested;
+
     void OnOverviewClick(object sender, RoutedEventArgs e) =>
         ItemPressed?.Invoke(sender: this, e: new BarItemPressedEventArgs(target: PanelTarget.Overview, item: OverviewButton));
 
@@ -62,4 +64,6 @@ public sealed partial class BarView : UserControl
     }
 
     void OnQuitClick(object sender, RoutedEventArgs e) => QuitRequested?.Invoke(sender: this, e: EventArgs.Empty);
+
+    void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(sender: this, e: EventArgs.Empty);
 }

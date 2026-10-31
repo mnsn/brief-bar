@@ -26,4 +26,7 @@ public enum PanelCloseReason
 
     /// BriefBar is quitting.
     Quitting,
+
+    /// Something in it opened what it's about, in another app or in Settings, which comes to the front.
+    Opened,
 }

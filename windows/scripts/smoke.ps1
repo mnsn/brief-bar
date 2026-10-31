@@ -1,10 +1,11 @@
 # Checks BriefBar for Windows end to end with made-up data, through UI Automation: a bar at the top of each display,
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
-# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
-# panels; a second start while it starts opening its Overview; and every display's work area given back within a
-# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
-# quits a BriefBar that's running, and starts its own with --demo.
+# Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
+# with Copilot's page and its settings; Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as
+# displays change, and still opening panels; a second start while it starts opening its Overview; and every display's
+# work area given back within a second of quitting, whether from scripts\quit.ps1 or because another program asked a
+# bar to close. Build first: it quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
 # panel's keys are sent only while it's in front.
@@ -139,6 +140,72 @@ function Send-PanelKeys($process, [string] $keys) {
     return $true
 }
 
+# The first button under `$element` whose name is like `$pattern`.
+function Get-Button($element, [string] $pattern) {
+    @($element.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::Button))) |
+        Where-Object { $_.Current.Name -like $pattern } | Select-Object -First 1
+}
+
+# What a panel's list shows as groups, "Needs you: 3", in order.
+function Get-GroupNames($list) {
+    @($list.FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::Group)) | ForEach-Object { $_.Current.Name })
+}
+
+# Opens Copilot's panel under `$bar`, and returns its list.
+function Open-Copilot($bar) {
+    Invoke-Item (Get-Button $bar 'GitHub Copilot sessions: *')
+    Wait-Until { $list = Get-PanelList $bar; if ($list -and $list.Current.Name -eq 'Sessions') { $list } } 5
+}
+
+# Copilot's panel, from its made-up sessions (`CopilotDemoData`): the Mac's groups in its order, Idle folded until you
+# unfold it, Clear moving what's done to Idle, and a session that opens closing the panel; then Settings, from the
+# panel, with Copilot's page, whose Show context usage shows each session's context on its row.
+function Test-Copilot($process, $bar) {
+    Check ($null -ne (Get-Button $bar 'GitHub Copilot sessions: 3 need you, 2 running, 1 done or ready, 1 went wrong.*')) "Copilot's item counts its made-up sessions"
+    # Past the 600 ms in which a press counts as the one that closed the panel, should one have.
+    Start-Sleep -Milliseconds 700
+    $list = Open-Copilot $bar
+    Check ($null -ne $list) "pressing it opens Copilot's sessions"
+    if (-not $list) { return }
+    $groups = Get-GroupNames $list
+    Check (($groups -join ' | ') -eq 'Needs you: 3 | Running: 2 | Done: 1 | Stopped: 1 | Idle: 2') "its groups are the Mac's, in its order ($($groups -join ', '))"
+    $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern).SetScrollPercent(-1, 100)
+    $fold = Wait-Until { Get-Button $list 'Show idle, 2' } 3
+    $idleRows = { @(@($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Idle: 2')))[0].FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count }
+    Check ($null -ne $fold -and (& $idleRows) -eq 0) 'its idle sessions start folded'
+    if ($fold) {
+        Invoke-Item $fold
+        Check ($null -ne (Wait-Until { if ((& $idleRows) -eq 2) { $true } } 3)) 'and unfold'
+    }
+    $clear = Get-Button $list 'Clear'
+    if ($clear) { Invoke-Item $clear }
+    $cleared = Wait-Until { $names = Get-GroupNames $list; if ($names -contains 'Idle: 3' -and -not ($names -like 'Done: *')) { $names } } 3
+    Check ($null -ne $cleared) 'Clear moves what finished to Idle'
+    Check ($null -ne (Get-Button $bar 'GitHub Copilot sessions: 3 need you, 2 running, 1 went wrong.*')) 'and the bar stops counting it'
+    $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
+    if ($row) { Invoke-Item $row }
+    Check ($null -ne (Wait-Until { if (-not (Get-PanelList $bar)) { $true } } 3)) 'pressing a session closes the panel, as it opens the session'
+
+    # Settings, from the panel's foot.
+    $list = Open-Copilot $bar
+    if ($list) { Invoke-Item (Get-Button $bar 'Settings') }
+    $settings = Wait-Until { $A::RootElement.FindFirst($Scope::Children, [System.Windows.Automation.AndCondition]::new(
+                (Condition $A::ProcessIdProperty $process.Id), (Condition $A::NameProperty 'BriefBar Settings'))) } 5
+    Check ($null -ne $settings -and -not (Get-PanelList $bar)) 'its Settings button opens Settings, in place of the panel'
+    if (-not $settings) { return }
+    $title = Wait-Until { $settings.FindFirst($Scope::Descendants, (Condition $A::AutomationIdProperty 'PageTitle')) } 3
+    Check ($null -ne $title -and $title.Current.Name -eq 'GitHub Copilot') "at Copilot's page"
+    $toggle = Get-Button $settings 'Show context usage'
+    $state = if ($toggle) { $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) }
+    Check ($null -ne $state -and $state.Current.ToggleState -eq 'Off') 'which lists its settings, as they start'
+    if (-not $state) { return }
+    $state.Toggle()
+    $list = Open-Copilot $bar
+    # Copilot resolves its sessions again once the setting changes; the panel follows.
+    $measured = Wait-Until { if ($list) { $rows = @($list.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem)) | Where-Object { $_.Current.Name -like '*, Context: *% full (*' }); if ($rows.Count -ge 2) { $rows } } } 5
+    Check (@($measured).Count -ge 2) "Show context usage shows each measured session's context ($(@($measured).Count) rows on screen)"
+}
+
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
 # ends within three, without an error: an unexpected error gives the space back too, and ends with 1.
 function Test-Quit($process, $before, [scriptblock] $ask, [string] $how) {
@@ -250,6 +317,8 @@ function Test-Running($process, $before) {
     else {
         Write-Host 'skip  the same item on another display (one display)'
     }
+
+    Test-Copilot -process $process -bar $first
 
     # Alt+F4 doesn't close a bar.
     $handle = [IntPtr]$first.Current.NativeWindowHandle

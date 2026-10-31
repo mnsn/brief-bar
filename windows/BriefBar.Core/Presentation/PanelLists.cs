@@ -5,7 +5,8 @@ namespace BriefBar.Core.Presentation;
 /// What a panel lists: a section's own groups, or, for the Overview, every section's things by state.
 public static class PanelLists
 {
-    /// A section's groups, in its order, each with its rows in the section's order. Empty groups aren't shown.
+    /// A section's groups, in its order, each with its rows in the section's order, what it can do, and whether it starts
+    /// folded. Empty groups aren't shown.
     public static IReadOnlyList<PanelGroup> ForSection(SectionSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshot);
@@ -14,7 +15,11 @@ public static class PanelLists
                 Key: group.Key,
                 Title: group.Title,
                 State: group.State,
-                Rows: snapshot.Rows.Where(predicate: row => row.Group == group.Key).ToList()))
+                Rows: snapshot.Rows.Where(predicate: row => row.Group == group.Key).ToList())
+            {
+                Commands = group.Commands,
+                IsFolded = group.IsFolded,
+            })
             .Where(predicate: group => group.Rows.Count > 0)
             .ToList();
         var listed = groups.Sum(selector: group => group.Rows.Count);

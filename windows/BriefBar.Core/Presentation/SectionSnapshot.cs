@@ -9,6 +9,16 @@ public sealed record SectionSnapshot(
     IReadOnlyList<ItemRow> Rows,
     IReadOnlyList<BriefLine> BriefLines)
 {
+    /// What its panel can ask its source to do, on buttons at its foot, such as "Open GitHub Copilot".
+    public IReadOnlyList<PanelCommand> Commands { get; init; } = [];
+
+    /// What its panel says when it has nothing to list, such as "No sessions yet"; a general sentence when null.
+    public string? EmptyText { get; init; }
+
+    /// What its panel says when nothing in it is counted, such as Copilot's "All quiet" over its idle sessions; none for
+    /// a section that just lists nothing.
+    public QuietNote? Quiet { get; init; }
+
     /// Its rows' states, counted: the bar's counts are always its rows'.
     public StateCounts Counts
     {

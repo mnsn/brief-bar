@@ -22,4 +22,11 @@ public interface ISectionSource
 
     /// What `section` shows now. Safe to call from any thread.
     SectionSnapshot Snapshot(SectionId section);
+
+    /// Does what its panel asked, on the UI thread, such as opening a row's item: one of the commands its snapshot
+    /// offers. One it doesn't offer now, as for a row that's gone, does nothing.
+    void Perform(CommandRequest request);
+
+    /// Deletes what it saved about your data, but not its settings: as you turn it off, once it's stopped.
+    void DeleteSavedData();
 }

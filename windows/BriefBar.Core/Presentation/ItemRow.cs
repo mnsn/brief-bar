@@ -39,4 +39,20 @@ public sealed record ItemRow
 
     /// A chat's initials, shown in place of its state's icon.
     public string? Initials { get; init; }
+
+    /// What its panel can ask its source to do to it, in its menu; the first is what pressing it does. None for a row
+    /// that opens nothing.
+    public IReadOnlyList<PanelCommand> Commands { get; init; } = [];
+
+    /// More about it than the row shows, for its tooltip.
+    public string? ToolTip { get; init; }
+
+    /// How far it's indented under the row it belongs with, such as a Copilot session under the one that started it.
+    public int Depth { get; init; }
+
+    /// Something related, named on the row, which it opens.
+    public RowTag? Tag { get; init; }
+
+    /// How full it is, such as a Copilot session's context window.
+    public RowMeter? Meter { get; init; }
 }

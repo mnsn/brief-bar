@@ -1,4 +1,6 @@
+using BriefBar.Core.Copilot;
 using BriefBar.Core.Presentation;
+using BriefBar.Core.Settings;
 
 namespace BriefBar.Core.Demo;
 
@@ -107,75 +109,14 @@ public static class DemoData
                 sentence: "“Fix the coupon rounding error” is approved and ready to complete."),
         ]);
 
-    public static SectionSnapshot CopilotSessions(DateTimeOffset now) => new(
-        Info: Sections.CopilotSessions,
-        Status: SectionStatus.Live,
-        Groups:
-        [
-            new RowGroup(Key: "needsYou", Title: "Needs you", State: ItemState.NeedsYou),
-            new RowGroup(Key: "running", Title: "Running", State: ItemState.Running),
-            new RowGroup(Key: "done", Title: "Done", State: ItemState.Done),
-            new RowGroup(Key: "stopped", Title: "Stopped", State: ItemState.Failing),
-        ],
-        Rows:
-        [
-            new ItemRow
-            {
-                Id = "release", Section = SectionId.CopilotSessions, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.ShieldLock, Title = "Release 2.4.0", Status = "Needs permission · acme-api",
-                Detail = "git push origin main --follow-tags", Date = Ago(now: now, minutes: 1),
-            },
-            new ItemRow
-            {
-                Id = "oauth", Section = SectionId.CopilotSessions, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.ClipboardTaskList, Title = "Move sign-in to OAuth 2.1", Status = "Plan ready for review · acme-api",
-                Detail = "Replace cookie sessions with OAuth 2.1 and PKCE.", Date = Ago(now: now, minutes: 2),
-            },
-            new ItemRow
-            {
-                Id = "dark-mode", Section = SectionId.CopilotSessions, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.ChatQuestion, Title = "Add dark mode to settings", Status = "Waiting for your answer · shop-web",
-                Detail = "Should dark mode follow the system appearance?", Date = Ago(now: now, minutes: 4),
-                Chips = [new RowChip(Kind: RowChipKind.WorkItem, Text: "5170"), new RowChip(Kind: RowChipKind.PullRequest, Text: "!4093")],
-            },
-            new ItemRow
-            {
-                Id = "payments-sdk", Section = SectionId.CopilotSessions, Group = "running", State = ItemState.Running,
-                Icon = IconKey.ArrowSync, Title = "Migrate payments to the new SDK", Status = "Running · payments-api",
-                Detail = "Updating 14 call sites in PaymentsClient", Date = Ago(now: now, minutes: 3),
-            },
-            new ItemRow
-            {
-                Id = "screenshots", Section = SectionId.CopilotSessions, Group = "running", State = ItemState.Running,
-                Icon = IconKey.ArrowSync, Title = "Update the README screenshots", Status = "Running · docs-site",
-                Detail = "Capturing dark mode", Date = Ago(now: now, minutes: 6),
-            },
-            new ItemRow
-            {
-                Id = "sync-retry", Section = SectionId.CopilotSessions, Group = "done", State = ItemState.Done,
-                Icon = IconKey.Checkmark, Title = "Add retry to sync", Status = "Done · opened !4107",
-                Detail = "Its checks pass.", Date = Ago(now: now, minutes: 9),
-            },
-            new ItemRow
-            {
-                Id = "flaky-login", Section = SectionId.CopilotSessions, Group = "stopped", State = ItemState.Failing,
-                Icon = IconKey.Warning, Title = "Fix the flaky login test", Status = "Stopped · shop-web",
-                Detail = "Not responding for 10 minutes", Date = Ago(now: now, minutes: 31),
-            },
-        ],
-        BriefLines:
-        [
-            Line(id: "release", section: SectionId.CopilotSessions, state: ItemState.NeedsYou, now: now, minutes: 1,
-                sentence: "“Release 2.4.0” needs your permission to run git push origin main --follow-tags."),
-            Line(id: "oauth", section: SectionId.CopilotSessions, state: ItemState.NeedsYou, now: now, minutes: 2,
-                sentence: "“Move sign-in to OAuth 2.1” has a plan for you to review."),
-            Line(id: "dark-mode", section: SectionId.CopilotSessions, state: ItemState.NeedsYou, now: now, minutes: 4,
-                sentence: "“Add dark mode to settings” asks: Should dark mode follow the system appearance?"),
-            Line(id: "sync-retry", section: SectionId.CopilotSessions, state: ItemState.Done, now: now, minutes: 9,
-                sentence: "“Add retry to sync” is done, and opened !4107."),
-            Line(id: "flaky-login", section: SectionId.CopilotSessions, state: ItemState.Failing, now: now, minutes: 31,
-                sentence: "“Fix the flaky login test” stopped responding."),
-        ]);
+    /// Copilot's made-up sessions (`CopilotDemoData`), as `CopilotSource` shows them, with its settings as they start.
+    public static SectionSnapshot CopilotSessions(DateTimeOffset now)
+    {
+        var settings = new CopilotSettings(settings: new MemorySettings(), now: now);
+        var store = new SessionStore(settings: settings, openSession: _ => { }, isAppInstalled: () => true, isAppFrontmost: () => false);
+        store.Receive(snapshot: CopilotDemoData.Snapshot(now: now), now: now);
+        return CopilotRows.Snapshot(store: store, settings: settings);
+    }
 
     public static SectionSnapshot GitHubPullRequests(DateTimeOffset now) => new(
         Info: Sections.GitHubPullRequests,

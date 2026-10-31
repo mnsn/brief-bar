@@ -20,6 +20,7 @@ internal sealed class AppShell : IDisposable
     public static readonly uint TaskbarCreated = User32.RegisterWindowMessage(message: "TaskbarCreated");
 
     readonly DispatcherQueue queue;
+    readonly AppSources appSources;
     readonly SourceHost sources;
     readonly Action exit;
     /// A bar on each display, in the order of `Displays.All`.
@@ -32,14 +33,16 @@ internal sealed class AppShell : IDisposable
     readonly DispatcherQueueTimer ticker;
     readonly UISettings uiSettings = new();
     readonly AccessibilitySettings accessibility = new();
+    SettingsWindow? settings;
     bool quitting;
 
-    public AppShell(DispatcherQueue queue, IReadOnlyList<ISectionSource> sources, bool isDemo, Action exit)
+    public AppShell(DispatcherQueue queue, AppSources sources, bool isDemo, Action exit)
     {
         this.queue = queue;
         this.exit = exit;
         IsDemo = isDemo;
-        this.sources = new SourceHost(sources: sources, queue: queue);
+        appSources = sources;
+        this.sources = new SourceHost(sources: sources.Initial(), queue: queue);
         panel = new PanelController(shell: this);
         desktop = new DesktopWatcher(queue: queue);
         displaysSettle = queue.CreateTimer();
@@ -77,6 +80,56 @@ internal sealed class AppShell : IDisposable
 
     public IReadOnlyList<SectionSnapshot> Snapshots() => sources.Snapshots();
 
+    /// Does what a panel asked: BriefBar's own commands, such as reviewing a paused source in Settings, here; the rest,
+    /// its source.
+    public void Perform(CommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(argument: request);
+        if (quitting)
+        {
+            return;
+        }
+        Log.Write(line: $"panel: {request.Section} asked for a command");
+        if (request.Command == AppCommands.ReviewSource)
+        {
+            OpenSettings(source: request.Section.Source);
+            return;
+        }
+        sources.Perform(request: request);
+    }
+
+    /// Opens Settings at `source`'s page, or at General, or brings it to the front there, in place of the panel.
+    public void OpenSettings(SourceId? source)
+    {
+        if (quitting)
+        {
+            return;
+        }
+        panel.Dismiss(reason: PanelCloseReason.Opened);
+        if (settings is null)
+        {
+            var viewModel = new SettingsViewModel(sources: appSources.Switch, copilot: appSources.Copilot, palette: Palette);
+            settings = new SettingsWindow(shell: this, viewModel: viewModel);
+            var opened = settings;
+            opened.Closed += (_, _) =>
+            {
+                if (settings == opened)
+                {
+                    settings = null;
+                }
+            };
+            Log.Write(line: $"settings: opened");
+        }
+        settings.Show(source: source);
+    }
+
+    /// Turns `entry` on, or keeps it on after an update, with your consent to what it reads now: its sections show on
+    /// the bar as it starts.
+    public Task TurnOnAsync(SourceEntry entry) => appSources.Switch.TurnOnAsync(entry: entry, runner: sources);
+
+    /// Turns `entry` off: it stops, its sections leave the bar, and what it saved is deleted.
+    public Task TurnOffAsync(SourceEntry entry) => appSources.Switch.TurnOffAsync(entry: entry, runner: sources);
+
     /// Opens the Overview on the main display, as a second start of BriefBar asks.
     public void ShowOverview()
     {
@@ -101,6 +154,8 @@ internal sealed class AppShell : IDisposable
         // The space first, so nothing that follows can keep it reserved.
         GiveSpaceBack();
         panel.Shutdown();
+        settings?.Close();
+        settings = null;
         desktop.Dispose();
         ticker.Stop();
         displaysSettle.Stop();
@@ -206,6 +261,7 @@ internal sealed class AppShell : IDisposable
         }
         Palette = palette;
         Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}");
+        settings?.UsePalette(palette: palette);
         Refresh();
     }
 
