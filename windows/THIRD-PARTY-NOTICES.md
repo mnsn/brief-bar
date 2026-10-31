@@ -4,7 +4,7 @@ BriefBar for Windows includes the following.
 
 ## Fluent UI System Icons
 
-`BriefBar/Icons.cs` holds the path data of icons from Fluent UI System Icons,
+`BriefBar.Core/Presentation/IconPaths.cs` holds the path data of icons from Fluent UI System Icons,
 https://github.com/microsoft/fluentui-system-icons, under the MIT License:
 
 ```text
