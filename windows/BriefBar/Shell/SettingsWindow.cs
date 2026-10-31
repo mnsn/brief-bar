@@ -4,6 +4,7 @@ using BriefBar.Views;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using WinRT.Interop;
@@ -20,6 +21,7 @@ internal sealed partial class SettingsWindow : Window
 
     readonly AppShell shell;
     readonly SettingsView view;
+    bool closed;
 
     public SettingsWindow(AppShell shell, SettingsViewModel viewModel)
     {
@@ -27,13 +29,14 @@ internal sealed partial class SettingsWindow : Window
         Hwnd = WindowNative.GetWindowHandle(target: this);
         Title = "BriefBar Settings";
         view = new SettingsView(viewModel: viewModel, palette: shell.Palette);
-        view.TurnOnRequested += (_, source) => TurnOn(source: source);
-        view.TurnOffRequested += (_, source) => TurnOff(source: source);
+        view.TurnOnRequested += async (_, source) => await SwitchAsync(source: source, turnOn: true);
+        view.TurnOffRequested += async (_, source) => await SwitchAsync(source: source, turnOn: false);
         view.QuitRequested += (_, _) => shell.Quit();
         Content = view;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(titleBar: view.TitleBarElement);
         SystemBackdrop = new MicaBackdrop { Kind = MicaKind.Base };
+        Closed += (_, _) => closed = true;
         PlaceOnPrimaryDisplay();
     }
 
@@ -67,39 +70,57 @@ internal sealed partial class SettingsWindow : Window
             _Height: height));
     }
 
-    async void TurnOn(SourceSettingsViewModel source)
+    /// Turns `source` on, or keeps it on, or turns it off, one change at a time; then shows how it stands, and says so
+    /// when your choice couldn't be saved, as on a full disk.
+    async Task SwitchAsync(SourceSettingsViewModel source, bool turnOn)
     {
         if (source.IsBusy)
         {
             return;
         }
         source.IsBusy = true;
+        bool saved;
         try
         {
-            await shell.TurnOnAsync(entry: source.Entry);
+            saved = turnOn
+                ? await shell.TurnOnAsync(entry: source.Entry).ConfigureAwait(continueOnCapturedContext: true)
+                : await shell.TurnOffAsync(entry: source.Entry).ConfigureAwait(continueOnCapturedContext: true);
+        }
+        catch (OperationCanceledException) when (shell.IsQuitting)
+        {
+            // BriefBar quit before the source could start: it starts the next time, as saved.
+            return;
         }
         finally
         {
             source.IsBusy = false;
-            view.Refresh();
+            if (!closed)
+            {
+                view.Refresh();
+            }
+        }
+        if (!saved && !closed)
+        {
+            await SayNotSavedAsync(name: source.Name, isOn: turnOn).ConfigureAwait(continueOnCapturedContext: true);
         }
     }
 
-    async void TurnOff(SourceSettingsViewModel source)
+    /// What a choice that couldn't be saved means, until BriefBar can save it.
+    async Task SayNotSavedAsync(string name, bool isOn)
     {
-        if (source.IsBusy)
+        var dialog = new ContentDialog
         {
-            return;
-        }
-        source.IsBusy = true;
-        try
-        {
-            await shell.TurnOffAsync(entry: source.Entry);
-        }
-        finally
-        {
-            source.IsBusy = false;
-            view.Refresh();
-        }
+            Title = "Couldn't save your choice",
+            Content = isOn
+                ? name + " is on, but BriefBar couldn't save that, so it'll be off the next time BriefBar starts. BriefBar "
+                    + "tries again whenever a setting changes, and as it quits."
+                : name + " is off, but BriefBar couldn't save that, so it may be on again the next time BriefBar starts. "
+                    + "BriefBar tries again whenever a setting changes, and as it quits.",
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = view.XamlRoot,
+            RequestedTheme = view.ActualTheme,
+        };
+        await dialog.ShowAsync();
     }
 }

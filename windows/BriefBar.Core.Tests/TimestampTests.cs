@@ -26,6 +26,9 @@ public sealed class TimestampTests
         "", "2026-10-18", "2026-10-18T17:00", "20261018T170007Z", "2026/10/18T17:00:07Z", "2026-10-18X17:00:07Z",
         "2026-13-01T00:00:00Z", "2026-10-32T00:00:00Z", "2026-10-18T24:00:00Z", "2026-10-18T17:60:00Z",
         "2026-10-18T17:00:07.Z", "2026-10-18T17:00:07Zjunk", "2026-10-18T17:00:07+5", "2026-10-18T17:00:07 UTC",
+        // Days past their month's end, which aren't dates in the next month.
+        "2026-02-31T00:00:00Z", "2026-04-31T00:00:00Z", "2026-02-29T00:00:00Z", "1900-02-29T00:00:00Z", "2026-00-10T00:00:00Z",
+        "2026-10-00T00:00:00Z",
     };
 
     [Theory]
@@ -48,6 +51,10 @@ public sealed class TimestampTests
         Assert.Equal(expected: 11_017, actual: Timestamp.DaysFromCivil(year: 2000, month: 3, day: 1));
         Assert.Equal(expected: -1, actual: Timestamp.DaysFromCivil(year: 1969, month: 12, day: 31));
         Assert.Equal(expected: DateTimeOffset.FromUnixTimeSeconds(seconds: 1_709_164_800), actual: Timestamp.Parse(text: "2024-02-29T00:00:00Z"));
+        // Leap years: every fourth, but not every hundredth, unless it's every four hundredth.
+        Assert.Equal(expected: new DateTimeOffset(year: 2000, month: 2, day: 29, hour: 0, minute: 0, second: 0, offset: TimeSpan.Zero), actual: Timestamp.Parse(text: "2000-02-29T00:00:00Z"));
+        Assert.Equal(expected: new DateTimeOffset(year: 2026, month: 12, day: 31, hour: 0, minute: 0, second: 0, offset: TimeSpan.Zero), actual: Timestamp.Parse(text: "2026-12-31T00:00:00Z"));
+        Assert.Equal(expected: new DateTimeOffset(year: 2026, month: 4, day: 30, hour: 0, minute: 0, second: 0, offset: TimeSpan.Zero), actual: Timestamp.Parse(text: "2026-04-30T00:00:00Z"));
         Assert.Equal(expected: DateTimeOffset.FromUnixTimeSeconds(seconds: -1), actual: Timestamp.Parse(text: "1969-12-31T23:59:59Z"));
         // Beyond what a DateTimeOffset holds.
         Assert.Null(@object: Timestamp.Parse(text: "0000-01-01T00:00:00Z"));

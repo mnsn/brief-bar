@@ -2,7 +2,8 @@ using System.Text.Json.Nodes;
 
 namespace BriefBar.Core.Settings;
 
-/// Settings kept in memory only: for tests, which leave nothing behind, and for the demo, which never touches yours.
+/// Settings kept in memory only: for tests, which leave nothing behind, and for the demo, which never touches yours. All
+/// they promise is memory, so they're always saved.
 public sealed class MemorySettings : ISettingsStorage
 {
     readonly Lock gate = new();
@@ -16,7 +17,7 @@ public sealed class MemorySettings : ISettingsStorage
         }
     }
 
-    public void Write(string key, JsonNode? value)
+    public bool Write(string key, JsonNode? value)
     {
         lock (gate)
         {
@@ -29,5 +30,8 @@ public sealed class MemorySettings : ISettingsStorage
                 values[key] = value.DeepClone();
             }
         }
+        return true;
     }
+
+    public bool Flush() => true;
 }

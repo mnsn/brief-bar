@@ -56,7 +56,8 @@ public sealed class SourceChoices
         return choices;
     }
 
-    public void Save(ISettingsStorage settings)
+    /// Saves your choices; returns whether everything is saved, to last after BriefBar quits (`ISettingsStorage.Write`).
+    public bool Save(ISettingsStorage settings)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         var saved = new JsonObject();
@@ -68,6 +69,6 @@ public sealed class SourceChoices
                 ["date"] = consent.Date.UtcDateTime.ToString(format: "yyyy-MM-dd'T'HH:mm:ss.fff'Z'", provider: System.Globalization.CultureInfo.InvariantCulture),
             };
         }
-        settings.Write(key: SettingsKey, value: new JsonObject { ["consents"] = saved });
+        return settings.Write(key: SettingsKey, value: new JsonObject { ["consents"] = saved });
     }
 }

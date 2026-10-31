@@ -13,10 +13,11 @@ public static class SettingsValues
         return settings.Read(key: key) is JsonValue value && value.GetValueKind() == JsonValueKind.True;
     }
 
-    public static void SetBool(this ISettingsStorage settings, string key, bool value)
+    /// Saves `value` under `key`; returns whether everything is saved (`ISettingsStorage.Write`).
+    public static bool SetBool(this ISettingsStorage settings, string key, bool value)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
-        settings.Write(key: key, value: JsonValue.Create(value: value));
+        return settings.Write(key: key, value: JsonValue.Create(value: value));
     }
 
     public static int Number(this ISettingsStorage settings, string key)
@@ -25,10 +26,11 @@ public static class SettingsValues
         return settings.Read(key: key) is JsonValue value && value.TryGetValue(value: out int number) ? number : 0;
     }
 
-    public static void SetNumber(this ISettingsStorage settings, string key, int value)
+    /// Saves `value` under `key`; returns whether everything is saved (`ISettingsStorage.Write`).
+    public static bool SetNumber(this ISettingsStorage settings, string key, int value)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
-        settings.Write(key: key, value: JsonValue.Create(value: value));
+        return settings.Write(key: key, value: JsonValue.Create(value: value));
     }
 
     /// A map of names to times, saved as seconds since 1970, as the Mac saves them; entries of another kind are left
@@ -53,7 +55,8 @@ public static class SettingsValues
         return dates;
     }
 
-    public static void SetDates(this ISettingsStorage settings, string key, IReadOnlyDictionary<string, DateTimeOffset> dates)
+    /// Saves `dates` under `key`, as `Dates` reads them; returns whether everything is saved (`ISettingsStorage.Write`).
+    public static bool SetDates(this ISettingsStorage settings, string key, IReadOnlyDictionary<string, DateTimeOffset> dates)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         ArgumentNullException.ThrowIfNull(argument: dates);
@@ -62,6 +65,6 @@ public static class SettingsValues
         {
             saved[propertyName: name] = JsonValue.Create(value: (date - DateTimeOffset.UnixEpoch).Ticks / (double)TimeSpan.TicksPerSecond);
         }
-        settings.Write(key: key, value: saved);
+        return settings.Write(key: key, value: saved);
     }
 }

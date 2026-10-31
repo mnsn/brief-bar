@@ -109,6 +109,63 @@ public sealed class CopilotSourceTests
         }
     }
 
+    /// Turned off while its engine's first read hasn't begun, it stops the engine only once that read has run, so the
+    /// engine can't begin reading after the source is off.
+    [Fact]
+    public async Task StopsItsEngineOnlyOnceItHasStarted()
+    {
+        using var holdStart = new ManualResetEventSlim(initialState: false);
+        var (source, engines, _, _) = Make(holdStart: holdStart);
+        using (source)
+        {
+            await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var stopping = source.StopAsync();
+            // Time enough for a stop that doesn't wait to have run.
+            await Task.Delay(millisecondsDelay: 200, cancellationToken: TestContext.Current.CancellationToken);
+            FakeSessionEngine engine;
+            lock (engines)
+            {
+                engine = Assert.Single(collection: engines);
+            }
+            Assert.False(condition: stopping.IsCompleted);
+            Assert.Empty(collection: engine.Calls);
+
+            holdStart.Set();
+            await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(expected: ["start", "stop"], actual: engine.Calls);
+        }
+    }
+
+    /// Its engine failed to start: stopping it still gives back whatever it got to hold.
+    [Fact]
+    public async Task StopsAnEngineThatFailedToStart()
+    {
+        var engines = new List<FakeSessionEngine>();
+        var source = new CopilotSource(
+            settings: new CopilotSettings(settings: new MemorySettings(), now: DateTimeOffset.UtcNow),
+            makeEngine: onChange =>
+            {
+                var engine = new FakeSessionEngine(onChange: onChange, failsToStart: true);
+                lock (engines)
+                {
+                    engines.Add(item: engine);
+                }
+                return engine;
+            },
+            app: new CopilotAppAccess(OpenSession: _ => { }, Activate: () => { }, IsInstalled: () => true, IsFrontmost: () => false));
+        using (source)
+        {
+            var changed = Changes(source: source);
+            await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            lock (engines)
+            {
+                Assert.Equal(expected: ["start", "stop"], actual: Assert.Single(collection: engines).Calls);
+            }
+        }
+    }
+
     /// Reading fails in a way it doesn't expect: it says so, rather than starting forever.
     [Fact]
     public async Task SaysSoWhenItCantStartReading()
@@ -143,7 +200,8 @@ public sealed class CopilotSourceTests
         Assert.StartsWith(expectedStartString: "None.", actualString: CopilotSource.Description.Network, comparisonType: StringComparison.Ordinal);
     }
 
-    static (CopilotSource Source, List<FakeSessionEngine> Engines, List<string> Opened, List<int> Activations) Make(CopilotSettings? settings = null)
+    static (CopilotSource Source, List<FakeSessionEngine> Engines, List<string> Opened, List<int> Activations) Make(
+        CopilotSettings? settings = null, ManualResetEventSlim? holdStart = null)
     {
         var engines = new List<FakeSessionEngine>();
         var opened = new List<string>();
@@ -152,7 +210,7 @@ public sealed class CopilotSourceTests
             settings: settings ?? new CopilotSettings(settings: new MemorySettings(), now: DateTimeOffset.UtcNow),
             makeEngine: onChange =>
             {
-                var engine = new FakeSessionEngine(onChange: onChange);
+                var engine = new FakeSessionEngine(onChange: onChange, holdStart: holdStart);
                 lock (engines)
                 {
                     engines.Add(item: engine);

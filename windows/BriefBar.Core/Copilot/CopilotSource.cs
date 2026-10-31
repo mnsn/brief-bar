@@ -29,6 +29,9 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     readonly CopilotAppAccess app;
     readonly TimeProvider time;
     ISessionEngine? engine;
+    /// Its engine's start, on the thread pool, which stopping waits for, so that a start still waiting to run can't
+    /// begin reading once the source is off.
+    Task? engineStart;
     ITimer? ticker;
     /// Which start the engine belongs to, so that a stopped engine's late snapshot changes nothing.
     int generation;
@@ -61,7 +64,7 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ISessionEngine starting;
+        Task started;
         lock (gate)
         {
             if (engine is not null)
@@ -69,13 +72,14 @@ public sealed class CopilotSource : ISectionSource, IDisposable
                 return Task.CompletedTask;
             }
             var current = ++generation;
-            starting = engine = makeEngine(arg: state => Receive(state: state, fromGeneration: current));
+            var starting = engine = makeEngine(arg: state => Receive(state: state, fromGeneration: current));
             ticker = time.CreateTimer(callback: _ => Tick(), state: null, dueTime: tickInterval, period: tickInterval);
             settings.Changed += SettingsChanged;
+            // Its first read is on the thread pool, so that starting doesn't wait for it.
+            started = engineStart = Task.Run(action: starting.Start, cancellationToken: CancellationToken.None);
         }
         Log.Write(line: $"copilot: starting");
-        // Its first read is on the thread pool, so that starting doesn't wait for it.
-        _ = Task.Run(action: starting.Start, cancellationToken: CancellationToken.None).ContinueWith(
+        _ = started.ContinueWith(
             continuationAction: failed => StartFailed(error: failed.Exception!),
             cancellationToken: CancellationToken.None,
             continuationOptions: TaskContinuationOptions.OnlyOnFaulted,
@@ -86,19 +90,22 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     public Task StopAsync()
     {
         ISessionEngine? stopping;
+        Task? started;
         ITimer? timer;
         lock (gate)
         {
             generation++;
             stopping = engine;
+            started = engineStart;
             engine = null;
+            engineStart = null;
             timer = ticker;
             ticker = null;
             settings.Changed -= SettingsChanged;
         }
         timer?.Dispose();
         // Outside the lock: the engine may be handing over a snapshot, which takes it.
-        return stopping is null ? Task.CompletedTask : Task.Run(action: stopping.Stop);
+        return stopping is null ? Task.CompletedTask : StopAfterStartAsync(stopping: stopping, started: started);
     }
 
     /// Forgets the sessions you cleared or viewed, as turning Copilot off does. Its settings stay.
@@ -148,16 +155,19 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
     }
 
-    public void Dispose()
+    /// Stops it as `StopAsync` does, without waiting: an engine still starting stops once it has started.
+    public void Dispose() => _ = StopAsync();
+
+    /// Stops `stopping` once its start has run, however that went: started on the thread pool, it could otherwise begin
+    /// reading after it was told to stop. A start that failed has said so already (`StartFailed`); stopping it still
+    /// gives back whatever it holds. On the thread pool, since the engine's lock may be held by a read.
+    static async Task StopAfterStartAsync(ISessionEngine stopping, Task? started)
     {
-        lock (gate)
+        if (started is not null)
         {
-            generation++;
-            ticker?.Dispose();
-            ticker = null;
-            settings.Changed -= SettingsChanged;
+            await started.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
         }
-        Interlocked.Exchange(location1: ref engine, value: null)?.Stop();
+        await Task.Run(action: stopping.Stop).ConfigureAwait(continueOnCapturedContext: false);
     }
 
     void Receive(EngineSnapshot state, int fromGeneration)

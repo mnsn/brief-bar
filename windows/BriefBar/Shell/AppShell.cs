@@ -33,6 +33,8 @@ internal sealed class AppShell : IDisposable
     readonly DispatcherQueueTimer ticker;
     readonly UISettings uiSettings = new();
     readonly AccessibilitySettings accessibility = new();
+    /// Sources being turned on or off: quitting waits for them, so that one turned off has deleted what it saved.
+    readonly List<Task> switching = [];
     SettingsWindow? settings;
     bool quitting;
 
@@ -58,6 +60,9 @@ internal sealed class AppShell : IDisposable
     }
 
     public bool IsDemo { get; }
+
+    /// It's quitting: its windows are closing, and its sources stopping.
+    public bool IsQuitting => quitting;
 
     public ThemePalette Palette { get; private set; }
 
@@ -124,11 +129,12 @@ internal sealed class AppShell : IDisposable
     }
 
     /// Turns `entry` on, or keeps it on after an update, with your consent to what it reads now: its sections show on
-    /// the bar as it starts.
-    public Task TurnOnAsync(SourceEntry entry) => appSources.Switch.TurnOnAsync(entry: entry, runner: sources);
+    /// the bar as it starts. Returns whether your choice is saved, to last after BriefBar quits (`SourceSwitch`).
+    public Task<bool> TurnOnAsync(SourceEntry entry) => SwitchAsync(operation: appSources.Switch.TurnOnAsync(entry: entry, runner: sources));
 
-    /// Turns `entry` off: it stops, its sections leave the bar, and what it saved is deleted.
-    public Task TurnOffAsync(SourceEntry entry) => appSources.Switch.TurnOffAsync(entry: entry, runner: sources);
+    /// Turns `entry` off: it stops, its sections leave the bar, and what it saved is deleted. Returns whether your choice
+    /// is saved, to last after BriefBar quits (`SourceSwitch`).
+    public Task<bool> TurnOffAsync(SourceEntry entry) => SwitchAsync(operation: appSources.Switch.TurnOffAsync(entry: entry, runner: sources));
 
     /// Opens the Overview on the main display, as a second start of BriefBar asks.
     public void ShowOverview()
@@ -378,18 +384,50 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// Waits for the sources to stop, at most 2 seconds, then ends.
+    /// Waits for sources being turned on or off to finish, then for the sources to stop, at most 2 seconds each; saves
+    /// what couldn't be saved, if it can now; and ends.
     async void FinishQuitting(long started)
     {
         try
         {
+            await WaitForSwitchingAsync(timeout: TimeSpan.FromSeconds(value: 2)).ConfigureAwait(continueOnCapturedContext: true);
             await sources.StopAsync(timeout: TimeSpan.FromSeconds(value: 2)).ConfigureAwait(continueOnCapturedContext: true);
         }
         finally
         {
+            appSources.Settings.Flush();
             Dispose();
             Log.Write(line: $"quit after {Stopwatch.GetElapsedTime(startingTimestamp: started)}");
             exit();
+        }
+    }
+
+    /// Notes `operation`, a source being turned on or off, until it's done, for quitting to wait for.
+    async Task<bool> SwitchAsync(Task<bool> operation)
+    {
+        switching.Add(item: operation);
+        try
+        {
+            return await operation.ConfigureAwait(continueOnCapturedContext: true);
+        }
+        finally
+        {
+            switching.Remove(item: operation);
+        }
+    }
+
+    /// Waits at most `timeout` for every source being turned on or off. How each went is for whoever asked for it,
+    /// Settings, which awaits it, to say: here, only that it's done.
+    async Task WaitForSwitchingAsync(TimeSpan timeout)
+    {
+        if (switching.Count == 0)
+        {
+            return;
+        }
+        var all = Task.WhenAll(tasks: switching.ToList());
+        if (await Task.WhenAny(task1: all, task2: Task.Delay(delay: timeout)).ConfigureAwait(continueOnCapturedContext: true) != all)
+        {
+            Log.Write(line: $"sources: still turning on or off after {timeout}; quitting anyway");
         }
     }
 }

@@ -38,7 +38,7 @@ public static class Timestamp
         {
             return null;
         }
-        if (month is < 1 or > 12 || day is < 1 or > 31 || hour >= 24 || minute >= 60 || second > 60)
+        if (month is < 1 or > 12 || day < 1 || day > DaysInMonth(year: year, month: month) || hour >= 24 || minute >= 60 || second > 60)
         {
             return null;
         }
@@ -121,6 +121,17 @@ public static class Timestamp
         var dayOfEra = (yearOfEra * 365) + (yearOfEra / 4) - (yearOfEra / 100) + dayOfYear;
         return (era * 146_097) + dayOfEra - 719_468;
     }
+
+    /// How many days `month` has in `year`, in the proleptic Gregorian calendar that `DaysFromCivil` counts in: a date
+    /// past its month's end, such as February 31, is no date, rather than one in March.
+    static int DaysInMonth(int year, int month) => month switch
+    {
+        2 => IsLeapYear(year: year) ? 29 : 28,
+        4 or 6 or 9 or 11 => 30,
+        _ => 31,
+    };
+
+    static bool IsLeapYear(int year) => year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
 
     static int? Digit(byte value) => value is >= (byte)'0' and <= (byte)'9' ? value - '0' : null;
 

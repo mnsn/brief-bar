@@ -63,13 +63,14 @@ public sealed class SourceSwitch
     }
 
     /// Turns `entry` on, or keeps it on once you've reviewed what it reads now: your consent to that is saved first, then
-    /// it starts, in place of its paused self. Nothing for one that's on.
-    public async Task TurnOnAsync(SourceEntry entry, ISourceRunner runner)
+    /// it starts, in place of its paused self. Nothing for one that's on. Returns whether your choices are saved, to last
+    /// after BriefBar quits: when not, as on a full disk, it's on until BriefBar quits, and off after.
+    public async Task<bool> TurnOnAsync(SourceEntry entry, ISourceRunner runner)
     {
         ArgumentNullException.ThrowIfNull(argument: runner);
         if (State(entry: entry) == SourceState.On)
         {
-            return;
+            return Saved();
         }
         choices.TurnOn(source: entry.Id, version: entry.Description.Version, date: time.GetUtcNow());
         choices.Save(settings: settings);
@@ -77,16 +78,19 @@ public sealed class SourceSwitch
         Release(source: await runner.RemoveAsync(source: entry.Id).ConfigureAwait(continueOnCapturedContext: true));
         await runner.AddAsync(source: make(arg: entry)).ConfigureAwait(continueOnCapturedContext: true);
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
+        return Saved();
     }
 
     /// Turns `entry` off: saved first, then it stops, and what it saved for you is deleted, whether it ran or waited,
-    /// paused. Its settings stay. Nothing for one that's off.
-    public async Task TurnOffAsync(SourceEntry entry, ISourceRunner runner)
+    /// paused. Its settings stay. Nothing for one that's off. Returns whether your choices are saved, to last after
+    /// BriefBar quits: when not, it's off until BriefBar quits, but what's saved still has your consent, so it may be on
+    /// again after.
+    public async Task<bool> TurnOffAsync(SourceEntry entry, ISourceRunner runner)
     {
         ArgumentNullException.ThrowIfNull(argument: runner);
         if (State(entry: entry) == SourceState.Off)
         {
-            return;
+            return Saved();
         }
         choices.TurnOff(source: entry.Id);
         choices.Save(settings: settings);
@@ -101,7 +105,20 @@ public sealed class SourceSwitch
             Release(source: stopped);
         }
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
+        return Saved();
     }
 
     static void Release(ISectionSource? source) => (source as IDisposable)?.Dispose();
+
+    /// Whether everything is saved, now that a choice is made: what couldn't be saved before is tried again, so a choice
+    /// saved by a later write counts.
+    bool Saved()
+    {
+        var saved = settings.Flush();
+        if (!saved)
+        {
+            Log.Write(line: $"sources: a choice isn't saved, so it lasts only until BriefBar quits");
+        }
+        return saved;
+    }
 }

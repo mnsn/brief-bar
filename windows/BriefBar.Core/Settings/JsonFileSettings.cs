@@ -6,15 +6,21 @@ namespace BriefBar.Core.Settings;
 
 /// Settings saved as JSON in one file: `%LOCALAPPDATA%\BriefBar\Settings.json` for the app. A file that's missing or
 /// can't be read holds nothing, so every source is off (`SourceChoices`). Each change writes the whole file, to a
-/// temporary file first, so that a crash never leaves half of one. A write that fails is logged, and the change stays
-/// in memory until BriefBar quits.
+/// temporary file first, so that a crash never leaves half of one. A write that another program blocks for a moment, as
+/// an antivirus scanning the file can, is tried again a few times. One that still fails is logged, and says so: the change
+/// stays in memory until BriefBar quits, and the next write, or `Flush`, saves it with everything else.
 public sealed class JsonFileSettings : ISettingsStorage
 {
+    /// How many times a save is tried, the next a little later than the last.
+    const int SaveAttempts = 3;
+    static readonly TimeSpan retryDelay = TimeSpan.FromMilliseconds(value: 50);
     static readonly JsonSerializerOptions writing = new() { WriteIndented = true };
 
     readonly Lock gate = new();
     readonly string path;
     readonly JsonObject values;
+    /// What's in memory isn't all in the file, as the last save failed.
+    bool unsaved;
 
     public JsonFileSettings(string path)
     {
@@ -36,7 +42,7 @@ public sealed class JsonFileSettings : ISettingsStorage
         }
     }
 
-    public void Write(string key, JsonNode? value)
+    public bool Write(string key, JsonNode? value)
     {
         lock (gate)
         {
@@ -44,14 +50,22 @@ public sealed class JsonFileSettings : ISettingsStorage
             {
                 if (!values.Remove(propertyName: key))
                 {
-                    return;
+                    return !unsaved;
                 }
             }
             else
             {
                 values[propertyName: key] = value.DeepClone();
             }
-            Save();
+            return Save();
+        }
+    }
+
+    public bool Flush()
+    {
+        lock (gate)
+        {
+            return !unsaved || Save();
         }
     }
 
@@ -78,25 +92,34 @@ public sealed class JsonFileSettings : ISettingsStorage
         }
     }
 
-    void Save()
+    /// Writes everything kept, and says whether it could.
+    bool Save()
     {
         var temporary = path + ".tmp";
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            if (Path.GetDirectoryName(path: path) is { Length: > 0 } folder)
+            try
             {
-                Directory.CreateDirectory(path: folder);
+                if (Path.GetDirectoryName(path: path) is { Length: > 0 } folder)
+                {
+                    Directory.CreateDirectory(path: folder);
+                }
+                File.WriteAllText(path: temporary, contents: values.ToJsonString(options: writing));
+                File.Move(sourceFileName: temporary, destFileName: path, overwrite: true);
+                unsaved = false;
+                return true;
             }
-            File.WriteAllText(path: temporary, contents: values.ToJsonString(options: writing));
-            File.Move(sourceFileName: temporary, destFileName: path, overwrite: true);
-        }
-        catch (IOException error)
-        {
-            Log.Write(error: error, context: $"settings: couldn't save; kept until BriefBar quits");
-        }
-        catch (UnauthorizedAccessException error)
-        {
-            Log.Write(error: error, context: $"settings: couldn't save; kept until BriefBar quits");
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                if (attempt < SaveAttempts)
+                {
+                    Thread.Sleep(timeout: retryDelay * attempt);
+                    continue;
+                }
+                Log.Write(error: error, context: $"settings: couldn't save; kept until BriefBar quits, and tried again");
+                unsaved = true;
+                return false;
+            }
         }
     }
 }

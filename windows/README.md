@@ -84,7 +84,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
-  asks first, stops it, takes it off the bar and deletes what BriefBar saved for it; its settings stay.
+  asks first, stops it, takes it off the bar and deletes what BriefBar saved for it; its settings stay. If a choice
+  can't be saved, as on a full disk, Settings says so: it lasts until BriefBar quits, and BriefBar tries to save it
+  again whenever a setting changes, and as it quits.
 - **GitHub Copilot sessions**, as on the Mac ([How it works](../docs/how-it-works.md#github-copilot)): what each
   session in the GitHub Copilot app is doing, from the app's own files in `%USERPROFILE%\.copilot`, read-only,
   as they change. Its groups are the Mac's: Needs you (a question, a plan to review, a permission), Running, Done

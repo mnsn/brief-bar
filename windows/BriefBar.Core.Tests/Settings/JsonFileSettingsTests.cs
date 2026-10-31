@@ -27,6 +27,30 @@ public sealed class JsonFileSettingsTests
         Assert.Equal(expected: ["Settings.json"], actual: Directory.GetFiles(path: folder.Combine("BriefBar")).Select(selector: Path.GetFileName));
     }
 
+    /// A change it can't save, here because a file is where its folder goes, says so and stays in memory, until a later
+    /// write or a flush saves it, with everything else.
+    [Fact]
+    public void SaysWhenItCantSaveAndSavesLater()
+    {
+        using var folder = new TemporaryFolder();
+        var blocker = folder.Combine("BriefBar");
+        File.WriteAllText(path: blocker, contents: "Not a folder.");
+        var path = Path.Combine(path1: blocker, path2: "Settings.json");
+        var settings = new JsonFileSettings(path: path);
+
+        Assert.False(condition: settings.Write(key: "sources", value: new JsonObject { ["off"] = true }));
+        Assert.True(condition: settings.Read(key: "sources")!["off"]!.GetValue<bool>());
+        Assert.False(condition: settings.Flush());
+        // Removing a key that isn't there saves nothing, and what's unsaved still is.
+        Assert.False(condition: settings.Write(key: "absent", value: null));
+
+        File.Delete(path: blocker);
+        Assert.True(condition: settings.Flush());
+        Assert.True(condition: new JsonFileSettings(path: path).Read(key: "sources")!["off"]!.GetValue<bool>());
+        Assert.True(condition: settings.Flush());
+        Assert.True(condition: settings.Write(key: "absent", value: null));
+    }
+
     /// A file that can't be read holds nothing: so every source is off.
     [Fact]
     public void StartsEmptyFromAFileItCantRead()

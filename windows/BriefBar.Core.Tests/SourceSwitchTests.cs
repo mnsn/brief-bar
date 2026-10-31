@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
 
@@ -44,7 +45,7 @@ public sealed class SourceSwitchTests
         Assert.IsType<FakeSource>(@object: Assert.Single(collection: Switch(settings: settings, made: made).Initial()));
 
         // Turning it on again changes nothing.
-        await sources.TurnOnAsync(entry: entry, runner: runner);
+        Assert.True(condition: await sources.TurnOnAsync(entry: entry, runner: runner));
         Assert.Single(collection: runner.Running);
         Assert.Equal(expected: 1, actual: changes);
     }
@@ -67,6 +68,49 @@ public sealed class SourceSwitchTests
         Assert.Equal(expected: 1, actual: running.Deletions);
         Assert.True(condition: running.Disposed);
         Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+    }
+
+    /// A choice that can't be saved, as on a full disk, holds until BriefBar quits, and it says so, for Settings to tell
+    /// you: a source you turned off would otherwise be on again after a restart, with what's saved still your consent.
+    /// The next save that works saves it.
+    [Fact]
+    public async Task SaysWhenYourChoiceIsntSaved()
+    {
+        var settings = new FlakySettings();
+        var made = new List<FakeSource>();
+        var runner = new FakeRunner();
+        var sources = Switch(settings: settings, made: made);
+        Assert.True(condition: await sources.TurnOnAsync(entry: entry, runner: runner));
+        var running = Assert.Single(collection: made);
+        settings.Fails = true;
+
+        Assert.False(condition: await sources.TurnOffAsync(entry: entry, runner: runner));
+
+        // It's off now, and what it saved is deleted, from memory at least.
+        Assert.Equal(expected: SourceState.Off, actual: sources.State(entry: entry));
+        Assert.Empty(collection: runner.Running);
+        Assert.Equal(expected: 1, actual: running.Deletions);
+        // But a restart would find your consent.
+        Assert.Equal(expected: SourceState.On, actual: SourceChoices.Load(settings: settings.AsSaved()).State(source: SourceId.Copilot, version: 2));
+
+        settings.Fails = false;
+        Assert.True(condition: await sources.TurnOffAsync(entry: entry, runner: runner));
+        Assert.Equal(expected: SourceState.Off, actual: SourceChoices.Load(settings: settings.AsSaved()).State(source: SourceId.Copilot, version: 2));
+    }
+
+    /// One turned on whose consent can't be saved is on until BriefBar quits, and off after: it says so too.
+    [Fact]
+    public async Task SaysWhenItsOnOnlyUntilBriefBarQuits()
+    {
+        var settings = new FlakySettings { Fails = true };
+        var runner = new FakeRunner();
+        var sources = Switch(settings: settings, made: []);
+
+        Assert.False(condition: await sources.TurnOnAsync(entry: entry, runner: runner));
+
+        Assert.Equal(expected: SourceState.On, actual: sources.State(entry: entry));
+        Assert.Single(collection: runner.Running);
+        Assert.Equal(expected: SourceState.Off, actual: SourceChoices.Load(settings: settings.AsSaved()).State(source: SourceId.Copilot, version: 2));
     }
 
     /// An update made it read more than you saw: it reads nothing, paused, until you've seen what it reads now.
@@ -113,7 +157,7 @@ public sealed class SourceSwitchTests
         Assert.Equal(expected: SourceState.Off, actual: sources.State(entry: entry));
     }
 
-    static SourceSwitch Switch(MemorySettings settings, List<FakeSource> made) => new(
+    static SourceSwitch Switch(ISettingsStorage settings, List<FakeSource> made) => new(
         settings: settings,
         entries: [entry],
         make: _ =>
@@ -127,6 +171,56 @@ public sealed class SourceSwitchTests
     sealed class FixedTime(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    /// Settings whose saves fail while `Fails` is set, as on a full disk: what a restart would read is `AsSaved()`.
+    sealed class FlakySettings : ISettingsStorage
+    {
+        readonly Dictionary<string, JsonNode> values = new(comparer: StringComparer.Ordinal);
+        Dictionary<string, JsonNode> saved = new(comparer: StringComparer.Ordinal);
+        bool unsaved;
+
+        public bool Fails { get; set; }
+
+        public JsonNode? Read(string key) => values.TryGetValue(key: key, value: out var value) ? value.DeepClone() : null;
+
+        public bool Write(string key, JsonNode? value)
+        {
+            if (value is null)
+            {
+                values.Remove(key: key);
+            }
+            else
+            {
+                values[key] = value.DeepClone();
+            }
+            return Save();
+        }
+
+        public bool Flush() => !unsaved || Save();
+
+        /// What a restart would read.
+        public MemorySettings AsSaved()
+        {
+            var restarted = new MemorySettings();
+            foreach (var (key, value) in saved)
+            {
+                restarted.Write(key: key, value: value);
+            }
+            return restarted;
+        }
+
+        bool Save()
+        {
+            if (Fails)
+            {
+                unsaved = true;
+                return false;
+            }
+            saved = values.ToDictionary(keySelector: pair => pair.Key, elementSelector: pair => pair.Value.DeepClone(), comparer: StringComparer.Ordinal);
+            unsaved = false;
+            return true;
+        }
     }
 
     sealed class FakeRunner(List<ISectionSource>? running = null) : ISourceRunner
