@@ -39,9 +39,15 @@ public sealed class PanelToggle
         return PanelToggleAction.Open;
     }
 
-    /// The panel showing `target` closed at `now`, however it closed.
-    public void Closed(PanelTarget target, long now)
+    /// The panel showing `target` closed at `now`, for `reason`. Only a close that a press on its item could have caused
+    /// itself, by moving focus from the panel or seeming to land elsewhere, makes a press on that item soon after do
+    /// nothing.
+    public void Closed(PanelTarget target, PanelCloseReason reason, long now)
     {
+        if (reason is not (PanelCloseReason.OtherApp or PanelCloseReason.ClickElsewhere))
+        {
+            return;
+        }
         lastClosed = target;
         lastClosedAt = now;
     }
