@@ -1,0 +1,198 @@
+<UserControl
+    x:Class="BriefBar.Views.BarView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:BriefBar.Views"
+    xmlns:vm="using:BriefBar.ViewModels">
+
+    <!-- The bar: on the left, the Overview's item, which says what needs you in words; on the right, an item per
+         section. A press on the empty space between them closes the panel. -->
+    <Grid
+        x:Name="Root"
+        Padding="2,0,2,0"
+        AutomationProperties.LandmarkType="Navigation"
+        AutomationProperties.Name="BriefBar"
+        Background="Transparent"
+        PointerPressed="OnRootPressed">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Grid.ContextFlyout>
+            <MenuFlyout>
+                <MenuFlyoutItem Click="OnQuitClick" Text="Quit BriefBar" />
+            </MenuFlyout>
+        </Grid.ContextFlyout>
+
+        <views:BarItemButton
+            x:Name="OverviewButton"
+            AutomationProperties.Name="{x:Bind ViewModel.Overview.AutomationName, Mode=OneWay}"
+            Click="OnOverviewClick"
+            IsOpen="{x:Bind ViewModel.Overview.IsOpen, Mode=OneWay}"
+            Style="{StaticResource BarItemButtonStyle}"
+            ToolTipService.ToolTip="{x:Bind ViewModel.Overview.ToolTip, Mode=OneWay}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <views:BriefBarMark
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
+                    DoneBrush="{x:Bind ViewModel.Overview.MarkDoneBrush, Mode=OneWay}"
+                    LineBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                    NeedsYouBrush="{x:Bind ViewModel.Overview.MarkNeedsYouBrush, Mode=OneWay}"
+                    RunningBrush="{x:Bind ViewModel.Overview.MarkRunningBrush, Mode=OneWay}" />
+                <ItemsControl
+                    VerticalAlignment="Center"
+                    IsTabStop="False"
+                    ItemsSource="{x:Bind ViewModel.Overview.Parts}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SummaryPartViewModel">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock
+                                    Margin="4,0,4,0"
+                                    VerticalAlignment="Center"
+                                    FontSize="13"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Text="·"
+                                    Visibility="{x:Bind ShowsSeparator, Mode=OneWay}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontSize="14"
+                                    FontWeight="Bold"
+                                    Foreground="{x:Bind CountBrush, Mode=OneWay}"
+                                    Text="{x:Bind Count, Mode=OneWay}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontSize="13"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind Words, Mode=OneWay}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind ViewModel.Overview.EmptyText, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.Overview.ShowsEmptyText, Mode=OneWay}" />
+            </StackPanel>
+        </views:BarItemButton>
+
+        <ItemsControl
+            Grid.Column="2"
+            VerticalAlignment="Stretch"
+            IsTabStop="False"
+            ItemsSource="{x:Bind ViewModel.Items}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:BarItemViewModel">
+                    <views:BarItemButton
+                        AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                        Click="OnItemClick"
+                        IsOpen="{x:Bind IsOpen, Mode=OneWay}"
+                        Style="{StaticResource BarItemButtonStyle}"
+                        ToolTipService.ToolTip="{x:Bind ToolTip, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <views:FluentIcon
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind GlyphBrush, Mode=OneWay}"
+                                Icon="{x:Bind Glyph, Mode=OneWay}"
+                                Size="16" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="13"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind Label, Mode=OneWay}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="13"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Text="…"
+                                Visibility="{x:Bind ShowsStarting, Mode=OneWay}" />
+                            <ItemsControl
+                                VerticalAlignment="Center"
+                                IsTabStop="False"
+                                ItemsSource="{x:Bind Chips}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="7" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:CountChipViewModel">
+                                        <Grid VerticalAlignment="Center">
+                                            <Border
+                                                Height="20"
+                                                Padding="5,0,7,0"
+                                                Background="{x:Bind PillBrush, Mode=OneWay}"
+                                                CornerRadius="10"
+                                                Visibility="{x:Bind IsPill, Mode=OneWay}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <views:FluentIcon
+                                                        VerticalAlignment="Center"
+                                                        Fill="{x:Bind PillTextBrush, Mode=OneWay}"
+                                                        Icon="{x:Bind Icon, Mode=OneWay}"
+                                                        Size="14" />
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        FontSize="13"
+                                                        FontWeight="Bold"
+                                                        Foreground="{x:Bind PillTextBrush, Mode=OneWay}"
+                                                        Text="{x:Bind Count, Mode=OneWay}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <StackPanel
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal"
+                                                Spacing="3"
+                                                Visibility="{x:Bind IsPlain, Mode=OneWay}">
+                                                <views:FluentIcon
+                                                    VerticalAlignment="Center"
+                                                    Fill="{x:Bind IconBrush, Mode=OneWay}"
+                                                    Icon="{x:Bind Icon, Mode=OneWay}"
+                                                    Size="14" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="14"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                    Text="{x:Bind Count, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                Visibility="{x:Bind ShowsBadge, Mode=OneWay}">
+                                <views:FluentIcon
+                                    VerticalAlignment="Center"
+                                    Fill="{x:Bind BadgeBrush, Mode=OneWay}"
+                                    Icon="{x:Bind BadgeIcon, Mode=OneWay}"
+                                    Size="14" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontSize="13"
+                                    FontWeight="SemiBold"
+                                    Foreground="{x:Bind BadgeBrush, Mode=OneWay}"
+                                    Text="{x:Bind BadgeText, Mode=OneWay}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </views:BarItemButton>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</UserControl>

@@ -119,6 +119,7 @@ Tests/Fixtures/                made-up data that other programs wrote, such as a
 scripts/                       app bundling, signing and checks, the optional signing certificate,
                                releases (their keys, signing and appcast), the boundary and demo checks,
                                the demo data, the MDM profile and the icon
+windows/                       BriefBar for Windows, in development: a WinUI 3 app with its own README
 .github/workflows/             CI and releases
 ```
 
@@ -332,6 +333,10 @@ and when started by hand. A new run cancels the one in progress on the same pull
 to `main`, weekly, and when started by hand, never on pull requests, since the Swift scan holds a
 macOS runner for twenty to thirty minutes. A new scan cancels the one in progress. Its alerts are
 under **Security**, so check them before you approve a release.
+
+`.github/workflows/windows.yml` checks BriefBar for Windows' (`windows/`) formatting, runs its tests and builds it
+for x64 and Arm64 on Windows, on pushes to `main` and pull requests that change it, and when started by hand. It
+isn't a required check.
 
 ## Releasing
 
