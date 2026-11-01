@@ -258,9 +258,10 @@ public enum CopilotModel {
     /// From least to most thinking. Not every model takes every one.
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
 
-    /// For a summary, which needs little thinking: without Opus, which costs more than a summary is worth, or Auto, which
-    /// may choose it.
-    public static let forSummaries: [Choice] = suggestions.filter { !$0.id.contains("opus") && $0.id != "auto" }
+    /// For a summary, from the cheapest to the most capable, which costs the most, so you choose what it's worth: without
+    /// Auto, which may choose any.
+    public static let forSummaries: [Choice] = ["claude-haiku-5.5", "claude-sonnet-5.5", "gpt-6.1-sol", "gemini-4-argon", "claude-opus-5.5"]
+        .compactMap { id in suggestions.first { $0.id == id } }
 
     /// What a task is sent with unless you choose otherwise.
     public static let standard = CopilotRunOptions(model: "claude-opus-5.5", effort: "max")

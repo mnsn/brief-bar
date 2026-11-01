@@ -427,9 +427,8 @@ closed since (`CopilotTaskEntry.waits(of:among:isDone:type:)`, which `work_item`
 session once, whether the work sent to Copilot in it or the session itself tells of it (`ItemStory.Wait.about`); two
 pull requests in the same words, numbered alike in two organizations or repositories, are each said with its place, such
 as "(fabrikam)"; and other things in the same words, such as two sessions of the same name, are said once with how many,
-"(2 sessions)". While it shows, the summary's next step shows only with the rest of it, under **Show More**, so it isn't
-said twice, or by other names, unless it's yours and the line doesn't say anything waits on you
-(`SummaryCard.foldsNext`). A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
+"(2 sessions)". While a summary shows under it, its next step shows too, always, since it says what to do, which the
+line doesn't. A short one doesn't break: the line breaks after a "·". Its title, chevron and count fold
 Where It Stands to that line; to VoiceOver, the chevron is the disclosure button, "Where It Stands, expanded", and the
 title stays a heading, and BriefBar remembers it (`links.whereItStandsFolded`); folded, with nothing waiting, it says
 "Waiting on: no one", but only once the work item and all that's linked to it have said where they stand, and never
@@ -437,7 +436,8 @@ while one can't. Pages don't show it. Each row shows its state as the lists by s
 stands in a sentence, its opening words in its state's color, and since when; one that needs you or went wrong opens in
 a click. Clicking a row opens its page over the work item's details (`ItemPageView`, the `pages` of
 `WorkItemDetailsStore`): what it is, where it stands and since when, and its actions, with **✨ Summarize**
-and its summary under them; then what Copilot said after its last checkpoint, while it's at work or waits for you, or
+and its summary under them, written as the page opens, as a work item's details do, unless one that's current is there;
+then what Copilot said after its last checkpoint, while it's at work or waits for you, or
 how it ended once it stopped; then all its source knows of it (`ItemStory` in `Sources/BriefBarCore`), how it's linked
 to what you opened it from first, in a card as the work item's fields are, and the pipelines that ran on it; then **Also
 Linked**, what else is linked to it, without the work item and the pages you came through (the `trail` of
@@ -478,66 +478,189 @@ sent to Copilot says how it went, and Copilot what it recorded.
 
 ### Summaries
 
-**Summaries**, in Settings › General, under Show Links, is off until you turn it on, and works only while
-Show Links is on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says, a line each, what it uses or sends, where,
-what it costs and what the model can do. Apple Intelligence (on this Mac) is the default when no model was chosen;
-existing model choices and the on/off setting stay as they were, under the same `summaries.copilot.*` preferences.
-The picker also offers Claude Haiku 5.5, Claude Sonnet 5.5, GPT-6.1 Sol and Gemini 4 Argon
-(`CopilotModel.forSummaries`), not Opus, which costs more than a summary is worth, nor Auto, which may choose it.
-Apple Intelligence runs through `OnDeviceModel` and `SystemLanguageModel.default`, never Private Cloud Compute,
-with no tools, Copilot requests, sign-in or subscription. It needs a supported Mac, macOS 26 or later and Apple
-Intelligence enabled and ready. Settings explains when it isn't available; only a selected Copilot model checks
-whether the Copilot CLI is there. Local failures never fall back to Copilot. While Show Links is off,
-it's dimmed and can't be changed. Then, once there's something to sum up, two things linked to the work item or more,
-or one and its own tasks, as the sprint has them for a story or a bug (`LinkedItem.parts`), Where It Stands' header
-has **✨ Summarize with Apple Intelligence** or **✨ Summarize with Copilot**, or just **Summarize** where that doesn't
-fit, while no summary shows; its tooltip says whether it stays on this Mac or uses your Copilot plan.
-Only when you click it, it asks the selected provider for a summary of the
-work item and what's linked to it. Before it asks, the sources tell what they
-know of each, as for the details, the work item's description and latest comments too, and each of its tasks, with how
-the work sent to Copilot for it stands, and `StorySummaryPrompt` (in
-`Sources/BriefBarCore`) puts them in a prompt: instructions, then the data between `<data>` and `</data>`, which the
-model is told is only data, never instructions, with any `<data>` or `</data>` in it taken out, the most pressing
-first, and at most 14,000 characters for Copilot or 6,000 for Apple Intelligence, even when the subject alone is long.
-Local prompts cap each item's details at 1,800 characters so long discussions leave room for linked items' facts.
-The on-device session receives the instructions separately, reserves up to 500 response tokens and has a 45-second
-timeout. Character limits aren't token guarantees: if the model's context window is exceeded, the summary says so
-and offers a model change, never a cloud retry. Truncated data says details were left out, and the instructions
-require an incomplete-summary notice rather than treating missing data as no blockers or votes.
-The data starts with your name, as your pull requests have it in Azure DevOps,
-when that's known, and the model is told that's who reads it, to call you "you"; and that you already see each row's
-status, so it leads with what the rows don't say: blockers, what's left, contradictions. It asks for a headline, whom
-the next step is for (you, a person or Copilot) and what it is, and at most 120 words, which `StorySummary` reads,
-whatever Markdown is around them, and a next step that names whom it's for first, as in "Sam Rivera: get !4120
-reviewed". A teammate's pull request says who wrote it as one of its facts. Nothing from Teams goes in it, nor anything
-from the notifications that sent you a pull request: when a pull request's row says who sent it to you in a chat, or
-that you answered them, the prompt says where it stands by its votes instead (`ItemStory.sharedSentence`), and its
-status as active or a draft (`LinkedItem.sharedStatus`). The details still show who sent it.
+**Summaries**, in Settings › General, under Show Links, is off until you turn it on, and works only while Show Links is
+on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, and, right under that, **Writes**: **As
+you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
+line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
+model can do, with the model, under what it costs (`StorySummariesSetting.onDeviceSection`, `copilotSection` and
+`choiceTitle`): "On this Mac: free, less accurate", Apple Intelligence, "(not on this Mac)" where this Mac can't run
+it; then "Through Copilot: a request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5
+(cheapest), Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs most)
+(`CopilotModel.forSummaries`), so you choose what a summary is worth; never Auto, which may choose any. The picker is as
+wide as the model chosen needs, up to 320 points, so it fits in a 480-point popover. While Apple Intelligence is
+chosen, a line under it says it's a small model that often gets details wrong, even in short histories, and that
+Copilot's models are far more accurate: on realistic made-up items, it got every one of them wrong where Claude Haiku
+5.5 got them right. So unless you chose a model, it's Claude Haiku 5.5 through Copilot where the Copilot CLI is, and
+Apple Intelligence where it isn't (`StorySummaries.copilotDefaultModel`, `lookForCLI`, `hasChosenModel`): the CLI is
+looked for, as your login shell finds it, once summaries are on, as BriefBar starts, as they're turned on and as their
+setting shows, one look for all who ask meanwhile, which stops as they go off; never while they're off. Until the model's
+known (`knowsModel`), nothing's written as something opens, nor said to be about to be, so a card never says "on this
+Mac" for one that goes to Copilot; ✨ writes with the model it names. Choosing a model in the
+picker, even the one that was the default, saves it, and it stays whatever's found. Existing model choices and the
+on/off setting stay as they were, under the same `summaries.copilot.*` preferences; whoever had summaries on in 0.9.0
+with Claude Haiku 5.5, its default then, keeps it while the CLI is there. Apple Intelligence runs through
+`OnDeviceModel` and `SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests,
+sign-in or subscription; it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the
+setting explains when it isn't available. Opening something writes nothing with a model that can't write it there,
+Apple Intelligence where this Mac can't run it, or one through Copilot where the CLI wasn't found
+(`StorySummaries.canRunModel`), so each thing opened doesn't say so; ✨ still asks, and says why. Local failures never
+fall back to Copilot. While Show Links is off, it's dimmed and can't be changed.
+**Writes** starts as **As you open one**, except for whoever had summaries on before it came, when they were written
+only when you asked: they keep **Only when you ask** until they choose otherwise, saved once, the
+first time this version starts, so an update never starts spending for them.
 
-The card (`SummaryCard`) shows the headline and the next step, "Next for you: Complete !4091.", and what's been done and
-what's left behind **Show More**. Its caption names Apple Intelligence or Copilot, with "2m ago", the time each minute and never cut
-short, and its tooltip, which model wrote it, when, and from what: "from 5101, !4120 and 1 Copilot session". Each action
-has one control: **Stop** while it's written, after the model's name and "on this Mac" or "1 request", shortened to
-"Summarizing" and the location or cost where that doesn't fit, then **✕** only, in a 22-point target, which hides it (`StorySummaries.hide`): it's
-kept, as long as summaries are, and **Show Summary** shows it again without asking Copilot; **Summarize Again**, **Copy
-Summary** and **Hide Summary** in its right-click menu. Out of date, its caption says so in bold, and **Summarize
-Again** joins **Show More** at its foot. VoiceOver says "Summary ready" and what it's of, once, however many places show
-it. Your name comes from Azure DevOps, or else from your GitHub login.
+Once something's linked to the work item (`StorySummaries.hasSomethingToSum`), and no summary shows or is about to,
+Where It Stands' header has **✨ Summarize with Apple Intelligence** or **✨ Summarize with Copilot**, or just
+**Summarize** where that doesn't fit; its tooltip says whether it stays on this Mac or uses your Copilot plan. With **As
+you open one**, as the details open it, and while it isn't folded, the card shows at once, about as tall as it will be,
+with gray lines where the summary will go and "Summarizing in a moment · on this Mac", or "· 1 request" for a Copilot
+model, and **Not Now** (`StorySummaries.expect`, `isPending`); two seconds later (`openedFor`), the
+details ask for it (`StorySummaries.opened`), and it's written, the caption naming the model and **Stop** in Not Now's
+place, unless one is being written, you closed it, the last couldn't be written less than ten minutes ago
+(`retryAfter`), even if you closed what said so, or you wrote, stopped, closed or showed one for it since it opened
+(`timesActed(on:)`, which the details remember as it opens, so what they do by themselves never undoes what you did).
+One that's there already shows again, as it was, while it's current, once what it summed up is told as it is now; out
+of date, it's written again as it opens only once it's ten minutes old (`rewriteAfter`), since a session at work changes
+what it says every few minutes, and ↻ writes it sooner. Then, and for one that couldn't be written ten minutes ago or
+more, its card says so as it opens, as for a new one (`StorySummaries.isDue`): "Since then: !4120 changed. Updating in a
+moment · 1 request", or "Trying again in a moment", with **Not Now** in place of ↻ and ✕, or of **Try Again**; and one
+found out of date only once what it summed up is read again, as it opens, says so then, for as long
+(`StorySummaries.noticeFor`). **Not
+Now** keeps it from being written as it opened, this time, and ✨, or ↻, shows. While its setting shows from **Turn
+On…**, nothing's written as it opens (`StorySummaries.isChoosing`, which each Turn On… claims for itself, so another
+going away doesn't end it): turning summaries on there writes one once you're done choosing how. Passing through a work item on your way to another costs nothing; turning summaries on, unfolding Where It
+Stands, or its getting something linked while it shows, such as links read after it opened, asks again. With **Only when
+you ask**, it's written when you click ✨. The card's coming, filling and going moves what's under it smoothly.
+
+Before it asks, the sources tell what they know of each, as for the details, the work item's description and latest
+comments too, and each of its tasks, with how the work sent to Copilot for it stands; then each source reads more of
+each thing for the summary, only now (`ItemStories.context(for:)`, from what each registers with `registerContext`), as
+[below](#what-a-summary-reads) says; and `StorySummaryPrompt` (in `Sources/BriefBarCore`) puts them in a prompt:
+instructions, then the data between `<data>` and `</data>`, which the model is told is only data, never instructions,
+with any `<data>` or `</data>` in it taken out, the most pressing first, and at most 36,000 characters for Copilot or
+6,000 for Apple Intelligence, even when the subject alone is long. What a source read for the summary follows each
+thing's story, a labelled part each, in place of a note of its story's by the same label, such as a description cut
+shorter: an even share each of 10,000 characters for the thing summed up and of 5,000 for each one linked to it, 4,000
+at most, what a short part doesn't use going to the others, so a long description doesn't crowd out the comments after
+it (`StorySummaryPrompt.room`); a part that would be cut to less than 200 is left out, a short one never is. For Apple
+Intelligence, each thing gets 1,800 characters in all, so long discussions leave room for what's linked, and what was
+read for it shares what its story leaves of them, the same way. The on-device session receives the instructions
+separately, reserves up to 500 tokens for the answer and has a 45-second timeout. Character limits aren't token
+guarantees: if the model's context window is exceeded, the summary says so and offers a model change, never a cloud
+retry. Data cut short says details were left out, and only then are the summaries told to say they may be incomplete;
+missing data never means there are no blockers, votes or work left. A note that it may be incomplete is taken out of a
+summary only when nothing in its data was cut short ("…"), left out, or said to have more ("(2 more)")
+(`StorySummaries.isWhole`, `StorySummary.withoutIncompleteNotes`), as a small model adds one anyway; never one that
+says work is incomplete. Pipeline runs that passed are left out of the data,
+so the model can't say a build passed; failed, running and waiting ones stay, a failed one with its first error. The
+data starts with your name, as your pull requests have it in Azure DevOps, when that's known, and the model is told
+that's who reads it, to call you "you"; then, for a work item, after `SHOWN`, who it all waits on, as Where It Stands
+says it above the summary, which pages and rows don't say. The model is told that you see each item's title and status
+line and what's after `SHOWN`, so it never repeats them, nor lists tasks' states or hours, but says what you'd otherwise
+open Azure DevOps or a session to learn: what reviewers asked and whether that's answered, what Copilot changed and what
+it said is left or risky, why a build failed, what blocks the work and on whom; and to check what was built, from pull
+requests' descriptions and Copilot's answers, against the work item's description and acceptance criteria, where a pull
+request that does only part of the work, the rest being other tasks' or not done yet, is work left, not a difference. It
+answers in a form `StorySummary` reads, whatever Markdown is around its labels: first `CHECK:`, each way what was built
+differs from what the work item asks, or None, which is never shown, and which keeps even the model on this Mac to the
+form; a headline of at most 14 words, the one thing to know, the first difference found when there's one; whom the step
+that unblocks the most is for, you, a person or Copilot, and what it is; and `SUMMARY:`, 2 to 5 short points, the most
+important first, at most 160 words in all, each on a line of its own after "- ", with a bold lead of a word or two, such
+as **Differs:**, **Review:** or **Left:**, and `code` for commit IDs, paths and endpoints. `StorySummary.parse` keeps the
+points as Markdown of those few kinds, each point after "- ", however the model marked it, its bold and code closed even
+where it's cut short, a link as its text, without headings, quotes, rules or code blocks; a point is never read as a
+label, as "- **Next:** …" might be; an answer run into one line is read apart at its labels; your name for whom the next
+step is reads as "you"; and "PR !4120" reads "!4120", "the PR" "the pull request" and "PRs" "pull requests", leaving
+names such as "PR-Validation" as they are. A next step may name whom it's for first, as in "Sam Rivera: get !4120 reviewed". A
+teammate's pull request says who wrote it as
+one of its facts. Nothing from Teams goes in it, nor anything from the notifications that sent you a pull request: when
+a pull request's row says who sent it to you in a chat, or that you answered them, the prompt says where it stands by
+its votes instead (`ItemStory.sharedSentence`), and its status as active or a draft (`LinkedItem.sharedStatus`); who it
+waits on says only "you, to look at !4113". The details still show who sent it.
+
+The card (`SummaryCard`), at the top of Where It Stands, under Waiting On, shows all of it, a size bigger than the
+details' text: the headline, the next step, "Next for you: Cap the backoff, then reply to Sam.", and its points, never
+behind **Show More**, since that's what explains where things stand: a bullet each, with its bold and `code` as the model
+wrote them, and a link only as its words, since what a model writes may come from anyone's comment (`SummaryMarkdown`,
+`SummaryPoints`); an answer without points shows as the text it is. A next step that only says again what Waiting On
+says above it, for whom that line says it waits on, naming what it names and nothing else, every word of it being the
+line's, as "Complete !4091." under "you, to complete !4091", doesn't show (`SummaryCard.repeats`); one that says more,
+as "Complete !4091 after fixing authentication.", does. Its caption says "Summary by Apple Intelligence · 2m ago", or "Summary by
+Copilot", the time each minute and never cut short, and its tooltip, which model wrote it, when, from what, "from 5101,
+!4120 and 1 Copilot session", and, for a Copilot model, that it was 1 request. Each action has one control: **Not Now** before it's written, **Stop** while it is; then **↻**,
+which writes it again, and **✕**, each in a 22-point target, which hides it (`StorySummaries.hide`): it's kept, as long
+as summaries are, and **Show Summary** shows it again without writing another; **Summarize Again**, **Copy Summary** and
+**Hide Summary** in its right-click menu. Written again, by ↻, by opening it, or by **Summarize Again**, the one before
+shows, gray, under "Updating · on this Mac", or "· 1 request", with **Stop**, which brings it back as it was
+(`StorySummaries.previous(for:)`). Out of date, its caption says so in bold, its text turns a little lighter, and its
+foot says what changed, "Since then: !4120 changed.", with **Summarize Again**, in the tint, as a link. One that
+couldn't be written again stays as it was, lighter only if it's out of date too, with why at its foot, "Couldn't update:
+Apple Intelligence is busy or took too long.", and under that, **Choose Model…** for a model that isn't on
+your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't be written at all says "Couldn't summarize:
+…", with the same, and its ✕ closes it, since nothing's kept. VoiceOver says "Summary ready" and what it's of, once,
+however many places show it. Your name comes from Azure DevOps, or else from your GitHub login.
+
+While Summaries is off and Show Links is on, a line where its card would be, in Where It Stands once something's linked
+and under a page's heading, offers it (`SummaryOffer`): "AI can tell you where this stands, in a few lines.", whichever
+model would write them, which isn't known until they're on, with **Turn On…**, in the tint, after it while it fits, or else on a line of
+its own, which shows its setting in a popover, what it uses or sends, where and what it costs, to turn it on there, the
+line staying while it shows; and **✕**, which hides the line for good (`summaries.copilot.offerHidden`). It's above where
+the card will be, so turning summaries on there doesn't move it.
 
 The lists offer it too, for a pull request, Azure DevOps' or GitHub's, and a Copilot session, whatever's linked to it
-(`StorySummaries.canSummarize`, while a source describes it): pointing at its row puts **✨** in its time's place
-(`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its actions, and while it's written a
-spinner takes that place, so a second click there doesn't open the row. Its right-click and Actions menus have, in a
-group of its own right after opening it, **Summarize** with the chosen provider, then **Stop Summarizing**, **Hide Summary** or
-**Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do its accessibility actions. Its summary shows
-under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨ and the headline, then the next step and for
-whom, two lines each at most, with **Show More** at its end, in the tint, as a link, and, out of date, **Summarize
-Again**; ✕ shows on the right while you point at it, over its first line, and the time it was written is in its tooltip,
-so that it isn't read as the row's; it ends where the row's time does, left of its actions. The prompt tells the model
-that the reader sees each item's Status line, so it leads with what that doesn't say. It's the same summary as its
-page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's out of
-date. With nothing linked to it, it sums up what its source knows of it alone; a thing no source describes, or that
-nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries`).
+(`StorySummaries.canSummarize`, while a source describes it), only when you ask, never as they show: pointing at its row
+puts **✨** in its time's place (`RowTime`, which keeps the spot, and `rowSummarizeButton`), unless the row shows its
+actions, and while it's written a spinner takes that place, so a second click there doesn't open the row. Its
+right-click and Actions menus have, in a group of its own right after opening it, **Summarize with Apple
+Intelligence** or **Summarize with Copilot**, then
+**Stop Summarizing**, **Hide Summary** or **Show Summary**, and **Summarize Again** (`SummarizeMenuItems`), and so do
+its accessibility actions. Its summary shows under its row (`RowSummary`) in the row's own sizes, as a chat's does: ✨
+and the headline, then the next step and for whom, in full, then, quieter, the first three lines of its points, after
+"•", with their bold and code (`RowSummaryContent.paragraphLines`, `SummaryMarkdown.joined`), with **Show More** at
+their end, in the tint, as a link, while there's more, and, out of date, what changed, "Out of date: !4102 changed",
+with **Summarize Again**; ✕ shows on the right while you point at it, over its first line, and the
+time it was written is in its tooltip, so that it isn't read as the row's; it ends where the row's time does, left of
+its actions. Written again, the one before stays, gray, with a spinner and **Stop** over the end of its first line; one
+that couldn't be written again stays, with "Couldn't update: …" and **Try Again** at its foot. It's the same summary as
+its page's; while it shows, what it summed up is read again each minute, as for Where It Stands, so it says when it's
+out of date. With nothing linked to it, it sums up what its source knows of it alone; a thing no source describes, or
+that nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries`).
+
+#### What a summary reads
+
+As a summary is written, and, for one ten minutes old or more, again as its details or page open, to tell whether it's
+still current, and only then, each source reads more of each thing it sums up, beyond its story
+(`ItemStories.registerContext`), whichever model writes it. Nothing of it is kept but a fingerprint of each part, in
+memory (`StorySummaries.lastRead`, a hash of each part's text by its label), until summaries or Show Links go off, a
+source stops, or BriefBar quits; and nothing is read while Show Links is off or once the summary is taken back. A part
+the prompt has no room for says it's left out, "(Comment threads left out for length.)", and so do the older comments
+of a work item that don't fit or weren't read, by its comment count, "(2 earlier comments left out)":
+
+- Azure DevOps (`WorkLinksStore.context`; every request a GET): a pull request's description, in plain text, without
+  what its template asks its author in HTML comments, from a GET of it; and its comment threads, your pull requests'
+  as already read and others' read where the pull request says it is (`PullRequestContext`): the unresolved ones a line
+  each, the open ones first, the newest first, with who started it and where, what they said and the latest reply,
+  and whether anyone else replied, "(replied, not resolved)" or "(no reply yet)", then how many are resolved, with the
+  latest two in brief; each part at most 3,000 characters. A work item's texts, its description, repro steps and
+  acceptance criteria, and its latest comments, up to ten, oldest first, so an answer follows its question, and, cut to
+  fit, the newest stay (`ItemStory.Fact.keepsEnd`), from its details on
+  screen, or read as when you open it (`WorkItemStory.context`), under its story's notes' labels, so they take those
+  notes' places. A read that fails leaves its part out; once Azure DevOps asks to slow down, nothing more is read; and
+  what's read as someone other than who the pull requests' refresh saw signed in is left out. That's up to two GETs a
+  pull request and two or three a work item. The demo reads nothing: it has its pull requests' threads, a few made-up
+  descriptions and its sprint's details.
+- Copilot (`SessionConversation`, in `Sources/CopilotCore`, and `CopilotSource`): a session's conversation, from its
+  log, opened below `~/.copilot` without following a symbolic link, for a session's ID, a UUID, only: the whole log
+  when it's no longer than 4.5 MB, or else its first 512 KB, for what was asked first, and its last 4 MB, for the
+  latest turns. It keeps what you asked, or another session did (a message whose `data.source` starts with `agent-`,
+  said as "Another session"), and each answer that ended Copilot's turn, its own message without tool requests, or the
+  summary it called its task done with, said once; not what it says as it calls tools, what an agent and its subagents
+  say to each other, or the app's notices (`<system_notification>`). Each message is a paragraph, cut short, an ask at
+  600 characters, an answer at 900 and the last one at 1,200: what was asked first, then the latest turns that fit in
+  3,800 characters in all, with "(N earlier turns left out)", or "(part of the conversation left out)" where the middle
+  of a longer log wasn't read. A read takes well under a tenth of a second, even for a log of hundreds of megabytes.
+- GitHub: nothing more. BriefBar reads GitHub with one fixed query, so a GitHub pull request's summary has what that
+  reads: its reviews, its checks and whether it can merge.
 
 When a Copilot model is selected, `CopilotSummarizer` (in `Sources/CopilotTasks`) runs `copilot -p <prompt> --model <model> --reasoning-effort low
 --available-tools=briefbar_no_tools --deny-tool shell --deny-tool write --disable-builtin-mcps --no-custom-instructions
@@ -545,32 +668,41 @@ When a Copilot model is selected, `CopilotSummarizer` (in `Sources/CopilotTasks`
 shell's environment, for two minutes at most. No tool is called `briefbar_no_tools`, so the model has none: an empty
 `--available-tools` would leave it every tool, as the CLI takes that as no limit. The folder,
 `~/Library/Application Support/BriefBar/Copilot/Summaries`, is BriefBar's own and empty, so no project's instructions,
-skills or MCP servers apply. Only the chosen model is used. The CLI keeps each run as a
-session, as it keeps every session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar.
+skills or MCP servers apply. Only the chosen model is used. The CLI keeps each run as a session, as it keeps every
+session, named "BriefBar summary"; the Copilot app doesn't list them, and nor does BriefBar, even when it finds sessions
+from their folders, without the app's database (`SessionStateScanner` leaves out those that worked in that folder,
+`CopilotPaths.briefBarSummaries`).
 When it fails, `CopilotSummarizer` tells from what the CLI said whether it isn't signed in ("No authentication
 information found"), the model isn't on your plan, or your premium requests ran out, and the card says so in a
 sentence, "The Copilot CLI isn't signed in. Run copilot in Terminal once.", with what the CLI said in its tooltip,
 **Choose Model…** for a model that isn't on your plan, which shows the setting, and **Try Again**.
 
-The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summaries goes off,
-or a source stops, taking what it told with it; one being written is stopped then, and **Cancel** stops it too: Copilot
-doesn't start, or `ProcessRunner` stops it, with whatever it started, as at its timeout. Changing models also cancels
-in-flight summaries, without starting another; written summaries retain their original model attribution.
-The stories it was waiting for
+The summary is kept in memory only, until BriefBar quits, you close it, Show Links or Summaries goes off, or a source
+stops, taking what it told with it; one being written is stopped then, and **Stop** stops it too: the model isn't asked,
+or its answer is dropped, and `ProcessRunner` stops Copilot, with whatever it started, as at its timeout. Changing models
+also stops summaries being written, without starting another; written summaries keep the model that wrote them. The
+stories it was waiting for
 stop being read, unless the details asked for them too, and a story the details are reading already is waited for rather
 than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
 status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
 one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
-(`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
-than for how long, which its date says, and a pull request without recent activity says just that; and a story that's
+(`StorySummaries.Input`); or what was read for it, as it was last read, part by part, such as a reply in a pull request's
+comment thread, which changes neither its row nor its story: a part that says something else, or that wasn't there,
+counts, but not one that couldn't be read again, as when its read failed. That's read again only as one ten minutes old
+or more opens, before it's written again. How long ago anything was isn't part of it, so a task's row and story say "Working" rather
+than for how long, which its date says, and a pull request without recent activity says just that; nor is what
+Copilot's doing just now, on a session's or a task's row or story, "Working: Run the cart tests" being just "Working"
+(`StorySummaries.steady`), nor what a session at work said last, which change every few minutes, while its checkpoints,
+its asking or its ending do count; and a story that's
 been forgotten since, a quarter of an hour on, makes no difference until it's told again. Nor do a work item's
 description and comments when they're known only then or only now: its story has them only while its details were read
 and all of them only when its comments could be read too (`ItemStory.notesRead`). Read in full both then and now, a
-first comment does, and so does the last one gone. Its caption then says **Out of date**, in orange, with what changed
-in its tooltip, "!4120 changed", and **Summarize Again** on its right; the headline and the next step turn gray. The
-demo makes summaries up (`DemoSummaries`) and never runs Copilot, and `--render` of your own data writes none; the
-demo's pictures show a summary as it's written, once it is, out of date and failed (`summary-*`), and the setting with
-Show Links off; and a pull request's and a session's summary under its row (`rows-summary-*`), which the other pictures
+first comment does, and so does the last one gone. Its caption then says **Out of date**, in bold, and its foot what
+changed, "Since then: !4120 changed.", with **Summarize Again**; what it says turns a little lighter. The demo makes
+summaries up (`DemoSummaries`) and never runs Copilot, nor does opening anything write one in `--render`, of the demo or
+your own data; the demo's pictures show a summary about to be written as it opens, as it's written, once it is, as it's
+written again, when that couldn't be, out of date and failed, the line that offers it while it's off (`summary-*`),
+and the setting with Show Links off; a pull request's and a session's page with theirs; and a pull request's and a session's summary under its row (`rows-summary-*`), which the other pictures
 of the lists don't show.
 
 **Your edits.** Linking adds a link of your own. Unlinking takes it away, or, for a link a source knows, hides it in
@@ -944,8 +1076,8 @@ so a pull request's details (policies and threads, two requests) are fetched on 
   minutes, and drafts and idle ones every fifteen.
 
 Requests honor `Retry-After`: when Azure DevOps asks to slow down, nothing is sent until the time it
-gave. When nothing can be read (offline, for example), refreshes back off up to ten minutes, and
-waking the Mac or getting back online refreshes right away.
+gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`). When nothing can be read (offline, for
+example), refreshes back off up to ten minutes, and waking the Mac or getting back online refreshes right away.
 
 Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
 server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a
@@ -1509,7 +1641,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 | Source | Written by | Provides |
 |---|---|---|
 | `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
-| `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors |
+| `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors; and, only as [Summarize with Copilot](#what-a-summary-reads) writes a summary, what was asked in it and what Copilot answered |
 | `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
 BriefBar combines the two. The database says which sessions exist and whether the app

@@ -319,6 +319,26 @@ extension Locked where Value == Int {
         #expect(server.requests.count == sent)
     }
 
+    /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then, so
+    /// a summary reading one pull request after another stops at the first.
+    @Test func waitsAMinuteWhenToldToSlowDownWithoutHowLong() async throws {
+        let server = StubServer()
+        server.on("/_apis/connectionData") { _ in .status(503) }
+        let client = server.client()
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+        await #expect(throws: ADOError.throttled(retryAfter: 60)) { try await client.get(url, as: ADOConnectionData.self) }
+
+        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
+        let sent = server.requests.count
+        do {
+            _ = try await client.get(url, as: ADOConnectionData.self)
+            Issue.record("Expected to be throttled")
+        } catch ADOError.throttled(let wait) {
+            #expect(wait > 55 && wait <= 60)
+        }
+        #expect(server.requests.count == sent)
+    }
+
     @Test func reportsAuthFailures() async {
         let server = StubServer()
         let client = server.client(tokens: FakeTokens(server.id, error: .signedOut("Run az login")))

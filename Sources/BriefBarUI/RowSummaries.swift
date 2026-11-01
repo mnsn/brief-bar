@@ -2,8 +2,9 @@ import AppKit
 import BriefBarCore
 import SwiftUI
 
-// On-demand summaries on pull requests' and sessions' rows: in the time's place while hovered, and in their menus.
-// Only while Summaries and Show Links are on; never in a widget.
+// On-demand summaries on pull requests' and sessions' rows in the lists: ✨ in its time's place while you point at it,
+// Summarize in its menus, and the summary in a few lines under it, as a chat's summary shows, until you hide it. Only
+// while summaries and Show Links are on; never in a widget.
 
 private struct OffersSummariesKey: EnvironmentKey {
     static let defaultValue = true
@@ -17,8 +18,9 @@ extension EnvironmentValues {
     }
 }
 
-/// The summary under a row, in the row's own sizes: ✨ and its headline, then what's next and for whom, the rest on
-/// request; while it's written, that it is, with Stop; when it couldn't be, why, with Try Again.
+/// The summary under a row, in the row's own sizes: ✨ and its headline, then what's next and for whom, then the first
+/// three lines of the rest, all of it on request; while it's written, that it is, with Stop; when it couldn't be, why, with Try
+/// Again.
 package struct RowSummary: View {
     private let subject: ItemRef?
 
@@ -46,9 +48,13 @@ private struct RowSummaryContent: View {
     @Environment(\.textScale) private var textScale
     @LocalState private var showsMore = false
     @LocalState private var isHovered = false
+    /// How tall its paragraph is as it shows, and all of it.
+    @LocalState private var paragraphHeight: (shown: CGFloat, full: CGFloat) = (0, 0)
 
     /// Under the sparkles, where the headline starts: their column, as big as the text, then 5 points.
     private var indent: CGFloat { 12 * textScale + 5 }
+    /// How many lines of what's been done and what's left show at first.
+    static let paragraphLines = 3
 
     var body: some View {
         if summaries.isAvailable, let state = summaries.shownState(for: subject) {
@@ -74,41 +80,69 @@ private struct RowSummaryContent: View {
     private func line(_ state: StorySummaries.State) -> some View {
         switch state {
         case .writing:
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                ProgressView()
-                    .controlSize(.mini)
-                SummaryCard.writingText(summaries)
-                Button("Stop") { summaries.cancel(subject) }
-                    .buttonStyle(.borderless)
-                Spacer(minLength: 0)
+            // Written again, the one it replaces shows meanwhile, dimmed, with Stop.
+            if case .written(let summary, let at, let inputs, let model)? = summaries.previous(for: subject) {
+                written(summary, at: at, inputs: inputs, model: model, isUpdating: true)
+            } else {
+                writingLine
             }
-            .font(size: options.rowDetailSize)
         case .written(let summary, let at, let inputs, let model):
             written(summary, at: at, inputs: inputs, model: model)
         case .failed(let problem, _):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("Couldn't summarize: \(problem.message)")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .help(problem.detail ?? "")
-                Button("Try Again") { summaries.summarize(subject) }
-                    .buttonStyle(.borderless)
-                    .fixedSize()
-                Spacer(minLength: 4)
-                Button("Close") { summaries.dismiss(subject) }
-                    .buttonStyle(.borderless)
-                    .fixedSize()
+            // Written again and couldn't be: the one before stays, with why at its foot.
+            if case .written(let summary, let at, let inputs, let model)? = summaries.previous(for: subject) {
+                written(summary, at: at, inputs: inputs, model: model, failure: problem)
+            } else {
+                failedLine(problem)
             }
-            .font(size: options.rowDetailSize)
         }
     }
 
-    private func written(_ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String) -> some View {
-        let changed = summaries.whatChanged(subject)
+    private var writingLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            SummaryCard.writingText(summaries)
+            Button("Stop") { summaries.cancel(subject) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tint)
+            Spacer(minLength: 0)
+        }
+        .font(size: options.rowDetailSize)
+    }
+
+    private func failedLine(_ problem: StorySummaries.Problem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Couldn't summarize: \(problem.message)")
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(problem.detail ?? "")
+            Button("Try Again") { summaries.summarize(subject) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tint)
+                .fixedSize()
+                .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+            Spacer(minLength: 4)
+            Button("Close") { summaries.dismiss(subject) }
+                .buttonStyle(.borderless)
+                .fixedSize()
+        }
+        .font(size: options.rowDetailSize)
+    }
+
+    /// A written one; while another is written in its place, dimmed, with Stop; or, when that one couldn't be written, as
+    /// it was, with why at its foot.
+    private func written(
+        _ summary: StorySummary, at: Date, inputs: [StorySummaries.Input], model: String, isUpdating: Bool = false,
+        failure: StorySummaries.Problem? = nil
+    ) -> some View {
+        let changed = isUpdating || failure != nil ? nil : summaries.whatChanged(subject)
+        // Lighter while another's written in its place, or once it's out of date; not just for one that couldn't be.
+        let isDimmed = isUpdating || changed != nil
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: "sparkles")
@@ -118,16 +152,28 @@ private struct RowSummaryContent: View {
                     .accessibilityHidden(true)
                 Text(summary.headline)
                     .font(size: options.rowReasonSize, weight: .medium)
-                    .foregroundStyle(changed == nil ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
-                    .lineLimit(showsMore ? nil : 2)
+                    .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
+                    // Never cut short, nor what's next: a sentence each, and what the rest is cut to make room for.
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 // Room for ✕; its time is in its tooltip, so that it isn't read as the row's.
                 Spacer(minLength: 24)
             }
-            // While you point at it, ✕, over the end of its first line, which it doesn't make any taller.
+            // While another is written in its place, that it is, with Stop, over the end of its first line; or, while you
+            // point at it, ✕; neither makes it any taller.
             .overlay(alignment: .topTrailing) {
-                if isHovered {
+                if isUpdating {
+                    HStack(spacing: 5) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Button("Stop") { summaries.cancel(subject) }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.tint)
+                            .font(size: 11)
+                            .help("Stop, and keep the summary from \(at.formatted(date: .omitted, time: .shortened))")
+                    }
+                    .help(SummaryCard.writing(summaries))
+                } else if isHovered {
                     Button {
                         summaries.hide(subject)
                     } label: {
@@ -141,8 +187,10 @@ private struct RowSummaryContent: View {
                     .offset(y: -3)
                 }
             }
-            // Show More at the end of what's next, while there's more; Show Less at the end of the rest.
-            let more = summary.paragraph == nil ? nil : Button(showsMore ? "Show Less" : "Show More") {
+            // Show More at the end of the rest, while there's more of it: its points, three lines of them at first; Show
+            // Less once they're all there.
+            let hasMore = showsMore || paragraphHeight.full > paragraphHeight.shown + 1
+            let more = summary.paragraph == nil || !hasMore ? nil : Button(showsMore ? "Show Less" : "Show More") {
                 withAnimation(.easeOut(duration: 0.15)) { showsMore.toggle() }
             }
             .buttonStyle(.borderless)
@@ -151,41 +199,60 @@ private struct RowSummaryContent: View {
             .foregroundStyle(.tint)
             .fixedSize()
             if let next = summary.next {
+                (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                    .font(size: options.rowDetailSize)
+                    .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary.opacity(0.85)))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, indent)
+            }
+            if let paragraph = summary.paragraph {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
+                    // Quieter than what's next, and than the row: it's what explains the rest.
+                    Text(SummaryMarkdown.joined(paragraph))
                         .font(size: options.rowDetailSize)
                         .foregroundStyle(.secondary)
-                        .lineLimit(showsMore ? nil : 2)
+                        .lineLimit(showsMore ? nil : Self.paragraphLines)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                    if !showsMore, let more { more }
-                }
-                .padding(.leading, indent)
-            }
-            if showsMore, let paragraph = summary.paragraph {
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    Text(paragraph)
-                        .font(size: options.rowDetailSize)
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.shown = $0 }
+                        // All of it, unseen, to tell whether three lines cut it short.
+                        .background(alignment: .topLeading) {
+                            Text(SummaryMarkdown.joined(paragraph))
+                                .font(size: options.rowDetailSize)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .hidden()
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { paragraphHeight.full = $0 }
+                        }
                     if let more { more }
                 }
                 .padding(.leading, indent)
                 .padding(.top, 2)
             }
-            if (summary.next == nil && !showsMore && more != nil) || changed != nil {
+            if let failure {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Couldn't update: \(failure.message)")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(failure.detail ?? "")
+                    Button("Try Again") { summaries.summarize(subject) }
+                        .foregroundStyle(.tint)
+                        .fixedSize()
+                        .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
+                }
+                .buttonStyle(.borderless)
+                .font(size: 11)
+                .padding(.leading, indent)
+            } else if let changed {
                 HStack(spacing: 12) {
-                    if summary.next == nil, !showsMore, let more { more }
-                    if let changed {
-                        Text("Out of date")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .help("Since it was written: \(changed).")
-                        Button("Summarize Again") { summaries.summarize(subject) }
-                            .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model),
-                                                       onDevice: summaries.usesOnDeviceModel))
-                    }
+                    (Text("Out of date").fontWeight(.semibold) + Text(": \(changed)"))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help("Since it was written: \(changed).")
+                    Button("Summarize Again") { summaries.summarize(subject) }
+                        .foregroundStyle(.tint)
+                        .help(SummarizeButton.help(for: subject, model: summaries.name(of: summaries.model), onDevice: summaries.usesOnDeviceModel))
                 }
                 .buttonStyle(.borderless)
                 .font(size: 11)
@@ -196,17 +263,26 @@ private struct RowSummaryContent: View {
         .onHover { isHovered = $0 }
         .help("Written by \(summaries.attribution(for: model)) at \(at.formatted(date: .omitted, time: .shortened)), "
               + "from \(StorySummaries.source(of: inputs)).")
+        // While another is written, Stop is what's done to it, as on its card.
         .contextMenu {
-            Button("Summarize Again") { summaries.summarize(subject) }
+            if !isUpdating {
+                Button("Summarize Again") { summaries.summarize(subject) }
+            }
             Button("Copy Summary") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(summary.plainText, forType: .string)
             }
-            Button("Hide Summary") { summaries.hide(subject) }
+            if !isUpdating {
+                Button("Hide Summary") { summaries.hide(subject) }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(SummaryCard.title(for: model))
-        .accessibilityAction(named: "Hide Summary") { summaries.hide(subject) }
+        .accessibilityActions {
+            if !isUpdating {
+                Button("Hide Summary") { summaries.hide(subject) }
+            }
+        }
     }
 }
 
@@ -254,7 +330,12 @@ private struct SummarizeMenuContent: View {
                 Button("Summarize Again") { summaries.summarize(subject) }
             case .failed:
                 Button("Try Again") { summaries.summarize(subject) }
-                Button("Close Summary") { summaries.dismiss(subject) }
+                // One that couldn't be written again closes as the one before it, kept to show again.
+                if summaries.previous(for: subject) != nil {
+                    Button("Hide Summary") { summaries.hide(subject) }
+                } else {
+                    Button("Close Summary") { summaries.dismiss(subject) }
+                }
             }
             if divided { Divider() }
         }

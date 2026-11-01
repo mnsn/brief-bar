@@ -22,6 +22,14 @@ import Testing
         FileManager.default.temporaryDirectory.appendingPathComponent("summaries-\(UUID().uuidString)", isDirectory: true)
     }
 
+    /// Summaries offer Copilot's models from the cheapest to the most capable, Opus, which costs the most, so you choose
+    /// what a summary's worth; never Auto, which may choose any.
+    @Test func summariesOfferModelsFromTheCheapestToTheMostCapable() {
+        #expect(CopilotModel.forSummaries.map(\.id) == [
+            "claude-haiku-5.5", "claude-sonnet-5.5", "gpt-6.1-sol", "gemini-4-argon", "claude-opus-5.5",
+        ])
+    }
+
     @Test func itRunsWithNoToolsAtAllAndNothingOfYours() {
         let folder = URL(fileURLWithPath: "/Users/robin/Library/Application Support/BriefBar/Copilot/Summaries")
         let arguments = CopilotSummarizer.arguments(prompt: "Sum it up", options: options, folder: folder)

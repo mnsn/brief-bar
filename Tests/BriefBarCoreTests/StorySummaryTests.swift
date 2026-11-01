@@ -1,4 +1,4 @@
-import BriefBarCore
+@testable import BriefBarCore
 import Foundation
 import Testing
 
@@ -70,7 +70,219 @@ import Testing
         let summary = try #require(StorySummary.parse("HEADLINE: \(long)\nSUMMARY: \(long)"))
         #expect(summary.headline.count <= 220)
         #expect(summary.headline.hasSuffix("…"))
-        #expect((summary.paragraph?.count ?? 0) <= 1_400)
+        #expect((summary.paragraph?.count ?? 0) <= 1_600)
+    }
+
+    // MARK: Points
+
+    /// The form the prompt asks for: a check that's never shown, then a summary in points, each with a lead in bold.
+    @Test func theCheckIsNeverShownAndTheSummaryIsItsPoints() {
+        let summary = StorySummary.parse("""
+            CHECK: The work item asks for a sign-in prompt for guests; Copilot hides the button from them.
+            HEADLINE: Guests should get a sign-in prompt, but Copilot hid Save for later from them.
+            NEXT FOR: you
+            NEXT: Ask Copilot to show guests a prompt to sign in.
+            SUMMARY:
+            - **Differs:** Copilot hides the button from guests, who should get a prompt to sign in.
+            - **Review:** Sam agreed to return 404 from `DELETE /cart/saved`, but Priya's thread isn't resolved.
+            """)
+        #expect(summary == StorySummary(
+            headline: "Guests should get a sign-in prompt, but Copilot hid Save for later from them.", nextFor: "you",
+            next: "Ask Copilot to show guests a prompt to sign in.", paragraph: """
+                - **Differs:** Copilot hides the button from guests, who should get a prompt to sign in.
+                - **Review:** Sam agreed to return 404 from `DELETE /cart/saved`, but Priya's thread isn't resolved.
+                """
+        ))
+        // Over a few lines, some of them points, whatever comes after it, and with nothing else.
+        let long = StorySummary.parse("""
+            CHECK:
+            - **Differs:** Copilot hides the button from guests.
+            - Next: nothing differs otherwise.
+            HEADLINE: Guests see nothing.
+            SUMMARY: - **Done:** The table and the API.
+            CHECK: None
+            """)
+        #expect(long == StorySummary(headline: "Guests see nothing.", paragraph: "- **Done:** The table and the API."))
+        // A line of the summary's own that starts as a check would is part of it.
+        let checked = StorySummary.parse("HEADLINE: Waiting.\nSUMMARY:\n- **Done:** The table.\nCheck: the nightly logs first.")
+        #expect(checked?.paragraph == "- **Done:** The table.\nCheck: the nightly logs first.")
+        // Without a headline, the summary's first sentence is the headline, and the check is still never shown.
+        let unlabeled = StorySummary.parse("CHECK: Copilot hides the button.\nSUMMARY: The work is under way. Nothing waits.")
+        #expect(unlabeled == StorySummary(headline: "The work is under way.", paragraph: "Nothing waits."))
+        #expect(StorySummary.parse("CHECK: None") == nil)
+    }
+
+    /// Within the summary, a point is never a label, whatever it starts with, and neither is a label said already, such as a
+    /// lead in bold: only a line of its own may start one, with emphasis or a heading around it.
+    @Test func aPointThatStartsLikeALabelIsPartOfTheSummary() {
+        let summary = StorySummary.parse("""
+            HEADLINE: Waiting for Priya's review.
+            NEXT FOR: Sam Rivera
+            NEXT: Return 404 from DELETE.
+            SUMMARY:
+            - **Next:** ask Sam to rebase.
+            - **Summary:** two threads are open.
+            * Headline: one approval of two.
+            **Next for you:** nothing more.
+            **Next:** answer Chen.
+            """)
+        #expect(summary?.nextFor == "Sam Rivera")
+        #expect(summary?.next == "Return 404 from DELETE.")
+        #expect(summary?.headline == "Waiting for Priya's review.")
+        #expect(summary?.paragraph == """
+            - **Next:** ask Sam to rebase.
+            - **Summary:** two threads are open.
+            - Headline: one approval of two.
+            - **Next for you:** nothing more.
+            - **Next:** answer Chen.
+            """)
+        // A label it didn't have yet, on a line of its own, still starts it, in bold or after a heading's marks.
+        let late = StorySummary.parse("HEADLINE: Approved.\nSUMMARY:\n- **Done:** Both approved.\n## Next: Complete !4091.")
+        #expect(late?.next == "Complete !4091.")
+        #expect(late?.paragraph == "- **Done:** Both approved.")
+        let bold = StorySummary.parse("""
+            **Headline:** Approved.
+            **Summary:** - **Done:** Both approved.
+            **Next:** Complete !4091.
+            """)
+        #expect(bold == StorySummary(headline: "Approved.", next: "Complete !4091.", paragraph: "- **Done:** Both approved."))
+    }
+
+    /// The summary's points, however they're marked, with **bold** and `code`: links as their text, headings as theirs, no
+    /// code fences, rules or blank lines between points, and every bold or code mark closed, even once it's cut.
+    @Test func theSummaryKeepsOnlyPointsBoldAndCode() throws {
+        let summary = StorySummary.parse("""
+            **Headline:** `DELETE` returns 204 for [a typo](https://example.invalid/a).
+            NEXT: Read <https://example.invalid/docs>.
+            **SUMMARY:**
+            ## Where it stands
+            * **Review:** Priya asks for a 404, in [the controller](https://example.invalid/c) at `src/Saved.cs:58`.
+
+            • **Risk:** No retries; see https://example.invalid/retries.
+            1. **Left:** Moving one back, in 5104.
+            ---
+            ```
+            2) **Done:** The table, in commit `4f2a9c1`.
+            ```
+            > Sam agreed.
+            """)
+        #expect(summary?.headline == "DELETE returns 204 for a typo.")
+        #expect(summary?.next == "Read https://example.invalid/docs.")
+        #expect(summary?.paragraph == """
+            Where it stands
+            - **Review:** Priya asks for a 404, in the controller at `src/Saved.cs:58`.
+            - **Risk:** No retries; see https://example.invalid/retries.
+            - **Left:** Moving one back, in 5104.
+            - **Done:** The table, in commit `4f2a9c1`.
+            Sam agreed.
+            """)
+        // A blank line that isn't between points stays, once.
+        let spaced = StorySummary.parse("HEADLINE: H.\nSUMMARY:\n- **Done:** A.\n\n\nThe rest waits.")
+        #expect(spaced?.paragraph == "- **Done:** A.\n\nThe rest waits.")
+        // Cut short, a point doesn't leave its bold or its code open.
+        let long = "- **Done:** " + String(repeating: "word ", count: 300) + "**" + String(repeating: "bold ", count: 60) + "**"
+        let cut = try #require(StorySummary.parse("HEADLINE: H.\nSUMMARY:\n\(long)")?.paragraph)
+        #expect(cut.count <= 1_600)
+        #expect(cut.hasPrefix("- **Done:** word"))
+        #expect(cut.hasSuffix("bold…"))
+        #expect(cut.components(separatedBy: "**").count == 3)
+        #expect(StorySummary.points(["- **Done", "`x"], limit: 100) == "- Done\nx")
+    }
+
+    /// An answer in sentences, as models wrote before they were asked for points, or as one may still, reads as it did.
+    @Test func aSummaryWithoutPointsReadsAsItDid() {
+        let summary = StorySummary.parse("""
+            HEADLINE: Waiting for review.
+            SUMMARY: The cart service saves items.
+            Moving one back is left, in 5104.
+            """)
+        #expect(summary?.paragraph == "The cart service saves items.\nMoving one back is left, in 5104.")
+        #expect(summary?.plainText == "Waiting for review.\n\nThe cart service saves items.\nMoving one back is left, in 5104.")
+    }
+
+    /// For the pasteboard, each point after "• ", without the marks of bold and code.
+    @Test func itsPlainTextHasNoMarkdown() {
+        let summary = StorySummary(
+            headline: "Approved.", nextFor: "you", next: "Complete !4091.",
+            paragraph: "- **Done:** Rounds half up in `CouponService`.\n- **Review:** Both approved.\nNothing else waits."
+        )
+        #expect(summary.plainParagraph == """
+            • Done: Rounds half up in CouponService.
+            • Review: Both approved.
+            Nothing else waits.
+            """)
+        #expect(summary.plainText == """
+            Approved.
+            Next for you: Complete !4091.
+
+            • Done: Rounds half up in CouponService.
+            • Review: Both approved.
+            Nothing else waits.
+            """)
+        #expect(StorySummary(headline: "Merged.").plainParagraph == nil)
+    }
+
+    /// An answer run into one line, as a small model may write it: each label in capitals starts its part, and each lead in
+    /// bold after a sentence's end starts a point.
+    @Test func anAnswerRunIntoOneLineIsReadInItsParts() {
+        let summary = StorySummary.parse("""
+            CHECK: Guests see nothing, not a prompt to sign in. HEADLINE: Copilot hides Save for later from guests. \
+            NEXT FOR: you. NEXT: Ask Copilot for a sign-in prompt. SUMMARY: **Differs:** Guests see nothing. **Review:** \
+            Sam agreed to a 404; Chen has no reply yet. **Left:** Moving one back, in 5104.
+            """)
+        #expect(summary == StorySummary(
+            headline: "Copilot hides Save for later from guests.", nextFor: "you", next: "Ask Copilot for a sign-in prompt.",
+            paragraph: """
+                - **Differs:** Guests see nothing.
+                - **Review:** Sam agreed to a 404; Chen has no reply yet.
+                - **Left:** Moving one back, in 5104.
+                """
+        ))
+        // In words, it's one line: a label isn't in capitals there.
+        #expect(StorySummary.parse("HEADLINE: The next: review it.")?.headline == "The next: review it.")
+    }
+
+    /// Who's next, without what a model adds after "you" or "Copilot", or a period; a name as it's written.
+    @Test func whosNextIsSaidPlainly() {
+        func nextFor(_ who: String) -> String? {
+            StorySummary.parse("HEADLINE: Waiting.\nNEXT FOR: \(who)\nNEXT: Review !4120.")?.nextFor
+        }
+        #expect(nextFor("you, to address the missing toast.") == "you")
+        #expect(nextFor("You.") == "you")
+        #expect(nextFor("Copilot, in session “Dark mode”") == "Copilot")
+        #expect(nextFor("Sam Rivera.") == "Sam Rivera")
+        #expect(nextFor("Rivera, Sam") == "Rivera, Sam")
+        #expect(nextFor("Youssef Ali") == "Youssef Ali")
+        #expect(StorySummary.parse("HEADLINE: Approved.\nNEXT: You: complete !4091.")?.nextFor == "you")
+        // The reader, whose name the prompt gave, is "you", whatever the model said.
+        let answer = "HEADLINE: Waiting.\nNEXT FOR: Robin Diaz\nNEXT: Review !4120."
+        #expect(StorySummary.parse(answer, reader: "Robin Diaz")?.nextFor == "you")
+        #expect(StorySummary.parse(answer, reader: "Sam Rivera")?.nextFor == "Robin Diaz")
+        #expect(StorySummary.parse(answer)?.nextFor == "Robin Diaz")
+        #expect(StorySummary.parse("HEADLINE: Waiting.\nNEXT: Robin Diaz: review !4120.", reader: "Robin Diaz")?.nextFor == "you")
+    }
+
+    /// "PR" as the prompt asks, "pull request", where that's safe: never in what may be a name.
+    @Test func pullRequestsAreSpelledOutWhereThatsSafe() {
+        let cases = [
+            "PR !4120 waits on Priya.": "!4120 waits on Priya.",
+            "Sam's PR !4120 adds the table, and the PR #12 too.": "Sam's !4120 adds the table, and #12 too.",
+            "PRs !4120 and !4121 are open.": "!4120 and !4121 are open.",
+            "The PR adds a table; Sam's PR's tests pass.": "The pull request adds a table; Sam's pull request's tests pass.",
+            "Both PRs wait; an PR for 5104 isn't open.": "Both pull requests wait; a pull request for 5104 isn't open.",
+            "Two open PRs.": "Two open pull requests.",
+            "Not in the work item or PR, and PR !4120 waits.": "Not in the work item or pull request, and !4120 waits.",
+            "contoso-web PR failed, and the PR-Validation build too.": "contoso-web PR failed, and the PR-Validation build too.",
+            "The cart-service CI build failed.": "The cart-service CI build failed.",
+            "APRs and PRISM stay.": "APRs and PRISM stay.",
+        ]
+        for (said, spelled) in cases {
+            #expect(StorySummary.spelledOut(said) == spelled)
+        }
+        let summary = StorySummary.parse("HEADLINE: PR !4120 waits.\nNEXT: review the PR.\nSUMMARY:\n- **Review:** Two PRs wait.")
+        #expect(summary == StorySummary(
+            headline: "!4120 waits.", next: "Review the pull request.", paragraph: "- **Review:** Two pull requests wait."
+        ))
     }
 
     // MARK: The prompt
@@ -89,7 +301,12 @@ import Testing
             link: "Linked in Azure DevOps",
             story: ItemStory(
                 sentence: "Waiting for reviewers: Alex Kim", facts: [ItemStory.Fact("Author", "Sam Rivera")],
-                runs: [ItemStory.Run(name: "shop-web CI", state: .failing, status: "Failed at Run tests", detail: "2 tests failed")]
+                runs: [
+                    ItemStory.Run(name: "shop-web CI", state: .failing, status: "Failed at Run tests", detail: "2 tests failed"),
+                    // One that passed says nothing a summary should: the model would only say that it passed.
+                    ItemStory.Run(name: "cart-service CI", state: .done, status: "Passed"),
+                    ItemStory.Run(name: "shop-web e2e", state: nil, status: "Expired: it has to run again"),
+                ]
             )
         )
         let session = StorySummaryPrompt.Item(
@@ -114,6 +331,7 @@ import Testing
             - Author: Sam Rivera
             Pipelines:
             - shop-web CI: Failed at Run tests (2 tests failed)
+            - shop-web e2e: Expired: it has to run again
 
             COPILOT SESSION: Save items for later
             Linked: Through !4120
@@ -128,6 +346,13 @@ import Testing
             - Show them
             Said last: All tests pass.
             """)
+        // Only runs that passed, so no pipelines at all; agents still read them all (`lines()`).
+        var passed = pullRequest
+        passed.story?.runs = [ItemStory.Run(name: "cart-service CI", state: .done, status: "Passed")]
+        let described = StorySummaryPrompt.describe(passed, isSubject: false)
+        #expect(!described.contains("Pipelines:"))
+        #expect(!described.contains("Passed"))
+        #expect(passed.story?.lines().contains("- cart-service CI: Passed") == true)
     }
 
     @Test func whoThingsWaitOnIsSaidYouFirstThenPeopleThenCopilotOnce() {
@@ -198,9 +423,27 @@ import Testing
         let prompt = StorySummaryPrompt.make(subject: subject, linked: [], reader: "Robin Diaz")
         #expect(prompt.contains("<data>\nREADER: Robin Diaz\n\nWORK ITEM 5101: Save items for later from the cart\n"))
         #expect(StorySummaryPrompt.instructions.contains("When the data starts with READER, that's who reads this: call them you"))
-        #expect(StorySummaryPrompt.instructions.contains("already sees each item's Status line: never repeat it"))
+        #expect(StorySummaryPrompt.instructions.contains("already sees each item's title and Status line, and the lines after SHOWN: never repeat them"))
+        #expect(StorySummaryPrompt.instructions.contains("against the work item's description and acceptance criteria"))
+        #expect(StorySummaryPrompt.instructions.contains("A pull request may do only part of the work"))
+        #expect(StorySummaryPrompt.instructions.contains("is work left, not a difference"))
+        // The check comes first, before what's shown, so the model works out what differs before it writes.
+        #expect(StorySummaryPrompt.instructions.contains("with no other text:\nCHECK: "))
+        #expect(StorySummaryPrompt.instructions.contains("the first difference CHECK found"))
+        #expect(StorySummaryPrompt.instructions.contains("what isn't built yet doesn't count"))
+        let nextFor = "NEXT FOR: who should take the step that unblocks the most: you, the reader"
+        #expect(StorySummaryPrompt.instructions.contains(nextFor))
         #expect(StorySummaryPrompt.instructions.contains("\nNEXT FOR: "))
+        #expect(StorySummaryPrompt.instructions.contains("each on a line of its own that starts with \"- \" and a bold lead"))
+        #expect(StorySummaryPrompt.instructions.contains("Write pull request and build, not PR or CI."))
         #expect(!StorySummaryPrompt.make(subject: subject, linked: []).contains("READER:"))
+        // What the reader sees beside it, such as who it all waits on, comes after who reads it, for the model not to repeat.
+        let shown = StorySummaryPrompt.make(
+            subject: subject, linked: [], reader: "Robin Diaz", shown: ["Waiting on: reviewers of Sam Rivera's !4120", " "]
+        )
+        #expect(shown.contains("<data>\nREADER: Robin Diaz\nSHOWN:\nWaiting on: reviewers of Sam Rivera's !4120\n\nWORK ITEM 5101:"))
+        #expect(StorySummaryPrompt.make(subject: subject, linked: [], shown: ["Waiting on: Copilot, on task 5103"])
+            .contains("<data>\nSHOWN:\nWaiting on: Copilot, on task 5103\n\nWORK ITEM 5101:"))
     }
 
     @Test func dataCantEndItselfOrCrowdOutTheRest() {
@@ -233,6 +476,140 @@ import Testing
         #expect(!ItemStory(sentence: "", notes: [ItemStory.Fact("Description", "Save items.")]).isEmpty)
     }
 
+    /// What was read for the summary follows a thing's story, and takes the place of a note it has by the same label; the
+    /// thing itself gets more room than each one linked to it.
+    @Test func whatWasReadForTheSummaryFollowsTheStoryAndFitsItsRoom() throws {
+        let story = ItemStory(sentence: "Active", notes: [
+            ItemStory.Fact("Description", "Save items for…"), ItemStory.Fact("Why it's Active", "Work started"),
+        ])
+        let item = StorySummaryPrompt.Item(
+            kind: "Work item", label: "5101", title: "Save items for later from the cart", status: "Active", story: story,
+            context: [
+                ItemStory.Fact("Description", "Save items for later, and move them back to the cart."),
+                ItemStory.Fact("Conversation", "You: Add the saved items table.\nCopilot: Added it, with tests."),
+            ]
+        )
+        let described = StorySummaryPrompt.describe(item, isSubject: true)
+        #expect(described == """
+            WORK ITEM 5101: Save items for later from the cart
+            Status: Active
+            Why it's Active: Work started
+            Description:
+            Save items for later, and move them back to the cart.
+            Conversation:
+            You: Add the saved items table.
+            Copilot: Added it, with tests.
+            """)
+
+        let long = String(repeating: "Sam asked for paging. ", count: 600)
+        let reading = { (isSubject: Bool) in
+            StorySummaryPrompt.describe(StorySummaryPrompt.Item(
+                kind: "Pull request", label: "!4120", title: "Save items in the cart service",
+                context: [ItemStory.Fact("Open threads", long), ItemStory.Fact("Description", long), ItemStory.Fact("Reviews", long)]
+            ), isSubject: isSubject)
+        }
+        // All of it is cut to fit, each part to an even share: the thing summed up gets twice the room of each one linked.
+        let subject = reading(true)
+        let linked = reading(false)
+        #expect(subject.count <= StorySummaryPrompt.ContextLimit.subject + 200)
+        #expect(subject.count > StorySummaryPrompt.ContextLimit.subject - 200)
+        #expect(linked.count <= StorySummaryPrompt.ContextLimit.linked + 200)
+        for label in ["Open threads:", "Description:", "Reviews:"] {
+            #expect(linked.contains(label))
+        }
+        let firstPart = try #require(linked.components(separatedBy: "Open threads:\n").last?.components(separatedBy: "\nDescription:").first)
+        #expect(firstPart.count <= StorySummaryPrompt.ContextLimit.linked / 3 + 1)
+        // A short part takes what it needs, and leaves the rest of its share to the others, up to a part's most.
+        #expect(StorySummaryPrompt.room(for: ["No comments.", long], in: 5_000) == [12, StorySummaryPrompt.ContextLimit.part])
+        #expect(StorySummaryPrompt.room(for: [long, "No comments.", long], in: 5_000) == [2_494, 12, 2_494])
+        // Cut to almost nothing, a part says nothing, so it's left out; a short one never is.
+        let crowded = StorySummaryPrompt.describe(StorySummaryPrompt.Item(
+            kind: "Pull request", label: "!4120", title: "Save items in the cart service",
+            context: (1...30).map { ItemStory.Fact("Thread \($0)", long) } + [ItemStory.Fact("Resolved", "None.")]
+        ), isSubject: false)
+        #expect(!crowded.contains("Thread 1:"))
+        // Left out, it says so, so the model knows.
+        #expect(crowded.contains("(Thread 1 left out for length.)"))
+        #expect(crowded.contains("Resolved:\nNone."))
+    }
+
+    /// For a model on this Mac, each thing has less room: what was read for it shares what its story leaves, so the first
+    /// part doesn't crowd out the rest.
+    @Test func aLocalPromptSharesEachThingsRoomBetweenWhatWasRead() {
+        let long = String(repeating: "Sam asked for paging. ", count: 300)
+        let item = StorySummaryPrompt.Item(
+            kind: "Pull request", label: "!4120", title: "Save items in the cart service", status: "Active",
+            story: ItemStory(sentence: "Active", facts: [.init("Reviewer", "Priya approved")]),
+            context: [ItemStory.Fact("Description", long), ItemStory.Fact("Open threads", long), ItemStory.Fact("Conversation", long)]
+        )
+        let described = StorySummaryPrompt.describe(item, isSubject: true, limit: 1_800)
+        #expect(described.count <= 1_800)
+        #expect(described.count > 1_600)
+        for label in ["Priya approved", "Description:", "Open threads:", "Conversation:"] {
+            #expect(described.contains(label))
+        }
+        let prompt = StorySummaryPrompt.make(subject: item, linked: [item], limit: 6_000, itemLimit: 1_800, includeInstructions: false)
+        #expect(prompt.components(separatedBy: "Conversation:").count == 3)
+        #expect(!prompt.contains("Details left out for length."))
+        // Without a limit, each part has the room it had.
+        #expect(StorySummaryPrompt.describe(item, isSubject: true).count > 9_000)
+    }
+
+    /// A small model says the summary may be incomplete though nothing was left out: given all of it, that goes, and a
+    /// point that says only that; one that says some work is incomplete stays.
+    @Test func aSummaryOfAllItWasGivenDoesntSayItsIncomplete() {
+        let summary = StorySummary(headline: "Approved.", paragraph: """
+            - **Review:** Priya Shah approved. The summary may be incomplete.
+            - **Note:** This summary may be incomplete.
+            - **Left:** The migration is incomplete.
+            - **Blocked:** The data migration is incomplete.
+            """)
+        #expect(summary.withoutIncompleteNotes().paragraph == """
+            - **Review:** Priya Shah approved.
+            - **Left:** The migration is incomplete.
+            - **Blocked:** The data migration is incomplete.
+            """)
+        #expect(StorySummary(headline: "Approved.", paragraph: "- **Note:** The summary may be incomplete.").withoutIncompleteNotes().paragraph == nil)
+    }
+
+    /// The data's headings in capitals, as a small model may copy them, read as words.
+    @Test func theDatasCapitalisedHeadingsReadAsWords() {
+        #expect(StorySummary.spelledOut("PULL REQUEST !4133 failed; TASK 5134 waits on WORK ITEM 5101.")
+                == "!4133 failed; task 5134 waits on work item 5101.")
+        #expect(StorySummary.spelledOut("The COPILOT SESSION asked, and the TASK SENT TO COPILOT ended.")
+                == "The Copilot session asked, and the task sent to Copilot ended.")
+    }
+
+    /// Bold and code are closed where they're left open, but what's in code is its text, even a path's "**"; and copied,
+    /// code keeps it too.
+    @Test func codeKeepsItsTextWhenMarksAreClosedAndCopied() {
+        #expect(StorySummary.closed("- **Changed:** `/src/**/Config.swift`") == "- **Changed:** `/src/**/Config.swift`")
+        #expect(StorySummary.closed("- **Changed:** the con…") == "- **Changed:** the con…")
+        #expect(StorySummary.closed("- **Changed:** the `Con…") == "- **Changed:** the Con…")
+        #expect(StorySummary.closed("- **Changed the con…") == "- Changed the con…")
+        let summary = StorySummary(headline: "Moved.", paragraph: "- **Changed:** `/src/**/Config.swift`")
+        #expect(summary.plainParagraph == "• Changed: /src/**/Config.swift")
+    }
+
+    /// Comments, oldest first, cut to fit, keep their newest: an answer isn't lost to its question.
+    @Test func whatsSaidOldestFirstKeepsItsNewestWhenCut() {
+        let comments = (1...10).map { "Comment \($0): " + String(repeating: "word ", count: 20) }.joined(separator: "\n")
+        let cut = StorySummaryPrompt.ending(comments, limit: 400)
+        #expect(cut.count <= 400)
+        #expect(cut.hasPrefix("…\n"))
+        #expect(cut.contains("Comment 10:"))
+        #expect(!cut.contains("Comment 1:"))
+        #expect(StorySummaryPrompt.ending("Short.", limit: 400) == "Short.")
+        let item = StorySummaryPrompt.Item(
+            kind: "Work item", label: "5101", title: "Save items", status: "Active",
+            context: [ItemStory.Fact("Description", String(repeating: "Save. ", count: 300)),
+                      ItemStory.Fact("Latest comments", comments, keepsEnd: true)]
+        )
+        let described = StorySummaryPrompt.describe(item, isSubject: true, limit: 1_000)
+        #expect(described.contains("Comment 10:"))
+        #expect(described.count <= 1_000)
+    }
+
     @Test func aLocalPromptKeepsLinkedFactsDespiteLongDiscussions() {
         var longSubject = subject
         longSubject.story?.notes = (0..<20).map {
@@ -252,7 +629,7 @@ import Testing
         #expect(prompt.components(separatedBy: "Priya approved").count == 3)
         #expect(prompt.components(separatedBy: "Details left out for length.").count == 4)
         #expect(prompt.count <= 6_000 + "<data>\n\n</data>".count)
-        #expect(StorySummaryPrompt.instructions.contains("say the summary is incomplete"))
+        #expect(StorySummaryPrompt.instructions.contains("say the summary may be incomplete"))
     }
 
     @Test(arguments: [0, 10, 6_000, 14_000])

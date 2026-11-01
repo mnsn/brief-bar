@@ -9,8 +9,9 @@ import SwiftUI
 /// finished or stopped. It reads the Copilot app's own files, and needs no permission.
 @MainActor
 package final class CopilotSource: BriefBarSource {
-    /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details.
-    nonisolated package static let descriptionVersion = 3
+    /// 2: Show Links. 3: what Copilot recorded of a session's work, for a work item's details. 4: a session's
+    /// conversation, for summaries.
+    nonisolated package static let descriptionVersion = 4
 
     package let id = SourceID.copilot
     package let name = "GitHub Copilot"
@@ -18,8 +19,8 @@ package final class CopilotSource: BriefBarSource {
     package let description = SourceDescription(
         version: CopilotSource.descriptionVersion,
         summary: "What each GitHub Copilot app session is doing, and which ones need you",
-        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. BriefBar never changes them. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
-        network: "None. Copilot's list makes no network requests.",
+        reads: "The GitHub Copilot app's own files under ~/.copilot, read-only: its database of sessions, and each session's event log; BriefBar never changes them. Only if you turn on Show Links: also which pull request each session started from or opened, and its project's GitHub repository and folder name, from the same database; and, when you open the details of a work item a session is linked to, or ask for a summary of the session or of something it's linked to, what Copilot recorded of that session's work: its checkpoints, the notes Copilot writes as a session goes on, and the last thing it said, which BriefBar keeps in memory only. New: only when a summary is written of a session, or of something linked to it, or, for one ten minutes old or more, again as you open it, to tell whether it's still current: what was asked in that session, by you or by another session, and Copilot's answers, from its event log. With Apple Intelligence, what a summary is written from stays on this Mac; with a Copilot model, BriefBar sends it to GitHub Copilot through the Copilot CLI, which keeps a copy in its session history. BriefBar keeps none of it. It keeps only which finished sessions you've cleared or, with Move Viewed Sessions to Idle on, viewed, and, with Show Links, the links you add to sessions or hide, as references only, never titles.",
+        network: "None from BriefBar: Copilot's list makes no network requests. When a summary is written with a Copilot model, the Copilot CLI sends what it covers to GitHub Copilot.",
         needs: "Nothing: macOS doesn't protect these files.",
         requirements: []
     )
@@ -42,12 +43,17 @@ package final class CopilotSource: BriefBarSource {
     /// What `--render` read, for its other pictures.
     private var rendered: EngineSnapshot?
 
-    package init(services: AppServices) {
+    package convenience init(services: AppServices) {
+        // The demo reads only made-up data, never your own, and its sessions are the app's, never the CLI's.
+        self.init(services: services, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default())
+    }
+
+    /// With the Copilot folder it reads, such as a test's.
+    init(services: AppServices, paths: CopilotPaths?) {
         self.services = services
         settings = AppSettings(defaults: services.defaults)
-        // The demo reads only made-up data, never your own, and its sessions are the app's, never the CLI's.
         store = SessionStore(
-            settings: settings, paths: services.isDemo ? CopilotPaths.overridden() : CopilotPaths.default(), sentTasks: services.sentTasks,
+            settings: settings, paths: paths, sentTasks: services.sentTasks,
             isAppInstalled: { [isDemo = services.isDemo] in isDemo || CopilotApp.isInstalled }
         )
     }
@@ -128,9 +134,13 @@ package final class CopilotSource: BriefBarSource {
         links.publish(.copilot, links: facts, items: items)
     }
 
-    /// Tells the details what's known of its sessions, when they ask.
-    private func tellStories() {
+    /// Tells the details what's known of its sessions, when they ask, and summaries what was said in each,
+    /// as it writes a summary.
+    func tellStories() {
         services.stories.register(.copilot, kinds: [.session]) { [weak self] ref in await self?.tell(ref) }
+        services.stories.registerContext(.copilot, kinds: [.session]) { [weak self] ref in
+            await self?.conversation(ref) ?? []
+        }
     }
 
     /// What Copilot knows of a session beyond its row: where it stands, if it's one of the app's, and what Copilot recorded
@@ -142,8 +152,26 @@ package final class CopilotSource: BriefBarSource {
             return SessionStory.make(snapshot: snapshot, account: nil)
         }
         let id = ref.id
-        let account = await Task.detached(priority: .utility) { SessionAccount.read(paths: paths, id: id) }.value
+        let account = await Self.offMain { Task.isCancelled ? nil : SessionAccount.read(paths: paths, id: id) }
         return SessionStory.make(snapshot: snapshot, account: account)
+    }
+
+    /// What was asked in a session and what Copilot answered, the app's or a task's that Azure DevOps sent, read from its
+    /// log off the main thread, for a summary as it's written (`SessionConversation`). Nothing's read once Show Links is
+    /// off, or the summary stopped, even when that's while it's read.
+    private func conversation(_ ref: ItemRef) async -> [ItemStory.Fact] {
+        guard let paths = store.paths, services.links.isOn, !Task.isCancelled else { return [] }
+        let id = ref.id
+        let digest = await Self.offMain { SessionConversation.digest(paths: paths, id: id) }
+        guard services.links.isOn, !Task.isCancelled, !digest.isEmpty else { return [] }
+        return [ItemStory.Fact("Conversation", digest)]
+    }
+
+    /// Does `work` off the main thread, and stops it when the task that waits for it is cancelled: work that hasn't
+    /// started by then finds itself cancelled, and a read checks before each file it opens.
+    private static func offMain<Value: Sendable>(_ work: @escaping @Sendable () -> Value) async -> Value {
+        let task = Task.detached(priority: .utility, operation: work)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     // MARK: Menu bar

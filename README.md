@@ -66,10 +66,12 @@ Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilo
 
 **“Where does this stand, what's next, and who is it waiting on?”**
 
-Enable **Summaries** under **Settings › General**, with Show Links on, then click **✨ Summarize**
-in a work item's details. It combines the work item and its linked work into a short
-status and a next step, with more detail behind **Show More**. Pull requests and sessions have the
-same action: hover over a row for **✨**, or use its right-click menu.
+Enable **Summaries** under **Settings › General**, with Show Links on, and open a work item's details.
+It reads the work item and its linked work, down to pull requests' comment threads and what you asked
+each Copilot session and what it answered, and writes a headline, the next step and whose it is, and a
+few points on what's done, what's left, what's blocking and where the work differs from what was asked.
+A pull request's or a session's page writes one too, and in the lists, hover over a row for **✨**, or
+use its right-click menu.
 
 <p align="center">
   <picture>
@@ -82,13 +84,16 @@ There are two different kinds of AI help:
 
 | | What you get | Where it runs |
 |---|---|---|
-| **Summaries** | On-demand summaries of work items, pull requests and sessions, using what BriefBar knows about them and their links | Apple Intelligence on your Mac by default: macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests. Or choose a Copilot model, and the details go through your signed-in Copilot CLI to GitHub Copilot, on your Copilot plan. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
+| **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Claude Haiku 5.5 by default when the Copilot CLI is installed: the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each, and you can choose any model from Haiku, the cheapest, to Claude Opus 5.5, the most capable. Or Apple Intelligence on your Mac, the default without the CLI: free, macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests, but a small model that often gets details wrong. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
 | **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires macOS 26+ with Apple Intelligence available and enabled. |
 
-Summaries of your work run **only when you ask**, not in the background. BriefBar marks a summary
-**Out of date** when its inputs change, so you know when to ask again. BriefBar keeps summaries in
-memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. BriefBar never
-switches from Apple Intelligence to Copilot on its own. The app and its plain-language brief work
+Summaries of your work are written **as you open** a work item's details or a page, never in the
+background, and the card says what it's about to do first, with **Not Now**; or, if you choose, **only
+when you ask**. One that's still current shows again as it was; BriefBar marks a summary **Out of
+date** when its inputs change, and writes a new one when you ask, or as you open it once it's ten
+minutes old. BriefBar keeps summaries in
+memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. When Apple
+Intelligence can't write one, BriefBar says why and never tries Copilot instead. The app and its plain-language brief work
 without either AI feature.
 
 ## Send the next step to Copilot
@@ -197,7 +202,7 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
-| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Apple Intelligence (macOS 26+) unless you choose a Copilot model, which requires the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in with access to that model. |
+| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence (macOS 26+). |
 
 You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
 through the built-in updater, even if you installed with Homebrew (`brew upgrade` skips BriefBar
@@ -212,9 +217,10 @@ Sources are read-only: Azure DevOps and GitHub use your existing CLI sign-ins, a
 tracking reads files on your Mac. Full Disk Access is needed for Teams and the optional
 **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 
-Links, summaries, Send Work to Copilot and agent access each start off. Summaries stay on your Mac
-with Apple Intelligence; only if you choose a Copilot model do they send the selected work's details
-to GitHub Copilot. Sending work gives an agent permission to act within that action's limits. Teams
+Links, summaries, Send Work to Copilot and agent access each start off. Once you turn summaries on,
+they send the details of the work you open to GitHub Copilot when the Copilot CLI is installed, to be
+written by Claude Haiku 5.5; choose Apple Intelligence in their setting to keep them on your Mac, as
+they are when the CLI isn't installed. Sending work gives an agent permission to act within that action's limits. Teams
 content never goes to Copilot summaries or BriefBar's agent tools.
 
 [Full privacy details](docs/user-guide.md#privacy) · [Security and download verification](SECURITY.md)

@@ -311,7 +311,7 @@ for appearance in ["light", "dark"] {
         Scene(image: shot("azureDevOps-sprint-bug-details"), caption: "Every item links to its pull requests and sessions"),
         Scene(image: shot("azureDevOps-sprint-pull-request-page"), caption: "Click through to the pull request…"),
         Scene(image: shot("azureDevOps-sprint-deep-page"), caption: "…and the Copilot session that opened it"),
-        Scene(image: shot("rows-summary-pull-requests"), caption: "AI briefs, and a summary on every row"),
+        Scene(image: shot("rows-summary-pull-requests"), caption: "AI briefs, and a summary under any row you ask"),
         Scene(image: board, caption: "Hand the next task to Copilot", hovered: hoveredRow(on: board, dark: dark), hoverArea: taskRow),
     ]
     let composer = shot("azureDevOps-copilot-composer")

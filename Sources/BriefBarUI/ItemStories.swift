@@ -9,10 +9,19 @@ import Foundation
 package final class ItemStories: ObservableObject {
     /// Tells a thing's story, or nil when the source doesn't know it.
     package typealias Teller = @MainActor (ItemRef) async -> ItemStory?
+    /// Reads more of a thing than its story says, for a summary only, as one is written: a session's conversation, a
+    /// pull request's description and comments. Each part has a label and its text, cut to fit; none when the source
+    /// has nothing more.
+    package typealias ContextReader = @MainActor (ItemRef) async -> [ItemStory.Fact]
 
     private struct Registration {
         var kinds: Set<ItemRef.Kind>
         var tell: Teller
+    }
+
+    private struct ContextRegistration {
+        var kinds: Set<ItemRef.Kind>
+        var read: ContextReader
     }
 
     /// A story as told, for the version of the row it was told for.
@@ -41,6 +50,7 @@ package final class ItemStories: ObservableObject {
 
     private let links: Links
     private var tellers: [SourceID: Registration] = [:]
+    private var readers: [SourceID: ContextRegistration] = [:]
     @Published private var told: [ItemRef: Told] = [:]
     @Published private var telling: [ItemRef: Telling] = [:]
     private var nextToken = 0
@@ -70,9 +80,19 @@ package final class ItemStories: ObservableObject {
         forget(kinds)
     }
 
-    /// A source stopped: what it told goes with it.
+    /// A source reads more of these kinds of its things for summaries from now on (`context(for:)`), replacing what read
+    /// them before. Withdrawing the source takes it back too.
+    package func registerContext(_ source: SourceID, kinds: Set<ItemRef.Kind>, reader: @escaping ContextReader) {
+        readers[source] = ContextRegistration(kinds: kinds, read: reader)
+    }
+
+    /// A source stopped: what it told goes with it, and it reads nothing more for summaries.
     package func withdraw(_ source: SourceID) {
-        guard let registration = tellers.removeValue(forKey: source) else { return }
+        let reader = readers.removeValue(forKey: source)
+        guard let registration = tellers.removeValue(forKey: source) else {
+            if reader != nil { withdrawn.send(source) }
+            return
+        }
         forget(registration.kinds)
         withdrawn.send(source)
     }
@@ -187,6 +207,27 @@ package final class ItemStories: ObservableObject {
         }
         guard isCurrent(ref, token: token), let version = telling[ref]?.version else { return }
         told[ref] = Told(story: story.flatMap { $0.isEmpty ? nil : $0 }, version: version, at: now())
+    }
+
+    // MARK: More, for a summary
+
+    /// What the sources read of each of these things for a summary, now: each source that reads more of a thing's kind is
+    /// asked in the sources' order, and a part a source before it gave, by its label, isn't taken twice. Nothing is kept,
+    /// and nothing more is read once Show Links goes off or the task that asks is cancelled.
+    package func context(for refs: [ItemRef]) async -> [ItemRef: [ItemStory.Fact]] {
+        var context: [ItemRef: [ItemStory.Fact]] = [:]
+        for ref in refs where context[ref] == nil {
+            var parts: [ItemStory.Fact] = []
+            for source in SourceID.allCases {
+                guard links.isOn, !Task.isCancelled else { return context }
+                guard let reader = readers[source], reader.kinds.contains(ref.kind) else { continue }
+                for part in await reader.read(ref) where !part.value.isEmpty && !parts.contains(where: { $0.label == part.label }) {
+                    parts.append(part)
+                }
+            }
+            context[ref] = parts
+        }
+        return context.filter { !$0.value.isEmpty }
     }
 
     /// Forgets what was told too long ago.

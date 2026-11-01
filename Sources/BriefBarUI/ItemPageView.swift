@@ -15,7 +15,7 @@ package struct ItemPageView: View {
     }
 
     package var body: some View {
-        PageContent(ref: ref, links: services.links, stories: services.stories, summaries: services.summaries)
+        PageContent(ref: ref, links: services.links, stories: services.stories, summaries: services.summaries, defaults: services.defaults)
     }
 
     /// What a page is called where it's named, for VoiceOver: "Pull request 4091", "Copilot session Save items for later".
@@ -45,9 +45,13 @@ private struct PageContent: View {
     @ObservedObject var links: Links
     @ObservedObject var stories: ItemStories
     @ObservedObject var summaries: StorySummaries
+    let defaults: UserDefaults
 
     @Environment(\.itemNavigation) private var navigation
+    @Environment(\.isRendering) private var isRendering
     @AccessibilityFocusState private var isTitleFocused: Bool
+    /// What it shows, and how many times you'd acted on its summary as it opened.
+    @LocalState private var opened: OpenedSubject?
 
     /// What shows under it: the work item, and the pages you came through.
     private var trail: [ItemRef] {
@@ -60,7 +64,11 @@ private struct PageContent: View {
         let story = stories.story(for: ref)
         VStack(alignment: .leading, spacing: 20) {
             heading(item, story: story)
-            // Its summary, of it and what's linked to it, under what it is.
+            // Its summary, of it and what's linked to it, under what it is; while summaries are off, what one would do,
+            // first, so turning them on there doesn't move it.
+            if links.isDescribed(ref) {
+                SummaryOffer(subject: ref, summaries: summaries, links: links, defaults: defaults)
+            }
             SummaryCard(subject: ref, summaries: summaries, rows: [])
             StoryDetails(
                 item: item, story: story, isTelling: stories.isTelling(ref) && !stories.hasTold(ref), mode: .page,
@@ -82,7 +90,37 @@ private struct PageContent: View {
                 Color.clear.onChange(of: context.date) { stories.request(links.describe(ref)) }
             }
         }
+        // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details: as it
+        // opens, as summaries are turned on, and as a source says what it is; never once you acted on it since it opened.
+        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.knowsModel)|\(summaries.canSummarize(ref))") {
+            guard links.isOn, !isRendering else { return }
+            // Which model it'd be written with, first, so its card never says the wrong one: this starts again once
+            // it's known, its id saying so.
+            if !summaries.knowsModel {
+                await summaries.lookForCLI()
+                return
+            }
+            let acted = visit(ref)
+            // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.
+            let wait = summaries.expect(ref, unlessActedSince: acted)
+            defer { summaries.stopExpecting(ref, wait) }
+            try? await Task.sleep(for: StorySummaries.openedFor)
+            guard !Task.isCancelled else { return }
+            await summaries.opened(ref, unlessActedSince: acted)
+        }
+        // The card coming, filling and going moves what's under it smoothly.
+        .animation(.easeOut(duration: 0.2), value: summaries.shownState(for: ref))
+        .animation(.easeOut(duration: 0.2), value: summaries.isPending(ref))
         .onAppear { isTitleFocused = true }
+    }
+
+    /// How many times you'd acted on its summary as it opened (`StorySummaries.timesActed(on:)`), remembered for as long
+    /// as it shows.
+    private func visit(_ ref: ItemRef) -> Int {
+        if let opened, opened.subject == ref { return opened.acted }
+        let acted = summaries.timesActed(on: ref)
+        opened = OpenedSubject(subject: ref, acted: acted)
+        return acted
     }
 
     /// How it's linked to what you opened it from.
@@ -140,7 +178,7 @@ private struct PageContent: View {
                     }
                     .glassButtonStyle()
                     .help("Shows the summary you closed, as it was written")
-                } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil {
+                } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil, !summaries.isPending(ref) {
                     // Just "Summarize" where the whole of it doesn't fit.
                     ViewThatFits(in: .horizontal) {
                         summarize(summaries.actionTitle)

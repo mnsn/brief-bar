@@ -78,4 +78,63 @@ import Testing
         #expect(!WorkItemStory.make(task, details: unread).notes.isEmpty)
         #expect(!WorkItemStory.make(task, details: unread).notesRead)
     }
+
+    /// For a summary, its details say more of its texts and comments than its story's notes, by the same labels, so they
+    /// take the notes' places.
+    @Test func aSummaryReadsMoreOfItsTextsAndCommentsByItsNotesLabels() throws {
+        let story = item(5101, "User Story", "Active", who: robin)
+        let long = String(repeating: "Saved items belong to the account, not the device. ", count: 100)
+        let details = WorkItemDetails(
+            item: story, reason: "Work started",
+            texts: [
+                WorkItemDetails.LongText(id: "System.Description", title: "Description", text: RichText(html: "<p>\(long)</p>")),
+                WorkItemDetails.LongText(
+                    id: "Microsoft.VSTS.Common.AcceptanceCriteria", title: "Acceptance Criteria",
+                    text: RichText(html: "<ol><li>Saved items show under the cart</li><li>Newest first</li></ol>")
+                ),
+            ],
+            comments: (1...12).map { number in
+                WorkItemDetails.Comment(
+                    id: 20 - number, author: number.isMultiple(of: 2) ? sam : nil, createdAt: nil,
+                    text: RichText(markdown: "Comment \(number).")
+                )
+            },
+            readAt: Date()
+        )
+        let context = WorkItemStory.context(details)
+        let notes = WorkItemStory.make(story, details: details).notes
+        // Why it's in its state is all there is of it, in its note.
+        #expect(context.map(\.label) == notes.map(\.label).filter { $0 != "Why it's Active" })
+        #expect(context.map(\.label) == ["Description", "Acceptance Criteria", "Latest comments"])
+        let description = try #require(context.first?.value)
+        let note = try #require(notes.first { $0.label == "Description" }?.value)
+        #expect(description.count <= WorkItemStory.contextLimit)
+        #expect(description.count > note.count)
+        #expect(context[1].value == "1. Saved items show under the cart\n2. Newest first")
+        // Its latest ten comments, a line each, the oldest of them first, so that an answer follows its question, after
+        // how many earlier ones are left out.
+        let said = (1...10).map { "\($0.isMultiple(of: 2) ? "Sam Rivera" : "Someone"): Comment \($0)." }
+        #expect(context[2].value == (["(2 earlier comments left out)"] + said.reversed()).joined(separator: "\n"))
+        #expect(context[2].keepsEnd)
+        // Those that weren't read, past the page that was, count too.
+        var paged = details
+        paged.commentCount = 100
+        #expect(WorkItemStory.context(paged).last?.value.hasPrefix("(90 earlier comments left out)\n") == true)
+        paged.commentCount = 11
+        paged.comments = Array(details.comments.prefix(10))
+        #expect(WorkItemStory.context(paged).last?.value.hasPrefix("(1 earlier comment left out)\n") == true)
+
+        // As many long ones as fit, each cut to its length.
+        var talkative = details
+        talkative.comments = (1...10).map { WorkItemDetails.Comment(id: $0, author: sam, createdAt: nil, text: RichText(markdown: long)) }
+        talkative.commentCount = 10
+        let comments = try #require(WorkItemStory.context(talkative).last?.value)
+        #expect(comments.count <= WorkItemStory.contextLimit)
+        let lines = comments.components(separatedBy: "\n")
+        #expect(lines.first == "(6 earlier comments left out)")
+        #expect(lines.count == 5)
+        #expect(lines.dropFirst().allSatisfy { $0.hasPrefix("Sam Rivera: Saved items") && $0.hasSuffix("…") })
+        // Without texts or comments, there's nothing more.
+        #expect(WorkItemStory.context(WorkItemDetails(item: story, readAt: Date())).isEmpty)
+    }
 }

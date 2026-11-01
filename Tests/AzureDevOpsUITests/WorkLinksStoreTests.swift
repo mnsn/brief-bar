@@ -281,6 +281,71 @@ import Testing
         #expect(stories.story(for: item.linkRef) != nil)
     }
 
+    /// What Azure DevOps reads of its things for a summary, as one is written: in the demo, what it has, never Azure DevOps,
+    /// by the labels of its stories' notes, again once someone else signs in; and nothing while Show Links is off, or once
+    /// it stops.
+    @Test func itReadsMoreOfItsThingsForASummaryFromWhatTheDemoHas() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
+        let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
+        let links = Links(defaults: MemoryDefaults(), isDemo: true)
+        links.setOn(true)
+        let stories = ItemStories(links: links)
+        await store.loadOnce()
+        await sprint.loadOnce()
+        let workLinks = WorkLinksStore(links: links, stories: stories, store: store, sprint: sprint, copilot: copilot, settings: settings)
+        await workLinks.loadOnce()
+
+        // One of your pull requests: its made-up description, and its threads as the pull requests read them.
+        let retry = ItemRef.pullRequest(organization: organization, number: 4102)
+        let parts = try #require(await stories.context(for: [retry])[retry])
+        #expect(parts.map(\.label) == ["Description", "Comment threads"])
+        #expect(parts[0].value.hasPrefix("Payments that fail for a moment, with a timeout or a 503, are tried again"))
+        #expect(parts[0].value.contains("\nTesting\n• Unit tests for the backoff schedule"))
+        #expect(parts[1].value.hasPrefix("Unresolved (1):\nYou on src/PaymentsClient.cs:88: I went with exponential backoff"))
+        #expect(parts[1].value.contains(" — Sam Rivera: Could we cap the backoff at 30 seconds?"))
+        // One without a description or a comment; a teammate's, which the lists don't show, as made up.
+        let renamed = ItemRef.pullRequest(organization: organization, number: 4079)
+        #expect(await workLinks.context(renamed) == [ItemStory.Fact("Comment threads", "No comments.")])
+        let saved = await workLinks.context(.pullRequest(organization: organization, number: 4120))
+        #expect(saved.map(\.label) == ["Description"])
+
+        // A sprint's story: its made-up details, by the labels of its story's notes, so they take their places.
+        let story = ItemRef.workItem(organization: organization, id: 5101)
+        let details = await workLinks.context(story)
+        #expect(details.map(\.label) == ["Description", "Acceptance Criteria", "Latest comments"])
+        #expect(details[0].value.hasPrefix("As a shopper, I want to save items for later from my cart"))
+        // Its comments, the oldest first, so that the answer follows Priya's question.
+        #expect(details[2].value.hasPrefix("Sam Rivera: The design is in Figma"))
+        #expect(details[2].value.hasSuffix("\nRobin Diaz: Only signed-in shoppers for now. Guests get a prompt to sign in when they try."))
+        #expect(details[2].value.components(separatedBy: "\n").count == 3)
+        // And the same from its details on screen.
+        let shown = WorkItemDetailsStore(mode: .demo, client: store.client, board: sprint.$board.eraseToAnyPublisher())
+        workLinks.details = shown
+        await shown.loadOnce(try #require(sprint.board?.rows.compactMap(\.parent).first { $0.id == 5101 }))
+        #expect(await workLinks.context(story) == details)
+        // What it doesn't know, or isn't its own, has nothing more.
+        #expect(await workLinks.context(.workItem(organization: organization, id: 9999)).isEmpty)
+        #expect(await workLinks.context(.pullRequest(organization: organization, number: 9999)).isEmpty)
+        #expect(await workLinks.context(session).isEmpty)
+
+        // Told again as someone else who signed in, it reads for them too.
+        workLinks.accountChanged("robin")
+        workLinks.accountChanged("sam")
+        #expect(await stories.context(for: [retry, story]).keys.sorted() == [story, retry])
+
+        // Nothing while Show Links is off.
+        links.setOn(false)
+        #expect(await workLinks.context(retry).isEmpty)
+        #expect(await workLinks.context(story).isEmpty)
+        #expect(await stories.context(for: [retry, story]).isEmpty)
+        links.setOn(true)
+        // Nor once Azure DevOps stops.
+        workLinks.stop()
+        #expect(await stories.context(for: [retry, story]).isEmpty)
+    }
+
     /// Someone else signed in while Show Links reads: what was read as the last one goes at once, before it's told of
     /// again, and what the engine that read as them still brings is left out; what's read as the new one is taken.
     @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {

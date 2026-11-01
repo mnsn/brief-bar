@@ -147,10 +147,14 @@ public struct ItemStory: Sendable, Equatable {
     public struct Fact: Sendable, Equatable, Hashable {
         public var label: String
         public var value: String
+        /// Whether, cut to fit, it keeps its last lines rather than its first: what's said oldest first, such as comments,
+        /// whose newest matter most.
+        public var keepsEnd: Bool
 
-        public init(_ label: String, _ value: String) {
+        public init(_ label: String, _ value: String, keepsEnd: Bool = false) {
             self.label = label
             self.value = value
+            self.keepsEnd = keepsEnd
         }
     }
 

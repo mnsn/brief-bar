@@ -123,6 +123,8 @@ public struct ADOCommitRef: Decodable, Sendable {
 public struct ADOPullRequest: Decodable, Sendable {
     public var pullRequestId: Int
     public var title: String
+    /// What it's about, in Markdown, as its author wrote it: up to 4,000 characters.
+    public var description: String?
     public var status: String
     public var createdBy: ADOIdentity
     public var creationDate: Date

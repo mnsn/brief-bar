@@ -255,4 +255,25 @@ import Testing
             #expect(SessionStateScanner.workspaceName(in: directory) == nil)
         }
     }
+
+    /// Without the app's database, sessions are found from their folders: not the ones that wrote BriefBar's summaries,
+    /// which worked in its own folder.
+    @Test func theSessionsThatWroteBriefBarsSummariesArentListed() throws {
+        try withTemporaryDirectory { root in
+            let paths = CopilotPaths(root: root)
+            let summaries = root.appendingPathComponent("Library/Application Support/BriefBar/Copilot/Summaries", isDirectory: true)
+            let yours = "1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01"
+            let briefBars = "2e7c3d8f-5a1b-4c9f-8d42-6b3f8e9a7c02"
+            for (id, workspace) in [
+                (yours, "name: Fix the cart\ncwd: /Users/robin/src/shop\n"),
+                (briefBars, "name: BriefBar summary\ncwd: \(summaries.path)/\n"),
+            ] {
+                try writeLog([Line.sessionStart(at: t(0))], to: paths.eventsFile(id))
+                try workspace.write(to: paths.sessionDirectory(id).appendingPathComponent("workspace.yaml"), atomically: true, encoding: .utf8)
+            }
+            let listed = SessionStateScanner.recentSessions(paths: paths, now: Date(), summaries: summaries)
+            #expect(listed.map(\.id) == [yours])
+            #expect(listed.first?.name == "Fix the cart")
+        }
+    }
 }

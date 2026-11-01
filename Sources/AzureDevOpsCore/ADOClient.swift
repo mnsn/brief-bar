@@ -109,7 +109,12 @@ public struct ADOClient: Sendable {
                 throw ADOError.unauthorized
             case 403: throw ADOError.forbidden
             case 404: throw ADOError.notFound
-            case 429, 503: throw ADOError.throttled(retryAfter: Self.retryAfter(http) ?? 60)
+            case 429, 503:
+                // Asked to slow down without saying for how long: nothing goes out for a minute, as if it had said so,
+                // whichever engine or summary asks next.
+                let wait = Self.retryAfter(http) ?? Self.retryAfterUnsaid
+                await gate.hold(for: wait)
+                throw ADOError.throttled(retryAfter: wait)
             default: throw ADOError.http(http.statusCode)
             }
         }
@@ -144,6 +149,9 @@ public struct ADOClient: Sendable {
         else { return nil }
         return min(seconds, 3_600)
     }
+
+    /// How long to wait when Azure DevOps asks to slow down without saying for how long.
+    static let retryAfterUnsaid: TimeInterval = 60
 
     static func map(_ error: URLError) -> ADOError {
         switch error.code {
