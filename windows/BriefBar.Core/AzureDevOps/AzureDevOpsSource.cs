@@ -35,6 +35,8 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     /// listing your subscriptions. BriefBar picks the sign-in up within a minute.
     public static IReadOnlyList<string> SignInArguments { get; } = ["login", "--allow-no-subscriptions", "--output", "none"];
 
+    /// Sign in runs with your own environment, as you'd run it in a terminal.
+    static readonly Dictionary<string, string?> yourEnvironment = [];
 
     static readonly TimeSpan tickInterval = TimeSpan.FromSeconds(value: 15);
 
@@ -341,7 +343,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             return;
         }
         Log.Write(line: $"azureDevOps: signing in with az login");
-        processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, keepOpen: true);
+        processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
     }
 
     /// Looks for your organizations, on the thread pool, if `wanted` says so now and it isn't looking already: then it

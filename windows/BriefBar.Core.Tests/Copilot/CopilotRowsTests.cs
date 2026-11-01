@@ -12,13 +12,13 @@ public sealed class CopilotRowsTests
     public void ShowsEachReasonWithItsIconAndAnIdleOneQuietly()
     {
         Assert.Equal(expected: Enum.GetValues<StatusReason>().Length, actual: Enum.GetValues<StatusReason>().Select(selector: CopilotRows.Icon).Distinct().Count());
-        var waiting = CopilotRows.Row(session: Session(phase: DisplayPhase.NeedsYou, reason: StatusReason.Question), canOpen: true, showContextUsage: false);
+        var waiting = CopilotRows.Row(session: Session(phase: DisplayPhase.NeedsYou, reason: StatusReason.Question), opening: SessionOpening.App, showContextUsage: false);
         Assert.Equal(expected: IconKey.ChatQuestion, actual: waiting.Icon);
         Assert.Equal(expected: ItemState.NeedsYou, actual: waiting.State);
         Assert.Equal(expected: "needsYou", actual: waiting.Group);
 
         // An idle session keeps the icon it ended with, without a state, so its badge is quiet.
-        var idle = CopilotRows.Row(session: Session(phase: DisplayPhase.Idle, reason: StatusReason.Finished), canOpen: true, showContextUsage: false);
+        var idle = CopilotRows.Row(session: Session(phase: DisplayPhase.Idle, reason: StatusReason.Finished), opening: SessionOpening.App, showContextUsage: false);
         Assert.Equal(expected: IconKey.Checkmark, actual: idle.Icon);
         Assert.Null(@object: idle.State);
         Assert.Equal(expected: "idle", actual: idle.Group);
@@ -32,15 +32,23 @@ public sealed class CopilotRowsTests
         Assert.Equal(expected: "Working", actual: CopilotRows.Subtitle(session: Session(phase: DisplayPhase.Running, reason: StatusReason.Working, project: null)));
     }
 
+    /// A session opens in the Copilot app; without it, in a terminal with the Copilot CLI, as the Mac's open in Terminal.
     [Fact]
-    public void OpensASessionInTheCopilotAppOnlyWhenItsInstalled()
+    public void OpensASessionInTheCopilotAppOrElseInATerminal()
     {
         var session = Session(phase: DisplayPhase.Done, reason: StatusReason.Finished);
-        var row = CopilotRows.Row(session: session, canOpen: true, showContextUsage: false);
+        var row = CopilotRows.Row(session: session, opening: SessionOpening.App, showContextUsage: false);
         Assert.Equal(expected: [new PanelCommand(Key: CopilotCommands.Open, Title: "Open in GitHub Copilot", Opens: true)], actual: row.Commands);
         Assert.EndsWith(expectedEndString: "Click to open in GitHub Copilot", actualString: row.ToolTip, comparisonType: StringComparison.Ordinal);
 
-        var unopenable = CopilotRows.Row(session: session, canOpen: false, showContextUsage: false);
+        var inTerminal = CopilotRows.Row(session: session, opening: SessionOpening.Terminal, showContextUsage: false);
+        Assert.Equal(expected: [new PanelCommand(Key: CopilotCommands.Open, Title: "Open in a terminal", Opens: true)], actual: inTerminal.Commands);
+        Assert.EndsWith(
+            expectedEndString: "Click to open in a terminal with the Copilot CLI, or bring up the terminal that has it open",
+            actualString: inTerminal.ToolTip,
+            comparisonType: StringComparison.Ordinal);
+
+        var unopenable = CopilotRows.Row(session: session, opening: SessionOpening.Nowhere, showContextUsage: false);
         Assert.Empty(collection: unopenable.Commands);
         Assert.EndsWith(expectedEndString: "BriefBar opens sessions in the GitHub Copilot app, which isn't installed", actualString: unopenable.ToolTip, comparisonType: StringComparison.Ordinal);
     }
@@ -55,7 +63,7 @@ public sealed class CopilotRowsTests
             AnswerIn = new RelatedSession(Id: "coordinator", Name: "Release 2.5"),
             Parent = new RelatedSession(Id: "lead", Name: "A session with a rather long name indeed"),
         };
-        var row = CopilotRows.Row(session: relayed, canOpen: true, showContextUsage: false);
+        var row = CopilotRows.Row(session: relayed, opening: SessionOpening.App, showContextUsage: false);
         Assert.Equal(
             expected:
             [
@@ -69,14 +77,14 @@ public sealed class CopilotRowsTests
             actual: row.Tag);
         Assert.Contains(expectedSubstring: "“Release 2.5”, which coordinates it, asks you this for it", actualString: row.ToolTip, comparisonType: StringComparison.Ordinal);
 
-        // Without the Copilot app, the tag still names the session that started it, but opens nothing.
+        // Where sessions open nowhere, the tag still names the session that started it, but opens nothing.
         Assert.Equal(
             expected: new RowTag(Text: "↳ A session with a rather…", ToolTip: "Started by “A session with a rather long name indeed”", Spoken: "Started by “A session with a rather long name indeed”", Command: null),
-            actual: CopilotRows.Row(session: relayed, canOpen: false, showContextUsage: false).Tag);
+            actual: CopilotRows.Row(session: relayed, opening: SessionOpening.Nowhere, showContextUsage: false).Tag);
 
         // Where you answer it is the session that started it: the row names it already.
         var askedByParent = relayed with { Parent = new RelatedSession(Id: "coordinator", Name: "Release 2.5") };
-        var plain = CopilotRows.Row(session: askedByParent, canOpen: true, showContextUsage: false);
+        var plain = CopilotRows.Row(session: askedByParent, opening: SessionOpening.App, showContextUsage: false);
         Assert.Null(@object: plain.Tag);
         Assert.Equal(expected: [CopilotCommands.Open, CopilotCommands.OpenItself], actual: plain.Commands.Select(selector: command => command.Key));
     }
@@ -85,19 +93,19 @@ public sealed class CopilotRowsTests
     public void ShowsContextUsageOnlyWhenAskedAndMeasured()
     {
         var measured = Session(phase: DisplayPhase.Running, reason: StatusReason.Working) with { ContextUsage = new ContextUsage(Tokens: 151_000, Limit: 200_000) };
-        Assert.Null(@object: CopilotRows.Row(session: measured, canOpen: true, showContextUsage: false).Meter);
-        Assert.Null(@object: CopilotRows.Row(session: measured with { ContextUsage = null }, canOpen: true, showContextUsage: true).Meter);
-        var meter = CopilotRows.Row(session: measured, canOpen: true, showContextUsage: true).Meter;
+        Assert.Null(@object: CopilotRows.Row(session: measured, opening: SessionOpening.App, showContextUsage: false).Meter);
+        Assert.Null(@object: CopilotRows.Row(session: measured with { ContextUsage = null }, opening: SessionOpening.App, showContextUsage: true).Meter);
+        var meter = CopilotRows.Row(session: measured, opening: SessionOpening.App, showContextUsage: true).Meter;
         Assert.Equal(expected: new RowMeter(Fraction: 0.755, Text: "76%", IsHigh: true, Spoken: "Context: 76% full (151K of 200K tokens)"), actual: meter);
-        Assert.False(condition: CopilotRows.Row(session: measured with { ContextUsage = new ContextUsage(Tokens: 1_200, Limit: 1_200_000) }, canOpen: true, showContextUsage: true).Meter!.IsHigh);
+        Assert.False(condition: CopilotRows.Row(session: measured with { ContextUsage = new ContextUsage(Tokens: 1_200, Limit: 1_200_000) }, opening: SessionOpening.App, showContextUsage: true).Meter!.IsHigh);
         Assert.Equal(expected: ["999", "1.2K", "90K", "128K", "1.5M"], actual: new long[] { 999, 1_234, 90_000, 128_000, 1_500_000 }.Select(selector: CopilotRows.Compact));
     }
 
     [Fact]
     public void IndentsANestedSessionThreeLevelsAtMost()
     {
-        Assert.Equal(expected: 2, actual: CopilotRows.Row(session: Session(phase: DisplayPhase.Running, reason: StatusReason.Working) with { Depth = 2 }, canOpen: true, showContextUsage: false).Depth);
-        Assert.Equal(expected: 3, actual: CopilotRows.Row(session: Session(phase: DisplayPhase.Running, reason: StatusReason.Working) with { Depth = 7 }, canOpen: true, showContextUsage: false).Depth);
+        Assert.Equal(expected: 2, actual: CopilotRows.Row(session: Session(phase: DisplayPhase.Running, reason: StatusReason.Working) with { Depth = 2 }, opening: SessionOpening.App, showContextUsage: false).Depth);
+        Assert.Equal(expected: 3, actual: CopilotRows.Row(session: Session(phase: DisplayPhase.Running, reason: StatusReason.Working) with { Depth = 7 }, opening: SessionOpening.App, showContextUsage: false).Depth);
     }
 
     [Fact]

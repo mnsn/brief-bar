@@ -13,8 +13,8 @@ public sealed class SessionStore
     EngineSnapshot state = new();
 
     /// - `openSession`: opens a session in the Copilot app.
-    /// - `openCLISession`: opens one without the app, as the Mac does in Terminal; none on Windows yet, so without the app
-    ///   nothing opens.
+    /// - `openCLISession`: opens one without the app, in a terminal with the Copilot CLI (`CLISession`), as the Mac does in
+    ///   Terminal; without it, nothing opens without the app.
     /// - `isAppInstalled`: whether the Copilot app is on this PC, looked at again on each click and every so often.
     /// - `isAppFrontmost`: whether the Copilot app is the window in front, for Move Viewed Sessions to Idle.
     public SessionStore(
@@ -48,8 +48,8 @@ public sealed class SessionStore
     /// What the engine read last.
     public EngineSnapshot State => state;
 
-    /// Whether a session can be opened: in the app, or without it, where that's ported.
-    public bool CanOpen => AppInstalled || openCLISession is not null;
+    /// Where a session opens: in the app, or without it, in a terminal.
+    public SessionOpening Opening => AppInstalled ? SessionOpening.App : openCLISession is not null ? SessionOpening.Terminal : SessionOpening.Nowhere;
 
     public IEnumerable<SessionSnapshot> SessionsIn(DisplayPhase phase) => Sessions.Where(predicate: session => session.Phase == phase);
 
@@ -62,7 +62,7 @@ public sealed class SessionStore
         Recompute(now: now);
     }
 
-    /// Opens the session: in the Copilot app, or without it, in a terminal where that's ported. Only Move Viewed
+    /// Opens the session: in the Copilot app, or without it, in a terminal. Only Move Viewed
     /// Sessions to Idle dismisses its recent completion. A session whose question another session asks you for opens
     /// that one, where you answer it.
     public void Open(SessionSnapshot session, DateTimeOffset now)

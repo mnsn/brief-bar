@@ -6,8 +6,9 @@ using BriefBar.Core.Logging;
 
 namespace BriefBar.Core;
 
-/// The only place BriefBar starts programs, such as the Azure CLI for a sign-in's token, so that what it starts, and how,
-/// is checked in one place (`BoundaryTests`). The Mac's `ProcessRunner` and `DetachedProgram`.
+/// The only place BriefBar starts programs, such as the Azure CLI for a sign-in's token, or looks into those running, such
+/// as the Copilot CLI that has a session open, so that what it starts, and how, is checked in one place
+/// (`BoundaryTests`). The Mac's `ProcessRunner` and `DetachedProgram`.
 ///
 /// A batch file, such as `az.cmd`, runs in `cmd.exe`, which reads its whole command line as commands: nothing of yours may
 /// reach it. So a batch file gets only fixed arguments, made of letters, digits and `-._:/=`, or this throws; and `cmd.exe`
@@ -75,11 +76,14 @@ public sealed partial class ProcessRunner : IProcessRunner
         return new ProcessResult(ExitCode: process.ExitCode, Output: Text(sink: output), Error: Text(sink: error));
     }
 
-    public void StartInConsole(string program, IReadOnlyList<string> arguments, string? workingDirectory, bool keepOpen)
+    public void StartInConsole(
+        string program, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string?> environment, bool keepOpen)
     {
+        ArgumentNullException.ThrowIfNull(argument: environment);
         var info = StartInfo(program: program, arguments: arguments, keepOpen: keepOpen);
         // BriefBar has no console, so the program gets a window of its own, in the terminal Windows opens consoles in.
         info.CreateNoWindow = false;
+        Apply(environment: environment, info: info);
         if (workingDirectory is not null)
         {
             info.WorkingDirectory = workingDirectory;
@@ -88,6 +92,45 @@ public sealed partial class ProcessRunner : IProcessRunner
             ?? throw new InvalidOperationException(message: "Windows didn't start the program.");
     }
 
+    /// Whether a program with process ID `pid` is running, as Windows lists its programs. One BriefBar may not look into,
+    /// such as one run as administrator, is running.
+    public static bool IsRunning(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId: pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            // None has that ID.
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            // It ended meanwhile.
+            return false;
+        }
+        catch (Win32Exception)
+        {
+            // Listed, but not BriefBar's to look into.
+            return true;
+        }
+    }
+
+    /// When the program with process ID `pid` started, or null when none with that ID runs, or Windows won't say.
+    public static DateTimeOffset? StartTime(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId: pid);
+            return new DateTimeOffset(dateTime: process.StartTime);
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            return null;
+        }
+    }
 
     /// Whether `program` is a batch file, which `cmd.exe` runs: by its extension, without the dots and spaces that Windows
     /// takes off the end of a file's name, as Windows runs `az.cmd.` and `az.cmd ` in `cmd.exe` too.

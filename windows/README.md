@@ -95,9 +95,11 @@ section names and the like, so nothing you see can reach it: a line with a strin
   as they change. Its groups are the Mac's: Needs you (a question, a plan to review, a permission), Running, Done
   and Stopped (each with **Clear**, which moves them to Idle), and Idle, folded. A row opens its session in the
   Copilot app (`ghapp://sessions/<id>`), or, for a question that a coordinating session asks for another, the session
-  where you answer it; its menu opens the session itself, and the one that started it. Its settings are the Mac's:
-  Keep finished sessions for, Move viewed sessions to idle, Show relayed questions once, Nest sessions under their
-  parents (a ↳ tag names a parent elsewhere) and Show context usage (a ring and a percentage, orange from 70%).
+  where you answer it; its menu opens the session itself, and the one that started it. On a PC with only the Copilot
+  CLI, a row opens its session in a terminal, as the Mac does in Terminal: it brings up the terminal of a CLI that has
+  the session open, or else runs `copilot --resume <id>` in the folder the session works in. Its settings are the
+  Mac's: Keep finished sessions for, Move viewed sessions to idle, Show relayed questions once, Nest sessions under
+  their parents (a ↳ tag names a parent elsewhere) and Show context usage (a ring and a percentage, orange from 70%).
 - **Azure DevOps pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#azure-devops)): yours and the
   ones you review, in the organizations you choose, which it finds the first time, and the ones you watch by their
   links, read with the Azure CLI's sign-in (`az account get-access-token`, its token kept in memory only) and GET
@@ -141,8 +143,9 @@ Where Windows differs, these were decided:
   shows the Mac's first item.
 - **.NET 10**, supported until November 2028, and **x64 and Arm64**.
 - **Copilot sessions open in the GitHub Copilot app**, as on the Mac when it's installed. On a PC with only the
-  Copilot CLI, rows list but don't open until BriefBar can start programs (`ProcessRunner`), where the Mac opens the
-  CLI in Terminal.
+  Copilot CLI, a row opens its session in a terminal, as the Mac opens it in Terminal: the terminal of a CLI that
+  has it open comes to the front, or else `copilot --resume <id>` runs in Windows' default terminal, in the session's
+  folder. What goes wrong, such as a CLI BriefBar can't find, is said in Windows' own dialog.
 - **Azure DevOps signs in with `az login` in a console window**, which stays open so you can read what it said, where
   the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac that reads every app's
   notifications, which comes with Teams.
@@ -151,16 +154,16 @@ Where Windows differs, these were decided:
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), and the one place that starts programs (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
-| `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), and the source (`CopilotSource`, `CopilotRows`) |
+| `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
 | `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's and Azure DevOps' through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
 | `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
-| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), opening Azure DevOps' pages (`AzureDevOpsShell`), and the log file |
+| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' pages (`AzureDevOpsShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
 | `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data |
 
@@ -265,7 +268,13 @@ SDK ships inside the app.
   `az.cmd` runs Python, which can hold its output open after `az` ends: the runner waits half a second for the rest,
   then ends what's left, and a timeout ends the whole tree.
 - **A console program started by an app without a console gets a window of its own**, in Windows' default
-  terminal, such as Windows Terminal: that's how `az login` opens.
+  terminal, such as Windows Terminal: that's how `az login` and `copilot --resume` open. To bring up the terminal a
+  Copilot CLI already runs in, BriefBar attaches to its console for a moment (`AttachConsole`, taking Ctrl+C
+  meanwhile so it can't end BriefBar): in Windows Terminal, `GetConsoleWindow` gives a hidden stand-in window, owned
+  by the terminal's own (`GA_ROOTOWNER`), checked on this PC; in an editor's terminal it's owned by nothing, so
+  BriefBar says where the session is instead.
+- **Windows' task dialog needs Common Controls 6**, which only an app's manifest can ask for; without it,
+  `TaskDialog` isn't there at all.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found
   with real data, the panel said "All clear" for the seconds between finding your organizations and reading them.
   The Mac shows "Loading" while it refreshes; Windows only the first time, so the bar doesn't say it's starting at
@@ -281,10 +290,9 @@ SDK ships inside the app.
 Port the sources first, one at a time, each checked with real data ([below](#checking-with-real-data)), in
 this order:
 
-1. ~~**Copilot sessions**~~, done, with Settings and each source's consent. Not ported yet, for later layers:
-   opening a session on a PC without the Copilot app (the Mac opens the Copilot CLI in Terminal; until then such
-   rows list but don't open), Show Links, a work item's details and summaries, tasks sent to the Copilot CLI, and
-   `--mcp`.
+1. ~~**Copilot sessions**~~, done, with Settings and each source's consent; with the Azure DevOps layer, rows on a
+   PC with only the Copilot CLI open in a terminal. Not ported yet, for later layers: Show Links, a work item's
+   details and summaries, tasks sent to the Copilot CLI, and `--mcp`.
 2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request.
    Not ported yet, for later layers: the Sprint and Pipelines sections, a pull request's page with its story, the
    brief's summaries, notifications, pull requests sent in chats (with Teams, as it reads notifications), Show

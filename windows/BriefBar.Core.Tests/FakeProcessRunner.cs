@@ -8,6 +8,7 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
     readonly Lock gate = new();
     readonly List<FakeProcessRun> runs = [];
     readonly List<FakeConsole> consoles = [];
+    Exception? failsToStart;
 
     public IReadOnlyList<FakeProcessRun> Runs
     {
@@ -54,11 +55,30 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
             : Task.FromResult(result: answer(arg: number));
     }
 
-    public void StartInConsole(string program, IReadOnlyList<string> arguments, string? workingDirectory, bool keepOpen)
+    public void StartInConsole(
+        string program, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string?> environment, bool keepOpen)
     {
         lock (gate)
         {
-            consoles.Add(item: new FakeConsole(Program: program, Arguments: [.. arguments], WorkingDirectory: workingDirectory, KeepOpen: keepOpen));
+            if (failsToStart is { } failure)
+            {
+                throw failure;
+            }
+            consoles.Add(item: new FakeConsole(
+                Program: program,
+                Arguments: [.. arguments],
+                WorkingDirectory: workingDirectory,
+                Environment: new Dictionary<string, string?>(collection: environment, comparer: StringComparer.Ordinal),
+                KeepOpen: keepOpen));
+        }
+    }
+
+    /// Starting in a console window throws `failure` from now on, as Windows does for a program that isn't there.
+    public void FailToStart(Exception failure)
+    {
+        lock (gate)
+        {
+            failsToStart = failure;
         }
     }
 }

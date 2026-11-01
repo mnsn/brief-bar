@@ -16,8 +16,10 @@ public interface IProcessRunner
         TimeSpan timeout,
         CancellationToken cancellationToken);
 
-    /// Starts `program` with `arguments` in a console window of its own, in `workingDirectory`, and leaves it running:
-    /// Windows opens it in your default terminal, such as Windows Terminal. With `keepOpen`, a batch file's window stays
-    /// open once it's done, so you can read what it said. A program that isn't there throws `Win32Exception`.
-    void StartInConsole(string program, IReadOnlyList<string> arguments, string? workingDirectory, bool keepOpen);
+    /// Starts `program` with `arguments` in a console window of its own, in `workingDirectory`, with `environment`'s
+    /// variables as `RunAsync` sets them, and leaves it running: Windows opens it in your default terminal, such as Windows
+    /// Terminal. With `keepOpen`, a batch file's window stays open once it's done, so you can read what it said. A program
+    /// that isn't there throws `Win32Exception`.
+    void StartInConsole(
+        string program, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string?> environment, bool keepOpen);
 }

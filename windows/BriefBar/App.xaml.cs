@@ -32,7 +32,7 @@ public sealed partial class App : Application
         UseLogFile();
         Log.Write(line: $"started: demo {options.IsDemo}, process {Environment.ProcessId}");
         var queue = DispatcherQueue.GetForCurrentThread();
-        var sources = new AppSources(isDemo: options.IsDemo, madeAt: DateTimeOffset.Now);
+        var sources = new AppSources(isDemo: options.IsDemo, madeAt: DateTimeOffset.Now, queue: queue);
         var shell = new AppShell(queue: queue, sources: sources, isDemo: options.IsDemo, exit: Exit);
         giveSpaceBack = shell.GiveSpaceBack;
         instance.Listen(queue: queue, quit: shell.Quit, show: shell.ShowOverview);
