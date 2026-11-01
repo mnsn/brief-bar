@@ -558,12 +558,16 @@ import Testing
     @Test func aSummaryOfAllItWasGivenDoesntSayItsIncomplete() {
         let summary = StorySummary(headline: "Approved.", paragraph: """
             - **Review:** Priya Shah approved. The summary may be incomplete.
-            - **Note:** Details may be incomplete.
+            - **Note:** This summary may be incomplete.
             - **Left:** The migration is incomplete.
+            - **Blocked:** The data migration is incomplete.
             """)
-        #expect(summary.withoutIncompleteNotes().paragraph
-                == "- **Review:** Priya Shah approved.\n- **Left:** The migration is incomplete.")
-        #expect(StorySummary(headline: "Approved.", paragraph: "- **Note:** The data is incomplete.").withoutIncompleteNotes().paragraph == nil)
+        #expect(summary.withoutIncompleteNotes().paragraph == """
+            - **Review:** Priya Shah approved.
+            - **Left:** The migration is incomplete.
+            - **Blocked:** The data migration is incomplete.
+            """)
+        #expect(StorySummary(headline: "Approved.", paragraph: "- **Note:** The summary may be incomplete.").withoutIncompleteNotes().paragraph == nil)
     }
 
     /// The data's headings in capitals, as a small model may copy them, read as words.

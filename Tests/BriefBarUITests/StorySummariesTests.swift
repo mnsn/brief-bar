@@ -726,18 +726,61 @@ import Testing
         #expect(summaries.model == StorySummaries.appleIntelligenceModel)
     }
 
-    /// Asked before the Copilot CLI was looked for, a summary is written with the model that finds.
-    @Test func aSummaryIsWrittenWithTheModelTheCLIChooses() async {
+    /// Until the model's known, nothing's written as something opens, nor said to be about to be, so a card never says
+    /// "on this Mac" for one that goes to Copilot; once it is, it's written with it. ✨ writes with the model it names.
+    @Test func nothingsWrittenAsItOpensUntilTheModelIsKnown() async {
         let (links, _, summaries) = hub()
-        publish(links)
+        publishWithTasks(links)
         summaries.findCLI = { true }
         let models = Asked()
         summaries.write = { _, options in
             models.add(options.model)
             return .success("HEADLINE: Fixed in !4091.")
         }
+        #expect(!summaries.knowsModel)
+        #expect(summaries.expect(workItem, unlessActedSince: nil) == nil)
+        await summaries.opened(workItem)
+        #expect(models.prompts.isEmpty)
+        // ✨, meanwhile: the model it says, Apple Intelligence.
         await summaries.summarizeAndWait(workItem)
-        #expect(models.prompts == [StorySummaries.copilotDefaultModel])
+        #expect(models.prompts == [StorySummaries.appleIntelligenceModel])
+        summaries.dismiss(workItem)
+        // Known: Claude Haiku 5.5, as the CLI is there.
+        await summaries.lookForCLI()
+        #expect(summaries.knowsModel)
+        #expect(summaries.expect(workItem, unlessActedSince: nil) != nil)
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(models.prompts == [StorySummaries.appleIntelligenceModel, StorySummaries.copilotDefaultModel])
+    }
+
+    /// The Copilot CLI looked for once for all who ask meanwhile, and the look stops as summaries go off, model unchanged.
+    @Test func lookingForTheCLIIsSharedAndStopsAsSummariesGoOff() async throws {
+        let (_, _, summaries) = hub(on: false)
+        let gate = Gate()
+        let looks = Asked()
+        summaries.findCLI = {
+            await gate.wait()
+            looks.add(Task.isCancelled ? "stopped" : "found")
+            return true
+        }
+        summaries.setOn(true)
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(gate.isWaiting)
+        // Asked again meanwhile, it waits for the same look.
+        let again = Task { await summaries.lookForCLI() }
+        for _ in 0..<20 { await Task.yield() }
+        summaries.setOn(false)
+        gate.open()
+        await again.value
+        for _ in 0..<200 where looks.prompts.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(looks.prompts == ["stopped"])
+        #expect(!summaries.hasLookedForCLI)
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
     }
 
     /// Opening one writes nothing with a model that can't write it here, Apple Intelligence where this Mac can't run it,

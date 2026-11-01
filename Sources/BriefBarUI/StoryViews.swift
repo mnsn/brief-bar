@@ -305,7 +305,7 @@ private struct StandingContent: View {
             // Once it's shown a moment, its summary, unless one that's current is there: as it opens, as it's unfolded, as
             // summaries are turned on, and as it has something to sum up, such as links that came after it opened; never
             // once you wrote, stopped, closed or showed it since it opened.
-            .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.hasSomethingToSum(subject))") {
+            .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.knowsModel)|\(summaries.hasSomethingToSum(subject))") {
                 guard links.isOn, showsSummary, !isFolded, !isRendering else { return }
                 let acted = visit(subject)
                 // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.

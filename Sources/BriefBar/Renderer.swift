@@ -40,6 +40,8 @@ enum Renderer {
             await model.services.stories.tell(links.linked(Set(ItemRef.Kind.allCases)).sorted().map(links.describe))
             if demo {
                 let summaries = model.services.summaries
+                // Written by the model they'd have, once it's known.
+                await summaries.lookForCLI()
                 for workItem in links.linked([.workItem]).sorted() where summaries.hasSomethingToSum(workItem) {
                     await summaries.summarizeAndWait(workItem)
                 }

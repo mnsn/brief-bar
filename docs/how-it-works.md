@@ -492,8 +492,10 @@ chosen, a line under it says it's a small model that often gets details wrong, e
 Copilot's models are far more accurate: on realistic made-up items, it got every one of them wrong where Claude Haiku
 5.5 got them right. So unless you chose a model, it's Claude Haiku 5.5 through Copilot where the Copilot CLI is, and
 Apple Intelligence where it isn't (`StorySummaries.copilotDefaultModel`, `lookForCLI`, `hasChosenModel`): the CLI is
-looked for, as your login shell finds it, once summaries are on, as BriefBar starts, as they're turned on, as their
-setting shows, and before a summary is written if it hasn't been yet; never while they're off. Choosing a model in the
+looked for, as your login shell finds it, once summaries are on, as BriefBar starts, as they're turned on and as their
+setting shows, one look for all who ask meanwhile, which stops as they go off; never while they're off. Until the model's
+known (`knowsModel`), nothing's written as something opens, nor said to be about to be, so a card never says "on this
+Mac" for one that goes to Copilot; ✨ writes with the model it names. Choosing a model in the
 picker, even the one that was the default, saves it, and it stays whatever's found. Existing model choices and the
 on/off setting stay as they were, under the same `summaries.copilot.*` preferences; whoever had summaries on in 0.9.0
 with Claude Haiku 5.5, its default then, keeps it while the CLI is there. Apple Intelligence runs through

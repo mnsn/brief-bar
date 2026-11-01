@@ -67,6 +67,8 @@ final class AppModel: ObservableObject {
             // is.
             services.summaries.canRunOnDevice = { true }
             services.summaries.findCLI = { true }
+            let summaries = services.summaries
+            Task { await summaries.lookForCLI() }
         } else if !rendering {
             let summarizer = CopilotSummarizer()
             services.summaries.write = StorySummaries.writer(copilot: AppModel.copilotSummaries(summarizer))

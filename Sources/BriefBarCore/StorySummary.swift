@@ -45,14 +45,13 @@ public struct StorySummary: Sendable, Equatable {
     }
 
     /// It without saying it may be incomplete, for a summary of all it was given, as a small model says anyway: a sentence
-    /// of its points that says the summary, its data or details may be incomplete goes, and a point with nothing else; not
-    /// one that says some work is.
+    /// of its points that says the summary is, or may be, goes, and a point with nothing else; never one that says some
+    /// work or data is, such as "The data migration is incomplete."
     public func withoutIncompleteNotes() -> StorySummary {
         guard let paragraph, paragraph.range(of: "incomplete", options: .caseInsensitive) != nil else { return self }
         let says = { (sentence: String) in
             let lowered = sentence.lowercased()
-            return lowered.contains("incomplete")
-                && ["summary", "data", "details", "information"].contains(where: lowered.contains)
+            return lowered.contains("incomplete") && lowered.contains("summary")
         }
         let lines = paragraph.components(separatedBy: "\n").compactMap { line -> String? in
             guard line.range(of: "incomplete", options: .caseInsensitive) != nil else { return line }
