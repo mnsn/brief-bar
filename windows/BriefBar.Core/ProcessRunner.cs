@@ -64,7 +64,7 @@ public sealed partial class ProcessRunner : IProcessRunner
         {
             // Something it started holds its output open: what it printed itself has arrived by now, and what it left
             // running is ended, as on the Mac.
-            EndLeftovers(process: process);
+            EndTree(process: process);
             await StopReadingAsync(read: read, reading: reading).ConfigureAwait(continueOnCapturedContext: false);
         }
         else
@@ -212,8 +212,10 @@ public sealed partial class ProcessRunner : IProcessRunner
         return info;
     }
 
-    /// Ends `process` and everything it started, such as the Python that `az.cmd` runs. One that has ended meanwhile
-    /// has nothing left to end.
+    /// Ends `process` and everything it started, such as the Python that `az.cmd` runs: all of it at the time limit, or what
+    /// it left running once it ended. One that has ended meanwhile has nothing left to end. One that can't be ended is
+    /// logged rather than thrown: the caller still gets the time limit's error, or what the program printed, which is its
+    /// whole answer.
     static void EndTree(Process process)
     {
         try
@@ -223,19 +225,9 @@ public sealed partial class ProcessRunner : IProcessRunner
         catch (InvalidOperationException) when (process.HasExited)
         {
         }
-    }
-
-    /// Ends what `process`, which has ended, left running. One that can't be ended is logged rather than thrown: what the
-    /// program printed is its whole answer.
-    static void EndLeftovers(Process process)
-    {
-        try
-        {
-            EndTree(process: process);
-        }
         catch (AggregateException error)
         {
-            Log.Write(error: error, context: $"process: couldn't end what a program left running");
+            Log.Write(error: error, context: $"process: couldn't end all of a program, or what it left running");
         }
     }
 
