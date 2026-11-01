@@ -163,6 +163,17 @@ public sealed class AuthTests
         Assert.Single(collection: cli.Runs);
     }
 
+    /// A caller that gave up, as a source that's stopping, runs nothing.
+    [Fact]
+    public async Task ACallerThatGaveUpRunsNothing()
+    {
+        var cli = new FakeProcessRunner(answer: _ => Output(text: "gho_never"));
+        var provider = new GitHubCLITokenProvider(locator: Locator(present: [InstalledCLI]), runner: cli);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(testCode: () => provider.TokenAsync(cancellationToken: new CancellationToken(canceled: true)));
+        Assert.Empty(collection: cli.Runs);
+    }
+
     [Fact]
     public async Task NoCLIRunsNothing()
     {

@@ -143,6 +143,14 @@ public sealed partial class ProcessRunner : IProcessRunner
             || string.Equals(a: extension, b: ".bat", comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
+    /// Whether `cmd.exe` can run `program`: a path without quotes, percent signs or line breaks, which it would read as
+    /// part of a command. Windows allows a percent sign in a folder's name, so a program found there runs only directly.
+    public static bool CmdCanRun(string program)
+    {
+        ArgumentNullException.ThrowIfNull(argument: program);
+        return program.IndexOfAny(anyOf: ['"', '%', '\r', '\n']) < 0;
+    }
+
     /// `cmd.exe`'s arguments that run `program`, a batch file or a program whose window stays open (`keepOpen`), with
     /// `arguments`, which must be fixed words: `/d` without AutoRun commands, `/v:off` without delayed expansion, and `/s`
     /// so that the outer quotes are the only ones it takes off.
@@ -150,7 +158,7 @@ public sealed partial class ProcessRunner : IProcessRunner
     {
         ArgumentException.ThrowIfNullOrEmpty(argument: program);
         ArgumentNullException.ThrowIfNull(argument: arguments);
-        if (program.IndexOfAny(anyOf: ['"', '%', '\r', '\n']) >= 0)
+        if (!CmdCanRun(program: program))
         {
             throw new ArgumentException(message: "A path that cmd.exe runs can't hold quotes, percent signs or line breaks.", paramName: nameof(program));
         }

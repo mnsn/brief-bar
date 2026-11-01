@@ -122,7 +122,8 @@ public sealed class GitHubSourceTests
     }
 
     /// Sign in runs `gh auth login` with fixed arguments in a console window that stays open, through `cmd.exe`, which
-    /// takes only fixed words; without the GitHub CLI, or if it can't start, it opens the page that says how to install it.
+    /// takes only fixed words, or in a window of its own at a path `cmd.exe` can't take; without the GitHub CLI, or if it
+    /// can't start, it opens the page that says how to install it.
     [Fact]
     public async Task SignsInWithTheGitHubCli()
     {
@@ -151,6 +152,22 @@ public sealed class GitHubSourceTests
         await third.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
         third.Perform(request: Request(command: GitHubCommands.SignIn));
         Assert.Equal(expected: GitHubRows.InstallCliPage, actual: Assert.Single(collection: gone.Opened));
+
+        // `cmd.exe` can't take a path with a percent sign: `gh` there gets a window of its own, which closes once it's done.
+        var percent = Make(cli: @"C:\Tools\100%\gh.exe");
+        using var fourth = percent.Source;
+        await fourth.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        fourth.Perform(request: Request(command: GitHubCommands.SignIn));
+        Assert.False(condition: Assert.Single(collection: percent.Processes.Consoles).KeepOpen);
+        Assert.Empty(collection: percent.Opened);
+
+        // A batch file there can't run at all: what to install comes up, rather than the error.
+        var batch = Make(cli: @"C:\Tools\100%\gh.cmd");
+        batch.Processes.FailToStart(failure: new ArgumentException(message: "A path that cmd.exe runs can't hold quotes, percent signs or line breaks."));
+        using var fifth = batch.Source;
+        await fifth.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        fifth.Perform(request: Request(command: GitHubCommands.SignIn));
+        Assert.Equal(expected: GitHubRows.InstallCliPage, actual: Assert.Single(collection: batch.Opened));
     }
 
     /// A panel opening reads again, unless it read in the last 10 seconds, as the Mac's popover does.

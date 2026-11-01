@@ -174,8 +174,9 @@ Where Windows differs, these were decided:
 - **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
   `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
   where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
-  lee"), where the Mac writes "sam, kai and lee". Its empty list says **All quiet** only while nothing stops it reading:
-  the Mac's says so under a note that it's offline or can't reach GitHub too, even before any read has worked.
+  lee"), where the Mac writes "sam, kai and lee". Its empty list says **All quiet** only when it read them all: the
+  Mac's says so under a note that it's offline, can't reach GitHub or couldn't read some pull requests too, even before
+  any read has worked.
 
 ## The code
 
@@ -308,7 +309,8 @@ SDK ships inside the app.
 - **That window closes the moment its program ends**, before you can read what it said. `az login` stays open
   because `az.cmd` is a batch file, which runs in `cmd.exe /k`; `gh.exe` isn't one, so `gh auth login` would close as
   soon as it was done. A program whose window should stay open runs in `cmd.exe /k` as a batch file does, with fixed
-  words only (`ProcessRunner.CmdArguments`).
+  words only (`ProcessRunner.CmdArguments`). `cmd.exe` would read a percent sign in its path as part of a command, and
+  Windows allows one in a folder's name: `gh` found there runs directly, in a window that closes once it's done.
 - **Windows' task dialog needs Common Controls 6**, which only an app's manifest can ask for; without it,
   `TaskDialog` isn't there at all.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found

@@ -319,7 +319,8 @@ public sealed class GitHubSource : ISectionSource, IDisposable
     }
 
     /// Runs `gh auth login` in a console window, which stays open once it's done, so you can read what it said; or, without
-    /// the GitHub CLI, opens the page that says how to install it.
+    /// the GitHub CLI, opens the page that says how to install it. `cmd.exe` keeps the window open, but can't take a path
+    /// with a percent sign: `gh` found at one gets a window of its own, which closes once it's done.
     void SignIn()
     {
         if (reading.LocateCli() is not { } program)
@@ -330,11 +331,13 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         Log.Write(line: $"github: signing in with gh auth login");
         try
         {
-            processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
+            processes.StartInConsole(
+                program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: ProcessRunner.CmdCanRun(program: program));
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException)
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or ArgumentException)
         {
-            // It was uninstalled or moved since BriefBar found it: what to install comes up in its place.
+            // It was uninstalled or moved since BriefBar found it, or it's a batch file at a path that `cmd.exe` can't
+            // take: what to install comes up in its place.
             Log.Write(error: error, context: $"github: couldn't start gh auth login");
             Open(page: GitHubRows.InstallCliPage);
         }

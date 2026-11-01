@@ -133,6 +133,23 @@ public sealed class ProcessRunnerTests
         Assert.Throws<Win32Exception>(testCode: () => ProcessRunner.StartInfo(program: @"C:\Made-up folder\gh.exe", arguments: arguments, keepOpen: true));
     }
 
+    /// `cmd.exe` would read a percent sign, quotes or a line break in a path as part of a command: a program in a folder
+    /// whose name has a percent sign, which Windows allows, runs only directly.
+    [Fact]
+    public void RunsAProgramAtAPathWithAPercentSignOnlyDirectly()
+    {
+        const string percent = @"C:\Tools\100%\gh.exe";
+        Assert.True(condition: ProcessRunner.CmdCanRun(program: powerShell));
+        Assert.False(condition: ProcessRunner.CmdCanRun(program: percent));
+        Assert.False(condition: ProcessRunner.CmdCanRun(program: "C:\\Tools\\\"gh\".exe"));
+        Assert.False(condition: ProcessRunner.CmdCanRun(program: "C:\\Tools\r\ngh.exe"));
+
+        Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.StartInfo(program: percent, arguments: ["auth", "login"], keepOpen: true));
+        var direct = ProcessRunner.StartInfo(program: percent, arguments: ["auth", "login"], keepOpen: false);
+        Assert.Equal(expected: percent, actual: direct.FileName);
+        Assert.Equal(expected: ["auth", "login"], actual: direct.ArgumentList);
+    }
+
     [Fact]
     public async Task SetsAndRemovesVariables()
     {

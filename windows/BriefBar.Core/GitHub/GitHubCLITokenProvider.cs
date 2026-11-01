@@ -63,6 +63,8 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
 
     public async Task<GitHubToken> TokenAsync(CancellationToken cancellationToken)
     {
+        // A caller that gave up, as a source that's stopping, starts no run of `gh`; one under way finishes, as on the Mac.
+        cancellationToken.ThrowIfCancellationRequested();
         Task<GitHubToken> fetching;
         lock (gate)
         {

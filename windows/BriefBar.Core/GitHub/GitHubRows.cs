@@ -33,8 +33,10 @@ public static class GitHubRows
             Commands = Commands(status: status),
             ProblemCommand = ProblemCommand(problem: problem),
             EmptyText = !store.HasLoaded && problem is null ? "Loading your pull requests…" : null,
-            // Not when it couldn't read: the list may not be empty.
-            Quiet = store.HasLoaded && items.Count == 0 && problem is null ? new QuietNote(Title: "All quiet", Detail: "No open pull requests for you") : null,
+            // Not when it couldn't read them all: the list may not be empty.
+            Quiet = store.HasLoaded && items.Count == 0 && problem is null && store.Notice is null && !store.MoreThanShown
+                ? new QuietNote(Title: "All quiet", Detail: "No open pull requests for you")
+                : null,
             Notices = Notices(store: store),
             Account = store.Login is { } login ? new SectionAccount(Name: login, Help: "Signed in to the GitHub CLI as " + login) : null,
         };

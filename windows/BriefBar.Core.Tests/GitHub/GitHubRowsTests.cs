@@ -101,6 +101,10 @@ public sealed class GitHubRowsTests
         Assert.Empty(collection: snapshot.Rows);
         // Not when it couldn't read: the list may not be empty.
         Assert.Null(@object: GitHubRows.Snapshot(store: Store(read: false, error: GitHubError.Offline)).Quiet);
+        // Nor when GitHub couldn't read some of them, or there are more than it read.
+        var empty = new GitHubLoad(Login: GitHubFixture.Me, Items: []);
+        Assert.Null(@object: GitHubRows.Snapshot(store: Store(load: empty with { Notice = "Some pull requests couldn't be read: made-up error." })).Quiet);
+        Assert.Null(@object: GitHubRows.Snapshot(store: Store(load: empty with { MoreThanShown = true })).Quiet);
         // Nor before it has.
         Assert.Null(@object: GitHubRows.Snapshot(store: Store(read: false)).Quiet);
     }
