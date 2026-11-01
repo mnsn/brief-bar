@@ -69,6 +69,25 @@ public sealed class SQLiteTests
         Assert.Equal(expected: before, actual: File.ReadAllBytes(path: path));
     }
 
+    /// Every query reads the database as it was at the first: a commit by the app's writer between two of them, which can
+    /// come at any moment, can't mix old and new rows into one read. The next connection reads it.
+    [Fact]
+    public void ReadsOneSnapshotAcrossItsQueries()
+    {
+        using var folder = new TemporaryFolder();
+        var path = folder.Combine("test.db");
+        using var writer = new TestDatabase(path: path, journalMode: "WAL");
+        writer.Exec(statements: "CREATE TABLE item (id INTEGER); INSERT INTO item VALUES (1);");
+        using (var connection = new SQLiteConnection(path: path))
+        {
+            Assert.Equal(expected: [1L], actual: Count(connection: connection));
+            writer.Exec(statements: "INSERT INTO item VALUES (2);");
+            Assert.Equal(expected: [1L], actual: Count(connection: connection));
+        }
+        using var next = new SQLiteConnection(path: path);
+        Assert.Equal(expected: [2L], actual: Count(connection: next));
+    }
+
     /// Writes a small database, as another app would.
     static string MakeDatabase(TemporaryFolder folder)
     {
@@ -81,4 +100,8 @@ public sealed class SQLiteTests
             """);
         return path;
     }
+
+    /// How many items `connection` reads.
+    static List<long> Count(SQLiteConnection connection) =>
+        connection.Rows(sql: "SELECT count(*) FROM item", map: row => row.NumberOrZero(column: 0));
 }

@@ -4,7 +4,8 @@ namespace BriefBar.Core;
 
 /// A short-lived, read-only SQLite connection, closed as it's disposed. It never changes the database's contents. Like
 /// any reader next to a WAL writer, it takes brief shared locks and updates SQLite's shared-memory index (`-shm`). What a
-/// query sorts stays in memory (`temp_store`), never in a temporary file. The Mac's `SQLiteConnection`.
+/// query sorts stays in memory (`temp_store`), never in a temporary file. Every query reads the database as it was at the
+/// first, so a commit that lands between two of them can't mix into one read. The Mac's `SQLiteConnection`.
 ///
 /// SQLite opens files sharing reading and writing, but not deleting, so the app that owns the database can't delete or
 /// rename them while it's open: keep it open only for one read.
@@ -34,6 +35,10 @@ public sealed class SQLiteConnection : IDisposable
             // setting: nothing is written.
             using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA temp_store = MEMORY";
+            command.ExecuteNonQuery();
+            // One snapshot for every query: a read transaction, which takes no lock until the first query reads. It ends as
+            // the connection closes, which SQLite does itself, so disposing never fails for it.
+            command.CommandText = "BEGIN DEFERRED";
             command.ExecuteNonQuery();
         }
         catch (SqliteException)
