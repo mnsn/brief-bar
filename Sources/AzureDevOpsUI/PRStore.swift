@@ -601,11 +601,11 @@ final class PRStore: ObservableObject {
         // compared with next moves along without announcing anything.
         if state.hasLoaded {
             if announce, !state.isRefreshing, let announced, settings.notifications, let notifier {
-                let firstLoaded = state.firstLoaded
+                let loaded = state
                 let startedAt = self.startedAt
                 let news = NotificationPlanner.news(previous: announced, current: sorted) { item in
-                    // An organization added later starts from when it was first read.
-                    max(startedAt, firstLoaded[item.key.organization] ?? .distantFuture)
+                    // An organization added later starts from when it was first read, however it's spelled.
+                    max(startedAt, loaded.firstRead(of: item.key.organization) ?? .distantFuture)
                 }
                 .filter { delivered.insert($0.id).inserted }
                 if !news.isEmpty {

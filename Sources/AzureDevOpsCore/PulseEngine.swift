@@ -84,6 +84,12 @@ public struct PulseSnapshot: Sendable, Equatable {
         self.hasLoaded = hasLoaded
         self.closedLinks = closedLinks
     }
+
+    /// When an organization's lists were first read, however its name is spelled: a pull request read under another
+    /// spelling, such as one Done keeps from before it was spelled as Azure DevOps does, is of the same organization.
+    public func firstRead(of organization: String) -> Date? {
+        firstLoaded[organization] ?? firstLoaded.first { $0.key.lowercased() == organization.lowercased() }?.value
+    }
 }
 
 /// Polls Azure DevOps: the pull request lists every refresh (three requests per organization), the details of the

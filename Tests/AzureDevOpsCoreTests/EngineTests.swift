@@ -669,11 +669,12 @@ import BriefBarCore
     }
 
     /// Spelled another way, an organization was first read when it was first read under its old spelling: what came
-    /// since is news, and nothing's kept under the old spelling.
+    /// since is news, however a pull request read before spells it, and nothing's kept under the old spelling.
     @Test func anOrganizationSpelledAnotherWayWasFirstReadWhenItWasFirstRead() async throws {
         let clock = Locked(t(0))
         let server = StubServer()
-        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.serveOrganization(mine: [Fixture.pullRequest(1)], completed: [Fixture.pullRequest(3, status: "completed", closed: t(-10 * minute))])
+        // Its completed pull request from before is past the ones the list gives.
         server.serveOrganization("Contoso", mine: [Fixture.pullRequest(1)])
         let engine = PulseEngine(
             client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org]), now: { clock.value }
@@ -686,7 +687,9 @@ import BriefBarCore
         await engine.refreshNow()
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.firstLoaded == ["Contoso": t(0)])
-        #expect(snapshot.records.map(\.id.organization) == ["Contoso"])
+        #expect(snapshot.records.map(\.id.description) == ["Contoso/1", "contoso/3"])
+        #expect(snapshot.firstRead(of: "contoso") == t(0))
+        #expect(snapshot.firstRead(of: "fabrikam") == nil)
     }
 
     @Test func fetchesDetailsOnABudgetAfterTheFirstLoad() async {
