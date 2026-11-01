@@ -20,15 +20,15 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Border
+                x:Name="TitleTile"
                 Width="18"
                 Height="18"
                 VerticalAlignment="Center"
-                Background="{x:Bind TileBrush}"
                 CornerRadius="4">
                 <views:FluentIcon
+                    x:Name="TitleTileIcon"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Fill="{x:Bind OnTileBrush}"
                     Icon="Stack"
                     Size="12" />
             </Border>

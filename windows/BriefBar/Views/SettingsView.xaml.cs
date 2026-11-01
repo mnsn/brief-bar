@@ -2,7 +2,6 @@ using BriefBar.Core;
 using BriefBar.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 
 namespace BriefBar.Views;
 
@@ -17,8 +16,8 @@ public sealed partial class SettingsView : UserControl
     {
         ArgumentNullException.ThrowIfNull(argument: viewModel);
         ViewModel = viewModel;
-        UsePalette(palette: palette);
         InitializeComponent();
+        UsePalette(palette: palette);
         general = new GeneralSettingsPage(viewModel: viewModel);
         general.SourceRequested += (_, source) => Show(source: source.Entry.Id);
         general.QuitRequested += (_, _) => QuitRequested?.Invoke(sender: this, e: EventArgs.Empty);
@@ -39,10 +38,6 @@ public sealed partial class SettingsView : UserControl
     }
 
     public SettingsViewModel ViewModel { get; }
-
-    public Brush TileBrush { get; private set; } = null!;
-
-    public Brush OnTileBrush { get; private set; } = null!;
 
     /// Where the window can be dragged.
     public UIElement TitleBarElement => TitleBar;
@@ -73,11 +68,13 @@ public sealed partial class SettingsView : UserControl
         ShowBadges();
     }
 
+    /// Its colors in `palette`, as the theme or the contrast changes: the title bar's tile, set here as it has no
+    /// binding that follows, and each source's.
     public void UsePalette(ThemePalette palette)
     {
         ArgumentNullException.ThrowIfNull(argument: palette);
-        TileBrush = palette.Tint(tint: 0xFF0067C0u);
-        OnTileBrush = palette.OnTint;
+        TitleTile.Background = palette.Tint(tint: 0xFF0067C0u);
+        TitleTileIcon.Fill = palette.OnTint;
         ViewModel.UsePalette(palette: palette);
     }
 
