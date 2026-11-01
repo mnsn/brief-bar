@@ -292,6 +292,11 @@ SDK ships inside the app.
   runs, every 3 minutes, or every 15 for a quiet one), unless the pull request itself changed. Besides new ones, at
   most 8 are read a refresh, changed ones first, then those due longest, so pull requests whose builds run can't keep
   the others waiting.
+- **Azure DevOps can ask BriefBar to slow down** (429 or 503): as on the Mac, nothing is sent until the time it gave
+  (`Retry-After`), or for a minute when it doesn't say, whichever reader asks next. The readers of the pull requests
+  you watch, of those that left your lists, of failed builds and of merges stop, and count nothing as failed: a pull
+  request you watch is read once BriefBar may send again, not an hour later. The reader of threads and policies
+  stops too: a pull request it was reading then waits its usual interval, and the rest keep their turn.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 

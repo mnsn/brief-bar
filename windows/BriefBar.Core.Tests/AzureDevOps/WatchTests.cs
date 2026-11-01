@@ -85,6 +85,30 @@ public sealed class WatchTests
         Assert.DoesNotContain(collection: server.Requests, filter: request => request.Path.Contains(value: "/CONTOSO/", comparisonType: StringComparison.Ordinal));
     }
 
+    /// Asked to slow down while it reads the ones you watch, it stops, and counts nothing as failed: once it may send
+    /// again, the next refresh reads them all, rather than an hour later.
+    [Fact]
+    public async Task OnesYouWatchAreReadOnceAzureDevOpsLetsBriefBarSendAgain()
+    {
+        var clock = new TestClock(start: T(seconds: 0));
+        var server = new StubServer();
+        server.ServeOrganization();
+        server.On(path: "/contoso/_apis/git/pullrequests/11", reply: _ => StubReply.Code(status: 503));
+        server.On(path: "/contoso/_apis/git/pullrequests/12", json: Fixture.PullRequest(id: 12, author: People.Alex));
+        using var client = server.Client(time: clock);
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { }, time: clock);
+        engine.SetLinkedPullRequests(keys: new HashSet<PRKey> { Key(number: 11), Key(number: 12) });
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        Assert.Empty(collection: engine.CurrentSnapshot().Records);
+        Assert.DoesNotContain(collection: server.Requests, filter: request => request.Path.EndsWith(value: "/pullrequests/12", comparisonType: StringComparison.Ordinal));
+
+        server.On(path: "/contoso/_apis/git/pullrequests/11", json: Fixture.PullRequest(id: 11, author: People.Alex));
+        clock.Set(time: T(seconds: 61));
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        Assert.Equal(expected: [11, 12], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id.Number).Order());
+    }
+
     /// What the panel says of `record` at the reference time, when you last looked a day before.
     static PRSnapshot? Classify(PRRecord record) =>
         PRClassifier.Snapshot(record: record, seenCutoff: T(seconds: -Make.Day), dismissedCutoff: T(seconds: -Make.Day), now: T(seconds: 0));

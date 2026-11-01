@@ -527,7 +527,7 @@ public sealed class PulseEngine : IPulseEngine
 
     /// Reads the pull requests sent to you or watched that aren't in your lists, ten a refresh: the ones never read first,
     /// then the ones read longest ago. Each stays listed as it was last read in between. One that's closed or couldn't be
-    /// read is tried again an hour later.
+    /// read is tried again an hour later; asked to slow down, it stops, and reads them once it may send again.
     async Task AddLinkedAsync(Dictionary<PRKey, PulseListed> listed, DateTimeOffset date, CancellationToken cancellationToken)
     {
         List<PRKey> due;
@@ -587,6 +587,11 @@ public sealed class PulseEngine : IPulseEngine
                     var role = pr.Author.Id == me ? PRRole.Author : pr.FindReviewer(id: me) is not null ? PRRole.Reviewer : PRRole.Linked;
                     linked[key] = (new PulseListed(PullRequest: pr, Role: role), date);
                 }
+            }
+            catch (ADOException error) when (error.Error.Kind == ADOErrorKind.Throttled)
+            {
+                // Asked to slow down: nothing more is read, and nothing counts as failed.
+                break;
             }
             catch (ADOException error)
             {
