@@ -250,6 +250,7 @@ private struct MergeCard: View {
             case .waiting: parts.append("waiting for approval")
             case .running: parts.append(summary.running == 1 ? "1 running" : "\(summary.running) running")
             case .passed: parts.append(summary.total == 1 ? "passed" : "all \(summary.total) passed")
+            case .canceled: parts.append("\(summary.pipeline ?? "A pipeline") was canceled")
             }
         }
         return parts.joined(separator: " · ")
@@ -261,7 +262,7 @@ private struct MergeCard: View {
         case .waiting?: return .orange
         case .running?: return .blue
         case .passed?: return .green
-        case nil: return Color(nsColor: .systemGray)
+        case .canceled?, nil: return Color(nsColor: .systemGray)
         }
     }
 }

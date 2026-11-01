@@ -299,9 +299,9 @@ that needs you again. A pull request without activity for two weeks goes to Idle
 time, only the last three days count as new, and each account you sign in to the Azure CLI with has its
 own. Notifications announce new replies, mentions, comments, review requests, votes, new commits, failed
 builds, pull requests that become ready or complete, and, after you merge one, a pipeline that fails or
-waits for an approval, or all of them passing. Clicking one opens the comment, or the run, it's about.
-The first time, BriefBar finds the organizations where you have pull requests; **Organizations** in its
-settings changes them.
+waits for an approval, all of them passing, or one canceled. Clicking one opens the comment, or the run,
+it's about. The first time, BriefBar finds the organizations where you have pull requests;
+**Organizations** in its settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
 was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
