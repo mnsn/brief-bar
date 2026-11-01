@@ -1,5 +1,6 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
+using BriefBar.Core.GitHub;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
 
@@ -77,45 +78,14 @@ public static class DemoData
         return CopilotRows.Snapshot(store: store, settings: settings);
     }
 
-    public static SectionSnapshot GitHubPullRequests(DateTimeOffset now) => new(
-        Info: Sections.GitHubPullRequests,
-        Status: SectionStatus.Updated(time: now.AddSeconds(seconds: -45)),
-        Groups:
-        [
-            new RowGroup(Key: "needsYou", Title: "Needs you", State: ItemState.NeedsYou),
-            new RowGroup(Key: "failing", Title: "Failing", State: ItemState.Failing),
-            new RowGroup(Key: "ready", Title: "Ready to merge", State: ItemState.Done),
-        ],
-        Rows:
-        [
-            new ItemRow
-            {
-                Id = "checkout-dark-mode", Section = SectionId.GitHubPullRequests, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.Eye, Title = "Add dark mode to the checkout page", Status = "priya asks for your review · shop-web",
-                Detail = "Required reviewer", Date = Ago(now: now, minutes: 20),
-            },
-            new ItemRow
-            {
-                Id = "swift-6-2", Section = SectionId.GitHubPullRequests, Group = "failing", State = ItemState.Failing,
-                Icon = IconKey.Dismiss, Title = "Upgrade to Swift 6.2", Status = "Checks are failing · ios-app",
-                Detail = "build (macos-15) failed after 6 minutes", Date = Ago(now: now, minutes: 25),
-            },
-            new ItemRow
-            {
-                Id = "lodash", Section = SectionId.GitHubPullRequests, Group = "ready", State = ItemState.Done,
-                Icon = IconKey.Checkmark, Title = "Bump lodash to 4.17.21", Status = "Ready to merge · shop-web",
-                Date = Ago(now: now, minutes: 60),
-            },
-        ],
-        BriefLines:
-        [
-            Line(id: "checkout-dark-mode", section: SectionId.GitHubPullRequests, state: ItemState.NeedsYou, now: now, minutes: 20,
-                sentence: "priya asks for your review on “Add dark mode to the checkout page”."),
-            Line(id: "swift-6-2", section: SectionId.GitHubPullRequests, state: ItemState.Failing, now: now, minutes: 25,
-                sentence: "Checks are failing on “Upgrade to Swift 6.2”."),
-            Line(id: "lodash", section: SectionId.GitHubPullRequests, state: ItemState.Done, now: now, minutes: 60,
-                sentence: "“Bump lodash to 4.17.21” is ready to merge."),
-        ]);
+    /// GitHub's made-up pull requests (`GitHubDemoData`), as `GitHubSource` shows them once it has read them.
+    public static SectionSnapshot GitHubPullRequests(DateTimeOffset now)
+    {
+        var store = new GitHubStore(settings: new GitHubSettings(settings: new MemorySettings()));
+        store.Start();
+        store.Receive(load: GitHubDemoData.Load(now: now), now: now);
+        return GitHubRows.Snapshot(store: store);
+    }
 
     static DateTimeOffset Ago(DateTimeOffset now, int minutes) => now.AddMinutes(minutes: -minutes);
 

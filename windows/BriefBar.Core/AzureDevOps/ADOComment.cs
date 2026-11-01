@@ -19,15 +19,15 @@ public sealed record ADOComment(int Id)
     public bool? IsDeleted { get; init; }
 
     internal static ADOComment? Read(JsonElement element) =>
-        ADOJson.WholeNumber(element: element, name: "id") is { } id
+        LenientJson.WholeNumber(element: element, name: "id") is { } id
             ? new ADOComment(Id: id)
             {
-                ParentCommentId = ADOJson.WholeNumber(element: element, name: "parentCommentId"),
-                Author = ADOJson.Node(element: element, name: "author") is { } author ? ADOIdentity.Read(element: author) : null,
-                Content = ADOJson.Text(element: element, name: "content"),
-                PublishedDate = ADOJson.Date(element: element, name: "publishedDate"),
-                CommentType = ADOJson.Text(element: element, name: "commentType"),
-                IsDeleted = ADOJson.Flag(element: element, name: "isDeleted"),
+                ParentCommentId = LenientJson.WholeNumber(element: element, name: "parentCommentId"),
+                Author = LenientJson.Node(element: element, name: "author") is { } author ? ADOIdentity.Read(element: author) : null,
+                Content = LenientJson.Text(element: element, name: "content"),
+                PublishedDate = LenientJson.Date(element: element, name: "publishedDate"),
+                CommentType = LenientJson.Text(element: element, name: "commentType"),
+                IsDeleted = LenientJson.Flag(element: element, name: "isDeleted"),
             }
             : null;
 }

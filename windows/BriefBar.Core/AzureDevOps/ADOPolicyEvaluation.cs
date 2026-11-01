@@ -7,11 +7,11 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOPolicyEvaluation(string? Status, ADOPolicyConfiguration Configuration, ADOPolicyContext? Context = null, DateTimeOffset? CompletedDate = null)
 {
     internal static ADOPolicyEvaluation? Read(JsonElement element) =>
-        ADOJson.Node(element: element, name: "configuration") is { } node && ADOPolicyConfiguration.Read(element: node) is { } configuration
+        LenientJson.Node(element: element, name: "configuration") is { } node && ADOPolicyConfiguration.Read(element: node) is { } configuration
             ? new ADOPolicyEvaluation(
-                Status: ADOJson.Text(element: element, name: "status"),
+                Status: LenientJson.Text(element: element, name: "status"),
                 Configuration: configuration,
-                Context: ADOJson.Node(element: element, name: "context") is { } context ? ADOPolicyContext.Read(element: context) : null,
-                CompletedDate: ADOJson.Date(element: element, name: "completedDate"))
+                Context: LenientJson.Node(element: element, name: "context") is { } context ? ADOPolicyContext.Read(element: context) : null,
+                CompletedDate: LenientJson.Date(element: element, name: "completedDate"))
             : null;
 }

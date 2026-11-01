@@ -7,5 +7,5 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOTimeline(IReadOnlyList<ADOTimelineRecord> Records)
 {
     internal static ADOTimeline Read(JsonElement element) =>
-        new(Records: ADOJson.Items(element: element, name: "records", read: ADOTimelineRecord.Read) ?? []);
+        new(Records: LenientJson.Items(element: element, name: "records", read: ADOTimelineRecord.Read) ?? []);
 }

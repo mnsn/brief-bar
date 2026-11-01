@@ -29,19 +29,19 @@ public sealed record ADOTimelineRecord(string Id)
     public IReadOnlyList<ADOTimelineIssue>? Issues { get; init; }
 
     internal static ADOTimelineRecord? Read(JsonElement element) =>
-        ADOJson.Text(element: element, name: "id") is { } id
+        LenientJson.Text(element: element, name: "id") is { } id
             ? new ADOTimelineRecord(Id: id)
             {
-                ParentId = ADOJson.Text(element: element, name: "parentId"),
-                Type = ADOJson.Text(element: element, name: "type"),
-                Name = ADOJson.Text(element: element, name: "name"),
-                Identifier = ADOJson.Text(element: element, name: "identifier"),
-                Order = ADOJson.WholeNumber(element: element, name: "order"),
-                State = ADOJson.Text(element: element, name: "state"),
-                Result = ADOJson.Text(element: element, name: "result"),
-                StartTime = ADOJson.Date(element: element, name: "startTime"),
-                FinishTime = ADOJson.Date(element: element, name: "finishTime"),
-                Issues = ADOJson.Items(element: element, name: "issues", read: ADOTimelineIssue.Read),
+                ParentId = LenientJson.Text(element: element, name: "parentId"),
+                Type = LenientJson.Text(element: element, name: "type"),
+                Name = LenientJson.Text(element: element, name: "name"),
+                Identifier = LenientJson.Text(element: element, name: "identifier"),
+                Order = LenientJson.WholeNumber(element: element, name: "order"),
+                State = LenientJson.Text(element: element, name: "state"),
+                Result = LenientJson.Text(element: element, name: "result"),
+                StartTime = LenientJson.Date(element: element, name: "startTime"),
+                FinishTime = LenientJson.Date(element: element, name: "finishTime"),
+                Issues = LenientJson.Items(element: element, name: "issues", read: ADOTimelineIssue.Read),
             }
             : null;
 }

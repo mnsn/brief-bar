@@ -1,6 +1,7 @@
 using BriefBar.Core;
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
+using BriefBar.Core.GitHub;
 
 namespace BriefBar.ViewModels;
 
@@ -10,13 +11,15 @@ public sealed class SettingsViewModel
     readonly SourceSwitch sources;
 
     /// `findOrganizations` asks Azure DevOps to look for your organizations again.
-    public SettingsViewModel(SourceSwitch sources, AzureDevOpsSettings azureDevOps, CopilotSettings copilot, ThemePalette palette, Action findOrganizations)
+    public SettingsViewModel(
+        SourceSwitch sources, AzureDevOpsSettings azureDevOps, CopilotSettings copilot, GitHubSettings gitHub, ThemePalette palette, Action findOrganizations)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);
         this.sources = sources;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
         AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
         Copilot = new CopilotSettingsViewModel(settings: copilot);
+        GitHub = new GitHubSettingsViewModel(settings: gitHub);
         Refresh();
     }
 
@@ -25,6 +28,8 @@ public sealed class SettingsViewModel
     public AzureDevOpsSettingsViewModel AzureDevOps { get; }
 
     public CopilotSettingsViewModel Copilot { get; }
+
+    public GitHubSettingsViewModel GitHub { get; }
 
     public static string Intro =>
         "Every source is off until you turn it on. Each one first says what it reads, where it connects and what it needs, "

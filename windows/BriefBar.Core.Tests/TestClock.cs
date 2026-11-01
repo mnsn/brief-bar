@@ -1,4 +1,4 @@
-namespace BriefBar.Core.Tests.AzureDevOps;
+namespace BriefBar.Core.Tests;
 
 /// A clock a test sets, as the Swift tests' `now` closures do: what time it is, while timers and delays run in real time.
 internal sealed class TestClock(DateTimeOffset start) : TimeProvider

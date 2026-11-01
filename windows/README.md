@@ -1,11 +1,11 @@
 # BriefBar for Windows
 
-In development. BriefBar for Windows gives Windows what BriefBar's menu bar gives the Mac: a bar docked to the
-top of each display, with each source's counts, and a panel under each of its items that lists what needs you.
-It's a WinUI 3 app on .NET 10. Its first two sources, **GitHub Copilot sessions** and **Azure DevOps pull
-requests**, are ported; the others come one at a time ([What's next](#whats-next)). Every source is off until you
-turn it on in Settings, and reads nothing until then. Started with `--demo`, it shows **made-up data** for every
-source, and reads nothing of yours.
+In development. BriefBar for Windows gives Windows what BriefBar's menu bar gives the Mac: a bar docked to the top of each
+display, with each source's counts, and a panel under each of its items that lists what needs you. It's a WinUI 3 app on
+.NET 10. Its first three sources, **GitHub Copilot sessions**, **Azure DevOps pull requests** and **GitHub pull
+requests**, are ported; Teams comes next ([What's next](#whats-next)). Every source is off until you turn it on in
+Settings, and reads nothing until then. Started with `--demo`, it shows **made-up data** for every source, and reads
+nothing of yours.
 
 ## Build and run
 
@@ -40,11 +40,12 @@ pull request that changes `windows/`, and `main` requires it to pass.
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
 Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps' panel (its groups, Idle
-folded, Mark as seen, Answered seen once the panel closes) and its page in Settings, Alt+F4, each bar keeping its
-display as displays change, a second start while BriefBar starts opening its Overview, and the space given back within
-a second of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave
-the mouse and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only
-while the panel is in front, and it works over a disconnected remote session too, without the keys.
+folded, Mark as seen, Answered seen once the panel closes) and its page in Settings, GitHub's panel (its groups, its
+foot with the account it reads as, a row that opens) and its page in Settings, Alt+F4, each bar keeping its display as
+displays change, a second start while BriefBar starts opening its Overview, and the space given back within a second
+of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave the mouse
+and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the
+panel is in front, and it works over a disconnected remote session too, without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -72,15 +73,16 @@ section names and the like, so nothing you see can reach it: a line with a strin
   Ctrl+2 to Ctrl+9 the bar's items in order, as the Mac window's ⌘1 to ⌘9 show its pages, and Ctrl+Tab and
   Ctrl+Shift+Tab the next item and the one before. Each item's tooltip says its key, and Narrator says it too.
 - **The panel** opens under its item as you press it: a header with the section's tile, title and status; a
-  banner when a section can't show everything; the brief; then its groups (the Overview's: Needs you,
-  Something's wrong, Running, Done or ready), with headers that stay in view as you scroll. Each row has a badge
-  in its state's color (or a chat's initials), its title, where it stands, what it's about in two lines at most
-  (three when it needs you), how long ago, unread messages and links. The keyboard starts on its first row.
-  Pressing a row, or Enter, opens what it's about and closes the panel; right-click, the menu key or Shift+F10
-  shows everything it can do; its tooltip shows all of it. A group can have a button, as Copilot's Done has Clear,
-  or start folded, as Copilot's Idle does. Its foot has the section's own buttons, such as **Open GitHub
-  Copilot**, and **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another
-  app or Settings to the front, or press its item again.
+  banner when a section can't show everything; notes about what it shows, such as that there's more on GitHub than
+  it reads; the brief; then its groups (the Overview's: Needs you, Something's wrong, Running, Done or ready), with
+  headers that stay in view as you scroll. Each row has a badge in its state's color (or a chat's initials), its
+  title, where it stands, what it's about in two lines at most (three when it needs you), how long ago, unread
+  messages and links. The keyboard starts on its first row. Pressing a row, or Enter, opens what it's about and
+  closes the panel; right-click, the menu key or Shift+F10 shows everything it can do; its tooltip shows all of it.
+  A group can have a button, as Copilot's Done has Clear, or start folded, as Copilot's Idle does. Its foot has the
+  section's own buttons, such as **Open GitHub Copilot**, who it reads as, such as the GitHub CLI's login, and
+  **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another app or Settings
+  to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
   button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
@@ -121,6 +123,17 @@ section names and the like, so nothing you see can reach it: a line with a strin
   Refresh, Keep done for, Idle after no activity for, Show To review in the bar, Follow pipelines after you merge,
   your organizations (with Add an organization and Find my organizations again), and the pull requests you watch
   (with Watch a pull request, by its link).
+- **GitHub pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#github)): the open pull requests on
+  github.com that ask for your review by name, and your own, read with the GitHub CLI's sign-in (`gh auth token
+  --hostname github.com`, its token kept in memory only, for half an hour) and one GraphQL query that only reads, every
+  2 minutes, and as you open the list, unless it read in the last 10 seconds. Its groups are the Mac's: To review,
+  Changes requested, Failing, Ready to merge and Waiting; the bar counts all but Waiting. A row says why it's there and
+  who ("Changes requested · By sam"), and which pull request it is (`owner/repo#123`); it opens the pull request on
+  GitHub. Notes beside the list say what GitHub couldn't read, as for an organization that needs single sign-on, and
+  when there are more than the 50 it reads of each kind, with **More on GitHub**. Its foot has **Open GitHub**, the
+  account the GitHub CLI is signed in to, and an icon beside Settings that refreshes now. Signed out, it offers to sign
+  in, which runs `gh auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one
+  it can't start, it links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
@@ -158,21 +171,27 @@ Where Windows differs, these were decided:
 - **Azure DevOps signs in with `az login` in a console window**, which stays open so you can read what it said, where
   the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac that reads every app's
   notifications, which comes with Teams.
+- **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
+  `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
+  where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
+  lee"), where the Mac writes "sam, kai and lee". Its empty list says **All quiet** only while nothing stops it reading:
+  the Mac's says so under a note that it's offline or can't reach GitHub too, even before any read has worked.
 
 ## The code
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`) and waiting as long as they ask (`RateLimitGate`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
-| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
+| `BriefBar.Core/GitHub/` | GitHub pull requests, ported from `Sources/GitHubCore` with the Swift names (`PullRequestQuery`, `GitHubClient`, `GitHubCLITokenProvider`, `GitHubClassifier`, `GitHubReader`…), the store and settings from `GitHubUI` (`GitHubStore`, `GitHubSettings`), and the source (`GitHubSource`, `GitHubRows`) |
+| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, notes beside a list and who a section reads as, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
-| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's and Azure DevOps' through their real stores |
+| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's, Azure DevOps' and GitHub's through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
 | `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
-| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' pages (`AzureDevOpsShell`), and the log file |
+| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' and GitHub's pages in your browser (`BrowserShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
 | `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data |
 
@@ -286,6 +305,10 @@ SDK ships inside the app.
   meanwhile so it can't end BriefBar): in Windows Terminal, `GetConsoleWindow` gives a hidden stand-in window, owned
   by the terminal's own (`GA_ROOTOWNER`), checked on this PC; in an editor's terminal it's owned by nothing, so
   BriefBar says where the session is instead.
+- **That window closes the moment its program ends**, before you can read what it said. `az login` stays open
+  because `az.cmd` is a batch file, which runs in `cmd.exe /k`; `gh.exe` isn't one, so `gh auth login` would close as
+  soon as it was done. A program whose window should stay open runs in `cmd.exe /k` as a batch file does, with fixed
+  words only (`ProcessRunner.CmdArguments`).
 - **Windows' task dialog needs Common Controls 6**, which only an app's manifest can ask for; without it,
   `TaskDialog` isn't there at all.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found
@@ -324,8 +347,9 @@ this order:
    complete, sorting the list by date, the Sprint and Pipelines sections, a pull request's page with its story, the
    brief's summaries, notifications, pull requests sent in chats (with Teams, as it reads notifications), Show
    Links, sending work to Copilot, and `--mcp`.
-3. **GitHub pull requests**: `gh auth token --hostname github.com`, then its one GraphQL query. Port
-   `Sources/GitHubCore`.
+3. ~~**GitHub pull requests**~~, done: the pull requests' section, its setting, and opening each pull request, with
+   the GitHub CLI's sign-in and its one GraphQL query. Not ported yet, for later layers: a pull request's page with its
+   story (`PullRequestStory`), the brief's summaries, Show Links, and the sign-in's state in Settings.
 4. **Teams chats**, the hardest. On the Mac, BriefBar reads Teams' notifications from Notification Center's
    database and Teams' read markers from its web view's IndexedDB (`TeamsCore`, `NotificationCenterDB`,
    `ChromiumIndexedDB`). On Windows, notifications are in
@@ -356,12 +380,19 @@ The repository is public, and chats, pull requests and sessions are private, oft
 
 - Check each source against its own app or site: Azure DevOps, GitHub, the Copilot app and Teams. Compare
   every count, state and row, and what opens from it. The log says each source's counts by state as it changes
-  (`copilot: Ready, 36 sessions…`, `azureDevOps: Ready, problem none, organizations 1: 4 need you…`), without names.
+  (`copilot: Ready, 36 sessions…`, `azureDevOps: Ready, problem none, organizations 1: 4 need you…`, `github: Ready,
+  problem none, notice False, more than shown False: 2 to review…`), without names.
   The screen tool can't read the Copilot app's window, so ask whoever's at the PC to compare it; what a row opened
   is in the app's own `lastRoutePath`, in `data.db`. For Azure DevOps, a throwaway program that reads the same
   organizations through `BriefBar.Core` and, separately, with its own GET requests (the Azure CLI's token) can compare
   every row's group with Azure DevOps' own facts, and every row's link with its repository's web URL, printing counts
-  only; keep it out of the repository.
+  only; keep it out of the repository. For GitHub, the same: `BriefBar.Core`'s read beside `gh`'s own searches
+  (`gh api graphql`, `gh search prs`), with the same sign-in.
+- Run BriefBar, and `gh` or `az`, as you would: an agent's shell often has its own `GH_TOKEN`, `GH_HOST` and `gh`, and
+  `gh auth token` gives `GH_TOKEN` when it's set, so a BriefBar started from there reads GitHub as the agent. Start it
+  without `GH_TOKEN`, `GITHUB_TOKEN` and `GH_HOST`, with your own `gh` first in `PATH`.
+- Turning a source on saves your consent in `%LOCALAPPDATA%\BriefBar\Settings.json`: copy it before a check, and put it
+  back after each one, so the check leaves your choices as they were.
 - Report what you checked in counts and states, never names, titles, messages, IDs, organizations or projects.
   Screenshots are for the made-up data only.
 - Never commit logs, databases or fixtures copied from a real machine. When real data shows a case the tests

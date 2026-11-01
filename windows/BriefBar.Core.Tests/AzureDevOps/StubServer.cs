@@ -24,7 +24,7 @@ internal sealed class StubServer
 
     /// A client that reaches this server, with `tokens`, or tokens of its own.
     public ADOClient Client(IAccessTokenProvider? tokens = null, TimeProvider? time = null) =>
-        new(tokens: tokens ?? new FakeTokens(value: "made-up-token"), handler: new StubHandler(server: this), time: time);
+        new(tokens: tokens ?? new FakeTokens(value: "made-up-token"), handler: new StubHandler(handle: Handle), time: time);
 
     /// Answers requests whose path contains `path`, and whose query has every item of `query`, values in any case.
     public void On(string path, Func<StubRequest, StubReply> reply, IReadOnlyDictionary<string, string>? query = null)
@@ -72,15 +72,10 @@ internal sealed class StubServer
         On(path: "/threads", json: Fixture.List(items: []));
     }
 
-    /// Notes `request`, and answers it.
-    internal StubReply Handle(HttpRequestMessage request)
+    /// Notes `request`, with its `body`, and answers it.
+    internal StubReply Handle(HttpRequestMessage request, byte[]? body)
     {
-        var noted = new StubRequest(
-            Method: request.Method,
-            Url: request.RequestUri!,
-            Authorization: request.Headers.Authorization?.ToString(),
-            FedAuthRedirect: request.Headers.TryGetValues(name: "X-TFS-FedAuthRedirect", values: out var values) ? values.FirstOrDefault() : null,
-            HasBody: request.Content is not null);
+        var noted = StubRequest.Of(request: request, body: body);
         List<Func<StubRequest, StubReply?>> current;
         lock (gate)
         {

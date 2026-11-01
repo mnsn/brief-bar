@@ -40,7 +40,7 @@ public sealed class ProcessRunnerTests
         Assert.Equal(expected: "Größe\r\n", actual: result.Error);
     }
 
-    /// A batch file runs in `cmd.exe`, as `BatchCommandLine` says, and gets its fixed arguments as they are.
+    /// A batch file runs in `cmd.exe`, as `CmdArguments` says, and gets its fixed arguments as they are.
     [Fact]
     public async Task RunsABatchFileInCmdWithItsArguments()
     {
@@ -57,7 +57,7 @@ public sealed class ProcessRunnerTests
 
         Assert.Equal(expected: 4, actual: result.ExitCode);
         Assert.Equal(
-            expected: "\"" + cmd + "\" " + ProcessRunner.BatchCommandLine(batchFile: batchFile, arguments: arguments, keepOpen: false) + "\r\n"
+            expected: "\"" + cmd + "\" " + ProcessRunner.CmdArguments(program: batchFile, arguments: arguments, keepOpen: false) + "\r\n"
                 + string.Join(separator: ' ', value: arguments) + "\r\n",
             actual: result.Output);
         Assert.Equal(expected: string.Empty, actual: result.Error);
@@ -73,7 +73,7 @@ public sealed class ProcessRunnerTests
         File.WriteAllText(path: batchFile, contents: "@echo ran>\"%~dp0ran.txt\"\r\n");
         foreach (var program in new[] { batchFile, batchFile + ".", batchFile + " " })
         {
-            Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.BatchCommandLine(batchFile: program, arguments: ["account", argument], keepOpen: false));
+            Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.CmdArguments(program: program, arguments: ["account", argument], keepOpen: false));
             await Assert.ThrowsAsync<ArgumentException>(testCode: () => new ProcessRunner().RunAsync(
                 program: program, arguments: ["account", argument], environment: noVariables, timeout: enough, cancellationToken: TestContext.Current.CancellationToken));
         }
@@ -111,6 +111,27 @@ public sealed class ProcessRunnerTests
     [InlineData(@"C:\Tools.cmd\az.exe", false)]
     public void TellsABatchFile(string program, bool isBatchFile) =>
         Assert.Equal(expected: isBatchFile, actual: ProcessRunner.IsBatchFile(program: program));
+
+    /// A console window that stays open once its program is done, as `gh auth login`'s does, runs it in `cmd.exe`, as a
+    /// batch file runs, so it gets only fixed words then; one that closes runs it directly, with whatever arguments.
+    [Fact]
+    public void KeepsAProgramsWindowOpenInCmd()
+    {
+        string[] arguments = ["auth", "login", "--hostname", "github.com", "--web"];
+        var kept = ProcessRunner.StartInfo(program: powerShell, arguments: arguments, keepOpen: true);
+        Assert.Equal(expected: cmd, actual: kept.FileName);
+        Assert.Equal(expected: "/d /v:off /s /k \"\"" + powerShell + "\" auth login --hostname github.com --web\"", actual: kept.Arguments);
+        Assert.Empty(collection: kept.ArgumentList);
+        Assert.False(condition: kept.UseShellExecute);
+
+        var closing = ProcessRunner.StartInfo(program: powerShell, arguments: [.. arguments, "a b"], keepOpen: false);
+        Assert.Equal(expected: powerShell, actual: closing.FileName);
+        Assert.Equal(expected: [.. arguments, "a b"], actual: closing.ArgumentList);
+
+        Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.StartInfo(program: powerShell, arguments: ["auth", "a&b"], keepOpen: true));
+        // A program that isn't there fails as Windows would fail to start it.
+        Assert.Throws<Win32Exception>(testCode: () => ProcessRunner.StartInfo(program: @"C:\Made-up folder\gh.exe", arguments: arguments, keepOpen: true));
+    }
 
     [Fact]
     public async Task SetsAndRemovesVariables()

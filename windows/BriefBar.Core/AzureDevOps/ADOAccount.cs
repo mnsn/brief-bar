@@ -6,5 +6,5 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOAccount(string AccountName)
 {
     internal static ADOAccount? Read(JsonElement element) =>
-        ADOJson.Text(element: element, name: "accountName") is { } name ? new ADOAccount(AccountName: name) : null;
+        LenientJson.Text(element: element, name: "accountName") is { } name ? new ADOAccount(AccountName: name) : null;
 }

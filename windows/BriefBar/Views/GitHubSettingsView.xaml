@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="BriefBar.Views.GitHubSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- GitHub's own settings, as the Mac's gear menu and Settings page offer them, each a card. -->
+    <StackPanel Spacing="4">
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Refresh" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="How often BriefBar reads your pull requests: one request to GitHub each time. It also reads them as you open the list, if it last did more than 10 seconds before." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Refresh"
+                ItemsSource="{x:Bind ViewModel.RefreshTitles}"
+                SelectedIndex="{x:Bind ViewModel.RefreshIndex, Mode=TwoWay}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

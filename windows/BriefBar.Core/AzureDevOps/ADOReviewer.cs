@@ -13,14 +13,14 @@ public sealed record ADOReviewer(
     bool? HasDeclined = null)
 {
     internal static ADOReviewer? Read(JsonElement element) =>
-        ADOJson.Text(element: element, name: "id") is { } id
+        LenientJson.Text(element: element, name: "id") is { } id
             ? new ADOReviewer(
                 Id: id,
-                DisplayName: ADOJson.Text(element: element, name: "displayName"),
-                UniqueName: ADOJson.Text(element: element, name: "uniqueName"),
-                Vote: ADOJson.WholeNumber(element: element, name: "vote"),
-                IsRequired: ADOJson.Flag(element: element, name: "isRequired"),
-                IsContainer: ADOJson.Flag(element: element, name: "isContainer"),
-                HasDeclined: ADOJson.Flag(element: element, name: "hasDeclined"))
+                DisplayName: LenientJson.Text(element: element, name: "displayName"),
+                UniqueName: LenientJson.Text(element: element, name: "uniqueName"),
+                Vote: LenientJson.WholeNumber(element: element, name: "vote"),
+                IsRequired: LenientJson.Flag(element: element, name: "isRequired"),
+                IsContainer: LenientJson.Flag(element: element, name: "isContainer"),
+                HasDeclined: LenientJson.Flag(element: element, name: "hasDeclined"))
             : null;
 }

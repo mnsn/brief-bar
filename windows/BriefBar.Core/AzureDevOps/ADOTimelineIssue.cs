@@ -6,5 +6,5 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOTimelineIssue(string? Type, string? Message)
 {
     internal static ADOTimelineIssue Read(JsonElement element) =>
-        new(Type: ADOJson.Text(element: element, name: "type"), Message: ADOJson.Text(element: element, name: "message"));
+        new(Type: LenientJson.Text(element: element, name: "type"), Message: LenientJson.Text(element: element, name: "message"));
 }

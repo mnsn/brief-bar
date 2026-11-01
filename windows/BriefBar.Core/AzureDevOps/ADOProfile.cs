@@ -6,5 +6,5 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOProfile(string Id, string? PublicAlias)
 {
     internal static ADOProfile? Read(JsonElement element) =>
-        ADOJson.Text(element: element, name: "id") is { } id ? new ADOProfile(Id: id, PublicAlias: ADOJson.Text(element: element, name: "publicAlias")) : null;
+        LenientJson.Text(element: element, name: "id") is { } id ? new ADOProfile(Id: id, PublicAlias: LenientJson.Text(element: element, name: "publicAlias")) : null;
 }

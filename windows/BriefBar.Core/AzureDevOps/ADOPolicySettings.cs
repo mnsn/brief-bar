@@ -12,9 +12,9 @@ public sealed record ADOPolicySettings(
     string? DefaultDisplayName = null)
 {
     internal static ADOPolicySettings Read(JsonElement element) => new(
-        DisplayName: ADOJson.Text(element: element, name: "displayName"),
-        MinimumApproverCount: ADOJson.WholeNumber(element: element, name: "minimumApproverCount"),
-        StatusName: ADOJson.Text(element: element, name: "statusName"),
-        StatusGenre: ADOJson.Text(element: element, name: "statusGenre"),
-        DefaultDisplayName: ADOJson.Text(element: element, name: "defaultDisplayName"));
+        DisplayName: LenientJson.Text(element: element, name: "displayName"),
+        MinimumApproverCount: LenientJson.WholeNumber(element: element, name: "minimumApproverCount"),
+        StatusName: LenientJson.Text(element: element, name: "statusName"),
+        StatusGenre: LenientJson.Text(element: element, name: "statusGenre"),
+        DefaultDisplayName: LenientJson.Text(element: element, name: "defaultDisplayName"));
 }

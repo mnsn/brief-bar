@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace BriefBar.Core.Tests.AzureDevOps;
+namespace BriefBar.Core.Tests;
 
 /// What a `StubServer` answers a request with: a status, headers and a body, or a failure to reach it.
 internal sealed record StubReply(HttpStatusCode Status, IReadOnlyDictionary<string, string> Headers, byte[] Body, Exception? Failure = null)

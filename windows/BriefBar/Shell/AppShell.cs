@@ -119,6 +119,7 @@ internal sealed class AppShell : IDisposable
                 sources: appSources.Switch,
                 azureDevOps: appSources.AzureDevOps,
                 copilot: appSources.Copilot,
+                gitHub: appSources.GitHub,
                 palette: Palette,
                 findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)));
             settings = new SettingsWindow(shell: this, viewModel: viewModel);

@@ -11,7 +11,7 @@ public sealed record ADOList<T>(IReadOnlyList<T> Value, int Skipped)
     internal static ADOList<T>? Read(JsonElement element, Func<JsonElement, T?> read)
     {
         ArgumentNullException.ThrowIfNull(argument: read);
-        if (ADOJson.Member(element: element, name: "value") is not { ValueKind: JsonValueKind.Array } array)
+        if (LenientJson.Member(element: element, name: "value") is not { ValueKind: JsonValueKind.Array } array)
         {
             return null;
         }

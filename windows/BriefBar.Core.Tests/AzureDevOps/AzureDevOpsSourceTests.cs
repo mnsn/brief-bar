@@ -11,7 +11,6 @@ namespace BriefBar.Core.Tests.AzureDevOps;
 /// requests.
 public sealed class AzureDevOpsSourceTests
 {
-    static readonly TimeSpan wait = TimeSpan.FromSeconds(value: 10);
     static readonly DateTimeOffset now = TestTimes.T(seconds: 0);
 
     [Fact]
@@ -26,9 +25,9 @@ public sealed class AzureDevOpsSourceTests
         Assert.Equal(expected: ["configure", "link", "start"], actual: engine.Calls);
         Assert.Equal(expected: [AzureDevOpsDemoData.Organization], actual: engine.Configuration?.Organizations);
 
-        var changed = Changes(source: source);
+        var changed = Waiting.NextChange(source: source);
         engine.Publish(snapshot: AzureDevOpsDemoData.Snapshot(now: now));
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         var snapshot = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
         Assert.Equal(expected: new StateCounts(NeedsYou: 3, Failing: 2, Done: 2), actual: snapshot.Counts);
         Assert.Throws<ArgumentException>(testCode: () => source.Snapshot(section: SectionId.CopilotSessions));
@@ -87,7 +86,7 @@ public sealed class AzureDevOpsSourceTests
         // Fixed words only, which a batch file can take.
         Assert.Equal(
             expected: "/d /v:off /s /k \"\"C:\\Program Files\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd\" login --allow-no-subscriptions --output none\"",
-            actual: ProcessRunner.BatchCommandLine(batchFile: console.Program, arguments: console.Arguments, keepOpen: true));
+            actual: ProcessRunner.CmdArguments(program: console.Program, arguments: console.Arguments, keepOpen: true));
 
         var withoutCli = Make(cli: null);
         using var other = withoutCli.Source;
@@ -122,10 +121,10 @@ public sealed class AzureDevOpsSourceTests
         var made = Make(settings: settings, find: _ => Task.FromResult(result: new OrganizationsFound(All: ["contoso", "fabrikam"], WithPullRequests: ["contoso"])));
         using var source = made.Source;
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await Until(condition: () => settings.HasDiscovered);
+        await Waiting.Until(condition: () => settings.HasDiscovered);
         Assert.Equal(expected: ["contoso"], actual: settings.Organizations);
         Assert.Equal(expected: ["contoso", "fabrikam"], actual: settings.KnownOrganizations);
-        await Until(condition: () => made.Engine().Configuration?.Organizations.SequenceEqual(second: ["contoso"]) == true);
+        await Waiting.Until(condition: () => made.Engine().Configuration?.Organizations.SequenceEqual(second: ["contoso"]) == true);
     }
 
     /// Finding them fails, as when you aren't signed in: the section says why, and it tries again later rather than
@@ -136,15 +135,15 @@ public sealed class AzureDevOpsSourceTests
         var settings = new AzureDevOpsSettings(settings: new MemorySettings(), now: now);
         var made = Make(settings: settings, find: _ => Task.FromException<OrganizationsFound>(exception: new ADOException(error: ADOError.FromAuth(error: AuthError.SignedOut(message: "Please run az login.")))));
         using var source = made.Source;
-        var changed = Changes(source: source);
+        var changed = Waiting.NextChange(source: source);
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await Until(condition: () => source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Status.Condition == SectionCondition.Problem);
+        await Waiting.Until(condition: () => source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Status.Condition == SectionCondition.Problem);
         var snapshot = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
         Assert.Equal(expected: "Sign in", actual: snapshot.Status.ShortProblem);
         Assert.Equal(expected: AzureDevOpsCommands.SignIn, actual: snapshot.ProblemCommand?.Key);
         Assert.False(condition: settings.HasDiscovered);
         Assert.Empty(collection: settings.Organizations);
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     /// Stopping doesn't run what a search for your organizations under way registered to stop with: that runs on the
@@ -160,18 +159,18 @@ public sealed class AzureDevOpsSourceTests
             find: async cancellationToken =>
             {
                 // Released only once StopAsync has returned: run by StopAsync itself, it would wait out its limit.
-                cancellationToken.Register(callback: () => Volatile.Write(location: ref heldUp, value: !release.Wait(timeout: wait)));
+                cancellationToken.Register(callback: () => Volatile.Write(location: ref heldUp, value: !release.Wait(timeout: Waiting.Limit)));
                 registered.TrySetResult();
                 await Task.Delay(delay: Timeout.InfiniteTimeSpan, cancellationToken: cancellationToken);
                 return new OrganizationsFound(All: [], WithPullRequests: []);
             });
         using var source = made.Source;
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await registered.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await registered.Task.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
 
         var stopped = source.StopAsync();
         release.Set();
-        await stopped.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await stopped.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(condition: Volatile.Read(location: ref heldUp));
     }
 
@@ -186,7 +185,7 @@ public sealed class AzureDevOpsSourceTests
         source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.MarkAsSeen, GroupKey: "needsYou"));
         Assert.NotEmpty(collection: made.Settings.Seen.SeenAt);
 
-        await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "stop", actual: engine.Calls[^1]);
         var before = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
         engine.Publish(snapshot: new PulseSnapshot());
@@ -219,9 +218,9 @@ public sealed class AzureDevOpsSourceTests
         Assert.Contains(collection: engine.Calls, filter: call => call == "refresh");
 
         source.PanelVisibilityChanged(section: SectionId.AzureDevOpsPullRequests, isShowing: true);
-        var changed = Changes(source: source);
+        var changed = Waiting.NextChange(source: source);
         source.PanelVisibilityChanged(section: SectionId.AzureDevOpsPullRequests, isShowing: false);
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.DoesNotContain(collection: source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Rows, filter: row => row.Group == "answered");
     }
 
@@ -232,9 +231,9 @@ public sealed class AzureDevOpsSourceTests
         var made = Make();
         using var source = made.Source;
         await Loaded(made: made);
-        var changed = Changes(source: source);
+        var changed = Waiting.NextChange(source: source);
         made.Engine().Fail();
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         var status = source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Status;
         Assert.Equal(expected: SectionCondition.Problem, actual: status.Condition);
         Assert.Equal(expected: "BriefBar couldn't read Azure DevOps.", actual: status.Problem);
@@ -274,7 +273,7 @@ public sealed class AzureDevOpsSourceTests
         Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.OtherSeenKey));
         Assert.Same(expected: before, actual: source.Snapshot(section: SectionId.AzureDevOpsPullRequests));
         Assert.Single(collection: made.Opened);
-        await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(collection: made.Engine().Calls, filter: call => call == "stop");
     }
 
@@ -345,36 +344,13 @@ public sealed class AzureDevOpsSourceTests
     static async Task Loaded(Made made)
     {
         await made.Source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        var changed = Changes(source: made.Source);
+        var changed = Waiting.NextChange(source: made.Source);
         made.Engine().Publish(snapshot: AzureDevOpsDemoData.Snapshot(now: now));
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     static CommandRequest Request(string command, string rowId) => new(Section: SectionId.AzureDevOpsPullRequests, Command: command, RowId: rowId);
 
     static ItemRow Row(AzureDevOpsSource source, string id) =>
         Assert.Single(collection: source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Rows, predicate: row => row.Id == id);
-
-    /// Completes the next time the source says it changed.
-    static Task Changes(AzureDevOpsSource source)
-    {
-        var next = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
-        void Changed(object? sender, EventArgs e)
-        {
-            source.Changed -= Changed;
-            next.TrySetResult();
-        }
-        source.Changed += Changed;
-        return next.Task;
-    }
-
-    static async Task Until(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + wait;
-        while (!condition())
-        {
-            Assert.True(condition: DateTime.UtcNow < deadline, userMessage: "It didn't happen in time.");
-            await Task.Delay(millisecondsDelay: 10, cancellationToken: TestContext.Current.CancellationToken);
-        }
-    }
 }

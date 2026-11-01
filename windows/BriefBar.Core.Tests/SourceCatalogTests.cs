@@ -1,5 +1,6 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
+using BriefBar.Core.GitHub;
 using BriefBar.Core.Presentation;
 
 namespace BriefBar.Core.Tests;
@@ -9,7 +10,7 @@ public sealed class SourceCatalogTests
     [Fact]
     public void ListsWhatWindowsHasWithWhatItSaysItReads()
     {
-        Assert.Equal(expected: [SourceId.AzureDevOps, SourceId.Copilot], actual: SourceCatalog.OnWindows.Select(selector: entry => entry.Id));
+        Assert.Equal(expected: [SourceId.AzureDevOps, SourceId.Copilot, SourceId.GitHub], actual: SourceCatalog.OnWindows.Select(selector: entry => entry.Id));
         var azureDevOps = SourceCatalog.OnWindows[0];
         Assert.Equal(expected: "Azure DevOps", actual: azureDevOps.Name);
         Assert.Same(expected: AzureDevOpsSource.Description, actual: azureDevOps.Description);
@@ -19,12 +20,19 @@ public sealed class SourceCatalogTests
         Assert.Equal(expected: "GitHub Copilot", actual: copilot.Name);
         Assert.Same(expected: CopilotSource.Description, actual: copilot.Description);
         Assert.Equal(expected: [Sections.CopilotSessions], actual: copilot.Sections);
+        var gitHub = SourceCatalog.OnWindows[2];
+        Assert.Equal(expected: SourceId.GitHub, actual: gitHub.Id);
+        Assert.Equal(expected: "GitHub", actual: gitHub.Name);
+        Assert.Same(expected: GitHubSource.Description, actual: gitHub.Description);
+        Assert.Equal(expected: [Sections.GitHubPullRequests], actual: gitHub.Sections);
+        Assert.Equal(expected: Sections.GitHubPullRequests.Glyph, actual: gitHub.Glyph);
+        Assert.Equal(expected: Sections.GitHubPullRequests.Tint, actual: gitHub.Tint);
     }
 
     [Fact]
     public void NamesTheSourcesStillToCome()
     {
-        Assert.Equal(expected: "GitHub and Microsoft Teams", actual: SourceCatalog.StillToCome);
+        Assert.Equal(expected: "Microsoft Teams", actual: SourceCatalog.StillToCome);
     }
 
     [Fact]

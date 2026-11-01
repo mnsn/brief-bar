@@ -6,7 +6,6 @@ namespace BriefBar.Core.Tests.Copilot;
 
 public sealed class CopilotSourceTests
 {
-    static readonly TimeSpan wait = TimeSpan.FromSeconds(value: 10);
 
     [Fact]
     public async Task StartsWithoutWaitingForItsFirstReadThenShowsIt()
@@ -14,13 +13,13 @@ public sealed class CopilotSourceTests
         var (source, engines, _, _) = Make();
         using (source)
         {
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(expected: SectionCondition.Starting, actual: source.Snapshot(section: SectionId.CopilotSessions).Status.Condition);
             var engine = await Engine(engines: engines);
 
             engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             var snapshot = source.Snapshot(section: SectionId.CopilotSessions);
             Assert.Equal(expected: SectionStatus.Live, actual: snapshot.Status);
             Assert.Equal(expected: ["finished"], actual: snapshot.Rows.Select(selector: row => row.Id));
@@ -37,9 +36,9 @@ public sealed class CopilotSourceTests
         {
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
             var engine = await Engine(engines: engines);
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
 
             source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Open, RowId: "finished"));
             Assert.Equal(expected: ["finished"], actual: opened);
@@ -67,17 +66,17 @@ public sealed class CopilotSourceTests
         {
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
             var engine = await Engine(engines: engines);
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             var measured = new SessionRecord(
                 Meta: new SessionMeta { Id = "working", Name = "Made-up session", IsRunning = true, UpdatedAt = DateTimeOffset.UtcNow, ContextUsage = new ContextUsage(Tokens: 50, Limit: 100) },
                 Log: null);
             engine.Publish(snapshot: Snapshot(measured));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Null(@object: source.Snapshot(section: SectionId.CopilotSessions).Rows.Single().Meter);
 
-            changed = Changes(source: source);
+            changed = Waiting.NextChange(source: source);
             settings.ShowContextUsage = true;
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(expected: "50%", actual: source.Snapshot(section: SectionId.CopilotSessions).Rows.Single().Meter?.Text);
         }
     }
@@ -92,9 +91,9 @@ public sealed class CopilotSourceTests
         {
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
             var engine = await Engine(engines: engines);
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Clear, GroupKey: "done"));
             Assert.NotEmpty(collection: settings.Cleared);
 
@@ -131,7 +130,7 @@ public sealed class CopilotSourceTests
             Assert.Empty(collection: engine.Calls);
 
             holdStart.Set();
-            await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await stopping.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(expected: ["start", "stop"], actual: engine.Calls);
         }
     }
@@ -152,9 +151,9 @@ public sealed class CopilotSourceTests
             {
                 engine = Assert.Single(collection: engines);
             }
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
 
             var stopping = source.StopAsync();
             source.DeleteSavedData();
@@ -164,7 +163,7 @@ public sealed class CopilotSourceTests
             Assert.False(condition: stopping.IsCompleted);
             Assert.Empty(collection: settings.Cleared);
             holdStart.Set();
-            await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await stopping.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Empty(collection: settings.Cleared);
         }
     }
@@ -180,9 +179,9 @@ public sealed class CopilotSourceTests
         {
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
             var engine = await Engine(engines: engines);
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Clear, GroupKey: "done"));
             Assert.NotEmpty(collection: settings.Cleared);
 
@@ -197,7 +196,7 @@ public sealed class CopilotSourceTests
 
             Assert.Empty(collection: settings.Cleared);
             Assert.Same(expected: before, actual: source.Snapshot(section: SectionId.CopilotSessions));
-            await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(expected: 1, actual: engine.Stops);
         }
     }
@@ -221,10 +220,10 @@ public sealed class CopilotSourceTests
             app: new CopilotAppAccess(OpenSession: _ => { }, Activate: () => { }, IsInstalled: () => true, IsFrontmost: () => false));
         using (source)
         {
-            var changed = Changes(source: source);
+            var changed = Waiting.NextChange(source: source);
             await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
-            await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+            await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
             lock (engines)
             {
                 Assert.Equal(expected: ["start", "stop"], actual: Assert.Single(collection: engines).Calls);
@@ -250,9 +249,9 @@ public sealed class CopilotSourceTests
                 return engine;
             },
             app: new CopilotAppAccess(OpenSession: _ => { }, Activate: () => { }, IsInstalled: () => true, IsFrontmost: () => false));
-        var changed = Changes(source: source);
+        var changed = Waiting.NextChange(source: source);
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         var status = source.Snapshot(section: SectionId.CopilotSessions).Status;
         Assert.Equal(expected: SectionCondition.Problem, actual: status.Condition);
         Assert.Equal(expected: "BriefBar couldn't read your Copilot sessions.", actual: status.Problem);
@@ -290,7 +289,7 @@ public sealed class CopilotSourceTests
     /// The engine the source made, once it's started it, on the thread pool.
     static async Task<FakeSessionEngine> Engine(List<FakeSessionEngine> engines)
     {
-        var deadline = DateTime.UtcNow + wait;
+        var deadline = DateTime.UtcNow + Waiting.Limit;
         while (DateTime.UtcNow < deadline)
         {
             lock (engines)
@@ -304,19 +303,6 @@ public sealed class CopilotSourceTests
         }
         Assert.Fail(message: "The source never started its engine.");
         throw new InvalidOperationException();
-    }
-
-    /// Completes the next time the source says it changed.
-    static Task Changes(CopilotSource source)
-    {
-        var next = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
-        void Changed(object? sender, EventArgs e)
-        {
-            source.Changed -= Changed;
-            next.TrySetResult();
-        }
-        source.Changed += Changed;
-        return next.Task;
     }
 
     static EngineSnapshot Snapshot(params SessionRecord[] records) => new() { Records = [.. records] };

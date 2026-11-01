@@ -68,21 +68,46 @@
             </StackPanel>
         </Grid>
 
-        <InfoBar
-            Grid.Row="1"
-            Margin="12,10,12,0"
-            IsClosable="False"
-            IsOpen="{x:Bind ViewModel.HasProblem, Mode=OneWay}"
-            Message="{x:Bind ViewModel.ProblemMessage, Mode=OneWay}"
-            Severity="Warning"
-            Title="{x:Bind ViewModel.ProblemTitle, Mode=OneWay}">
-            <InfoBar.ActionButton>
-                <Button
-                    Click="OnProblemCommandClick"
-                    Content="{x:Bind ViewModel.ProblemCommandTitle, Mode=OneWay}"
-                    Visibility="{x:Bind ViewModel.HasProblemCommand, Mode=OneWay}" />
-            </InfoBar.ActionButton>
-        </InfoBar>
+        <StackPanel Grid.Row="1">
+            <InfoBar
+                Margin="12,10,12,0"
+                IsClosable="False"
+                IsOpen="{x:Bind ViewModel.HasProblem, Mode=OneWay}"
+                Message="{x:Bind ViewModel.ProblemMessage, Mode=OneWay}"
+                Severity="Warning"
+                Title="{x:Bind ViewModel.ProblemTitle, Mode=OneWay}">
+                <InfoBar.ActionButton>
+                    <Button
+                        Click="OnProblemCommandClick"
+                        Content="{x:Bind ViewModel.ProblemCommandTitle, Mode=OneWay}"
+                        Visibility="{x:Bind ViewModel.HasProblemCommand, Mode=OneWay}" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+            <!-- What the section says about what it shows, beside it, such as that there's more on GitHub. -->
+            <ItemsControl
+                IsTabStop="False"
+                ItemsSource="{x:Bind ViewModel.Notices, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasNotices, Mode=OneWay}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:NoticeViewModel">
+                        <InfoBar
+                            Margin="12,10,12,0"
+                            IsClosable="False"
+                            IsOpen="True"
+                            Message="{x:Bind Message}"
+                            Severity="Informational">
+                            <InfoBar.ActionButton>
+                                <Button
+                                    Click="OnNoticeCommandClick"
+                                    Content="{x:Bind CommandTitle}"
+                                    ToolTipService.ToolTip="{x:Bind CommandHelp}"
+                                    Visibility="{x:Bind HasCommand}" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
 
         <ListView
             x:Name="List"
@@ -518,6 +543,18 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- Who the section reads as, such as the GitHub CLI's login, as the Mac's popover shows it. -->
+                <TextBlock
+                    MaxWidth="160"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="{x:Bind ViewModel.AccountHelp, Mode=OneWay}"
+                    FontSize="12"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind ViewModel.AccountName, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind ViewModel.AccountHelp, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.HasAccount, Mode=OneWay}" />
                 <TextBlock
                     Margin="8,0,0,0"
                     VerticalAlignment="Center"

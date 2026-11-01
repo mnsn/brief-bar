@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace BriefBar.Core.AzureDevOps;
+namespace BriefBar.Core;
 
-/// Reads Azure DevOps' JSON leniently, as the Mac's `ADOJSON` and its `lenient` decoding do: a value that's missing, null
-/// or of an unexpected type reads as missing, and a list skips an element it can't read. Dates are ISO 8601, with Azure
-/// DevOps' varying precision (`Timestamp`).
-internal static class ADOJson
+/// Reads what Azure DevOps and GitHub answer leniently, as the Mac's `ADOJSON` and its `lenient` decoding, and GitHub's
+/// `Lossy` lists, do: a value that's missing, null or of an unexpected type reads as missing, and a list skips an element
+/// it can't read. Dates are ISO 8601, with Azure DevOps' varying precision (`Timestamp`).
+internal static class LenientJson
 {
     /// The member `name` of `element`, an object, or null.
     public static JsonElement? Member(JsonElement? element, string name) =>

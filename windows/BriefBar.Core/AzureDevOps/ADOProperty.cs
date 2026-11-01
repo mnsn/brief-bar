@@ -6,5 +6,5 @@ namespace BriefBar.Core.AzureDevOps;
 /// null for one that isn't an object or has no value of a simple type.
 public sealed record ADOProperty(string? Value)
 {
-    internal static ADOProperty Read(JsonElement element) => new(Value: ADOJson.AnyText(element: ADOJson.Member(element: element, name: "$value")));
+    internal static ADOProperty Read(JsonElement element) => new(Value: LenientJson.AnyText(element: LenientJson.Member(element: element, name: "$value")));
 }
