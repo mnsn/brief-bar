@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.2 - 2026-11-01
+
 - **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with
   colored tiles and cards instead of a plain form. **Where It Goes** shows the session and the
   repository as rows you click to change; for a session that's already there, **Open in Copilot** and
