@@ -132,8 +132,8 @@ public enum NotificationPlanner {
     }
 
     /// What the pipelines after a merge did since the last list: one failed, one waits for an approval, or they all
-    /// passed once they'd been running. Each failed or waiting run is announced once, and what happened before
-    /// `notBefore` isn't.
+    /// finished once they'd been running, and passed or one was canceled. Each failed, waiting or canceled run is announced
+    /// once, and what happened before `notBefore` isn't.
     static func mergeNote(_ snapshot: PRSnapshot, before old: MergeSummary?, notBefore: Date) -> PulseNotification? {
         guard snapshot.role == .author, let merge = snapshot.merge, let at = merge.since, at >= notBefore else { return nil }
         let pipeline = merge.pipeline.map { "“\($0)”" } ?? "A pipeline"
@@ -156,6 +156,13 @@ public enum NotificationPlanner {
                 id: "\(snapshot.id):merge:passed", state: .done, title: merge.total == 1 ? "Pipeline passed" : "Pipelines passed",
                 subtitle: snapshot.title,
                 body: merge.total == 1 ? "Its pipeline passed after it merged." : "All \(merge.total) pipelines passed after it merged.",
+                url: snapshot.url, key: snapshot.key, at: at
+            )
+        case .canceled where old?.outcome == .running || old?.outcome == .waiting:
+            return PulseNotification(
+                id: "\(snapshot.id):merge:canceled:\(merge.runId ?? 0)", state: .done, title: "Pipeline canceled",
+                subtitle: snapshot.title,
+                body: merge.total == 1 ? "Its pipeline was canceled after it merged." : "\(pipeline) was canceled after it merged.",
                 url: snapshot.url, key: snapshot.key, at: at
             )
         default:

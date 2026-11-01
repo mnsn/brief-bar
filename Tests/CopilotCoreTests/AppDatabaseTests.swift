@@ -309,6 +309,100 @@ import BriefBarCore
         }
     }
 
+    /// Read as the app closed it, without locks, the database is only what the app committed while the app leaves it alone:
+    /// one that opens it as it's read could change the file under the read. Its log appears, so it's read again, the usual
+    /// way.
+    @Test func readsAgainTheUsualWayWhenTheAppOpensTheDatabaseAsItsRead() throws {
+        try withTemporaryDirectory { directory in
+            let url = try Self.closedDatabase(in: directory)
+            var app: TestDatabase?
+            defer { app?.close() }
+            var closedReads = 0
+            let snapshot = try AppDatabase.load(at: url, links: false) {
+                closedReads += 1
+                guard app == nil else { return }
+                do {
+                    let opened = try TestDatabase(at: url, journalMode: "WAL")
+                    try opened.addSession("added", title: "Added", type: "general_chat")
+                    app = opened
+                } catch {
+                    Issue.record(error)
+                }
+            }
+            #expect(closedReads == 1)
+            #expect(FileManager.default.fileExists(atPath: url.path + "-wal"))
+            #expect(snapshot.sessions.map(\.id).sorted() == [Self.chatId, "added"].sorted())
+        }
+    }
+
+    /// The app opened the database, wrote to it and closed it again, all as it was read: the file changed under the read,
+    /// so it's read again.
+    @Test func readsAgainWhenTheAppChangesTheDatabaseAsItsRead() throws {
+        try withTemporaryDirectory { directory in
+            let url = try Self.closedDatabase(in: directory)
+            var closedReads = 0
+            let snapshot = try AppDatabase.load(at: url, links: false) {
+                closedReads += 1
+                if closedReads == 1 { Self.writeAsTheApp(url, id: "added", title: "Added") }
+            }
+            #expect(closedReads == 2)
+            #expect(snapshot.sessions.map(\.id).sorted() == [Self.chatId, "added"].sorted())
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["data.db"])
+        }
+    }
+
+    /// The app wrote to the database each time it was read: after three reads, BriefBar says so, and the list keeps what
+    /// it last read.
+    @Test func saysWhenTheDatabaseKeepsChangingAsItsRead() throws {
+        try withTemporaryDirectory { directory in
+            let url = try Self.closedDatabase(in: directory)
+            var closedReads = 0
+            do {
+                _ = try AppDatabase.load(at: url, links: false) {
+                    closedReads += 1
+                    // A long title takes new pages, so the file grows each time, however close together the writes.
+                    Self.writeAsTheApp(url, id: "added \(closedReads)", title: String(repeating: "x", count: 20_000))
+                }
+                Issue.record("Expected the database to keep changing as it was read")
+            } catch let error as AppDatabaseError {
+                #expect(error.description == "Copilot database query failed: it kept changing as it was read")
+            }
+            #expect(closedReads == 3)
+        }
+    }
+
+    /// A database in WAL mode with one session, as the app leaves it when it quits, an hour ago: without its log.
+    private static func closedDatabase(in folder: URL) throws -> URL {
+        let url = folder.appendingPathComponent("data.db")
+        let db = try TestDatabase(at: url, journalMode: "WAL")
+        try db.createAppSchema()
+        try db.addSession(chatId, title: "Saved", type: "general_chat")
+        db.close()
+        try removeLogs(of: url)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3_600)], ofItemAtPath: url.path)
+        return url
+    }
+
+    /// Opens the database, adds a chat and closes it again, as the app does when it starts, writes and quits.
+    private static func writeAsTheApp(_ url: URL, id: String, title: String) {
+        do {
+            let app = try TestDatabase(at: url, journalMode: "WAL")
+            try app.addSession(id, title: title, type: "general_chat")
+            app.close()
+            try removeLogs(of: url)
+        } catch {
+            Issue.record(error)
+        }
+    }
+
+    /// Removes the write-ahead log and its index, as the Copilot app's SQLite does when it closes the database. macOS's
+    /// keeps an empty log and the index instead.
+    private static func removeLogs(of url: URL) throws {
+        for suffix in ["-wal", "-shm"] where FileManager.default.fileExists(atPath: url.path + suffix) {
+            try FileManager.default.removeItem(atPath: url.path + suffix)
+        }
+    }
+
     @Test func aMissingDatabaseIsAnErrorAndIsNotCreated() throws {
         try withTemporaryDirectory { directory in
             let url = directory.appendingPathComponent("data.db")

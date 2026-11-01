@@ -382,6 +382,11 @@ import BriefBarCore
 
         let passed = try story([ci, pipeline(2, "shop-web Deploy", .succeeded)])
         #expect(passed.runs == [ItemStory.Run(name: "Pipelines after merge", state: .done, status: "Passed", date: t(-minute))])
+
+        // One canceled is that run, in Done's state, rather than a pass.
+        let canceled = try story([ci, pipeline(2, "shop-web Deploy", .canceled)])
+        #expect(canceled.sentence == "Completed: Merged into main · “shop-web Deploy” was canceled")
+        #expect(canceled.runs == [ItemStory.Run(name: "shop-web Deploy", state: .done, status: "Canceled", url: deployRun, date: t(-minute))])
     }
 
     // MARK: Linked, not yours

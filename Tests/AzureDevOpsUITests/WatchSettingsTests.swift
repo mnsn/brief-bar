@@ -35,4 +35,24 @@ import Testing
         defaults.set(Data("not json".utf8), forKey: SettingsKey.watchedPullRequests)
         #expect(AppSettings(defaults: defaults).watchedPullRequests.isEmpty)
     }
+
+    /// Azure DevOps ignores the letter case of an organization's name, so a link that spells it differently is to the same
+    /// pull request: one in your lists is listed once, as one you watch, and stopping watching it from its row works.
+    @Test func aLinkThatSpellsTheOrganizationDifferentlyWatchesThePullRequestListed() throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        #expect(settings.watch(PullRequestLink(organization: "CONTOSO", project: "Storefront", repository: "search", number: 4071)))
+        #expect(settings.isWatching(PRKey(DemoData.organization, 4071)))
+        #expect(!settings.watch(PullRequestLink(organization: "Contoso", project: "Storefront", repository: "search", number: 4071)))
+
+        let store = PRStore(settings: settings, mode: .demo)
+        store.receive(DemoData.snapshot(now: store.now))
+        let rows = store.items.filter { $0.key.number == 4071 }
+        #expect(rows.count == 1)
+        let row = try #require(rows.first)
+        #expect(row.key.organization == DemoData.organization)
+        #expect(row.isWatched)
+
+        store.stopWatching(row)
+        #expect(settings.watchedPullRequests.isEmpty)
+    }
 }

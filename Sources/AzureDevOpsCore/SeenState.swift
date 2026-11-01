@@ -165,29 +165,29 @@ public enum RefreshPlanner {
         }
     }
 
-    /// Pull requests without details always, then, up to `limit` (nil for no limit), changed ones and the
-    /// ones whose details are oldest past their interval.
+    /// Pull requests without details always, then, up to `limit` (nil for no limit), changed ones, by when they were last
+    /// read, and then the ones due, by when they became due: when they were last read, plus their interval, busy, active
+    /// or quiet. A busy one is due again every minute, but never ahead of one that's been due for longer, so while many
+    /// builds run, the others still get their turn.
     public static func plan(_ candidates: [Candidate], cache: [PRKey: Entry], now: Date, options: Options, limit: Int?) -> [PRKey] {
-        var ranked: [(priority: Int, fetchedAt: Date, key: PRKey)] = []
+        var missing: [PRKey] = []
+        var ranked: [(priority: Int, at: Date, key: PRKey)] = []
         for candidate in candidates {
             guard let entry = cache[candidate.key] else {
-                ranked.append((0, .distantPast, candidate.key))
+                missing.append(candidate.key)
                 continue
             }
             if entry.fingerprint != candidate.fingerprint {
-                ranked.append((1, entry.fetchedAt, candidate.key))
+                ranked.append((0, entry.fetchedAt, candidate.key))
                 continue
             }
-            let age = now.timeIntervalSince(entry.fetchedAt)
-            if entry.isBusy, age >= options.busyInterval {
-                ranked.append((2, entry.fetchedAt, candidate.key))
-            } else if entry.isQuiet ? age >= options.quietInterval : age >= options.activeInterval {
-                ranked.append((3, entry.fetchedAt, candidate.key))
+            let interval = entry.isBusy ? options.busyInterval : entry.isQuiet ? options.quietInterval : options.activeInterval
+            if now.timeIntervalSince(entry.fetchedAt) >= interval {
+                ranked.append((1, entry.fetchedAt.addingTimeInterval(interval), candidate.key))
             }
         }
-        ranked.sort { ($0.priority, $0.fetchedAt, $0.key) < ($1.priority, $1.fetchedAt, $1.key) }
-        let missing = ranked.filter { $0.priority == 0 }.map(\.key)
-        let due = ranked.filter { $0.priority > 0 }.map(\.key)
-        return missing + (limit.map { Array(due.prefix($0)) } ?? due)
+        ranked.sort { ($0.priority, $0.at, $0.key) < ($1.priority, $1.at, $1.key) }
+        let due = ranked.map(\.key)
+        return missing.sorted() + (limit.map { Array(due.prefix($0)) } ?? due)
     }
 }

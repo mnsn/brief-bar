@@ -68,9 +68,9 @@ import BriefBarCore
     @Test func whatFailedComesFirstThenWhatWaitsThenWhatRuns() throws {
         #expect(MergeSummary([]) == nil)
 
-        let passed = try #require(MergeSummary([status(1, .succeeded), status(2, .partiallySucceeded), status(3, .canceled)]))
+        let passed = try #require(MergeSummary([status(1, .succeeded), status(2, .partiallySucceeded)]))
         #expect(passed.outcome == .passed)
-        #expect(passed.total == 3)
+        #expect(passed.total == 2)
 
         let running = try #require(MergeSummary([status(1, .succeeded), status(2, .running)]))
         #expect(running.outcome == .running)
@@ -87,6 +87,27 @@ import BriefBarCore
         #expect(failed.pipeline == "pipeline 2")
         #expect(failed.failure == unitTests)
         #expect(failed.runURL?.absoluteString.contains("buildId=2") == true)
+    }
+
+    /// Once none failed, waits or runs, a canceled run means they didn't all pass: the first one canceled says so, as a
+    /// failed one would.
+    @Test func aCanceledRunIsNotAPass() throws {
+        let canceled = try #require(MergeSummary([
+            status(1, .succeeded), status(2, .canceled, finished: t(-2 * minute)), status(3, .partiallySucceeded), status(4, .canceled),
+        ]))
+        #expect(canceled.outcome == .canceled)
+        #expect(canceled.total == 4)
+        #expect(canceled.running == 0)
+        #expect(canceled.pipeline == "pipeline 2")
+        #expect(canceled.runId == 2)
+        #expect(canceled.runURL?.absoluteString.contains("buildId=2") == true)
+        #expect(canceled.since == t(-2 * minute))
+        #expect(MergeSummary([status(1, .canceled)])?.outcome == .canceled)
+
+        // What failed, waits or still runs comes first.
+        #expect(MergeSummary([status(1, .canceled), status(2, .failed)])?.outcome == .failed)
+        #expect(MergeSummary([status(1, .canceled), status(2, .running, stages: [waitingStage])])?.outcome == .waiting)
+        #expect(MergeSummary([status(1, .canceled), status(2, .queued)])?.outcome == .running)
     }
 
     // MARK: The merged pull request
@@ -130,6 +151,17 @@ import BriefBarCore
         #expect(passed.detail == "Merged into main · 2 pipelines passed")
         #expect(classify([status(1, .succeeded)], seen: t(-2 * hour))?.detail == "Merged into main · its pipeline passed")
         #expect(classify([status(1, .succeeded)], seen: t(-minute)) == nil)
+
+        // One canceled isn't a pass: it's Done as a passed one is, saying so.
+        let canceled = try #require(classify([status(1, .succeeded), status(2, .canceled)], seen: t(-2 * hour)))
+        #expect(canceled.group == .done)
+        #expect(canceled.reason == .completed)
+        #expect(canceled.headline == "Completed")
+        #expect(canceled.detail == "Merged into main · “pipeline 2” was canceled")
+        #expect(canceled.url == pr.webURL)
+        #expect(canceled.merge?.outcome == .canceled)
+        #expect(classify([status(1, .canceled)], seen: t(-2 * hour))?.detail == "Merged into main · its pipeline was canceled")
+        #expect(classify([status(1, .canceled)], seen: t(-minute)) == nil)
 
         // Someone else's merge, or one abandoned, says nothing about pipelines.
         var abandoned = pr
@@ -190,6 +222,18 @@ import BriefBarCore
         var old = failed
         old.since = t(-2 * hour)
         #expect(plan([snapshot(running)], [snapshot(old)]).isEmpty)
+
+        // One canceled once they'd been running is news too, as it is, rather than that they passed.
+        let canceled = MergeSummary(outcome: .canceled, total: 2, pipeline: "shop-web CD", runId: 10, since: t(0))
+        let stopped = plan([snapshot(running)], [snapshot(canceled)])
+        #expect(stopped.map(\.title) == ["Pipeline canceled"])
+        #expect(stopped.first?.body == "“shop-web CD” was canceled after it merged.")
+        #expect(stopped.first?.state == .done)
+        var alone = canceled
+        alone.total = 1
+        #expect(plan([snapshot(waiting)], [snapshot(alone)]).first?.body == "Its pipeline was canceled after it merged.")
+        #expect(plan([], [snapshot(canceled)]).isEmpty)
+        #expect(plan([snapshot(canceled)], [snapshot(canceled)]).isEmpty)
     }
 
     // MARK: The engine

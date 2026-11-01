@@ -10,7 +10,7 @@ import BriefBarCore
         RefreshPlanner.Candidate(key: PRKey("contoso", number), fingerprint: fingerprint)
     }
 
-    @Test func newAndChangedFirstThenTheOldestDue() {
+    @Test func newAndChangedFirstThenWhatsBeenDueLongest() {
         let cache: [PRKey: RefreshPlanner.Entry] = [
             PRKey("contoso", 2): .init(fetchedAt: t(-10), fingerprint: "old"),
             PRKey("contoso", 3): .init(fetchedAt: t(-61), fingerprint: "f", isBusy: true),
@@ -22,12 +22,37 @@ import BriefBarCore
         ]
         let candidates = (1...8).map { candidate($0) }
         let all = RefreshPlanner.plan(candidates, cache: cache, now: t(0), options: options, limit: nil)
-        #expect(all.map(\.number) == [1, 2, 3, 8, 4, 5])
+        // 4 has been due since t(-320), 5 since t(-20), and 3 and 8 since t(-1).
+        #expect(all.map(\.number) == [1, 2, 4, 5, 3, 8])
         // The budget is for refreshing known pull requests: new ones are always fetched.
         let budgeted = RefreshPlanner.plan(candidates, cache: cache, now: t(0), options: options, limit: 2)
-        #expect(budgeted.map(\.number) == [1, 2, 3])
+        #expect(budgeted.map(\.number) == [1, 2, 4])
         let more = (9...12).map { candidate($0) }
         #expect(RefreshPlanner.plan(candidates + more, cache: cache, now: t(0), options: options, limit: 1).map(\.number) == [1, 9, 10, 11, 12, 2])
+    }
+
+    /// Pull requests with builds running are due every minute, but they don't keep the others waiting: with more of them
+    /// than a refresh reads, the others are read in their turn, so their new comments come in.
+    @Test func busyPullRequestsDontKeepTheOthersWaiting() {
+        let options = RefreshPlanner.Options()
+        var cache: [PRKey: RefreshPlanner.Entry] = [:]
+        for number in 1...10 {
+            cache[PRKey("contoso", number)] = .init(fetchedAt: t(-minute), fingerprint: "f", isBusy: true)
+        }
+        cache[PRKey("contoso", 11)] = .init(fetchedAt: t(-4 * minute), fingerprint: "f")
+        cache[PRKey("contoso", 12)] = .init(fetchedAt: t(-1_000), fingerprint: "f", isQuiet: true)
+        let candidates = (1...12).map { candidate($0) }
+
+        let first = RefreshPlanner.plan(candidates, cache: cache, now: t(0), options: options, limit: options.budget)
+        #expect(first.map(\.number) == [12, 11, 1, 2, 3, 4, 5, 6])
+
+        // A refresh a minute, each reading what it planned: every one has been read by the second.
+        var read = Set(first)
+        for key in first { cache[key]?.fetchedAt = t(0) }
+        let second = RefreshPlanner.plan(candidates, cache: cache, now: t(minute), options: options, limit: options.budget)
+        #expect(second.map(\.number) == [7, 8, 9, 10, 1, 2, 3, 4])
+        read.formUnion(second)
+        #expect(read.count == 12)
     }
 
     @Test func nothingIsDueRightAfterAFetch() {
@@ -312,6 +337,18 @@ import BriefBarCore
         let needs = Brief.items(from: [snapshots[2], snapshots[5], snapshots[0]])
         #expect(needs.map(\.key.number) == [3, 6])
         #expect(needs[1].sentence == "Sam Rivera asked you to review “Pull request 6”.")
+    }
+
+    /// A pull request that's there because a reviewer wants changes or rejected it says who, even when someone else
+    /// commented after them.
+    @Test func briefNamesWhoWantsChangesOrRejectedIt() {
+        let comment = PREvent(id: "c1.2", kind: .comment, at: t(10), actor: "Priya Shah", text: "Nice work", threadId: 1)
+        let changes = PREvent(id: "v2", kind: .changesRequested, at: t(5), actor: "Alex Kim")
+        let rejection = PREvent(id: "v3", kind: .rejected, at: t(5), actor: "Sam Rivera")
+        let waiting = snapshot(1, group: .needsYou, reason: .changesRequested, events: [comment, changes])
+        #expect(Brief.item(waiting, reader: nil).sentence == "Alex Kim is waiting for changes on “Pull request 1”.")
+        let rejected = snapshot(2, group: .needsYou, reason: .rejected, events: [comment, rejection])
+        #expect(Brief.item(rejected, reader: nil).sentence == "Sam Rivera rejected “Pull request 2”.")
     }
 }
 

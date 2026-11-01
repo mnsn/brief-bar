@@ -304,12 +304,12 @@ public actor PulseEngine {
         let organizationsChanged = configuration.organizations != self.configuration.organizations
         self.configuration = configuration
         if organizationsChanged {
-            let kept = Set(configuration.organizations)
+            let kept = Self.folded(configuration.organizations)
             // Pull requests people sent you stay, whichever organizations are watched.
-            active = active.filter { kept.contains($0.key.organization) || linked[$0.key] != nil }
-            done = done.filter { kept.contains($0.key.organization) }
-            vanished = vanished.filter { kept.contains($0.key.organization) }
-            firstLoaded = firstLoaded.filter { kept.contains($0.key) }
+            active = active.filter { kept.contains($0.key.organization.lowercased()) || linked[$0.key] != nil }
+            done = done.filter { kept.contains($0.key.organization.lowercased()) }
+            vanished = vanished.filter { kept.contains($0.key.organization.lowercased()) }
+            firstLoaded = firstLoaded.filter { kept.contains($0.key.lowercased()) }
             publish()
         }
         waker.wake()
@@ -471,12 +471,13 @@ public actor PulseEngine {
         for (key, pr) in done where completed[key] == nil && listed[key] == nil {
             completed[key] = pr
         }
-        // The organizations may have changed while the lists loaded: keep only the ones still watched.
-        let watched = Set(self.configuration.organizations)
-        listed = listed.filter { watched.contains($0.key.organization) }
-        completed = completed.filter { watched.contains($0.key.organization) }
-        vanished = vanished.filter { watched.contains($0.key.organization) }
-        firstLoaded = firstLoaded.filter { watched.contains($0.key) }
+        // The organizations may have changed while the lists loaded: keep only the ones still watched, however their names
+        // are spelled.
+        let watched = Self.folded(self.configuration.organizations)
+        listed = listed.filter { watched.contains($0.key.organization.lowercased()) }
+        completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
+        vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
+        firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
         await addLinked(to: &listed, at: startedAt)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
@@ -511,7 +512,9 @@ public actor PulseEngine {
 
     /// Reads the pull requests people sent you that aren't in your lists, ten a refresh: the ones never read
     /// first, then the ones read longest ago. Each stays listed as it was last read in between. One that's closed
-    /// or couldn't be read is tried again an hour later.
+    /// or couldn't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest wait for the next
+    /// refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores
+    /// their case, as Azure DevOps does.
     private func addLinked(to listed: inout [PRKey: Listed], at date: Date) async {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
@@ -540,6 +543,9 @@ public actor PulseEngine {
                 closedLinks.remove(key)
                 let role: PRRole = pr.author.id == me ? .author : pr.reviewer(me) != nil ? .reviewer : .linked
                 linked[key] = (Listed(pullRequest: pr, role: role), date)
+            } catch ADOError.throttled {
+                // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
+                break
             } catch {
                 linkedFailures[key] = date
                 // Gone, or no access: nothing to list. Otherwise it stays as last read.
@@ -906,6 +912,11 @@ public actor PulseEngine {
         } catch {
             return .failure(.network(error.localizedDescription))
         }
+    }
+
+    /// Organizations' names as Azure DevOps tells them apart: ignoring their letter case.
+    private static func folded(_ organizations: [String]) -> Set<String> {
+        Set(organizations.map { $0.lowercased() })
     }
 
     private func nextDelay() -> TimeInterval {

@@ -46,6 +46,8 @@ public struct MergeSummary: Sendable, Codable, Equatable {
         case failed
         /// They all finished, and none failed.
         case passed
+        /// They all finished, none failed, and one or more were canceled.
+        case canceled
     }
 
     public var outcome: Outcome
@@ -53,17 +55,17 @@ public struct MergeSummary: Sendable, Codable, Equatable {
     public var total: Int
     /// How many are queued or running.
     public var running: Int
-    /// The pipeline that failed or waits.
+    /// The pipeline that failed, waits or was canceled.
     public var pipeline: String?
     /// The stage it waits for.
     public var stage: String?
     /// Where it failed, when its timeline says.
     public var failure: PipelineFailure?
-    /// The run that failed or waits: a later one doing the same is news again.
+    /// The run that failed, waits or was canceled: a later one doing the same is news again.
     public var runId: Int?
     /// That run's page.
     public var runURL: URL?
-    /// When it came to this: the run failed, or the last one finished.
+    /// When it came to this: the run failed or was canceled, or the last one finished.
     public var since: Date?
 
     public init(
@@ -81,7 +83,8 @@ public struct MergeSummary: Sendable, Codable, Equatable {
         self.since = since
     }
 
-    /// Nil without any run. Something failed comes first, then something waiting, then something running.
+    /// Nil without any run. Something failed comes first, then something waiting, then something running, then something
+    /// canceled: once none failed, waits or runs, one that was canceled means they didn't all pass.
     public init?(_ pipelines: [PipelineStatus]) {
         let latest = pipelines.compactMap { status in status.latest.map { (status, $0) } }
         guard !latest.isEmpty else { return nil }
@@ -97,6 +100,10 @@ public struct MergeSummary: Sendable, Codable, Equatable {
                       since: run.startedAt ?? run.queuedAt)
         } else if running > 0 {
             self.init(outcome: .running, total: latest.count, running: running, since: latest.compactMap { $0.1.queuedAt }.max())
+        } else if let canceled = latest.first(where: { $0.1.status == .canceled }) {
+            let (status, run) = canceled
+            self.init(outcome: .canceled, total: latest.count, pipeline: status.pipeline.name, runId: run.id, runURL: run.webURL,
+                      since: run.changedAt)
         } else {
             self.init(outcome: .passed, total: latest.count, since: latest.compactMap { $0.1.finishedAt }.max())
         }

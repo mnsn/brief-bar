@@ -1,6 +1,7 @@
 import Foundation
 
-/// Identifies a pull request: its number is unique within its organization.
+/// Identifies a pull request: its number is unique within its organization. Azure DevOps ignores the letter case of an
+/// organization's name, and so do keys: `Contoso/42` and `contoso/42` are the same pull request. Each keeps its spelling.
 public struct PRKey: Hashable, Comparable, Sendable, Codable, CustomStringConvertible {
     public var organization: String
     public var number: Int
@@ -12,8 +13,17 @@ public struct PRKey: Hashable, Comparable, Sendable, Codable, CustomStringConver
 
     public var description: String { "\(organization)/\(number)" }
 
+    public static func == (lhs: PRKey, rhs: PRKey) -> Bool {
+        lhs.number == rhs.number && lhs.organization.lowercased() == rhs.organization.lowercased()
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(organization.lowercased())
+        hasher.combine(number)
+    }
+
     public static func < (lhs: PRKey, rhs: PRKey) -> Bool {
-        (lhs.organization, lhs.number) < (rhs.organization, rhs.number)
+        (lhs.organization.lowercased(), lhs.number) < (rhs.organization.lowercased(), rhs.number)
     }
 }
 
