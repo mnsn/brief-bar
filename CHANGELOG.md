@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with
+  colored tiles and cards instead of a plain form. **Where It Goes** shows the session and the
+  repository as rows you click to change; for a session that's already there, **Open in Copilot** and
+  **Run with the CLI** sit side by side, each saying what it does and, when it can't be used, why. The
+  model and how hard it thinks are under the prompt, which says where it came from, with **Reset** once
+  you change it. It follows **Quieter Colors and Surfaces** in Settings › Appearance.
+
 ## 0.10.1 - 2026-11-01
 
 - **A menu-bar item's list opens on the desktop you're on.** Clicking a BriefBar item after you'd

@@ -1453,7 +1453,7 @@ whatever it reads, since its denials win over `--allow-all-tools`: a review gets
 build the last two, and resolving conflicts, which has to commit its merge, `shell(git push)`. Its worktree,
 `copilot-worktrees/<repository>/pr-<id>`, is detached at `origin/<branch>`, fetched first, so it never
 takes the branch from a checkout that has it. The composer already knows and shows the remote
-repository. **Local Clone** selects its folder on this Mac, not which repository the PR belongs to.
+repository. **Choose Local Clone…** selects its folder on this Mac, not which repository the PR belongs to.
 BriefBar checks the clone's `origin` against the PR's organization, project and repository (names or
 IDs, with Azure DevOps HTTPS and SSH URLs), and remembers a valid choice immediately, even if you
 cancel without sending. Later PRs in that repository reuse it. When there is no saved choice, it
@@ -1465,7 +1465,7 @@ last one's session, if its worktree is still there: `--session-id` is that sessi
 `--name`, in that worktree, and the run keeps its place in the list. **Push & Reply** always does, and is
 offered once a task that changed files is done.
 
-**A session that's already there.** The composer's **Session** menu also lists the sessions a task can
+**A session that's already there.** The composer's session menu, under **Where It Goes**, also lists the sessions a task can
 go to instead of a new one (`SessionChoice`), read as it opens, and only while **Send Work to Copilot**
 is on. First BriefBar's own: its tasks on the work item or pull request whose worktrees are still there,
 and, for a pull request, the work item's task that opened it, by the pull request's link the task kept.

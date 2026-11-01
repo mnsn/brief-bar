@@ -87,7 +87,12 @@ extension WorkItem {
     }
 
     /// The type's color, close to Azure DevOps's own, so cards are recognizable at a glance.
-    var typeColor: Color {
+    var typeColor: Color { Self.typeColor(of: type) }
+
+    var typeSymbol: String { Self.typeSymbol(of: type) }
+
+    /// A type's color, such as `Bug`'s, for what knows only its name.
+    static func typeColor(of type: String) -> Color {
         switch type.lowercased() {
         case "bug": return Color(red: 0.84, green: 0.20, blue: 0.25)
         case "task": return Color(red: 0.95, green: 0.72, blue: 0.10)
@@ -98,7 +103,7 @@ extension WorkItem {
         }
     }
 
-    var typeSymbol: String {
+    static func typeSymbol(of type: String) -> String {
         switch type.lowercased() {
         case "bug": return "ladybug.fill"
         case "task": return "checklist"
