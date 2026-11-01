@@ -2,8 +2,9 @@
 
 In development. BriefBar for Windows gives Windows what BriefBar's menu bar gives the Mac: a bar docked to the
 top of each display, with each source's counts, and a panel under each of its items that lists what needs you.
-It's a WinUI 3 app on .NET 10. None of the sources is ported yet ([What's next](#whats-next)), so it reads
-nothing of yours: started with `--demo`, it shows **made-up data**.
+It's a WinUI 3 app on .NET 10. Its first source, **GitHub Copilot sessions**, is ported; the others come one at a
+time ([What's next](#whats-next)). Every source is off until you turn it on in Settings, and reads nothing until
+then. Started with `--demo`, it shows **made-up data** for every source, and reads nothing of yours.
 
 ## Build and run
 
@@ -14,13 +15,15 @@ dotnet build BriefBar/BriefBar.csproj
 BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64\BriefBar.exe --demo
 ```
 
-Without `--demo`, the bar says **No source is on**. The first build downloads the Windows App SDK from NuGet,
-about 300 MB. It ships inside the app, so there's nothing else to install. Add `--runtime win-arm64` to build
-for Arm64.
+Without `--demo`, the bar says **No source is on** until you turn one on: right-click the bar and choose
+**Settings**, or press **Open Settings** in the Overview. Settings, and what you turned on, are saved in
+`%LOCALAPPDATA%\BriefBar\Settings.json`; with `--demo`, nothing is saved. The first build downloads the Windows
+App SDK from NuGet, about 300 MB. It ships inside the app, so there's nothing else to install. Add
+`--runtime win-arm64` to build for Arm64.
 
-To quit, right-click the bar and choose **Quit BriefBar**, use **More** (…) at the bottom of any panel, or run
-`scripts\quit.ps1`. Quit before you build again, since the build replaces the running app. One copy runs per
-sign-in: starting it again opens the running one's Overview.
+To quit, right-click the bar and choose **Quit BriefBar**, use **More** (…) at the bottom of any panel, press
+**Quit** in Settings, or run `scripts\quit.ps1`. Quit before you build again, since the build replaces the running
+app. One copy runs per sign-in: starting it again opens the running one's Overview.
 
 ```powershell
 dotnet test --project BriefBar.Core.Tests/BriefBar.Core.Tests.csproj
@@ -34,11 +37,12 @@ errors; `.github/workflows/windows.yml` checks the formatting, runs the tests an
 pull request that changes `windows/`, and `main` requires it to pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
-another display right after a press on this one, Alt+F4, each bar keeping its display as displays change, a second
-start while BriefBar starts opening its Overview, and the space given back within a second of quitting or of another
-program asking BriefBar to close. Run it before you open a pull request, and leave the mouse and keyboard alone while
-it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the panel is in front, and
-it works over a disconnected remote session too, without the keys.
+another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
+Settings (a Copilot setting, and closing the panel as it comes to the front), Alt+F4, each bar keeping its display as
+displays change, a second start while BriefBar starts opening its Overview, and the space given back within a second
+of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave the mouse
+and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the
+panel is in front, and it works over a disconnected remote session too, without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -68,9 +72,30 @@ section names and the like, so nothing you see can reach it: a line with a strin
 - **The panel** opens under its item as you press it: a header with the section's tile, title and status; a
   banner when a section can't show everything; the brief; then its groups (the Overview's: Needs you,
   Something's wrong, Running, Done or ready), with headers that stay in view as you scroll. Each row has a badge
-  in its state's color (or a chat's initials), its title, where it stands, what it's about in two lines at most,
-  how long ago, unread messages and links. The keyboard starts on its first row. It closes when you press Esc,
-  click anywhere else, bring another app to the front, or press its item again.
+  in its state's color (or a chat's initials), its title, where it stands, what it's about in two lines at most
+  (three when it needs you), how long ago, unread messages and links. The keyboard starts on its first row.
+  Pressing a row, or Enter, opens what it's about and closes the panel; right-click, the menu key or Shift+F10
+  shows everything it can do; its tooltip shows all of it. A group can have a button, as Copilot's Done has Clear,
+  or start folded, as Copilot's Idle does. Its foot has the section's own buttons, such as **Open GitHub
+  Copilot**, and **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another
+  app or Settings to the front, or press its item again.
+- **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
+  button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
+  turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
+  your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
+  update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
+  asks first, stops it, takes it off the bar and deletes what BriefBar saved for it at once, without waiting for it
+  to stop, so quitting meanwhile can't leave it behind; its settings stay. If a choice can't be saved, as on a full
+  disk, Settings says so: it lasts until BriefBar quits, and BriefBar tries to save it again whenever a setting
+  changes, and as it quits.
+- **GitHub Copilot sessions**, as on the Mac ([How it works](../docs/how-it-works.md#github-copilot)): what each
+  session in the GitHub Copilot app is doing, from the app's own files in `%USERPROFILE%\.copilot`, read-only,
+  as they change. Its groups are the Mac's: Needs you (a question, a plan to review, a permission), Running, Done
+  and Stopped (each with **Clear**, which moves them to Idle), and Idle, folded. A row opens its session in the
+  Copilot app (`ghapp://sessions/<id>`), or, for a question that a coordinating session asks for another, the session
+  where you answer it; its menu opens the session itself, and the one that started it. Its settings are the Mac's:
+  Keep finished sessions for, Move viewed sessions to idle, Show relayed questions once, Nest sessions under their
+  parents (a ↳ tag names a parent elsewhere) and Show context usage (a ring and a percentage, orange from 70%).
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
@@ -101,18 +126,23 @@ Where Windows differs, these were decided:
   key like the Mac's Ctrl+F8 for a bar like this one. Starting BriefBar again opens the Overview, as reopening it
   shows the Mac's first item.
 - **.NET 10**, supported until November 2028, and **x64 and Arm64**.
+- **Copilot sessions open in the GitHub Copilot app**, as on the Mac when it's installed. On a PC with only the
+  Copilot CLI, rows list but don't open until BriefBar can start programs (`ProcessRunner`), where the Mac opens the
+  CLI in Terminal.
 
 ## The code
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), and what a source gives the app (`ISectionSource`) |
-| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups and rows, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
-| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), and reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`) |
+| `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), and the source (`CopilotSource`, `CopilotRows`) |
+| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
+| `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
+| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's through its real store |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
-| `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
-| `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar and the panel in XAML, as buttons and a list; what they show; and their styles, per theme |
-| `BriefBar/Services/` | Running the sources and handing what they show to the UI thread (`SourceHost`), and the log file |
+| `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
+| `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
+| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
 | `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data |
 
@@ -191,6 +221,23 @@ SDK ships inside the app.
 - **An unhandled exception doesn't end a WinUI desktop app**, which runs on without its windows: BriefBar logs
   it, gives every bar's space back, and ends. One thrown while UI Automation presses a button goes back to the
   caller instead, so check the log when you test that way.
+- **WinUI ends the app at once when a shape gets a geometry that another shape uses**, with `E_INVALIDARG` in
+  `combase.dll`, no managed exception and nothing in the log, only a dump in `%LOCALAPPDATA%\CrashDumps`. A list
+  reuses its rows' elements as it scrolls and changes, so a view model must never hold a `Geometry`: Copilot's
+  context ring draws its own (`MeterRing`).
+- **A read-only SQLite connection to a database in WAL mode creates its `-wal` and `-shm` files** when they're
+  gone, as when the Copilot app isn't running: `AppDatabase` opens such a database immutable instead, without locks.
+  That holds only while the app leaves the file alone, so it checks the file's size and time, and that there's still
+  no log, before and after: if the app opened or wrote it meanwhile, it reads again, the usual way. SQLite's
+  Windows files are opened without delete sharing, so connections are never pooled (`Pooling=False`) and each
+  closes once it has read, or the Copilot app couldn't replace its own files.
+- **`FileSystemWatcher` does report the Copilot app's writes to `data.db-wal`** while the app holds it open
+  (checked: about 20 events in 30 seconds of use), so the engine reads on change, not on a timer; a watcher that
+  overflows or fails reads everything again, and it reads everything once a minute anyway.
+- **`ghapp://` with no path opens the Copilot app's start page**, away from what it showed: **Open GitHub Copilot**
+  brings the app's window to the front instead, and uses the link only to start the app when it has no window.
+- **A press through UI Automation doesn't let BriefBar bring another app to the front**, as a click does: check
+  what opens from a row with the mouse.
 - **Don't name a namespace `…Windows`**: it hides WinRT's `Windows.*` namespaces.
 
 ## What's next
@@ -198,10 +245,10 @@ SDK ships inside the app.
 Port the sources first, one at a time, each checked with real data ([below](#checking-with-real-data)), in
 this order:
 
-1. **Copilot sessions**, the closest to the Mac: on Windows the data is laid out the same way, in
-   `%USERPROFILE%\.copilot`, with the Copilot app's database `data.db` and each session's log in
-   `session-state\<id>\events.jsonl`. Port `Sources/CopilotCore`. Settings, with each source's consent, comes
-   with it, since a source can't be turned on before then.
+1. ~~**Copilot sessions**~~, done, with Settings and each source's consent. Not ported yet, for later layers:
+   opening a session on a PC without the Copilot app (the Mac opens the Copilot CLI in Terminal; it comes with
+   `ProcessRunner`, and until then such rows list but don't open), Show Links, a work item's details and
+   summaries, tasks sent to the Copilot CLI, and `--mcp`.
 2. **Azure DevOps pull requests**: sign in with
    `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json`, then only GET
    requests. On Windows, `az` is `az.cmd` on the `PATH`. Port `Sources/AzureDevOpsCore`.
@@ -236,7 +283,9 @@ counts, states and errors, never names, messages, titles or IDs; and nothing act
 The repository is public, and chats, pull requests and sessions are private, often confidential.
 
 - Check each source against its own app or site: Azure DevOps, GitHub, the Copilot app and Teams. Compare
-  every count, state and row, and what opens from it.
+  every count, state and row, and what opens from it. The log says each source's counts by state as it changes
+  (`copilot: Ready, 36 sessions…`), without names. The screen tool can't read the Copilot app's window, so ask
+  whoever's at the PC to compare it; what a row opened is in the app's own `lastRoutePath`, in `data.db`.
 - Report what you checked in counts and states, never names, titles, messages, IDs, organizations or projects.
   Screenshots are for the made-up data only.
 - Never commit logs, databases or fixtures copied from a real machine. When real data shows a case the tests

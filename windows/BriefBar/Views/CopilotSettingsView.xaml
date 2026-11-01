@@ -1,0 +1,90 @@
+<UserControl
+    x:Class="BriefBar.Views.CopilotSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Copilot's own settings, as the Mac's gear menu and Settings page offer them, each a card. -->
+    <StackPanel Spacing="4">
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Keep finished sessions for" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Finished and stopped sessions stay under Done and Stopped this long, unless you clear them; then they're idle." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Keep finished sessions for"
+                ItemsSource="{x:Bind ViewModel.KeepEndedTitles}"
+                SelectedIndex="{x:Bind ViewModel.KeepEndedIndex, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Move viewed sessions to idle" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Hide finished and stopped sessions after you open them, or view them in GitHub Copilot. Off keeps them until you clear them, or the time above passes." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Move viewed sessions to idle"
+                IsOn="{x:Bind ViewModel.MoveViewedToIdle, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Show relayed questions once" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="When a session that coordinates another asks you that session's question or plan, show it once, on the coordinating session, where you answer it. Off shows both." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Show relayed questions once"
+                IsOn="{x:Bind ViewModel.ShowRelayedQuestionsOnce, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Nest sessions under their parents" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Show a session that another session started under it, indented, as GitHub Copilot's sidebar does, when both are in the same group. Elsewhere, a ↳ tag names the session that started it and opens it. Off lists each session on its own." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Nest sessions under their parents"
+                IsOn="{x:Bind ViewModel.NestSessions, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Show context usage" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Show how full each session's context window is, once GitHub Copilot has measured it." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Show context usage"
+                IsOn="{x:Bind ViewModel.ShowContextUsage, Mode=TwoWay}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

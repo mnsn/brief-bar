@@ -21,6 +21,8 @@
         </Grid.ColumnDefinitions>
         <Grid.ContextFlyout>
             <MenuFlyout>
+                <MenuFlyoutItem Click="OnSettingsClick" Text="Settings" />
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem Click="OnQuitClick" Text="Quit BriefBar" />
             </MenuFlyout>
         </Grid.ContextFlyout>

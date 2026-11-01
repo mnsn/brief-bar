@@ -12,6 +12,7 @@ public enum IconKey
     CheckmarkCircle,
     ChevronRight,
     ClipboardTaskList,
+    Clock,
     Dismiss,
     DismissCircle,
     Eye,
@@ -24,6 +25,7 @@ public enum IconKey
     Person,
     Power,
     Pulse,
+    RecordStop,
     Rocket,
     Send,
     Settings,
@@ -31,4 +33,5 @@ public enum IconKey
     Sparkle,
     Stack,
     Warning,
+    WeatherMoon,
 }

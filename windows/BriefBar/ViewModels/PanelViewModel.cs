@@ -5,12 +5,18 @@ using Microsoft.UI.Xaml.Media;
 
 namespace BriefBar.ViewModels;
 
-/// What the panel shows: its header, a banner when its section can't show everything, its brief, and its groups of
-/// rows. One panel serves every item, so it's updated in place, keeping its list's scroll position and focus.
+/// What the panel shows: its header, a banner when its section can't show everything, its brief, a word when all is
+/// quiet, its groups of rows, and what its footer can do. One panel serves every item, so it's updated in place,
+/// keeping its list's scroll position and focus.
 public sealed class PanelViewModel : Observable
 {
     /// BriefBar's own blue, for the Overview's tile.
     const uint OverviewTint = 0xFF0067C0u;
+
+    /// The groups you unfolded since the panel opened.
+    readonly HashSet<string> unfolded = new(comparer: StringComparer.Ordinal);
+    ThemePalette? palette;
+    DateTimeOffset now;
 
     public PanelTarget Target { get; private set => Set(storage: ref field, value: value); }
 
@@ -35,11 +41,28 @@ public sealed class PanelViewModel : Observable
 
     public string ProblemMessage { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
+    /// What the banner's button does, such as reviewing what a paused source reads.
+    public PanelCommand? ProblemCommand { get; private set => Set(storage: ref field, value: value); }
+
+    /// The section the banner is about: in the Overview, not the panel's own.
+    public SectionId? ProblemSection { get; private set => Set(storage: ref field, value: value); }
+
+    public bool HasProblemCommand { get; private set => Set(storage: ref field, value: value); }
+
+    public string ProblemCommandTitle { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
     public ObservableCollection<BriefLineViewModel> Brief { get; } = [];
 
     public bool HasBrief { get; private set => Set(storage: ref field, value: value); }
 
     public Brush SparkleBrush { get; private set => Set(storage: ref field, value: value); } = null!;
+
+    /// "All quiet", over "3 idle sessions", when the section counts nothing.
+    public bool HasQuiet { get; private set => Set(storage: ref field, value: value); }
+
+    public string QuietTitle { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    public string QuietDetail { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
     public ObservableCollection<RowGroupViewModel> Groups { get; } = [];
 
@@ -47,13 +70,28 @@ public sealed class PanelViewModel : Observable
 
     public string EmptyText { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
+    /// With no source on, the empty Overview offers Settings, where you turn one on.
+    public bool OffersSettings { get; private set => Set(storage: ref field, value: value); }
+
+    /// What the section's footer offers, such as "Open GitHub Copilot".
+    public IReadOnlyList<PanelCommand> Commands { get; private set => Set(storage: ref field, value: value); } = [];
+
     /// Made-up data, said in the footer so it's never mistaken for yours.
     public bool IsDemo { get; private set => Set(storage: ref field, value: value); }
+
+    /// The source whose page Settings opens at from this panel: its section's, or none for the Overview.
+    public SourceId? Source => Target.Section?.Source;
 
     public void Update(PanelTarget target, IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now, bool isDemo)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshots);
         ArgumentNullException.ThrowIfNull(argument: palette);
+        if (target != Target)
+        {
+            unfolded.Clear();
+        }
+        this.palette = palette;
+        this.now = now;
         Target = target;
         IsDemo = isDemo;
         LiveBrush = palette.Fill(state: ItemState.Done);
@@ -68,6 +106,29 @@ public sealed class PanelViewModel : Observable
         }
     }
 
+    /// As the panel opens: every group that folds starts folded again, as on the Mac.
+    public void FoldAll() => unfolded.Clear();
+
+    /// Shows or hides the rows of `group`, a group that folds.
+    public void ToggleFold(RowGroupViewModel group)
+    {
+        ArgumentNullException.ThrowIfNull(argument: group);
+        if (!group.IsFoldable || palette is null)
+        {
+            return;
+        }
+        var folded = !group.IsFolded;
+        if (folded)
+        {
+            unfolded.Remove(item: group.Key);
+        }
+        else
+        {
+            unfolded.Add(item: group.Key);
+        }
+        group.Fold(folded: folded, palette: palette, now: now);
+    }
+
     void ShowOverview(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now)
     {
         TileGlyph = IconKey.Stack;
@@ -80,10 +141,13 @@ public sealed class PanelViewModel : Observable
             is SectionCondition.Problem or SectionCondition.Stale or SectionCondition.Paused);
         ShowProblem(snapshot: trouble, now: now);
         ShowBrief(lines: PanelLists.Brief(snapshots: snapshots), palette: palette);
+        ShowQuiet(quiet: null);
         ShowGroups(groups: PanelLists.ForOverview(snapshots: snapshots), section: null, palette: palette, now: now);
         EmptyText = snapshots.Count == 0
-            ? "BriefBar for Windows doesn't read any source yet: they arrive one at a time. Start it with --demo to see made-up data."
+            ? "No source is on. Turn one on in Settings, and what needs you shows here."
             : "Nothing needs you right now.";
+        OffersSettings = snapshots.Count == 0;
+        Commands = [];
     }
 
     void ShowSection(SectionId section, SectionSnapshot? snapshot, ThemePalette palette, DateTimeOffset now)
@@ -93,14 +157,17 @@ public sealed class PanelViewModel : Observable
         TileBrush = palette.Tint(tint: info?.Tint ?? OverviewTint);
         TileGlyphBrush = palette.OnTint;
         Title = info?.Title ?? section.RawValue;
+        OffersSettings = false;
         if (snapshot is null)
         {
             Subtitle = info?.SourceName ?? string.Empty;
             IsLive = false;
             ShowProblem(snapshot: null, now: now);
             ShowBrief(lines: [], palette: palette);
+            ShowQuiet(quiet: null);
             ShowGroups(groups: [], section: section, palette: palette, now: now);
             EmptyText = "This source is off.";
+            Commands = [];
             return;
         }
         var status = StatusWords.Of(status: snapshot.Status, now: now);
@@ -109,8 +176,17 @@ public sealed class PanelViewModel : Observable
         IsLive = snapshot.Status.IsLive && conditionIsReady;
         ShowProblem(snapshot: snapshot, now: now);
         ShowBrief(lines: PanelLists.Brief(snapshots: [snapshot]), palette: palette);
+        ShowQuiet(quiet: snapshot.Quiet);
         ShowGroups(groups: PanelLists.ForSection(snapshot: snapshot), section: section, palette: palette, now: now);
-        EmptyText = snapshot.Status.Condition == SectionCondition.Starting ? "Reading…" : "Nothing here right now.";
+        EmptyText = snapshot.Status.Condition == SectionCondition.Starting
+            ? "Reading…"
+            : snapshot.EmptyText ?? "Nothing here right now.";
+        // A paused section's review is on its banner.
+        IReadOnlyList<PanelCommand> commands = snapshot.Status.Condition == SectionCondition.Paused ? [] : snapshot.Commands;
+        if (!commands.SequenceEqual(second: Commands))
+        {
+            Commands = commands;
+        }
     }
 
     /// A banner for a section that can't show everything: why, and what to do.
@@ -126,6 +202,12 @@ public sealed class PanelViewModel : Observable
             _ => string.Empty,
         };
         ProblemMessage = HasProblem ? StatusWords.Of(status: snapshot!.Status, now: now) : string.Empty;
+        ProblemSection = HasProblem ? snapshot!.Info.Id : null;
+        ProblemCommand = condition == SectionCondition.Paused
+            ? snapshot!.Commands.FirstOrDefault(predicate: command => command.Key == AppCommands.ReviewSource)
+            : null;
+        HasProblemCommand = ProblemCommand is not null;
+        ProblemCommandTitle = ProblemCommand?.Title ?? string.Empty;
     }
 
     void ShowBrief(IReadOnlyList<BriefLine> lines, ThemePalette palette)
@@ -143,6 +225,13 @@ public sealed class PanelViewModel : Observable
         HasBrief = lines.Count > 0;
     }
 
+    void ShowQuiet(QuietNote? quiet)
+    {
+        HasQuiet = quiet is not null;
+        QuietTitle = quiet?.Title ?? string.Empty;
+        QuietDetail = quiet?.Detail ?? string.Empty;
+    }
+
     void ShowGroups(IReadOnlyList<PanelGroup> groups, SectionId? section, ThemePalette palette, DateTimeOffset now)
     {
         CollectionSync.Sync(
@@ -152,10 +241,10 @@ public sealed class PanelViewModel : Observable
             create: group =>
             {
                 var created = new RowGroupViewModel(key: group.Key);
-                created.Update(group: group, section: section, palette: palette, now: now);
+                created.Update(group: group, section: section, palette: palette, now: now, isFolded: !unfolded.Contains(item: group.Key));
                 return created;
             },
-            update: (item, group) => item.Update(group: group, section: section, palette: palette, now: now));
-        IsEmpty = groups.Count == 0;
+            update: (item, group) => item.Update(group: group, section: section, palette: palette, now: now, isFolded: !unfolded.Contains(item: group.Key)));
+        IsEmpty = groups.Count == 0 && !HasQuiet;
     }
 }

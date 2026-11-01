@@ -18,6 +18,9 @@ public sealed partial class BoundaryTests
     [GeneratedRegex(pattern: @"\b(Process\.Start|ProcessStartInfo|System\.Diagnostics\.Process\b|CreateProcess|ShellExecute|WinExec)\b")]
     private static partial Regex ProcessApi();
 
+    [GeneratedRegex(pattern: @"\b(new SqliteConnection|SqliteConnection\(|sqlite3_open)")]
+    private static partial Regex DatabaseApi();
+
     [Fact]
     public void OnlyAzureDevOpsAndGitHubUseTheNetwork()
     {
@@ -28,6 +31,14 @@ public sealed partial class BoundaryTests
     public void OnlyProcessRunnerStartsPrograms()
     {
         Assert.Empty(collection: Uses(api: ProcessApi(), allowed: processes));
+    }
+
+    /// So every connection BriefBar opens is read-only, closes once it's read, and sorts in memory.
+    [Fact]
+    public void OnlySQLiteConnectionOpensDatabases()
+    {
+        Assert.Empty(collection: Uses(api: DatabaseApi(), allowed: ["BriefBar.Core/SQLiteConnection.cs"]));
+        Assert.Contains(collection: SourceFiles(), filter: file => file == "BriefBar.Core/SQLiteConnection.cs");
     }
 
     [Fact]

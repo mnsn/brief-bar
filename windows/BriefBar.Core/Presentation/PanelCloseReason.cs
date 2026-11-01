@@ -12,10 +12,10 @@ public enum PanelCloseReason
     /// A press on the bar, between its items.
     EmptySpace,
 
-    /// A click anywhere but BriefBar's windows.
+    /// A click anywhere but a bar or the panel, in Settings too.
     ClickElsewhere,
 
-    /// Another app's window came to the front.
+    /// Another app's window, or Settings, came to the front.
     OtherApp,
 
     /// A full-screen window came to the front on its display, and the bar stepped aside.
@@ -26,4 +26,7 @@ public enum PanelCloseReason
 
     /// BriefBar is quitting.
     Quitting,
+
+    /// Something in it opened what it's about, in another app or in Settings, which comes to the front.
+    Opened,
 }
