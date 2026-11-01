@@ -639,6 +639,20 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .background(Color(nsColor: .windowBackgroundColor))
             renderings.append((name: "link-picker", view: AnyView(picker)))
         }
+        // The pull requests by when each was created, the oldest first, in the menu bar's list and on the window's page,
+        // whatever order the settings have.
+        if let store, !store.items.isEmpty {
+            let panel = MenuPanelView(order: .oldestFirst)
+                .background(Color(nsColor: .windowBackgroundColor))
+            let page = PullRequestsPage(order: .oldestFirst)
+                .environment(\.panelStyle, .page)
+                .textSize(from: services)
+                .frame(width: 780, height: 900)
+                .background(WindowBackdrop())
+                .environment(\.isRendering, true)
+            renderings += [(name: "pull-requests-oldest-first", view: environment(panel)),
+                           (name: "pull-requests-oldest-first-page", view: environment(page))]
+        }
         return renderings
     }
 }

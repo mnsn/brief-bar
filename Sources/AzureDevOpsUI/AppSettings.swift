@@ -50,6 +50,10 @@ final class AppSettings: ObservableObject {
     @Published var showToReview: Bool {
         didSet { defaults.set(showToReview, forKey: Key.showToReview) }
     }
+    /// How the pull requests are listed: in their groups, or by when each was created.
+    @Published var pullRequestOrder: PROrder {
+        didSet { defaults.set(pullRequestOrder.rawValue, forKey: Key.pullRequestOrder) }
+    }
     /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
     @Published var followMerges: Bool {
         didSet { defaults.set(followMerges, forKey: Key.followMerges) }
@@ -145,6 +149,7 @@ final class AppSettings: ObservableObject {
         notifications = defaults.object(forKey: Key.notifications) as? Bool ?? true
         summaries = defaults.object(forKey: Key.summaries) as? Bool ?? true
         showToReview = defaults.bool(forKey: Key.showToReview)
+        pullRequestOrder = defaults.string(forKey: Key.pullRequestOrder).flatMap(PROrder.init(rawValue:)) ?? .status
         followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
         watchedPullRequests = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
@@ -453,6 +458,7 @@ enum SettingsKey {
     static let notifications = "ado.notifications"
     static let summaries = "ado.summaries"
     static let showToReview = "ado.showToReviewInMenuBar"
+    static let pullRequestOrder = "ado.pullRequestOrder"
     static let followMerges = "ado.followMerges"
     static let watchedPullRequests = "ado.watchedPullRequests"
     static let organizations = "ado.organizations"

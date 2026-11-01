@@ -108,3 +108,54 @@ extension PRSnapshot {
         [headline, repository].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
+
+extension PROrder {
+    /// In the menu that sorts the list.
+    var title: String {
+        switch self {
+        case .status: return "By Status"
+        case .newestFirst: return "Newest First"
+        case .oldestFirst: return "Oldest First"
+        }
+    }
+}
+
+extension PRReadiness.Item {
+    /// As a pipeline's run shows where it stands: ✓ done, ✕ failing, ✋ waiting on you, ↻ running, and a clock while it
+    /// waits on someone else; open comments that don't hold the pull request up, a speech bubble.
+    var symbol: String {
+        guard isRequired else { return "text.bubble" }
+        switch state {
+        case .done?: return "checkmark.circle.fill"
+        case .failing?: return "xmark.circle.fill"
+        case .needsYou?: return "hand.raised.fill"
+        case .running?: return "arrow.triangle.2.circlepath"
+        case nil: return "clock"
+        }
+    }
+
+    var color: Color { isRequired ? state?.color ?? .secondary : .secondary }
+
+    /// "Build failed (shop-web CI · Run unit tests: 2 tests failed)", for a tooltip or VoiceOver.
+    var described: String {
+        guard let detail, !detail.isEmpty else { return label }
+        return "\(label) (\(detail))"
+    }
+}
+
+extension PRReadiness {
+    /// What's left and what's done, a line each, for a row's tooltip: "Left to complete it: 1 of 2 approvals (Approved by
+    /// Priya Shah); Resolve 1 comment", "Done: Build passed (payments-api CI)".
+    var lines: [String] {
+        let blocking = items.filter { $0.isRequired && !$0.isDone }
+        let optional = items.filter { !$0.isRequired && !$0.isDone }
+        let done = items.filter(\.isDone)
+        var lines = [blocking.isEmpty
+            ? "Nothing left to complete it" + (isCurrent ? "" : ", as last read")
+            : "Left to complete it: " + blocking.map(\.described).joined(separator: "; ")]
+        if !optional.isEmpty { lines.append("Not required: " + optional.map(\.described).joined(separator: "; ")) }
+        if !done.isEmpty { lines.append("Done: " + done.map(\.described).joined(separator: "; ")) }
+        if !isCurrent { lines.append("It changed since its policies were read: they're read again at the next refresh") }
+        return lines
+    }
+}

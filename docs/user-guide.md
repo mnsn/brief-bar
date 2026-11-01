@@ -283,11 +283,28 @@ Apple Intelligence sums up the newest of each.
 | **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on). And comments you've seen that still wait on you |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
 | **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
-| **Ready to Complete** | Your pull request is approved and every required policy passes (or it completes automatically) |
+| **Ready to Complete** | Your pull request is approved, every person it requires as a reviewer approved, and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
 | **Waiting** | Your pull requests waiting for reviewers, a build or a requirement, and reviews you're waiting on the author for |
 | **Done** | Completed or abandoned in the last day, and while the pipelines that run after it merged are still going or wait for an approval |
 | **Idle** | Drafts, pull requests without activity for two weeks, and reviews you've approved or declined |
+
+**What's left.** Under each of your open pull requests, Idle's too, a line says what Azure DevOps still
+requires before you can complete it, from its blocking policies, its reviewers' votes and its merge, the
+most pressing first: ✋ what you have to do, such as **Resolve 2 comments**, **Link a work item**,
+**Publish the draft** or **Sam wants changes**; ✕ what failed, such as **Build failed** or **Merge
+conflicts**; ↻ builds and checks still running; a clock for what waits on others, such as **1 of 2
+approvals** or **Waiting on Sam**, a reviewer it requires; then ✓ what's done, such as **Build passed**
+or **Approved**. Open comments that no policy requires resolving are said too, without holding it up.
+Point at the row for who approved, which builds ran and where one failed. A person it requires as a
+reviewer, whether a policy or someone added them, holds it up until they approve, as Azure DevOps does:
+until then, it waits for reviewers. A team it requires counts as its policy says.
+
+**Sort** the list with ↑↓ at its top, or the menu beside **Open in Azure DevOps** on the window's page:
+**By Status**, in the groups above, or by when each was created, **Newest First** or **Oldest First**,
+to follow many at once. By date, every open pull request is in one list, each still with its symbol,
+what it waits for and what's left, and its time says how long ago it was created; Idle's, folded below
+it, are in the same order, and Done's stay apart, the latest first. BriefBar keeps your choice.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, or
 **Mark as Seen**, sees it: what's new moves on until something new happens, but a comment that waits on
