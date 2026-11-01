@@ -34,12 +34,16 @@ public enum PullRequestWait {
         case .buildFailed: return author("to fix \(number)'s build")
         case .checkFailed: return author("to fix \(number)'s checks")
         case .conflicts: return author("to resolve \(number)'s conflicts")
+        case .mergeFailed: return author("to fix \(number)'s merge")
         case .buildExpired: return author("to queue \(number)'s build again")
         case .failedAfterMerge: return author("to fix the pipeline that failed after \(number) merged")
         case .readyToComplete: return author("to complete \(number)")
         case .requirementsPending: return author("to meet \(number)'s policies")
         case .waitingForReviewers:
-            let waiting = (record?.pullRequest.reviewers ?? []).filter { !$0.isGroup && !$0.hasDeclined && $0.vote == .none }
+            let reviewers = (record?.pullRequest.reviewers ?? []).filter { !$0.isGroup }
+            // Whoever it requires and hasn't approved holds it up, even one who declined: another's vote can't unblock it.
+            let required = reviewers.filter { $0.isRequired && !$0.vote.isApproval && !$0.vote.wantsChanges }
+            let waiting = required.isEmpty ? reviewers.filter { !$0.hasDeclined && $0.vote == .none } : required
             return ItemStory.Wait(
                 .people, waiting.isEmpty ? "reviewers of \(whose)" : "\(PullRequestStory.names(waiting.map(\.person.name))), to review \(whose)"
             )
@@ -68,6 +72,7 @@ public enum PullRequestWait {
         }
         if pullRequest.isDraft { return author("to publish \(number), a draft") }
         if pullRequest.hasConflicts { return author("to resolve \(number)'s conflicts") }
+        if pullRequest.mergeProblem != nil { return author("to fix \(number)'s merge") }
         let reviewers = pullRequest.reviewers.filter { !$0.hasDeclined }
         let people = reviewers.filter { !$0.isGroup }
         if people.contains(where: \.vote.wantsChanges) { return author("to make the changes asked for on \(number)") }

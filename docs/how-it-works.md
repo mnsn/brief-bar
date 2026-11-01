@@ -1117,9 +1117,12 @@ request is now: until its policies have been read again after a push or a vote, 
 **Your pull requests** are, in order: in **Needs You** if something new needs you, or a comment you've
 seen still waits on you (below); **Idle** if
 they're drafts or have had no activity (comments, pushes, votes) for two weeks; **Failing** for a
-failed build or status check, merge conflicts or an expired build; **Waiting** while a reviewer
+failed build or status check, merge conflicts, a merge Azure DevOps couldn't make otherwise (its
+`mergeStatus` is `failure` or `rejectedByPolicy`) or an expired build; **Waiting** while a reviewer
 wants changes; **Ready to Complete** when every blocking policy passes (or, without reviewer
-policies, someone approved); and **Waiting** otherwise, with what it's waiting for.
+policies, someone approved) and every person it requires as a reviewer approved, whether a policy or
+someone added them, since Azure DevOps doesn't complete it before; and **Waiting** otherwise, with what
+it's waiting for. A team it requires counts as its policy says.
 
 **Pull requests you review** are in **Needs You** for something new, or a reply or mention you've seen
 that still waits on you, **Idle** if they're drafts,
@@ -1128,6 +1131,42 @@ you asked the author for changes.
 
 A pull request that would be **Idle** or **Waiting** is in **Answered** instead while there's
 something you answered yourself that you haven't seen yet (see below).
+
+### What's left before you can complete it
+
+A group says the one thing that matters most; each of your open pull requests also says all of it at
+once (`PRReadiness`), once its details are read, from the same checks and votes as its group:
+
+| Item | Said | Done when |
+|---|---|---|
+| A draft | ✋ **Publish the draft** | It isn't one |
+| A reviewer who wants changes | ✋ **Sam wants changes**, **Sam rejected it**, **Changes requested** | Nobody does |
+| **Minimum number of reviewers** | **1 of 2 approvals**, **Not approved yet**, **Approval policy pending** | The policy passes: **Approved** |
+| No reviewer policy | **Not approved yet** | Someone approved |
+| A reviewer it requires: a person by a policy or by hand; a team as a pending **Required reviewers** policy names it (`requiredReviewerIds`), or any that hasn't approved when the policy doesn't say | **Waiting on Sam**, **Waiting on 2 reviewers** | They approved; for a team, its **Required reviewers** policy passes |
+| Builds | ✕ **Build failed** or **Build expired**, ✋ **Build hasn't run**, ↻ **Build running** | Every build passed |
+| Status checks | ✕ **Check failed**, ↻ **Check running** | Every check passed |
+| **Comment requirements** | ✋ **Resolve 2 comments** | The policy passes: **Comments resolved** |
+| **Work item linking** | ✋ **Link a work item** | **Work item linked** |
+| Any other blocking policy | Its name | It passes |
+| Merge conflicts | ✕ **Merge conflicts** | There are none |
+| A merge Azure DevOps couldn't make otherwise | ✕ **Merge failed**, **Merge rejected** (by a policy) | It merges, usually after another push |
+| Policies you can't read | **Can't read its policies** | Never: nobody can tell |
+
+What's left comes first, as the lists order states: what waits on you, what failed, what's running and
+what waits on others, then what's done. Without a comment policy, open threads (active or pending) are
+said, as **2 open comments**, but don't count against it. It's ready, with nothing left, exactly when it
+would be **Ready to Complete**: everything it requires is done, as the pull request is now. Something new
+that needs you, or two weeks without activity, still puts it in **Needs You** or **Idle** first. After a
+push or a vote, until its policies are read again, it says what was read last, and isn't ready. When
+enough people approved but a **Minimum number of reviewers** policy still isn't met, as when the last one
+to push can't approve, it says **Approval policy pending**: BriefBar doesn't read who the policy counts.
+
+**Sorting.** The list, in the menu bar and on the window's page, is by status unless you sort it by
+date (`PROrder`, in the preferences as `ado.pullRequestOrder`): then every pull request but Done's and
+Idle's is in one list, by when it was created, the newest or the oldest first, and each row's time is
+its age. Idle's, folded below it, are in the same order; Done's, closed already, stay the latest first.
+Counts, the brief, notifications, widgets and lists by state stay by status.
 
 ### What counts as new
 

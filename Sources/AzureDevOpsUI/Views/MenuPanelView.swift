@@ -3,8 +3,11 @@ import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// The menu-bar popover: every pull request grouped by what it needs from you.
+/// The menu-bar popover: every pull request grouped by what it needs from you, or listed by when each was created.
 struct MenuPanelView: View {
+    /// The order to list them in, for pictures; nil for the one you chose.
+    var order: PROrder? = nil
+
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var loginItem: LoginItem
@@ -18,6 +21,8 @@ struct MenuPanelView: View {
     private static let shownGroups: [PRGroup] = [.needsYou, .answered, .failing, .ready, .toReview, .waiting, .done]
     /// What Needs You's Mark as Seen does, in the popover and on the window's page.
     static let markAsSeenHelp = "You've seen these: what's new moves on, and comments that wait on you stay until you reply, they're resolved, or you remove them"
+
+    private var shownOrder: PROrder { order ?? settings.pullRequestOrder }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +54,10 @@ struct MenuPanelView: View {
             }
             Spacer()
             CountChips(counts: store.counts, showToReview: settings.showToReview)
+            PullRequestOrderMenu(order: shownOrder)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -118,23 +127,28 @@ struct MenuPanelView: View {
                 BriefView()
             }
 
-            ForEach(Self.shownGroups, id: \.self) { group in
-                let items = store.items(in: group)
-                if !items.isEmpty {
-                    section(group, items)
-                    if options.compactBriefs, store.showsBrief,
-                       group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
-                        BriefView()
+            if shownOrder.isByDate {
+                byDate
+            } else {
+                ForEach(Self.shownGroups, id: \.self) { group in
+                    let items = store.items(in: group)
+                    if !items.isEmpty {
+                        section(group, items)
+                        if options.compactBriefs, store.showsBrief,
+                           group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
+                            BriefView()
+                        }
                     }
                 }
             }
 
-            let idle = store.items(in: .idle)
+            let idle = store.items(by: shownOrder).filter { $0.group == .idle }
             if !idle.isEmpty {
                 DisclosureGroup(isExpanded: $showIdle) {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true, openSource: source(item), stopWatching: watching(item)) { store.open(item) }
+                            PRRowView(item: item, now: store.now, compact: true, showsCreated: shownOrder.isByDate, openSource: source(item),
+                                      stopWatching: watching(item)) { store.open(item) }
                         }
                     }
                 } label: {
@@ -170,6 +184,40 @@ struct MenuPanelView: View {
             ForEach(items) { item in
                 PullRequestRow(item: item)
             }
+        }
+    }
+
+    /// Every open pull request in one list, by when each was created, each saying where it stands; then Done's.
+    @ViewBuilder
+    private var byDate: some View {
+        let listed = store.dateList(shownOrder)
+        if !listed.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("\(shownOrder.title) (\(listed.count))")
+                        .font(size: 11, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                        .help("By when each was created. Each says where it stands, and yours what's left before you can complete them.")
+                    Spacer()
+                    if listed.contains(where: { $0.group == .needsYou && $0.hasNews }) {
+                        Button("Mark as Seen") { store.clear(.needsYou) }
+                            .buttonStyle(.borderless)
+                            .font(size: 11)
+                            .help(Self.markAsSeenHelp)
+                    }
+                }
+                .padding(.horizontal, 8)
+                ForEach(listed) { item in
+                    PullRequestRow(item: item, showsCreated: true)
+                }
+            }
+            if options.compactBriefs, store.showsBrief {
+                BriefView()
+            }
+        }
+        let done = store.items(in: .done)
+        if !done.isEmpty {
+            section(.done, done)
         }
     }
 
@@ -213,17 +261,51 @@ struct MenuPanelView: View {
 /// and from its menu, the message it was sent in, or takes it off Needs You.
 struct PullRequestRow: View {
     let item: PRSnapshot
+    /// Its time is how long ago it was created, as in a list by date.
+    var showsCreated = false
 
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
         PRRowView(
-            item: item, now: store.now, openSource: item.chatSource == nil ? nil : { store.openSource(item) },
+            item: item, now: store.now, showsCreated: showsCreated,
+            openSource: item.chatSource == nil ? nil : { store.openSource(item) },
             stopWatching: item.isWatched ? { store.stopWatching(item) } : nil,
             dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil
         ) {
             store.open(item)
         }
+    }
+}
+
+/// Lists the pull requests by status, or by when each was created, newest or oldest first: in the list's header.
+struct PullRequestOrderMenu: View {
+    /// The order the list shows.
+    let order: PROrder
+    /// The order's name beside its symbol, on a window's page; the symbol alone in a popover.
+    var showsTitle = false
+
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        Menu {
+            Picker("Sort", selection: $settings.pullRequestOrder) {
+                ForEach(PROrder.allCases, id: \.self) { order in
+                    Text(order.title).tag(order)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            if showsTitle {
+                Label(order.title, systemImage: "arrow.up.arrow.down")
+            } else {
+                Image(systemName: "arrow.up.arrow.down")
+            }
+        }
+        .help("Sort: \(order.title). By Status groups them by what they need from you; Newest First and Oldest First list them by when each was created")
+        .accessibilityLabel("Sort Pull Requests")
+        .accessibilityValue(order.title)
     }
 }
 
