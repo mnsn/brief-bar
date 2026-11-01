@@ -90,6 +90,10 @@ final class AppSettings: ObservableObject {
     @Published var sprintJustMine: Bool {
         didSet { defaults.set(sprintJustMine, forKey: Key.sprintJustMine) }
     }
+    /// How wide you made a work item's details beside the sprint, in points; nil for their usual width.
+    @Published var sprintDetailsWidth: Double? {
+        didSet { defaults.set(sprintDetailsWidth, forKey: Key.sprintDetailsWidth) }
+    }
     /// The pipelines in the Pipelines section, in the order you pinned them.
     @Published var pinnedPipelines: [PipelineRef] {
         didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
@@ -149,6 +153,7 @@ final class AppSettings: ObservableObject {
         chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
+        sprintDetailsWidth = (defaults.object(forKey: Key.sprintDetailsWidth) as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
@@ -460,6 +465,7 @@ enum SettingsKey {
     static let chatLinks = "ado.chatLinks"
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"
+    static let sprintDetailsWidth = "ado.sprintDetailsWidth"
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
     static let copilotOptions = "ado.copilot.options"
