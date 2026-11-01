@@ -237,8 +237,12 @@ the display you clicked: macOS moves an item's own window to whichever menu bar 
 on an item can make another display's menu bar active, as the
 [FAQ in the user guide](user-guide.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
 It's a new window each time: macOS can stop keeping a window on every Space, as when the displays wake
-from sleep, and a popover shown from it would open on a Space you've left. With nothing on, or every
-section hidden, BriefBar shows its own icon, whose menu opens Settings.
+from sleep, and a popover shown from it would open on a Space you've left. While it's open, a click in
+another app closes it, through a global event monitor that notes only where you clicked, so a click on
+the item is left to the item: clicking an item doesn't make BriefBar the active app on macOS 27, and the
+popover's own `.transient` behavior could leave it open over the windows you clicked, as after you'd
+used its ⚙ menu. With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens
+Settings.
 
 Every popover starts with **Overview**, which opens the window at its Overview
 ([below](#the-overview)), and each list's title, such as **Pull Requests ›**, opens the window at that
