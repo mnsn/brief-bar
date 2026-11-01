@@ -284,9 +284,10 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 - Update the README, or [How it works](docs/how-it-works.md), when behavior or settings change.
 - For UI changes, include before and after screenshots from `make screenshots`, never of your own data.
 
-`main` requires a pull request, CI's `Build and test (macos-26)` job to pass on an up-to-date branch,
-and all review conversations to be resolved. A second person's approval isn't required, so a solo
-maintainer can merge their own pull request. Force-pushing to `main` and deleting it are blocked.
+`main` requires a pull request, CI's `Build and test (macos-26)` job and the Windows workflow's
+`Build and test (windows-2025)` job to pass on an up-to-date branch, and all review conversations to be
+resolved. A second person's approval isn't required, so a solo maintainer can merge their own pull request.
+Force-pushing to `main` and deleting it are blocked.
 
 ## Signing
 
@@ -315,8 +316,8 @@ security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN" && rmdir "$(dirname "$BRIE
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` that changes more than docs, on pull requests,
-and when started by hand. A new run cancels the one in progress on the same pull request or branch,
+`.github/workflows/ci.yml` runs on every push to `main` that changes more than docs and BriefBar for Windows, on
+pull requests, and when started by hand. A new run cancels the one in progress on the same pull request or branch,
 `main` included.
 
 - It builds and tests on Apple silicon on macOS 26. It runs the boundary and demo checks and
@@ -327,6 +328,9 @@ and when started by hand. A new run cancels the one in progress on the same pull
 - On `main` only, pushed or started by hand, it also builds and tests the same way on macOS 15, whose
   Xcode 16 SDK has no FoundationModels, and the next job runs the macOS 26 package on macOS 15, with
   the updater check too. Pull requests skip macOS 15, so each waits for one runner instead of three.
+- A pull request that changes only BriefBar for Windows (`windows/` and its workflow) builds nothing for
+  the Mac: `scripts/ci-changes.sh` says what changed, and the build job still runs, on Linux, skipping
+  every step, so its required check passes.
 - Intel builds and checks aren't supported.
 
 `.github/workflows/codeql.yml` scans the Swift code and the workflows with CodeQL on the same pushes
@@ -335,8 +339,8 @@ macOS runner for twenty to thirty minutes. A new scan cancels the one in progres
 under **Security**, so check them before you approve a release.
 
 `.github/workflows/windows.yml` checks BriefBar for Windows' (`windows/`) formatting, runs its tests and builds it
-for x64 and Arm64 on Windows, on pushes to `main` and pull requests that change it, and when started by hand. It
-isn't a required check.
+for x64 and Arm64 on Windows, on pushes to `main` that change it, on every pull request, and when started by hand.
+A pull request that doesn't change it skips the build, which counts as passing, so `main` can require it.
 
 ## Releasing
 

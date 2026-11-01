@@ -30,7 +30,8 @@ scripts\smoke.ps1
 
 Run the tests from `windows/`, whose `global.json` has `dotnet test` use Microsoft.Testing.Platform, as
 xUnit v3 needs. The projects build with the latest recommended analyzers, nullable references and warnings as
-errors; `.github/workflows/windows.yml` checks the formatting, runs the tests and builds for x64 and Arm64.
+errors; `.github/workflows/windows.yml` checks the formatting, runs the tests and builds for x64 and Arm64 for every
+pull request that changes `windows/`, and `main` requires it to pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Alt+F4, each bar keeping its display as displays change, and the
