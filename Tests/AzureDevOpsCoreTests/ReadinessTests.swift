@@ -270,6 +270,13 @@ import BriefBarCore
         ])
         #expect(try snapshot(record(two, checks: checks)).detail == "Approved by Priya Shah · Sam Rivera and Alex Kim are required")
 
+        // It waits on whoever it requires, even one who declined, rather than on someone whose vote can't unblock it.
+        let declined = record(makePR(reviewers: [
+            Reviewer(person: People.priya, vote: .approved), Reviewer(person: People.sam, vote: .none),
+            Reviewer(person: People.alex, vote: .none, isRequired: true, hasDeclined: true),
+        ]), checks: checks)
+        #expect(PullRequestWait.waiting(on: try snapshot(declined), record: declined)?.text == "Alex Kim, to review your !7")
+
         // Once they approved, it's ready.
         let approved = makePR(reviewers: [Reviewer(person: People.priya, vote: .approved), Reviewer(person: People.sam, vote: .approved, isRequired: true)])
         #expect(try snapshot(record(approved, checks: checks)).group == .ready)

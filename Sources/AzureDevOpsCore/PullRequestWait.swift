@@ -39,7 +39,10 @@ public enum PullRequestWait {
         case .readyToComplete: return author("to complete \(number)")
         case .requirementsPending: return author("to meet \(number)'s policies")
         case .waitingForReviewers:
-            let waiting = (record?.pullRequest.reviewers ?? []).filter { !$0.isGroup && !$0.hasDeclined && $0.vote == .none }
+            let reviewers = (record?.pullRequest.reviewers ?? []).filter { !$0.isGroup }
+            // Whoever it requires and hasn't approved holds it up, even one who declined: another's vote can't unblock it.
+            let required = reviewers.filter { $0.isRequired && !$0.vote.isApproval && !$0.vote.wantsChanges }
+            let waiting = required.isEmpty ? reviewers.filter { !$0.hasDeclined && $0.vote == .none } : required
             return ItemStory.Wait(
                 .people, waiting.isEmpty ? "reviewers of \(whose)" : "\(PullRequestStory.names(waiting.map(\.person.name))), to review \(whose)"
             )

@@ -237,14 +237,16 @@ struct ReadinessLine: View {
     var body: some View {
         FlowLayout(spacing: 10, lineSpacing: 2) {
             ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
+                // As wide as it needs, or as the row has room for, its words cut short then: the tooltip says all of it.
                 HStack(spacing: 3) {
                     Image(systemName: item.symbol)
                         .font(size: options.rowDetailSize - 1.5, weight: .semibold)
                         .foregroundStyle(item.color)
                     Text(item.label)
                         .foregroundStyle(item.isDone || isQuiet ? Color.secondary : Color.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                .fixedSize()
             }
         }
         .font(size: options.rowDetailSize)
