@@ -108,7 +108,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To review too if you
   turn that on. A row says why it's there, with the comment, the failed step or who approved; it opens the pull
   request in your browser, at the comment that needs you, and sees it; its menu removes it from Needs you, or stops
-  watching it. Its foot has **Open Azure DevOps**, and an icon beside Settings refreshes now, as the Mac's does.
+  watching it. After you merge one, Done says how the pipelines that run on its merge go: running, waiting for an
+  approval, and then passed or canceled, until you've seen it; one that fails moves it to Failing. Its foot has
+  **Open Azure DevOps**, and an icon beside Settings refreshes now, as the Mac's does.
   Signed out, it offers to sign in, which runs `az login` in a console window; without the Azure CLI,
   it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle after no activity for,
   Show To review in the bar, Follow pipelines after you merge, your organizations (with Add an organization and

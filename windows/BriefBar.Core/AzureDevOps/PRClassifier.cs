@@ -663,8 +663,9 @@ public static class PRClassifier
             Detail = string.IsNullOrEmpty(value: placement.Detail) ? null : placement.Detail,
             Since = placement.Since ?? lastActivity,
         };
-        // What its pipelines do after it merged shows, whether or not you've seen it since.
-        if (merge is not null && merge.Outcome != MergeOutcome.Passed)
+        // What its pipelines do after it merged shows, whether or not you've seen it since. Once they've all finished,
+        // passed or canceled, it's Done until you've seen it.
+        if (merge is not null && merge.Outcome is not (MergeOutcome.Passed or MergeOutcome.Canceled))
         {
             switch (merge.Outcome)
             {
@@ -706,7 +707,11 @@ public static class PRClassifier
         var detail = completed ? "Merged into " + pr.TargetBranch : null;
         if (merge is not null)
         {
-            detail = (detail ?? string.Empty) + (merge.Total == 1 ? " · its pipeline passed" : " · " + Text(number: merge.Total) + " pipelines passed");
+            detail = (detail ?? string.Empty) + merge.Outcome switch
+            {
+                MergeOutcome.Canceled => merge.Total == 1 ? " · its pipeline was canceled" : " · “" + merge.Pipeline + "” was canceled",
+                _ => merge.Total == 1 ? " · its pipeline passed" : " · " + Text(number: merge.Total) + " pipelines passed",
+            };
         }
         return Placed(placement: new PRPlacement(
             Group: PRGroup.Done,

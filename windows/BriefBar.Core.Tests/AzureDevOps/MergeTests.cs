@@ -60,17 +60,41 @@ public sealed class MergeTests
     // How they add up
 
     [Fact]
-    public void WhatFailedComesFirstThenWhatWaitsThenWhatRuns()
+    public void WhatFailedComesFirstThenWhatWaitsThenWhatRunsThenWhatWasCanceled()
     {
         Assert.Null(@object: MergeSummary.Of(pipelines: []));
 
-        var passed = MergeSummary.Of(pipelines:
-        [
-            Status(id: 1, run: PipelineRunStatus.Succeeded), Status(id: 2, run: PipelineRunStatus.PartiallySucceeded), Status(id: 3, run: PipelineRunStatus.Canceled),
-        ]);
+        var passed = MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Succeeded), Status(id: 2, run: PipelineRunStatus.PartiallySucceeded)]);
         Assert.NotNull(@object: passed);
         Assert.Equal(expected: MergeOutcome.Passed, actual: passed.Outcome);
-        Assert.Equal(expected: 3, actual: passed.Total);
+        Assert.Equal(expected: 2, actual: passed.Total);
+
+        // Canceled, though the others passed: not passed. It names the first that was, as a failure is named.
+        var canceled = MergeSummary.Of(pipelines:
+        [
+            Status(id: 1, run: PipelineRunStatus.Succeeded),
+            Status(id: 2, run: PipelineRunStatus.Canceled, finished: T(seconds: -3 * Make.Minute)),
+            Status(id: 3, run: PipelineRunStatus.Canceled),
+        ]);
+        Assert.NotNull(@object: canceled);
+        Assert.Equal(expected: MergeOutcome.Canceled, actual: canceled.Outcome);
+        Assert.Equal(expected: 3, actual: canceled.Total);
+        Assert.Equal(expected: 0, actual: canceled.Running);
+        Assert.Equal(expected: "pipeline 2", actual: canceled.Pipeline);
+        Assert.Equal(expected: 2, actual: canceled.RunId);
+        Assert.Contains(expectedSubstring: "buildId=2", actualString: canceled.RunUrl?.AbsoluteUri, comparisonType: StringComparison.Ordinal);
+        Assert.Equal(expected: T(seconds: -3 * Make.Minute), actual: canceled.Since);
+        Assert.Equal(expected: MergeOutcome.Canceled, actual: MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Canceled)])?.Outcome);
+        // What fails, waits or runs still comes first.
+        Assert.Equal(
+            expected: MergeOutcome.Running,
+            actual: MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Canceled), Status(id: 2, run: PipelineRunStatus.Running)])?.Outcome);
+        Assert.Equal(
+            expected: MergeOutcome.Waiting,
+            actual: MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Canceled), Status(id: 2, run: PipelineRunStatus.Running, stages: [waitingStage])])?.Outcome);
+        Assert.Equal(
+            expected: MergeOutcome.Failed,
+            actual: MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Canceled), Status(id: 2, run: PipelineRunStatus.Failed, failure: unitTests)])?.Outcome);
 
         var running = MergeSummary.Of(pipelines: [Status(id: 1, run: PipelineRunStatus.Succeeded), Status(id: 2, run: PipelineRunStatus.Running)]);
         Assert.NotNull(@object: running);
@@ -143,6 +167,20 @@ public sealed class MergeTests
         Assert.Equal(expected: "Merged into main · 2 pipelines passed", actual: passed.Detail);
         Assert.Equal(expected: "Merged into main · its pipeline passed", actual: Classify(statuses: [Status(id: 1, run: PipelineRunStatus.Succeeded)], seen: T(seconds: -2 * Make.Hour))?.Detail);
         Assert.Null(@object: Classify(statuses: [Status(id: 1, run: PipelineRunStatus.Succeeded)], seen: T(seconds: -Make.Minute)));
+
+        // One that was canceled is Done as a passed one is, until you've seen it, and says so.
+        var canceled = Classify(statuses: [Status(id: 1, run: PipelineRunStatus.Canceled)], seen: T(seconds: -2 * Make.Hour));
+        Assert.NotNull(@object: canceled);
+        Assert.Equal(expected: PRGroup.Done, actual: canceled.Group);
+        Assert.Equal(expected: PRReason.Completed, actual: canceled.Reason);
+        Assert.Equal(expected: "Completed", actual: canceled.Headline);
+        Assert.Equal(expected: "Merged into main · its pipeline was canceled", actual: canceled.Detail);
+        Assert.Equal(expected: pr.WebUrl, actual: canceled.Url);
+        Assert.Equal(expected: MergeOutcome.Canceled, actual: canceled.Merge?.Outcome);
+        Assert.Equal(
+            expected: "Merged into main · “pipeline 2” was canceled",
+            actual: Classify(statuses: [Status(id: 1, run: PipelineRunStatus.Succeeded), Status(id: 2, run: PipelineRunStatus.Canceled)], seen: T(seconds: -2 * Make.Hour))?.Detail);
+        Assert.Null(@object: Classify(statuses: [Status(id: 1, run: PipelineRunStatus.Canceled)], seen: T(seconds: -Make.Minute)));
 
         // Someone else's merge, or one abandoned, says nothing about pipelines.
         var abandoned = pr with { Status = PullRequestStatus.Abandoned };

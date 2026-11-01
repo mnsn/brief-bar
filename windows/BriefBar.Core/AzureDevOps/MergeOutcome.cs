@@ -14,4 +14,7 @@ public enum MergeOutcome
 
     /// They all finished, and none failed.
     Passed,
+
+    /// They all finished, none failed, and one or more were canceled.
+    Canceled,
 }

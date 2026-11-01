@@ -1,8 +1,8 @@
 namespace BriefBar.Core.AzureDevOps;
 
 /// How the pipelines after a merge stand together, for its pull request's row and the brief: the outcome, how many ran
-/// and how many are queued or running, the pipeline that failed or waits, with the stage it waits for or where it failed,
-/// that run and its page, and when it came to this. The Mac's `MergeSummary`.
+/// and how many are queued or running, the pipeline that failed, waits or was canceled, with the stage it waits for or
+/// where it failed, that run and its page, and when it came to this. The Mac's `MergeSummary`.
 public sealed record MergeSummary(
     MergeOutcome Outcome,
     int Total,
@@ -14,8 +14,8 @@ public sealed record MergeSummary(
     Uri? RunUrl = null,
     DateTimeOffset? Since = null)
 {
-    /// How `pipelines` stand together: something failed comes first, then something waiting, then something running.
-    /// Null without any run.
+    /// How `pipelines` stand together: something failed comes first, then something waiting, then something running, then
+    /// something canceled. Null without any run.
     public static MergeSummary? Of(IReadOnlyList<PipelineStatus> pipelines)
     {
         ArgumentNullException.ThrowIfNull(argument: pipelines);
@@ -53,6 +53,16 @@ public sealed record MergeSummary(
         if (running > 0)
         {
             return new MergeSummary(Outcome: MergeOutcome.Running, Total: latest.Count, Running: running, Since: latest.Max(selector: pair => pair.Run.QueuedAt));
+        }
+        if (latest.FirstOrDefault(predicate: pair => pair.Run.Status == PipelineRunStatus.Canceled) is { Run: not null } canceled)
+        {
+            return new MergeSummary(
+                Outcome: MergeOutcome.Canceled,
+                Total: latest.Count,
+                Pipeline: canceled.Status.Pipeline.Name,
+                RunId: canceled.Run.Id,
+                RunUrl: canceled.Run.WebUrl,
+                Since: canceled.Run.FinishedAt);
         }
         return new MergeSummary(Outcome: MergeOutcome.Passed, Total: latest.Count, Since: latest.Max(selector: pair => pair.Run.FinishedAt));
     }
