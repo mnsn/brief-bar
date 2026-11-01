@@ -64,6 +64,8 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     int generation;
     /// Reading failed in a way BriefBar doesn't expect: the section says so until it's turned off.
     bool failed;
+    /// Turned off: what it saved is deleted, and it saves nothing more, even before it has stopped.
+    bool turnedOff;
     SectionSnapshot snapshot = SectionSnapshot.Starting(info: BriefBar.Core.Sections.AzureDevOpsPullRequests);
     (SectionCondition Condition, GroupCounts Counts, PulseProblemKind? Problem)? logged;
 
@@ -163,9 +165,19 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         return stoppingEngine is null ? cancelling : StopEngineAsync(stopping: stoppingEngine, finding: finding, cancel: cancel, cancelling: cancelling);
     }
 
-    /// Forgets which pull requests you've seen, with every account, as turning Azure DevOps off does. Its settings stay,
-    /// with your organizations and the pull requests you watch.
-    public void DeleteSavedData() => settings.ForgetSeen(now: time.GetUtcNow());
+    /// Forgets which pull requests you've seen, with every account, as turning Azure DevOps off does, and saves nothing from
+    /// then on, even if its stop, on the thread pool, hasn't begun. Its settings stay, with your organizations and the pull
+    /// requests you watch.
+    public void DeleteSavedData()
+    {
+        lock (gate)
+        {
+            // A snapshot its engine hands over from now on, or a search for your organizations that ends, changes nothing.
+            turnedOff = true;
+            generation++;
+        }
+        settings.ForgetSeen(now: time.GetUtcNow());
+    }
 
     public SectionSnapshot Snapshot(SectionId section) =>
         section == SectionId.AzureDevOpsPullRequests
@@ -177,7 +189,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         ArgumentNullException.ThrowIfNull(argument: request);
         if (request.Section != SectionId.AzureDevOpsPullRequests || !IsRunning)
         {
-            // Stopped, or not started: it saves nothing, so what it saved stays deleted once it's off.
+            // Stopped, not started, or turned off: it saves nothing, so what it saved stays deleted once it's off.
             return;
         }
         if (request.RowId is null && request.GroupKey is null && PerformForSection(command: request.Command))
@@ -187,6 +199,10 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         Uri? page = null;
         lock (gate)
         {
+            if (engine is null || turnedOff)
+            {
+                return;
+            }
             var now = time.GetUtcNow();
             var item = request.RowId is { } id ? store.Items.FirstOrDefault(predicate: listed => listed.Id == id) : null;
             var group = request.GroupKey is { } key ? AzureDevOpsRows.Group(groupKey: key) : null;
@@ -231,7 +247,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         bool stale;
         lock (gate)
         {
-            stale = engine is not null && (store.State.RefreshedAt is not { } refreshed || time.GetUtcNow() - refreshed > staleAfter);
+            stale = engine is not null && !turnedOff && (store.State.RefreshedAt is not { } refreshed || time.GetUtcNow() - refreshed > staleAfter);
         }
         if (stale)
         {
@@ -248,7 +264,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
         lock (gate)
         {
-            if (engine is null)
+            if (engine is null || turnedOff)
             {
                 return;
             }
@@ -290,13 +306,14 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
     }
 
+    /// Started, and not turned off.
     bool IsRunning
     {
         get
         {
             lock (gate)
             {
-                return engine is not null;
+                return engine is not null && !turnedOff;
             }
         }
     }
@@ -332,7 +349,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         IPulseEngine? running;
         lock (gate)
         {
-            running = engine;
+            running = turnedOff ? null : engine;
         }
         running?.Refresh();
         FindOrganizations(wanted: _ => store.NeedsDiscovery);
@@ -369,7 +386,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         lock (gate)
         {
             var now = time.GetUtcNow();
-            if (engine is null || stopping is null || !wanted(arg: now) || !store.StartDiscovery(now: now))
+            if (engine is null || turnedOff || stopping is null || !wanted(arg: now) || !store.StartDiscovery(now: now))
             {
                 return;
             }
@@ -455,7 +472,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         bool changed;
         lock (gate)
         {
-            if (engine is null)
+            if (engine is null || turnedOff)
             {
                 return;
             }
@@ -482,7 +499,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         IPulseEngine? running;
         lock (gate)
         {
-            running = engine;
+            running = turnedOff ? null : engine;
         }
         if (running is null)
         {
@@ -492,7 +509,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         running.SetLinkedPullRequests(keys: settings.WatchedKeys);
         lock (gate)
         {
-            if (engine != running)
+            if (engine != running || turnedOff)
             {
                 return;
             }

@@ -244,6 +244,40 @@ public sealed class AzureDevOpsSourceTests
         Assert.Equal(expected: SectionCondition.Problem, actual: source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Status.Condition);
     }
 
+    /// Turned off, it deletes what it saved maybe before its stop, on the thread pool, has begun: from then on, nothing it
+    /// does saves, whether its engine hands over a snapshot, a click or the panel closing arrives late, or a setting
+    /// changes.
+    [Fact]
+    public async Task SavesNothingMoreOnceWhatItSavedIsDeleted()
+    {
+        var storage = new MemorySettings();
+        var made = Make(settings: AzureDevOpsDemoData.Settings(storage: storage, now: now));
+        using var source = made.Source;
+        await Loaded(made: made);
+        source.Perform(request: Request(command: AzureDevOpsCommands.Open, rowId: "contoso/4097"));
+        Assert.NotNull(@object: storage.Read(key: AzureDevOpsSettings.SeenKey));
+
+        source.DeleteSavedData();
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.SeenKey));
+        var before = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
+        made.Engine().Publish(snapshot: AzureDevOpsDemoData.Snapshot(now: now));
+        source.PanelVisibilityChanged(section: SectionId.AzureDevOpsPullRequests, isShowing: true);
+        source.Perform(request: Request(command: AzureDevOpsCommands.Open, rowId: "contoso/4102"));
+        source.Perform(request: Request(command: AzureDevOpsCommands.RemoveFromNeedsYou, rowId: "contoso/4102"));
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.MarkAsSeen, GroupKey: "needsYou"));
+        source.PanelVisibilityChanged(section: SectionId.AzureDevOpsPullRequests, isShowing: false);
+        made.Settings.ShowToReview = true;
+        // Time for what a setting's change starts, on the thread pool, to have run.
+        await Task.Delay(millisecondsDelay: 300, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.SeenKey));
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.OtherSeenKey));
+        Assert.Same(expected: before, actual: source.Snapshot(section: SectionId.AzureDevOpsPullRequests));
+        Assert.Single(collection: made.Opened);
+        await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Contains(collection: made.Engine().Calls, filter: call => call == "stop");
+    }
+
     [Fact]
     public void SaysWhatItReads()
     {
