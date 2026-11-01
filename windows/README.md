@@ -310,7 +310,8 @@ SDK ships inside the app.
   because `az.cmd` is a batch file, which runs in `cmd.exe /k`; `gh.exe` isn't one, so `gh auth login` would close as
   soon as it was done. A program whose window should stay open runs in `cmd.exe /k` as a batch file does, with fixed
   words only (`ProcessRunner.CmdArguments`). `cmd.exe` would read a percent sign in its path as part of a command, and
-  Windows allows one in a folder's name: `gh` found there runs directly, in a window that closes once it's done.
+  Windows allows one in a folder's name: `gh.exe` found there runs directly, in a window that closes once it's done,
+  and a `gh.cmd` there can't run at all, which the panel says.
 - **Windows' task dialog needs Common Controls 6**, which only an app's manifest can ask for; without it,
   `TaskDialog` isn't there at all.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found

@@ -254,6 +254,25 @@ public sealed class AuthTests
         Assert.Equal(expected: folder.Combine("gh.cmd"), actual: provider.Program);
     }
 
+    /// A `gh.cmd` in a folder whose name has a percent sign, which `cmd.exe` would read as part of a command, can't run:
+    /// `ProcessRunner` refuses it before anything starts. That's a problem the panel shows, and BriefBar looks again next
+    /// time, rather than one that stops it reading GitHub.
+    [Fact]
+    public async Task ABatchFileThatCmdCantTakeIsAProblemToFix()
+    {
+        const string percent = @"C:\Tools\100%\gh.cmd";
+        var overridden = new Dictionary<string, string?>(dictionary: environment, comparer: StringComparer.OrdinalIgnoreCase)
+        {
+            [GitHubCLILocator.OverrideVariable] = percent,
+        };
+        var provider = new GitHubCLITokenProvider(locator: new GitHubCLILocator(environment: overridden, exists: path => path == percent), runner: new ProcessRunner());
+
+        var error = await Assert.ThrowsAsync<GitHubAuthException>(testCode: () => provider.TokenAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: GitHubAuthError.Failed(message: "Couldn't run the GitHub CLI."), actual: error.Error);
+        Assert.IsType<ArgumentException>(@object: error.InnerException);
+        Assert.Null(@object: provider.Program);
+    }
+
     [Fact]
     public void LooksInThePathInWindowsOrder()
     {
