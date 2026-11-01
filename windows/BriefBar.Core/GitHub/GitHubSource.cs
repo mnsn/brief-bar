@@ -104,9 +104,9 @@ public sealed class GitHubSource : ISectionSource, IDisposable
     }
 
     /// Stops reading, and forgets what it read; returns once a read under way has ended, and what cancelling it set off,
-    /// such as ending its request to GitHub, has finished. That runs on the thread pool, not in the caller: a callback that
-    /// blocks can't freeze Settings as you turn GitHub off, or keep BriefBar from quitting, which waits for its sources
-    /// only so long (`SourceHost`). Stopped already, it returns the last stop, which may not have finished.
+    /// such as ending its request to GitHub, has finished. That runs on the thread pool, not in the caller, so a callback
+    /// that blocks holds up only the stop's own task, which BriefBar waits for only so long as it quits (`SourceHost`).
+    /// Stopped already, it returns the last stop, which may not have finished.
     public Task StopAsync()
     {
         ITimer? timer;
@@ -131,7 +131,8 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         return finished;
     }
 
-    /// The list and the token are only ever in memory, and the refresh choice is a setting: there's nothing to delete.
+    /// The list and the token are only ever in memory, and the refresh choice is a setting: there's nothing to delete. Nor
+    /// is there anything to stop: nothing it does saves anything, before its stop has begun or after.
     public void DeleteSavedData()
     {
     }

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json.Nodes;
 using BriefBar.Core.Demo;
 using BriefBar.Core.GitHub;
 using BriefBar.Core.Presentation;
@@ -356,6 +357,39 @@ public sealed class GitHubSourceTests
         Assert.Equal(expected: 15, actual: storage.Number(key: GitHubSettings.RefreshMinutesKey));
     }
 
+    /// Turning GitHub off deletes what it saved on the UI thread, maybe before its stop has begun, and from then on it must
+    /// save nothing (`ISectionSource.DeleteSavedData`). It never saves anything: what it read, who it read as and the
+    /// GitHub CLI's token stay in memory, and its one setting, Refresh, is changed only in Settings. So nothing it still
+    /// does before it stops writes anything: a read that ends, a click, a sign-in, a panel that opens, or Refresh changing.
+    [Fact]
+    public async Task SavesNothingEvenBeforeItsStopBegins()
+    {
+        var storage = new RecordingSettings();
+        var settings = new GitHubSettings(settings: storage);
+        var made = Make(settings: settings);
+        using var source = made.Source;
+        await Loaded(made: made);
+        source.Perform(request: Request(command: GitHubCommands.Refresh));
+        source.DeleteSavedData();
+
+        var changed = Waiting.NextChange(source: source);
+        await made.Answer(load: GitHubDemoData.Load(now: now));
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+        var row = source.Snapshot(section: SectionId.GitHubPullRequests).Rows[0];
+        source.Perform(request: Request(command: GitHubCommands.Open, rowId: row.Id));
+        source.Perform(request: Request(command: GitHubCommands.OpenGitHub));
+        source.Perform(request: Request(command: GitHubCommands.SignIn));
+        source.PanelWillShow(section: SectionId.GitHubPullRequests);
+        settings.RefreshMinutes = 5;
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: 2, actual: made.Reads);
+        Assert.Equal(expected: 2, actual: made.Opened.Count);
+        Assert.Single(collection: made.Processes.Consoles);
+        // Only the setting itself, as Settings changes it.
+        Assert.Equal(expected: [GitHubSettings.RefreshMinutesKey], actual: storage.Written);
+    }
+
     /// A source with made-up reads that wait to be answered (`Made.Answer`, `Made.Fail`, `Made.Break`), the GitHub CLI at
     /// `cli`, and what it opened and started.
     static Made Make(GitHubSettings? settings = null, string? cli = Cli)
@@ -390,6 +424,38 @@ public sealed class GitHubSourceTests
         public int Disposals => Volatile.Read(location: ref disposals);
 
         public void Dispose() => Interlocked.Increment(location: ref disposals);
+    }
+
+    /// Settings in memory that note the key of every write, in order.
+    sealed class RecordingSettings : ISettingsStorage
+    {
+        readonly Lock gate = new();
+        readonly MemorySettings settings = new();
+        readonly List<string> written = [];
+
+        public IReadOnlyList<string> Written
+        {
+            get
+            {
+                lock (gate)
+                {
+                    return [.. written];
+                }
+            }
+        }
+
+        public JsonNode? Read(string key) => settings.Read(key: key);
+
+        public bool Write(string key, JsonNode? value)
+        {
+            lock (gate)
+            {
+                written.Add(item: key);
+            }
+            return settings.Write(key: key, value: value);
+        }
+
+        public bool Flush() => settings.Flush();
     }
 
     /// A source, and the reads it made: each waits until it's answered, or cancelled.
