@@ -133,6 +133,38 @@ public sealed class ClientTests
         Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
     }
 
+    /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then,
+    /// whichever engine asks next, as for another organization.
+    [Theory]
+    [InlineData(503)]
+    [InlineData(429)]
+    public async Task WaitsAMinuteWhenToldToSlowDownWithoutHowLong(int status)
+    {
+        var server = new StubServer();
+        server.On(path: "/_apis/connectionData", reply: _ => StubReply.Code(status: status));
+        var clock = new TestClock(start: TestTimes.T(seconds: 0));
+        using var client = server.Client(time: clock);
+        var url = ADOEndpoint.ConnectionData(organization: "contoso");
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 60)), actual: error.Error);
+
+        // Until then, nothing is sent.
+        server.On(path: "/_apis/connectionData", json: Me);
+        var sent = server.Requests.Count;
+        clock.Set(time: TestTimes.T(seconds: 5));
+        var held = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(
+            url: ADOEndpoint.ConnectionData(organization: "fabrikam"), read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 55)), actual: held.Error);
+        Assert.Equal(expected: sent, actual: server.Requests.Count);
+
+        // Then it is.
+        clock.Set(time: TestTimes.T(seconds: 60));
+        var me = await client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken);
+        Assert.Equal(expected: "ME", actual: me.AuthenticatedUser.Id);
+        Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
+    }
+
     [Fact]
     public async Task ReportsAuthFailures()
     {

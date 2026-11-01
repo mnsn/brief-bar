@@ -1,7 +1,7 @@
 namespace BriefBar.Core.AzureDevOps;
 
-/// Remembers how long Azure DevOps asked BriefBar to wait (`Retry-After`), so that no request goes out before then. The
-/// Mac's `RateLimitGate`.
+/// Remembers how long Azure DevOps asked BriefBar to wait (`Retry-After`, or a minute when it asked to slow down without
+/// saying), so that no request goes out before then. The Mac's `RateLimitGate`.
 internal sealed class RateLimitGate(TimeProvider time)
 {
     readonly Lock gate = new();

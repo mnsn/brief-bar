@@ -8,10 +8,13 @@ namespace BriefBar.Core.AzureDevOps;
 
 /// Reads from Azure DevOps. It only ever sends GET requests, each with a bearer token from the Azure CLI's sign-in:
 /// BriefBar never changes anything there. No cookies and no cache: every request carries its own token, through the
-/// system's proxy. A rejected token is replaced once; `Retry-After` holds every request back until then. The Mac's
-/// `ADOClient`.
+/// system's proxy. A rejected token is replaced once. Asked to slow down, it sends nothing until the time Azure DevOps
+/// gave (`Retry-After`), or for a minute when it doesn't say. The Mac's `ADOClient`.
 public sealed class ADOClient : IDisposable
 {
+    /// How long to wait when Azure DevOps asks to slow down without saying for how long.
+    internal static readonly TimeSpan RetryAfterUnsaid = TimeSpan.FromSeconds(value: 60);
+
     readonly HttpClient http;
     readonly RateLimitGate gate;
     readonly TimeProvider time;
@@ -67,9 +70,10 @@ public sealed class ADOClient : IDisposable
         {
             using var request = Request(url: url, token: token.Value);
             using var response = await SendAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-            if (RetryAfter(response: response) is { } retryAfter)
+            var retryAfter = RetryAfter(response: response);
+            if (retryAfter is { } asked)
             {
-                gate.Hold(wait: retryAfter);
+                gate.Hold(wait: asked);
             }
             var status = (int)response.StatusCode;
             switch (status)
@@ -93,7 +97,11 @@ public sealed class ADOClient : IDisposable
                 case 404:
                     throw new ADOException(error: ADOError.NotFound);
                 case 429 or 503:
-                    throw new ADOException(error: ADOError.Throttled(retryAfter: RetryAfter(response: response) ?? TimeSpan.FromSeconds(value: 60)));
+                    // Asked to slow down without saying for how long: nothing goes out for a minute, as if it had said so,
+                    // whichever engine asks next.
+                    var slowDown = retryAfter ?? RetryAfterUnsaid;
+                    gate.Hold(wait: slowDown);
+                    throw new ADOException(error: ADOError.Throttled(retryAfter: slowDown));
                 default:
                     throw new ADOException(error: ADOError.Http(status: status));
             }
