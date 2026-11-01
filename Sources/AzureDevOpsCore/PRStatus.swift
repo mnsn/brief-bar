@@ -33,6 +33,8 @@ public enum PRReason: String, Sendable, Codable {
     case mentioned, sentInChat, replied, commented, reviewRequested, newCommits, changesRequested, rejected
     case answered
     case buildFailed, checkFailed, conflicts, buildExpired
+    /// Azure DevOps couldn't merge it, for something other than conflicts: the merge failed, or a policy rejected it.
+    case mergeFailed
     /// A pipeline that ran after it merged failed.
     case failedAfterMerge
     case readyToComplete, autoComplete
@@ -171,6 +173,11 @@ public struct PRSnapshot: Sendable, Codable, Equatable, Identifiable {
     public var merge: MergeSummary? = nil
     /// You watch it, by its link.
     public var isWatched = false
+    /// When the pull request was created.
+    public var createdAt: Date? = nil
+    /// What's left before you can complete it, and what's done: for your own open pull requests, once their details are
+    /// read.
+    public var readiness: PRReadiness? = nil
 
     public var id: String { key.description }
 
@@ -258,6 +265,7 @@ public enum PRClassifier {
             checkState: details.flatMap { checkState($0.checks) }, hasDetails: details != nil
         )
         snapshot.isWatched = record.isWatched
+        snapshot.createdAt = pr.createdAt
         func set(_ group: PRGroup, _ reason: PRReason, _ headline: String, _ detail: String? = nil, since: Date? = nil) {
             snapshot.group = group
             snapshot.reason = reason
@@ -312,6 +320,7 @@ public enum PRClassifier {
         case .active:
             break
         }
+        snapshot.readiness = PRReadiness(record)
 
         var events: [PREvent] = []
         if let details {
@@ -696,7 +705,8 @@ public enum PRClassifier {
         let failedBuilds = blocking.filter { $0.kind == .build && $0.state == .failed }
         let failedChecks = blocking.filter { $0.kind == .status && $0.state == .failed }
         let expired = blocking.filter { $0.kind == .build && $0.state == .expired }
-        let conflicts = pr.hasConflicts ? " · merge conflicts" : ""
+        // What's wrong with its merge too, after a failed build or check: " · merge conflicts", " · merge failed".
+        let conflicts = pr.hasConflicts ? " · merge conflicts" : pr.mergeProblem.map { " · " + $0.headline.lowercased() } ?? ""
         if !failedBuilds.isEmpty {
             // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
             let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
@@ -711,6 +721,11 @@ public enum PRClassifier {
         }
         if pr.hasConflicts {
             set(.failing, .conflicts, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)", nil)
+            return
+        }
+        // Azure DevOps couldn't merge it otherwise, so it can't be completed either, however its policies stand.
+        if let problem = pr.mergeProblem {
+            set(.failing, .mergeFailed, problem.headline, problem.detail, nil)
             return
         }
         if !expired.isEmpty {
@@ -732,8 +747,11 @@ public enum PRClassifier {
         let requirements = blocking.filter { $0.kind == .requirement && $0.state != .passed }
         let hasReviewerPolicy = checks.contains { $0.kind == .reviewers && $0.isBlocking }
         let approvedBy = approvals.isEmpty ? nil : "Approved by " + approvals.map(\.person.name).joined(separator: ", ")
+        // A reviewer it requires holds it up until they approve, whether a policy or someone added them, even one who
+        // declined: Azure DevOps won't complete it before. A team, such as one a policy adds, counts as its policy says.
+        let requiredWaiting = pr.reviewers.filter { $0.isRequired && !$0.isGroup && !$0.vote.isApproval }
 
-        if known, running.isEmpty, notRun.isEmpty, reviewersPending.isEmpty, requirements.isEmpty,
+        if known, running.isEmpty, notRun.isEmpty, reviewersPending.isEmpty, requirements.isEmpty, requiredWaiting.isEmpty,
            hasReviewerPolicy || !approvals.isEmpty {
             set(.ready, pr.autoComplete ? .autoComplete : .readyToComplete,
                 pr.autoComplete ? "Completing automatically" : "Ready to complete",
@@ -749,6 +767,10 @@ public enum PRClassifier {
         } else {
             progress.append("No approvals yet")
         }
+        if !requiredWaiting.isEmpty {
+            let names = PullRequestStory.names(requiredWaiting.map(\.person.name))
+            progress.append(requiredWaiting.count == 1 ? "\(names) is required" : "\(names) are required")
+        }
         if !running.isEmpty {
             progress.append(running.contains { $0.kind == .build } ? "build running" : "checks running")
         }
@@ -757,7 +779,7 @@ public enum PRClassifier {
             set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.first, nil)
         } else if details?.checksKnown == false {
             set(.waiting, .requirementsPending, "Can't read its policies", progress.first, nil)
-        } else if !reviewersPending.isEmpty || (!hasReviewerPolicy && approvals.isEmpty) {
+        } else if !reviewersPending.isEmpty || !requiredWaiting.isEmpty || (!hasReviewerPolicy && approvals.isEmpty) {
             set(.waiting, .waitingForReviewers, "Waiting for reviewers", progress.joined(separator: " · "), nil)
         } else if !running.isEmpty {
             let builds = running.filter { $0.kind == .build }
@@ -819,6 +841,39 @@ public enum PROrdering {
             return lhs.key < rhs.key
         }
     }
+
+    /// In the order you chose: by status, as `sorted`; or by when each was created, whatever its group.
+    public static func sorted(_ snapshots: [PRSnapshot], by order: PROrder) -> [PRSnapshot] {
+        switch order {
+        case .status:
+            return sorted(snapshots)
+        case .newestFirst, .oldestFirst:
+            let newestFirst = order == .newestFirst
+            return snapshots.sorted { lhs, rhs in
+                // One made up without the date it was created comes last, either way.
+                switch (lhs.createdAt, rhs.createdAt) {
+                case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
+                    return newestFirst ? lhsDate > rhsDate : lhsDate < rhsDate
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return newestFirst ? lhs.key > rhs.key : lhs.key < rhs.key
+                }
+            }
+        }
+    }
+}
+
+/// How the pull requests are listed: by what each needs from you, or by when each was created.
+public enum PROrder: String, Sendable, Codable, CaseIterable {
+    /// In their groups, Needs You first, the most recent first in each.
+    case status
+    /// By when each was created, the newest first.
+    case newestFirst
+    /// By when each was created, the ones open longest first.
+    case oldestFirst
+
+    /// Whether the list is by when they were created, rather than in their groups.
+    public var isByDate: Bool { self != .status }
 }
 
 public struct GroupCounts: Sendable, Equatable, Codable {

@@ -57,7 +57,7 @@ each source.
 
 | Source | What you can follow |
 |---|---|
-| **Azure DevOps** | Pull requests needing your reply or review, failures and ready-to-complete work; your team's sprint and work-item details; pinned pipelines and pipelines after your merges. |
+| **Azure DevOps** | Pull requests needing your reply or review, failures and ready-to-complete work, with what's left before each of yours can complete, sorted by status or by date; your team's sprint and work-item details; pinned pipelines and pipelines after your merges. |
 | **GitHub Copilot** | Sessions running, waiting for your answer, ready for plan review, finished or stopped. Works with the Copilot app, or with local CLI sessions when the app isn't installed. |
 | **GitHub** | Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals. |
 | **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |

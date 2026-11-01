@@ -10,6 +10,11 @@ struct PRRowView: View {
     let now: Date
     var compact = false
     var showsActions = false
+    /// Its time is how long ago it was created, as in a list by date, rather than since what it's there for.
+    var showsCreated = false
+    /// What's left before you can complete it, under it, for your own: in lists, folded Idle's too, but not in a widget,
+    /// whose rows keep one height.
+    var showsReadiness = true
     /// Opens the message it was sent in (right-click); nil when it wasn't.
     var openSource: (() -> Void)? = nil
     /// Stops watching it (right-click); nil when you don't watch it.
@@ -39,7 +44,7 @@ struct PRRowView: View {
                 .help(helpText)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(item.title), \(item.headline)")
-                .accessibilityValue(([isNew ? "New" : nil] + [item.repository, item.detail]).compactMap { $0 }.joined(separator: ", "))
+                .accessibilityValue(accessibilityValue)
                 .accessibilityHint("Opens the pull request in Azure DevOps")
                 .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
                 RowSummary(subject: item.key.linkRef)
@@ -94,7 +99,7 @@ struct PRRowView: View {
                             .frame(width: 7, height: 7)
                             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     }
-                    RowTime(Elapsed.short(since: item.since, now: now), subject: item.key.linkRef, isHovered: isHovered)
+                    RowTime(Elapsed.short(since: time, now: now), subject: item.key.linkRef, isHovered: isHovered)
                 }
                 if compact {
                     Text(compactLine)
@@ -117,6 +122,10 @@ struct PRRowView: View {
                             .lineLimit(item.group == .needsYou ? 3 : 2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+                if showsReadiness, let readiness = item.readiness, !readiness.items.isEmpty {
+                    ReadinessLine(readiness: readiness, isQuiet: item.group == .idle)
+                        .padding(.top, 2)
                 }
             }
         }
@@ -152,10 +161,27 @@ struct PRRowView: View {
         return "\(item.headline) · \(detail)"
     }
 
+    /// When it was created, in a list by date; otherwise since what it's there for.
+    private var time: Date? {
+        showsCreated ? item.createdAt ?? item.since : item.since
+    }
+
+    private var accessibilityValue: String {
+        var parts = [isNew ? "New" : nil, item.repository, item.detail].compactMap { $0 }
+        if let readiness = item.readiness, !readiness.items.isEmpty { parts += readiness.lines }
+        // What a list by date is sorted by, which its time says.
+        if showsCreated, let created = item.createdAt { parts.append("Created \(Elapsed.short(since: created, now: now)) ago") }
+        return parts.joined(separator: ", ")
+    }
+
     private var helpText: String {
         var lines = [item.title, "\(item.repository) · \(item.project) · !\(item.key.number) by \(item.author)", item.headline]
         if let detail = item.detail { lines.append(detail) }
-        if !item.approvals.isEmpty && item.group != .ready { lines.append("Approved by " + item.approvals.joined(separator: ", ")) }
+        if !item.approvals.isEmpty && item.group != .ready && item.readiness == nil {
+            lines.append("Approved by " + item.approvals.joined(separator: ", "))
+        }
+        if let readiness = item.readiness, !readiness.items.isEmpty { lines += readiness.lines }
+        if let created = item.createdAt { lines.append("Created \(Elapsed.short(since: created, now: now)) ago") }
         if item.group == .needsYou && !isNew {
             lines.append("You've seen it: it stays here until you reply, the comments are resolved, or you remove it")
         }
@@ -195,6 +221,37 @@ struct RowIcon: View {
                 .font(size: size)
                 .foregroundStyle(item.rowColor)
         }
+    }
+}
+
+/// What's left before you can complete one of your pull requests, the most pressing first, then what's done: "✕ Build
+/// failed  ✋ Resolve 2 comments  ◷ 1 of 2 approvals  ✓ Work item linked", on as many lines as it takes. Its symbols keep
+/// their colors with quieter colors on; what's done reads quieter than what's left.
+struct ReadinessLine: View {
+    let readiness: PRReadiness
+    /// Its words all quiet, as an idle row's title is.
+    var isQuiet = false
+
+    @Environment(\.interfaceOptions) private var options
+
+    var body: some View {
+        FlowLayout(spacing: 10, lineSpacing: 2) {
+            ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
+                // As wide as it needs, or as the row has room for, its words cut short then: the tooltip says all of it.
+                HStack(spacing: 3) {
+                    Image(systemName: item.symbol)
+                        .font(size: options.rowDetailSize - 1.5, weight: .semibold)
+                        .foregroundStyle(item.color)
+                    Text(item.label)
+                        .foregroundStyle(item.isDone || isQuiet ? Color.secondary : Color.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+        .font(size: options.rowDetailSize)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(readiness.lines.joined(separator: ". "))
     }
 }
 

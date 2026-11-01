@@ -103,10 +103,12 @@ public struct Check: Sendable, Codable, Equatable {
     public var buildId: Int?
     /// Where that build failed, and the first error there, once its timeline has been read.
     public var failure: PipelineFailure?
+    /// Lowercased identity IDs of the people and teams a required-reviewers policy requires; empty when it doesn't say.
+    public var reviewerIds: [String]
 
     public init(
         name: String, kind: Kind, state: State, isBlocking: Bool = true, minimumApprovers: Int? = nil, completedAt: Date? = nil,
-        buildId: Int? = nil, failure: PipelineFailure? = nil
+        buildId: Int? = nil, failure: PipelineFailure? = nil, reviewerIds: [String] = []
     ) {
         self.name = name
         self.kind = kind
@@ -116,6 +118,7 @@ public struct Check: Sendable, Codable, Equatable {
         self.completedAt = completedAt
         self.buildId = buildId
         self.failure = failure
+        self.reviewerIds = reviewerIds.map { $0.lowercased() }
     }
 
     /// Nil for a disabled policy.
@@ -177,6 +180,7 @@ public struct Check: Sendable, Codable, Equatable {
         minimumApprovers = settings?.minimumApproverCount
         completedAt = evaluation.completedDate
         buildId = kind == .build ? context?.buildId : nil
+        reviewerIds = kind == .reviewers ? (settings?.requiredReviewerIds ?? []).map { $0.lowercased() } : []
     }
 
     /// A build that failed, and whose run is known: its timeline says where.

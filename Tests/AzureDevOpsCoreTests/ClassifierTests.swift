@@ -61,6 +61,19 @@ import BriefBarCore
         #expect(try check(Fixture.evaluation("Build", status: "rejected", enabled: false)) == nil)
     }
 
+    /// Whom a required-reviewers policy requires, by identity ID, lowercased as reviewers' are; nothing when it doesn't say,
+    /// says it some other way, or isn't about reviewers.
+    @Test func requiredReviewerPoliciesSayWhomTheyRequire() throws {
+        let id = "6B3C1F2A-0000-4000-8000-000000000001"
+        let required = try check(Fixture.evaluation("Required reviewers", status: "rejected",
+                                                    settings: ["requiredReviewerIds": [id], "minimumApproverCount": 1]))
+        #expect(required?.reviewerIds == [id.lowercased()])
+        #expect(required?.minimumApprovers == 1)
+        #expect(try check(Fixture.evaluation("Required reviewers", status: "rejected"))?.reviewerIds == [])
+        #expect(try check(Fixture.evaluation("Required reviewers", status: "rejected", settings: ["requiredReviewerIds": "odd"]))?.reviewerIds == [])
+        #expect(try check(Fixture.evaluation("Build", status: "approved", settings: ["requiredReviewerIds": [id]]))?.reviewerIds == [])
+    }
+
     @Test func separatesConversationsFromActivity() throws {
         let pr = makePR(reviewers: [Reviewer(person: People.sam, vote: .approved)])
         let threads = try Fixture.decode(ADOList<ADOThread>.self, Fixture.list([
@@ -471,6 +484,7 @@ import BriefBarCore
         #expect(try state([failedBuild, Check(name: "api-ci", kind: .build, state: .failed)]).2 == "2 builds failed")
         #expect(try state([Check(name: "scan", kind: .status, state: .failed)]) == (.failing, .checkFailed, "Check failed", "scan"))
         #expect(try state([], merge: "conflicts") == (.failing, .conflicts, "Merge conflicts", "fix-total into main"))
+        #expect(try state([], merge: "failure") == (.failing, .mergeFailed, "Merge failed", "Azure DevOps couldn't merge fix-total into main"))
         #expect(try state([Check(name: "web-ci", kind: .build, state: .expired)]) == (.failing, .buildExpired, "Build expired", "web-ci · queue it again"))
         // An optional build doesn't count.
         let optional = Check(name: "perf", kind: .build, state: .failed, isBlocking: false)

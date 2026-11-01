@@ -2,12 +2,30 @@
 
 ## Unreleased
 
+## 0.10.2 - 2026-11-01
+
 - **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with
   colored tiles and cards instead of a plain form. **Where It Goes** shows the session and the
   repository as rows you click to change; for a session that's already there, **Open in Copilot** and
   **Run with the CLI** sit side by side, each saying what it does and, when it can't be used, why. The
   model and how hard it thinks are under the prompt, which says where it came from, with **Reset** once
   you change it. It follows **Quieter Colors and Surfaces** in Settings › Appearance.
+- **See what's left before you can complete each of your pull requests.** Under each of your open
+  Azure DevOps pull requests, a line checks everything Azure DevOps requires: approvals, such as **1 of
+  2 approvals**, the reviewers it requires, builds, status checks, comments to resolve, a linked work
+  item, merge conflicts and drafts. What's left comes first, with what to do (**Resolve 2 comments**),
+  what failed (**Build failed**) or who it waits on (**Waiting on Sam**), then what's done, with a ✓.
+  Point at the row for who approved and where a build failed.
+- **Sort your pull requests by date.** With ↑↓ at the top of the list, or the menu on the window's
+  page, list them **Newest First** or **Oldest First**, by when each was created, in one list where each
+  still says where it stands, with Idle's folded below it in the same order; or **By Status**, in their
+  groups, as before. BriefBar keeps your choice.
+- **A person marked as a required reviewer now holds a pull request out of Ready to Complete until they
+  approve**, as Azure DevOps does, whether a policy or someone added them. A team still counts as its
+  policy says.
+- **A pull request Azure DevOps can't merge is under Failing.** When its merge fails for a reason other
+  than conflicts, or a policy rejects it, it says **Merge failed** or **Merge rejected**, as conflicts
+  do, rather than being ready to complete.
 
 ## 0.10.1 - 2026-11-01
 

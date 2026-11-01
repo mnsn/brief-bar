@@ -112,6 +112,17 @@ final class PRStore: ObservableObject {
         items.filter { $0.group == group }
     }
 
+    /// The list in the order you chose: `items`, by status; or by when each was created.
+    func items(by order: PROrder) -> [PRSnapshot] {
+        order.isByDate ? PROrdering.sorted(items, by: order) : items
+    }
+
+    /// What a list by date has in one, by when each was created: every pull request but Done's and Idle's, which keep
+    /// their own sections after it.
+    func dateList(_ order: PROrder) -> [PRSnapshot] {
+        items(by: order).filter { $0.group != .done && $0.group != .idle }
+    }
+
     var organizations: [String] {
         mode == .demo ? [DemoData.organization] : settings.organizations
     }
