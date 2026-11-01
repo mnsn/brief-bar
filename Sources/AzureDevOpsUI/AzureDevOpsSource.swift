@@ -599,13 +599,17 @@ package final class AzureDevOpsSource: BriefBarSource {
                     trail.append(next.item.ref)
                 }
             }
-            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; and with Where It
-            // Stands folded to who it waits on.
+            // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; with Where It
+            // Stands folded to who it waits on; and a pull request's page taller, for the README's trail to scroll
+            // down.
+            let variants: [String: Set<String>] = [
+                "sprint-details": ["-medium", "-narrow", "-folded"], "sprint-pull-request-page": ["-medium", "-tall"],
+            ]
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),
-                ("-folded", CGSize(width: 1_000, height: 720)),
+                ("-folded", CGSize(width: 1_000, height: 720)), ("-tall", CGSize(width: 1_000, height: 1_000)),
             ] {
-                guard suffix.isEmpty || name == "sprint-details" || (name == "sprint-pull-request-page" && suffix == "-medium") else { continue }
+                guard suffix.isEmpty || variants[name, default: []].contains(suffix) else { continue }
                 let page = SprintPage()
                     .environmentObject(details)
                     .environment(\.whereItStandsFolded, suffix == "-folded" ? true : nil)
@@ -620,6 +624,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
             let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
                 .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.isRendering, true)
             let options = Form { CopilotSetting() }
                 .formStyle(.grouped)
                 .environment(\.inSettingsForm, true)
