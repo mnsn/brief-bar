@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with
+  colored tiles and cards instead of a plain form. **Where It Goes** shows the session and the
+  repository as rows you click to change; for a session that's already there, **Open in Copilot** and
+  **Run with the CLI** sit side by side, each saying what it does and, when it can't be used, why. The
+  model and how hard it thinks are under the prompt, which says where it came from, with **Reset** once
+  you change it. It follows **Quieter Colors and Surfaces** in Settings › Appearance.
 - **See what's left before you can complete each of your pull requests.** Under each of your open
   Azure DevOps pull requests, a line checks everything Azure DevOps requires: approvals, such as **1 of
   2 approvals**, the reviewers it requires, builds, status checks, comments to resolve, a linked work
@@ -15,6 +21,31 @@
 - **A person marked as a required reviewer now holds a pull request out of Ready to Complete until they
   approve**, as Azure DevOps does, whether a policy or someone added them. A team still counts as its
   policy says.
+
+## 0.10.1 - 2026-11-01
+
+- **A menu-bar item's list opens on the desktop you're on.** Clicking a BriefBar item after you'd
+  switched desktops (Spaces) could open its list out of sight, on a desktop you'd left, and keep doing
+  so until you opened it from the menu bar on another display. Now it opens where you click.
+- **A pipeline canceled after you merge no longer reads as passed.** Once none of the pipelines that ran
+  after your pull request merged failed, waits or still runs, but one was canceled, its row in Done says
+  "its pipeline was canceled", or which one, such as "“shop-web CD” was canceled", and so do its
+  notification, **Pipeline canceled**, its page and the Pipelines page, rather than that they passed.
+- **A pull request you watch is listed once.** Watched by a link that spells its organization's name with
+  other capital letters, such as `Contoso` for `contoso`, it was listed twice, and seeing one left the
+  other new. Azure DevOps ignores the difference, and now so does BriefBar.
+- **New comments come in while many builds run.** With eight or more pull requests whose builds were
+  running, BriefBar kept reading only those, and new comments on your other pull requests waited until
+  the builds finished. Each now takes its turn, the one that's waited longest first.
+- **Pull requests you watch are read again soon after Azure DevOps asks BriefBar to slow down**, rather
+  than an hour later.
+- **Finding your organizations tries again when Azure DevOps asks BriefBar to slow down**, rather than
+  keeping only those it had checked by then, for good.
+- **The brief names who wants changes, or rejected your pull request**, rather than someone who commented
+  after them.
+- **The Copilot app's sessions are read again when the app changes them as BriefBar reads them.** While
+  the app was closed, BriefBar could read its database just as the app opened or wrote it, and list what
+  it read partway. It now notices and reads it again, and says so if the database keeps changing.
 
 ## 0.10.0 - 2026-11-01
 

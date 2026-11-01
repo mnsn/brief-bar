@@ -316,9 +316,9 @@ that needs you again. A pull request without activity for two weeks goes to Idle
 time, only the last three days count as new, and each account you sign in to the Azure CLI with has its
 own. Notifications announce new replies, mentions, comments, review requests, votes, new commits, failed
 builds, pull requests that become ready or complete, and, after you merge one, a pipeline that fails or
-waits for an approval, or all of them passing. Clicking one opens the comment, or the run, it's about.
-The first time, BriefBar finds the organizations where you have pull requests; **Organizations** in its
-settings changes them.
+waits for an approval, all of them passing, or one canceled. Clicking one opens the comment, or the run,
+it's about. The first time, BriefBar finds the organizations where you have pull requests;
+**Organizations** in its settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
 was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
@@ -477,7 +477,7 @@ may run any command: send only what you'd hand to Copilot yourself.
 
 #### Sending to a session that's already there
 
-A task doesn't have to start a new session. The window's **Session** menu lists the ones it can go to
+A task doesn't have to start a new session. The window's session menu, under **Where It Goes**, lists the ones it can go to
 instead: BriefBar's earlier tasks on the work item or pull request, and the task of the work item that
 opened the pull request; then your Copilot app's sessions that go with it, such as the one on the pull
 request's branch, one the app records with it, one you linked to it with [Show Links](#links), or one
@@ -954,7 +954,7 @@ new session asks you to confirm in the app, can't choose the model, and takes on
 GitHub. Copilot in Azure DevOps works in the cloud, without your tools and MCP servers. To go on with a
 task, choose **Continue in Terminal** in its menu: that resumes the same session, in its worktree. To
 hand a task to one of the Copilot app's sessions instead, such as the one that opened the pull request,
-choose it in the window's **Session** menu.
+choose it in the window's session menu, under **Where It Goes**.
 Copilot loads a repository's own skills, MCP servers and hooks only from a folder you trust: when you
 trust a repository's folder in Copilot, its worktrees get the same trust.
 
