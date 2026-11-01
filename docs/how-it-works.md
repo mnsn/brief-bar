@@ -1143,7 +1143,7 @@ once (`PRReadiness`), once its details are read, from the same checks and votes 
 | A reviewer who wants changes | ✋ **Sam wants changes**, **Sam rejected it**, **Changes requested** | Nobody does |
 | **Minimum number of reviewers** | **1 of 2 approvals**, **Not approved yet**, **Approval policy pending** | The policy passes: **Approved** |
 | No reviewer policy | **Not approved yet** | Someone approved |
-| A reviewer it requires, a person by a policy or by hand, a team by its pending policy | **Waiting on Sam**, **Waiting on 2 reviewers** | They approved; for a team, its **Required reviewers** policy passes |
+| A reviewer it requires: a person by a policy or by hand; a team as a pending **Required reviewers** policy names it (`requiredReviewerIds`), or any that hasn't approved when the policy doesn't say | **Waiting on Sam**, **Waiting on 2 reviewers** | They approved; for a team, its **Required reviewers** policy passes |
 | Builds | ✕ **Build failed** or **Build expired**, ✋ **Build hasn't run**, ↻ **Build running** | Every build passed |
 | Status checks | ✕ **Check failed**, ↻ **Check running** | Every check passed |
 | **Comment requirements** | ✋ **Resolve 2 comments** | The policy passes: **Comments resolved** |

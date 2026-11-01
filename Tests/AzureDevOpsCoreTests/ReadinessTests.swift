@@ -154,6 +154,14 @@ import BriefBarCore
         #expect(try approvals([priya, Reviewer(person: team, vote: .none, isRequired: true, isGroup: true)],
                               [Check(name: "Required reviewers", kind: .reviewers, state: .passed)])
             == ["✓ Approved", "✓ Required reviewers"])
+        // Two policies, each requiring a team: only the team whose policy is pending is waited on, whatever the other's
+        // vote. The policy names it by its ID, in any case.
+        let payments = Person(id: "77777777-7777-7777-7777-777777777777", name: "[Shop]\\Payments Team")
+        let teams = [Reviewer(person: team, vote: .none, isRequired: true, isGroup: true),
+                     Reviewer(person: payments, vote: .none, isRequired: true, isGroup: true)]
+        let policies = [Check(name: "Required reviewers", kind: .reviewers, state: .passed, reviewerIds: [team.id]),
+                        Check(name: "Required reviewers", kind: .reviewers, state: .pending, reviewerIds: [payments.id.uppercased()])]
+        #expect(try approvals([priya] + teams, policies) == ["◷ Waiting on Payments Team", "✓ Approved"])
         #expect(try approvals([Reviewer(person: People.sam, vote: .none, isRequired: true), Reviewer(person: People.alex, vote: .none, isRequired: true)])
             == ["◷ Not approved yet", "◷ Waiting on 2 reviewers"])
         // With a reviewer policy but no minimum, approvals aren't required, but they're said once there are some.

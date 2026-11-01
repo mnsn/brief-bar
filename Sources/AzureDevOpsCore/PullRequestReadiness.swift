@@ -141,11 +141,16 @@ extension PRReadiness {
         }
 
         // A reviewer it requires holds it up until they approve, whether a policy or someone added them, even one who
-        // declined. Who wants changes is said already.
+        // declined. Who wants changes is said already. A team is waited on only as a pending policy requires it: one whose
+        // own policy passed isn't, whatever its vote; every one that hasn't approved, when a pending policy doesn't say.
         let requiredPolicies = reviewerPolicies.filter { $0.name == Self.requiredReviewers }
         let pendingPolicies = requiredPolicies.filter { $0.state != .passed }
         let requiredPeople = people.filter { $0.isRequired && !$0.vote.isApproval && !$0.vote.wantsChanges }
-        let requiredGroups = pendingPolicies.isEmpty ? [] : pr.reviewers.filter { $0.isGroup && $0.isRequired && !$0.vote.isApproval }
+        let pendingIds = Set(pendingPolicies.flatMap(\.reviewerIds))
+        let unsaid = pendingPolicies.contains { $0.reviewerIds.isEmpty }
+        let requiredGroups = pr.reviewers.filter { reviewer in
+            reviewer.isGroup && reviewer.isRequired && !reviewer.vote.isApproval && (unsaid || pendingIds.contains(reviewer.person.id))
+        }
         let waitingOn = requiredPeople + requiredGroups
         if !waitingOn.isEmpty || !pendingPolicies.isEmpty {
             let label = switch waitingOn.count {
