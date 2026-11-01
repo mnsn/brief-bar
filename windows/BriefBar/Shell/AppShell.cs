@@ -129,6 +129,9 @@ internal sealed class AppShell : IDisposable
         settings.Show(source: source);
     }
 
+    /// Whether `hwnd` is Settings, or one of its windows, such as a list's drop-down.
+    public bool IsSettings(nint hwnd) => settings is { } window && hwnd != 0 && Foreground.RootOwner(hwnd: hwnd) == window.Hwnd;
+
     /// Turns `entry` on, or keeps it on after an update, with your consent to what it reads now: its sections show on
     /// the bar as it starts. Returns whether your choice is saved, to last after BriefBar quits (`SourceSwitch`).
     public Task<bool> TurnOnAsync(SourceEntry entry) => SwitchAsync(operation: appSources.Switch.TurnOnAsync(entry: entry, runner: sources));

@@ -106,6 +106,9 @@ internal static class User32
     [DllImport("user32.dll")]
     public static extern nint GetWindow(nint hWnd, uint command);
 
+    [DllImport("user32.dll")]
+    public static extern nint GetAncestor(nint hWnd, uint flags);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
     public static extern int GetWindowTextLength(nint hWnd);
 

@@ -14,8 +14,8 @@ using WinRT.Interop;
 namespace BriefBar.Shell;
 
 /// The panel's window, like a menu-bar item's popover on the Mac. It hides, rather than closes, when you press Esc,
-/// click anywhere but BriefBar, or bring another app forward; `PanelController` decides the rest. It shows its own view
-/// model, which goes with it.
+/// click anywhere but a bar or itself, Settings included, or bring another app or Settings forward; `PanelController`
+/// decides the rest. It shows its own view model, which goes with it.
 internal sealed partial class PanelWindow : Window
 {
     readonly PanelController controller;
@@ -152,7 +152,7 @@ internal sealed partial class PanelWindow : Window
             return;
         }
         var next = successor != 0 ? successor : User32.GetForegroundWindow();
-        if (Foreground.IsOurs(hwnd: next))
+        if (controller.KeepsOpenFor(hwnd: next))
         {
             // A press on a bar moves focus there before the press reaches its item, which then decides: the same item
             // closes the panel, another opens its own. So that isn't you going elsewhere. Unless the press closed the
@@ -201,8 +201,8 @@ internal sealed partial class PanelWindow : Window
         WindowGone?.Invoke(sender: this, e: EventArgs.Empty);
     }
 
-    /// Closes it on a click on anything but BriefBar's own windows, even when Windows didn't let it become the active
-    /// window, as with a full-screen game in front.
+    /// Closes it on a click on anything but a bar or itself, even when Windows didn't let it become the active window, as
+    /// with a full-screen game in front.
     void WatchClicks()
     {
         if (mouseHook != 0)
@@ -233,7 +233,7 @@ internal sealed partial class PanelWindow : Window
         {
             // The hook's data starts with the point, in physical pixels.
             var point = Marshal.PtrToStructure<Win32Point>(ptr: data);
-            if (!Foreground.IsOurs(hwnd: User32.WindowFromPoint(point: point)))
+            if (!controller.KeepsOpenFor(hwnd: User32.WindowFromPoint(point: point)))
             {
                 var shown = showing;
                 DispatcherQueue.TryEnqueue(callback: () =>

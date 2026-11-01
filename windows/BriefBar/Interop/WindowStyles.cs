@@ -27,5 +27,8 @@ internal static class WindowStyles
     /// `GetWindow`'s owner.
     public const uint GW_OWNER = 4;
 
+    /// `GetAncestor`'s top-level window, through parents and owners.
+    public const uint GA_ROOTOWNER = 3;
+
     public const uint MONITOR_DEFAULTTONEAREST = 2;
 }

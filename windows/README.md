@@ -38,11 +38,11 @@ pull request that changes `windows/`, and `main` requires it to pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
-Settings and a Copilot setting, Alt+F4, each bar keeping its display as displays change, a second start while
-BriefBar starts opening its Overview, and the space given back within a second of quitting or of another program
-asking BriefBar to close. Run it before you open a pull request, and leave the mouse and keyboard alone while it runs,
-since a click elsewhere closes the panel it's checking; it sends keys only while the panel is in front, and it works
-over a disconnected remote session too, without the keys.
+Settings (a Copilot setting, and closing the panel as it comes to the front), Alt+F4, each bar keeping its display as
+displays change, a second start while BriefBar starts opening its Overview, and the space given back within a second
+of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave the mouse
+and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the
+panel is in front, and it works over a disconnected remote session too, without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -77,8 +77,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   Pressing a row, or Enter, opens what it's about and closes the panel; right-click, the menu key or Shift+F10
   shows everything it can do; its tooltip shows all of it. A group can have a button, as Copilot's Done has Clear,
   or start folded, as Copilot's Idle does. Its foot has the section's own buttons, such as **Open GitHub
-  Copilot**, and **Settings**. It closes when you press Esc, click anywhere else, bring another app to the front,
-  or press its item again.
+  Copilot**, and **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another
+  app or Settings to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
   button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is

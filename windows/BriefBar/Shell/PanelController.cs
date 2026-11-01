@@ -143,6 +143,10 @@ internal sealed class PanelController(AppShell shell)
         shell.OpenSettings(source: source);
     }
 
+    /// Whether going to `hwnd`, with a click or as it comes to the front, leaves the panel open: a bar, which a press on
+    /// its item goes through, or the panel itself, and their menus. Settings is somewhere else, as another app is.
+    public bool KeepsOpenFor(nint hwnd) => Foreground.IsOurs(hwnd: hwnd) && !shell.IsSettings(hwnd: hwnd);
+
     /// Fits it again, once what it shows has changed on screen, as a group folds.
     public void Refit()
     {
