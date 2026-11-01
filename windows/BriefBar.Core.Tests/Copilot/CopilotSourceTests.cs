@@ -169,6 +169,39 @@ public sealed class CopilotSourceTests
         }
     }
 
+    /// Turned off, it deletes what it saved maybe before its stop, on the thread pool, has begun: from then on, nothing it
+    /// does saves, whether its engine hands over a snapshot, a click arrives late, or a setting changes.
+    [Fact]
+    public async Task SavesNothingMoreOnceWhatItSavedIsDeleted()
+    {
+        var settings = new CopilotSettings(settings: new MemorySettings(), now: DateTimeOffset.UtcNow);
+        var (source, engines, _, _) = Make(settings: settings);
+        using (source)
+        {
+            await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var engine = await Engine(engines: engines);
+            var changed = Changes(source: source);
+            engine.Publish(snapshot: Snapshot(Ended(id: "finished", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -2))));
+            await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Clear, GroupKey: "done"));
+            Assert.NotEmpty(collection: settings.Cleared);
+
+            source.DeleteSavedData();
+            Assert.Empty(collection: settings.Cleared);
+            var before = source.Snapshot(section: SectionId.CopilotSessions);
+            engine.Publish(snapshot: Snapshot(Ended(id: "another", at: DateTimeOffset.UtcNow.AddMinutes(minutes: -1))));
+            source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Clear, GroupKey: "done"));
+            settings.ShowContextUsage = true;
+            // Time for what a setting's change starts, on the thread pool, to have run.
+            await Task.Delay(millisecondsDelay: 300, cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Empty(collection: settings.Cleared);
+            Assert.Same(expected: before, actual: source.Snapshot(section: SectionId.CopilotSessions));
+            await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(expected: 1, actual: engine.Stops);
+        }
+    }
+
     /// Its engine failed to start: stopping it still gives back whatever it got to hold.
     [Fact]
     public async Task StopsAnEngineThatFailedToStart()

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
@@ -6,6 +7,9 @@ namespace BriefBar.Core.Tests;
 
 public sealed class SourceSwitchTests
 {
+    /// Long enough for anything that should happen; a test that waits this long has failed.
+    static readonly TimeSpan wait = TimeSpan.FromSeconds(value: 10);
+
     static readonly SourceEntry entry = new(
         Id: SourceId.Copilot,
         Name: "GitHub Copilot",
@@ -90,16 +94,46 @@ public sealed class SourceSwitchTests
 
         Assert.False(condition: turningOff.IsCompleted);
         Assert.Empty(collection: runner.Running);
-        Assert.True(condition: running.Stopped);
         Assert.Equal(expected: 1, actual: running.Deletions);
         Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
         Assert.False(condition: running.Disposed);
         Assert.Equal(expected: 0, actual: changes);
+        // Its stop runs on the thread pool.
+        await running.StopCalled.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
 
         stopped.SetResult();
-        Assert.True(condition: await turningOff.WaitAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(condition: await turningOff.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
         Assert.True(condition: running.Disposed);
         Assert.Equal(expected: 1, actual: changes);
+    }
+
+    /// A stop that blocks before it returns, as one waiting for a program might, can't hold up turning its source off:
+    /// it runs on the thread pool, and what the source saved is deleted at once.
+    [Fact]
+    public async Task TurnsOffWithoutWaitingForAStopThatBlocks()
+    {
+        var settings = new MemorySettings();
+        var made = new List<FakeSource>();
+        var runner = new FakeRunner();
+        var sources = Switch(settings: settings, made: made);
+        await sources.TurnOnAsync(entry: entry, runner: runner);
+        var running = Assert.Single(collection: made);
+        using var hold = new ManualResetEventSlim(initialState: false);
+        running.HoldStop = hold;
+
+        var clock = Stopwatch.StartNew();
+        var turningOff = sources.TurnOffAsync(entry: entry, runner: runner);
+        var returnedAfter = clock.Elapsed;
+        await running.StopCalled.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(condition: returnedAfter < TimeSpan.FromSeconds(value: 1), userMessage: $"It took {returnedAfter} to return.");
+        Assert.False(condition: turningOff.IsCompleted);
+        Assert.Equal(expected: 1, actual: running.Deletions);
+        Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+
+        hold.Set();
+        Assert.True(condition: await turningOff.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(condition: running.Disposed);
     }
 
     /// One that fails to stop has still deleted what it saved, and turning it off says it failed.
@@ -305,7 +339,11 @@ public sealed class SourceSwitchTests
 
         public bool Started { get; private set; }
 
-        public bool Stopped { get; private set; }
+        /// Its stop was called, on whichever thread.
+        public bool Stopped => StopCalled.Task.IsCompleted;
+
+        /// Completes as its stop is called.
+        public TaskCompletionSource StopCalled { get; } = new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int Deletions { get; private set; }
 
@@ -313,6 +351,9 @@ public sealed class SourceSwitchTests
 
         /// What its stop returns: done at once, unless a test says otherwise.
         public Task Stopping { get; set; } = Task.CompletedTask;
+
+        /// When set, its stop waits for it before it returns, as a stop that blocks would.
+        public ManualResetEventSlim? HoldStop { get; set; }
 
         public event EventHandler? Changed
         {
@@ -328,7 +369,8 @@ public sealed class SourceSwitchTests
 
         public Task StopAsync()
         {
-            Stopped = true;
+            StopCalled.TrySetResult();
+            HoldStop?.Wait(timeout: wait);
             return Stopping;
         }
 

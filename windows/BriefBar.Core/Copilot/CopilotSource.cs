@@ -35,6 +35,8 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     ITimer? ticker;
     /// Which start the engine belongs to, so that a stopped engine's late snapshot changes nothing.
     int generation;
+    /// Turned off: what it saved is deleted, and it saves nothing more, even before it has stopped.
+    bool turnedOff;
     SectionSnapshot snapshot = SectionSnapshot.Starting(info: BriefBar.Core.Sections.CopilotSessions);
     SectionCondition? loggedCondition;
 
@@ -108,8 +110,19 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         return stopping is null ? Task.CompletedTask : StopAfterStartAsync(stopping: stopping, started: started);
     }
 
-    /// Forgets the sessions you cleared or viewed, as turning Copilot off does. Its settings stay.
-    public void DeleteSavedData() => settings.ForgetDismissed();
+    /// Forgets the sessions you cleared or viewed, as turning Copilot off does, and saves nothing from then on, even if its
+    /// stop, on the thread pool, hasn't begun. Its settings stay.
+    public void DeleteSavedData()
+    {
+        lock (gate)
+        {
+            // Once any resolve that's saving has finished: nothing after it saves, and a snapshot its engine hands over
+            // from now on changes nothing.
+            turnedOff = true;
+            generation++;
+        }
+        settings.ForgetDismissed();
+    }
 
     public SectionSnapshot Snapshot(SectionId section) =>
         section == SectionId.CopilotSessions
@@ -130,9 +143,9 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         }
         lock (gate)
         {
-            if (engine is null)
+            if (engine is null || turnedOff)
             {
-                // Stopped, or not started: it saves nothing, so what it saved stays deleted once it's off.
+                // Stopped, not started, or turned off: it saves nothing, so what it saved stays deleted once it's off.
                 return;
             }
             var now = time.GetUtcNow();
@@ -194,7 +207,7 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         bool changed;
         lock (gate)
         {
-            if (engine is null || !store.HasLoaded)
+            if (engine is null || turnedOff || !store.HasLoaded)
             {
                 return;
             }
@@ -219,7 +232,7 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     {
         lock (gate)
         {
-            if (engine is null || !store.HasLoaded)
+            if (engine is null || turnedOff || !store.HasLoaded)
             {
                 return;
             }
