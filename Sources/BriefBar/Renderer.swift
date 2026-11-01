@@ -4,8 +4,9 @@ import BriefBarUI
 import SwiftUI
 
 /// `--render <dir>`: draws, in light and dark, the menu bar with each item's list open, the widgets, the window
-/// at each page, each source's other pictures, and the Settings window. Useful for checking layouts without
-/// screen-recording permission, and for the README's pictures. With `--demo`, from made-up data.
+/// at each page, each source's other pictures, the desktop of the README's tour, and the Settings window. Useful for
+/// checking layouts without screen-recording permission, and for the README's pictures. With `--demo`, from made-up
+/// data.
 @MainActor
 enum Renderer {
     static func run(directory: String, demo: Bool) -> Int32 {
@@ -101,10 +102,11 @@ enum Renderer {
             guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { continue }
             let suffix = dark ? "dark" : "light"
 
-            func picture(
-                of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String,
+            /// The list that pressing an item opens, and what each item shows.
+            func openedList(
+                of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil,
                 options: [String: MenuBarItemOptions] = [:]
-            ) {
+            ) -> (items: [MenuBarItemContent], image: NSBitmapImageRep)? {
                 func itemOptions(_ item: SectionLayout.Item) -> MenuBarItemOptions {
                     options[item.id] ?? model.options(forMenuBarItem: item.id)
                 }
@@ -129,8 +131,14 @@ enum Renderer {
                     .environmentObject(model.services)
                     .environmentObject(model.services.loginItem)
                     .background(Color(nsColor: .windowBackgroundColor))
-                if let image = Snapshot.render(view, appearance: appearance) {
-                    write(MenuBarPicture.draw(panel: image, items: contents, pressed: index, appearance: appearance), "\(name)-\(suffix)")
+                return Snapshot.render(view, appearance: appearance).map { (contents, $0) }
+            }
+            func picture(
+                of items: [SectionLayout.Item], pressed index: Int, at section: SectionID? = nil, name: String,
+                options: [String: MenuBarItemOptions] = [:]
+            ) {
+                if let opened = openedList(of: items, pressed: index, at: section, options: options) {
+                    write(MenuBarPicture.draw(panel: opened.image, items: opened.items, pressed: index, appearance: appearance), "\(name)-\(suffix)")
                 }
             }
             for (index, item) in items.enumerated() {
@@ -148,7 +156,7 @@ enum Renderer {
                 picture(of: allItems, pressed: 0, name: "menubar-by-state", options: byState)
             }
 
-            func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
+            func widgetImage(_ sections: [SectionID], size: WidgetSize) -> NSBitmapImageRep? {
                 let content = WidgetContent(id: "render", model: model)
                 content.sections = sections
                 content.options = WidgetOptions(size: size)
@@ -158,7 +166,10 @@ enum Renderer {
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(16)
-                write(Snapshot.render(view, appearance: appearance), "\(name)-\(suffix)")
+                return Snapshot.render(view, appearance: appearance)
+            }
+            func widget(_ sections: [SectionID], size: WidgetSize, name: String) {
+                write(widgetImage(sections, size: size), "\(name)-\(suffix)")
             }
             for size in WidgetSize.allCases {
                 for section in widgetSections {
@@ -182,6 +193,19 @@ enum Renderer {
                 if shownWidgetSections.count > 1 {
                     widget(shownWidgetSections, size: size, name: "widget-all-\(size.rawValue)")
                 }
+            }
+
+            // The desktop the README's tour plays on: every section in one item, its list open by state, beside a widget
+            // with every section; then with the list closed; and bare, for the tour's window to open over.
+            if allItems.count == 1, allItems[0].sections.count > 1, shownWidgetSections.count > 1,
+               let opened = openedList(of: allItems, pressed: 0, options: byState) {
+                let size = NSSize(width: 1_020, height: 728)
+                let widget = widgetImage(shownWidgetSections, size: .medium)
+                write(MenuBarPicture.desktop(size: size, items: opened.items, open: (0, opened.image), widget: widget,
+                                             appearance: appearance), "desktop-\(suffix)")
+                write(MenuBarPicture.desktop(size: size, items: opened.items, widget: widget, appearance: appearance),
+                      "desktop-closed-\(suffix)")
+                write(MenuBarPicture.desktop(size: size, items: opened.items, appearance: appearance), "desktop-bare-\(suffix)")
             }
 
             // A window with one page: no sidebar.
