@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-11-01
 
 - **Choose the model that writes summaries, from free on your Mac to the most capable.** In
   **Settings › General › Summaries**, choose Apple Intelligence, free on your Mac, or a model through
