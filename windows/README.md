@@ -285,7 +285,8 @@ SDK ships inside the app.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found
   with real data, the panel said "All clear" for the seconds between finding your organizations and reading them.
   The Mac shows "Loading" while it refreshes; Windows only the first time, so the bar doesn't say it's starting at
-  every refresh of an empty list.
+  every refresh of an empty list. An organization spelled another way since, as when finding your organizations
+  again spells it as Azure DevOps does, keeps when it was first read (`PulseSnapshot.FirstRead`).
 - **Seconds since 1970 in a double don't hold every tick of today's dates**: saved that way, a time reads back a
   tick or two off, and a seen time that comes back early makes the comment it was set to new again, so what you'd
   taken off Needs you came back after a restart. `SettingsValues` saves times as decimal seconds, to the tick.

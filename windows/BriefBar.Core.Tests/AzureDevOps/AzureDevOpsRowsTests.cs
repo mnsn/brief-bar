@@ -236,6 +236,27 @@ public sealed class AzureDevOpsRowsTests
         Assert.Equal(expected: SectionCondition.Ready, actual: AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now).Status.Condition);
     }
 
+    /// An organization spelled another way since it was first read, as when finding your organizations again spells it as
+    /// Azure DevOps does, has been read: with nothing to list, it's all clear, not loading.
+    [Fact]
+    public void AnOrganizationSpelledAnotherWayHasBeenRead()
+    {
+        var settings = new AzureDevOpsSettings(settings: new MemorySettings(), now: now) { Organizations = ["CONTOSO"], HasDiscovered = true };
+        var store = new PRStore(settings: settings);
+        store.Receive(
+            snapshot: new PulseSnapshot
+            {
+                Organizations = ["CONTOSO"],
+                HasLoaded = true,
+                RefreshedAt = now,
+                FirstLoaded = new Dictionary<string, DateTimeOffset> { [AzureDevOpsDemoData.Organization] = now },
+            },
+            now: now);
+        var snapshot = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        Assert.Null(@object: snapshot.EmptyText);
+        Assert.Equal(expected: new QuietNote(Title: "All clear", Detail: "No open pull requests"), actual: snapshot.Quiet);
+    }
+
     /// Nothing needs counting: "All clear", over what's idle.
     [Fact]
     public void SaysAllClearOverWhatsIdle()

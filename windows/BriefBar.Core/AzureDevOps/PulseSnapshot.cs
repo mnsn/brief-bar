@@ -26,6 +26,24 @@ public sealed record PulseSnapshot
 
     public IReadOnlySet<PRKey> ClosedLinks { get; init; } = new HashSet<PRKey>();
 
+    /// When `organization`'s lists were first read, however its name is spelled: a pull request read under another
+    /// spelling, as before finding your organizations again spelled it as Azure DevOps does, is of the same organization.
+    public DateTimeOffset? FirstRead(string organization)
+    {
+        if (FirstLoaded.TryGetValue(key: organization, value: out var date))
+        {
+            return date;
+        }
+        foreach (var (name, first) in FirstLoaded)
+        {
+            if (string.Equals(a: name, b: organization, comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                return first;
+            }
+        }
+        return null;
+    }
+
     public bool Equals(PulseSnapshot? other) =>
         other is not null
             && Records.Equals(other: other.Records)

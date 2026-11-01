@@ -332,6 +332,32 @@ public sealed class EngineTests
         Assert.Equal(expected: [new PRKey(Organization: Fixture.Org, Number: 1)], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id));
     }
 
+    /// Spelled another way, an organization was first read when it was first read under its old spelling, and nothing's
+    /// kept under that spelling, however a pull request read before spells it.
+    [Fact]
+    public async Task AnOrganizationSpelledAnotherWayWasFirstReadWhenItWasFirstRead()
+    {
+        var clock = new TestClock(start: TestTimes.T(seconds: 0));
+        var server = new StubServer();
+        server.ServeOrganization(mine: [Fixture.PullRequest(id: 1)], completed: [Fixture.PullRequest(id: 3, status: "completed", closed: TestTimes.T(seconds: -10 * Make.Minute))]);
+        // Its completed pull request from before is past the ones the list gives.
+        server.ServeOrganization(organization: "Contoso", mine: [Fixture.PullRequest(id: 1)]);
+        using var client = server.Client(time: clock);
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { }, time: clock);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        Assert.Equal(expected: new KeyValuePair<string, DateTimeOffset>(key: Fixture.Org, value: TestTimes.T(seconds: 0)), actual: Assert.Single(collection: engine.CurrentSnapshot().FirstLoaded));
+
+        clock.Set(time: TestTimes.T(seconds: Make.Minute));
+        engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso"] });
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        var snapshot = engine.CurrentSnapshot();
+        Assert.Equal(expected: new KeyValuePair<string, DateTimeOffset>(key: "Contoso", value: TestTimes.T(seconds: 0)), actual: Assert.Single(collection: snapshot.FirstLoaded));
+        Assert.Equal(expected: ["Contoso/1", "contoso/3"], actual: snapshot.Records.Select(selector: record => record.Id.ToString()).Order(comparer: StringComparer.Ordinal));
+        Assert.Equal(expected: TestTimes.T(seconds: 0), actual: snapshot.FirstRead(organization: Fixture.Org));
+        Assert.Null(@object: snapshot.FirstRead(organization: "fabrikam"));
+    }
+
     [Fact]
     public async Task FetchesDetailsOnABudgetAfterTheFirstLoad()
     {

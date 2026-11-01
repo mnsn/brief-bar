@@ -340,7 +340,7 @@ public sealed class PulseEngine : IPulseEngine
                     {
                         userName = name;
                     }
-                    firstLoaded.TryAdd(key: organization, value: startedAt);
+                    NoteFirstRead(organization: organization, startedAt: startedAt);
                     foreach (var pr in lists.Mine.Where(predicate: pr => pr.Status == PullRequestStatus.Active))
                     {
                         listed[pr.Key] = new PulseListed(PullRequest: pr, Role: PRRole.Author);
@@ -853,6 +853,25 @@ public sealed class PulseEngine : IPulseEngine
         closedLinks.Clear();
         builds.Forget();
         merges.Forget();
+    }
+
+    /// Notes that `organization`'s lists were read at `startedAt`, unless they were read before. Read before under another
+    /// spelling, it's the same organization: it keeps when it was first read then, under the spelling it has now. Under
+    /// the lock.
+    void NoteFirstRead(string organization, DateTimeOffset startedAt)
+    {
+        if (firstLoaded.ContainsKey(key: organization))
+        {
+            return;
+        }
+        var earlier = firstLoaded.Keys.FirstOrDefault(predicate: name => string.Equals(a: name, b: organization, comparisonType: StringComparison.OrdinalIgnoreCase));
+        var first = startedAt;
+        if (earlier is not null)
+        {
+            first = firstLoaded[earlier];
+            firstLoaded.Remove(key: earlier);
+        }
+        firstLoaded[organization] = first;
     }
 
     /// What it knows now. Under the lock.

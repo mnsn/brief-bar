@@ -144,7 +144,7 @@ public static class AzureDevOpsRows
         var state = store.State;
         var reading = !state.HasLoaded
             || !state.Organizations.SequenceEqual(second: organizations, comparer: StringComparer.Ordinal)
-            || organizations.Any(predicate: organization => !state.FirstLoaded.ContainsKey(key: organization));
+            || organizations.Any(predicate: organization => state.FirstRead(organization: organization) is null);
         return reading && store.Problem is null ? PRPlaceholder.Loading : PRPlaceholder.None;
     }
 
