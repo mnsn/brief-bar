@@ -778,6 +778,8 @@ import Testing
         #expect(summaries.hasChosenModel)
         summaries.setOn(true)
         await summaries.lookForCLI()
+        // And the lookup turning it on starts, before the model changes.
+        for _ in 0..<20 { await Task.yield() }
         #expect(looks.count == 0)
         #expect(summaries.hasCLI == nil)
         summaries.setModel("claude-haiku-5.5")
