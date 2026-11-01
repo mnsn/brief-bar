@@ -289,7 +289,9 @@ SDK ships inside the app.
   taken off Needs you came back after a restart. `SettingsValues` saves times as decimal seconds, to the tick.
 - **A new comment shows within a minute to a quarter of an hour**, as on the Mac: the lists are read every minute,
   but each pull request's threads and policies only as often as `RefreshPlanner` says (every minute while a build
-  runs, every 3 minutes, or every 15 for a quiet one), unless the pull request itself changed.
+  runs, every 3 minutes, or every 15 for a quiet one), unless the pull request itself changed. Besides new ones, at
+  most 8 are read a refresh, changed ones first, then those due longest, so pull requests whose builds run can't keep
+  the others waiting.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 

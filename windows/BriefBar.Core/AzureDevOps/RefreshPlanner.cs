@@ -5,8 +5,9 @@ namespace BriefBar.Core.AzureDevOps;
 /// The Mac's `RefreshPlanner`.
 public static class RefreshPlanner
 {
-    /// The pull requests without details, always; then, up to `limit`, or all of them for null, changed ones and the ones
-    /// whose details are oldest past their interval.
+    /// The pull requests without details, always; then, up to `limit`, or all of them for null, changed ones by when
+    /// they were read, and the ones due by when they became due, the earliest first. One becomes due when it was read
+    /// plus its interval, so that pull requests whose builds run can't keep the others waiting.
     public static IReadOnlyList<PRKey> Plan(
         IEnumerable<RefreshPlannerCandidate> candidates,
         IReadOnlyDictionary<PRKey, RefreshPlannerEntry> cache,
@@ -17,32 +18,34 @@ public static class RefreshPlanner
         ArgumentNullException.ThrowIfNull(argument: candidates);
         ArgumentNullException.ThrowIfNull(argument: cache);
         ArgumentNullException.ThrowIfNull(argument: options);
-        var ranked = new List<(int Priority, DateTimeOffset FetchedAt, PRKey Key)>();
+        var missing = new List<PRKey>();
+        var changed = new List<(DateTimeOffset FetchedAt, PRKey Key)>();
+        var due = new List<(DateTimeOffset DueAt, PRKey Key)>();
         foreach (var candidate in candidates)
         {
             if (!cache.TryGetValue(key: candidate.Key, value: out var entry))
             {
-                ranked.Add(item: (0, DateTimeOffset.MinValue, candidate.Key));
+                missing.Add(item: candidate.Key);
                 continue;
             }
             if (entry.Fingerprint != candidate.Fingerprint)
             {
-                ranked.Add(item: (1, entry.FetchedAt, candidate.Key));
+                changed.Add(item: (entry.FetchedAt, candidate.Key));
                 continue;
             }
-            var age = now - entry.FetchedAt;
-            if (entry.IsBusy && age >= options.BusyInterval)
+            var dueAt = entry.FetchedAt + Interval(entry: entry, options: options);
+            if (dueAt <= now)
             {
-                ranked.Add(item: (2, entry.FetchedAt, candidate.Key));
-            }
-            else if (entry.IsQuiet ? age >= options.QuietInterval : age >= options.ActiveInterval)
-            {
-                ranked.Add(item: (3, entry.FetchedAt, candidate.Key));
+                due.Add(item: (dueAt, candidate.Key));
             }
         }
-        var sorted = ranked.OrderBy(keySelector: item => item.Priority).ThenBy(keySelector: item => item.FetchedAt).ThenBy(keySelector: item => item.Key).ToList();
-        var missing = sorted.Where(predicate: item => item.Priority == 0).Select(selector: item => item.Key);
-        var due = sorted.Where(predicate: item => item.Priority > 0).Select(selector: item => item.Key);
-        return [.. missing, .. limit is { } most ? due.Take(count: most) : due];
+        var refreshing = changed.OrderBy(keySelector: item => item.FetchedAt).ThenBy(keySelector: item => item.Key).Select(selector: item => item.Key)
+            .Concat(second: due.OrderBy(keySelector: item => item.DueAt).ThenBy(keySelector: item => item.Key).Select(selector: item => item.Key));
+        return [.. missing.Order(), .. limit is { } most ? refreshing.Take(count: most) : refreshing];
     }
+
+    /// How long a pull request's details last: `BusyInterval` while a build or check runs on it, else `QuietInterval`
+    /// for a quiet one, else `ActiveInterval`.
+    static TimeSpan Interval(RefreshPlannerEntry entry, RefreshPlannerOptions options) =>
+        entry.IsBusy ? options.BusyInterval : entry.IsQuiet ? options.QuietInterval : options.ActiveInterval;
 }
