@@ -147,6 +147,34 @@ public sealed class AzureDevOpsSourceTests
         await changed.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
     }
 
+    /// Stopping doesn't run what a search for your organizations under way registered to stop with: that runs on the
+    /// thread pool, so a slow one can't hold up whoever stops it, as BriefBar quitting. The stop ends once it has run.
+    [Fact]
+    public async Task StoppingDoesntRunTheSearchsCancellationItself()
+    {
+        using var release = new ManualResetEventSlim(initialState: false);
+        var registered = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var heldUp = false;
+        var made = Make(
+            settings: new AzureDevOpsSettings(settings: new MemorySettings(), now: now),
+            find: async cancellationToken =>
+            {
+                // Released only once StopAsync has returned: run by StopAsync itself, it would wait out its limit.
+                cancellationToken.Register(callback: () => Volatile.Write(location: ref heldUp, value: !release.Wait(timeout: wait)));
+                registered.TrySetResult();
+                await Task.Delay(delay: Timeout.InfiniteTimeSpan, cancellationToken: cancellationToken);
+                return new OrganizationsFound(All: [], WithPullRequests: []);
+            });
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await registered.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+
+        var stopped = source.StopAsync();
+        release.Set();
+        await stopped.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.False(condition: Volatile.Read(location: ref heldUp));
+    }
+
     /// Once it's stopped, what its engine still hands over changes nothing, and turning it off forgets what you've seen.
     [Fact]
     public async Task StopsAndForgetsWhatItSaved()

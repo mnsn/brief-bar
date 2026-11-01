@@ -156,9 +156,11 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
         NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
         timer?.Dispose();
-        cancel?.Cancel();
+        // On the thread pool: what a search under way registered to stop with doesn't run here, as it would with Cancel, so
+        // it can't hold up whoever stops this, as BriefBar quitting does.
+        var cancelling = cancel?.CancelAsync() ?? Task.CompletedTask;
         // Outside the lock: the engine may be handing over a snapshot, which takes it.
-        return stoppingEngine is null ? Task.CompletedTask : StopEngineAsync(stopping: stoppingEngine, finding: finding, cancel: cancel);
+        return stoppingEngine is null ? cancelling : StopEngineAsync(stopping: stoppingEngine, finding: finding, cancel: cancel, cancelling: cancelling);
     }
 
     /// Forgets which pull requests you've seen, with every account, as turning Azure DevOps off does. Its settings stay,
@@ -268,8 +270,9 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         continuationOptions: TaskContinuationOptions.ExecuteSynchronously,
         scheduler: TaskScheduler.Default);
 
-    /// Stops `stopping`, and waits for a search for your organizations under way to end, which `cancel` asks.
-    static async Task StopEngineAsync(IPulseEngine stopping, Task? finding, CancellationTokenSource? cancel)
+    /// Stops `stopping`, and waits for a search for your organizations under way to end, which `cancel` asks, and for what
+    /// it registered to stop with (`cancelling`): `cancel` isn't disposed while that runs.
+    static async Task StopEngineAsync(IPulseEngine stopping, Task? finding, CancellationTokenSource? cancel, Task cancelling)
     {
         try
         {
@@ -282,6 +285,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
         finally
         {
+            await cancelling.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
             cancel?.Dispose();
         }
     }
