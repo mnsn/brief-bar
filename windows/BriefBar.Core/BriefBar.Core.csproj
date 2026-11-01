@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- BriefBar's logic, free of UI and of Windows' APIs, as Sources/*Core is on the Mac: what each source shows and why,
+       and what the bar and its panels say about it. Portable, so its tests run anywhere. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>BriefBar.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="BriefBar.Core.Tests" />
+  </ItemGroup>
+</Project>

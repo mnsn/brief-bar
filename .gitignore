@@ -24,3 +24,9 @@ private-key*
 .vscode/
 .idea/
 .DS_Store
+
+# The Windows app's build output, and Visual Studio's state
+windows/**/bin/
+windows/**/obj/
+windows/.vs/
+windows/**/*.user
