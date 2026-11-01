@@ -178,9 +178,9 @@ public sealed class PanelViewModel : Observable
         ShowBrief(lines: PanelLists.Brief(snapshots: [snapshot]), palette: palette);
         ShowQuiet(quiet: snapshot.Quiet);
         ShowGroups(groups: PanelLists.ForSection(snapshot: snapshot), section: section, palette: palette, now: now);
-        EmptyText = snapshot.Status.Condition == SectionCondition.Starting
-            ? "Reading…"
-            : snapshot.EmptyText ?? "Nothing here right now.";
+        // A section may say what it's doing as it starts, such as finding your organizations.
+        EmptyText = snapshot.EmptyText
+            ?? (snapshot.Status.Condition == SectionCondition.Starting ? "Reading…" : "Nothing here right now.");
         // A paused section's review is on its banner.
         IReadOnlyList<PanelCommand> commands = snapshot.Status.Condition == SectionCondition.Paused ? [] : snapshot.Commands;
         if (!commands.SequenceEqual(second: Commands))
@@ -203,9 +203,12 @@ public sealed class PanelViewModel : Observable
         };
         ProblemMessage = HasProblem ? StatusWords.Of(status: snapshot!.Status, now: now) : string.Empty;
         ProblemSection = HasProblem ? snapshot!.Info.Id : null;
-        ProblemCommand = condition == SectionCondition.Paused
-            ? snapshot!.Commands.FirstOrDefault(predicate: command => command.Key == AppCommands.ReviewSource)
-            : null;
+        ProblemCommand = condition switch
+        {
+            SectionCondition.Paused => snapshot!.Commands.FirstOrDefault(predicate: command => command.Key == AppCommands.ReviewSource),
+            SectionCondition.Problem or SectionCondition.Stale => snapshot!.ProblemCommand,
+            _ => null,
+        };
         HasProblemCommand = ProblemCommand is not null;
         ProblemCommandTitle = ProblemCommand?.Title ?? string.Empty;
     }

@@ -34,6 +34,20 @@ public ref struct LogLine
     public void AppendFormatted<TEnum>(TEnum value)
         where TEnum : struct, Enum => builder.AppendFormatted(value: value);
 
+    /// An enum that may be missing, such as a problem's kind: "none" without one.
+    public void AppendFormatted<TEnum>(TEnum? value)
+        where TEnum : struct, Enum
+    {
+        if (value is { } known)
+        {
+            builder.AppendFormatted(value: known);
+        }
+        else
+        {
+            builder.AppendLiteral(value: "none");
+        }
+    }
+
     public void AppendFormatted(ILoggable? value) => builder.AppendLiteral(value: value?.ToString() ?? "none");
 
     internal string ToStringAndClear() => builder.ToStringAndClear();

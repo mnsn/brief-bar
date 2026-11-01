@@ -1,3 +1,4 @@
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Presentation;
 
@@ -8,7 +9,12 @@ public sealed class SourceCatalogTests
     [Fact]
     public void ListsWhatWindowsHasWithWhatItSaysItReads()
     {
-        var copilot = Assert.Single(collection: SourceCatalog.OnWindows);
+        Assert.Equal(expected: [SourceId.AzureDevOps, SourceId.Copilot], actual: SourceCatalog.OnWindows.Select(selector: entry => entry.Id));
+        var azureDevOps = SourceCatalog.OnWindows[0];
+        Assert.Equal(expected: "Azure DevOps", actual: azureDevOps.Name);
+        Assert.Same(expected: AzureDevOpsSource.Description, actual: azureDevOps.Description);
+        Assert.Equal(expected: [Sections.AzureDevOpsPullRequests], actual: azureDevOps.Sections);
+        var copilot = SourceCatalog.OnWindows[1];
         Assert.Equal(expected: SourceId.Copilot, actual: copilot.Id);
         Assert.Equal(expected: "GitHub Copilot", actual: copilot.Name);
         Assert.Same(expected: CopilotSource.Description, actual: copilot.Description);
@@ -18,7 +24,7 @@ public sealed class SourceCatalogTests
     [Fact]
     public void NamesTheSourcesStillToCome()
     {
-        Assert.Equal(expected: "Azure DevOps, GitHub, and Microsoft Teams", actual: SourceCatalog.StillToCome);
+        Assert.Equal(expected: "GitHub and Microsoft Teams", actual: SourceCatalog.StillToCome);
     }
 
     [Fact]

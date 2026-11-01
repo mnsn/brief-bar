@@ -2,9 +2,10 @@
 
 In development. BriefBar for Windows gives Windows what BriefBar's menu bar gives the Mac: a bar docked to the
 top of each display, with each source's counts, and a panel under each of its items that lists what needs you.
-It's a WinUI 3 app on .NET 10. Its first source, **GitHub Copilot sessions**, is ported; the others come one at a
-time ([What's next](#whats-next)). Every source is off until you turn it on in Settings, and reads nothing until
-then. Started with `--demo`, it shows **made-up data** for every source, and reads nothing of yours.
+It's a WinUI 3 app on .NET 10. Its first two sources, **GitHub Copilot sessions** and **Azure DevOps pull
+requests**, are ported; the others come one at a time ([What's next](#whats-next)). Every source is off until you
+turn it on in Settings, and reads nothing until then. Started with `--demo`, it shows **made-up data** for every
+source, and reads nothing of yours.
 
 ## Build and run
 
@@ -38,11 +39,12 @@ pull request that changes `windows/`, and `main` requires it to pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
-Settings (a Copilot setting, and closing the panel as it comes to the front), Alt+F4, each bar keeping its display as
-displays change, a second start while BriefBar starts opening its Overview, and the space given back within a second
-of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave the mouse
-and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the
-panel is in front, and it works over a disconnected remote session too, without the keys.
+Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps' panel (its groups, Idle
+folded, Mark as seen, Answered seen once the panel closes) and its page in Settings, Alt+F4, each bar keeping its
+display as displays change, a second start while BriefBar starts opening its Overview, and the space given back within
+a second of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave
+the mouse and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only
+while the panel is in front, and it works over a disconnected remote session too, without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -96,6 +98,18 @@ section names and the like, so nothing you see can reach it: a line with a strin
   where you answer it; its menu opens the session itself, and the one that started it. Its settings are the Mac's:
   Keep finished sessions for, Move viewed sessions to idle, Show relayed questions once, Nest sessions under their
   parents (a ↳ tag names a parent elsewhere) and Show context usage (a ring and a percentage, orange from 70%).
+- **Azure DevOps pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#azure-devops)): yours and the
+  ones you review, in the organizations you choose, which it finds the first time, and the ones you watch by their
+  links, read with the Azure CLI's sign-in (`az account get-access-token`, its token kept in memory only) and GET
+  requests only, every minute. Its groups are the Mac's: Needs you (with **Mark as seen** while something there is
+  new), Answered (until you've seen it in the panel), Failing, Ready to complete, To review, Waiting, Done (with
+  **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To review too if you
+  turn that on. A row says why it's there, with the comment, the failed step or who approved; it opens the pull
+  request in your browser, at the comment that needs you, and sees it; its menu removes it from Needs you, or stops
+  watching it. Signed out, it offers to sign in, which runs `az login` in a console window; without the Azure CLI,
+  it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle after no activity for,
+  Show To review in the bar, Follow pipelines after you merge, your organizations (with Add an organization and
+  Find my organizations again), and the pull requests you watch (with Watch a pull request, by its link).
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
@@ -129,20 +143,24 @@ Where Windows differs, these were decided:
 - **Copilot sessions open in the GitHub Copilot app**, as on the Mac when it's installed. On a PC with only the
   Copilot CLI, rows list but don't open until BriefBar can start programs (`ProcessRunner`), where the Mac opens the
   CLI in Terminal.
+- **Azure DevOps signs in with `az login` in a console window**, which stays open so you can read what it said, where
+  the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac that reads every app's
+  notifications, which comes with Teams.
 
 ## The code
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), and reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`) |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), and the one place that starts programs (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
-| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's through its real store |
+| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's and Azure DevOps' through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
 | `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
-| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), and the log file |
+| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), opening Azure DevOps' pages (`AzureDevOpsShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
 | `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data |
 
@@ -239,6 +257,24 @@ SDK ships inside the app.
 - **A press through UI Automation doesn't let BriefBar bring another app to the front**, as a click does: check
   what opens from a row with the mouse.
 - **Don't name a namespace `…Windows`**: it hides WinRT's `Windows.*` namespaces.
+- **On Windows, `az` is a batch file, `az.cmd`**, and Windows runs a batch file in `cmd.exe`, which reads its whole
+  command line as commands, quotes or not. So nothing of yours reaches it: `ProcessRunner` gives a batch file fixed
+  words only (letters, digits and `-._:/=`, checked to the end of the text, since a regex's `$` lets a final line
+  break through), runs it as `cmd.exe /d /v:off /s /c "<path> <words>"`, without AutoRun commands or delayed
+  expansion, refuses a path with quotes, `%` or line breaks, and treats `az.cmd.` as the batch file Windows would run.
+  `az.cmd` runs Python, which can hold its output open after `az` ends: the runner waits half a second for the rest,
+  then ends what's left, and a timeout ends the whole tree.
+- **A console program started by an app without a console gets a window of its own**, in Windows' default
+  terminal, such as Windows Terminal: that's how `az login` opens.
+- **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found
+  with real data, the panel said "All clear" for the seconds between finding your organizations and reading them.
+  The Mac shows "Loading" while it refreshes; Windows only the first time, so the bar doesn't say it's starting at
+  every refresh of an empty list.
+- **A new comment shows within a minute to a quarter of an hour**, as on the Mac: the lists are read every minute,
+  but each pull request's threads and policies only as often as `RefreshPlanner` says (every minute while a build
+  runs, every 3 minutes, or every 15 for a quiet one), unless the pull request itself changed.
+- **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
+  it to see every group.
 
 ## What's next
 
@@ -246,12 +282,13 @@ Port the sources first, one at a time, each checked with real data ([below](#che
 this order:
 
 1. ~~**Copilot sessions**~~, done, with Settings and each source's consent. Not ported yet, for later layers:
-   opening a session on a PC without the Copilot app (the Mac opens the Copilot CLI in Terminal; it comes with
-   `ProcessRunner`, and until then such rows list but don't open), Show Links, a work item's details and
-   summaries, tasks sent to the Copilot CLI, and `--mcp`.
-2. **Azure DevOps pull requests**: sign in with
-   `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json`, then only GET
-   requests. On Windows, `az` is `az.cmd` on the `PATH`. Port `Sources/AzureDevOpsCore`.
+   opening a session on a PC without the Copilot app (the Mac opens the Copilot CLI in Terminal; until then such
+   rows list but don't open), Show Links, a work item's details and summaries, tasks sent to the Copilot CLI, and
+   `--mcp`.
+2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request.
+   Not ported yet, for later layers: the Sprint and Pipelines sections, a pull request's page with its story, the
+   brief's summaries, notifications, pull requests sent in chats (with Teams, as it reads notifications), Show
+   Links, sending work to Copilot, and `--mcp`.
 3. **GitHub pull requests**: `gh auth token --hostname github.com`, then its one GraphQL query. Port
    `Sources/GitHubCore`.
 4. **Teams chats**, the hardest. On the Mac, BriefBar reads Teams' notifications from Notification Center's
@@ -284,8 +321,12 @@ The repository is public, and chats, pull requests and sessions are private, oft
 
 - Check each source against its own app or site: Azure DevOps, GitHub, the Copilot app and Teams. Compare
   every count, state and row, and what opens from it. The log says each source's counts by state as it changes
-  (`copilot: Ready, 36 sessions…`), without names. The screen tool can't read the Copilot app's window, so ask
-  whoever's at the PC to compare it; what a row opened is in the app's own `lastRoutePath`, in `data.db`.
+  (`copilot: Ready, 36 sessions…`, `azureDevOps: Ready, problem none, organizations 1: 4 need you…`), without names.
+  The screen tool can't read the Copilot app's window, so ask whoever's at the PC to compare it; what a row opened
+  is in the app's own `lastRoutePath`, in `data.db`. For Azure DevOps, a throwaway program that reads the same
+  organizations through `BriefBar.Core` and, separately, with its own GET requests (the Azure CLI's token) can compare
+  every row's group with Azure DevOps' own facts, and every row's link with its repository's web URL, printing counts
+  only; keep it out of the repository.
 - Report what you checked in counts and states, never names, titles, messages, IDs, organizations or projects.
   Screenshots are for the made-up data only.
 - Never commit logs, databases or fixtures copied from a real machine. When real data shows a case the tests

@@ -69,6 +69,6 @@ public sealed class TimestampTests
     public void RoundTripsTheCLIsFormat()
     {
         var date = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds: 1_792_342_807_250);
-        Assert.Equal(expected: date, actual: Timestamp.Parse(text: Copilot.TestTimes.Iso(date: date)));
+        Assert.Equal(expected: date, actual: Timestamp.Parse(text: TestTimes.Iso(date: date)));
     }
 }

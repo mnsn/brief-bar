@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 using BriefBar.Core.Settings;
-using static BriefBar.Core.Tests.Copilot.TestTimes;
+using static BriefBar.Core.Tests.TestTimes;
 
 namespace BriefBar.Core.Tests.Settings;
 

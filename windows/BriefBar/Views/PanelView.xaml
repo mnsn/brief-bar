@@ -505,7 +505,7 @@
                                     <views:FluentIcon
                                         VerticalAlignment="Center"
                                         Fill="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                        Icon="Open"
+                                        Icon="{x:Bind Icon}"
                                         Size="14" />
                                     <TextBlock
                                         VerticalAlignment="Center"

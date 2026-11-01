@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using BriefBar.Core.Copilot;
-using static BriefBar.Core.Tests.Copilot.TestTimes;
+using static BriefBar.Core.Tests.TestTimes;
 
 namespace BriefBar.Core.Tests.Copilot;
 

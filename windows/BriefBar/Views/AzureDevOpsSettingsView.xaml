@@ -1,0 +1,258 @@
+<UserControl
+    x:Class="BriefBar.Views.AzureDevOpsSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:viewmodels="using:BriefBar.ViewModels">
+
+    <!-- Azure DevOps' own settings, as the Mac's gear menu and Settings page offer them, each a card: how it reads, then
+         your organizations, then the pull requests you watch. -->
+    <StackPanel Spacing="4">
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Refresh" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="How often BriefBar reads your pull requests. It also reads them as you open the list, if it last did more than 30 seconds before." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Refresh"
+                ItemsSource="{x:Bind ViewModel.RefreshTitles}"
+                SelectedIndex="{x:Bind ViewModel.RefreshIndex, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Keep done for" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Completed and abandoned pull requests stay under Done this long, unless you clear them." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Keep done for"
+                ItemsSource="{x:Bind ViewModel.KeepDoneTitles}"
+                SelectedIndex="{x:Bind ViewModel.KeepDoneIndex, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Idle after no activity for" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Pull requests without activity this long go to Idle, as drafts and the reviews you've approved do." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Idle after no activity for"
+                ItemsSource="{x:Bind ViewModel.IdleTitles}"
+                SelectedIndex="{x:Bind ViewModel.IdleIndex, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Show To review in the bar" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Count the reviews you've been asked for and have seen, under To review, with what needs you in the bar and the Overview. Off lists them under To review only." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Show To review in the bar"
+                IsOn="{x:Bind ViewModel.ShowToReview, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Follow pipelines after you merge" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Once your pull request completes, follow the pipelines that run on its merge, and the ones they start, while Done keeps it: its row says how they're going, and moves to Failing if one fails." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Follow pipelines after you merge"
+                IsOn="{x:Bind ViewModel.FollowMerges, Mode=TwoWay}" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="Organizations" />
+        <TextBlock
+            Margin="1,0,0,8"
+            Style="{StaticResource SettingsCardDescriptionStyle}"
+            Text="The organizations whose pull requests BriefBar reads. The first time, it finds the ones where you have pull requests." />
+        <TextBlock
+            Margin="1,0,0,8"
+            Style="{StaticResource SettingsCardDescriptionStyle}"
+            Text="None yet. Add one below, or find yours."
+            Visibility="{x:Bind ViewModel.HasNoOrganizations, Mode=OneWay}" />
+        <ItemsControl IsTabStop="False" ItemsSource="{x:Bind ViewModel.Organizations}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="viewmodels:OrganizationViewModel">
+                    <Grid MinHeight="52" Style="{StaticResource SettingsCardStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Style="{StaticResource SettingsCardTitleStyle}"
+                            Text="{x:Bind Name}" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            MinWidth="0"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="{x:Bind Name}"
+                            IsOn="{x:Bind IsWatched, Mode=TwoWay}" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <StackPanel Grid.ColumnSpan="2">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Add an organization" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Its name, or a link from it, such as dev.azure.com/contoso or contoso.visualstudio.com." />
+            </StackPanel>
+            <TextBox
+                x:Name="OrganizationBox"
+                Grid.Row="1"
+                Margin="0,8,0,0"
+                AutomationProperties.Name="Organization to add"
+                KeyDown="OnOrganizationKeyDown"
+                PlaceholderText="contoso"
+                Text="{x:Bind ViewModel.OrganizationInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Row="1"
+                Grid.Column="1"
+                Margin="0,8,0,0"
+                VerticalAlignment="Top"
+                Click="OnAddOrganizationClick"
+                Content="Add" />
+            <TextBlock
+                Grid.Row="2"
+                Grid.ColumnSpan="2"
+                Margin="0,6,0,0"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.OrganizationError, Mode=OneWay}"
+                TextWrapping="Wrap"
+                Visibility="{x:Bind ViewModel.HasOrganizationError, Mode=OneWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Find my organizations again" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Looks for the organizations you belong to, and watches the ones where you have pull requests, keeping the ones you added." />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Click="OnFindOrganizationsClick"
+                Content="Find again" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="Pull requests you watch" />
+        <TextBlock
+            Margin="1,0,0,8"
+            Style="{StaticResource SettingsCardDescriptionStyle}"
+            Text="A pull request you're not on, such as one your team was asked to review, listed as if you reviewed it, with what's new on it, until it closes or you stop watching it." />
+        <ItemsControl IsTabStop="False" ItemsSource="{x:Bind ViewModel.Watched}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="viewmodels:WatchedPullRequestViewModel">
+                    <Grid MinHeight="52" Style="{StaticResource SettingsCardStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="{x:Bind Title}" />
+                            <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="{x:Bind Detail}" />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="{x:Bind StopName}"
+                            Click="OnStopWatchingClick"
+                            Content="Stop watching" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <StackPanel Grid.ColumnSpan="2">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Watch a pull request" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Paste its link, from its page in Azure DevOps. To stop watching it, right-click it in the list, or come back here." />
+            </StackPanel>
+            <TextBox
+                x:Name="LinkBox"
+                Grid.Row="1"
+                Margin="0,8,0,0"
+                AutomationProperties.Name="Link to the pull request to watch"
+                KeyDown="OnLinkKeyDown"
+                PlaceholderText="https://dev.azure.com/contoso/Shop/_git/shop-web/pullrequest/4071"
+                Text="{x:Bind ViewModel.LinkInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Row="1"
+                Grid.Column="1"
+                Margin="0,8,0,0"
+                VerticalAlignment="Top"
+                Click="OnWatchClick"
+                Content="Watch" />
+            <TextBlock
+                Grid.Row="2"
+                Grid.ColumnSpan="2"
+                Margin="0,6,0,0"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.LinkError, Mode=OneWay}"
+                TextWrapping="Wrap"
+                Visibility="{x:Bind ViewModel.HasLinkError, Mode=OneWay}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

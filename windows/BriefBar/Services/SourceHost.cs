@@ -94,8 +94,32 @@ internal sealed class SourceHost : ISourceRunner, IDisposable
     public void Perform(CommandRequest request)
     {
         ArgumentNullException.ThrowIfNull(argument: request);
-        var source = sources.Find(match: candidate => candidate.Sections.Any(predicate: section => section.Id == request.Section));
-        source?.Perform(request: request);
+        SourceOf(section: request.Section)?.Perform(request: request);
+    }
+
+    /// The panel shows `current` now, or nothing, in place of `previous`: a source hears that its section's own panel
+    /// closed or opened, and, before a panel shows its sections, on their own or in the Overview, that it will.
+    public void PanelChanged(PanelTarget? previous, PanelTarget? current)
+    {
+        if (previous is { Section: { } closed } && previous != current)
+        {
+            SourceOf(section: closed)?.PanelVisibilityChanged(section: closed, isShowing: false);
+        }
+        if (current is not { } shown)
+        {
+            return;
+        }
+        IReadOnlyList<SectionId> showing = shown.Section is { } one
+            ? [one]
+            : sources.SelectMany(selector: source => source.Sections.Select(selector: section => section.Id)).ToList();
+        foreach (var section in showing)
+        {
+            SourceOf(section: section)?.PanelWillShow(section: section);
+        }
+        if (shown.Section is { } opened && previous != current)
+        {
+            SourceOf(section: opened)?.PanelVisibilityChanged(section: opened, isShowing: true);
+        }
     }
 
     /// Stops every source, waiting at most `timeout` for them, cancelling included, and lets go of their events.
@@ -124,6 +148,9 @@ internal sealed class SourceHost : ISourceRunner, IDisposable
     }
 
     public void Dispose() => stopping.Dispose();
+
+    /// The running source `section` belongs to, or null.
+    ISectionSource? SourceOf(SectionId section) => sources.Find(match: candidate => candidate.Sections.Any(predicate: info => info.Id == section));
 
     void OnSourceChanged(object? sender, EventArgs e)
     {
