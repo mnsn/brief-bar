@@ -129,7 +129,7 @@ final class AppSettings: ObservableObject {
     }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
-    /// When you last looked at each pull request that's listed only because someone sent it to you (`PRKey.description`),
+    /// When you last looked at each pull request that's listed only because someone sent it to you (`SeenState.name(of:)`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
     @Published private(set) var seenSentInChats: [String: Date] = [:]
     /// When you last removed each of those from Needs You, in memory only too.
@@ -266,7 +266,7 @@ final class AppSettings: ObservableObject {
         var seenInMemory = seenSentInChats
         var dismissedInMemory = dismissedSentInChats
         for entry in entries {
-            let key = entry.key.description
+            let key = SeenState.name(of: entry.key)
             if sentInChats.contains(entry.key) {
                 seenInMemory[key] = max(entry.date, seenInMemory[key] ?? .distantPast)
                 if dismissing { dismissedInMemory[key] = max(entry.date, dismissedInMemory[key] ?? .distantPast) }
@@ -285,7 +285,7 @@ final class AppSettings: ObservableObject {
 
     /// When you last looked at a pull request, as far as BriefBar remembers: in the preferences, or in memory.
     func seenCutoff(for key: PRKey) -> Date {
-        max(seen.cutoff(for: key), seenSentInChats[key.description] ?? .distantPast)
+        max(seen.cutoff(for: key), seenSentInChats[SeenState.name(of: key)] ?? .distantPast)
     }
 
     /// The Azure CLI account whose seen state is in use, once known: what you see and take off Needs You now is its own.
@@ -311,13 +311,13 @@ final class AppSettings: ObservableObject {
     /// Up to when the comments that wait on you in a pull request don't need you anymore: when you last removed it from
     /// Needs You, or sent them to Copilot.
     func dismissedCutoff(for key: PRKey) -> Date {
-        max(seen.dismissedCutoff(for: key), dismissedSentInChats[key.description] ?? .distantPast)
+        max(seen.dismissedCutoff(for: key), dismissedSentInChats[SeenState.name(of: key)] ?? .distantPast)
     }
 
     /// Moves what the preferences say you've seen of these pull requests, listed only because someone sent them to
     /// you, into memory: and when you removed them from Needs You. Earlier builds kept that in the preferences.
     func keepSeenInMemory(_ keys: Set<PRKey>) {
-        let names = keys.map(\.description).filter { seen.seenAt[$0] != nil || seen.dismissedAt[$0] != nil }
+        let names = keys.map { SeenState.name(of: $0) }.filter { seen.seenAt[$0] != nil || seen.dismissedAt[$0] != nil }
         guard !names.isEmpty else { return }
         var seenInMemory = seenSentInChats
         var dismissedInMemory = dismissedSentInChats

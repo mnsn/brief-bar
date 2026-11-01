@@ -312,15 +312,28 @@ public enum AppDatabase {
     /// Sessions plus the app's view state. Only the session list is required; the rest is best effort.
     /// - Parameter links: also where each session's work goes (`SessionLinks`), for Show Links.
     public static func load(at url: URL, links: Bool = false) throws -> DatabaseSnapshot {
-        do {
-            return try load(from: open(url), links: links)
-        } catch let error as AppDatabaseError where error.code == SQLITE_CANTOPEN && isClosedWALDatabase(url) {
-            // A read-only connection can't recreate the write-ahead log, which SQLite removes when
-            // the app closes the database. Without a log or journal, the file holds every committed
-            // change, and the app only writes to it again through a new log, so read it as it is.
-            guard let snapshot = try? load(from: open(url, immutable: true), links: links) else { throw error }
-            return snapshot
+        try load(at: url, links: links, afterClosedRead: nil)
+    }
+
+    /// How many times the database is read while the app opens or writes it as it's read, before BriefBar says so.
+    static let readAttempts = 3
+
+    /// `load`, with `afterClosedRead` run after each read of the database as the app closed it: for tests, the app opening
+    /// or writing it as it's read.
+    static func load(at url: URL, links: Bool, afterClosedRead: (() -> Void)?) throws -> DatabaseSnapshot {
+        for _ in 1...readAttempts {
+            do {
+                return try load(from: open(url), links: links)
+            } catch let error as AppDatabaseError where error.code == SQLITE_CANTOPEN {
+                // A read-only connection can't recreate the write-ahead log, which SQLite removes when the app closes the
+                // database, so it's read as it is, without locks; or, if the app opened or wrote it meanwhile, read again.
+                guard let closed = closedWALStamp(url) else { throw error }
+                if let snapshot = try readClosed(url, links: links, closed: closed, afterRead: afterClosedRead, failure: error) {
+                    return snapshot
+                }
+            }
         }
+        throw AppDatabaseError.query("it kept changing as it was read", code: SQLITE_BUSY)
     }
 
     private static func open(_ url: URL, immutable: Bool = false) throws -> SQLiteConnection {
@@ -331,11 +344,29 @@ public enum AppDatabase {
         }
     }
 
-    private static func isClosedWALDatabase(_ url: URL) -> Bool {
+    /// The database as the app closed it, read without locks. Without a log or journal, the file holds every committed
+    /// change, but only while the app leaves it alone: one that opens it and checkpoints could change it under the read.
+    /// Nil when the app opened or wrote it meanwhile, to read it again; a read that fails while it stayed as it was throws
+    /// `failure`, the error reading it the usual way.
+    private static func readClosed(
+        _ url: URL, links: Bool, closed: FileInfo, afterRead: (() -> Void)?, failure: AppDatabaseError
+    ) throws -> DatabaseSnapshot? {
+        let result = try? load(from: open(url, immutable: true), links: links)
+        afterRead?()
+        guard closedWALStamp(url) == closed else { return nil }
+        guard let snapshot = result else { throw failure }
+        return snapshot
+    }
+
+    /// The database's identity, size and time while the app has it closed, without its write-ahead log or a journal; nil
+    /// otherwise. The app writes to it only through a log, which stays until it closes the database again, so the same
+    /// stamp in two looks means nothing changed the file in between.
+    private static func closedWALStamp(_ url: URL) -> FileInfo? {
         let fileManager = FileManager.default
-        return fileManager.fileExists(atPath: url.path)
-            && !fileManager.fileExists(atPath: url.path + "-wal")
-            && !fileManager.fileExists(atPath: url.path + "-journal")
+        guard !fileManager.fileExists(atPath: url.path + "-wal"), !fileManager.fileExists(atPath: url.path + "-journal") else {
+            return nil
+        }
+        return FileInfo(path: url.path)
     }
 
     private static func load(from connection: SQLiteConnection, links: Bool) throws -> DatabaseSnapshot {

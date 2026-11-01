@@ -413,4 +413,27 @@ extension Locked where Value == Int {
         server.on("/contoso/_apis/git/pullrequests", json: Fixture.list([Fixture.pullRequest(1)]))
         #expect(try await OrganizationDiscovery.discover(client: client).withPullRequests == ["contoso"])
     }
+
+    /// Asked to slow down partway, discovery hasn't checked every organization: it tries again, rather than keeping the
+    /// ones it had found by then as all there are.
+    @Test func askedToSlowDownDiscoveryTriesAgainRatherThanSettleForSome() async throws {
+        let server = StubServer()
+        let names = (1...7).map { "org\($0)" }
+        let accounts: [[String: Any]] = names.map { ["accountName": $0] }
+        server.on("/_apis/profile/profiles/me", json: ["id": "profile-id", "publicAlias": "alias"])
+        server.on("/_apis/accounts", query: ["memberId": "alias"], json: Fixture.list(accounts))
+        for name in names.dropLast() {
+            server.on("/\(name)/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
+            server.on("/\(name)/_apis/git/pullrequests", json: Fixture.list([Fixture.pullRequest(1)]))
+        }
+        // Six are checked at a time, so the seventh starts once one of the others has been found.
+        server.on("/org7/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": "30"]) }
+
+        do {
+            let found = try await OrganizationDiscovery.discover(client: server.client())
+            Issue.record("Expected to be asked to slow down, but found \(found.withPullRequests)")
+        } catch ADOError.throttled {
+            // Discovery tries again a minute later.
+        }
+    }
 }

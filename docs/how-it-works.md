@@ -1060,12 +1060,12 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
-| `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when none were found because some couldn't be checked (offline, say), it tries again a minute later |
+| `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1074,8 +1074,10 @@ so a pull request's details (policies and threads, two requests) are fetched on 
 - every pull request without details, which is all of them on the first load, in parallel, four at a
   time;
 - then, at most eight others a refresh: changed ones first (a push, a vote, a merge status or draft
-  change), then those with a build or check in progress (every minute), the others every three
-  minutes, and drafts and idle ones every fifteen.
+  change), by when they were last read, then the ones that are due, by when they became due, the
+  earliest first. One with a build or check in progress is due a minute after it was last read, the
+  others three minutes after, and drafts and idle ones fifteen. So while more builds run than a refresh
+  reads, the other pull requests still get their turn, and their new comments come in.
 
 Requests honor `Retry-After`: when Azure DevOps asks to slow down, nothing is sent until the time it
 gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`). When nothing can be read (offline, for
@@ -1214,7 +1216,9 @@ listed as a review, under **To Review** as **Watching** (`PRRecord.watched()`), 
 mentions; one you are on is listed as it is. What you've seen of it is kept in the preferences, as for
 your own. Once it's completed or abandoned, or can't be found or read anymore, BriefBar stops watching
 it (`PulseSnapshot.closedLinks`); a failure that may pass doesn't count. The command line lists the ones
-the app watches too.
+the app watches too. Azure DevOps ignores the letter case of an organization's name, and so does BriefBar
+(`PRKey`, `SeenState.name(of:)`): a link that spells it differently is to the pull request in your lists,
+listed once, as one you watch, and what you've seen of it is the same however it's spelled.
 
 ### Pipelines after your merges
 
@@ -1234,14 +1238,15 @@ Together they decide what the pull request's row says:
 - **Failing**, as **Failed after merge**, when a pipeline's latest run failed, with where and its first
   error; the row and its notification open the run.
 - **Waiting for approval**, in Done, while a stage of one waits for an approval or a check.
-- In Done, how many are still running, and then that they passed.
+- In Done, how many are still running, and then that they passed, or, when one was canceled and none
+  failed, that it was: "its pipeline was canceled", or which one, such as "“shop-web CD” was canceled".
 
 While they run or wait, the pull request stays in Done even once you've opened it; once they've all
-passed, it leaves Done as before, when you've seen it. A notification says when one fails, when one
-starts waiting for an approval, and when they've all passed after running; what happened before
-BriefBar started isn't announced. The Pipelines page lists them under **After Your Merges**, above the
-pipelines you pin. **Follow Pipelines After You Merge** turns it off, and BriefBar then forgets the
-runs it found.
+finished, passed or canceled, it leaves Done as before, when you've seen it. A notification says when one
+fails, when one starts waiting for an approval, and when they've all finished after running: that they
+passed, or that one was canceled, which opens that run. What happened before BriefBar started isn't
+announced. The Pipelines page lists them under **After Your Merges**, above the pipelines you pin.
+**Follow Pipelines After You Merge** turns it off, and BriefBar then forgets the runs it found.
 
 ### Pull requests sent in chats
 
@@ -1608,13 +1613,14 @@ about, and marks the pull request seen.
 
 Azure DevOps' own brief, at the top of its list and its page, picks, in code, the newest pull
 request that needs you, the newest failure and the newest one that's ready (then more of what needs
-you, up to three). The brief across sources ([above](#the-brief)) says each pull request the same
-way. Items about a comment go to Apple Intelligence's on-device model one at a time, with the
-commenter, the title and the comment, and come back as one sentence such as "Sam asks you to cap the
-backoff at 30 seconds on …". The others are plain sentences. Results are kept for as long as the app
-runs, never block the panel, and fall back to the plain sentence if the model isn't available or
-fails. BriefBar explicitly uses `SystemLanguageModel.default`: nothing goes to Private Cloud Compute
-or any other model.
+you, up to three). Each names whoever its pull request is there for: the one who commented, or the
+reviewer who wants changes or rejected it, even when someone else has commented since. The brief across
+sources ([above](#the-brief)) says each pull request the same way. Items about a comment go to Apple
+Intelligence's on-device model one at a time, with the commenter, the title and the comment, and come
+back as one sentence such as "Sam asks you to cap the backoff at 30 seconds on …". The others are plain
+sentences. Results are kept for as long as the app runs, never block the panel, and fall back to the
+plain sentence if the model isn't available or fails. BriefBar explicitly uses
+`SystemLanguageModel.default`: nothing goes to Private Cloud Compute or any other model.
 
 ### Limits
 
@@ -1663,7 +1669,12 @@ BriefBar never changes either of them:
   takes shared locks and updates SQLite's shared-memory index (`data.db-shm`) while it reads;
   neither changes any data. When the app has quit and SQLite has removed the write-ahead log, a
   read-only connection can't open the database, so BriefBar reads it in SQLite's
-  [immutable mode](https://www.sqlite.org/uri.html#uriimmutable) instead.
+  [immutable mode](https://www.sqlite.org/uri.html#uriimmutable) instead. That takes no locks, so
+  what it reads holds only while the app leaves the file alone: BriefBar looks at the file's identity,
+  size and time, and whether a log appeared, before and after the read. If the app opened or wrote the
+  database meanwhile, BriefBar reads it again, the usual way once the app has it open; after three
+  reads in a row that changed, it says "Copilot database query failed: it kept changing as it was
+  read", and the list keeps what it last read.
 
 ### How a status is decided
 

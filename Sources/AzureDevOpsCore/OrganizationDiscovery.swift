@@ -26,11 +26,16 @@ public enum OrganizationDiscovery {
     }
 
     /// Your organizations and the ones with your pull requests. Throws when it couldn't tell, for example while
-    /// offline, rather than finding none, so it can try again.
+    /// offline, rather than finding none, so it can try again; and when Azure DevOps asked to slow down before every one
+    /// was checked, rather than settling for those found by then, which would be kept as all there are.
     public static func discover(client: ADOClient) async throws -> Found {
         let all = try await memberships(client: client)
         let probe = await probe(all, client: client)
-        if probe.withPullRequests.isEmpty, let failure = probe.failures.min(by: { $0.key < $1.key }) {
+        let failures = probe.failures.sorted { $0.key < $1.key }
+        if let throttled = failures.first(where: { if case .throttled = $0.value { true } else { false } }) {
+            throw throttled.value
+        }
+        if probe.withPullRequests.isEmpty, let failure = failures.first {
             throw failure.value
         }
         return Found(all: all, withPullRequests: probe.withPullRequests)

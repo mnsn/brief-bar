@@ -275,8 +275,9 @@ public enum PRClassifier {
             let completed = pr.status == .completed
             let merge = completed ? record.merge?.summary : nil
             snapshot.merge = merge
-            // What its pipelines do after it merged shows, whether or not you've seen it since.
-            if let merge, merge.outcome != .passed {
+            // What its pipelines do after it merged shows, whether or not you've seen it since. Once they've all finished,
+            // whether they passed or one was canceled, it's Done as before.
+            if let merge, merge.outcome != .passed, merge.outcome != .canceled {
                 switch merge.outcome {
                 case .failed:
                     set(.failing, .failedAfterMerge, "Failed after merge",
@@ -295,7 +296,14 @@ public enum PRClassifier {
             guard closed > seenCutoff else { return nil }
             var detail = completed ? "Merged into \(pr.targetBranch)" : nil
             if let merge {
-                detail = (detail ?? "") + (merge.total == 1 ? " · its pipeline passed" : " · \(merge.total) pipelines passed")
+                let ended: String
+                switch (merge.outcome, merge.total) {
+                case (.canceled, 1): ended = "its pipeline was canceled"
+                case (.canceled, _): ended = "\(merge.pipeline.map { "“\($0)”" } ?? "a pipeline") was canceled"
+                case (_, 1): ended = "its pipeline passed"
+                default: ended = "\(merge.total) pipelines passed"
+                }
+                detail = (detail ?? "") + " · " + ended
             }
             set(.done, completed ? .completed : .abandoned, completed ? "Completed" : "Abandoned", detail, since: closed)
             return snapshot

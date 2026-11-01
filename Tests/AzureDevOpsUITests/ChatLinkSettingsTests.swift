@@ -103,6 +103,17 @@ import Testing
         #expect(settings.seenCutoff(for: yours) == now)
     }
 
+    /// What you've seen of one sent to you, and took off Needs You, is the same however its organization is spelled: Azure
+    /// DevOps ignores the case of organizations' names.
+    @Test func whatYouveSeenOfOneSentToYouIsTheSameHoweverItsOrganizationIsSpelled() {
+        let settings = AppSettings(defaults: preferences(enabled: true), now: now)
+        let spelledAnotherWay = PRKey("Contoso", 7)
+        settings.markSeen([spelledAnotherWay], at: now.addingTimeInterval(60), sentInChats: [spelledAnotherWay])
+        settings.dismiss([(key: spelledAnotherWay, date: now.addingTimeInterval(30))], sentInChats: [spelledAnotherWay])
+        #expect(settings.seenCutoff(for: sentInChat) == now.addingTimeInterval(60))
+        #expect(settings.dismissedCutoff(for: sentInChat) == now.addingTimeInterval(30))
+    }
+
     @Test func turningItOffForgetsTheLinksAndWhatYouSawOfThem() {
         let settings = AppSettings(defaults: preferences(enabled: true), now: now)
         #expect(settings.addChatLinks([link(7, sentAt: now)], now: now))

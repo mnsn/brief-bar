@@ -96,7 +96,9 @@ public enum Brief {
 
     private static func kindMatches(_ kind: PREvent.Kind, _ reason: PRReason) -> Bool {
         switch (kind, reason) {
-        case (.mention, .mentioned), (.reply, .replied), (.comment, .commented), (.sentInChat, .sentInChat): return true
+        case (.mention, .mentioned), (.reply, .replied), (.comment, .commented), (.sentInChat, .sentInChat),
+             (.changesRequested, .changesRequested), (.rejected, .rejected):
+            return true
         default: return false
         }
     }
