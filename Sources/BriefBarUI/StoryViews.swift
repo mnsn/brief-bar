@@ -307,6 +307,12 @@ private struct StandingContent: View {
             // once you wrote, stopped, closed or showed it since it opened.
             .task(id: "\(subject)|\(isFolded)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.knowsModel)|\(summaries.hasSomethingToSum(subject))") {
                 guard links.isOn, showsSummary, !isFolded, !isRendering else { return }
+                // Which model it'd be written with, first, so its card never says the wrong one: this starts again once
+                // it's known, its id saying so.
+                if !summaries.knowsModel {
+                    await summaries.lookForCLI()
+                    return
+                }
                 let acted = visit(subject)
                 // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.
                 let wait = summaries.expect(subject, unlessActedSince: acted)

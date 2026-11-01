@@ -97,25 +97,33 @@ package final class StorySummaries: ObservableObject {
         /// Its story's notes, as the prompt has them, such as a work item's description and latest comments, when they
         /// were all read (`ItemStory.notesRead`): empty for none; nil when they weren't, or only some were.
         package var notes: String?
+        /// What was read of it for a summary, as it was last read: a fingerprint of each part by its label, such as a pull
+        /// request's comment threads, never the text itself; nil when nothing was.
+        package var context: [String: Int]?
 
-        package init(ref: ItemRef, label: String, row: String, story: String?, notes: String? = nil) {
+        package init(ref: ItemRef, label: String, row: String, story: String?, notes: String? = nil, context: [String: Int]? = nil) {
             self.ref = ref
             self.label = label
             self.row = row
             self.story = story
             self.notes = notes
+            self.context = context
         }
 
         /// Whether it says something else now: its row; or its story, when it's known both then and now, with its notes
         /// when they were read both then and now, such as its first comment. A story known only then or only now, such as
         /// one that's been forgotten since, says nothing either way, and so do notes: a work item's are read only with its
-        /// details.
+        /// details. And what was read of it for a summary, read again: a part that says something else, or that wasn't
+        /// there, such as a reply in a comment thread, which changes neither its row nor its story; not one that wasn't
+        /// read again, as when its read failed.
         func differs(from now: Input) -> Bool {
             if row != now.row { return true }
-            guard let story, let current = now.story else { return false }
-            if story != current { return true }
-            guard let notes, let currentNotes = now.notes else { return false }
-            return notes != currentNotes
+            if let story, let current = now.story {
+                if story != current { return true }
+                if let notes, let currentNotes = now.notes, notes != currentNotes { return true }
+            }
+            guard let context, let current = now.context else { return false }
+            return current.contains { context[$0.key] != $0.value }
         }
     }
 
@@ -136,6 +144,10 @@ package final class StorySummaries: ObservableObject {
     private var nextWait = 0
     /// How many times you wrote, stopped, closed or showed each one (`timesActed(on:)`).
     private var acted: [ItemRef: Int] = [:]
+    /// What was read for a summary of each thing, as it was last read, a fingerprint of each part by its label, never the
+    /// text: for a summary, as it's written, and, for one `rewriteAfter` old, again as it opens, to tell whether it's
+    /// still current.
+    private var lastRead: [ItemRef: [String: Int]] = [:]
     /// When each last couldn't be written, until one is: opening it doesn't try again before `retryAfter`, even if you
     /// closed what said so.
     private var lastFailed: [ItemRef: Date] = [:]
@@ -184,13 +196,14 @@ package final class StorySummaries: ObservableObject {
             defaults.set(!defaults.bool(forKey: Self.enabledKey), forKey: Self.whenOpenedKey)
         }
         writesWhenOpened = defaults.object(forKey: Self.whenOpenedKey) as? Bool ?? true
-        // Turning Show Links off forgets every summary, and stops writing them.
+        // Turning Show Links off forgets every summary, and stops writing them, and looking for the Copilot CLI.
         links.$isOn.removeDuplicates().filter { !$0 }
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll(stopsLooking: true) } }
             .store(in: &cancellables)
-        // So does a source that stops: what it said goes with it, and any summary may say it.
+        // So does a source that stops: what it said goes with it, and any summary may say it. Summaries stay on, so the
+        // CLI is still looked for.
         links.withdrawn.merge(with: stories.withdrawn)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll() } }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetAll(stopsLooking: false) } }
             .store(in: &cancellables)
         // Whether one written is out of date changes with what's linked, and what's told of each: what shows it looks again.
         links.objectWillChange.merge(with: stories.objectWillChange)
@@ -225,7 +238,7 @@ package final class StorySummaries: ObservableObject {
         isOn = on
         defaults.set(on, forKey: Self.enabledKey)
         Log.app.info("Summaries \(on ? "on" : "off", privacy: .public)")
-        if !on { forgetAll() }
+        if !on { forgetAll(stopsLooking: true) }
         // Which model writes them, unless you chose one.
         if on { Task { await lookForCLI() } }
     }
@@ -355,7 +368,12 @@ package final class StorySummaries: ObservableObject {
         guard mayWrite(subject, unlessActedSince: acted) else { return }
         if case .written(_, let at, _, _)? = states[subject] {
             guard now().timeIntervalSince(at) >= Self.rewriteAfter else { return }
-            await stories.tell([links.describe(subject)] + links.connections(of: subject).map(\.item))
+            let items = [links.describe(subject)] + links.connections(of: subject).map(\.item)
+            await stories.tell(items)
+            // And what was read for it, read again: a reply in a comment thread changes neither a row nor a story.
+            let context = await stories.context(for: items.map(\.ref))
+            guard !Task.isCancelled, isAvailable else { return }
+            remember(context)
             guard mayWrite(subject, unlessActedSince: acted), isOutOfDate(subject) else { return }
             // Found out of date only now, so its card didn't say so as it opened: it does now, with Not Now, as long.
             if !isPending(subject) {
@@ -460,6 +478,7 @@ package final class StorySummaries: ObservableObject {
             guard self.isCurrent(subject, token: token) else { return }
             let context = await self.stories.context(for: items.map(\.ref))
             guard self.isCurrent(subject, token: token) else { return }
+            self.remember(context)
             guard let input = self.input(for: subject, context: context, model: options.model) else {
                 // Nothing to sum up anymore: the one before says what's gone.
                 self.writing[subject] = nil
@@ -473,7 +492,7 @@ package final class StorySummaries: ObservableObject {
                 .failure(Problem("BriefBar can't write summaries here."))
             }
             // Given all of it, it isn't incomplete, whatever a small model says.
-            let isWhole = !input.prompt.contains("left out for length.)")
+            let isWhole = Self.isWhole(input.prompt)
             self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model, isWhole: isWhole)
         }
         writing[subject] = (token, task)
@@ -588,11 +607,15 @@ package final class StorySummaries: ObservableObject {
         return said.isEmpty ? nil : said.joined(separator: "; ")
     }
 
-    private func forgetAll() {
-        lookup?.task.cancel()
-        lookup = nil
+    /// - Parameter stopsLooking: whether looking for the Copilot CLI stops too, as summaries or Show Links go off.
+    private func forgetAll(stopsLooking: Bool) {
+        if stopsLooking {
+            lookup?.task.cancel()
+            lookup = nil
+        }
         for writing in writing.values { writing.task.cancel() }
         writing = [:]
+        lastRead = [:]
         states = [:]
         previous = [:]
         hidden = []
@@ -635,6 +658,14 @@ package final class StorySummaries: ObservableObject {
             includeInstructions: !onDevice
         )
         return (prompt, inputs(for: subject))
+    }
+
+    /// Whether the data a model was given is all there was: nothing in it cut short ("…"), or said to be left out, or to
+    /// have more ("(2 more)"). Only then does a note that the summary may be incomplete say nothing true, so only then is
+    /// it taken out. What the instructions say before the data doesn't count.
+    nonisolated static func isWhole(_ prompt: String) -> Bool {
+        let data = prompt.components(separatedBy: "<data>\n").last ?? prompt
+        return !data.contains("…") && !data.contains("left out") && data.firstMatch(of: /\(\d+ more\)/) == nil
     }
 
     /// Routes only to the selected provider. A local failure must never send the prompt to Copilot instead.
@@ -680,7 +711,15 @@ package final class StorySummaries: ObservableObject {
     /// The thing and what's linked to it, each as it says now.
     private func inputs(for subject: ItemRef) -> [Input] {
         ([links.describe(subject)] + links.connections(of: subject).map(\.item)).map { item in
-            Self.input(item, story: stories.story(for: item.ref))
+            Self.input(item, story: stories.story(for: item.ref), context: lastRead[item.ref])
+        }
+    }
+
+    /// What was just read of each thing for a summary, as it's last read: what's read of one again takes the place of
+    /// what was, and one that nothing was read of this time keeps what was, as when its reads failed.
+    private func remember(_ context: [ItemRef: [ItemStory.Fact]]) {
+        for (ref, parts) in context where !parts.isEmpty {
+            lastRead[ref] = Dictionary(parts.map { ($0.label, $0.value.hashValue) }, uniquingKeysWith: { first, _ in first })
         }
     }
 
@@ -689,7 +728,7 @@ package final class StorySummaries: ObservableObject {
     /// first error of one that failed, and all Copilot recorded of its work; and its notes apart. No date goes in. What
     /// one at work is doing just now, and what it said last, which change every few minutes, aren't news: that it's at
     /// work is, until it stops or asks, and what it records as it goes, such as a checkpoint.
-    static func input(_ item: LinkedItem, story: ItemStory?) -> Input {
+    static func input(_ item: LinkedItem, story: ItemStory?, context: [String: Int]? = nil) -> Input {
         let row = [item.state?.rawValue ?? "", item.title, steady(item.statusToShare ?? "")]
         var told: String?
         var notes: String?
@@ -701,7 +740,7 @@ package final class StorySummaries: ObservableObject {
             let noted = ItemStory(sentence: "", notes: story.notes).lines()
             notes = story.notesRead ? noted.joined(separator: "\n") : nil
         }
-        return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes)
+        return Input(ref: item.ref, label: item.label, row: row.joined(separator: "\n"), story: told, notes: notes, context: context)
     }
 
     /// Text without what Copilot's doing just now, on its own or on a task's line: "Working: Run the cart tests" as

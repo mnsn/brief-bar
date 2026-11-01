@@ -528,6 +528,8 @@ import Testing
             context: (1...30).map { ItemStory.Fact("Thread \($0)", long) } + [ItemStory.Fact("Resolved", "None.")]
         ), isSubject: false)
         #expect(!crowded.contains("Thread 1:"))
+        // Left out, it says so, so the model knows.
+        #expect(crowded.contains("(Thread 1 left out for length.)"))
         #expect(crowded.contains("Resolved:\nNone."))
     }
 

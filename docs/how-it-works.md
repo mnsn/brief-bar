@@ -548,7 +548,10 @@ read for it shares what its story leaves of them, the same way. The on-device se
 separately, reserves up to 500 tokens for the answer and has a 45-second timeout. Character limits aren't token
 guarantees: if the model's context window is exceeded, the summary says so and offers a model change, never a cloud
 retry. Data cut short says details were left out, and only then are the summaries told to say they may be incomplete;
-missing data never means there are no blockers, votes or work left. Pipeline runs that passed are left out of the data,
+missing data never means there are no blockers, votes or work left. A note that it may be incomplete is taken out of a
+summary only when nothing in its data was cut short ("…"), left out, or said to have more ("(2 more)")
+(`StorySummaries.isWhole`, `StorySummary.withoutIncompleteNotes`), as a small model adds one anyway; never one that
+says work is incomplete. Pipeline runs that passed are left out of the data,
 so the model can't say a build passed; failed, running and waiting ones stay, a failed one with its first error. The
 data starts with your name, as your pull requests have it in Azure DevOps, when that's known, and the model is told
 that's who reads it, to call you "you"; then, for a work item, after `SHOWN`, who it all waits on, as Where It Stands
@@ -625,9 +628,13 @@ that nothing's known of, isn't sent. Desktop widgets show none (`offersSummaries
 
 #### What a summary reads
 
-As a summary is written, and only then, each source reads more of each thing it sums up, beyond its story
-(`ItemStories.registerContext`), whichever model writes it; nothing of it is kept, and nothing is read while Show Links
-is off or once the summary is taken back:
+As a summary is written, and, for one ten minutes old or more, again as its details or page open, to tell whether it's
+still current, and only then, each source reads more of each thing it sums up, beyond its story
+(`ItemStories.registerContext`), whichever model writes it. Nothing of it is kept but a fingerprint of each part, in
+memory (`StorySummaries.lastRead`, a hash of each part's text by its label), until summaries or Show Links go off, a
+source stops, or BriefBar quits; and nothing is read while Show Links is off or once the summary is taken back. A part
+the prompt has no room for says it's left out, "(Comment threads left out for length.)", and so do the older comments
+of a work item that don't fit, "(2 earlier comments left out)":
 
 - Azure DevOps (`WorkLinksStore.context`; every request a GET): a pull request's description, in plain text, without
   what its template asks its author in HTML comments, from a GET of it; and its comment threads, your pull requests'
@@ -679,7 +686,10 @@ stop being read, unless the details asked for them too, and a story the details 
 than left out. Once what it summed up says something else, it's out of date: what's linked, each one's state, title or
 status, or what its story says, as Copilot was given it: where it stands, its facts, how its runs stand, with a failed
 one's first error, all that Copilot recorded of its work, and a work item's description and latest comments
-(`StorySummaries.Input`). How long ago anything was isn't part of it, so a task's row and story say "Working" rather
+(`StorySummaries.Input`); or what was read for it, as it was last read, part by part, such as a reply in a pull request's
+comment thread, which changes neither its row nor its story: a part that says something else, or that wasn't there,
+counts, but not one that couldn't be read again, as when its read failed. That's read again only as one ten minutes old
+or more opens, before it's written again. How long ago anything was isn't part of it, so a task's row and story say "Working" rather
 than for how long, which its date says, and a pull request without recent activity says just that; nor is what
 Copilot's doing just now, on a session's or a task's row or story, "Working: Run the cart tests" being just "Working"
 (`StorySummaries.steady`), nor what a session at work said last, which change every few minutes, while its checkpoints,

@@ -96,11 +96,15 @@ public enum WorkItemStory {
         }
         var comments: [String] = []
         var used = 0
-        for said in details.comments.prefix(contextComments).compactMap({ comment($0, limit: contextCommentLimit) }) {
-            guard used + said.count <= contextLimit else { break }
+        let sayable = details.comments.compactMap { comment($0, limit: contextCommentLimit) }
+        // With room to say how many earlier ones are left out.
+        for said in sayable.prefix(contextComments) {
+            guard used + said.count + 40 <= contextLimit else { break }
             comments.append(said)
             used += said.count + 1
         }
+        // The older ones that didn't fit say so, first, as they'd be.
+        if comments.count < sayable.count { comments.append("(\(sayable.count - comments.count) earlier comments left out)") }
         // Cut to fit a summary, the newest stay.
         if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.reversed().joined(separator: "\n"), keepsEnd: true)) }
         return parts

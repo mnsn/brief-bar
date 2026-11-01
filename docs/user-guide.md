@@ -209,10 +209,11 @@ Copilot links hides it in BriefBar, until you choose **Show Hidden Links**. Whil
 reads the links of your pull requests and, while the sprint is on screen, of its work items, and the
 Copilot source reads which pull request each session started from or opened, and, when a work item's
 details show a session, the checkpoints and last words Copilot keeps in that session's folder, in
-memory only. Only as a summary is written, Azure DevOps also reads each pull request's description and
-comment threads, and each work item's details unless they're on screen, up to two or three GET requests
-for each, and Copilot reads what was asked in each session and what it answered, from the session's log;
-they go to the model that writes it with the rest, and BriefBar keeps none of it.
+memory only. Only as a summary is written, or, for one ten minutes old or more, as you open it again, to
+tell whether it's still current, Azure DevOps also reads each pull request's description and comment
+threads, and each work item's details unless they're on screen, up to two or three GET requests for each,
+and Copilot reads what was asked in each session and what it answered, from the session's log; they go to
+the model that writes a summary with the rest, and BriefBar keeps none of it.
 
 ## Notifications
 
@@ -829,11 +830,12 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   Private Cloud Compute or any other model, and are kept in memory only: the brief's, for ten minutes
   after its line was last on screen. With **Show Message Previews** off, no message text goes into the
   brief.
-- **Summaries**, off until you turn them on, are written by Apple Intelligence on your Mac unless you
-  chose a model before. Only with a Copilot model chosen do a work item's, pull request's or Copilot
-  session's details go to GitHub Copilot, and only as you open its details or page, unless a summary
-  that's still current is there, or **Not Now**, or, with **Writes** set to **Only when you ask**, only
-  when you click **✨ Summarize with Copilot**: what they show, its description and latest comments, its
+- **Summaries**, off until you turn them on, are written by Claude Haiku 5.5 through GitHub Copilot
+  when the Copilot CLI is installed, and by Apple Intelligence on your Mac when it isn't, unless you
+  choose a model. Only with a model through Copilot, chosen or the default, do a work item's, pull
+  request's or Copilot session's details go to GitHub Copilot, and only as you open its details or page,
+  unless a summary that's still current is there, or **Not Now**, or, with **Writes** set to **Only when
+  you ask**, only when you click **✨ Summarize with Copilot**: what they show, its description and latest comments, its
   pull requests' descriptions, reviews, comment threads, builds and their errors, and what Copilot wrote
   of its sessions, what you asked in them and what it answered, goes to the Copilot CLI and on to GitHub
   Copilot's model, as when you send work to Copilot, with your name as Azure DevOps has it, or your

@@ -94,6 +94,12 @@ private struct PageContent: View {
         // opens, as summaries are turned on, and as a source says what it is; never once you acted on it since it opened.
         .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.knowsModel)|\(summaries.canSummarize(ref))") {
             guard links.isOn, !isRendering else { return }
+            // Which model it'd be written with, first, so its card never says the wrong one: this starts again once
+            // it's known, its id saying so.
+            if !summaries.knowsModel {
+                await summaries.lookForCLI()
+                return
+            }
             let acted = visit(ref)
             // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.
             let wait = summaries.expect(ref, unlessActedSince: acted)

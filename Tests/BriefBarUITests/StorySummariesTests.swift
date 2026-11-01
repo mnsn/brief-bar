@@ -408,6 +408,11 @@ import Testing
     }
 
     /// What's told of each, which a test changes.
+    /// What a reader reads for a summary, as a test sets it.
+    private final class Parts {
+        var parts: [ItemStory.Fact] = []
+    }
+
     private final class Told {
         var stories: [ItemRef: ItemStory] = [:]
     }
@@ -1063,6 +1068,75 @@ import Testing
         #expect(asked.prompts.count == 2)
         try await opening("Abandoned by Sam Rivera", laterBy: 2, keeps: false)
         #expect(asked.prompts.count == 3)
+    }
+
+    /// What was read for a summary, read again as an old one opens: a reply in a comment thread, which changes neither a row
+    /// nor a story, makes it out of date, and it's written again; the same, or a part that couldn't be read, doesn't.
+    @Test func aReplyInACommentThreadMakesAnOldSummaryOutOfDateAsItOpens() async {
+        let (links, stories, summaries) = hub()
+        publish(links)
+        let read = Parts()
+        read.parts = [ItemStory.Fact("Comment threads", "Sam Rivera on Coupon.swift:12: Round half up? (no reply yet)")]
+        stories.registerContext(.azureDevOps, kinds: [.pullRequest]) { _ in read.parts }
+        let asked = Asked()
+        summaries.write = writer(asked)
+        await summaries.summarizeAndWait(workItem)
+        #expect(asked.prompts.count == 1)
+        summaries.now = { Date().addingTimeInterval(StorySummaries.rewriteAfter + 60) }
+        // The same: nothing's written.
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 1)
+        // Couldn't be read this time: nothing either.
+        read.parts = []
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 1)
+        #expect(!summaries.isOutOfDate(workItem))
+        // A reply: out of date, and written again.
+        read.parts = [ItemStory.Fact(
+            "Comment threads", "Sam Rivera on Coupon.swift:12: Round half up? — Priya Shah: Done. (replied, not resolved)"
+        )]
+        await summaries.opened(workItem)
+        await waitForWriting(summaries, workItem)
+        #expect(asked.prompts.count == 2)
+        #expect(asked.prompts.last?.contains("Priya Shah: Done.") == true)
+    }
+
+    /// A source that stops forgets every summary, but summaries are still on: the Copilot CLI is still looked for, and the
+    /// model's known once it's found.
+    @Test func aSourceThatStopsDoesntStopLookingForTheCLI() async throws {
+        let (_, stories, summaries) = hub(on: false)
+        stories.registerContext(.copilot, kinds: [.session]) { _ in [] }
+        let gate = Gate()
+        let looks = Asked()
+        summaries.findCLI = {
+            await gate.wait()
+            looks.add(Task.isCancelled ? "stopped" : "found")
+            return true
+        }
+        summaries.setOn(true)
+        for _ in 0..<200 where !gate.isWaiting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        stories.withdraw(.copilot)
+        gate.open()
+        for _ in 0..<200 where !summaries.hasLookedForCLI {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(looks.prompts == ["found"])
+        #expect(summaries.knowsModel)
+        #expect(summaries.model == StorySummaries.copilotDefaultModel)
+    }
+
+    /// The data a model was given is all there was only when nothing in it is cut short, left out, or has more: only then
+    /// does a summary's note that it may be incomplete go. What the instructions say first doesn't count.
+    @Test func dataIsWholeOnlyWhenNothingWasCutOrLeftOut() {
+        let prompt = { (data: String) in StorySummaryPrompt.instructions + "\n\n<data>\n" + data + "\n</data>" }
+        #expect(StorySummaries.isWhole(prompt("WORK ITEM 5110: Coupons\nStatus: Active")))
+        #expect(StorySummaries.isWhole("<data>\nWORK ITEM 5110: Coupons\n</data>"))
+        #expect(!StorySummaries.isWhole(prompt("Description:\nTotals round down for coupons in every…")))
+        #expect(!StorySummaries.isWhole(prompt("WORK ITEM 5110: Coupons\n\n(2 more linked, left out for length.)")))
+        #expect(!StorySummaries.isWhole(prompt("Conversation:\n(3 earlier turns left out)\nYou: Go on.")))
+        #expect(!StorySummaries.isWhole(prompt("Comment threads:\nUnresolved (9):\nSam Rivera: Why?\n(4 more)")))
     }
 
     /// While its setting shows from Turn On…, nothing's written as it opens: once it's gone, it is.

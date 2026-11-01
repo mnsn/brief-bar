@@ -217,9 +217,10 @@ Sources are read-only: Azure DevOps and GitHub use your existing CLI sign-ins, a
 tracking reads files on your Mac. Full Disk Access is needed for Teams and the optional
 **Pull Requests Sent in Chats**, not for ordinary pull-request or session tracking.
 
-Links, summaries, Send Work to Copilot and agent access each start off. Summaries stay on your Mac
-with Apple Intelligence; only if you choose a Copilot model do they send the selected work's details
-to GitHub Copilot. Sending work gives an agent permission to act within that action's limits. Teams
+Links, summaries, Send Work to Copilot and agent access each start off. Once you turn summaries on,
+they send the details of the work you open to GitHub Copilot when the Copilot CLI is installed, to be
+written by Claude Haiku 5.5; choose Apple Intelligence in their setting to keep them on your Mac, as
+they are when the CLI isn't installed. Sending work gives an agent permission to act within that action's limits. Teams
 content never goes to Copilot summaries or BriefBar's agent tools.
 
 [Full privacy details](docs/user-guide.md#privacy) · [Security and download verification](SECURITY.md)

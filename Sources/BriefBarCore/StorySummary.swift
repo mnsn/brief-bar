@@ -553,16 +553,20 @@ public enum StorySummaryPrompt {
         }
         var space = isSubject ? ContextLimit.subject : ContextLimit.linked
         if let limit {
-            // Each part's label takes a line of its own, after a line break.
-            let labels = item.context.reduce(0) { $0 + StoryText.line($1.label, limit: 80).count + 3 }
+            // Each part's label takes a line of its own, after a line break, or, for one left out, says so.
+            let labels = item.context.reduce(0) { $0 + StoryText.line($1.label, limit: 80).count + leftOut.count + 3 }
             space = min(space, max(0, limit - lines.joined(separator: "\n").count - labels))
         }
         let room = Self.room(for: item.context.map(\.value), in: space)
         for (part, room) in zip(item.context, room) {
             let text = part.keepsEnd ? ending(part.value, limit: room) : StoryText.paragraph(part.value, limit: room)
-            // Cut to almost nothing, it would say nothing.
-            guard !text.isEmpty, room >= min(ContextLimit.smallest, part.value.count) else { continue }
-            lines.append("\(StoryText.line(part.label, limit: 80)):\n\(text)")
+            let label = StoryText.line(part.label, limit: 80)
+            // Cut to almost nothing, it would say nothing: it says it's left out, as what's linked does.
+            guard !text.isEmpty, room >= min(ContextLimit.smallest, part.value.count) else {
+                lines.append("(\(label)\(leftOut)")
+                continue
+            }
+            lines.append("\(label):\n\(text)")
         }
         return lines.joined(separator: "\n")
     }
@@ -601,6 +605,9 @@ public enum StorySummaryPrompt {
         }
         return shares
     }
+
+    /// What a part that's left out says after its label: "(Comment threads left out for length.)".
+    static let leftOut = " left out for length.)"
 
     /// The data without its own `<data>` and `</data>`, which would end it early, whatever their case.
     static func scrub(_ text: String) -> String {

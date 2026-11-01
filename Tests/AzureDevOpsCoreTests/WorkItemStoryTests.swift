@@ -111,17 +111,21 @@ import Testing
         #expect(description.count <= WorkItemStory.contextLimit)
         #expect(description.count > note.count)
         #expect(context[1].value == "1. Saved items show under the cart\n2. Newest first")
-        // Its latest ten comments, a line each, the oldest of them first, so that an answer follows its question.
+        // Its latest ten comments, a line each, the oldest of them first, so that an answer follows its question, after
+        // how many earlier ones are left out.
         let said = (1...10).map { "\($0.isMultiple(of: 2) ? "Sam Rivera" : "Someone"): Comment \($0)." }
-        #expect(context[2].value == said.reversed().joined(separator: "\n"))
+        #expect(context[2].value == (["(2 earlier comments left out)"] + said.reversed()).joined(separator: "\n"))
+        #expect(context[2].keepsEnd)
 
         // As many long ones as fit, each cut to its length.
         var talkative = details
         talkative.comments = (1...10).map { WorkItemDetails.Comment(id: $0, author: sam, createdAt: nil, text: RichText(markdown: long)) }
         let comments = try #require(WorkItemStory.context(talkative).last?.value)
         #expect(comments.count <= WorkItemStory.contextLimit)
-        #expect(comments.components(separatedBy: "\n").count == 4)
-        #expect(comments.components(separatedBy: "\n").allSatisfy { $0.hasPrefix("Sam Rivera: Saved items") && $0.hasSuffix("…") })
+        let lines = comments.components(separatedBy: "\n")
+        #expect(lines.first == "(6 earlier comments left out)")
+        #expect(lines.count == 5)
+        #expect(lines.dropFirst().allSatisfy { $0.hasPrefix("Sam Rivera: Saved items") && $0.hasSuffix("…") })
         // Without texts or comments, there's nothing more.
         #expect(WorkItemStory.context(WorkItemDetails(item: story, readAt: Date())).isEmpty)
     }
