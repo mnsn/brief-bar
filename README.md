@@ -104,7 +104,7 @@ the task from running to its linked pull request.
 
 For pull requests, choose **Fix Comments**, **Fix the Build**, **Resolve Conflicts** or **Pre-review**.
 You can send follow-up work to the session that opened the pull request instead of starting from
-scratch. The **Session** menu includes related sessions and lets you choose another or start a new one.
+scratch. The session menu, under **Where It Goes**, includes related sessions and lets you choose another or start a new one.
 
 <p align="center">
   <picture>

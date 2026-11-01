@@ -8,7 +8,8 @@ import SwiftUI
 /// The window that sends a work item, or a pull request's comments, build or conflicts, to Copilot: the prompt, which
 /// you can change, the model, and where it goes: a new session, in a worktree of the repository it goes in, or a session
 /// that's there already, such as BriefBar's earlier task's or the Copilot app's session that opened the pull request. A
-/// window of its own, since popovers and widgets can't hold a sheet.
+/// window of its own, since popovers and widgets can't hold a sheet, translucent as BriefBar's window is, under a title bar
+/// it draws through.
 @MainActor
 final class CopilotComposer: NSObject, NSWindowDelegate {
     static let shared = CopilotComposer()
@@ -37,11 +38,17 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
         }
         .environmentObject(store)
         .environmentObject(store.settings)
-        let host = NSHostingController(rootView: AnyView(view))
+        // As Settings › Appearance says, such as with quieter colors.
+        let host = NSHostingController(rootView: store.services.map { AnyView(view.interfaceOptions(from: $0)) } ?? AnyView(view))
         host.sizingOptions = [.preferredContentSize]
+        // The view goes under the title bar, which it leaves room for: the window is as tall as the view.
+        host.safeAreaRegions = []
         let window = window ?? {
             let window = NSWindow(contentViewController: host)
-            window.styleMask = [.titled, .closable]
+            window.styleMask = [.titled, .closable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            // The window says what it is at its top, under the title bar.
+            window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false
             window.delegate = self
             self.window = window
@@ -110,6 +117,8 @@ struct CopilotComposerView: View {
     @LocalState private var appProblem: String?
     /// The session whose folder is being checked for the CLI.
     @LocalState private var checkingSession: String?
+    /// You're writing in the prompt: its card shows it.
+    @FocusState private var isEditingPrompt: Bool
 
     /// The most other sessions the menu lists.
     static let otherLimit = 30
@@ -194,48 +203,21 @@ struct CopilotComposerView: View {
     private var runsHere: Bool { target == nil || delivery == .cli }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             header
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow(alignment: .firstTextBaseline) {
-                    Text("Session").foregroundStyle(.secondary)
-                    sessionRow
-                }
-                if target != nil {
-                    GridRow {
-                        Text("Send").foregroundStyle(.secondary)
-                        deliveryRow
-                    }
-                }
-                if let (pullRequest, _) = pullRequest {
-                    GridRow {
-                        Text("Repository").foregroundStyle(.secondary)
-                        Text("\(pullRequest.organization) / \(pullRequest.project) / \(pullRequest.repository)")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                if target == nil {
-                    GridRow {
-                        Text(pullRequest == nil ? "Repository" : "Local Clone").foregroundStyle(.secondary)
-                        repositoryRow
-                    }
-                }
-                if runsHere {
-                    GridRow {
-                        Text("Model").foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            CopilotModelMenu(model: $model)
-                            CopilotEffortPicker(effort: $effort)
-                        }
-                    }
-                }
+            if isBusy {
+                busyNote
             }
-            promptEditor
+            destination
+            promptSection
             footer
         }
-        .padding(20)
-        .frame(width: 620)
+        .padding(.horizontal, 24)
+        // Below the title bar's buttons, which the window draws its top under.
+        .padding(.top, 36)
+        .padding(.bottom, 22)
+        .frame(width: 640)
+        .background(WindowBackdrop())
         .onAppear(perform: setUp)
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
@@ -247,25 +229,53 @@ struct CopilotComposerView: View {
         }
     }
 
+    /// What it does, in Copilot's colors, and what it's for. Dragging it moves the window.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
-                .font(size: 20, weight: .bold)
-            HStack(spacing: 6) {
-                Text(verbatim: workItem.map { "\($0.type) \($0.id)" } ?? pullRequest.map { "!\($0.0.id)" } ?? "")
-                    .font(size: 12, weight: .medium).monospacedDigit()
-                    .foregroundStyle(.secondary)
-                Text(workItem?.title ?? pullRequest?.0.title ?? "")
-                    .font(size: 12)
+        HStack(alignment: .center, spacing: 14) {
+            ComposerTile(symbol: pullRequest?.1.symbol ?? "paperplane.fill", fill: .copilot, size: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pullRequest.map { "\($0.1.title) with Copilot" } ?? "Send to Copilot")
+                    .font(size: 20, weight: .bold)
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 6) {
+                    if let workItem {
+                        ComposerBadge(symbol: WorkItem.typeSymbol(of: workItem.type), color: WorkItem.typeColor(of: workItem.type))
+                    } else {
+                        ComposerBadge(symbol: "arrow.triangle.pull", color: AzureDevOpsPage.pullRequests.color)
+                    }
+                    Text(verbatim: workItem.map { "\($0.type) \($0.id)" } ?? pullRequest.map { "!\($0.0.id)" } ?? "")
+                        .font(size: 12, weight: .semibold).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Text(workItem?.title ?? pullRequest?.0.title ?? "")
+                        .font(size: 12.5)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                if let (pullRequest, _) = pullRequest {
+                    let repository = "\(pullRequest.organization) / \(pullRequest.project) / \(pullRequest.repository)"
+                    Text("\(repository)  ·  \(pullRequest.sourceBranch) → \(pullRequest.targetBranch)")
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help("Its repository, and the branch it merges into its target")
+                }
             }
-            if isBusy {
-                Label("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").", systemImage: "exclamationmark.triangle")
-                    .font(size: 11.5)
-                    .foregroundStyle(.orange)
-            }
+            Spacer(minLength: 0)
         }
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
+    }
+
+    private var busyNote: some View {
+        Label("Copilot is already working on this \(workItem != nil ? "work item" : "pull request").", systemImage: "exclamationmark.triangle.fill")
+            .font(size: 12, weight: .medium)
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.12)))
     }
 
     /// Copilot works on it already, in a task BriefBar sent.
@@ -281,30 +291,47 @@ struct CopilotComposerView: View {
 
     // MARK: Where it goes
 
-    private var sessionRow: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Menu {
-                    sessionMenu
-                } label: {
-                    Label(target?.name ?? "New Session", systemImage: symbol(of: target))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .frame(maxWidth: 400, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .disabled(mustContinue || !store.canSend || !store.isOn)
-                .help(mustContinue ? "Push & Reply ships what its last task changed, in that task's session" : "Choose where it goes")
-                if isLooking {
-                    ProgressView().controlSize(.small)
-                        .help("Looking for Copilot sessions that go with it")
+    /// The session it goes to, and how, or the repository a new session works in: rows of a card.
+    private var destination: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ComposerSectionTitle(title: "Where It Goes")
+            VStack(spacing: 0) {
+                sessionRow
+                Divider()
+                    .padding(.leading, 50)
+                    .padding(.trailing, 10)
+                if target != nil {
+                    deliveryRow
+                } else {
+                    repositoryRow
                 }
             }
-            Text(sessionCaption)
-                .font(size: 11.5)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(4)
+            .background(GlassCard(cornerRadius: 14))
+        }
+    }
+
+    private var sessionRow: some View {
+        ComposerMenuRow(
+            title: target?.name ?? "New Session", caption: sessionCaption,
+            progress: isLooking ? "Looking for Copilot sessions that go with it" : nil,
+            isEnabled: !mustContinue && store.canSend && store.isOn
+        ) {
+            sessionTile
+        } items: {
+            sessionMenu
+        }
+        .help(mustContinue ? "Push & Reply ships what its last task changed, in that task's session" : "Choose where it goes")
+        .accessibilityLabel("Session")
+        .accessibilityValue(target?.name ?? "New Session")
+    }
+
+    /// A new session's, BriefBar's earlier task's, or the Copilot app's session's, as their pages' tiles.
+    @ViewBuilder private var sessionTile: some View {
+        switch target?.kind {
+        case nil: ComposerTile(symbol: "plus", fill: .tint(ComposerColors.newSession))
+        case .task?: ComposerTile(symbol: "paperplane.fill", fill: .tint(ComposerColors.task))
+        case .app?: ComposerTile(symbol: "waveform.path.ecg", fill: .tint(ComposerColors.appSession))
         }
     }
 
@@ -347,20 +374,10 @@ struct CopilotComposerView: View {
         .disabled(choice.isUnavailable)
     }
 
-    @ViewBuilder private func menuLabel(_ title: String, detail: String?, selected: Bool) -> some View {
+    private func menuLabel(_ title: String, detail: String?, selected: Bool) -> some View {
         // The app's sessions can have names a paragraph long.
         let name = title.count > 70 ? String(title.prefix(69)) + "…" : title
-        let text = [name, detail].compactMap { $0 }.joined(separator: " — ")
-        if selected {
-            Label(text, systemImage: "checkmark")
-        } else {
-            Text(text)
-        }
-    }
-
-    private func symbol(of choice: SessionChoice?) -> String {
-        guard let choice else { return "plus.circle" }
-        return choice.appSession != nil ? "waveform.path.ecg" : "paperplane"
+        return CheckedMenuLabel(title: [name, detail].compactMap { $0 }.joined(separator: " — "), isChecked: selected)
     }
 
     /// "on its branch · Spectre · users/robin/fix · 7m ago", "Fix Comments, done · 3h ago".
@@ -405,93 +422,166 @@ struct CopilotComposerView: View {
         }
     }
 
+    /// How it goes to the session: two choices, side by side, each there while it can be used, and what keeps the other
+    /// from it.
     private var deliveryRow: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Picker("Send", selection: $delivery) {
-                Text("Open in Copilot").tag(Delivery.app)
-                Text("Run with the CLI").tag(Delivery.cli)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                ComposerChoice(
+                    symbol: "arrow.up.forward.app", title: "Open in Copilot",
+                    detail: "Copies the prompt and opens the session in the Copilot app, to paste and send.",
+                    isSelected: delivery == .app
+                ) {
+                    delivery = .app
+                }
+                .disabled(appProblem != nil || target?.isUnavailable == true)
+                ComposerChoice(
+                    symbol: "terminal", title: "Run with the CLI", detail: "Copilot goes on with the session now, on its own.",
+                    isSelected: delivery == .cli, isChecking: checkingSession != nil
+                ) {
+                    delivery = .cli
+                }
+                .disabled(cliProblem != nil || checkingSession != nil || target?.isUnavailable == true)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .disabled(cliProblem != nil || appProblem != nil || checkingSession != nil || target?.isUnavailable == true)
-            .help("Open in Copilot copies the prompt and opens the session in the Copilot app, to paste and send. Run with the CLI goes on with it now, on its own.")
+            .fixedSize(horizontal: false, vertical: true)
             ForEach([cliProblem, appProblem].compactMap { $0 }, id: \.self) { problem in
-                Text(problem)
-                    .font(size: 11.5)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "info.circle")
+                    Text(problem)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(size: 11.5)
+                .foregroundStyle(.secondary)
             }
         }
+        .padding(10)
+        .help("Open in Copilot copies the prompt and opens the session in the Copilot app, to paste and send. Run with the CLI goes on with it now, on its own.")
     }
 
+    /// The repository a new session's worktree goes in: one it went in before, or a folder you choose.
     private var repositoryRow: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(store.knownRepositories, id: \.self) { url in
-                    Button(url.lastPathComponent) { check(url) }
-                }
-                if !store.knownRepositories.isEmpty { Divider() }
-                Button(pullRequest == nil ? "Choose Folder…" : "Choose Local Clone…", action: chooseFolder)
-            } label: {
-                Label(repository?.name ?? (pullRequest == nil ? "Choose a Repository" : "Choose Local Clone…"), systemImage: "folder")
+        ComposerMenuRow(
+            title: repository?.name ?? (pullRequest == nil ? "Choose a Repository" : "Choose a Local Clone"), caption: repositoryCaption,
+            isPlaceholder: repository == nil, isWarning: repositoryProblem != nil && !isChecking,
+            progress: isChecking ? "Checking the repository" : nil, isEnabled: !isChecking && store.canSend && store.isOn
+        ) {
+            ComposerTile(symbol: "folder.fill", fill: .tint(ComposerColors.repository))
+        } items: {
+            ForEach(store.knownRepositories, id: \.self) { url in
+                Button(url.lastPathComponent) { check(url) }
             }
-            .fixedSize()
-            .disabled(isChecking || !store.canSend || !store.isOn)
-            if isChecking {
-                ProgressView().controlSize(.small)
-            } else if let repositoryProblem {
-                Label(repositoryProblem, systemImage: "exclamationmark.triangle")
-                    .font(size: 11.5)
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
-            } else if let repository {
-                Text("\(UserPath.abbreviate(repository.root.path)), from origin/\(pullRequest?.0.sourceBranch ?? repository.baseBranch)")
+            if !store.knownRepositories.isEmpty { Divider() }
+            Button(pullRequest == nil ? "Choose Folder…" : "Choose Local Clone…", action: chooseFolder)
+        }
+        .help(pullRequest == nil ? "Choose the repository its change goes in" : "Choose your local clone of its repository")
+        .accessibilityLabel(pullRequest == nil ? "Repository" : "Local Clone")
+        .accessibilityValue(repository?.name ?? "None")
+    }
+
+    /// Where the repository is and the branch Copilot starts from; what's wrong with the folder you chose; or why to
+    /// choose one.
+    private var repositoryCaption: String? {
+        if isChecking { return "Checking…" }
+        if let repositoryProblem { return repositoryProblem }
+        if let repository {
+            return "\(UserPath.abbreviate(repository.root.path)), from origin/\(pullRequest?.0.sourceBranch ?? repository.baseBranch)"
+        }
+        return pullRequest == nil
+            ? "The repository its change goes in."
+            : "Choose its folder on this Mac once. BriefBar will remember it."
+    }
+
+    // MARK: The prompt
+
+    /// The prompt, which you can change, where it came from, and the model that works on it, on a card below it.
+    private var promptSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                ComposerSectionTitle(title: "Prompt")
+                Text(promptOrigin)
                     .font(size: 11.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-            } else if pullRequest != nil {
-                Text("Choose its folder on this Mac once. BriefBar will remember it.")
-                    .font(size: 11.5)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button {
+                    prompt = filledIn
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderless)
+                .font(size: 11.5, weight: .medium)
+                // Only once you've changed it, in the same place, so nothing moves.
+                .opacity(prompt == filledIn ? 0 : 1)
+                .disabled(prompt == filledIn)
+                .accessibilityHidden(prompt == filledIn)
+                .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
             }
+            VStack(spacing: 0) {
+                TextEditor(text: $prompt)
+                    .font(size: 13)
+                    .scrollContentBackground(.hidden)
+                    .focused($isEditingPrompt)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 9)
+                    .padding(.bottom, 4)
+                    .frame(height: 252)
+                    .accessibilityLabel("Prompt")
+                Divider()
+                    .opacity(0.6)
+                HStack(spacing: 6) {
+                    if runsHere {
+                        CopilotModelMenu(model: $model, isCapsule: true)
+                        CopilotEffortPicker(effort: $effort, isCapsule: true)
+                    } else {
+                        Label("The session's own model", systemImage: "sparkles")
+                            .font(size: 11.5)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                            .help("In the Copilot app, Copilot works with the session's own model, mode and permissions")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .background(GlassCard(cornerRadius: 14, raised: true))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(isEditingPrompt ? 0.55 : 0), lineWidth: 1.5)
+            )
         }
     }
 
-    private var promptEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Prompt").font(style: .headline)
-                Spacer()
-                Button("Reset") { prompt = filledIn }
-                    .buttonStyle(.borderless)
-                    .disabled(prompt == filledIn)
-                    .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
-            }
-            TextEditor(text: $prompt)
-                .font(size: 12.5)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .frame(height: 250)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
-        }
+    /// "From your template in Settings", "Written by BriefBar", or "Edited".
+    private var promptOrigin: String {
+        if prompt != filledIn { return "Edited" }
+        return workItem != nil && target == nil ? "From your template in Settings" : "Written by BriefBar"
     }
 
     private var footer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            Text(store.canSend ? footnote : "The demo doesn't send anything.")
-                .font(size: 11)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
+        HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "info.circle")
+                Text(store.canSend ? footnote : "The demo doesn't send anything.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(size: 11)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
             Button("Cancel", action: close)
                 .keyboardShortcut(.cancelAction)
-            Button(runsHere ? "Send" : "Open in Copilot", action: send)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSend)
+                .controlSize(.large)
+            Button(action: send) {
+                Label(runsHere ? "Send" : "Open in Copilot", systemImage: runsHere ? "paperplane.fill" : "arrow.up.forward.app")
+                    .labelStyle(.titleAndIcon)
+            }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canSend)
         }
     }
 
@@ -539,6 +629,13 @@ struct CopilotComposerView: View {
     // MARK: Finding sessions
 
     private func setUp() {
+        // The demo's made-up clone, as BriefBar would find yours once you chose it: the demo sends nothing.
+        if store.mode == .demo, !hasAppeared {
+            hasAppeared = true
+            repository = CopilotTasksStore.demoRepository(for: subject)
+            refreshPrompt()
+            return
+        }
         guard !hasAppeared, store.canSend, store.isOn else { return }
         hasAppeared = true
         if !store.canOpenInApp { appProblem = CopilotTasksStore.cantOpenInApp }
@@ -771,32 +868,43 @@ struct CopilotComposerView: View {
 /// The model: one of the suggestions, or any other your plan offers, by its ID.
 struct CopilotModelMenu: View {
     @Binding var model: String
+    /// A capsule, as the composer's prompt has it, rather than a pop-up button, as Settings has.
+    var isCapsule = false
 
     var body: some View {
-        Menu {
-            ForEach(CopilotModel.suggestions) { choice in
-                Button {
-                    model = choice.id
-                } label: {
-                    if choice.id == model {
-                        Label(choice.name, systemImage: "checkmark")
-                    } else {
-                        Text(choice.name)
-                    }
-                }
+        if isCapsule {
+            ComposerCapsuleMenu(symbol: "sparkles", title: title) { items }
+                .help("The model Copilot works with")
+        } else {
+            Menu {
+                items
+            } label: {
+                Text(title)
             }
-            if !model.isEmpty, !CopilotModel.suggestions.contains(where: { $0.id == model }) {
-                Divider()
-                Button {} label: { Label(model, systemImage: "checkmark") }
-            }
-            Divider()
-            Button("Other Model…") {
-                if let other = Self.askForModel(current: model) { model = other }
-            }
-        } label: {
-            Text(model.isEmpty ? "Choose a Model" : CopilotModel.name(of: model))
+            .fixedSize()
         }
-        .fixedSize()
+    }
+
+    private var title: String {
+        model.isEmpty ? "Choose a Model" : CopilotModel.name(of: model)
+    }
+
+    @ViewBuilder private var items: some View {
+        ForEach(CopilotModel.suggestions) { choice in
+            Button {
+                model = choice.id
+            } label: {
+                CheckedMenuLabel(title: choice.name, isChecked: choice.id == model)
+            }
+        }
+        if !model.isEmpty, !CopilotModel.suggestions.contains(where: { $0.id == model }) {
+            Divider()
+            Button {} label: { Label(model, systemImage: "checkmark") }
+        }
+        Divider()
+        Button("Other Model…") {
+            if let other = Self.askForModel(current: model) { model = other }
+        }
     }
 
     private static func askForModel(current: String) -> String? {
@@ -819,16 +927,38 @@ struct CopilotModelMenu: View {
 /// How hard the model thinks; Default leaves it to the model.
 struct CopilotEffortPicker: View {
     @Binding var effort: String?
+    /// A capsule, as the composer's prompt has it, rather than a pop-up button, as Settings has.
+    var isCapsule = false
+
+    private static let help = "Reasoning effort: how hard the model thinks. Not every model takes every one."
 
     var body: some View {
-        Picker("Effort", selection: $effort) {
-            Text("Default Effort").tag(String?.none)
-            ForEach(CopilotModel.efforts, id: \.self) { effort in
-                Text(CopilotModel.effortName(effort)).tag(Optional(effort))
+        if isCapsule {
+            ComposerCapsuleMenu(symbol: "brain", title: effort.map(CopilotModel.effortName) ?? "Default Effort") {
+                Button {
+                    effort = nil
+                } label: {
+                    CheckedMenuLabel(title: "Default Effort", isChecked: effort == nil)
+                }
+                ForEach(CopilotModel.efforts, id: \.self) { choice in
+                    Button {
+                        effort = choice
+                    } label: {
+                        CheckedMenuLabel(title: CopilotModel.effortName(choice), isChecked: effort == choice)
+                    }
+                }
             }
+            .help(Self.help)
+        } else {
+            Picker("Effort", selection: $effort) {
+                Text("Default Effort").tag(String?.none)
+                ForEach(CopilotModel.efforts, id: \.self) { effort in
+                    Text(CopilotModel.effortName(effort)).tag(Optional(effort))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help(Self.help)
         }
-        .labelsHidden()
-        .fixedSize()
-        .help("Reasoning effort: how hard the model thinks. Not every model takes every one.")
     }
 }

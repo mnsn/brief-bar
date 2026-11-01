@@ -88,6 +88,8 @@ final class CopilotTasksStore: ObservableObject {
 
     let settings: AppSettings
     let mode: PRStore.Mode
+    /// The app's, for the composer's window to look as Settings › Appearance says.
+    weak var services: AppServices?
     /// A work item's title, when the sprint shows it, for notifications.
     var title: (WorkItemReference) -> String? = { _ in nil }
     /// A pull request's title, when the list shows it, for notifications.
@@ -179,6 +181,17 @@ final class CopilotTasksStore: ObservableObject {
 
     private var demoEntries: [CopilotTaskEntry] {
         mode == .demo ? CopilotTaskEntry.demo(now: Date()) : []
+    }
+
+    /// The demo's clone of the repository a send goes in, made up as the rest of its data is, so its composer shows what
+    /// yours would.
+    static func demoRepository(for subject: TaskSubject) -> GitRepository {
+        let name: String
+        switch subject {
+        case .workItem: name = "shop-web"
+        case .pullRequest(let pullRequest, _): name = pullRequest.repository
+        }
+        return GitRepository(root: UserHome.url.appendingPathComponent("Developer/\(name)", isDirectory: true), baseBranch: "main")
     }
 
     /// The latest send of a work item, for its row.

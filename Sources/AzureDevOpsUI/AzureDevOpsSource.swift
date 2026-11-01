@@ -117,6 +117,7 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
             .store(in: &cancellables)
         let copilot = CopilotTasksStore(settings: settings, mode: store.mode, notifier: notifier)
+        copilot.services = services
         copilot.title = { [weak sprint] reference in sprint?.title(of: reference) }
         copilot.pullRequestTitle = { [weak store] reference in
             store?.items.first { $0.key.number == reference.id && $0.key.organization.caseInsensitiveCompare(reference.organization) == .orderedSame }?.title
@@ -619,7 +620,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         }
         if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
             let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
-                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.isRendering, true)
             let options = Form { CopilotSetting() }
                 .formStyle(.grouped)
                 .environment(\.inSettingsForm, true)
