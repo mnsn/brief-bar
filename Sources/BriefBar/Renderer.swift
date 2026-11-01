@@ -121,9 +121,10 @@ enum Renderer {
                 }
                 if panel.listByState {
                     panel.stateList.isShowing = true
-                    // With BRIEFBAR_RENDER_SUMMARIES=1, the brief as Apple Intelligence words it.
+                    // With BRIEFBAR_RENDER_SUMMARIES=1, the brief as Apple Intelligence words it, when it can.
                     let deadline = Date().addingTimeInterval(60)
-                    while model.briefWriter.isEnabled, !model.briefWriter.isDone(with: panel.stateList.brief), Date() < deadline {
+                    while model.briefWriter.isEnabled, model.briefWriter.isAvailable,
+                          !model.briefWriter.isDone(with: panel.stateList.brief), Date() < deadline {
                         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
                     }
                 }

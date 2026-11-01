@@ -306,10 +306,12 @@ func drawScrolled(_ scene: Scene, by offset: CGFloat, in context: CGContext) {
     guard let taller = scene.taller, offset > 0 else { return }
     let area = scene.scrollArea
     let shown = CGRect(origin: scene.point(area.minX, area.minY), size: CGSize(width: area.width * scene.scale, height: area.height * scene.scale))
-    // Square at the top, where the header is, and rounded at the bottom like the panel.
+    // Inside the window, square at the top, where the header is, and rounded at the bottom like the panel.
     let radius = panelRadius * scene.scale
     let rounded = CGRect(x: shown.minX, y: shown.minY - radius, width: shown.width, height: shown.height + radius)
     context.saveGState()
+    context.addPath(roundedRect(scene.frame, radius: windowRadius))
+    context.clip()
     context.clip(to: flipped(shown))
     context.addPath(roundedRect(rounded, radius: radius))
     context.clip()
