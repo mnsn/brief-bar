@@ -115,10 +115,10 @@ section names and the like, so nothing you see can reach it: a line with a strin
   pipelines that run on its merge go: running, waiting for an approval, and then passed or canceled, until you've
   seen it; one that fails moves it to Failing. Its foot has **Open Azure DevOps**, and an icon beside Settings
   refreshes now, as the Mac's does. Signed out, it offers to sign in, which runs `az login` in a console window;
-  without the Azure CLI, it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle
-  after no activity for, Show To review in the bar, Follow pipelines after you merge, your organizations (with Add
-  an organization and Find my organizations again), and the pull requests you watch (with Watch a pull request, by
-  its link).
+  without the Azure CLI, or with one it can't start, it links to its installation. Its settings are the Mac's:
+  Refresh, Keep done for, Idle after no activity for, Show To review in the bar, Follow pipelines after you merge,
+  your organizations (with Add an organization and Find my organizations again), and the pull requests you watch
+  (with Watch a pull request, by its link).
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
@@ -272,6 +272,8 @@ SDK ships inside the app.
   words only (letters, digits and `-._:/=`, checked to the end of the text, since a regex's `$` lets a final line
   break through), runs it as `cmd.exe /d /v:off /s /c "<path> <words>"`, without AutoRun commands or delayed
   expansion, refuses a path with quotes, `%` or line breaks, and treats `az.cmd.` as the batch file Windows would run.
+  An `az.cmd` it refuses, like one removed since BriefBar found it, can't run: Sign in opens the page that says how
+  to install the Azure CLI, rather than ending BriefBar.
   `az.cmd` runs Python, which can hold its output open after `az` ends: the runner waits half a second for the rest,
   then ends what's left, and a timeout ends the whole tree.
 - **A console program started by an app without a console gets a window of its own**, in Windows' default

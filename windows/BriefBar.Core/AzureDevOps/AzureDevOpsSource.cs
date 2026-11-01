@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net.NetworkInformation;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
@@ -334,7 +335,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     }
 
     /// Runs `az login` in a console window, which stays open once it's done, so you can read what it said; or, without
-    /// the Azure CLI, opens the page that says how to install it.
+    /// the Azure CLI, or with one it can't start, opens the page that says how to install it.
     void SignIn()
     {
         if (reading.LocateCli() is not { } program)
@@ -343,7 +344,17 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             return;
         }
         Log.Write(line: $"azureDevOps: signing in with az login");
-        processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
+        try
+        {
+            processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
+        }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or ArgumentException)
+        {
+            // It was uninstalled or moved since BriefBar found it, or it's at a path that `cmd.exe` can't take, with a
+            // percent sign (`ProcessRunner`): what to install comes up in its place.
+            Log.Write(error: error, context: $"azureDevOps: couldn't start az login");
+            access.OpenLink(obj: AzureDevOpsRows.InstallCliPage);
+        }
     }
 
     /// Looks for your organizations, on the thread pool, if `wanted` says so now and it isn't looking already: then it

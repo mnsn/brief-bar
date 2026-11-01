@@ -2,6 +2,7 @@ using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Demo;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
+using BriefBar.Core.Tests.Copilot;
 
 namespace BriefBar.Core.Tests.AzureDevOps;
 
@@ -94,6 +95,22 @@ public sealed class AzureDevOpsSourceTests
         other.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.SignIn));
         Assert.Empty(collection: withoutCli.Processes.Consoles);
         Assert.Equal(expected: AzureDevOpsRows.InstallCliPage, actual: Assert.Single(collection: withoutCli.Opened));
+    }
+
+    /// Sign in can't start `az login` when `az.cmd` was removed since BriefBar found it, or is at a path with a percent
+    /// sign, which `cmd.exe` would read as a variable (`ProcessRunner` refuses it): it opens the page that says how to
+    /// install it, rather than ending BriefBar. With `ProcessRunner`, which starts nothing either way.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SignInOpensTheInstallPageWhenAzLoginCantStart(bool atAPathWithAPercentSign)
+    {
+        using var folder = new TemporaryFolder();
+        var made = Make(cli: atAPathWithAPercentSign ? @"C:\Made up 100%\az.cmd" : folder.Combine("az.cmd"), runner: new ProcessRunner());
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.SignIn));
+        Assert.Equal(expected: AzureDevOpsRows.InstallCliPage, actual: Assert.Single(collection: made.Opened));
     }
 
     /// Without organizations, it finds yours as it starts: it watches the ones with pull requests of yours, keeps all of
@@ -223,9 +240,12 @@ public sealed class AzureDevOpsSourceTests
     }
 
     /// A source of the demo's settings, unless `settings` says otherwise, with a made-up engine, organizations from `find`,
-    /// and the Azure CLI at `cli`.
+    /// and the Azure CLI at `cli`, which `runner` starts, or a made-up runner that starts nothing (`Made.Processes`).
     static Made Make(
-        AzureDevOpsSettings? settings = null, Func<CancellationToken, Task<OrganizationsFound>>? find = null, string? cli = @"C:\az\az.cmd")
+        AzureDevOpsSettings? settings = null,
+        Func<CancellationToken, Task<OrganizationsFound>>? find = null,
+        string? cli = @"C:\az\az.cmd",
+        IProcessRunner? runner = null)
     {
         var engines = new List<FakePulseEngine>();
         var opened = new List<Uri>();
@@ -254,7 +274,7 @@ public sealed class AzureDevOpsSourceTests
                     opened.Add(item: link);
                 }
             }),
-            processes: processes,
+            processes: runner ?? processes,
             time: clock);
         return new Made(Source: source, Settings: chosen, Engines: engines, Opened: opened, Processes: processes, Clock: clock);
     }
