@@ -244,6 +244,59 @@ public sealed class SourceSwitchTests
         Assert.Equal(expected: SourceState.Off, actual: sources.State(entry: entry));
     }
 
+    /// Kept on after an update, it waits for its paused self to stop, on the thread pool, before it starts. Turned off
+    /// meanwhile, as from Settings opened again, it stays off: the later choice stands.
+    [Fact]
+    public async Task StaysOffWhenTurnedOffWhileItsKeptOn()
+    {
+        using var hold = new ManualResetEventSlim(initialState: false);
+        var (sources, runner, paused, made, settings) = KeepingOnASlowPausedSource(hold: hold);
+
+        var keepingOn = sources.TurnOnAsync(entry: entry, runner: runner);
+        await paused.StopCalled.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(condition: await sources.TurnOffAsync(entry: entry, runner: runner));
+        hold.Set();
+        Assert.True(condition: await keepingOn.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(expected: SourceState.Off, actual: sources.State(entry: entry));
+        Assert.Empty(collection: runner.Running);
+        Assert.DoesNotContain(collection: made, filter: source => source.Started);
+        Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+    }
+
+    /// Turned off and on again while it's kept on, it runs once: the later choice stands, with its own source.
+    [Fact]
+    public async Task RunsOnceWhenTurnedOffAndOnAgainWhileItsKeptOn()
+    {
+        using var hold = new ManualResetEventSlim(initialState: false);
+        var (sources, runner, paused, made, _) = KeepingOnASlowPausedSource(hold: hold);
+
+        var keepingOn = sources.TurnOnAsync(entry: entry, runner: runner);
+        await paused.StopCalled.Task.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await sources.TurnOffAsync(entry: entry, runner: runner);
+        await sources.TurnOnAsync(entry: entry, runner: runner);
+        hold.Set();
+        await keepingOn.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: SourceState.On, actual: sources.State(entry: entry));
+        var running = Assert.IsType<FakeSource>(@object: Assert.Single(collection: runner.Running));
+        Assert.Same(expected: Assert.Single(collection: made, predicate: source => source.Started), actual: running);
+    }
+
+    /// A source you turned on that now reads more, paused, whose stop waits for hold, as one's might take a while.
+    static (SourceSwitch Sources, FakeRunner Runner, FakeSource Paused, List<FakeSource> Made, MemorySettings Settings) KeepingOnASlowPausedSource(ManualResetEventSlim hold)
+    {
+        var settings = new MemorySettings();
+        var choices = new SourceChoices();
+        choices.TurnOn(source: SourceId.Copilot, version: 1, date: Times.At(seconds: -60));
+        choices.Save(settings: settings);
+        var made = new List<FakeSource>();
+        var sources = Switch(settings: settings, made: made);
+        Assert.Equal(expected: SourceState.NeedsReview, actual: sources.State(entry: entry));
+        var paused = new FakeSource { HoldStop = hold };
+        return (sources, new FakeRunner(running: [paused]), paused, made, settings);
+    }
+
     static SourceSwitch Switch(ISettingsStorage settings, List<FakeSource> made) => new(
         settings: settings,
         entries: [entry],

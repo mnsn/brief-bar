@@ -12,6 +12,9 @@ public sealed class SourceSwitch
     readonly Func<SourceEntry, ISectionSource> make;
     readonly TimeProvider time;
     readonly SourceChoices choices;
+    /// How many times each source was turned on or off, so that one still under way can tell a later choice was made
+    /// since, as from Settings opened again, and leave it to that one.
+    readonly Dictionary<SourceId, int> choicesMade = [];
 
     /// - `make`: a source of `entry`, not started yet.
     public SourceSwitch(ISettingsStorage settings, IReadOnlyList<SourceEntry> entries, Func<SourceEntry, ISectionSource> make, TimeProvider? time = null)
@@ -72,6 +75,7 @@ public sealed class SourceSwitch
         {
             return Saved();
         }
+        var choice = NewChoice(source: entry.Id);
         choices.TurnOn(source: entry.Id, version: entry.Description.Version, date: time.GetUtcNow());
         choices.Save(settings: settings);
         Log.Write(line: $"sources: {entry.Id} turned on, version {entry.Description.Version}");
@@ -79,6 +83,11 @@ public sealed class SourceSwitch
         {
             await Task.Run(function: paused.StopAsync).ConfigureAwait(continueOnCapturedContext: true);
             Release(source: paused);
+            if (choice != choicesMade[entry.Id])
+            {
+                // Turned off, or on again, while its paused self stopped: the later choice stands, with its own source.
+                return Saved();
+            }
         }
         await runner.AddAsync(source: make(arg: entry)).ConfigureAwait(continueOnCapturedContext: true);
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
@@ -97,6 +106,7 @@ public sealed class SourceSwitch
         {
             return Saved();
         }
+        _ = NewChoice(source: entry.Id);
         choices.TurnOff(source: entry.Id);
         choices.Save(settings: settings);
         Log.Write(line: $"sources: {entry.Id} turned off");
@@ -124,6 +134,9 @@ public sealed class SourceSwitch
     }
 
     static void Release(ISectionSource? source) => (source as IDisposable)?.Dispose();
+
+    /// Counts a choice for `source`, which makes any earlier one still under way stale; returns its number.
+    int NewChoice(SourceId source) => choicesMade[source] = choicesMade.GetValueOrDefault(key: source) + 1;
 
     /// Whether everything is saved, now that a choice is made: what couldn't be saved before is tried again, so a choice
     /// saved by a later write counts.
