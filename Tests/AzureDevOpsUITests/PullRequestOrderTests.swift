@@ -35,14 +35,18 @@ import Testing
         #expect(Set(oldest.map(\.key)) == Set(store.items.map(\.key)))
         let created = oldest.map { $0.createdAt ?? .distantFuture }
         #expect(created == created.sorted())
-        #expect(newest.map { $0.createdAt ?? .distantPast } == newest.map { $0.createdAt ?? .distantPast }.sorted(by: >))
+        let newestCreated: [Date] = newest.map { $0.createdAt ?? .distantPast }
+        #expect(newestCreated == newestCreated.sorted(by: >))
         // What the status order counts stays as it was.
         #expect(GroupCounts(newest) == store.counts)
 
         // In one list, all but Done's and Idle's, which keep their own sections.
         let listed = store.dateList(.oldestFirst)
-        #expect(listed == oldest.filter { $0.group != .done && $0.group != .idle })
+        let apart: Set<PRGroup> = [.done, .idle]
+        #expect(listed == oldest.filter { !apart.contains($0.group) })
         #expect(listed.count == store.items.count - store.counts.done - store.counts.idle)
-        #expect(listed.contains { $0.group == .needsYou } && listed.contains { $0.group == .ready })
+        let groups = Set(listed.map(\.group))
+        #expect(groups.contains(.needsYou))
+        #expect(groups.contains(.ready))
     }
 }

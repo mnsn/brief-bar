@@ -107,9 +107,10 @@ import BriefBarCore
         // An optional build, or one that doesn't apply, isn't something left.
         #expect(try builds([Check(name: "perf", kind: .build, state: .failed, isBlocking: false), api(.notApplicable)]) == nil)
 
-        let checks = { (states: [Check.State]) in
-            try readiness(makePR(), checks: states.enumerated().map { Check(name: "status \($0.offset)", kind: .status, state: $0.element) })
-                .items.first { $0.kind == .checks }.map { "\($0.state.map(\.rawValue) ?? "nil") \($0.label)" }
+        func checks(_ states: [Check.State]) throws -> String? {
+            let statuses = states.enumerated().map { Check(name: "status \($0.offset)", kind: .status, state: $0.element) }
+            guard let item = try readiness(makePR(), checks: statuses).items.first(where: { $0.kind == .checks }) else { return nil }
+            return "\(item.state?.rawValue ?? "nil") \(item.label)"
         }
         #expect(try checks([.failed, .passed]) == "failing Check failed")
         #expect(try checks([.pending, .running]) == "running 2 checks running")
