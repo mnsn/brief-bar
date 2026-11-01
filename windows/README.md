@@ -104,10 +104,12 @@ section names and the like, so nothing you see can reach it: a line with a strin
   ones you review, in the organizations you choose, which it finds the first time, and the ones you watch by their
   links, read with the Azure CLI's sign-in (`az account get-access-token`, its token kept in memory only) and GET
   requests only, every minute. Organization names are compared ignoring case, as Azure DevOps does: a pull request
-  you watch by a link that spells its organization another way is the one your lists have, listed once. Its groups
-  are the Mac's: Needs you (with **Mark as seen** while something there is new), Answered (until you've seen it in
-  the panel), Failing, Ready to complete, To review, Waiting, Done (with **Clear**) and Idle, folded; the bar counts
-  Needs you, Failing and Ready to complete, and To review too if you turn that on. A row says why it's there, with
+  you watch by a link that spells its organization another way is the one your lists have, listed once, and an
+  organization spelled another way, as when finding your organizations again spells it as Azure DevOps does, keeps
+  its pull requests, even while it can't be read. Its groups are the Mac's: Needs you (with **Mark as seen** while
+  something there is new), Answered (until you've seen it in the panel), Failing, Ready to complete, To review,
+  Waiting, Done (with **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To
+  review too if you turn that on. A row says why it's there, with
   the comment, the failed step or who approved; it opens the pull request in your browser, at the comment that needs
   you, and sees it; its menu removes it from Needs you, or stops watching it. After you merge one, Done says how the
   pipelines that run on its merge go: running, waiting for an approval, and then passed or canceled, until you've

@@ -357,12 +357,12 @@ public sealed class PulseEngine : IPulseEngine
                 else
                 {
                     errors.Add(item: (organization, error!));
-                    // Keep what was there until it can be read again.
-                    foreach (var (key, item) in active.Where(predicate: pair => pair.Key.Organization == organization))
+                    // Keep what was there until it can be read again, however its name was spelled then.
+                    foreach (var (key, item) in active.Where(predicate: pair => string.Equals(a: pair.Key.Organization, b: organization, comparisonType: StringComparison.OrdinalIgnoreCase)))
                     {
                         listed[key] = item;
                     }
-                    foreach (var (key, pr) in done.Where(predicate: pair => pair.Key.Organization == organization))
+                    foreach (var (key, pr) in done.Where(predicate: pair => string.Equals(a: pair.Key.Organization, b: organization, comparisonType: StringComparison.OrdinalIgnoreCase)))
                     {
                         completed[key] = pr;
                     }
@@ -378,7 +378,9 @@ public sealed class PulseEngine : IPulseEngine
             failures = 0;
         }
 
-        var succeeded = organizations.Except(second: errors.Select(selector: failed => failed.Organization), comparer: StringComparer.Ordinal).ToHashSet(comparer: StringComparer.Ordinal);
+        // The organizations read, by any spelling: a pull request read under another is of the same one.
+        var succeeded = organizations.Except(second: errors.Select(selector: failed => failed.Organization), comparer: StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
         await LookUpVanishedAsync(
             listed: listed, completed: completed, succeeded: succeeded, startedAt: startedAt, closedSince: closedSince, configuration: configuration, cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);

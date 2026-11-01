@@ -283,18 +283,28 @@ public sealed class EngineTests
         Assert.Equal(expected: [Fixture.Org], actual: snapshot.FirstLoaded.Keys);
     }
 
-    /// Organization names are case-insensitive in Azure DevOps: watched under another spelling, as when finding your
-    /// organizations again spells one as Azure DevOps does, an organization keeps its pull requests.
+    /// Spelled another way, as when finding your organizations again spells one as Azure DevOps does, an organization is the
+    /// same one: what was read there stays listed, even while it can't be read.
     [Fact]
     public async Task AnOrganizationSpelledAnotherWayKeepsItsPullRequests()
     {
         var server = new StubServer();
         server.ServeOrganization(mine: [Fixture.PullRequest(id: 1)]);
+        server.ServeOrganization(organization: "fabrikam");
         using var client = server.Client();
-        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { });
-        await engine.RefreshNowAsync(cancellationToken: TestContext.Current.CancellationToken);
-        engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso"] });
-        Assert.Equal(expected: [new PRKey(Organization: Fixture.Org, Number: 1)], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id));
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org, "fabrikam"] }, onChange: _ => { });
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        Assert.Equal(expected: [1], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id.Number));
+
+        server.On(path: "/Contoso/_apis", reply: _ => StubReply.Code(status: 500));
+        engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso", "fabrikam"] });
+        Assert.Equal(expected: [1], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id.Number));
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+        var snapshot = engine.CurrentSnapshot();
+        Assert.Equal(expected: Fixture.Org, actual: Assert.Single(collection: snapshot.Records).Id.Organization);
+        Assert.Equal(expected: 1, actual: snapshot.Records[0].Id.Number);
+        Assert.Equal(expected: PulseProblemKind.SomeOrganizations, actual: snapshot.Problem?.Kind);
     }
 
     /// Spelled another way while its lists load, an organization keeps what they had.
@@ -396,6 +406,28 @@ public sealed class EngineTests
         server.On(path: "/_apis/git/pullrequests", json: Fixture.List(items: [Fixture.PullRequest(id: 2)]), query: yourActiveList);
         server.On(path: "/_apis/git/pullrequests/1", json: Fixture.PullRequest(id: 1, status: "abandoned", closed: now.AddSeconds(seconds: -Make.Minute)));
         await engine.RefreshNowAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = engine.CurrentSnapshot();
+        Assert.Equal(expected: [PullRequestStatus.Abandoned, PullRequestStatus.Active], actual: snapshot.Records.Select(selector: record => record.PullRequest.Status));
+        Assert.Equal(expected: PRReason.Abandoned, actual: Classify(snapshot: snapshot, now: now).GetValueOrDefault(key: 1)?.Reason);
+    }
+
+    /// One of yours that left the list of an organization spelled another way since, as when finding your organizations
+    /// again spells it as Azure DevOps does, is looked up as any other is: it's the same organization.
+    [Fact]
+    public async Task FindsOutWhatHappenedToAPullRequestThatLeftAnOrganizationSpelledAnotherWay()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var server = new StubServer();
+        server.ServeOrganization(mine: [Fixture.PullRequest(id: 1), Fixture.PullRequest(id: 2)]);
+        using var client = server.Client();
+        using var engine = Engine(client: client);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
+
+        server.ServeOrganization(organization: "Contoso", mine: [Fixture.PullRequest(id: 2)]);
+        server.On(path: "/" + Fixture.Org + "/_apis/git/pullrequests/1", json: Fixture.PullRequest(id: 1, status: "abandoned", closed: now.AddSeconds(seconds: -Make.Minute)));
+        engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso"] });
+        await engine.RefreshNowAsync(cancellationToken: cancellationToken);
         var snapshot = engine.CurrentSnapshot();
         Assert.Equal(expected: [PullRequestStatus.Abandoned, PullRequestStatus.Active], actual: snapshot.Records.Select(selector: record => record.PullRequest.Status));
         Assert.Equal(expected: PRReason.Abandoned, actual: Classify(snapshot: snapshot, now: now).GetValueOrDefault(key: 1)?.Reason);
