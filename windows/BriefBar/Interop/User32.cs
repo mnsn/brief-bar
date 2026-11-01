@@ -13,6 +13,10 @@ internal static class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ShowWindow(nint hWnd, int command);
 
+    /// The window's scaling, in dots per inch, which Windows changes as it moves the window, hidden or not.
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(nint hWnd);
+
     [DllImport("user32.dll")]
     public static extern nint GetForegroundWindow();
 

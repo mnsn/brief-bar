@@ -14,6 +14,9 @@ namespace BriefBar.Shell;
 
 /// One display's bar: its window, the space it reserves, and the window messages a docked bar has to handle. It never
 /// becomes the active window, so a click on it leaves your window active, and it isn't on the taskbar or in Alt+Tab.
+/// It's never closed while BriefBar runs: as displays change, it keeps its display, takes another, or steps aside,
+/// hidden and holding no space, for a display that comes back (`BarArrangement`). Closing a WinUI window while a UI
+/// Automation client holds on to it can crash BriefBar.
 internal sealed partial class BarWindow : Window
 {
     readonly AppShell shell;
@@ -85,11 +88,45 @@ internal sealed partial class BarWindow : Window
 
     public ElementTheme Theme => view.ActualTheme;
 
+    /// Stepped aside: hidden, holding no space, until it takes a display again.
+    public bool IsSpare { get; private set; }
+
+    /// What decides which display it can take (`BarArrangement`): where it shows, and its window's scaling.
+    public BarCandidate Candidate => new(Bounds: Display.Bounds, Dpi: (int)User32.GetDpiForWindow(hWnd: Hwnd), IsShowing: !IsSpare);
+
+    /// Takes `display` over, as displays change: it's no longer a spare, and a bar from another display gives that
+    /// one's space back. Then `Place` puts it there.
+    public void TakeOver(Display display)
+    {
+        ArgumentNullException.ThrowIfNull(argument: display);
+        if (display.Bounds != Display.Bounds)
+        {
+            GiveSpaceBack();
+        }
+        Display = display;
+        IsSpare = false;
+    }
+
+    /// Steps aside, as its display went: gives its space back and hides, for a display that comes back.
+    public void StepAside()
+    {
+        if (closed || IsSpare)
+        {
+            return;
+        }
+        GiveSpaceBack();
+        IsSpare = true;
+        hiddenForFullScreen = false;
+        ViewModel.ShowOpen(target: null);
+        User32.ShowWindow(hWnd: Hwnd, command: WindowStyles.SW_HIDE);
+        Log.Write(line: $"bar {Display.Handle}: stepped aside");
+    }
+
     /// Reserves the top of its display and puts the bar there, unless it's there already, or `force`. A bar whose
-    /// display is gone asks for a bar on each display again instead.
+    /// display is gone asks for a bar on each display again instead. A spare stays where it is.
     public void Place(bool force)
     {
-        if (closed)
+        if (closed || IsSpare)
         {
             return;
         }
@@ -117,10 +154,10 @@ internal sealed partial class BarWindow : Window
         Log.Write(line: $"bar {Display.Handle}: at {Rect}, scale {Display.Scale}");
     }
 
-    /// Steps aside while a full-screen window, such as a game or a video, is in front on its display.
+    /// Hides while a full-screen window, such as a game or a video, is in front on its display.
     public void SetHiddenForFullScreen(bool hidden)
     {
-        if (hidden == hiddenForFullScreen || closed)
+        if (hidden == hiddenForFullScreen || closed || IsSpare)
         {
             return;
         }
@@ -157,7 +194,7 @@ internal sealed partial class BarWindow : Window
         Place(force: true);
     }
 
-    /// Closes the window for good. Call `GiveSpaceBack` first.
+    /// Closes the window for good, only as BriefBar quits. Call `GiveSpaceBack` first.
     public void CloseWindow()
     {
         if (closed)

@@ -13,6 +13,7 @@ namespace BriefBar.Shell;
 
 /// BriefBar on the desktop: a bar on every display, again whenever displays change; the one panel; what the sources
 /// show, kept up to date on both; the theme; and quitting, which gives every bar's space back before anything closes.
+/// No window closes before then: as displays change, bar windows are kept, moved or hidden (`BarArrangement`).
 internal sealed class AppShell : IDisposable
 {
     /// What Explorer broadcasts when it starts again, having forgotten every bar's space.
@@ -21,7 +22,10 @@ internal sealed class AppShell : IDisposable
     readonly DispatcherQueue queue;
     readonly SourceHost sources;
     readonly Action exit;
+    /// A bar on each display, in the order of `Displays.All`.
     readonly List<BarWindow> bars = [];
+    /// Bars that stepped aside as their display went: hidden, holding no space, for a display that comes back.
+    readonly List<BarWindow> spares = [];
     readonly PanelController panel;
     readonly DesktopWatcher desktop;
     readonly DispatcherQueueTimer displaysSettle;
@@ -41,7 +45,7 @@ internal sealed class AppShell : IDisposable
         displaysSettle = queue.CreateTimer();
         displaysSettle.Interval = TimeSpan.FromMilliseconds(value: 800);
         displaysSettle.IsRepeating = false;
-        displaysSettle.Tick += (_, _) => RecreateBars();
+        displaysSettle.Tick += (_, _) => DisplaysSettled();
         // Times such as "3m" and "Updated 20 s ago" move on by themselves.
         ticker = queue.CreateTimer();
         ticker.Interval = TimeSpan.FromSeconds(value: 15);
@@ -65,7 +69,7 @@ internal sealed class AppShell : IDisposable
         uiSettings.TextScaleFactorChanged += (_, _) => queue.TryEnqueue(callback: () => PlaceBars(force: true));
         // Light, dark, accent and High Contrast changes; AccessibilitySettings' own event needs a UWP window.
         uiSettings.ColorValuesChanged += (_, _) => queue.TryEnqueue(callback: () => ThemeChanged(theme: CurrentTheme()));
-        CreateBars();
+        ArrangeBars();
         desktop.Start();
         ticker.Start();
         StartSources();
@@ -100,11 +104,12 @@ internal sealed class AppShell : IDisposable
         desktop.Dispose();
         ticker.Stop();
         displaysSettle.Stop();
-        foreach (var bar in bars)
+        foreach (var bar in bars.Concat(second: spares))
         {
             bar.CloseWindow();
         }
         bars.Clear();
+        spares.Clear();
         Log.Write(line: $"quitting: windows closed after {Stopwatch.GetElapsedTime(startingTimestamp: started)}");
         FinishQuitting(started: started);
     }
@@ -136,9 +141,11 @@ internal sealed class AppShell : IDisposable
         }
     }
 
+    /// An item was pressed on `bar`. A bar that stepped aside keeps its buttons, which a UI Automation client that held
+    /// on to one could still press: nothing opens from it.
     public void ItemPressed(BarWindow bar, PanelTarget target, PixelRect anchor)
     {
-        if (!quitting)
+        if (!quitting && bars.Contains(item: bar))
         {
             panel.Press(bar: bar, target: target, itemAnchor: anchor);
         }
@@ -155,10 +162,10 @@ internal sealed class AppShell : IDisposable
 
     /// Something moved `bar`'s space, the work area or the scaling. If the displays are still the ones the bars are on,
     /// `bar` fits itself to the change; otherwise, a bar for each display again, as `DisplaysChanged`: a remote session
-    /// whose monitors change, for one, tells windows only that their space moved.
+    /// whose monitors change, for one, tells windows only that their space moved. A spare has no space to fit.
     public void LayoutChanged(BarWindow bar, bool force)
     {
-        if (quitting)
+        if (quitting || !bars.Contains(item: bar))
         {
             return;
         }
@@ -211,35 +218,55 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    void CreateBars()
+    /// A bar on each display, from the windows BriefBar has where it can (`BarArrangement`): a bar keeps its display or
+    /// takes another, a spare shows again, and only a display left over gets a new window. A bar that takes no display
+    /// steps aside. None closes: closing a WinUI window while a UI Automation client holds on to it can crash BriefBar,
+    /// and a display change, with its window messages, is just when that happens.
+    void ArrangeBars()
     {
+        var displays = Displays.All();
+        var windows = bars.Concat(second: spares).ToList();
+        var plan = BarArrangement.Plan(
+            candidates: windows.Select(selector: bar => bar.Candidate).ToList(),
+            displays: displays.Select(selector: display => display.Shape).ToList());
+        foreach (var index in plan.SteppingAside)
+        {
+            windows[index].StepAside();
+        }
         var now = DateTimeOffset.Now;
         var snapshots = sources.Snapshots();
-        foreach (var display in Displays.All())
+        var arranged = new List<BarWindow>();
+        for (var index = 0; index < displays.Count; index++)
         {
-            var bar = new BarWindow(shell: this, display: display);
+            var display = displays[index];
+            var bar = plan.ForDisplays[index] is { } taken ? windows[taken] : new BarWindow(shell: this, display: display);
+            bar.TakeOver(display: display);
             bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now);
-            bars.Add(item: bar);
+            arranged.Add(item: bar);
+        }
+        bars.Clear();
+        bars.AddRange(collection: arranged);
+        spares.Clear();
+        spares.AddRange(collection: windows.Where(predicate: bar => !arranged.Contains(item: bar)));
+        foreach (var bar in bars)
+        {
             bar.Place(force: true);
         }
-        Log.Write(line: $"bars: {bars.Count}");
+        var created = plan.ForDisplays.Count(predicate: taken => taken is null);
+        Log.Write(line: $"bars: {bars.Count}, {created} new, {plan.SteppingAside.Count} stepped aside, {spares.Count} spare");
         ApplyFullScreen();
     }
 
-    void RecreateBars()
+    /// The displays settled after a change: a bar for each again, without the panel, which opened under a bar that may
+    /// have moved.
+    void DisplaysSettled()
     {
         if (quitting)
         {
             return;
         }
         panel.Dismiss(reason: PanelCloseReason.DisplaysChanged);
-        foreach (var bar in bars)
-        {
-            bar.GiveSpaceBack();
-            bar.CloseWindow();
-        }
-        bars.Clear();
-        CreateBars();
+        ArrangeBars();
         desktop.Check();
     }
 

@@ -1,8 +1,9 @@
 # Checks BriefBar for Windows end to end with made-up data, through UI Automation: a bar at the top of each display,
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; the same item on
-# another display's bar; Alt+F4 leaving a bar alone; the bars coming back after displays change, still opening panels;
-# and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or because
-# another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own with --demo.
+# another display's bar; Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change,
+# and still opening panels; and every display's work area given back within a second of quitting, whether from
+# scripts\quit.ps1 or because another program asked a bar to close. Build first: it quits a BriefBar that's running,
+# and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display. Leave the mouse and keyboard alone while it
 # runs: a click anywhere but BriefBar closes the panel it's checking, as it should.
 param(
@@ -193,17 +194,30 @@ function Test-Running($process, $before) {
     Start-Sleep -Milliseconds 800
     Check ([SmokeNative]::IsWindow($handle) -and -not $process.HasExited) 'Alt+F4 leaves a bar alone'
 
-    # Displays change, as when one is plugged in or the PC wakes: a bar for each again, whose items still open panels.
-    $oldHandles = @(@($bars) | ForEach-Object { $_.Current.NativeWindowHandle })
+    # Displays change, as when one is plugged in or the PC wakes: the bars are arranged again, and here, where the
+    # displays stay as they were, each keeps its display. No bar window closes while BriefBar runs, since closing one
+    # while a UI Automation client holds on to it can crash it. Their items still open panels.
+    $oldHandles = @(@($bars) | ForEach-Object { $_.Current.NativeWindowHandle } | Sort-Object)
+    $log = Join-Path -Path $env:LOCALAPPDATA -ChildPath 'BriefBar\Logs\BriefBar.log'
+    $logLength = (Get-Item -Path $log).Length
     [void][SmokeNative]::PostMessageW($handle, $WM_DISPLAYCHANGE, [IntPtr]32, [IntPtr]::Zero)
-    $again = Wait-Until {
-        $found = Find-Bars -process $process -count $before.Count
-        if ($found -and -not @($found | Where-Object { $oldHandles -contains $_.Current.NativeWindowHandle })) { $found }
+    $arranged = Wait-Until {
+        $stream = [IO.File]::Open($log, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            [void]$stream.Seek([Math]::Min($logLength, $stream.Length), [IO.SeekOrigin]::Begin)
+            $added = [IO.StreamReader]::new($stream).ReadToEnd()
+        }
+        finally {
+            $stream.Dispose()
+        }
+        $added -match "bars: $($before.Count), 0 new, 0 stepped aside"
     } 10
-    Check ($null -ne $again) 'after displays change, a new bar on each display'
+    $again = Find-Bars -process $process -count $before.Count
+    $newHandles = @(@($again) | ForEach-Object { $_.Current.NativeWindowHandle } | Sort-Object)
+    Check ([bool]$arranged -and $null -ne $again -and -not (Compare-Object -ReferenceObject $oldHandles -DifferenceObject $newHandles)) 'after displays change, each bar keeps its display, its window open'
     if ($again) {
         $first = @($again)[0]
-        # Recreating the bars closed the panel: past the 600 ms in which a press on its item counts as the one that
+        # Arranging the bars closed the panel: past the 600 ms in which a press on its item counts as the one that
         # closed it.
         Start-Sleep -Milliseconds 700
         Invoke-Item (Get-OverviewItem $first)

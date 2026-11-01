@@ -32,10 +32,10 @@ Run the tests from `windows/`, whose `global.json` has `dotnet test` use Microso
 xUnit v3 needs. The projects build with the latest recommended analyzers, nullable references and warnings as
 errors; `.github/workflows/windows.yml` checks the formatting, runs the tests and builds for x64 and Arm64.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
-each display, its items named in words, the Overview's panel, the same item on another display, Alt+F4, displays
-changing, and the space given back within a second of quitting or of another program asking BriefBar to close. Run
-it before you open a pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere
-closes the panel it's checking; it works over a disconnected remote session too.
+each display, its items named in words, the Overview's panel, the same item on another display, Alt+F4, each bar
+keeping its display as displays change, and the space given back within a second of quitting or of another program
+asking BriefBar to close. Run it before you open a pull request, and leave the mouse and keyboard alone while it
+runs, since a click elsewhere closes the panel it's checking; it works over a disconnected remote session too.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -138,8 +138,16 @@ SDK ships inside the app.
 - **WinUI puts the window menu back too**, which Narrator lists as "System", and which could move or close a bar:
   both windows take `WS_SYSMENU` off in `WM_STYLECHANGING`, after WinUI's turn (`WindowMenu`).
 - **Windows destroys an owned window with its owner**, and WinUI doesn't raise `Closed` for it: the panel is owned
-  by the bar it opened from only while it shows, since bars close as displays change, and it forgets a window that's
-  gone however it went.
+  by the bar it opened from only while it shows, and it forgets a window that's gone however it went.
+- **Closing a WinUI window while a UI Automation client holds on to it can crash the app**, in
+  `Microsoft.UI.Xaml.dll`, with no managed exception. `Close` disconnects the window's automation provider with a
+  cross-apartment COM call, whose modal loop dispatches window messages, such as the `WM_WINDOWPOS*` a display change
+  brings, into the half-closed window. Narrator, Voice Access and many other apps are such clients. So no bar window
+  closes while BriefBar runs: as displays change, each keeps its display or takes another, one at its scaling
+  first, or steps aside, hidden and holding no space, for a display that comes back (`BarArrangement`). Only a
+  display left over gets a new window, so there are never more bar windows than the most displays there have been at
+  once, and windows close only as BriefBar quits, after every bar's space is back. A bar that stepped aside ignores
+  presses on its buttons, which a UI Automation client that held on to one could still make.
 - **A WinUI window closes on `WM_CLOSE`**, which Alt+F4 and `taskkill` send, leaving its space reserved: a bar turns
   down Alt+F4 (`SC_CLOSE`), and turns any other close into quitting BriefBar.
 - **Acrylic turns into a flat color in an inactive window**, and the bar is never active: `ActiveAcrylic` keeps
@@ -162,8 +170,8 @@ SDK ships inside the app.
 - **`x:Bind` connects only once a view is on screen**, so the panel calls `Bindings.Update()` before it first
   measures itself, and one-time bindings (`x:Bind`'s default) never update: anything that changes is `OneWay`.
 - **A remote session whose monitors change doesn't always send `WM_DISPLAYCHANGE`**; it moves the bars' space.
-  So any change to their space, the work area or the scaling makes the bars check the displays, and a bar for
-  each again if they're not the ones the bars are on.
+  So any change to their space, the work area or the scaling makes the bars check the displays, and arranges them
+  again if they're not the ones the bars are on.
 - **Watching every window's moves to find full-screen windows** wakes BriefBar on every move of the mouse: it
   watches the foreground window's thread only, and looks again every second only while a display has one.
 - **Quitting has to give the space back itself**: the first version left the second display's space reserved,
