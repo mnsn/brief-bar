@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **A menu-bar item's list opens on the desktop you're on.** Clicking a BriefBar item after you'd
+  switched desktops (Spaces) could open its list out of sight, on a desktop you'd left, and keep doing
+  so until you opened it from the menu bar on another display. Now it opens where you click.
+
 ## 0.10.0 - 2026-11-01
 
 - **Choose the model that writes summaries, from free on your Mac to the most capable.** In
