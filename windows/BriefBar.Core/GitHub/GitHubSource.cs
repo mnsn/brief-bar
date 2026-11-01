@@ -331,9 +331,9 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         }
     }
 
-    /// Runs `gh auth login` in a console window, which stays open once it's done, so you can read what it said; or, without
-    /// the GitHub CLI, opens the page that says how to install it. `cmd.exe` keeps the window open, but can't take a path
-    /// with a percent sign: `gh` found at one gets a window of its own, which closes once it's done.
+    /// Runs `gh auth login` in a console window, which stays open once it's done, so you can read what it said, unless
+    /// `gh` is at a path `cmd.exe` can't take (`ProcessRunner`); or, without the GitHub CLI, or with one it can't start,
+    /// opens the page that says how to install it.
     void SignIn()
     {
         if (reading.LocateCli() is not { } program)
@@ -344,8 +344,7 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         Log.Write(line: $"github: signing in with gh auth login");
         try
         {
-            processes.StartInConsole(
-                program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: ProcessRunner.CmdCanRun(program: program));
+            processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or ArgumentException)
         {

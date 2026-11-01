@@ -19,7 +19,8 @@ public interface IProcessRunner
     /// Starts `program` with `arguments` in a console window of its own, in `workingDirectory`, with `environment`'s
     /// variables as `RunAsync` sets them, and leaves it running: Windows opens it in your default terminal, such as Windows
     /// Terminal. With `keepOpen`, its window stays open once it's done, so you can read what it said: it runs in `cmd.exe`
-    /// then, as a batch file always does, so it takes only fixed arguments. A program that isn't there throws
+    /// then, as a batch file always does, so it takes only fixed arguments; but a program at a path `cmd.exe` can't take,
+    /// with a percent sign, runs directly, in a window that closes once it's done. A program that isn't there throws
     /// `Win32Exception`.
     void StartInConsole(
         string program, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string?> environment, bool keepOpen);

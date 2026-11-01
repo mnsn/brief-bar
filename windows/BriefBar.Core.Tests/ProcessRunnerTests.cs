@@ -134,7 +134,8 @@ public sealed class ProcessRunnerTests
     }
 
     /// `cmd.exe` would read a percent sign, quotes or a line break in a path as part of a command: a program in a folder
-    /// whose name has a percent sign, which Windows allows, runs only directly.
+    /// whose name has a percent sign, which Windows allows, runs only directly, even when its window should stay open, as
+    /// Azure DevOps' and GitHub's sign-ins ask for; and a batch file there, which only `cmd.exe` runs, can't run at all.
     [Fact]
     public void RunsAProgramAtAPathWithAPercentSignOnlyDirectly()
     {
@@ -144,10 +145,13 @@ public sealed class ProcessRunnerTests
         Assert.False(condition: ProcessRunner.CmdCanRun(program: "C:\\Tools\\\"gh\".exe"));
         Assert.False(condition: ProcessRunner.CmdCanRun(program: "C:\\Tools\r\ngh.exe"));
 
-        Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.StartInfo(program: percent, arguments: ["auth", "login"], keepOpen: true));
-        var direct = ProcessRunner.StartInfo(program: percent, arguments: ["auth", "login"], keepOpen: false);
-        Assert.Equal(expected: percent, actual: direct.FileName);
-        Assert.Equal(expected: ["auth", "login"], actual: direct.ArgumentList);
+        foreach (var keepOpen in new[] { true, false })
+        {
+            var direct = ProcessRunner.StartInfo(program: percent, arguments: ["auth", "login"], keepOpen: keepOpen);
+            Assert.Equal(expected: percent, actual: direct.FileName);
+            Assert.Equal(expected: ["auth", "login"], actual: direct.ArgumentList);
+            Assert.Throws<ArgumentException>(testCode: () => ProcessRunner.StartInfo(program: @"C:\Tools\100%\az.cmd", arguments: ["login"], keepOpen: keepOpen));
+        }
     }
 
     [Fact]

@@ -13,7 +13,8 @@ namespace BriefBar.Core;
 /// A batch file, such as `az.cmd`, runs in `cmd.exe`, which reads its whole command line as commands: nothing of yours may
 /// reach it. So a batch file gets only fixed arguments, made of letters, digits and `-._:/=`, or this throws; and `cmd.exe`
 /// runs it without AutoRun commands or delayed expansion, the batch file's path quoted. A program whose console window
-/// stays open once it's done, as `gh auth login`'s does, runs in `cmd.exe` the same way.
+/// stays open once it's done, as `gh auth login`'s does, runs in `cmd.exe` the same way, unless its path is one that
+/// `cmd.exe` can't take: then it runs directly, in a window that closes once it's done.
 public sealed partial class ProcessRunner : IProcessRunner
 {
     /// Windows' `ERROR_FILE_NOT_FOUND`.
@@ -144,7 +145,8 @@ public sealed partial class ProcessRunner : IProcessRunner
     }
 
     /// Whether `cmd.exe` can run `program`: a path without quotes, percent signs or line breaks, which it would read as
-    /// part of a command. Windows allows a percent sign in a folder's name, so a program found there runs only directly.
+    /// part of a command. Windows allows a percent sign in a folder's name, so a program found there runs only directly,
+    /// and a batch file there can't run at all.
     public static bool CmdCanRun(string program)
     {
         ArgumentNullException.ThrowIfNull(argument: program);
@@ -195,12 +197,13 @@ public sealed partial class ProcessRunner : IProcessRunner
     }
 
     /// How `program` starts: a batch file, or a program whose window stays open once it's done (`keepOpen`), in `cmd.exe`,
-    /// which keeps it open, with fixed arguments only; any other program directly, with whatever arguments.
+    /// which keeps it open, with fixed arguments only; any other program directly, with whatever arguments, as is one whose
+    /// window should stay open at a path `cmd.exe` can't take (`CmdCanRun`), whose window closes once it's done then.
     internal static ProcessStartInfo StartInfo(string program, IReadOnlyList<string> arguments, bool keepOpen)
     {
         ArgumentException.ThrowIfNullOrEmpty(argument: program);
         ArgumentNullException.ThrowIfNull(argument: arguments);
-        if (IsBatchFile(program: program) || keepOpen)
+        if (IsBatchFile(program: program) || (keepOpen && CmdCanRun(program: program)))
         {
             var commandLine = CmdArguments(program: program, arguments: arguments, keepOpen: keepOpen);
             // `cmd.exe` would start without it, and only say so in what it prints: it fails as a program that isn't there

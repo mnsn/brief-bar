@@ -310,8 +310,9 @@ SDK ships inside the app.
   because `az.cmd` is a batch file, which runs in `cmd.exe /k`; `gh.exe` isn't one, so `gh auth login` would close as
   soon as it was done. A program whose window should stay open runs in `cmd.exe /k` as a batch file does, with fixed
   words only (`ProcessRunner.CmdArguments`). `cmd.exe` would read a percent sign in its path as part of a command, and
-  Windows allows one in a folder's name: `gh.exe` found there runs directly, in a window that closes once it's done,
-  and a `gh.cmd` there can't run at all, which the panel says.
+  Windows allows one in a folder's name: a program found there, such as `gh.exe` or an `az.exe`, runs directly
+  instead, in a window that closes once it's done, and a batch file there, such as `gh.cmd`, can't run at all, which
+  the panel says.
 - **`CancellationTokenSource.Cancel()` runs every callback on its token before it returns**, on the thread that calls
   it, and a registration's `Dispose()` waits for its callback while that runs: one that blocks, such as one ending a
   program, would freeze Settings as you turn a source off, or hold up quitting. GitHub's source stops with
