@@ -405,7 +405,12 @@ public actor PulseEngine {
             case .success(let lists):
                 identities[organization] = lists.me
                 if let name = lists.name { userName = name }
-                if firstLoaded[organization] == nil { firstLoaded[organization] = startedAt }
+                if firstLoaded[organization] == nil {
+                    // Read before, spelled another way, it's the same organization: what came since then is news.
+                    let earlier = firstLoaded.first { $0.key.lowercased() == organization.lowercased() }
+                    if let earlier { firstLoaded[earlier.key] = nil }
+                    firstLoaded[organization] = earlier?.value ?? startedAt
+                }
                 for pr in lists.mine where pr.status == .active {
                     listed[pr.key] = Listed(pullRequest: pr, role: .author)
                 }

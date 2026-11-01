@@ -668,6 +668,27 @@ import BriefBarCore
         }
     }
 
+    /// Spelled another way, an organization was first read when it was first read under its old spelling: what came
+    /// since is news, and nothing's kept under the old spelling.
+    @Test func anOrganizationSpelledAnotherWayWasFirstReadWhenItWasFirstRead() async throws {
+        let clock = Locked(t(0))
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.serveOrganization("Contoso", mine: [Fixture.pullRequest(1)])
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org]), now: { clock.value }
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().firstLoaded == [Fixture.org: t(0)])
+
+        clock.set(t(minute))
+        await engine.setConfiguration(PulseEngine.Configuration(organizations: ["Contoso"]))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.firstLoaded == ["Contoso": t(0)])
+        #expect(snapshot.records.map(\.id.organization) == ["Contoso"])
+    }
+
     @Test func fetchesDetailsOnABudgetAfterTheFirstLoad() async {
         let server = StubServer()
         server.serveOrganization(mine: (1...5).map { Fixture.pullRequest($0) })
