@@ -129,6 +129,40 @@ public sealed class CLISessionTests
         Assert.Empty(collection: setup.Said);
     }
 
+    /// Copilot turned off as a session's terminal starts, after it checked it may: stopping waits for that terminal, so
+    /// none starts, and nothing is said, once it has stopped.
+    [Fact]
+    public async Task StoppingWaitsForATerminalThatsStarting()
+    {
+        using var setup = new Setup();
+        using var starting = new ManualResetEventSlim(initialState: false);
+        using var started = new ManualResetEventSlim(initialState: false);
+        setup.Processes.Starting = () =>
+        {
+            starting.Set();
+            started.Wait(timeout: wait);
+        };
+        var opening = setup.Session.Open(id: Id)!;
+        Task stopping;
+        try
+        {
+            Assert.True(condition: starting.Wait(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
+            stopping = Task.Run(action: setup.Session.Stop, cancellationToken: TestContext.Current.CancellationToken);
+            await Task.WhenAny(task1: stopping, task2: Task.Delay(delay: TimeSpan.FromMilliseconds(value: 300), cancellationToken: TestContext.Current.CancellationToken));
+            Assert.False(condition: stopping.IsCompleted, userMessage: "It stopped while a terminal was still starting.");
+            Assert.Empty(collection: setup.Processes.Consoles);
+        }
+        finally
+        {
+            started.Set();
+        }
+
+        await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await opening.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(collection: setup.Processes.Consoles);
+        Assert.Empty(collection: setup.Said);
+    }
+
     [Fact]
     public void OpensNothingThatIsntASession()
     {

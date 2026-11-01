@@ -32,4 +32,19 @@ public sealed class StartingSessionsTests
         Assert.Equal(expected: round + 1, actual: starting.Round);
         Assert.True(condition: starting.Begin(id: "a", now: now.AddSeconds(seconds: 1)));
     }
+
+    /// A session goes on opening only in the round it began in: once opening has stopped, nothing more of it runs.
+    [Fact]
+    public void GoesOnOpeningOnlyInTheRoundItBegan()
+    {
+        var starting = new StartingSessions();
+        var round = starting.Round;
+        var opened = 0;
+        Assert.True(condition: starting.RunUnlessStopped(round: round, open: () => opened++));
+        starting.StopAll();
+        Assert.False(condition: starting.RunUnlessStopped(round: round, open: () => opened++));
+        Assert.Equal(expected: 1, actual: opened);
+        Assert.True(condition: starting.RunUnlessStopped(round: starting.Round, open: () => opened++));
+        Assert.Equal(expected: 2, actual: opened);
+    }
 }

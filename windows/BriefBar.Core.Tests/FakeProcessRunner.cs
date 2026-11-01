@@ -33,6 +33,10 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
         }
     }
 
+    /// Runs each time it's asked to start something in a console window, before it notes it: as a terminal that takes a
+    /// while to start.
+    public Action? Starting { get; set; }
+
     public Task<ProcessResult> RunAsync(
         string program,
         IReadOnlyList<string> arguments,
@@ -58,6 +62,7 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
     public void StartInConsole(
         string program, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string?> environment, bool keepOpen)
     {
+        Starting?.Invoke();
         lock (gate)
         {
             if (failsToStart is { } failure)

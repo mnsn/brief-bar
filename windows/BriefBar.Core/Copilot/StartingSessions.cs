@@ -2,11 +2,14 @@ namespace BriefBar.Core.Copilot;
 
 /// The sessions being opened in a terminal, since when. A new terminal window takes a moment to start the Copilot CLI,
 /// which holds the session only once it starts: a second click meanwhile would start a second CLI on it, and fork its
-/// history. So for a while, opening it again opens nothing more. Safe to use from any thread. The Mac's
-/// `CLISession.Starting`.
+/// history. So for a while, opening it again opens nothing more. Opening stops for good with `StopAll`, once what's going
+/// on (`RunUnlessStopped`) is done. Safe to use from any thread. The Mac's `CLISession.Starting`.
 public sealed class StartingSessions
 {
     readonly Lock gate = new();
+
+    /// Held while a session goes on opening, and to stop: taken before `gate`, never while holding it.
+    readonly Lock opening = new();
     readonly Dictionary<string, DateTimeOffset> since = new(comparer: StringComparer.Ordinal);
     int round;
 
@@ -48,13 +51,34 @@ public sealed class StartingSessions
         }
     }
 
-    /// Stops opening every session, as when Copilot is turned off.
+    /// Runs `open`, which goes on opening a session that began in `round`, unless opening has stopped since: false then,
+    /// and it doesn't run. `StopAll` waits for one that's running, so none runs once it has returned; so `open` mustn't
+    /// wait for whatever stops opening.
+    public bool RunUnlessStopped(int round, Action open)
+    {
+        ArgumentNullException.ThrowIfNull(argument: open);
+        lock (opening)
+        {
+            if (Round != round)
+            {
+                return false;
+            }
+            open();
+            return true;
+        }
+    }
+
+    /// Stops opening every session, as when Copilot is turned off, once a session that's going on opening is done: none
+    /// goes on from then.
     public void StopAll()
     {
-        lock (gate)
+        lock (opening)
         {
-            since.Clear();
-            round++;
+            lock (gate)
+            {
+                since.Clear();
+                round++;
+            }
         }
     }
 }

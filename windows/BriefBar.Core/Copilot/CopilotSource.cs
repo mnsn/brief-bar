@@ -118,7 +118,7 @@ public sealed class CopilotSource : ISectionSource, IDisposable
             settings.Changed -= SettingsChanged;
         }
         timer?.Dispose();
-        // A session still starting in a terminal opens nothing now.
+        // A session still starting in a terminal opens nothing now, once one whose terminal is starting has started.
         cliSessions?.Stop();
         // Outside the lock: the engine may be handing over a snapshot, which takes it.
         return stopping is null ? Task.CompletedTask : StopAfterStartAsync(stopping: stopping, started: started);

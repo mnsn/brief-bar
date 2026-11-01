@@ -58,17 +58,19 @@ public sealed class CLISession
             shell.ShowTerminalOf(obj: pid);
             return null;
         }
-        // Its CLI may not hold it yet: a second one would fork its history.
+        // Its CLI may not hold it yet: a second one would fork its history. The round is read first, so that stopping
+        // before it began counts too.
+        var round = starting.Round;
         if (!starting.Begin(id: session, now: time.GetUtcNow()))
         {
             return null;
         }
-        var round = starting.Round;
         return Task.Run(action: () => Resume(id: session, round: round));
     }
 
     /// Stops opening sessions in a terminal, as Copilot is turned off or BriefBar quits: one that's still starting opens
-    /// nothing.
+    /// nothing, and one whose terminal is starting now is waited for, so none starts, and nothing is said, once this has
+    /// returned. Sources stop off the UI thread.
     public void Stop() => starting.StopAll();
 
     /// How to open session `id` yourself: `copilot --resume <id>`, with `COPILOT_HOME` set to `paths`' folder when the CLI
@@ -96,14 +98,19 @@ public sealed class CLISession
         var pid = holder(arg: paths.SessionDirectory(id: id));
         var copilot = pid is null ? locator.Locate() : null;
         var folder = copilot is null ? null : SessionStateScanner.WorkingFolder(directory: paths.SessionDirectory(id: id));
-        if (starting.Round != round)
-        {
-            return;
-        }
-        if (pid is { } holderId)
+        // Checked and done together, so that stopping, which waits for it, leaves nothing to start or say after it.
+        starting.RunUnlessStopped(round: round, open: () => OpenAsFound(id: id, holderId: pid, copilot: copilot, folder: folder));
+    }
+
+    /// Opens session `id` as `Resume` found it: brings up the terminal of the CLI that holds it (`holderId`), or starts the
+    /// CLI at `copilot` on it in `folder`, or says why it can't. What it asks of Windows is posted to the UI thread, which
+    /// it doesn't wait for.
+    void OpenAsFound(string id, int? holderId, string? copilot, string? folder)
+    {
+        if (holderId is { } pid)
         {
             starting.End(id: id);
-            shell.ShowTerminalOf(obj: holderId);
+            shell.ShowTerminalOf(obj: pid);
             return;
         }
         var command = ManualCommand(id: id, paths: paths, yourHome: locator.Home);
