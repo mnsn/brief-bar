@@ -69,8 +69,9 @@ public sealed class CLISession
     }
 
     /// Stops opening sessions in a terminal, as Copilot is turned off or BriefBar quits: one that's still starting opens
-    /// nothing, and one whose terminal is starting now is waited for, so none starts, and nothing is said, once this has
-    /// returned. Sources stop off the UI thread.
+    /// nothing, and one whose terminal is starting now is waited for, so that once this has returned, no terminal starts,
+    /// and nothing more is asked of the shell. Only the source's stop, on the thread pool, can wait: once it has run, as
+    /// when the source is let go of on the UI thread, which stops it again, nothing is starting.
     public void Stop() => starting.StopAll();
 
     /// How to open session `id` yourself: `copilot --resume <id>`, with `COPILOT_HOME` set to `paths`' folder when the CLI
