@@ -279,6 +279,9 @@ SDK ships inside the app.
   with real data, the panel said "All clear" for the seconds between finding your organizations and reading them.
   The Mac shows "Loading" while it refreshes; Windows only the first time, so the bar doesn't say it's starting at
   every refresh of an empty list.
+- **Seconds since 1970 in a double don't hold every tick of today's dates**: saved that way, a time reads back a
+  tick or two off, and a seen time that comes back early makes the comment it was set to new again, so what you'd
+  taken off Needs you came back after a restart. `SettingsValues` saves times as decimal seconds, to the tick.
 - **A new comment shows within a minute to a quarter of an hour**, as on the Mac: the lists are read every minute,
   but each pull request's threads and policies only as often as `RefreshPlanner` says (every minute while a build
   runs, every 3 minutes, or every 15 for a quiet one), unless the pull request itself changed.

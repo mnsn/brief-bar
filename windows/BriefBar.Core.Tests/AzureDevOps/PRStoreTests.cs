@@ -1,6 +1,7 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Demo;
 using BriefBar.Core.Settings;
+using BriefBar.Core.Tests.Copilot;
 
 namespace BriefBar.Core.Tests.AzureDevOps;
 
@@ -185,6 +186,28 @@ public sealed class PRStoreTests
         store.Receive(snapshot: new PulseSnapshot { Problem = PulseProblem.NoOrganizations, HasLoaded = true }, now: now);
         Assert.False(condition: store.NeedsDiscovery);
         Assert.Equal(expected: PulseProblemKind.NoOrganizations, actual: store.Problem?.Kind);
+    }
+
+    /// What you took off Needs you, or saw, stays so after a restart, to the tick of the comment it was set to.
+    [Fact]
+    public void WhatYouTookOffStaysOffAfterARestart()
+    {
+        using var folder = new TemporaryFolder();
+        var path = folder.Combine("Settings.json");
+        // Sam replies 12 minutes before: a time a double of seconds can't hold to the tick.
+        var at = new DateTimeOffset(year: 2026, month: 7, day: 12, hour: 23, minute: 17, second: 20, offset: TimeSpan.Zero).AddTicks(ticks: 8_140_000);
+        var settings = AzureDevOpsDemoData.Settings(storage: new JsonFileSettings(path: path), now: at);
+        var store = new PRStore(settings: settings);
+        store.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: at), now: at);
+        store.Dismiss(item: Item(store: store, number: 4102), now: at);
+        store.MarkSeen(item: Item(store: store, number: 4097), now: at);
+
+        var restarted = new AzureDevOpsSettings(settings: new JsonFileSettings(path: path), now: at);
+        var again = new PRStore(settings: restarted);
+        again.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: at), now: at);
+        Assert.Equal(expected: PRGroup.Waiting, actual: Item(store: again, number: 4102).Group);
+        Assert.False(condition: Item(store: again, number: 4097).HasNews);
+        Assert.Equal(expected: settings.DismissedCutoff(key: replied), actual: restarted.DismissedCutoff(key: replied));
     }
 
     /// The demo's pull requests and seen state, as `AzureDevOpsSource` starts them.
