@@ -42,10 +42,14 @@ internal sealed partial class SettingsWindow : Window
 
     public nint Hwnd { get; }
 
-    /// Shows `source`'s page, or General, and brings it to the front.
+    /// Shows `source`'s page, or General, and brings it to the front, restored if it was minimized.
     public void Show(SourceId? source)
     {
         view.Show(source: source);
+        if (Interop.User32.IsIconic(hWnd: Hwnd))
+        {
+            Interop.User32.ShowWindow(hWnd: Hwnd, command: Interop.WindowStyles.SW_RESTORE);
+        }
         Activate();
         Foreground.Bring(hwnd: Hwnd);
     }
