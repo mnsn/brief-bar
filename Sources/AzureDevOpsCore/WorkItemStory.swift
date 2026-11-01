@@ -103,8 +103,9 @@ public enum WorkItemStory {
             comments.append(said)
             used += said.count + 1
         }
-        // The older ones that didn't fit say so, first, as they'd be.
-        if comments.count < sayable.count { comments.append("(\(sayable.count - comments.count) earlier comments left out)") }
+        // The older ones that didn't fit, and those that weren't read at all, say so, first, as they'd be.
+        let left = sayable.count - comments.count + max(0, details.commentCount - details.comments.count)
+        if left > 0 { comments.append("(\(left) earlier \(left == 1 ? "comment" : "comments") left out)") }
         // Cut to fit a summary, the newest stay.
         if !comments.isEmpty { parts.append(ItemStory.Fact(commentsLabel, comments.reversed().joined(separator: "\n"), keepsEnd: true)) }
         return parts

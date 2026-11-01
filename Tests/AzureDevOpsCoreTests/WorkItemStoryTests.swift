@@ -116,10 +116,18 @@ import Testing
         let said = (1...10).map { "\($0.isMultiple(of: 2) ? "Sam Rivera" : "Someone"): Comment \($0)." }
         #expect(context[2].value == (["(2 earlier comments left out)"] + said.reversed()).joined(separator: "\n"))
         #expect(context[2].keepsEnd)
+        // Those that weren't read, past the page that was, count too.
+        var paged = details
+        paged.commentCount = 100
+        #expect(WorkItemStory.context(paged).last?.value.hasPrefix("(90 earlier comments left out)\n") == true)
+        paged.commentCount = 11
+        paged.comments = Array(details.comments.prefix(10))
+        #expect(WorkItemStory.context(paged).last?.value.hasPrefix("(1 earlier comment left out)\n") == true)
 
         // As many long ones as fit, each cut to its length.
         var talkative = details
         talkative.comments = (1...10).map { WorkItemDetails.Comment(id: $0, author: sam, createdAt: nil, text: RichText(markdown: long)) }
+        talkative.commentCount = 10
         let comments = try #require(WorkItemStory.context(talkative).last?.value)
         #expect(comments.count <= WorkItemStory.contextLimit)
         let lines = comments.components(separatedBy: "\n")

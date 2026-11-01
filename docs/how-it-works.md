@@ -634,7 +634,7 @@ still current, and only then, each source reads more of each thing it sums up, b
 memory (`StorySummaries.lastRead`, a hash of each part's text by its label), until summaries or Show Links go off, a
 source stops, or BriefBar quits; and nothing is read while Show Links is off or once the summary is taken back. A part
 the prompt has no room for says it's left out, "(Comment threads left out for length.)", and so do the older comments
-of a work item that don't fit, "(2 earlier comments left out)":
+of a work item that don't fit or weren't read, by its comment count, "(2 earlier comments left out)":
 
 - Azure DevOps (`WorkLinksStore.context`; every request a GET): a pull request's description, in plain text, without
   what its template asks its author in HTML comments, from a GET of it; and its comment threads, your pull requests'
