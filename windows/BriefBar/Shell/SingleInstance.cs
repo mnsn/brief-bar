@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 
 namespace BriefBar.Shell;
 
 /// Keeps one BriefBar running per sign-in. A second start asks the first to show its Overview, then quits; and
-/// windows/scripts/quit.ps1 asks it to quit, through a named event.
+/// windows/scripts/quit.ps1 asks it to quit, through a named event. The events are made as BriefBar claims its place,
+/// before XAML starts, so a request made while it starts waits, signaled, until it listens.
 internal sealed class SingleInstance : IDisposable
 {
     const string MutexName = "BriefBar.Windows";
@@ -11,14 +13,16 @@ internal sealed class SingleInstance : IDisposable
     const string ShowEventName = "BriefBar.Windows.Show";
 
     readonly Mutex mutex;
-    EventWaitHandle? quitEvent;
-    EventWaitHandle? showEvent;
+    readonly EventWaitHandle quitEvent;
+    readonly EventWaitHandle showEvent;
     RegisteredWaitHandle? quitWait;
     RegisteredWaitHandle? showWait;
 
     SingleInstance(Mutex mutex)
     {
         this.mutex = mutex;
+        quitEvent = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, name: QuitEventName);
+        showEvent = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, name: ShowEventName);
     }
 
     /// This BriefBar, if no other runs; null if one does.
@@ -33,24 +37,31 @@ internal sealed class SingleInstance : IDisposable
         return null;
     }
 
-    /// Asks the BriefBar that runs to show its Overview. False if it can't be reached yet, as just after it starts.
-    public static bool AskRunningToShow()
+    /// Asks the BriefBar that runs to show its Overview, trying for up to `patience`: one that has just claimed its
+    /// place makes its events a moment later. False if it can't be reached, as while it quits.
+    public static bool AskRunningToShow(TimeSpan patience)
     {
-        if (!EventWaitHandle.TryOpenExisting(name: ShowEventName, result: out var showing))
+        var started = Stopwatch.GetTimestamp();
+        while (true)
         {
-            return false;
-        }
-        using (showing)
-        {
-            return showing.Set();
+            if (EventWaitHandle.TryOpenExisting(name: ShowEventName, result: out var showing))
+            {
+                using (showing)
+                {
+                    return showing.Set();
+                }
+            }
+            if (Stopwatch.GetElapsedTime(startingTimestamp: started) >= patience)
+            {
+                return false;
+            }
+            Thread.Sleep(millisecondsTimeout: 50);
         }
     }
 
-    /// Calls `quit` or `show`, on `queue`, when another program asks.
+    /// Calls `quit` or `show`, on `queue`, when another program asks, or at once if it asked while BriefBar started.
     public void Listen(DispatcherQueue queue, Action quit, Action show)
     {
-        quitEvent = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, name: QuitEventName);
-        showEvent = new EventWaitHandle(initialState: false, mode: EventResetMode.AutoReset, name: ShowEventName);
         quitWait = ThreadPool.RegisterWaitForSingleObject(
             waitObject: quitEvent,
             callBack: (_, _) => queue.TryEnqueue(callback: () => quit()),
@@ -70,8 +81,8 @@ internal sealed class SingleInstance : IDisposable
     {
         quitWait?.Unregister(waitObject: null);
         showWait?.Unregister(waitObject: null);
-        quitEvent?.Dispose();
-        showEvent?.Dispose();
+        quitEvent.Dispose();
+        showEvent.Dispose();
         mutex.ReleaseMutex();
         mutex.Dispose();
     }

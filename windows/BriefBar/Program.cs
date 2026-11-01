@@ -14,7 +14,7 @@ public static class Program
         var instance = SingleInstance.TryClaim();
         if (instance is null)
         {
-            SingleInstance.AskRunningToShow();
+            SingleInstance.AskRunningToShow(patience: TimeSpan.FromSeconds(value: 2));
             return 0;
         }
         try

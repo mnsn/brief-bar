@@ -42,7 +42,8 @@ public sealed class RowViewModel : Observable
 
     public bool HasInitials { get; private set => Set(storage: ref field, value: value); }
 
-    public bool HasIcon => !HasInitials;
+    /// Its state's icon shows in its badge, without initials.
+    public bool HasIcon { get; private set => Set(storage: ref field, value: value); }
 
     public string Unread { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
@@ -84,6 +85,7 @@ public sealed class RowViewModel : Observable
         BadgeGlyphBrush = palette.OnFill;
         Initials = row.Initials ?? string.Empty;
         HasInitials = !string.IsNullOrEmpty(value: row.Initials);
+        HasIcon = !HasInitials;
         Unread = row.Unread > 0 ? row.Unread.ToString(provider: System.Globalization.CultureInfo.CurrentCulture) : string.Empty;
         HasUnread = row.Unread > 0;
         UnreadBrush = info is null ? palette.Quiet : palette.Tint(tint: info.Tint);

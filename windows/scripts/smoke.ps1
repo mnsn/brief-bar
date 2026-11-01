@@ -2,9 +2,9 @@
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
 # Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
-# panels; and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or
-# because another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own
-# with --demo.
+# panels; a second start while it starts opening its Overview; and every display's work area given back within a
+# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
+# quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
 # panel's keys are sent only while it's in front.
@@ -305,10 +305,18 @@ finally {
     }
 }
 
-# Another program asking a bar to close, as `taskkill` without /F does, quits BriefBar.
+# Started again while it's still starting, BriefBar opens its Overview once it's up, and the second start ends. Then
+# another program asking a bar to close, as `taskkill` without /F does, quits BriefBar.
 $process = Start-BriefBar
+$claimed = Wait-Until {
+    $mutex = $null
+    if ([System.Threading.Mutex]::TryOpenExisting('BriefBar.Windows', [ref]$mutex)) { $mutex.Dispose(); $true }
+} 10
+$second = if ($claimed) { [System.Diagnostics.Process]::Start($Exe, '--demo') }
 $bars = Wait-Until { Find-Bars -process $process -count $before.Count } 15
 if ($bars) {
+    $overview = Wait-Until { @(@($bars) | ForEach-Object { Get-PanelList $_ } | Where-Object { $_.Current.Name -eq 'Overview' }) } 5
+    Check ($null -ne $second -and $second.WaitForExit(5000) -and $second.ExitCode -eq 0 -and $null -ne $overview) 'a second start while it starts opens its Overview once it''s up, and ends'
     $handle = [IntPtr]@($bars)[0].Current.NativeWindowHandle
     Test-Quit -process $process -before $before -how 'a close request' -ask {
         [void][SmokeNative]::PostMessageW($handle, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
