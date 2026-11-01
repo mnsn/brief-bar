@@ -168,18 +168,21 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
         public var statusName: String?
         public var statusGenre: String?
         public var defaultDisplayName: String?
+        /// The people and teams a required-reviewers policy requires, by their identity IDs.
+        public var requiredReviewerIds: [String]?
 
         private enum CodingKeys: String, CodingKey {
-            case displayName, minimumApproverCount, statusName, statusGenre, defaultDisplayName
+            case displayName, minimumApproverCount, statusName, statusGenre, defaultDisplayName, requiredReviewerIds
         }
 
         public init(displayName: String? = nil, minimumApproverCount: Int? = nil, statusName: String? = nil,
-                    statusGenre: String? = nil, defaultDisplayName: String? = nil) {
+                    statusGenre: String? = nil, defaultDisplayName: String? = nil, requiredReviewerIds: [String]? = nil) {
             self.displayName = displayName
             self.minimumApproverCount = minimumApproverCount
             self.statusName = statusName
             self.statusGenre = statusGenre
             self.defaultDisplayName = defaultDisplayName
+            self.requiredReviewerIds = requiredReviewerIds
         }
 
         public init(from decoder: Decoder) throws {
@@ -189,6 +192,7 @@ public struct ADOPolicyEvaluation: Decodable, Sendable {
             statusName = container.lenient(String.self, forKey: .statusName)
             statusGenre = container.lenient(String.self, forKey: .statusGenre)
             defaultDisplayName = container.lenient(String.self, forKey: .defaultDisplayName)
+            requiredReviewerIds = container.lenient([String].self, forKey: .requiredReviewerIds)
         }
     }
 

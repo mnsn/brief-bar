@@ -1,0 +1,353 @@
+<UserControl
+    x:Class="BriefBar.Views.PanelView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:BriefBar.Views"
+    xmlns:vm="using:BriefBar.ViewModels">
+    <UserControl.Resources>
+        <CollectionViewSource x:Name="GroupedRows" IsSourceGrouped="True" />
+    </UserControl.Resources>
+
+    <!-- The panel under an item: its header, a banner when its section can't show everything, then its brief and
+         its groups of rows, and a footer. -->
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" Invoked="OnEscape" />
+        </Grid.KeyboardAccelerators>
+
+        <Grid
+            Padding="16,12,12,12"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,0,0,1"
+            ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="32" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border
+                Width="32"
+                Height="32"
+                VerticalAlignment="Center"
+                Background="{x:Bind ViewModel.TileBrush, Mode=OneWay}"
+                CornerRadius="6">
+                <views:FluentIcon
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Fill="{x:Bind ViewModel.TileGlyphBrush, Mode=OneWay}"
+                    Icon="{x:Bind ViewModel.TileGlyph, Mode=OneWay}"
+                    Size="18" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock
+                    AutomationProperties.HeadingLevel="Level1"
+                    FontSize="16"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                    Text="{x:Bind ViewModel.Title, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse
+                        Width="7"
+                        Height="7"
+                        VerticalAlignment="Center"
+                        Fill="{x:Bind ViewModel.LiveBrush, Mode=OneWay}"
+                        Visibility="{x:Bind ViewModel.IsLive, Mode=OneWay}" />
+                    <TextBlock
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <InfoBar
+            Grid.Row="1"
+            Margin="12,10,12,0"
+            IsClosable="False"
+            IsOpen="{x:Bind ViewModel.HasProblem, Mode=OneWay}"
+            Message="{x:Bind ViewModel.ProblemMessage, Mode=OneWay}"
+            Severity="Warning"
+            Title="{x:Bind ViewModel.ProblemTitle, Mode=OneWay}" />
+
+        <ListView
+            x:Name="List"
+            Grid.Row="2"
+            Padding="0,0,0,8"
+            AutomationProperties.Name="{x:Bind ViewModel.Title, Mode=OneWay}"
+            IsItemClickEnabled="False"
+            ItemsSource="{x:Bind GroupedRows.View, Mode=OneWay}"
+            SelectionMode="None">
+            <ListView.Header>
+                <Border
+                    Margin="12,10,12,2"
+                    Padding="12,10,12,10"
+                    Background="{ThemeResource BriefBackgroundBrush}"
+                    BorderBrush="{ThemeResource BriefBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{x:Bind ViewModel.HasBrief, Mode=OneWay}">
+                    <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <views:FluentIcon
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind ViewModel.SparkleBrush, Mode=OneWay}"
+                                Icon="Sparkle"
+                                Size="14" />
+                            <TextBlock
+                                AutomationProperties.HeadingLevel="Level2"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="Brief" />
+                        </StackPanel>
+                        <ItemsControl IsTabStop="False" ItemsSource="{x:Bind ViewModel.Brief}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:BriefLineViewModel">
+                                    <Grid Margin="0,3,0,3" ColumnSpacing="9">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="6" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse
+                                            Width="6"
+                                            Height="6"
+                                            Margin="0,7,0,0"
+                                            VerticalAlignment="Top"
+                                            Fill="{x:Bind DotBrush, Mode=OneWay}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            FontSize="14"
+                                            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                            Text="{x:Bind Sentence, Mode=OneWay}"
+                                            TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </ListView.Header>
+            <ListView.GroupStyle>
+                <GroupStyle HidesIfEmpty="True">
+                    <GroupStyle.HeaderTemplate>
+                        <DataTemplate x:DataType="vm:RowGroupViewModel">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <views:FluentIcon
+                                    VerticalAlignment="Center"
+                                    Fill="{x:Bind IconBrush, Mode=OneWay}"
+                                    Icon="{x:Bind Icon, Mode=OneWay}"
+                                    Size="16"
+                                    Visibility="{x:Bind HasIcon, Mode=OneWay}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.HeadingLevel="Level2"
+                                    FontSize="14"
+                                    FontWeight="SemiBold"
+                                    Foreground="{x:Bind TitleBrush, Mode=OneWay}"
+                                    Text="{x:Bind Title, Mode=OneWay}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontSize="14"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind CountText, Mode=OneWay}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </ListView.GroupStyle>
+            <ListView.ItemContainerStyle>
+                <Style BasedOn="{StaticResource DefaultListViewItemStyle}" TargetType="ListViewItem">
+                    <Setter Property="Padding" Value="8,8,8,8" />
+                    <Setter Property="Margin" Value="4,0,4,0" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Top" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="vm:RowViewModel">
+                    <!-- The row names itself (AutomationName); the grid only lays it out, so Narrator says it once. -->
+                    <Grid
+                        AutomationProperties.AccessibilityView="Raw"
+                        AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                        ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="32" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <views:FluentIcon
+                            Margin="0,9,0,0"
+                            VerticalAlignment="Top"
+                            Fill="{x:Bind SourceBrush, Mode=OneWay}"
+                            Icon="{x:Bind SourceGlyph, Mode=OneWay}"
+                            Size="14"
+                            Visibility="{x:Bind ShowsSource, Mode=OneWay}" />
+                        <Grid
+                            Grid.Column="1"
+                            Width="32"
+                            Height="32"
+                            VerticalAlignment="Top">
+                            <Ellipse Fill="{x:Bind BadgeBrush, Mode=OneWay}" Visibility="{x:Bind HasIcon, Mode=OneWay}" />
+                            <views:FluentIcon
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind BadgeGlyphBrush, Mode=OneWay}"
+                                Icon="{x:Bind Icon, Mode=OneWay}"
+                                Size="16"
+                                Visibility="{x:Bind HasIcon, Mode=OneWay}" />
+                            <Ellipse Fill="{x:Bind UnreadBrush, Mode=OneWay}" Visibility="{x:Bind HasInitials, Mode=OneWay}" />
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{x:Bind OnTintBrush, Mode=OneWay}"
+                                Text="{x:Bind Initials, Mode=OneWay}"
+                                Visibility="{x:Bind HasInitials, Mode=OneWay}" />
+                        </Grid>
+                        <StackPanel Grid.Column="2" Spacing="1">
+                            <TextBlock
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                Text="{x:Bind Title, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
+                            <TextBlock
+                                FontSize="13"
+                                Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                MaxLines="2"
+                                Text="{x:Bind Status, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap" />
+                            <ItemsControl
+                                Margin="0,2,0,2"
+                                IsTabStop="False"
+                                ItemsSource="{x:Bind Chips, Mode=OneWay}"
+                                Visibility="{x:Bind HasChips, Mode=OneWay}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:RowChipViewModel">
+                                        <Border
+                                            Height="20"
+                                            Padding="6,0,7,0"
+                                            Background="{x:Bind Background}"
+                                            CornerRadius="10">
+                                            <StackPanel Orientation="Horizontal" Spacing="3">
+                                                <views:FluentIcon
+                                                    VerticalAlignment="Center"
+                                                    Fill="{x:Bind Foreground}"
+                                                    Icon="{x:Bind Icon}"
+                                                    Size="12" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="12"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{x:Bind Foreground}"
+                                                    Text="{x:Bind Text}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock
+                                FontSize="13"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                MaxLines="2"
+                                Text="{x:Bind Detail, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind HasDetail, Mode=OneWay}" />
+                        </StackPanel>
+                        <StackPanel
+                            Grid.Column="3"
+                            HorizontalAlignment="Right"
+                            Spacing="4">
+                            <StackPanel
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal"
+                                Spacing="5">
+                                <Ellipse
+                                    Width="8"
+                                    Height="8"
+                                    VerticalAlignment="Center"
+                                    Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                    Visibility="{x:Bind IsNew, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Text="{x:Bind Age, Mode=OneWay}" />
+                            </StackPanel>
+                            <Border
+                                Height="18"
+                                MinWidth="18"
+                                Padding="5,0,5,0"
+                                HorizontalAlignment="Right"
+                                Background="{x:Bind UnreadBrush, Mode=OneWay}"
+                                CornerRadius="9"
+                                Visibility="{x:Bind HasUnread, Mode=OneWay}">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="11"
+                                    FontWeight="Bold"
+                                    Foreground="{x:Bind OnTintBrush, Mode=OneWay}"
+                                    Text="{x:Bind Unread, Mode=OneWay}" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <TextBlock
+            Grid.Row="2"
+            Margin="24,32,24,32"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            FontSize="14"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}"
+            TextAlignment="Center"
+            TextWrapping="Wrap"
+            Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay}" />
+
+        <Grid
+            Grid.Row="3"
+            Padding="16,4,6,4"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0">
+            <TextBlock
+                VerticalAlignment="Center"
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                Text="Made-up data"
+                Visibility="{x:Bind ViewModel.IsDemo, Mode=OneWay}" />
+            <Button
+                x:Name="MoreButton"
+                HorizontalAlignment="Right"
+                AutomationProperties.Name="More"
+                Style="{StaticResource IconButtonStyle}"
+                ToolTipService.ToolTip="More">
+                <views:FluentIcon Fill="{ThemeResource TextFillColorPrimaryBrush}" Icon="More" Size="16" />
+                <Button.Flyout>
+                    <MenuFlyout Placement="TopEdgeAlignedRight">
+                        <MenuFlyoutItem Click="OnQuitClick" Text="Quit BriefBar" />
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

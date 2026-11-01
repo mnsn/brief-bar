@@ -72,6 +72,7 @@ public enum Brief {
                 sentence = "\(title) failed" + (snapshot.detail.map { ": \($0)." } ?? ".")
             }
         case .conflicts: sentence = "\(title) has merge conflicts."
+        case .mergeFailed: sentence = "\(title) can't be merged."
         case .buildExpired: sentence = "\(title) needs its build queued again."
         case .failedAfterMerge:
             sentence = "\(snapshot.merge?.pipeline.map { "“\($0)”" } ?? "A pipeline") failed after \(title) merged."

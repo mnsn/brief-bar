@@ -1,0 +1,32 @@
+# BriefBar for Windows: C# style, on top of the repository's .editorconfig.
+
+[*.{cs,xaml,csproj,props,slnx}]
+indent_size = 4
+
+[*.{csproj,props,slnx,xaml}]
+indent_size = 2
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = when_multiline:warning
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_new_line_before_open_brace = all
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_readonly_field = true:warning
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+
+# The words are English only, as the Mac app's are.
+dotnet_diagnostic.CA1303.severity = none
+# Interop structs keep Win32's names.
+dotnet_diagnostic.CA1707.severity = none
+
+[BriefBar.Core.Tests/**.cs]
+# Test classes are public for the runner, and test names read as sentences.
+dotnet_diagnostic.CA1515.severity = none
+dotnet_diagnostic.CA1707.severity = none

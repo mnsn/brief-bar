@@ -1,0 +1,85 @@
+name: Windows
+
+# BriefBar for Windows (windows/), on pushes to main that change it, on every pull request, and when started by hand.
+# Checks formatting, tests BriefBar.Core and builds the WinUI 3 app for x64 and Arm64 on Windows. The macOS CI doesn't
+# build it, and this doesn't build the Mac app. A pull request that doesn't change it skips the build, which counts as
+# passing, so main can require this check.
+on:
+  # With the repository's settings that its format check applies (scripts/ci-changes.sh).
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+      - '.editorconfig'
+      - '.gitattributes'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new run cancels the one in progress on the same pull request or branch, main included.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Whether this run builds BriefBar for Windows (scripts/ci-changes.sh).
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.changes.outputs.windows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A pull request's merge commit and the branch it goes into; for a push, the commit it came after.
+          fetch-depth: ${{ github.event_name != 'push' && 2 || 0 }}
+
+      - name: Find what changed
+        id: changes
+        run: scripts/ci-changes.sh
+        env:
+          PUSHED_FROM: ${{ github.event.before }}
+
+  build:
+    name: Build and test (windows-2025)
+    needs: changes
+    # Skipped when BriefBar for Windows didn't change, which counts as passing; built if what changed couldn't be found.
+    if: ${{ !cancelled() && needs.changes.outputs.windows != 'false' }}
+    runs-on: windows-2025
+    timeout-minutes: 20
+    # windows/global.json picks the SDK and has `dotnet test` use Microsoft.Testing.Platform, from windows/ only.
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      # Lines end in LF, as .editorconfig says, on Windows too, so the format check sees what's committed.
+      - name: Keep line endings as committed
+        working-directory: .
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      # Style and analyzers are checked as the projects build, with warnings as errors; this checks whitespace.
+      - name: Check formatting
+        run: dotnet format whitespace . --folder --verify-no-changes
+
+      - name: Test BriefBar.Core
+        run: dotnet test --project BriefBar.Core.Tests/BriefBar.Core.Tests.csproj --configuration Release
+
+      # The Windows App SDK comes from NuGet with the first restore, and ships inside the app.
+      - name: Build for x64
+        run: dotnet build BriefBar/BriefBar.csproj --configuration Release --runtime win-x64
+
+      - name: Build for Arm64
+        run: dotnet build BriefBar/BriefBar.csproj --configuration Release --runtime win-arm64
