@@ -63,8 +63,10 @@ final class AppModel: ObservableObject {
             + CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
         if demo {
             services.summaries.write = DemoSummaries.write
-            // Its summaries are made up, wherever it runs.
+            // Its summaries are made up, wherever it runs, by the model most get: Claude Haiku 5.5, as where the Copilot CLI
+            // is.
             services.summaries.canRunOnDevice = { true }
+            services.summaries.findCLI = { true }
         } else if !rendering {
             let summarizer = CopilotSummarizer()
             services.summaries.write = StorySummaries.writer(copilot: AppModel.copilotSummaries(summarizer))

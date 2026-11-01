@@ -243,7 +243,7 @@ enum Renderer {
                 // before when that couldn't be.
                 for (ref, state) in rowSummaries {
                     let again: StorySummaries.State = ref.kind == .pullRequest
-                        ? .writing(since: Date()) : .failed(StorySummaries.onDeviceProblem(.busy), at: Date())
+                        ? .writing(since: Date()) : .failed(StorySummaries.Problem("Copilot took too long to answer."), at: Date())
                     summaries.useForRendering(ref, state: again, previous: state)
                 }
                 rows([(.azureDevOpsPullRequests, "updating-pull-requests"), (.copilotSessions, "not-updated-sessions")])
@@ -364,9 +364,13 @@ enum Renderer {
                 // Written again: the one before shows meanwhile; and when that one couldn't be written, as it was.
                 summaries.useForRendering(subject, state: .writing(since: Date()), previous: written)
                 card("updating")
-                summaries.useForRendering(subject, state: .failed(StorySummaries.onDeviceProblem(.busy), at: Date()), previous: written)
+                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem("Copilot took too long to answer."), at: Date()),
+                                          previous: written)
                 card("not-updated")
-                summaries.useForRendering(subject, state: .failed(StorySummaries.onDeviceProblem(.notReady), at: Date()))
+                summaries.useForRendering(subject, state: .failed(StorySummaries.Problem(
+                    "Claude Haiku 5.5 isn't on your Copilot plan.",
+                    detail: "Error: Model \"claude-haiku-5.5\" from --model flag is not available.", fix: .chooseModel
+                ), at: Date()))
                 card("failed")
                 // One of what it summed up said something else then.
                 if let index = inputs.firstIndex(where: { $0.ref.kind == .pullRequest }) { inputs[index].row += "\nthen" }
