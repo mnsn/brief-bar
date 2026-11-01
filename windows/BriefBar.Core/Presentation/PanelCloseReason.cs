@@ -21,7 +21,7 @@ public enum PanelCloseReason
     /// A full-screen window came to the front on its display, and the bar stepped aside.
     FullScreen,
 
-    /// The displays changed, and the bars were made again.
+    /// The displays changed, and the bars were arranged again.
     DisplaysChanged,
 
     /// BriefBar is quitting.

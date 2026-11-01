@@ -18,6 +18,9 @@ public sealed class OverviewItemViewModel : Observable
 
     public string AutomationName { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
+    /// "Ctrl+1", the key that shows the Overview from another panel, for Narrator.
+    public string Key { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
     /// Its panel is showing.
     public bool IsOpen { get; set => Set(storage: ref field, value: value); }
 
@@ -46,5 +49,6 @@ public sealed class OverviewItemViewModel : Observable
         ShowsEmptyText = parts.Count == 0;
         ToolTip = summary.ToolTip;
         AutomationName = summary.AutomationName;
+        Key = summary.Key;
     }
 }

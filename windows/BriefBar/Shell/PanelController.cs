@@ -26,7 +26,7 @@ internal sealed class PanelController(AppShell shell)
     {
         // Only a panel open under this bar counts: the same item on another display opens the panel there.
         var openHere = Owner == bar ? OpenTarget : null;
-        var action = toggle.Press(target: target, open: openHere, now: Environment.TickCount64);
+        var action = toggle.Press(target: target, bar: bar.Hwnd, open: openHere, now: Environment.TickCount64);
         Log.Write(line: $"panel: press on {target}, {action}");
         switch (action)
         {
@@ -74,12 +74,40 @@ internal sealed class PanelController(AppShell shell)
         {
             return;
         }
+        var owner = Owner;
         OpenTarget = null;
         Owner = null;
         window?.HideWindow();
-        toggle.Closed(target: target, reason: reason, now: Environment.TickCount64);
+        toggle.Closed(target: target, bar: owner?.Hwnd ?? 0, reason: reason, now: Environment.TickCount64);
         shell.ShowOpen(owner: null, target: null);
         Log.Write(line: $"panel: {target} closed, {reason}");
+    }
+
+    /// Ctrl and `number`, pressed in the panel: shows what that key opens in the bar it's under (`PanelKeys`), in place.
+    public void ShowNumbered(int number)
+    {
+        if (OpenTarget is null || Owner is not { } bar)
+        {
+            return;
+        }
+        if (PanelKeys.Numbered(targets: bar.ViewModel.Targets(), number: number) is { } target)
+        {
+            SwitchTo(bar: bar, target: target);
+        }
+    }
+
+    /// Ctrl+Tab, pressed in the panel, or Ctrl+Shift+Tab for `backward`: shows the next item in the bar it's under, or
+    /// the one before, around.
+    public void ShowNext(bool backward)
+    {
+        if (OpenTarget is not { } open || Owner is not { } bar)
+        {
+            return;
+        }
+        if (PanelKeys.Next(targets: bar.ViewModel.Targets(), current: open, backward: backward) is { } target)
+        {
+            SwitchTo(bar: bar, target: target);
+        }
     }
 
     /// Shows what the sources show now, in place, if it's open, as tall as that needs.
@@ -102,6 +130,17 @@ internal sealed class PanelController(AppShell shell)
         var closing = window;
         window = null;
         closing?.CloseForGood();
+    }
+
+    /// Shows `target` under its item in `bar`, from the keyboard, unless it's showing already.
+    void SwitchTo(BarWindow bar, PanelTarget target)
+    {
+        if (target == OpenTarget)
+        {
+            return;
+        }
+        Log.Write(line: $"panel: key for {target}");
+        Show(bar: bar, target: target, itemAnchor: bar.AnchorOf(target: target));
     }
 
     /// Makes the open panel as tall as what it shows, as far as the display allows.

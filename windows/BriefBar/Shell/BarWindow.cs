@@ -178,6 +178,10 @@ internal sealed partial class BarWindow : Window
     /// Where the Overview's item is, for a panel opened by something other than a press, such as a second start.
     public PixelRect OverviewAnchor() => AnchorOf(item: view.OverviewItem);
 
+    /// Where `target`'s item is, for its panel, shown from the keyboard: the Overview's, while the bar has no item for
+    /// it on screen.
+    public PixelRect AnchorOf(PanelTarget target) => AnchorOf(item: view.ItemFor(target: target) ?? view.OverviewItem);
+
     public bool Contains(Win32Point point) => !closed && User32.Contains(hWnd: Hwnd, point: point);
 
     /// Gives the reserved space back at once, without closing the window.

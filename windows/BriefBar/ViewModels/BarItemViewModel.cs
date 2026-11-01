@@ -41,6 +41,9 @@ public sealed class BarItemViewModel : Observable
 
     public string AutomationName { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
+    /// "Ctrl+2", the key that shows its panel from another, for Narrator; empty past the ninth item.
+    public string Key { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
     /// Its panel is showing.
     public bool IsOpen { get; set => Set(storage: ref field, value: value); }
 
@@ -64,5 +67,6 @@ public sealed class BarItemViewModel : Observable
         BadgeBrush = content.Badge == BarItemBadge.Paused ? palette.Quiet : palette.Caution;
         ToolTip = content.ToolTip;
         AutomationName = content.AutomationName;
+        Key = content.Key ?? string.Empty;
     }
 }

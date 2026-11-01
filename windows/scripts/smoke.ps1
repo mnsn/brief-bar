@@ -1,17 +1,19 @@
 # Checks BriefBar for Windows end to end with made-up data, through UI Automation: a bar at the top of each display,
-# with the work area below it; its items named in words; the Overview's panel, its groups and rows; the same item on
-# another display's bar; Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change,
-# and still opening panels; and every display's work area given back within a second of quitting, whether from
-# scripts\quit.ps1 or because another program asked a bar to close. Build first: it quits a BriefBar that's running,
-# and starts its own with --demo.
-# It works over a disconnected remote session too, which has one display. Leave the mouse and keyboard alone while it
-# runs: a click anywhere but BriefBar closes the panel it's checking, as it should.
+# with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
+# Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
+# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
+# panels; and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or
+# because another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own
+# with --demo.
+# It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
+# keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
+# panel's keys are sent only while it's in front.
 param(
     [string] $Exe = (Join-Path -Path $PSScriptRoot -ChildPath '..\BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64\BriefBar.exe')
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -32,6 +34,26 @@ public static class SmokeNative
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
+    [DllImport("wtsapi32.dll")] static extern bool WTSQuerySessionInformationW(IntPtr server, int session, int infoClass, out IntPtr buffer, out int bytes);
+    [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr memory);
+
+    /// The process whose window is in front, or 0.
+    public static uint ForegroundProcess()
+    {
+        GetWindowThreadProcessId(GetForegroundWindow(), out var process);
+        return process;
+    }
+
+    /// Whether this session is connected, as a remote session that's been disconnected isn't: keys sent to it go nowhere.
+    public static bool IsConnected()
+    {
+        // The current session's WTSConnectState, which is WTSActive, 0, while it's connected.
+        if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, 8, out var buffer, out _)) return true;
+        try { return Marshal.ReadInt32(buffer) == 0; }
+        finally { WTSFreeMemory(buffer); }
+    }
 
     /// Each display's bounds and work area, in physical pixels: "left,top,right,bottom|left,top,right,bottom".
     public static List<string> Displays()
@@ -110,6 +132,13 @@ function Get-OverviewItem($bar) { $bar.FindFirst($Scope::Descendants, (Condition
 # The panel's list, under the bar it opened from, as UI Automation shows an owned window.
 function Get-PanelList($bar) { $bar.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::List)) }
 
+# Sends `keys` to BriefBar's panel, only while it's in front, so they can't reach another app; false if it isn't.
+function Send-PanelKeys($process, [string] $keys) {
+    if ([SmokeNative]::ForegroundProcess() -ne $process.Id) { return $false }
+    [System.Windows.Forms.SendKeys]::SendWait($keys)
+    return $true
+}
+
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
 # ends within three, without an error: an unexpected error gives the space back too, and ends with 1.
 function Test-Quit($process, $before, [scriptblock] $ask, [string] $how) {
@@ -149,6 +178,9 @@ function Test-Running($process, $before) {
         $buttons = @($bar.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::Button)))
         $unnamed = @($buttons | Where-Object { $_.Current.Name -notmatch '^[A-Z][\w ]+: ' })
         Check ($buttons.Count -ge 2 -and $unnamed.Count -eq 0) "its $($buttons.Count) items are named in words"
+        $keys = @($buttons | ForEach-Object { $_.Current.AcceleratorKey }) -join ', '
+        $expected = @(1..$buttons.Count | ForEach-Object { if ($_ -le 9) { "Ctrl+$_" } else { '' } }) -join ', '
+        Check ($keys -eq $expected) "and say their keys in order ($keys)"
     }
 
     # The Overview's panel: its list, its groups by state, and its rows.
@@ -169,7 +201,37 @@ function Test-Running($process, $before) {
         Check ($scroll.Current.VerticalScrollPercent -le 0) 'it opens at its top'
     }
 
-    # The same item on another display's bar opens the panel there, rather than closing it here.
+    # From the keyboard, in the panel: Ctrl+2 shows the bar's first section's, under its item, Ctrl+Tab the next,
+    # Ctrl+Shift+Tab the one before, and Ctrl+1 the Overview again.
+    if ($list -and [SmokeNative]::IsConnected() -and [SmokeNative]::ForegroundProcess() -eq $process.Id) {
+        $overviewLeft = $list.Current.BoundingRectangle.Left
+        $section = $null
+        if (Send-PanelKeys $process '^2') {
+            $section = Wait-Until { $shown = Get-PanelList $first; if ($shown -and $shown.Current.Name -ne 'Overview') { $shown } } 5
+        }
+        Check ($null -ne $section -and $section.Current.BoundingRectangle.Left -gt $overviewLeft) "Ctrl+2 shows the first section's panel, under its item ($($section.Current.Name))"
+        if ($section) {
+            $firstSection = $section.Current.Name
+            $next = $null
+            if (Send-PanelKeys $process '^{TAB}') {
+                $next = Wait-Until { $shown = Get-PanelList $first; if ($shown -and $shown.Current.Name -notin @('Overview', $firstSection)) { $shown } } 5
+            }
+            Check ($null -ne $next) "Ctrl+Tab shows the next one's ($($next.Current.Name))"
+            $back = (Send-PanelKeys $process '^+{TAB}') -and (Wait-Until { (Get-PanelList $first).Current.Name -eq $firstSection } 5)
+            Check ([bool]$back) 'Ctrl+Shift+Tab shows the one before'
+        }
+        $list = $null
+        if (Send-PanelKeys $process '^1') {
+            $list = Wait-Until { $shown = Get-PanelList $first; if ($shown -and $shown.Current.Name -eq 'Overview') { $shown } } 5
+        }
+        Check ($null -ne $list -and $list.Current.BoundingRectangle.Left -eq $overviewLeft) 'Ctrl+1 shows the Overview again, where it was'
+    }
+    else {
+        Write-Host "skip  the panel's keys (the session is disconnected, or the panel isn't in front)"
+    }
+
+    # The same item on another display's bar opens the panel there, rather than closing it here, even right after a
+    # press on this one: that's a press of its own, not the same press arriving twice.
     if (@($bars).Count -ge 2) {
         $second = @($bars)[1]
         if (-not (Get-PanelList $first)) {
@@ -178,11 +240,12 @@ function Test-Running($process, $before) {
             Invoke-Item (Get-OverviewItem $first)
             [void](Wait-Until { Get-PanelList $first } 5)
         }
-        # Past the 350 ms in which a second press on the same item counts as the same press.
-        Start-Sleep -Milliseconds 600
+        # Past the 350 ms in which a second press on the same item counts as the same press, this one closes it.
+        Start-Sleep -Milliseconds 400
+        Invoke-Item (Get-OverviewItem $first)
         Invoke-Item (Get-OverviewItem $second)
         $moved = Wait-Until { (Get-PanelList $second) -and -not (Get-PanelList $first) } 5
-        Check ([bool]$moved) "the same item on another display's bar opens its panel there"
+        Check ([bool]$moved) "the same item on another display's bar opens its panel there, even right after a press here"
     }
     else {
         Write-Host 'skip  the same item on another display (one display)'

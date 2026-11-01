@@ -15,7 +15,10 @@ public sealed class BarViewModel
     {
         ArgumentNullException.ThrowIfNull(argument: snapshots);
         Overview.Update(summary: OverviewSummary.Of(snapshots: snapshots), palette: palette);
-        var contents = snapshots.Select(selector: snapshot => BarItemContent.Of(snapshot: snapshot, now: now)).ToList();
+        // After the Overview's, at 0, each item's place in the bar gives it its key (`PanelKeys`).
+        var contents = snapshots
+            .Select(selector: (snapshot, index) => BarItemContent.Of(snapshot: snapshot, position: index + 1, now: now))
+            .ToList();
         CollectionSync.Sync(
             items: Items,
             values: contents,
@@ -23,6 +26,9 @@ public sealed class BarViewModel
             create: content => new BarItemViewModel(content: content, palette: palette),
             update: (item, content) => item.Update(content: content, palette: palette));
     }
+
+    /// What its items show, in the bar's order, the Overview's first.
+    public IReadOnlyList<PanelTarget> Targets() => [PanelTarget.Overview, .. Items.Select(selector: item => item.Target)];
 
     /// Marks `target`'s item open, and every other closed; none for null.
     public void ShowOpen(PanelTarget? target)

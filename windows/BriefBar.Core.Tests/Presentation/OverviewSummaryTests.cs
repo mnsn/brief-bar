@@ -16,8 +16,10 @@ public sealed class OverviewSummaryTests
             expected: [(ItemState.NeedsYou, 4, "need you"), (ItemState.Failing, 1, "went wrong"), (ItemState.Done, 1, "done or ready")],
             actual: summary.Parts.Select(selector: part => (part.State, part.Count, part.Words)));
         // What's running is in the tooltip and for Narrator.
-        Assert.Equal(expected: "Overview\nNeeds you: 4 · Something's wrong: 1 · Running: 1 · Done or ready: 1", actual: summary.ToolTip);
+        Assert.Equal(expected: "Overview (Ctrl+1)\nNeeds you: 4 · Something's wrong: 1 · Running: 1 · Done or ready: 1", actual: summary.ToolTip);
         Assert.Equal(expected: "Overview: 4 need you, 1 went wrong, 1 running, 1 done or ready.", actual: summary.AutomationName);
+        // Ctrl+1 shows the Overview from any panel.
+        Assert.Equal(expected: "Ctrl+1", actual: summary.Key);
     }
 
     [Fact]
@@ -31,7 +33,7 @@ public sealed class OverviewSummaryTests
         var off = OverviewSummary.Of(snapshots: []);
         Assert.Empty(collection: off.Parts);
         Assert.Equal(expected: "No source is on", actual: off.EmptyText);
-        Assert.Equal(expected: "Overview\nNo source is on", actual: off.ToolTip);
+        Assert.Equal(expected: "Overview (Ctrl+1)\nNo source is on", actual: off.ToolTip);
     }
 
     [Fact]
@@ -43,6 +45,6 @@ public sealed class OverviewSummaryTests
         var summary = OverviewSummary.Of(snapshots: [runningOnly]);
         Assert.Empty(collection: summary.Parts);
         Assert.Equal(expected: "Nothing needs you", actual: summary.EmptyText);
-        Assert.Equal(expected: "Overview\nRunning: 1", actual: summary.ToolTip);
+        Assert.Equal(expected: "Overview (Ctrl+1)\nRunning: 1", actual: summary.ToolTip);
     }
 }

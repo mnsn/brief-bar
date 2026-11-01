@@ -27,6 +27,7 @@
 
         <views:BarItemButton
             x:Name="OverviewButton"
+            AutomationProperties.AcceleratorKey="{x:Bind ViewModel.Overview.Key, Mode=OneWay}"
             AutomationProperties.Name="{x:Bind ViewModel.Overview.AutomationName, Mode=OneWay}"
             Click="OnOverviewClick"
             IsOpen="{x:Bind ViewModel.Overview.IsOpen, Mode=OneWay}"
@@ -85,6 +86,7 @@
         </views:BarItemButton>
 
         <ItemsControl
+            x:Name="SectionItems"
             Grid.Column="2"
             VerticalAlignment="Stretch"
             IsTabStop="False"
@@ -97,6 +99,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:BarItemViewModel">
                     <views:BarItemButton
+                        AutomationProperties.AcceleratorKey="{x:Bind Key, Mode=OneWay}"
                         AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
                         Click="OnItemClick"
                         IsOpen="{x:Bind IsOpen, Mode=OneWay}"

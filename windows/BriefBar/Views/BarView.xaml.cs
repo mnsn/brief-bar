@@ -6,8 +6,9 @@ using Microsoft.UI.Xaml.Input;
 
 namespace BriefBar.Views;
 
-/// One display's bar: the Overview's item, and an item per section, as real buttons that Narrator names, the keyboard
-/// reaches and UI Automation can press.
+/// One display's bar: the Overview's item, and an item per section, as real buttons that Narrator names and UI
+/// Automation can press. The bar never takes the keyboard; from a panel, Ctrl+1 to Ctrl+9 and Ctrl+Tab show each item's
+/// (`PanelKeys`), as its tooltip says.
 public sealed partial class BarView : UserControl
 {
     public BarView(BarViewModel viewModel)
@@ -20,6 +21,17 @@ public sealed partial class BarView : UserControl
 
     /// The Overview's item, for where its panel goes.
     public FrameworkElement OverviewItem => OverviewButton;
+
+    /// The item that shows `target`, for where its panel goes, or null while the bar has none for it on screen.
+    public FrameworkElement? ItemFor(PanelTarget target)
+    {
+        if (target.IsOverview)
+        {
+            return OverviewButton;
+        }
+        var item = ViewModel.Items.FirstOrDefault(predicate: candidate => candidate.Target == target);
+        return item is null ? null : SectionItems.ContainerFromItem(item: item) as FrameworkElement;
+    }
 
     /// An item was pressed: the panel it opens, and the item, for where the panel goes.
     public event EventHandler<BarItemPressedEventArgs>? ItemPressed;

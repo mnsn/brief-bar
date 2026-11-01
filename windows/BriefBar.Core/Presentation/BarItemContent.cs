@@ -3,7 +3,8 @@ using System.Globalization;
 namespace BriefBar.Core.Presentation;
 
 /// What a section's item in the bar shows: its glyph and name, its counts in its section's order, and a badge when it
-/// doesn't show the whole story; with the same in words for its tooltip and for Narrator.
+/// doesn't show the whole story; with the same in words for its tooltip and for Narrator, and the key that shows its
+/// panel from another (`PanelKeys`), if it has one.
 public sealed record BarItemContent(
     SectionId Section,
     string Label,
@@ -14,12 +15,15 @@ public sealed record BarItemContent(
     BarItemBadge Badge,
     string? BadgeText,
     string ToolTip,
-    string AutomationName)
+    string AutomationName,
+    string? Key)
 {
-    public static BarItemContent Of(SectionSnapshot snapshot, DateTimeOffset now)
+    /// `snapshot`'s item at `position` in the bar, the Overview's being 0.
+    public static BarItemContent Of(SectionSnapshot snapshot, int position, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshot);
         var info = snapshot.Info;
+        var key = PanelKeys.Words(position: position);
         var badge = BadgeOf(condition: snapshot.Status.Condition);
         // Until it reads what's there, or while it can't, its counts would be wrong: it shows none.
         var showsCounts = badge is BarItemBadge.None or BarItemBadge.Stale;
@@ -34,8 +38,9 @@ public sealed record BarItemContent(
             Chips: chips,
             Badge: badge,
             BadgeText: BadgeTextOf(badge: badge, status: snapshot.Status),
-            ToolTip: ToolTipOf(info: info, chips: chips, showsCounts: showsCounts, status: status),
-            AutomationName: AutomationNameOf(info: info, chips: chips, showsCounts: showsCounts, status: status));
+            ToolTip: ToolTipOf(info: info, key: key, chips: chips, showsCounts: showsCounts, status: status),
+            AutomationName: AutomationNameOf(info: info, chips: chips, showsCounts: showsCounts, status: status),
+            Key: key);
     }
 
     static List<CountChip> ChipsOf(SectionInfo info, StateCounts counts) => info.States
@@ -61,10 +66,10 @@ public sealed record BarItemContent(
         _ => null,
     };
 
-    /// "GitHub Copilot sessions", then "Needs you: 2 · Running: 1", then how it stands, each on a line.
-    static string ToolTipOf(SectionInfo info, List<CountChip> chips, bool showsCounts, string status)
+    /// "GitHub Copilot sessions (Ctrl+2)", then "Needs you: 2 · Running: 1", then how it stands, each on a line.
+    static string ToolTipOf(SectionInfo info, string? key, List<CountChip> chips, bool showsCounts, string status)
     {
-        var lines = new List<string> { info.FullName };
+        var lines = new List<string> { key is null ? info.FullName : info.FullName + " (" + key + ")" };
         if (showsCounts)
         {
             lines.Add(item: chips.Count > 0

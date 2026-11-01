@@ -32,10 +32,12 @@ Run the tests from `windows/`, whose `global.json` has `dotnet test` use Microso
 xUnit v3 needs. The projects build with the latest recommended analyzers, nullable references and warnings as
 errors; `.github/workflows/windows.yml` checks the formatting, runs the tests and builds for x64 and Arm64.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
-each display, its items named in words, the Overview's panel, the same item on another display, Alt+F4, each bar
-keeping its display as displays change, and the space given back within a second of quitting or of another program
-asking BriefBar to close. Run it before you open a pull request, and leave the mouse and keyboard alone while it
-runs, since a click elsewhere closes the panel it's checking; it works over a disconnected remote session too.
+each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
+another display right after a press on this one, Alt+F4, each bar keeping its display as displays change, and the
+space given back within a second of quitting or of another program asking BriefBar to close. Run it before you open a
+pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere closes the panel it's
+checking; it sends keys only while the panel is in front, and it works over a disconnected remote session too,
+without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -57,8 +59,11 @@ section names and the like, so nothing you see can reach it: a line with a strin
   the section is starting, can't read, is paused or is stale.
 - **The items are buttons**, as tall as the bar, so a flick of the pointer to the screen's edge lands on one.
   Narrator names each in words ("GitHub Copilot sessions: 3 need you, 2 running, 1 done or ready, 1 went wrong"),
-  the keyboard reaches them, and UI Automation can press them. The item whose panel is open is marked, as the
-  taskbar marks the app in front.
+  and UI Automation can press them. The item whose panel is open is marked, as the taskbar marks the app in front.
+- **The keyboard gets there from a panel.** The bar never takes the keyboard, so your window keeps it. Starting
+  BriefBar again opens its Overview, with the keyboard on its first row; in any panel, Ctrl+1 shows the Overview,
+  Ctrl+2 to Ctrl+9 the bar's items in order, as the Mac window's ⌘1 to ⌘9 show its pages, and Ctrl+Tab and
+  Ctrl+Shift+Tab the next item and the one before. Each item's tooltip says its key, and Narrator says it too.
 - **The panel** opens under its item as you press it: a header with the section's tile, title and status; a
   banner when a section can't show everything; the brief; then its groups (the Overview's: Needs you,
   Something's wrong, Running, Done or ready), with headers that stay in view as you scroll. Each row has a badge
@@ -91,6 +96,9 @@ Where Windows differs, these were decided:
 - **Hiding the panel and the window from screen sharing and recordings** will be a choice in Settings, off by
   default.
 - **Sentence case** ("Needs you"), as Windows writes it.
+- **The keyboard reaches the bar's items from a panel**, with Ctrl+1 to Ctrl+9 and Ctrl+Tab, since Windows has no
+  key like the Mac's Ctrl+F8 for a bar like this one. Starting BriefBar again opens the Overview, as reopening it
+  shows the Mac's first item.
 - **.NET 10**, supported until November 2028, and **x64 and Arm64**.
 
 ## The code
@@ -98,7 +106,7 @@ Where Windows differs, these were decided:
 | Folder | What it holds |
 |---|---|
 | `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), and what a source gives the app (`ISectionSource`) |
-| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups and rows, where a panel opens, the bar's size, the state colors with their contrast, and the icons |
+| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups and rows, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
 | `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
