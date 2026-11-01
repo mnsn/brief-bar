@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.10.1 - 2026-11-01
 
+- **A menu-bar item's list opens on the desktop you're on.** Clicking a BriefBar item after you'd
+  switched desktops (Spaces) could open its list out of sight, on a desktop you'd left, and keep doing
+  so until you opened it from the menu bar on another display. Now it opens where you click.
 - **A pipeline canceled after you merge no longer reads as passed.** Once none of the pipelines that ran
   after your pull request merged failed, waits or still runs, but one was canceled, its row in Done says
   "its pipeline was canceled", or which one, such as "“shop-web CD” was canceled", and so do its

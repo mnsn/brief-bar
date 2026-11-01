@@ -200,7 +200,9 @@ then a menu. A popover opens from an invisible window over the item (`PopoverAnc
 the display you clicked: macOS moves an item's own window to whichever menu bar is active, and a click
 on an item can make another display's menu bar active, as the
 [FAQ in the user guide](user-guide.md#why-did-clicking-briefbar-switch-my-other-displays-space) explains.
-With nothing on, or every section hidden, BriefBar shows its own icon, whose menu opens Settings.
+It's a new window each time: macOS can stop keeping a window on every Space, as when the displays wake
+from sleep, and a popover shown from it would open on a Space you've left. With nothing on, or every
+section hidden, BriefBar shows its own icon, whose menu opens Settings.
 
 Every popover starts with **Overview**, which opens the window at its Overview
 ([below](#the-overview)), and each list's title, such as **Pull Requests ›**, opens the window at that
