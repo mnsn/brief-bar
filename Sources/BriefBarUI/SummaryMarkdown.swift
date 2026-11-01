@@ -10,8 +10,8 @@ enum SummaryMarkdown {
         case text(String)
     }
 
-    /// Its points, and the text between them, in order: a line right after a point goes on with it; after a blank line,
-    /// it's text of its own, its lines together.
+    /// Its points, and the text between them, in order: a line right after a point goes on with it, unless the point
+    /// ended its sentence; after a blank line, it's text of its own, its lines together.
     static func blocks(_ text: String) -> [Block] {
         var blocks: [Block] = []
         var isAfterBlank = false
@@ -24,7 +24,7 @@ enum SummaryMarkdown {
             defer { isAfterBlank = false }
             if let point = point(trimmed) {
                 blocks.append(.point(point))
-            } else if !isAfterBlank, case .point(let before)? = blocks.last {
+            } else if !isAfterBlank, case .point(let before)? = blocks.last, !Self.endsSentence(before) {
                 blocks[blocks.count - 1] = .point(before + " " + trimmed)
             } else if !isAfterBlank, case .text(let before)? = blocks.last {
                 blocks[blocks.count - 1] = .text(before + " " + trimmed)
@@ -33,6 +33,12 @@ enum SummaryMarkdown {
             }
         }
         return blocks
+    }
+
+    /// Whether a point ends as a sentence does, so what's after it isn't its own: ".", "!" or "?", maybe in bold or code.
+    private static func endsSentence(_ text: String) -> Bool {
+        let end = text.trimmingCharacters(in: CharacterSet(charactersIn: "*`\"”)").union(.whitespaces))
+        return end.hasSuffix(".") || end.hasSuffix("!") || end.hasSuffix("?")
     }
 
     private static func point(_ line: String) -> String? {

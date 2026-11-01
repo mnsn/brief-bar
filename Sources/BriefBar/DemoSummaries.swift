@@ -67,6 +67,15 @@ enum DemoSummaries {
             without the quantity stepper, and says "Nothing saved yet" when there are none.
             - **Needs:** The cart service's saved-items API from Sam's !4120, which isn't completed yet.
             """),
+        ("TASK SENT TO COPILOT 5112:", """
+            HEADLINE: Copilot fixed the rounding and opened !4091, which both reviewers approved.
+            NEXT FOR: you
+            NEXT: Complete !4091.
+            SUMMARY:
+            - **Done:** `CouponService.Apply` rounds discounted totals half up to each currency's minor units, so a $19.99 \
+            item with SAVE15 comes to $16.99, with a test for every currency.
+            - **Then:** Completing !4091 lets this task and bug 5110 be closed.
+            """),
         ("PULL REQUEST !4102:", """
             HEADLINE: Sam Rivera's required vote waits on a cap for the backoff.
             NEXT FOR: you

@@ -41,7 +41,7 @@ package enum OnDeviceModel {
                 return "Apple Intelligence isn't available."
             }
         }
-        return "Summaries need macOS 26 or later."
+        return "Apple Intelligence needs macOS 26 or later."
         #else
         return "This copy of BriefBar was built without summaries: they need the macOS 26 SDK."
         #endif

@@ -44,6 +44,30 @@ public struct StorySummary: Sendable, Equatable {
         }.joined()
     }
 
+    /// It without saying it may be incomplete, for a summary of all it was given, as a small model says anyway: a sentence
+    /// of its points that says the summary, its data or details may be incomplete goes, and a point with nothing else; not
+    /// one that says some work is.
+    public func withoutIncompleteNotes() -> StorySummary {
+        guard let paragraph, paragraph.range(of: "incomplete", options: .caseInsensitive) != nil else { return self }
+        let says = { (sentence: String) in
+            let lowered = sentence.lowercased()
+            return lowered.contains("incomplete")
+                && ["summary", "data", "details", "information"].contains(where: lowered.contains)
+        }
+        let lines = paragraph.components(separatedBy: "\n").compactMap { line -> String? in
+            guard line.range(of: "incomplete", options: .caseInsensitive) != nil else { return line }
+            let lead = line.prefixMatch(of: /- (?:\*\*[^*]+\*\*[ \t]*)?/).map { String(line[$0.range]) } ?? ""
+            let body = String(line.dropFirst(lead.count))
+            let sentences = body.matches(of: /[^.!?]+[.!?]*[ \t]*/).map { String(body[$0.range]) }
+            let rest = sentences.filter { !says($0) }.joined().trimmingCharacters(in: .whitespaces)
+            return rest.isEmpty ? nil : lead + rest
+        }
+        var summary = self
+        let kept = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        summary.paragraph = kept.isEmpty ? nil : kept
+        return summary
+    }
+
     /// It in plain text, for the pasteboard: the headline, the next step and for whom, then the paragraph.
     public var plainText: String {
         var text = headline
@@ -271,6 +295,15 @@ public struct StorySummary: Sendable, Equatable {
     /// wherever they are. Not "PR" alone, which may be part of a name, as in "contoso-web PR", nor "CI", which many
     /// pipelines' names have.
     static func spelledOut(_ text: String) -> String {
+        // The data's headings in capitals, as a small model may copy them: "PULL REQUEST !4133" is "!4133", "TASK 5134" is
+        // "task 5134".
+        let text = text
+            .replacing(/\bPULL REQUESTS? (?=[!#][0-9])/, with: "")
+            .replacing(/\bPULL REQUEST\b/, with: "pull request")
+            .replacing(/\bWORK ITEM\b/, with: "work item")
+            .replacing(/\bTASK SENT TO COPILOT\b/, with: "task sent to Copilot")
+            .replacing(/\bCOPILOT SESSION\b/, with: "Copilot session")
+            .replacing(/\bTASK (?=[0-9])/, with: "task ")
         guard text.contains("PR") else { return text }
         // A word that says which, or joins them, then "PR", "PRs" or "PR's", but not in a name such as "PR-Validation".
         let which = #/
@@ -432,9 +465,9 @@ public enum StorySummaryPrompt {
         NEXT FOR: who should take the step that unblocks the most: you, the reader, a person's name as the data gives \
         it, or Copilot; or Nobody, when nothing waits.
         NEXT: that step, in one short sentence that says what to do; or Nothing, when nothing waits.
-        SUMMARY: 2 to 5 short points, the most important first, at most 160 words in all, each on a line of its own that \
-        starts with "- " and a bold lead of a word or two and a colon, such as **Differs:**, **Blocked:**, **Review:**, \
-        **Done:**, **Left:** or **Risk:**.
+        SUMMARY: 2 to 5 short points that add to HEADLINE and NEXT, never saying them again, the most important first, at \
+        most 160 words in all, each on a line of its own that starts with "- " and a bold lead of a word or two and a \
+        colon, such as **Differs:**, **Blocked:**, **Review:**, **Done:**, **Left:** or **Risk:**.
         Write in plain English, without Markdown but for SUMMARY's bold leads and `code` for commit IDs, paths and \
         endpoints: no headings, links, tables or code blocks. Write pull request and build, not PR or CI. Use only what \
         the data says, and the names and numbers as they're given there. When something is unknown, say less rather than \

@@ -16,7 +16,9 @@ package final class StorySummaries: ObservableObject {
     package static let modelKey = "summaries.copilot.model"
     package static let whenOpenedKey = "summaries.copilot.whenOpened"
     nonisolated package static let appleIntelligenceModel = "apple-intelligence"
-    package static let defaultModel = appleIntelligenceModel
+    /// The model a summary is written with unless you choose one, while the Copilot CLI is there: it gets details right far
+    /// more often than Apple Intelligence, which is the model without it.
+    package static let copilotDefaultModel = "claude-haiku-5.5"
     package static let appleIntelligence = Model(id: appleIntelligenceModel, name: "Apple Intelligence")
     /// How long a work item's details or a page shows something before its summary is written: one you only pass on
     /// your way to another costs nothing, and Not Now has time to keep it from being written.
@@ -145,6 +147,10 @@ package final class StorySummaries: ObservableObject {
     package var write: Writer?
     /// Looks for the Copilot CLI, nil when it couldn't tell; nil where nothing's looked for, as in the demo.
     package var findCLI: (@Sendable () async -> Bool?)?
+    /// Whether the Copilot CLI was looked for, whatever that found.
+    private var hasLookedForCLI = false
+    /// Whether Apple Intelligence can run on this Mac now; the demo and tests say it can.
+    package var canRunOnDevice: () -> Bool = { OnDeviceModel.isAvailable }
     /// Your name as each source knows it, while it's on, for a summary to call you "you".
     private var yourNames: [SourceID: @MainActor () -> String?] = [:]
     /// For tests: what "now" is.
@@ -167,7 +173,8 @@ package final class StorySummaries: ObservableObject {
         self.links = links
         self.stories = stories
         isOn = isDemo || defaults.bool(forKey: Self.enabledKey)
-        model = defaults.string(forKey: Self.modelKey).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultModel
+        // Until the Copilot CLI is looked for, what's chosen without it (`lookForCLI`).
+        model = defaults.string(forKey: Self.modelKey).flatMap { $0.isEmpty ? nil : $0 } ?? Self.appleIntelligenceModel
         // Before When came, summaries were written only when you asked: whoever had them on then keeps that, until they
         // choose otherwise. Saved once, so it doesn't change for whoever turns them on later.
         if !isDemo, defaults.object(forKey: Self.whenOpenedKey) == nil {
@@ -216,13 +223,23 @@ package final class StorySummaries: ObservableObject {
         defaults.set(on, forKey: Self.enabledKey)
         Log.app.info("Summaries \(on ? "on" : "off", privacy: .public)")
         if !on { forgetAll() }
+        // Which model writes them, unless you chose one.
+        if on { Task { await lookForCLI() } }
     }
 
+    /// Whether you chose the model: else it's the default, as the Copilot CLI being there or not says.
+    package var hasChosenModel: Bool {
+        defaults.string(forKey: Self.modelKey).map { !$0.isEmpty } ?? false
+    }
+
+    /// Chooses the model: saved, so it stays, even the one that was the default.
     package func setModel(_ model: String) {
-        guard !model.isEmpty, model != self.model else { return }
-        // Don't keep writing with a provider after the user switches away from it.
-        for subject in Array(writing.keys) { cancel(subject) }
-        self.model = model
+        guard !model.isEmpty, model != self.model || !hasChosenModel else { return }
+        if model != self.model {
+            // Don't keep writing with a provider after the user switches away from it.
+            for subject in Array(writing.keys) { cancel(subject) }
+            self.model = model
+        }
         defaults.set(model, forKey: Self.modelKey)
     }
 
@@ -261,10 +278,23 @@ package final class StorySummaries: ObservableObject {
         models.first { $0.id == model }?.name ?? model
     }
 
-    /// Looks for the Copilot CLI while this is on, for Settings to say when it isn't there.
+    /// Looks for the Copilot CLI while this is on: for Settings to say when it isn't there, for a model through Copilot;
+    /// and, unless you chose a model, to choose one, Claude Haiku 5.5 through Copilot when it's there, else Apple
+    /// Intelligence. Nothing's looked for while this is off.
     package func lookForCLI() async {
-        guard isAvailable, !usesOnDeviceModel, let findCLI, let found = await findCLI() else { return }
-        hasCLI = found
+        guard isAvailable, !usesOnDeviceModel || !hasChosenModel, let findCLI else { return }
+        let found = await findCLI()
+        hasLookedForCLI = true
+        if let found { hasCLI = found }
+        guard isAvailable, !hasChosenModel else { return }
+        let chosen = hasCLI == true ? Self.copilotDefaultModel : Self.appleIntelligenceModel
+        if chosen != model { model = chosen }
+    }
+
+    /// Whether the model chosen can write one here: Apple Intelligence, where this Mac can run it; one through Copilot,
+    /// unless the Copilot CLI wasn't found.
+    private var canRunModel: Bool {
+        usesOnDeviceModel ? canRunOnDevice() : hasCLI != false
     }
 
     // MARK: Summaries
@@ -322,7 +352,7 @@ package final class StorySummaries: ObservableObject {
 
     /// Whether opening it may write its summary, as `opened` says.
     private func mayWrite(_ subject: ItemRef, unlessActedSince acted: Int?) -> Bool {
-        isAvailable && writesWhenOpened && !isChoosing && writing[subject] == nil && !hidden.contains(subject)
+        isAvailable && writesWhenOpened && !isChoosing && canRunModel && writing[subject] == nil && !hidden.contains(subject)
             && acted.map { $0 == timesActed(on: subject) } ?? true
             && lastFailed[subject].map { now().timeIntervalSince($0) >= Self.retryAfter } ?? true
     }
@@ -400,9 +430,14 @@ package final class StorySummaries: ObservableObject {
         hidden.remove(subject)
         if case .written? = states[subject] { previous[subject] = states[subject] }
         states[subject] = .writing(since: now())
-        let options = Options(model: model, effort: usesOnDeviceModel ? nil : "low")
         let task = Task { [weak self] in
             guard let self else { return }
+            // Unless you chose a model, which one it is, once the Copilot CLI's been looked for.
+            if !self.hasChosenModel, !self.hasLookedForCLI {
+                await self.lookForCLI()
+                guard self.isCurrent(subject, token: token) else { return }
+            }
+            let options = Options(model: self.model, effort: self.usesOnDeviceModel ? nil : "low")
             // What's known of it and of each, as it is now, and what more the sources read of each for a summary.
             let items = [self.links.describe(subject)] + self.links.connections(of: subject).map(\.item)
             await self.stories.tell(items)
@@ -421,7 +456,9 @@ package final class StorySummaries: ObservableObject {
             } else {
                 .failure(Problem("BriefBar can't write summaries here."))
             }
-            self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model)
+            // Given all of it, it isn't incomplete, whatever a small model says.
+            let isWhole = !input.prompt.contains("left out for length.)")
+            self.finish(subject, token: token, answer: answer, inputs: input.inputs, model: options.model, isWhole: isWhole)
         }
         writing[subject] = (token, task)
     }
@@ -438,14 +475,17 @@ package final class StorySummaries: ObservableObject {
         await writing[subject]?.task.value
     }
 
-    private func finish(_ subject: ItemRef, token: Int, answer: Result<String, Problem>, inputs: [Input], model: String) {
+    private func finish(
+        _ subject: ItemRef, token: Int, answer: Result<String, Problem>, inputs: [Input], model: String, isWhole: Bool
+    ) {
         // Taken back meanwhile: cancelled, dismissed, asked again, or turned off.
         guard isCurrent(subject, token: token) else { return }
         writing[subject] = nil
         switch answer {
         case .success(let text):
             // Your name, where the model wrote it for whom the next step is, as "you".
-            if let summary = StorySummary.parse(text, reader: yourName) {
+            if let parsed = StorySummary.parse(text, reader: yourName) {
+                let summary = isWhole ? parsed.withoutIncompleteNotes() : parsed
                 states[subject] = .written(summary, at: now(), inputs: inputs, model: model)
                 previous[subject] = nil
                 lastFailed[subject] = nil
@@ -607,9 +647,9 @@ package final class StorySummaries: ObservableObject {
         case .notReady:
             return Problem("Apple Intelligence is still getting ready. Try again later, or choose a Copilot model.", fix: .chooseModel)
         case .busy:
-            return Problem("Apple Intelligence is busy or took too long. Try again.")
+            return Problem("Apple Intelligence is busy or took too long.")
         case .empty:
-            return Problem("Apple Intelligence answered nothing. Try again.")
+            return Problem("Apple Intelligence answered nothing.")
         case .failed:
             return Problem("Apple Intelligence couldn't write a summary. Try again, or choose a Copilot model.", fix: .chooseModel)
         }

@@ -2,12 +2,13 @@
 
 ## Unreleased
 
-- **Summarize on your Mac with Apple Intelligence, or with the model you choose.** In **Settings ›
-  General › Summaries**, choose Apple Intelligence, free on your Mac, or a model through Copilot, from
-  Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: the picker
-  says what each costs. Apple Intelligence is the default unless you've already chosen a model, needs no
-  Copilot subscription, and keeps the summary on your Mac; it's a small model, so with long histories it
-  can get details wrong, and a Copilot model is more accurate. Summaries still start off. If Apple
+- **Choose the model that writes summaries, from free on your Mac to the most capable.** In
+  **Settings › General › Summaries**, choose Apple Intelligence, free on your Mac, or a model through
+  Copilot, from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the
+  most: the picker says what each costs. Unless you chose a model, Claude Haiku 5.5 writes them when
+  the Copilot CLI is installed, and Apple Intelligence when it isn't. Apple Intelligence needs no
+  Copilot subscription and keeps the summary on your Mac, but it's a small model that often gets
+  details wrong; Copilot's models are far more accurate. Summaries still start off. If Apple
   Intelligence isn't ready or can't summarize an item, BriefBar explains why and never switches to
   Copilot automatically.
 - **Know where things stand in a few lines, as you open them.** With **Summaries** on, opening a work

@@ -63,10 +63,15 @@ final class AppModel: ObservableObject {
             + CopilotModel.forSummaries.map { StorySummaries.Model(id: $0.id, name: $0.name) }
         if demo {
             services.summaries.write = DemoSummaries.write
+            // Its summaries are made up, wherever it runs.
+            services.summaries.canRunOnDevice = { true }
         } else if !rendering {
             let summarizer = CopilotSummarizer()
             services.summaries.write = StorySummaries.writer(copilot: AppModel.copilotSummaries(summarizer))
             services.summaries.findCLI = { await summarizer.findsCLI() }
+            // Which model writes them, unless you chose one: only while they're on.
+            let summaries = services.summaries
+            Task { await summaries.lookForCLI() }
         }
         // `--render` keeps the brief in BriefBar's own words, so pictures don't depend on the model, unless asked to wait.
         briefWriter = BriefWriter(isEnabled: !rendering || Attribution.environment["BRIEFBAR_RENDER_SUMMARIES"] == "1")

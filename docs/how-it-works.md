@@ -483,18 +483,26 @@ on (`StorySummaries` in `Sources/BriefBarUI`). Its setting says what it does, an
 you open one**, or **Only when you ask** (`StorySummaries.writesWhenOpened`, `summaries.copilot.whenOpened`); then, a
 line each, what it uses or sends, where, what it costs, which for a Copilot model follows that choice, and what the
 model can do, with the model, under what it costs (`StorySummariesSetting.onDeviceSection`, `copilotSection` and
-`choiceTitle`): "On this Mac, free", Apple Intelligence, the default when no model was chosen; then "Through Copilot: a
-request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5 (cheapest), Claude Sonnet
-5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs most) (`CopilotModel.forSummaries`), so you
-choose what a summary is worth; never Auto, which may choose any. The picker is as wide as the model chosen needs, up
-to 280 points, so it fits in a popover. While
-Apple Intelligence is chosen, a line under it says it's a small model, which can get details wrong with long histories,
-and that Copilot's models read more of each and are more accurate. Existing model choices and the on/off setting stay
-as they were, under the same `summaries.copilot.*` preferences. Apple Intelligence runs through `OnDeviceModel` and
-`SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests, sign-in or subscription;
-it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the setting explains when it
-isn't available. Only a selected Copilot model checks whether the Copilot CLI is there, as your login shell finds it,
-once it's on. Local failures never fall back to Copilot. While Show Links is off, it's dimmed and can't be changed.
+`choiceTitle`): "On this Mac: free, less accurate", Apple Intelligence, "(not on this Mac)" where this Mac can't run
+it; then "Through Copilot: a request each, at the model's rate", from the cheapest to the most capable, Claude Haiku 5.5
+(cheapest), Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 4 Argon and Claude Opus 5.5 (most capable, costs most)
+(`CopilotModel.forSummaries`), so you choose what a summary is worth; never Auto, which may choose any. The picker is as
+wide as the model chosen needs, up to 320 points, so it fits in a 480-point popover. While Apple Intelligence is
+chosen, a line under it says it's a small model that often gets details wrong, even in short histories, and that
+Copilot's models are far more accurate: on realistic made-up items, it got every one of them wrong where Claude Haiku
+5.5 got them right. So unless you chose a model, it's Claude Haiku 5.5 through Copilot where the Copilot CLI is, and
+Apple Intelligence where it isn't (`StorySummaries.copilotDefaultModel`, `lookForCLI`, `hasChosenModel`): the CLI is
+looked for, as your login shell finds it, once summaries are on, as BriefBar starts, as they're turned on, as their
+setting shows, and before a summary is written if it hasn't been yet; never while they're off. Choosing a model in the
+picker, even the one that was the default, saves it, and it stays whatever's found. Existing model choices and the
+on/off setting stay as they were, under the same `summaries.copilot.*` preferences; whoever had summaries on in 0.9.0
+with Claude Haiku 5.5, its default then, keeps it while the CLI is there. Apple Intelligence runs through
+`OnDeviceModel` and `SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests,
+sign-in or subscription; it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the
+setting explains when it isn't available. Opening something writes nothing with a model that can't write it there,
+Apple Intelligence where this Mac can't run it, or one through Copilot where the CLI wasn't found
+(`StorySummaries.canRunModel`), so each thing opened doesn't say so; ✨ still asks, and says why. Local failures never
+fall back to Copilot. While Show Links is off, it's dimmed and can't be changed.
 **Writes** starts as **As you open one**, except for whoever had summaries on before it came, when they were written
 only when you asked: they keep **Only when you ask** until they choose otherwise, saved once, the
 first time this version starts, so an update never starts spending for them.
@@ -582,14 +590,14 @@ shows, gray, under "Updating · on this Mac", or "· 1 request", with **Stop**, 
 (`StorySummaries.previous(for:)`). Out of date, its caption says so in bold, its text turns a little lighter, and its
 foot says what changed, "Since then: !4120 changed.", with **Summarize Again**, in the tint, as a link. One that
 couldn't be written again stays as it was, lighter only if it's out of date too, with why at its foot, "Couldn't update:
-Apple Intelligence is busy or took too long. Try again.", and under that, **Choose Model…** for a model that isn't on
+Apple Intelligence is busy or took too long.", and under that, **Choose Model…** for a model that isn't on
 your plan, and **Try Again**; ✕ then hides it as it was. One that couldn't be written at all says "Couldn't summarize:
 …", with the same, and its ✕ closes it, since nothing's kept. VoiceOver says "Summary ready" and what it's of, once,
 however many places show it. Your name comes from Azure DevOps, or else from your GitHub login.
 
 While Summaries is off and Show Links is on, a line where its card would be, in Where It Stands once something's linked
-and under a page's heading, offers it (`SummaryOffer`): "Apple Intelligence can tell you where this stands, in a few
-lines.", or Copilot, as the model chosen, with **Turn On…**, in the tint, after it while it fits, or else on a line of
+and under a page's heading, offers it (`SummaryOffer`): "AI can tell you where this stands, in a few lines.", whichever
+model would write them, which isn't known until they're on, with **Turn On…**, in the tint, after it while it fits, or else on a line of
 its own, which shows its setting in a popover, what it uses or sends, where and what it costs, to turn it on there, the
 line staying while it shows; and **✕**, which hides the line for good (`summaries.copilot.offerHidden`). It's above where
 the card will be, so turning summaries on there doesn't move it.

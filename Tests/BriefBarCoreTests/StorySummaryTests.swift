@@ -553,6 +553,27 @@ import Testing
         #expect(StorySummaryPrompt.describe(item, isSubject: true).count > 9_000)
     }
 
+    /// A small model says the summary may be incomplete though nothing was left out: given all of it, that goes, and a
+    /// point that says only that; one that says some work is incomplete stays.
+    @Test func aSummaryOfAllItWasGivenDoesntSayItsIncomplete() {
+        let summary = StorySummary(headline: "Approved.", paragraph: """
+            - **Review:** Priya Shah approved. The summary may be incomplete.
+            - **Note:** Details may be incomplete.
+            - **Left:** The migration is incomplete.
+            """)
+        #expect(summary.withoutIncompleteNotes().paragraph
+                == "- **Review:** Priya Shah approved.\n- **Left:** The migration is incomplete.")
+        #expect(StorySummary(headline: "Approved.", paragraph: "- **Note:** The data is incomplete.").withoutIncompleteNotes().paragraph == nil)
+    }
+
+    /// The data's headings in capitals, as a small model may copy them, read as words.
+    @Test func theDatasCapitalisedHeadingsReadAsWords() {
+        #expect(StorySummary.spelledOut("PULL REQUEST !4133 failed; TASK 5134 waits on WORK ITEM 5101.")
+                == "!4133 failed; task 5134 waits on work item 5101.")
+        #expect(StorySummary.spelledOut("The COPILOT SESSION asked, and the TASK SENT TO COPILOT ended.")
+                == "The Copilot session asked, and the task sent to Copilot ended.")
+    }
+
     /// Bold and code are closed where they're left open, but what's in code is its text, even a path's "**"; and copied,
     /// code keeps it too.
     @Test func codeKeepsItsTextWhenMarksAreClosedAndCopied() {

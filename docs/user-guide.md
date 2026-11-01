@@ -367,18 +367,19 @@ on screen until the new one's ready. With **Writes** set to
 **Only when you ask**, it waits for **✨** instead; if you turned summaries on before **Writes** came,
 that's what you keep until you change it.
 
-Apple Intelligence writes it on your Mac unless you've already chosen a model: it needs macOS 26 or later
-and Apple Intelligence on and ready, uses no Copilot requests or subscription, and never Private Cloud
-Compute; it can take less, so it reads a shorter cut of each thing, and, being a small model, it can get
-details wrong with long histories. You can instead choose a model through Copilot, from Claude Haiku 5.5,
-the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets those details through
-the Copilot CLI, one request on your Copilot plan, at the model's rate, each time one's written, and the
-card says so as it opens. Neither gets tools, so it can only write. The card says
+Unless you choose a model, Claude Haiku 5.5 writes it through Copilot when the Copilot CLI is installed,
+and Apple Intelligence on your Mac when it isn't. In the picker, you can choose any model through Copilot,
+from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets
+those details through the Copilot CLI, one request on your Copilot plan, at the model's rate, each time
+one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs macOS 26 or
+later and Apple Intelligence on and ready, uses no Copilot requests or subscription, and never Private
+Cloud Compute, but it can take less, so it reads a shorter cut of each thing, and, being a small model,
+it often gets details wrong, even in short histories. Neither gets tools, so it can only write. The card says
 when it was written, and its tooltip by which model and from what. When one can't be written, it says
 why and what would help: Apple Intelligence isn't available or the item is too long, the Copilot CLI
 isn't signed in, the model isn't on your plan (**Choose Model…**), or your premium requests ran out; one
-that couldn't be written again keeps the one before. BriefBar never switches from Apple Intelligence to
-Copilot by itself.
+that couldn't be written again keeps the one before. When Apple Intelligence can't write one, BriefBar says
+why and never tries Copilot instead.
 
 The lists have it too, when you ask: point at a pull request or a Copilot session, in Azure DevOps',
 GitHub's or Copilot's list, and **✨** takes its time's place, or right-click it for **Summarize** with
@@ -949,9 +950,9 @@ manage; if not, Teams says it can't summarize that language yet, Azure DevOps sh
 brief across sources keeps BriefBar's own words. These on-device summaries need macOS 26 or later,
 and Apple Intelligence turned on in System Settings. The plain-language brief works without it.
 
-**Summaries** of work items, pull requests and sessions use Apple Intelligence too, by default. If you
-choose a Copilot model instead, they go through the Copilot CLI, don't need Apple Intelligence or
-macOS 26, and their language support depends on that model.
+**Summaries** of work items, pull requests and sessions use Apple Intelligence too when the Copilot CLI
+isn't installed, unless you choose a model through Copilot. Through Copilot, they go through the Copilot
+CLI, don't need Apple Intelligence or macOS 26, and their language support depends on that model.
 
 ### Why isn't it notarized?
 

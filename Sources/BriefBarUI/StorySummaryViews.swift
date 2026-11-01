@@ -130,8 +130,9 @@ package struct SummaryCard: View {
     }
 
     /// Whether a next step only says again what Waiting On says above it: it's for whom that line says something waits on,
-    /// names what that wait names, and says nothing else, every word of it being the wait's, as "Complete !4091." under
-    /// "you, to complete !4091"; not "Complete !4091 after fixing authentication.", which says more.
+    /// names what that wait names, and says nothing else, every word of it being the wait's or one that says nothing, as
+    /// "Complete pull request !4091 in Azure DevOps." under "you, to complete !4091"; not "Complete !4091 after fixing
+    /// authentication.", which says more.
     static func repeats(_ next: String, for nextFor: String?, among waits: [ItemStory.Wait]) -> Bool {
         guard let nextFor else { return false }
         let said = words(next)
@@ -142,9 +143,14 @@ package struct SummaryCard: View {
             case .copilot: nextFor.caseInsensitiveCompare("Copilot") == .orderedSame
             case .people: wait.text.hasPrefix(nextFor + ",")
             }
-            return isFor && said.isSubset(of: words(wait.text))
+            return isFor && said.subtracting(fillers).isSubset(of: words(wait.text))
         }
     }
+
+    /// Words that say nothing a wait doesn't: what a thing is, and where.
+    private static let fillers: Set<String> = [
+        "the", "a", "an", "it", "its", "in", "pull", "request", "work", "item", "task", "session", "azure", "devops", "now",
+    ]
 
     /// A sentence's words, without case or punctuation but for what numbers a thing: "!4091", "#12".
     private static func words(_ text: String) -> Set<String> {
@@ -290,7 +296,7 @@ package struct SummaryCard: View {
                     .textSelection(.enabled)
                 if let next = summary.next, !Self.repeats(next, for: summary.nextFor, among: waits) {
                     (Text(summary.nextLabel).fontWeight(.semibold) + Text(" " + next))
-                        .font(size: isRow ? 11.5 : 12.5)
+                        .font(size: isRow ? 11.5 : 13)
                         .foregroundStyle(strong)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -307,14 +313,14 @@ package struct SummaryCard: View {
                 } else if let changed {
                     // What changed since, and a new one, or that it's about to be written.
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("Since then: \(changed).")
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                         if isDue {
-                            Text("Updating in a moment · \(summaries.requestDescription)")
+                            Text("Since then: \(changed). Updating in a moment · \(summaries.requestDescription)")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
+                            Text("Since then: \(changed).")
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             againButton
                         }
                     }
@@ -385,7 +391,7 @@ package struct SummaryCard: View {
                     .popover(isPresented: $choosesModel, arrowEdge: .bottom) {
                         StorySummariesSetting(summaries: summaries, links: services.links, isNested: false)
                             .padding(16)
-                            .frame(width: 460)
+                            .frame(width: 480)
                     }
             }
             Button("Try Again") { summaries.summarize(subject) }
@@ -551,9 +557,9 @@ package struct SummaryOffer: View {
 
     /// The preferences' key for the line, once you dismissed it.
     package static let hiddenKey = "summaries.copilot.offerHidden"
-    /// "Apple Intelligence can tell you where this stands, in a few lines.", or Copilot, as the model chosen.
+    /// What it offers, whichever model would write them, which isn't known until they're on.
     package static func text(_ summaries: StorySummaries) -> String {
-        "\(summaries.usesOnDeviceModel ? "Apple Intelligence" : "Copilot") can tell you where this stands, in a few lines."
+        "AI can tell you where this stands, in a few lines."
     }
 
     package init(subject: ItemRef, summaries: StorySummaries, links: Links, defaults: UserDefaults) {
@@ -619,7 +625,7 @@ package struct SummaryOffer: View {
             .popover(isPresented: $showsSetting, arrowEdge: .bottom) {
                 StorySummariesSetting(summaries: summaries, links: links, isNested: false)
                     .padding(16)
-                    .frame(width: 460)
+                    .frame(width: 480)
             }
     }
 }
@@ -713,7 +719,7 @@ package struct StorySummariesSetting: View {
                         Picker("Model", selection: Binding(get: { summaries.model }, set: { summaries.setModel($0) })) {
                             Section(Self.onDeviceSection) {
                                 ForEach(choices.filter { $0.id == StorySummaries.appleIntelligenceModel }) { model in
-                                    Text(Self.choiceTitle(model)).tag(model.id)
+                                    Text(Self.choiceTitle(model, canRunOnDevice: summaries.canRunOnDevice())).tag(model.id)
                                 }
                             }
                             Section(Self.copilotSection) {
@@ -725,7 +731,7 @@ package struct StorySummariesSetting: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         // As wide as the model chosen needs, but never its menu's longest line, which a popover hasn't room for.
-                        .frame(maxWidth: 280, alignment: .leading)
+                        .frame(maxWidth: 320, alignment: .leading)
                         if summaries.usesOnDeviceModel {
                             Text(Self.onDeviceAccuracy)
                                 .foregroundStyle(.secondary)
@@ -739,7 +745,7 @@ package struct StorySummariesSetting: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             if summaries.isAvailable, summaries.usesOnDeviceModel, let unavailableReason {
-                Label(unavailableReason + " Choose a Copilot model to use it instead; BriefBar never switches automatically.",
+                Label(unavailableReason + " Choose a model through Copilot to write them instead.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(style: .callout)
                     .foregroundStyle(.orange)
@@ -784,17 +790,18 @@ package struct StorySummariesSetting: View {
 
     /// The models to choose from, with the one chosen even when it isn't among them.
     /// What Apple Intelligence can and can't do well, under the model, while it's chosen.
-    package static let onDeviceAccuracy = "A small model: with long histories it can get details wrong. Copilot's models read "
-        + "more of each, and are more accurate."
+    package static let onDeviceAccuracy = "A small model on this Mac: it often gets details wrong, even in short histories. "
+        + "Copilot's models are far more accurate."
 
-    /// The picker's sections: what each costs, and where it runs.
-    package static let onDeviceSection = "On this Mac, free"
+    /// The picker's sections: where each runs, and what it costs.
+    package static let onDeviceSection = "On this Mac: free, less accurate"
     package static let copilotSection = "Through Copilot: a request each, at the model's rate"
 
     /// A model as the picker offers it, under what it costs: "Claude Haiku 5.5 (cheapest)", "Claude Opus 5.5 (most
-    /// capable, costs most)".
-    package static func choiceTitle(_ model: StorySummaries.Model) -> String {
+    /// capable, costs most)", and Apple Intelligence where this Mac can't run it, "(not on this Mac)".
+    package static func choiceTitle(_ model: StorySummaries.Model, canRunOnDevice: Bool = true) -> String {
         switch model.id {
+        case StorySummaries.appleIntelligenceModel where !canRunOnDevice: "\(model.name) (not on this Mac)"
         case "claude-haiku-5.5": "\(model.name) (cheapest)"
         case "claude-opus-5.5": "\(model.name) (most capable, costs most)"
         default: model.name

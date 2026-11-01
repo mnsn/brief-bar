@@ -84,7 +84,7 @@ There are two different kinds of AI help:
 
 | | What you get | Where it runs |
 |---|---|---|
-| **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Apple Intelligence on your Mac by default: free, macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests; a small model, which can get details wrong with long histories. Or choose a Copilot model, from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, and the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
+| **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Claude Haiku 5.5 by default when the Copilot CLI is installed: the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each, and you can choose any model from Haiku, the cheapest, to Claude Opus 5.5, the most capable. Or Apple Intelligence on your Mac, the default without the CLI: free, macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests, but a small model that often gets details wrong. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
 | **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires macOS 26+ with Apple Intelligence available and enabled. |
 
 Summaries of your work are written **as you open** a work item's details or a page, never in the
@@ -92,8 +92,8 @@ background, and the card says what it's about to do first, with **Not Now**; or,
 when you ask**. One that's still current shows again as it was; BriefBar marks a summary **Out of
 date** when its inputs change, and writes a new one when you ask, or as you open it once it's ten
 minutes old. BriefBar keeps summaries in
-memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. BriefBar never
-switches from Apple Intelligence to Copilot on its own. The app and its plain-language brief work
+memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. When Apple
+Intelligence can't write one, BriefBar says why and never tries Copilot instead. The app and its plain-language brief work
 without either AI feature.
 
 ## Send the next step to Copilot
@@ -202,7 +202,7 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
-| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Apple Intelligence (macOS 26+) unless you choose a Copilot model, which requires the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in with access to that model. |
+| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence (macOS 26+). |
 
 You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
 through the built-in updater, even if you installed with Homebrew (`brew upgrade` skips BriefBar

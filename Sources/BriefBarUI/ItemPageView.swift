@@ -92,7 +92,7 @@ private struct PageContent: View {
         }
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details: as it
         // opens, as summaries are turned on, and as a source says what it is; never once you acted on it since it opened.
-        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.canSummarize(ref))") {
+        .task(id: "\(ref)|\(summaries.isOn)|\(summaries.writesWhenOpened)|\(summaries.isChoosing)|\(summaries.model)|\(summaries.canSummarize(ref))") {
             guard links.isOn, !isRendering else { return }
             let acted = visit(ref)
             // Its card shows already, as it will be, with Not Now, until it's written or this stops waiting.

@@ -141,7 +141,8 @@ private struct RowSummaryContent: View {
         failure: StorySummaries.Problem? = nil
     ) -> some View {
         let changed = isUpdating || failure != nil ? nil : summaries.whatChanged(subject)
-        let isDimmed = isUpdating || changed != nil || failure != nil
+        // Lighter while another's written in its place, or once it's out of date; not just for one that couldn't be.
+        let isDimmed = isUpdating || changed != nil
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: "sparkles")

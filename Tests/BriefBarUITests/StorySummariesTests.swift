@@ -28,6 +28,7 @@ import Testing
         let summaries = StorySummaries(defaults: defaults, links: links, stories: stories, isDemo: false)
         summaries.setOn(on)
         summaries.noticeFor = .zero
+        summaries.canRunOnDevice = { true }
         return (links, stories, summaries)
     }
 
@@ -701,6 +702,66 @@ import Testing
             == "Sends this work item and what's linked to it to GitHub Copilot (Claude Haiku 5.5): 1 request on your Copilot plan.")
     }
 
+    /// Unless you chose a model, Claude Haiku 5.5 through Copilot writes summaries where the Copilot CLI is, which gets
+    /// details right far more often, and Apple Intelligence where it isn't; nothing's looked for while they're off, and a
+    /// model you chose stays.
+    @Test func theModelUnlessYouChoseOneFollowsTheCopilotCLI() async {
+        let (_, _, summaries) = hub(on: false)
+        summaries.findCLI = { true }
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
+        await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
+        summaries.setOn(true)
+        await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.copilotDefaultModel)
+        #expect(!summaries.hasChosenModel)
+        summaries.findCLI = { false }
+        await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
+        // Chosen, even as the default it was, it stays, whatever's found.
+        summaries.setModel(StorySummaries.appleIntelligenceModel)
+        #expect(summaries.hasChosenModel)
+        summaries.findCLI = { true }
+        await summaries.lookForCLI()
+        #expect(summaries.model == StorySummaries.appleIntelligenceModel)
+    }
+
+    /// Asked before the Copilot CLI was looked for, a summary is written with the model that finds.
+    @Test func aSummaryIsWrittenWithTheModelTheCLIChooses() async {
+        let (links, _, summaries) = hub()
+        publish(links)
+        summaries.findCLI = { true }
+        let models = Asked()
+        summaries.write = { _, options in
+            models.add(options.model)
+            return .success("HEADLINE: Fixed in !4091.")
+        }
+        await summaries.summarizeAndWait(workItem)
+        #expect(models.prompts == [StorySummaries.copilotDefaultModel])
+    }
+
+    /// Opening one writes nothing with a model that can't write it here, Apple Intelligence where this Mac can't run it,
+    /// or one through Copilot where the CLI isn't, so each one opened doesn't say so; ✨ still asks, and says why.
+    @Test func openingOneWritesNothingWithAModelThatCantRunHere() async {
+        let (links, _, summaries) = hub()
+        publishWithTasks(links)
+        let asked = Asked()
+        summaries.write = writer(asked)
+        summaries.canRunOnDevice = { false }
+        #expect(summaries.expect(workItem, unlessActedSince: nil) == nil)
+        await summaries.opened(workItem)
+        #expect(asked.prompts.isEmpty)
+        await summaries.summarizeAndWait(workItem)
+        #expect(asked.prompts.count == 1)
+        summaries.dismiss(workItem)
+        summaries.canRunOnDevice = { true }
+        summaries.setModel("claude-haiku-5.5")
+        summaries.findCLI = { false }
+        await summaries.lookForCLI()
+        await summaries.opened(workItem)
+        #expect(asked.prompts.count == 1)
+    }
+
     @Test func settingsSaysWhenTheCLIIsntThere() async {
         let (_, _, summaries) = hub(on: false)
         let looks = Looks()
@@ -712,8 +773,10 @@ import Testing
         await summaries.lookForCLI()
         #expect(looks.count == 0)
         #expect(summaries.hasCLI == nil)
+        // Apple Intelligence, once you chose it, needs neither a CLI lookup nor a Copilot sign-in.
+        summaries.setModel(StorySummaries.appleIntelligenceModel)
+        #expect(summaries.hasChosenModel)
         summaries.setOn(true)
-        // Apple Intelligence needs neither a CLI lookup nor a Copilot sign-in.
         await summaries.lookForCLI()
         #expect(looks.count == 0)
         #expect(summaries.hasCLI == nil)
@@ -989,6 +1052,7 @@ import Testing
         #expect(SummaryCard.repeats("Complete !4091.", for: "you", among: waits))
         #expect(SummaryCard.repeats("Answer on !4102.", for: "Sam Rivera", among: waits))
         #expect(SummaryCard.repeats("On task 5103.", for: "Copilot", among: waits))
+        #expect(SummaryCard.repeats("Complete pull request !4091 in Azure DevOps.", for: "you", among: waits))
         // Saying more, or something else, it shows.
         #expect(!SummaryCard.repeats("Complete !4091 after fixing authentication.", for: "you", among: waits))
         #expect(!SummaryCard.repeats("Complete !4091 once the build on main passes again.", for: "you", among: waits))
@@ -1007,6 +1071,10 @@ import Testing
         #expect(SummaryMarkdown.blocks(text) == [
             .point("**Done:** Added `SavedItemsList`."), .point("**Left:** [the docs](https://example.com/x) and more."),
             .text("Then more and more."),
+        ])
+        // A line after a point that ended its sentence is its own.
+        #expect(SummaryMarkdown.blocks("- **Left:** Two tasks.\nThe build passed.") == [
+            .point("**Left:** Two tasks."), .text("The build passed."),
         ])
         // As the model's answer is read: its points, each a line, and its lines as written.
         let answer = StorySummary.parse("""
@@ -1037,8 +1105,10 @@ import Testing
 
     /// The picker says what each model costs: Apple Intelligence nothing, Haiku the least and Opus the most.
     @Test func thePickerSaysWhatEachModelCosts() {
-        #expect(StorySummariesSetting.onDeviceSection == "On this Mac, free")
+        #expect(StorySummariesSetting.onDeviceSection == "On this Mac: free, less accurate")
         #expect(StorySummariesSetting.choiceTitle(StorySummaries.appleIntelligence) == "Apple Intelligence")
+        #expect(StorySummariesSetting.choiceTitle(StorySummaries.appleIntelligence, canRunOnDevice: false)
+                == "Apple Intelligence (not on this Mac)")
         #expect(StorySummariesSetting.choiceTitle(.init(id: "claude-haiku-5.5", name: "Claude Haiku 5.5")) == "Claude Haiku 5.5 (cheapest)")
         #expect(StorySummariesSetting.choiceTitle(.init(id: "claude-opus-5.5", name: "Claude Opus 5.5"))
                 == "Claude Opus 5.5 (most capable, costs most)")
