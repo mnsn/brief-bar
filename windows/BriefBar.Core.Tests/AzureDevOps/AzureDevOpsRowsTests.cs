@@ -61,6 +61,11 @@ public sealed class AzureDevOpsRowsTests
         Assert.Equal(expected: AzureDevOpsCommands.Clear, actual: Group(snapshot: snapshot, key: "done").Commands.Single().Key);
         Assert.True(condition: Group(snapshot: snapshot, key: "idle").IsFolded);
         Assert.DoesNotContain(collection: snapshot.Groups, filter: group => group.Key != "idle" && group.IsFolded);
+        // Its foot opens Azure DevOps, and refreshes from an icon beside Settings, as the Mac's does.
+        Assert.Equal(
+            expected: [(AzureDevOpsCommands.OpenAzureDevOps, false), (AzureDevOpsCommands.Refresh, true)],
+            actual: snapshot.Commands.Select(selector: command => (command.Key, command.IconOnly)));
+        Assert.Equal(expected: "Refresh now", actual: snapshot.Commands[1].Help);
 
         // Seen, Needs you has nothing new to mark.
         store.Clear(group: PRGroup.NeedsYou, now: now);

@@ -156,7 +156,8 @@ public static class AzureDevOpsRows
             Id: pair.Item.Id, Section: SectionId.AzureDevOpsPullRequests, State: pair.State!.Value, Date: pair.Item.Since, Sentence: Brief.Item(snapshot: pair.Item).Sentence))
         .ToList();
 
-    /// The footer's: choosing organizations, without any; Azure DevOps itself; and reading again, once it has started.
+    /// The footer's: choosing organizations, without any; Azure DevOps itself; and, once it has started, reading again
+    /// now, an icon beside Settings, as the Mac's is.
     static List<PanelCommand> Commands(SectionStatus status, PRPlaceholder placeholder)
     {
         var commands = new List<PanelCommand>();
@@ -170,7 +171,11 @@ public static class AzureDevOpsRows
         commands.Add(item: new PanelCommand(Key: AzureDevOpsCommands.OpenAzureDevOps, Title: "Open Azure DevOps", Help: "Your pull requests in Azure DevOps", Opens: true));
         if (status.Condition != SectionCondition.Starting)
         {
-            commands.Add(item: new PanelCommand(Key: AzureDevOpsCommands.Refresh, Title: "Refresh", Help: "Read Azure DevOps again now") { Icon = IconKey.ArrowSync });
+            commands.Add(item: new PanelCommand(Key: AzureDevOpsCommands.Refresh, Title: "Refresh", Help: "Refresh now")
+            {
+                Icon = IconKey.ArrowSync,
+                IconOnly = true,
+            });
         }
         return commands;
     }

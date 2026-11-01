@@ -76,6 +76,9 @@ public sealed class PanelViewModel : Observable
     /// What the section's footer offers, such as "Open GitHub Copilot".
     public IReadOnlyList<PanelCommand> Commands { get; private set => Set(storage: ref field, value: value); } = [];
 
+    /// What the section's footer offers as icons beside Settings, such as Azure DevOps' refresh.
+    public IReadOnlyList<PanelCommand> IconCommands { get; private set => Set(storage: ref field, value: value); } = [];
+
     /// Made-up data, said in the footer so it's never mistaken for yours.
     public bool IsDemo { get; private set => Set(storage: ref field, value: value); }
 
@@ -148,6 +151,7 @@ public sealed class PanelViewModel : Observable
             : "Nothing needs you right now.";
         OffersSettings = snapshots.Count == 0;
         Commands = [];
+        IconCommands = [];
     }
 
     void ShowSection(SectionId section, SectionSnapshot? snapshot, ThemePalette palette, DateTimeOffset now)
@@ -168,6 +172,7 @@ public sealed class PanelViewModel : Observable
             ShowGroups(groups: [], section: section, palette: palette, now: now);
             EmptyText = "This source is off.";
             Commands = [];
+            IconCommands = [];
             return;
         }
         var status = StatusWords.Of(status: snapshot.Status, now: now);
@@ -183,11 +188,20 @@ public sealed class PanelViewModel : Observable
             ?? (snapshot.Status.Condition == SectionCondition.Starting ? "Reading…" : "Nothing here right now.");
         // A paused section's review is on its banner.
         IReadOnlyList<PanelCommand> commands = snapshot.Status.Condition == SectionCondition.Paused ? [] : snapshot.Commands;
-        if (!commands.SequenceEqual(second: Commands))
+        var titled = FooterCommands(commands: commands, iconOnly: false);
+        if (!titled.SequenceEqual(second: Commands))
         {
-            Commands = commands;
+            Commands = titled;
+        }
+        var icons = FooterCommands(commands: commands, iconOnly: true);
+        if (!icons.SequenceEqual(second: IconCommands))
+        {
+            IconCommands = icons;
         }
     }
+
+    static List<PanelCommand> FooterCommands(IReadOnlyList<PanelCommand> commands, bool iconOnly) =>
+        [.. commands.Where(predicate: command => command.IconOnly == iconOnly)];
 
     /// A banner for a section that can't show everything: why, and what to do.
     void ShowProblem(SectionSnapshot? snapshot, DateTimeOffset now)

@@ -7,4 +7,8 @@ public sealed record PanelCommand(string Key, string Title, string? Help = null,
 {
     /// Its icon on a button at the panel's foot.
     public IconKey Icon { get; init; } = IconKey.Open;
+
+    /// Whether its button at the panel's foot is its icon alone, beside Settings, as the Mac's refresh is; its title is
+    /// then its name for screen readers, and its help its tooltip.
+    public bool IconOnly { get; init; }
 }

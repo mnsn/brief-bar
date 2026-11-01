@@ -108,7 +108,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To review too if you
   turn that on. A row says why it's there, with the comment, the failed step or who approved; it opens the pull
   request in your browser, at the comment that needs you, and sees it; its menu removes it from Needs you, or stops
-  watching it. Signed out, it offers to sign in, which runs `az login` in a console window; without the Azure CLI,
+  watching it. Its foot has **Open Azure DevOps**, and an icon beside Settings refreshes now, as the Mac's does.
+  Signed out, it offers to sign in, which runs `az login` in a console window; without the Azure CLI,
   it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle after no activity for,
   Show To review in the bar, Follow pipelines after you merge, your organizations (with Add an organization and
   Find my organizations again), and the pull requests you watch (with Watch a pull request, by its link).
