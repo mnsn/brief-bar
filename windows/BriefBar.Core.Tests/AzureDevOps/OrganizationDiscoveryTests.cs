@@ -99,5 +99,34 @@ public sealed class OrganizationDiscoveryTests
         Assert.Equal(expected: ["contoso"], actual: (await OrganizationDiscovery.DiscoverAsync(client: client, cancellationToken: cancellationToken)).WithPullRequests);
     }
 
+    /// Asked to slow down partway, it can't tell for the organizations it hadn't checked: it finds nothing, rather than
+    /// only the ones it checked before, so that nothing partial is saved, and it's tried again once BriefBar may send.
+    [Fact]
+    public async Task FindsNothingWhenAskedToSlowDownPartway()
+    {
+        var clock = new TestClock(start: TestTimes.T(seconds: 0));
+        var server = new StubServer();
+        server.On(path: "/_apis/profile/profiles/me", json: Profile);
+        server.On(path: "/_apis/accounts", json: Fixture.List(items: [Account(name: "contoso"), Account(name: "fabrikam"), Account(name: "northwind")]), query: Alias);
+        foreach (var organization in new[] { "contoso", "northwind" })
+        {
+            server.On(path: "/" + organization + "/_apis/connectionData", json: Me);
+            server.On(path: "/" + organization + "/_apis/git/pullrequests", json: Fixture.List(items: [Fixture.PullRequest(id: 1)]));
+        }
+        server.On(path: "/fabrikam/_apis/connectionData", reply: _ => StubReply.Code(status: 503));
+        using var client = server.Client(time: clock);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => OrganizationDiscovery.DiscoverAsync(client: client, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 60)), actual: error.Error);
+
+        // Once it may send again, it finds them all.
+        server.On(path: "/fabrikam/_apis/connectionData", json: Me);
+        server.On(path: "/fabrikam/_apis/git/pullrequests", json: Fixture.List(items: []));
+        clock.Set(time: TestTimes.T(seconds: 61));
+        var found = await OrganizationDiscovery.DiscoverAsync(client: client, cancellationToken: cancellationToken);
+        Assert.Equal(expected: ["contoso", "fabrikam", "northwind"], actual: found.All);
+        Assert.Equal(expected: ["contoso", "northwind"], actual: found.WithPullRequests);
+    }
+
     static JsonObject Account(string name) => new() { ["accountName"] = name };
 }

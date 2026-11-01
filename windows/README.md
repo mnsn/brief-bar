@@ -296,7 +296,9 @@ SDK ships inside the app.
   (`Retry-After`), or for a minute when it doesn't say, whichever reader asks next. The readers of the pull requests
   you watch, of those that left your lists, of failed builds and of merges stop, and count nothing as failed: a pull
   request you watch is read once BriefBar may send again, not an hour later. The reader of threads and policies
-  stops too: a pull request it was reading then waits its usual interval, and the rest keep their turn.
+  stops too: a pull request it was reading then waits its usual interval, and the rest keep their turn. Finding
+  your organizations saves nothing then, rather than only the ones it had checked, and the first time, it tries
+  again a minute later.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 

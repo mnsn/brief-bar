@@ -17,14 +17,19 @@ public static class OrganizationDiscovery
     }
 
     /// Your organizations, and those with your pull requests. Throws when it couldn't tell, as while offline, rather than
-    /// finding none, so that it's tried again.
+    /// finding none, and when Azure DevOps asked to slow down, rather than finding only some, so that it's tried again.
     public static async Task<OrganizationsFound> DiscoverAsync(ADOClient client, CancellationToken cancellationToken)
     {
         var all = await MembershipsAsync(client: client, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         var probe = await ProbeAsync(organizations: all, client: client, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-        if (probe.WithPullRequests.Count == 0 && probe.Failures.Count > 0)
+        var failures = probe.Failures.OrderBy(keySelector: pair => pair.Key, comparer: StringComparer.Ordinal).Select(selector: pair => pair.Value).ToList();
+        if (failures.Find(match: error => error.Kind == ADOErrorKind.Throttled) is { } slowedDown)
         {
-            throw new ADOException(error: probe.Failures.OrderBy(keySelector: pair => pair.Key, comparer: StringComparer.Ordinal).First().Value);
+            throw new ADOException(error: slowedDown);
+        }
+        if (probe.WithPullRequests.Count == 0 && failures.Count > 0)
+        {
+            throw new ADOException(error: failures[0]);
         }
         return new OrganizationsFound(All: all, WithPullRequests: probe.WithPullRequests);
     }
