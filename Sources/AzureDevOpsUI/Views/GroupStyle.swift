@@ -72,6 +72,7 @@ extension PRReason {
         case .buildFailed: return "xmark.circle.fill"
         case .checkFailed: return "xmark.octagon.fill"
         case .conflicts: return "arrow.triangle.branch"
+        case .mergeFailed: return "exclamationmark.circle.fill"
         case .buildExpired: return "clock.badge.exclamationmark.fill"
         case .failedAfterMerge: return "arrow.triangle.merge"
         case .readyToComplete: return "checkmark.circle.fill"

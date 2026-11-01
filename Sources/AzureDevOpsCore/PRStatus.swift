@@ -33,6 +33,8 @@ public enum PRReason: String, Sendable, Codable {
     case mentioned, sentInChat, replied, commented, reviewRequested, newCommits, changesRequested, rejected
     case answered
     case buildFailed, checkFailed, conflicts, buildExpired
+    /// Azure DevOps couldn't merge it, for something other than conflicts: the merge failed, or a policy rejected it.
+    case mergeFailed
     /// A pipeline that ran after it merged failed.
     case failedAfterMerge
     case readyToComplete, autoComplete
@@ -703,7 +705,8 @@ public enum PRClassifier {
         let failedBuilds = blocking.filter { $0.kind == .build && $0.state == .failed }
         let failedChecks = blocking.filter { $0.kind == .status && $0.state == .failed }
         let expired = blocking.filter { $0.kind == .build && $0.state == .expired }
-        let conflicts = pr.hasConflicts ? " · merge conflicts" : ""
+        // What's wrong with its merge too, after a failed build or check: " · merge conflicts", " · merge failed".
+        let conflicts = pr.hasConflicts ? " · merge conflicts" : pr.mergeProblem.map { " · " + $0.headline.lowercased() } ?? ""
         if !failedBuilds.isEmpty {
             // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
             let builds = failedBuilds.map { build in build.failure.map { "\(build.name) · \($0.summary)" } ?? build.name }
@@ -718,6 +721,11 @@ public enum PRClassifier {
         }
         if pr.hasConflicts {
             set(.failing, .conflicts, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)", nil)
+            return
+        }
+        // Azure DevOps couldn't merge it otherwise, so it can't be completed either, however its policies stand.
+        if let problem = pr.mergeProblem {
+            set(.failing, .mergeFailed, problem.headline, problem.detail, nil)
             return
         }
         if !expired.isEmpty {

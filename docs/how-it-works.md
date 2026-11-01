@@ -1117,7 +1117,8 @@ request is now: until its policies have been read again after a push or a vote, 
 **Your pull requests** are, in order: in **Needs You** if something new needs you, or a comment you've
 seen still waits on you (below); **Idle** if
 they're drafts or have had no activity (comments, pushes, votes) for two weeks; **Failing** for a
-failed build or status check, merge conflicts or an expired build; **Waiting** while a reviewer
+failed build or status check, merge conflicts, a merge Azure DevOps couldn't make otherwise (its
+`mergeStatus` is `failure` or `rejectedByPolicy`) or an expired build; **Waiting** while a reviewer
 wants changes; **Ready to Complete** when every blocking policy passes (or, without reviewer
 policies, someone approved) and every person it requires as a reviewer approved, whether a policy or
 someone added them, since Azure DevOps doesn't complete it before; and **Waiting** otherwise, with what
@@ -1149,6 +1150,7 @@ once (`PRReadiness`), once its details are read, from the same checks and votes 
 | **Work item linking** | ✋ **Link a work item** | **Work item linked** |
 | Any other blocking policy | Its name | It passes |
 | Merge conflicts | ✕ **Merge conflicts** | There are none |
+| A merge Azure DevOps couldn't make otherwise | ✕ **Merge failed**, **Merge rejected** (by a policy) | It merges, usually after another push |
 | Policies you can't read | **Can't read its policies** | Never: nobody can tell |
 
 What's left comes first, as the lists order states: what waits on you, what failed, what's running and

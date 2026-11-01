@@ -34,6 +34,7 @@ public enum PullRequestWait {
         case .buildFailed: return author("to fix \(number)'s build")
         case .checkFailed: return author("to fix \(number)'s checks")
         case .conflicts: return author("to resolve \(number)'s conflicts")
+        case .mergeFailed: return author("to fix \(number)'s merge")
         case .buildExpired: return author("to queue \(number)'s build again")
         case .failedAfterMerge: return author("to fix the pipeline that failed after \(number) merged")
         case .readyToComplete: return author("to complete \(number)")
@@ -71,6 +72,7 @@ public enum PullRequestWait {
         }
         if pullRequest.isDraft { return author("to publish \(number), a draft") }
         if pullRequest.hasConflicts { return author("to resolve \(number)'s conflicts") }
+        if pullRequest.mergeProblem != nil { return author("to fix \(number)'s merge") }
         let reviewers = pullRequest.reviewers.filter { !$0.hasDeclined }
         let people = reviewers.filter { !$0.isGroup }
         if people.contains(where: \.vote.wantsChanges) { return author("to make the changes asked for on \(number)") }

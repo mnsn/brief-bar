@@ -471,6 +471,7 @@ import BriefBarCore
         #expect(try state([failedBuild, Check(name: "api-ci", kind: .build, state: .failed)]).2 == "2 builds failed")
         #expect(try state([Check(name: "scan", kind: .status, state: .failed)]) == (.failing, .checkFailed, "Check failed", "scan"))
         #expect(try state([], merge: "conflicts") == (.failing, .conflicts, "Merge conflicts", "fix-total into main"))
+        #expect(try state([], merge: "failure") == (.failing, .mergeFailed, "Merge failed", "Azure DevOps couldn't merge fix-total into main"))
         #expect(try state([Check(name: "web-ci", kind: .build, state: .expired)]) == (.failing, .buildExpired, "Build expired", "web-ci · queue it again"))
         // An optional build doesn't count.
         let optional = Check(name: "perf", kind: .build, state: .failed, isBlocking: false)

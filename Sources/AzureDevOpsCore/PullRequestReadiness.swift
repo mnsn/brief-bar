@@ -28,6 +28,8 @@ public struct PRReadiness: Sendable, Codable, Equatable {
             case policy
             /// Merge conflicts with its target branch.
             case conflicts
+            /// A merge Azure DevOps couldn't make otherwise: it failed, or a policy rejected it.
+            case mergeFailed
             /// Its project doesn't let you read its policies, so nobody can tell whether it's ready.
             case unreadablePolicies
         }
@@ -190,6 +192,9 @@ extension PRReadiness {
 
         if pr.hasConflicts {
             add(.conflicts, .failing, "Merge conflicts", "\(pr.sourceBranch) into \(pr.targetBranch)")
+        }
+        if let problem = pr.mergeProblem {
+            add(.mergeFailed, .failing, problem.headline, problem.detail)
         }
         if !details.checksKnown {
             add(.unreadablePolicies, nil, "Can't read its policies",

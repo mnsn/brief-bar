@@ -21,6 +21,9 @@
 - **A person marked as a required reviewer now holds a pull request out of Ready to Complete until they
   approve**, as Azure DevOps does, whether a policy or someone added them. A team still counts as its
   policy says.
+- **A pull request Azure DevOps can't merge is under Failing.** When its merge fails for a reason other
+  than conflicts, or a policy rejects it, it says **Merge failed** or **Merge rejected**, as conflicts
+  do, rather than being ready to complete.
 
 ## 0.10.1 - 2026-11-01
 

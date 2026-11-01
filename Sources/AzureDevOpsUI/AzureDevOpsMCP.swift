@@ -896,6 +896,7 @@ enum AgentText {
             if !checks.isEmpty { lines.append("- Checks:\n" + checks.map { "  - \($0)" }.joined(separator: "\n")) }
         }
         if pr.hasConflicts { lines.append("- It has merge conflicts with \(pr.targetBranch).") }
+        if let problem = pr.mergeProblem { lines.append("- \(problem.detail).") }
         if let merge = record.merge {
             lines.append("- After it merged into \(merge.targetBranch) \(ago(merge.mergedAt, now: now)):")
             for status in merge.pipelines {

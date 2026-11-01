@@ -228,7 +228,7 @@ import BriefBarCore
         ]
         for reviewers in reviewerSets {
             for checks in checkSets {
-                for merge in ["succeeded", "conflicts"] {
+                for merge in ["succeeded", "conflicts", "failure", "rejectedByPolicy"] {
                     for known in [true, false] {
                         let pr = makePR(reviewers: reviewers, merge: merge, autoComplete: merge == "succeeded" && known)
                         let row = try snapshot(record(pr, checks: known ? checks : [], checksKnown: known))
@@ -253,6 +253,39 @@ import BriefBarCore
     }
 
     // MARK: Required reviewers in the list
+
+    /// A merge Azure DevOps couldn't make, for something other than conflicts, holds it up as conflicts do, however its
+    /// policies stand.
+    @Test func aMergeAzureDevOpsCouldntMakeIsFailing() throws {
+        let approved = [Reviewer(person: People.sam, vote: .approved)]
+        let passing = [build(.passed), minimumPolicy(.passed, 1)]
+        let cases = [
+            ("failure", "Merge failed", "Azure DevOps couldn't merge fix-total into main"),
+            ("rejectedByPolicy", "Merge rejected", "A policy rejected merging fix-total into main"),
+        ]
+        for (merge, headline, detail) in cases {
+            let failed = record(makePR(reviewers: approved, merge: merge), checks: passing)
+            let row = try snapshot(failed)
+            #expect(row.group == .failing)
+            #expect(row.reason == .mergeFailed)
+            #expect(row.headline == headline)
+            #expect(row.detail == detail)
+            let ready = try #require(row.readiness)
+            #expect(said(ready) == ["✕ \(headline)", "✓ Approved", "✓ Build passed"])
+            #expect(ready.items.first?.detail == detail)
+            #expect(!ready.isReady)
+            #expect(PullRequestWait.waiting(on: row, record: failed)?.text == "you, to fix !7's merge")
+            #expect(Brief.item(row, reader: nil).sentence == "“Fix the checkout total” can't be merged.")
+            #expect(PullRequestStory.merge(failed.pullRequest) == headline)
+        }
+        // After a failed build, its merge is said too, as conflicts are.
+        let both = record(makePR(reviewers: approved, merge: "failure"), checks: [build(.failed)])
+        #expect(try snapshot(both).detail == "web-ci · merge failed")
+        // Merges still being checked, or never checked, aren't failures.
+        for merge in ["queued", "notSet"] {
+            #expect(try snapshot(record(makePR(reviewers: approved, merge: merge), checks: passing)).group == .ready)
+        }
+    }
 
     @Test func aRequiredReviewerWhoHasntApprovedHoldsItUp() throws {
         let checks = [build(.passed), minimumPolicy(.passed, 1)]

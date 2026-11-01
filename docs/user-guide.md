@@ -282,7 +282,7 @@ Apple Intelligence sums up the newest of each.
 |---|---|
 | **Needs You** | Something new you haven't seen: a reply to your comment, a mention, a comment on your pull request, a review request, new commits since your vote, a reviewer who's waiting for you or rejected it, or a link to it someone sent you (if you turned that on). And comments you've seen that still wait on you |
 | **Answered** | Something that needed you that you've since taken care of in Azure DevOps, such as "You approved · Dana sent this in Teams", until you've seen it in the list |
-| **Failing** | Your pull request has a failed build or status check, merge conflicts, or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
+| **Failing** | Your pull request has a failed build or status check, merge conflicts, a merge Azure DevOps couldn't make otherwise (it failed, or a policy rejected it), or a build that expired. A failed build says where it failed, and its first error. And your merged pull request, when a pipeline that ran after it merged failed |
 | **Ready to Complete** | Your pull request is approved, every person it requires as a reviewer approved, and every required policy passes (or it completes automatically) |
 | **To Review** | Review requests you've seen but haven't voted on |
 | **Waiting** | Your pull requests waiting for reviewers, a build or a requirement, and reviews you're waiting on the author for |

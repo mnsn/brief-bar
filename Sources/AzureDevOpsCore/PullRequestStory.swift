@@ -179,12 +179,13 @@ public enum PullRequestStory {
         return said
     }
 
-    /// "Conflicts with main · Completes by itself once it can": how an active pull request's merge stands; nil for one
-    /// that's closed, or when there's nothing to say.
+    /// "Conflicts with main · Completes by itself once it can", "Merge failed": how an active pull request's merge stands;
+    /// nil for one that's closed, or when there's nothing to say.
     static func merge(_ pullRequest: PullRequest) -> String? {
         guard pullRequest.status == .active else { return nil }
         let said = [
             pullRequest.hasConflicts ? "Conflicts with \(pullRequest.targetBranch)" : nil,
+            pullRequest.mergeProblem?.headline,
             pullRequest.isDraft ? "Draft" : nil,
             pullRequest.autoComplete ? "Completes by itself once it can" : nil,
         ].compactMap { $0 }
