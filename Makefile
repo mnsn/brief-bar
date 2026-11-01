@@ -17,8 +17,6 @@ SCREENSHOTS := menubar-teams.chats-light menubar-teams.chats-dark menubar-combin
 # Window and detail pictures, as JPEG: their backgrounds would make PNGs several times larger.
 WINDOW_SHOTS := window-overview-light window-overview-dark \
 	window-azureDevOps.sprint-light window-azureDevOps.sprint-dark \
-	azureDevOps-sprint-details-light azureDevOps-sprint-details-dark \
-	azureDevOps-sprint-deep-page-light azureDevOps-sprint-deep-page-dark \
 	rows-summary-pull-requests-light rows-summary-pull-requests-dark \
 	azureDevOps-copilot-composer-light azureDevOps-copilot-composer-dark
 
@@ -114,22 +112,24 @@ render: build
 	"$(BRIEFBAR)" --render render $(ARGS)
 
 # Renders the README's pictures from the demo data, with Teams' summaries if Apple Intelligence is on, and its
-# animated tour if ffmpeg is installed.
+# animated tours if ffmpeg is installed.
 screenshots: build demo-data
 	rm -rf build/screenshots
 	$(DEMO_ENV) BRIEFBAR_RENDER_SUMMARIES=1 "$(BRIEFBAR)" --demo --render build/screenshots
 	mkdir -p docs/images
 	for name in $(SCREENSHOTS); do cp build/screenshots/$$name.png docs/images/; done
 	for name in $(WINDOW_SHOTS); do sips -s format jpeg -s formatOptions 88 build/screenshots/$$name.png --out docs/images/$$name.jpg >/dev/null; done
-	@if command -v ffmpeg >/dev/null; then $(MAKE) readme-tour; else echo "Skipped the README's tour: brew install ffmpeg, then make readme-tour."; fi
+	@if command -v ffmpeg >/dev/null; then $(MAKE) readme-tour; else echo "Skipped the README's tours: brew install ffmpeg, then make readme-tour."; fi
 
-# The README's animated tour, in light and dark, from the pictures make screenshots renders. Needs ffmpeg.
+# The README's animated tours, in light and dark, from the pictures make screenshots renders. Needs ffmpeg.
 readme-tour:
 	swift scripts/make-readme-tour.swift build/screenshots docs/images build/readme-tour
 
+# The app's icon, and the README's copy of it.
 icon:
 	swift scripts/make-icon.swift build/AppIcon.iconset
 	iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
+	cp build/AppIcon.iconset/icon_128x128@2x.png docs/images/icon.png
 
 clean:
 	rm -rf .build build

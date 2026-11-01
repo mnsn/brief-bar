@@ -92,6 +92,7 @@ struct CopilotComposerView: View {
 
     @EnvironmentObject private var store: CopilotTasksStore
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.isRendering) private var isRendering
 
     @LocalState private var prompt: String
     /// The prompt as it was last filled in, to tell whether you changed it.
@@ -564,7 +565,8 @@ struct CopilotComposerView: View {
         HStack(alignment: .center, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "info.circle")
-                Text(store.canSend ? footnote : "The demo doesn't send anything.")
+                // The README's picture says what sending does, as it would outside the demo.
+                Text(store.canSend || isRendering ? footnote : "The demo doesn't send anything.")
                     .fixedSize(horizontal: false, vertical: true)
             }
             .font(size: 11)

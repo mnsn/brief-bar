@@ -1,34 +1,79 @@
-# BriefBar
+<p align="center">
+  <img src="docs/images/icon.png" width="112" alt="BriefBar's icon">
+</p>
 
-[![CI](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+<h1 align="center">BriefBar</h1>
 
-**Your tasks, Copilot sessions and pull requests, connected. See what needs you and what happens next.**
+<p align="center">
+  <strong>Everything that needs you, in your Mac's menu bar.</strong><br>
+  Pull requests, GitHub Copilot sessions, your Azure DevOps sprint and Microsoft Teams chats, in one place.<br>
+  Summarized by AI, and one click from handing the next step to Copilot.
+</p>
 
-BriefBar is a macOS menu-bar app that brings **Azure DevOps**, **GitHub**, **GitHub Copilot** and
-**Microsoft Teams** into one view. Follow a work item through its tasks, the sessions working on it
-and the pull requests they produce. See who it's waiting on, ask AI for the short version, and send
-the next step to Copilot without piecing the story together across tabs.
+<p align="center">
+  <a href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip"><img src="https://img.shields.io/badge/Download_for_macOS-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="Download BriefBar for macOS"></a>
+</p>
 
-[**Download BriefBar**](https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip) ·
-[Get started](#get-started) · [User guide](docs/user-guide.md) · [What's new](CHANGELOG.md)
-
-**macOS 15+ · Apple silicon (M1 or later) · Free and open source**
+<p align="center">
+  or <code>brew install --cask mnsn/tap/briefbar</code><br>
+  <sub>Free and open source · macOS 15 or later · Apple silicon</sub>
+</p>
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-tour-dark.gif">
-    <img src="docs/images/readme-tour-light.gif" width="900" alt="A 20-second tour of BriefBar: from the Overview to the Sprint page, a story's details with an AI summary of where it stands, a bug's pull request and the Copilot session that opened it, pull requests with AI summaries, and a task sent to Copilot">
+    <img src="docs/images/readme-tour-light.gif" width="900" alt="BriefBar's list opening from its item in the menu bar, with a brief and everything that needs you; then its window at the Overview, the Sprint page, a story with an AI summary of where it stands, and a task sent to Copilot">
   </picture>
 </p>
 
-<p align="center"><em>From your sprint to a story, its pull request and the Copilot session behind it, summarized by AI, then the next task handed to Copilot.</em></p>
+- **See what needs you at a glance.** Counts in the menu bar; one click for a brief and a single list
+  across Azure DevOps, GitHub, Copilot and Teams. Or a widget on your desktop, or the full window.
+- **Follow the work, not the notifications.** Open a story to see its tasks, pull requests, builds and
+  the Copilot sessions working on them, and who it's waiting on.
+- **Get the short version.** AI summaries of a work item, pull request or session: where it stands,
+  what's left and the next step.
+- **Hand the next step to Copilot.** Send a task, review comments, a failing build or merge conflicts
+  to Copilot, with the context filled in.
+- **Private by default.** No account and no telemetry. Every source starts off, and says what it reads
+  before you turn it on.
 
-Screenshots use made-up demo data, including example summaries, in light and dark mode.
-They show optional features enabled. **Every source starts off**, and links, summaries,
-delegating work and agent access are separate opt-ins.
+<p align="center">
+  <a href="https://github.com/mnsn/brief-bar/releases/latest/download/BriefBar.zip"><strong>Download BriefBar</strong></a> ·
+  <a href="#get-started">Get started</a> · <a href="docs/user-guide.md">User guide</a> · <a href="CHANGELOG.md">What's new</a>
+</p>
 
-## Follow the work, not just the notifications
+## See what needs you at a glance
+
+Give each source its own item in the menu bar, with its counts, or add them all up in one. Click an
+item for its list, put a widget on your desktop, or open the window for everything, with a page for
+each source.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-teams.chats-dark.png">
+    <img src="docs/images/menubar-teams.chats-light.png" width="640" alt="BriefBar's items in the menu bar, one for each source with its counts; Teams' Chats list is open, with two unread chats and a summary of each">
+  </picture>
+</p>
+
+| Source | What you can follow |
+|---|---|
+| **Azure DevOps** | Pull requests needing your reply or review, failures and ready-to-complete work; your team's sprint and work-item details; pinned pipelines and pipelines after your merges. |
+| **GitHub Copilot** | Sessions running, waiting for your answer, ready for plan review, finished or stopped. Works with the Copilot app, or with local CLI sessions when the app isn't installed. |
+| **GitHub** | Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals. |
+| **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |
+
+Hide what you don't need. To read long descriptions and comments, hold **⌘** and scroll in a window to
+make its text bigger.
+[Layouts and appearance options →](docs/user-guide.md#menu-bar-widgets-and-windows)
+
+## Follow the work, not the notifications
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-trail-dark.gif">
+    <img src="docs/images/readme-trail-light.gif" width="900" alt="From a story on the Sprint page to its bug, the bug's pull request and the Copilot session that opened it, each a click away">
+  </picture>
+</p>
 
 Turn on **Show Links** in **Settings › General** to connect work items, pull requests and sessions.
 BriefBar picks up Azure DevOps' work-item links, the pull requests Copilot records with its sessions,
@@ -36,42 +81,23 @@ and sessions on a pull request's branch. You can also link things yourself from 
 menu or by pasting a link.
 
 Open a story, bug or task on the **Sprint** page. **Where It Stands** brings together its linked pull
-requests, their builds and Copilot sessions, with what needs you first. **Waiting on** names the next
-person to act: you, a reviewer or Copilot.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-sprint-details-dark.jpg">
-    <img src="docs/images/azureDevOps-sprint-details-light.jpg" width="900" alt="BriefBar's Sprint page with a story open beside the board: Where It Stands connects its tasks, pull request and Copilot sessions, with a summary and who the work is waiting on">
-  </picture>
-</p>
-
-Click through without leaving BriefBar:
+requests, their builds and Copilot sessions, with what needs you first, and **Waiting on** names who
+acts next: you, a reviewer or Copilot. Click through without leaving BriefBar:
 
 - **Work item:** description, acceptance criteria, tasks, attachments and discussion.
 - **Pull request:** reviewers and votes, comments waiting on you, conflicts, builds and failure details.
 - **Session:** its question or plan, progress notes, what's been done, what's next and its last response.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/azureDevOps-sprint-deep-page-dark.jpg">
-    <img src="docs/images/azureDevOps-sprint-deep-page-light.jpg" width="900" alt="A Copilot session's details reached from a bug through its pull request, with a breadcrumb back to the work item and the session's progress notes">
-  </picture>
-</p>
 
 Links you add stay in BriefBar; they don't change Azure DevOps, GitHub or Copilot.
 [How linking works →](docs/user-guide.md#links)
 
 ## Get the short version with AI
 
-**“Where does this stand, what's next, and who is it waiting on?”**
-
-Enable **Summaries** under **Settings › General**, with Show Links on, and open a work item's details.
-It reads the work item and its linked work, down to pull requests' comment threads and what you asked
-each Copilot session and what it answered, and writes a headline, the next step and whose it is, and a
-few points on what's done, what's left, what's blocking and where the work differs from what was asked.
-A pull request's or a session's page writes one too, and in the lists, hover over a row for **✨**, or
-use its right-click menu.
+**“Where does this stand, what's next, and who is it waiting on?”** Turn on **Summaries** in
+**Settings › General**, with Show Links on. A work item's summary reads it and its linked work, down
+to pull requests' comment threads and what each Copilot session was asked and answered, and gives a
+headline, the next step and whose it is, and a few points on what's done, left or blocking. Pull
+requests and sessions get one too: on their page, or under their row from **✨**.
 
 <p align="center">
   <picture>
@@ -80,7 +106,8 @@ use its right-click menu.
   </picture>
 </p>
 
-There are two different kinds of AI help:
+<details>
+<summary><strong>Which model writes them, and what it sees</strong></summary>
 
 | | What you get | Where it runs |
 |---|---|---|
@@ -91,20 +118,19 @@ Summaries of your work are written **as you open** a work item's details or a pa
 background, and the card says what it's about to do first, with **Not Now**; or, if you choose, **only
 when you ask**. One that's still current shows again as it was; BriefBar marks a summary **Out of
 date** when its inputs change, and writes a new one when you ask, or as you open it once it's ten
-minutes old. BriefBar keeps summaries in
-memory; with a Copilot model, the Copilot CLI also keeps its summary sessions locally. When Apple
-Intelligence can't write one, BriefBar says why and never tries Copilot instead. The app and its plain-language brief work
-without either AI feature.
+minutes old. BriefBar keeps summaries in memory; with a Copilot model, the Copilot CLI also keeps its
+summary sessions locally. When Apple Intelligence can't write one, BriefBar says why and never tries
+Copilot instead. The app and its plain-language brief work without either AI feature.
 
-## Send the next step to Copilot
+</details>
 
-With **Send Work to Copilot** enabled in Azure DevOps' settings, send a sprint task to Copilot with
-its context already filled in. Review or edit the prompt, choose a repository and model, and follow
-the task from running to its linked pull request.
+## Hand the next step to Copilot
 
-For pull requests, choose **Fix Comments**, **Fix the Build**, **Resolve Conflicts** or **Pre-review**.
-You can send follow-up work to the session that opened the pull request instead of starting from
-scratch. The session menu, under **Where It Goes**, includes related sessions and lets you choose another or start a new one.
+With **Send Work to Copilot** on in Azure DevOps' settings, send a sprint task to Copilot with its
+context already filled in. Review or edit the prompt, choose a repository and model, and follow the
+task from running to its linked pull request. For pull requests, choose **Fix Comments**, **Fix the
+Build**, **Resolve Conflicts** or **Pre-review**, and send follow-up work to the session that opened
+the pull request instead of starting from scratch.
 
 <p align="center">
   <picture>
@@ -118,51 +144,7 @@ paste and send. **Run with the CLI** runs it directly on your Mac, when the sess
 A new work-item task runs autonomously in its own worktree and can change code, run commands, push
 and open a pull request as you. Pull-request fixes don't push; **Push & Reply** is a separate action.
 Pre-review changes and posts nothing.
-
 [Copilot actions and their limits →](docs/user-guide.md#sending-to-a-session-thats-already-there)
-
-## Know what needs you, wherever you're working
-
-Keep a small menu-bar view, put a widget on your desktop, or open the full window. Group sources
-together or keep them separate. The **Overview** brings them together by state: what needs you,
-what's failing, what's running and what's ready. For long descriptions and comments, hold **⌘** and
-scroll in a window to make its text bigger.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-overview-dark.jpg">
-    <img src="docs/images/window-overview-light.jpg" width="900" alt="BriefBar's Overview with a cross-source brief and items needing attention, including Copilot questions, Teams chats and pull requests">
-  </picture>
-</p>
-
-| Source | What you can follow |
-|---|---|
-| **Azure DevOps** | Pull requests needing your reply or review, failures and ready-to-complete work; your team's sprint and work-item details; pinned pipelines and pipelines after your merges. |
-| **GitHub Copilot** | Sessions running, waiting for your answer, ready for plan review, finished or stopped. Works with the Copilot app, or with local CLI sessions when the app isn't installed. |
-| **GitHub** | Reviews requested from you by name, and your pull requests with changes requested, failing checks, conflicts or approvals. |
-| **Microsoft Teams** | Unread one-to-one, group and meeting chats from notifications on your Mac, with optional message previews and on-device summaries. |
-
-The task board and **Send Work to Copilot** actions are Azure DevOps features. GitHub provides
-pull-request tracking, links and on-demand summaries, not a GitHub Issues board.
-
-<details>
-<summary><strong>See the menu bar and desktop widget</strong></summary>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/menubar-by-state-dark.png">
-    <img src="docs/images/menubar-by-state-light.png" width="420" align="top" alt="A combined menu-bar list showing what needs attention across sources">
-  </picture>
-  &nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/widget-all-medium-dark.png">
-    <img src="docs/images/widget-all-medium-light.png" width="260" align="top" alt="A desktop widget with pull requests and Copilot sessions grouped by source">
-  </picture>
-</p>
-
-[Layouts and appearance options →](docs/user-guide.md#menu-bar-widgets-and-windows)
-
-</details>
 
 ## Ask from the Copilot app, too
 
@@ -220,8 +202,8 @@ tracking reads files on your Mac. Full Disk Access is needed for Teams and the o
 Links, summaries, Send Work to Copilot and agent access each start off. Once you turn summaries on,
 they send the details of the work you open to GitHub Copilot when the Copilot CLI is installed, to be
 written by Claude Haiku 5.5; choose Apple Intelligence in their setting to keep them on your Mac, as
-they are when the CLI isn't installed. Sending work gives an agent permission to act within that action's limits. Teams
-content never goes to Copilot summaries or BriefBar's agent tools.
+they are when the CLI isn't installed. Sending work gives an agent permission to act within that
+action's limits. Teams content never goes to Copilot summaries or BriefBar's agent tools.
 
 [Full privacy details](docs/user-guide.md#privacy) · [Security and download verification](SECURITY.md)
 
@@ -230,6 +212,9 @@ content never goes to Copilot summaries or BriefBar's agent tools.
 [User guide and FAQ](docs/user-guide.md) · [How it works](docs/how-it-works.md) ·
 [Contributing and demo mode](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) ·
 [Report a bug or suggest a feature](https://github.com/mnsn/brief-bar/issues)
+
+[![CI](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/mnsn/brief-bar/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 BriefBar is an independent project, not affiliated with or endorsed by Microsoft or GitHub.
 Copyright © 2026 Asaf Manassen. Licensed under [GPL v3.0 or later](LICENSE).
