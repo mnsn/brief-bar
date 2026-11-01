@@ -254,6 +254,64 @@ public sealed class GitHubSourceTests
         Assert.Equal(expected: 1, actual: made.Reads);
     }
 
+    /// A callback on a read's cancellation that blocks, as one ending a program can, holds up neither turning GitHub off
+    /// nor quitting: `StopAsync` returns at once, and finishes once the callback has. What the callback may use stays until
+    /// then: disposed as it stops, the source lets go of its connection to GitHub only once that stop has finished.
+    [Fact]
+    public async Task StopsAtOnceEvenWhenACancellationCallbackBlocks()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var release = new ManualResetEventSlim();
+        var loading = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var calledBack = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var blocking = default(CancellationTokenRegistration);
+        var connection = new Connection();
+        var reading = new GitHubReading(
+            load: readCancellation =>
+            {
+                var ended = new TaskCompletionSource<GitHubLoad>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+                // The only way the read ends: once the callback is let go.
+                blocking = readCancellation.Register(callback: () =>
+                {
+                    calledBack.TrySetResult();
+                    release.Wait();
+                    ended.TrySetCanceled(cancellationToken: readCancellation);
+                });
+                loading.TrySetResult();
+                return ended.Task;
+            },
+            locateCli: () => Cli,
+            owned: connection);
+        using var source = new GitHubSource(
+            settings: new GitHubSettings(settings: new MemorySettings()),
+            reading: reading,
+            access: new GitHubAccess(OpenLink: _ => { }),
+            processes: new FakeProcessRunner(),
+            time: new TestClock(start: now));
+        await source.StartAsync(cancellationToken: cancellationToken);
+        await loading.Task.WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+
+        Task stop;
+        try
+        {
+            // On another thread: were the callback to run in `StopAsync`, it wouldn't return until the callback did.
+            stop = await Task.Factory.StartNew(
+                    function: source.StopAsync, cancellationToken: cancellationToken, creationOptions: TaskCreationOptions.None, scheduler: TaskScheduler.Default)
+                .WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+            await calledBack.Task.WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+            source.Dispose();
+            Assert.False(condition: stop.IsCompleted);
+            Assert.Equal(expected: 0, actual: connection.Disposals);
+        }
+        finally
+        {
+            release.Set();
+        }
+        await stop.WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+        await Waiting.Until(condition: () => connection.Disposals == 1);
+        await blocking.DisposeAsync();
+    }
+
     /// Reading fails in a way it doesn't expect: it says so, rather than going on as if it read, and reads no more.
     [Fact]
     public async Task SaysSoWhenItCantGoOnReading()
@@ -330,6 +388,16 @@ public sealed class GitHubSourceTests
     }
 
     static CommandRequest Request(string command, string? rowId = null) => new(Section: SectionId.GitHubPullRequests, Command: command, RowId: rowId);
+
+    /// What a source's reading holds open, as its connection to GitHub: how often it was let go of.
+    sealed class Connection : IDisposable
+    {
+        int disposals;
+
+        public int Disposals => Volatile.Read(location: ref disposals);
+
+        public void Dispose() => Interlocked.Increment(location: ref disposals);
+    }
 
     /// A source, and the reads it made: each waits until it's answered, or cancelled.
     sealed class Made(TestClock clock, FakeProcessRunner processes)

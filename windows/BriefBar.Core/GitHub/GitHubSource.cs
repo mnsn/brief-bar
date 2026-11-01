@@ -44,6 +44,8 @@ public sealed class GitHubSource : ISectionSource, IDisposable
     ITimer? ticker;
     /// Ends a read under way, as the source stops; null while it's stopped.
     CancellationTokenSource? stopping;
+    /// The last stop, which finishes once the read it ended has, and what cancelling that set off.
+    Task stopped = Task.CompletedTask;
     Task? refreshing;
     /// Which start what a read found belongs to, so that a read that ends after the source stopped changes nothing.
     int generation;
@@ -101,26 +103,32 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         return Task.CompletedTask;
     }
 
-    /// Stops reading, and forgets what it read; returns once a read under way has ended.
+    /// Stops reading, and forgets what it read; returns once a read under way has ended, and what cancelling it set off,
+    /// such as ending its request to GitHub, has finished. That runs on the thread pool, not in the caller: a callback that
+    /// blocks can't freeze Settings as you turn GitHub off, or keep BriefBar from quitting, which waits for its sources
+    /// only so long (`SourceHost`). Stopped already, it returns the last stop, which may not have finished.
     public Task StopAsync()
     {
         ITimer? timer;
-        CancellationTokenSource? cancel;
-        Task? read;
+        Task finished;
         lock (gate)
         {
+            if (stopping is not { } cancel)
+            {
+                return stopped;
+            }
             generation++;
             timer = ticker;
             ticker = null;
-            cancel = stopping;
             stopping = null;
-            read = refreshing;
+            var read = refreshing;
             refreshing = null;
             store.Stop();
+            // `CancelAsync` runs no callback here, under the lock: it starts them on the thread pool.
+            finished = stopped = FinishStoppingAsync(before: stopped, read: read, cancelled: cancel.CancelAsync(), cancel: cancel);
         }
         timer?.Dispose();
-        cancel?.Cancel();
-        return FinishStoppingAsync(read: read, cancel: cancel);
+        return finished;
     }
 
     /// The list and the token are only ever in memory, and the refresh choice is a setting: there's nothing to delete.
@@ -186,26 +194,31 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         }
     }
 
-    /// Stops it as `StopAsync` does, without waiting, and lets go of its connection to GitHub once it has stopped.
+    /// Stops it as `StopAsync` does, without waiting, and lets go of its connection to GitHub once it has stopped: what
+    /// cancelling a read set off may use the connection until then.
     public void Dispose() => _ = StopAsync().ContinueWith(
         continuationAction: _ => reading.Dispose(),
         cancellationToken: CancellationToken.None,
         continuationOptions: TaskContinuationOptions.ExecuteSynchronously,
         scheduler: TaskScheduler.Default);
 
-    /// Waits for `read`, which `cancel` asks to end, then lets go of `cancel`.
-    static async Task FinishStoppingAsync(Task? read, CancellationTokenSource? cancel)
+    /// Waits for the stop `before` this one, which a start in between may have left unfinished, then for `read`, which
+    /// `cancel` asks to end, and for what cancelling it set off (`cancelled`); then lets go of `cancel`, which nothing
+    /// uses by then. How `before` and `read` ended is theirs to say, to whatever waited for them.
+    static async Task FinishStoppingAsync(Task before, Task? read, Task cancelled, CancellationTokenSource cancel)
     {
         try
         {
+            await before.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
             if (read is not null)
             {
                 await read.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
             }
+            await cancelled.ConfigureAwait(continueOnCapturedContext: false);
         }
         finally
         {
-            cancel?.Dispose();
+            cancel.Dispose();
         }
     }
 

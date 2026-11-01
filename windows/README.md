@@ -312,6 +312,11 @@ SDK ships inside the app.
   words only (`ProcessRunner.CmdArguments`). `cmd.exe` would read a percent sign in its path as part of a command, and
   Windows allows one in a folder's name: `gh.exe` found there runs directly, in a window that closes once it's done,
   and a `gh.cmd` there can't run at all, which the panel says.
+- **`CancellationTokenSource.Cancel()` runs every callback on its token before it returns**, on the thread that calls
+  it, and a registration's `Dispose()` waits for its callback while that runs: one that blocks, such as one ending a
+  program, would freeze Settings as you turn a source off, or hold up quitting. GitHub's source stops with
+  `CancelAsync`, which runs them on the thread pool, and lets go of its token and its connection to GitHub only once
+  they've finished, even when it's disposed while it stops.
 - **Windows' task dialog needs Common Controls 6**, which only an app's manifest can ask for; without it,
   `TaskDialog` isn't there at all.
 - **Azure DevOps' empty list isn't "All clear" until each organization has been read once** (`FirstLoaded`): found
