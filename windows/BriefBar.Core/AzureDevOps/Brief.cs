@@ -45,7 +45,8 @@ public static class Brief
     static bool KindMatches(PREventKind kind, PRReason reason) => (kind, reason) switch
     {
         (PREventKind.Mention, PRReason.Mentioned) or (PREventKind.Reply, PRReason.Replied)
-            or (PREventKind.Comment, PRReason.Commented) or (PREventKind.SentInChat, PRReason.SentInChat) => true,
+            or (PREventKind.Comment, PRReason.Commented) or (PREventKind.SentInChat, PRReason.SentInChat)
+            or (PREventKind.ChangesRequested, PRReason.ChangesRequested) or (PREventKind.Rejected, PRReason.Rejected) => true,
         _ => false,
     };
 }

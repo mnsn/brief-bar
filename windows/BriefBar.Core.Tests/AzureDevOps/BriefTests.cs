@@ -137,6 +137,22 @@ public sealed class BriefTests
             actual: Sentence(snapshot: Snapshot(number: 1, group: PRGroup.Waiting, reason: PRReason.Rejected, headline: "Rejected", detail: "Priya Shah")));
     }
 
+    /// A vote for changes, or a rejection, names a pull request's reason before a comment does: whoever commented since,
+    /// it says who voted.
+    [Fact]
+    public void AVoteSaysWhoVotedThoughSomeoneCommentedSince()
+    {
+        var comment = new PREvent(Id: "c2.1", Kind: PREventKind.Comment, At: T(seconds: 20), Actor: "Alex Kim", Text: "Nit: typo", ThreadId: 2);
+        var changes = new PREvent(Id: "v3", Kind: PREventKind.ChangesRequested, At: T(seconds: 15), Actor: "Priya Shah");
+        var rejection = new PREvent(Id: "v2", Kind: PREventKind.Rejected, At: T(seconds: 15), Actor: "Priya Shah");
+        Assert.Equal(
+            expected: "Priya Shah is waiting for changes on “Pull request 1”.",
+            actual: Sentence(snapshot: Snapshot(number: 1, group: PRGroup.NeedsYou, reason: PRReason.ChangesRequested, events: [comment, changes])));
+        Assert.Equal(
+            expected: "Priya Shah rejected “Pull request 1”.",
+            actual: Sentence(snapshot: Snapshot(number: 1, group: PRGroup.NeedsYou, reason: PRReason.Rejected, events: [comment, rejection])));
+    }
+
     [Fact]
     public void AFailedBuildSaysWhereItFailed()
     {
