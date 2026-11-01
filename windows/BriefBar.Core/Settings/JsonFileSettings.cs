@@ -73,9 +73,14 @@ public sealed class JsonFileSettings : ISettingsStorage
     {
         try
         {
-            return File.Exists(path: path) && JsonNode.Parse(json: File.ReadAllText(path: path)) is JsonObject saved ? saved : [];
+            if (!File.Exists(path: path) || JsonNode.Parse(json: File.ReadAllText(path: path)) is not JsonObject saved)
+            {
+                return [];
+            }
+            KeepWhatCanBeRead(saved: saved);
+            return saved;
         }
-        catch (JsonException)
+        catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException)
         {
             Log.Write(line: $"settings: the file can't be read; starting with none");
             return [];
@@ -89,6 +94,52 @@ public sealed class JsonFileSettings : ISettingsStorage
         {
             Log.Write(error: error, context: $"settings: the file can't be read; starting with none");
             return [];
+        }
+    }
+
+    /// Leaves out each setting that can't be read in full: one with text .NET can't make a string of, as half of an emoji
+    /// written as an escape, or with a name twice in one place. System.Text.Json takes both as it parses, and finds out only
+    /// as each part is first needed, so they would otherwise fail a read, or every save after, of everything. The others
+    /// are kept. Throws when the settings' own names can't be read: `InvalidOperationException`, or `ArgumentException`
+    /// for one that's there twice.
+    static void KeepWhatCanBeRead(JsonObject saved)
+    {
+        foreach (var key in saved.Select(selector: pair => pair.Key).ToList())
+        {
+            try
+            {
+                ReadAll(node: saved[propertyName: key]);
+            }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException)
+            {
+                saved.Remove(propertyName: key);
+                Log.Write(line: $"settings: a setting can't be read; left out");
+            }
+        }
+    }
+
+    /// Reads every name and string in `node`, which throws as reading it later would.
+    static void ReadAll(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject members:
+                foreach (var (_, member) in members)
+                {
+                    ReadAll(node: member);
+                }
+                break;
+            case JsonArray items:
+                foreach (var item in items)
+                {
+                    ReadAll(node: item);
+                }
+                break;
+            case JsonValue value when value.GetValueKind() == JsonValueKind.String:
+                _ = value.GetValue<string>();
+                break;
+            default:
+                break;
         }
     }
 

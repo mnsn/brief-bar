@@ -34,7 +34,7 @@ public static class SettingsValues
     }
 
     /// A map of names to times, saved as seconds since 1970, as the Mac saves them; entries of another kind are left
-    /// out.
+    /// out, and all of them when their names can't be read, as text .NET can't make a string of.
     public static Dictionary<string, DateTimeOffset> Dates(this ISettingsStorage settings, string key)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
@@ -43,14 +43,22 @@ public static class SettingsValues
         {
             return dates;
         }
-        foreach (var (name, node) in saved)
+        try
         {
-            // Within the years 1 to 9999, which is all a DateTimeOffset holds.
-            if (node is JsonValue value && value.TryGetValue(value: out double seconds) && double.IsFinite(d: seconds)
-                && seconds is > -62_135_596_800 and < 253_402_300_799)
+            foreach (var (name, node) in saved)
             {
-                dates[name] = DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)Math.Round(a: seconds * TimeSpan.TicksPerSecond));
+                // Within the years 1 to 9999, which is all a DateTimeOffset holds.
+                if (node is JsonValue value && value.TryGetValue(value: out double seconds) && double.IsFinite(d: seconds)
+                    && seconds is > -62_135_596_800 and < 253_402_300_799)
+                {
+                    dates[name] = DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)Math.Round(a: seconds * TimeSpan.TicksPerSecond));
+                }
             }
+        }
+        catch (InvalidOperationException)
+        {
+            // A name System.Text.Json can't decode, as half of an emoji written as an escape, which it finds only now.
+            dates.Clear();
         }
         return dates;
     }

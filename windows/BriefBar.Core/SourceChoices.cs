@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BriefBar.Core.Logging;
 using BriefBar.Core.Settings;
 
 namespace BriefBar.Core;
@@ -35,25 +36,33 @@ public sealed class SourceChoices
 
     public void TurnOff(SourceId source) => consents.Remove(key: SourceIds.RawValue(source: source));
 
-    /// What's saved, or nothing on when there's nothing saved or it can't be read.
+    /// What's saved, or nothing on when there's nothing saved or it can't be read. A consent that can't be read is left
+    /// out, so its source is off; when the sources' names can't be, as text .NET can't make a string of, none are on.
     public static SourceChoices Load(ISettingsStorage settings)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         var choices = new SourceChoices();
-        if (settings.Read(key: SettingsKey) is not JsonObject saved || saved["consents"] is not JsonObject consents)
+        try
         {
+            if (settings.Read(key: SettingsKey) is not JsonObject saved || saved["consents"] is not JsonObject consents)
+            {
+                return choices;
+            }
+            foreach (var (name, node) in consents)
+            {
+                if (ConsentFrom(node: node) is { } consent)
+                {
+                    choices.consents[name] = consent;
+                }
+            }
             return choices;
         }
-        foreach (var (name, node) in consents)
+        catch (InvalidOperationException)
         {
-            if (node is JsonObject consent
-                && consent["version"] is JsonValue version && version.GetValueKind() == JsonValueKind.Number && version.TryGetValue(value: out int number)
-                && consent["date"] is JsonValue date && date.TryGetValue(value: out string? text) && Timestamp.Parse(text: text) is { } when)
-            {
-                choices.consents[name] = new SourceConsent(Version: number, Date: when);
-            }
+            // A name System.Text.Json can't decode, as half of an emoji written as an escape, which it finds only now.
+            Log.Write(line: $"sources: the choices saved can't be read; every source is off");
+            return new SourceChoices();
         }
-        return choices;
     }
 
     /// Saves your choices; returns whether everything is saved, to last after BriefBar quits (`ISettingsStorage.Write`).
@@ -70,5 +79,23 @@ public sealed class SourceChoices
             };
         }
         return settings.Write(key: SettingsKey, value: new JsonObject { ["consents"] = saved });
+    }
+
+    /// One source's consent, or null when it can't be read, as for a date .NET can't make a string of.
+    static SourceConsent? ConsentFrom(JsonNode? node)
+    {
+        try
+        {
+            return node is JsonObject consent
+                && consent["version"] is JsonValue version && version.GetValueKind() == JsonValueKind.Number && version.TryGetValue(value: out int number)
+                && consent["date"] is JsonValue date && date.TryGetValue(value: out string? text) && Timestamp.Parse(text: text) is { } when
+                    ? new SourceConsent(Version: number, Date: when)
+                    : null;
+        }
+        catch (InvalidOperationException)
+        {
+            // Half of an emoji, written as an escape: System.Text.Json reads it, but can't decode it.
+            return null;
+        }
     }
 }

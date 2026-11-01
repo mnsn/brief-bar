@@ -82,6 +82,24 @@ public sealed class SourceChoicesTests
         }
     }
 
+    /// Text .NET can't make a string of, as half of an emoji, written as an escape: a consent with such a date is left
+    /// out, and when a source's name is such text, none of them can be read, so every source is off. Nothing ends.
+    [Fact]
+    public void TextItCantDecodeTurnsNothingOn()
+    {
+        var settings = new MemorySettings();
+        var date = Iso(date: T(seconds: 0));
+        settings.Write(
+            key: SourceChoices.SettingsKey,
+            value: JsonNode.Parse(json: "{\"consents\":{\"copilot\":{\"version\":1,\"date\":\"\\ud83d\"},\"outlook\":{\"version\":1,\"date\":\"" + date + "\"}}}"));
+        Assert.Equal(expected: ["outlook"], actual: SourceChoices.Load(settings: settings).Consents.Keys);
+
+        settings.Write(
+            key: SourceChoices.SettingsKey,
+            value: JsonNode.Parse(json: "{\"consents\":{\"\\ud83d\":{\"version\":1,\"date\":\"" + date + "\"},\"copilot\":{\"version\":1,\"date\":\"" + date + "\"}}}"));
+        Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
+    }
+
     [Fact]
     public void KeepsButIgnoresSourcesThisVersionDoesntKnow()
     {

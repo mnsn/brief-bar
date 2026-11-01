@@ -51,19 +51,51 @@ public sealed class JsonFileSettingsTests
         Assert.True(condition: settings.Write(key: "absent", value: null));
     }
 
-    /// A file that can't be read holds nothing: so every source is off.
+    /// A file that can't be read holds nothing: so every source is off. That includes a key it has twice, and a key .NET
+    /// can't make a string of, as half of an emoji written as an escape, found as the file is loaded.
     [Fact]
     public void StartsEmptyFromAFileItCantRead()
     {
         using var folder = new TemporaryFolder();
         var path = folder.Combine("Settings.json");
-        foreach (var contents in new[] { "not json", "[1, 2]", "", "\"sources\"" })
+        var consents = "\"sources\":{\"consents\":{\"copilot\":{\"version\":1,\"date\":\"2026-10-18T10:00:00.000Z\"}}}";
+        foreach (var contents in new[]
+        {
+            "not json", "[1, 2]", "", "\"sources\"", "{\"\\ud83d\":1," + consents + "}", "{\"a\":1,\"a\":2," + consents + "}",
+            "{\"sources\":{\"consents\":{\"copilot\":{\"version\":1,\"version\":2,\"date\":\"2026-10-18T10:00:00.000Z\"}}}}",
+        })
         {
             File.WriteAllText(path: path, contents: contents);
             var settings = new JsonFileSettings(path: path);
             Assert.Null(@object: settings.Read(key: SourceChoices.SettingsKey));
             Assert.Empty(collection: SourceChoices.Load(settings: settings).Consents);
         }
+    }
+
+    /// A setting holding text .NET can't make a string of, as half of an emoji written as an escape, is left out as the
+    /// file is loaded. The others are kept, and saving still works, which would otherwise fail on that text every time.
+    [Fact]
+    public void KeepsTheSettingsItCanRead()
+    {
+        using var folder = new TemporaryFolder();
+        var path = folder.Combine("Settings.json");
+        File.WriteAllText(
+            path: path,
+            contents: "{\"sources\":{\"consents\":{\"copilot\":{\"version\":1,\"date\":\"2026-10-18T10:00:00.000Z\"}}},"
+                + "\"copilot.clearedSessions\":{\"\\ud83d\":1},\"copilot.viewedSessions\":{\"a\":\"\\ud83d\"},\"twice\":{\"a\":1,\"a\":2},"
+                + "\"copilot.nestSessions\":true}");
+
+        var settings = new JsonFileSettings(path: path);
+
+        Assert.Null(@object: settings.Read(key: "copilot.clearedSessions"));
+        Assert.Null(@object: settings.Read(key: "copilot.viewedSessions"));
+        Assert.Null(@object: settings.Read(key: "twice"));
+        Assert.True(condition: settings.Bool(key: "copilot.nestSessions"));
+        Assert.Equal(expected: SourceState.On, actual: SourceChoices.Load(settings: settings).State(source: SourceId.Copilot, version: 1));
+        Assert.True(condition: settings.SetBool(key: "copilot.showContextUsage", value: true));
+        var reloaded = new JsonFileSettings(path: path);
+        Assert.True(condition: reloaded.Bool(key: "copilot.showContextUsage") && reloaded.Bool(key: "copilot.nestSessions"));
+        Assert.Null(@object: reloaded.Read(key: "copilot.clearedSessions"));
     }
 
     /// What it hands out is a copy: changing it changes nothing saved.
@@ -89,6 +121,9 @@ public sealed class JsonFileSettingsTests
         Assert.Equal(expected: 1_792_317_600.0, actual: settings.Read(key: "copilot.clearedSessions")!["a"]!.GetValue<double>());
         Assert.Equal(expected: dates, actual: settings.Dates(key: "copilot.clearedSessions"));
         settings.Write(key: "copilot.clearedSessions", value: JsonNode.Parse(json: "{\"a\":\"yesterday\",\"b\":1e300}"));
+        Assert.Empty(collection: settings.Dates(key: "copilot.clearedSessions"));
+        // A name it can't make a string of, as half of an emoji: what can't be read is forgotten, and nothing ends.
+        settings.Write(key: "copilot.clearedSessions", value: JsonNode.Parse(json: "{\"\\ud83d\":1,\"a\":1}"));
         Assert.Empty(collection: settings.Dates(key: "copilot.clearedSessions"));
     }
 }
