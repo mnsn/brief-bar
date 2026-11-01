@@ -1,23 +1,28 @@
 using BriefBar.Core;
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 
 namespace BriefBar.ViewModels;
 
-/// What Settings shows: every source you can turn on, whether it's on, and Copilot's own settings.
+/// What Settings shows: every source you can turn on, whether it's on, and each source's own settings.
 public sealed class SettingsViewModel
 {
     readonly SourceSwitch sources;
 
-    public SettingsViewModel(SourceSwitch sources, CopilotSettings copilot, ThemePalette palette)
+    /// `findOrganizations` asks Azure DevOps to look for your organizations again.
+    public SettingsViewModel(SourceSwitch sources, AzureDevOpsSettings azureDevOps, CopilotSettings copilot, ThemePalette palette, Action findOrganizations)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);
         this.sources = sources;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
+        AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
         Copilot = new CopilotSettingsViewModel(settings: copilot);
         Refresh();
     }
 
     public IReadOnlyList<SourceSettingsViewModel> Sources { get; }
+
+    public AzureDevOpsSettingsViewModel AzureDevOps { get; }
 
     public CopilotSettingsViewModel Copilot { get; }
 
@@ -43,4 +48,7 @@ public sealed class SettingsViewModel
             source.UsePalette(palette: palette);
         }
     }
+
+    /// Stops following the sources' settings, as Settings closes.
+    public void Detach() => AzureDevOps.Detach();
 }

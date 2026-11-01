@@ -28,7 +28,7 @@ public static class CopilotRows
         }
         var sessions = store.Sessions;
         var showContextUsage = settings.ShowContextUsage;
-        var rows = sessions.Select(selector: session => Row(session: session, canOpen: store.CanOpen, showContextUsage: showContextUsage)).ToList();
+        var rows = sessions.Select(selector: session => Row(session: session, opening: store.Opening, showContextUsage: showContextUsage)).ToList();
         var briefLines = sessions
             .Where(predicate: session => session.Phase.State() is not null)
             .Select(selector: session => new BriefLine(
@@ -76,8 +76,9 @@ public static class CopilotRows
     public static DisplayPhase? Phase(string groupKey) =>
         DisplayPhases.All.Cast<DisplayPhase?>().FirstOrDefault(predicate: phase => GroupKey(phase: phase!.Value) == groupKey);
 
-    /// One session's row: its reason's icon, its name, where it stands, what it's about, and what clicking it does.
-    public static ItemRow Row(SessionSnapshot session, bool canOpen, bool showContextUsage)
+    /// One session's row: its reason's icon, its name, where it stands, what it's about, and what clicking it does, as it
+    /// opens (`opening`).
+    public static ItemRow Row(SessionSnapshot session, SessionOpening opening, bool showContextUsage)
     {
         ArgumentNullException.ThrowIfNull(argument: session);
         var otherParent = OtherParent(session: session);
@@ -93,10 +94,10 @@ public static class CopilotRows
             Status = Subtitle(session: session),
             Detail = session.Detail,
             Date = session.Since,
-            Commands = Commands(session: session, canOpen: canOpen, otherParent: otherParent),
-            ToolTip = ToolTip(session: session, canOpen: canOpen, otherParent: otherParent, meter: meter),
+            Commands = Commands(session: session, opening: opening, otherParent: otherParent),
+            ToolTip = ToolTip(session: session, opening: opening, otherParent: otherParent, meter: meter),
             Depth = Math.Min(val1: session.Depth, val2: MaxIndentLevels),
-            Tag = otherParent is null ? null : Tag(parent: otherParent, canOpen: canOpen),
+            Tag = otherParent is null ? null : Tag(parent: otherParent, canOpen: opening != SessionOpening.Nowhere),
             Meter = meter,
         };
     }
@@ -159,7 +160,7 @@ public static class CopilotRows
     static string Scaled(double value, string suffix) =>
         (value >= 100 ? Math.Round(a: value) : Math.Round(value: value, digits: 1)).ToString(format: "0.#", provider: CultureInfo.InvariantCulture) + suffix;
 
-    /// "↳ Release 2.5": the session that started it, which it opens when the Copilot app can.
+    /// "↳ Release 2.5": the session that started it, which it opens when sessions open.
     static RowTag Tag(RelatedSession parent, bool canOpen)
     {
         var startedBy = "Started by “" + parent.Name + "”";
@@ -174,11 +175,10 @@ public static class CopilotRows
     static RelatedSession? OtherParent(SessionSnapshot session) =>
         session.Parent is { } parent && parent.Id != session.AnswerIn?.Id ? parent : null;
 
-    /// What clicking it does first, then what its menu offers: none without the Copilot app, which opens sessions on
-    /// Windows.
-    static List<PanelCommand> Commands(SessionSnapshot session, bool canOpen, RelatedSession? otherParent)
+    /// What clicking it does first, then what its menu offers: none when sessions open nowhere.
+    static List<PanelCommand> Commands(SessionSnapshot session, SessionOpening opening, RelatedSession? otherParent)
     {
-        if (!canOpen)
+        if (opening == SessionOpening.Nowhere)
         {
             return [];
         }
@@ -190,7 +190,8 @@ public static class CopilotRows
         }
         else
         {
-            commands.Add(item: new PanelCommand(Key: CopilotCommands.Open, Title: "Open in GitHub Copilot", Opens: true));
+            commands.Add(item: new PanelCommand(
+                Key: CopilotCommands.Open, Title: opening == SessionOpening.App ? "Open in GitHub Copilot" : "Open in a terminal", Opens: true));
         }
         if (otherParent is not null)
         {
@@ -200,7 +201,7 @@ public static class CopilotRows
     }
 
     /// Everything its row shows, in full, and what clicking it does.
-    static string ToolTip(SessionSnapshot session, bool canOpen, RelatedSession? otherParent, RowMeter? meter)
+    static string ToolTip(SessionSnapshot session, SessionOpening opening, RelatedSession? otherParent, RowMeter? meter)
     {
         var lines = new List<string> { session.DisplayName, Subtitle(session: session) };
         if (session.Detail is { } detail)
@@ -227,7 +228,7 @@ public static class CopilotRows
         {
             lines.Add(item: "Asks you for " + ListWords.Join(names: session.AsksFor.Select(selector: asked => "“" + asked.Name + "”").ToList()) + ", which it coordinates");
         }
-        if (!canOpen)
+        if (opening == SessionOpening.Nowhere)
         {
             lines.Add(item: "BriefBar opens sessions in the GitHub Copilot app, which isn't installed");
         }
@@ -237,7 +238,9 @@ public static class CopilotRows
         }
         else
         {
-            lines.Add(item: "Click to open in GitHub Copilot");
+            lines.Add(item: opening == SessionOpening.App
+                ? "Click to open in GitHub Copilot"
+                : "Click to open in a terminal with the Copilot CLI, or bring up the terminal that has it open");
         }
         return string.Join(separator: '\n', values: lines);
     }

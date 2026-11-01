@@ -1,11 +1,13 @@
 using BriefBar.Core;
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Demo;
 using BriefBar.Core.Settings;
+using Microsoft.UI.Dispatching;
 
 namespace BriefBar.Services;
 
-/// BriefBar's sources, as you chose them: where your choices and their settings are saved, Copilot's settings, which
+/// BriefBar's sources, as you chose them: where your choices and their settings are saved, each source's settings, which
 /// Settings changes too, and how each source is made. With --demo, every source is on, with made-up data, and nothing is
 /// saved: choices last until BriefBar quits.
 internal sealed class AppSources
@@ -13,19 +15,32 @@ internal sealed class AppSources
     /// What the demo's Copilot app does: nothing, as made-up sessions open nothing.
     static readonly CopilotAppAccess demoApp = new(OpenSession: _ => { }, Activate: () => { }, IsInstalled: () => true, IsFrontmost: () => false);
 
+    /// What the demo's Azure DevOps opens: nothing, as made-up pull requests aren't anywhere.
+    static readonly AzureDevOpsAccess demoAzureDevOps = new(OpenLink: _ => { });
+
+    static readonly ProcessRunner processes = new();
+
     readonly bool isDemo;
     readonly DateTimeOffset madeAt;
+    readonly DispatcherQueue queue;
 
-    public AppSources(bool isDemo, DateTimeOffset madeAt)
+    /// `queue` runs the UI thread, where a source's windows and dialogs show.
+    public AppSources(bool isDemo, DateTimeOffset madeAt, DispatcherQueue queue)
     {
         this.isDemo = isDemo;
         this.madeAt = madeAt;
+        this.queue = queue;
         Settings = isDemo ? DemoSettings(madeAt: madeAt) : new JsonFileSettings(path: JsonFileSettings.DefaultPath);
+        AzureDevOps = isDemo
+            ? AzureDevOpsDemoData.Settings(storage: Settings, now: madeAt)
+            : new AzureDevOpsSettings(settings: Settings, now: madeAt);
         Copilot = new CopilotSettings(settings: Settings, now: madeAt);
         Switch = new SourceSwitch(settings: Settings, entries: SourceCatalog.OnWindows, make: Make);
     }
 
     public ISettingsStorage Settings { get; }
+
+    public AzureDevOpsSettings AzureDevOps { get; }
 
     public CopilotSettings Copilot { get; }
 
@@ -50,21 +65,51 @@ internal sealed class AppSources
         return settings;
     }
 
-    /// Where the Copilot app keeps its data, or where `BRIEFBAR_COPILOT_DIR` says.
-    static Dictionary<string, string?> CopilotEnvironment() => new(comparer: StringComparer.Ordinal)
-    {
-        [CopilotPaths.DirectoryVariable] = Environment.GetEnvironmentVariable(variable: CopilotPaths.DirectoryVariable),
-    };
+    /// BriefBar's environment's `names`, as a locator or a folder's default reads them: where the Copilot app keeps its
+    /// data, or where `BRIEFBAR_COPILOT_DIR` says; where the Azure CLI or the Copilot CLI may be.
+    static Dictionary<string, string?> EnvironmentOf(IReadOnlyList<string> names) => names.ToDictionary(
+        keySelector: name => name, elementSelector: name => Environment.GetEnvironmentVariable(variable: name), comparer: StringComparer.OrdinalIgnoreCase);
 
-    /// A source of `entry`, not started yet: the only one so far is Copilot's.
-    CopilotSource Make(SourceEntry entry) => entry.Id switch
+    /// Azure DevOps itself, with the Azure CLI's sign-in.
+    static AzureDevOpsReading LiveAzureDevOps()
     {
-        SourceId.Copilot => new CopilotSource(
-            settings: Copilot,
-            makeEngine: isDemo
-                ? onChange => new DemoSessionEngine(madeAt: madeAt, onChange: onChange)
-                : onChange => new SessionEngine(paths: CopilotPaths.Default(environment: CopilotEnvironment()), onChange: onChange),
-            app: isDemo ? demoApp : CopilotAppShell.Access),
+        var locator = new AzureCLILocator(environment: EnvironmentOf(names: AzureCLILocator.Variables));
+        return AzureDevOpsReading.Live(tokens: new AzureCLITokenProvider(locator: locator, runner: processes), locator: locator);
+    }
+
+    /// A source of `entry`, not started yet.
+    ISectionSource Make(SourceEntry entry) => entry.Id switch
+    {
+        SourceId.AzureDevOps => new AzureDevOpsSource(
+            settings: AzureDevOps,
+            reading: isDemo ? DemoAzureDevOps() : LiveAzureDevOps(),
+            access: isDemo ? demoAzureDevOps : AzureDevOpsShell.Access,
+            processes: processes),
+        SourceId.Copilot => isDemo
+            ? new CopilotSource(settings: Copilot, makeEngine: onChange => new DemoSessionEngine(madeAt: madeAt, onChange: onChange), app: demoApp)
+            : LiveCopilot(),
         _ => throw new ArgumentOutOfRangeException(paramName: nameof(entry), actualValue: entry.Id, message: "Not a source BriefBar for Windows has."),
     };
+
+    /// The Copilot app's sessions, in its folder, or where `BRIEFBAR_COPILOT_DIR` says; on a PC without the app, they open
+    /// in a terminal with the Copilot CLI.
+    CopilotSource LiveCopilot()
+    {
+        var paths = CopilotPaths.Default(environment: EnvironmentOf(names: [CopilotPaths.DirectoryVariable]));
+        return new CopilotSource(
+            settings: Copilot,
+            makeEngine: onChange => new SessionEngine(paths: paths, onChange: onChange),
+            app: CopilotAppShell.Access,
+            cliSessions: new CLISession(
+                paths: paths,
+                locator: new CopilotCLILocator(environment: EnvironmentOf(names: CopilotCLILocator.Variables)),
+                processes: processes,
+                shell: CopilotCLIShell.Make(queue: queue)));
+    }
+
+    /// The demo's made-up pull requests, in its one made-up organization, without the Azure CLI.
+    AzureDevOpsReading DemoAzureDevOps() => new(
+        makeEngine: onChange => new DemoPulseEngine(madeAt: madeAt, onChange: onChange),
+        findOrganizations: _ => Task.FromResult(result: new OrganizationsFound(All: [AzureDevOpsDemoData.Organization], WithPullRequests: [AzureDevOpsDemoData.Organization])),
+        locateCli: () => null);
 }

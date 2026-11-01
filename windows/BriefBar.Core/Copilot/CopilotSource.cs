@@ -27,6 +27,7 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     readonly SessionStore store;
     readonly Func<Action<EngineSnapshot>, ISessionEngine> makeEngine;
     readonly CopilotAppAccess app;
+    readonly CLISession? cliSessions;
     readonly TimeProvider time;
     ISessionEngine? engine;
     /// Its engine's start, on the thread pool, which stopping waits for, so that a start still waiting to run can't
@@ -43,8 +44,14 @@ public sealed class CopilotSource : ISectionSource, IDisposable
     /// - `makeEngine`: the engine that reads the sessions, made with the handler for what it reads: `SessionEngine` on
     ///   the Copilot folder, or made-up sessions for the demo.
     /// - `app`: what Windows does with the Copilot app for it.
+    /// - `cliSessions`: opens sessions in a terminal with the Copilot CLI, on a PC without the app; none for the demo, whose
+    ///   app is always there.
     public CopilotSource(
-        CopilotSettings settings, Func<Action<EngineSnapshot>, ISessionEngine> makeEngine, CopilotAppAccess app, TimeProvider? time = null)
+        CopilotSettings settings,
+        Func<Action<EngineSnapshot>, ISessionEngine> makeEngine,
+        CopilotAppAccess app,
+        CLISession? cliSessions = null,
+        TimeProvider? time = null)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         ArgumentNullException.ThrowIfNull(argument: makeEngine);
@@ -52,9 +59,14 @@ public sealed class CopilotSource : ISectionSource, IDisposable
         this.settings = settings;
         this.makeEngine = makeEngine;
         this.app = app;
+        this.cliSessions = cliSessions;
         this.time = time ?? TimeProvider.System;
         store = new SessionStore(
-            settings: settings, openSession: app.OpenSession, isAppInstalled: app.IsInstalled, isAppFrontmost: app.IsFrontmost);
+            settings: settings,
+            openSession: app.OpenSession,
+            isAppInstalled: app.IsInstalled,
+            isAppFrontmost: app.IsFrontmost,
+            openCLISession: cliSessions is null ? null : id => _ = cliSessions.Open(id: id));
     }
 
     public event EventHandler? Changed;
@@ -106,6 +118,8 @@ public sealed class CopilotSource : ISectionSource, IDisposable
             settings.Changed -= SettingsChanged;
         }
         timer?.Dispose();
+        // A session still starting in a terminal opens nothing now, once one whose terminal is starting has started.
+        cliSessions?.Stop();
         // Outside the lock: the engine may be handing over a snapshot, which takes it.
         return stopping is null ? Task.CompletedTask : StopAfterStartAsync(stopping: stopping, started: started);
     }

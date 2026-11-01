@@ -26,7 +26,12 @@ public sealed partial class SettingsView : UserControl
         Navigation.MenuItems.Add(item: new NavigationViewItemHeader { Content = "Sources" });
         foreach (var source in viewModel.Sources)
         {
-            var settings = source.Entry.Id == SourceId.Copilot ? new CopilotSettingsView(viewModel: viewModel.Copilot) : null;
+            UIElement? settings = source.Entry.Id switch
+            {
+                SourceId.AzureDevOps => new AzureDevOpsSettingsView(viewModel: viewModel.AzureDevOps),
+                SourceId.Copilot => new CopilotSettingsView(viewModel: viewModel.Copilot),
+                _ => null,
+            };
             var page = new SourceSettingsPage(viewModel: source, settings: settings);
             page.TurnOnRequested += (_, _) => TurnOnRequested?.Invoke(sender: this, e: source);
             page.TurnOffRequested += (_, _) => TurnOffRequested?.Invoke(sender: this, e: source);

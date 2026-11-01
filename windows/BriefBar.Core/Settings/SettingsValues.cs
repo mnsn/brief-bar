@@ -38,20 +38,54 @@ public static class SettingsValues
     public static Dictionary<string, DateTimeOffset> Dates(this ISettingsStorage settings, string key)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
-        var dates = new Dictionary<string, DateTimeOffset>(comparer: StringComparer.Ordinal);
-        if (settings.Read(key: key) is not JsonObject saved)
+        return settings.Read(key: key) is JsonObject saved ? DatesFrom(node: saved) : new Dictionary<string, DateTimeOffset>(comparer: StringComparer.Ordinal);
+    }
+
+    /// Saves `dates` under `key`, as `Dates` reads them; returns whether everything is saved (`ISettingsStorage.Write`).
+    public static bool SetDates(this ISettingsStorage settings, string key, IReadOnlyDictionary<string, DateTimeOffset> dates)
+    {
+        ArgumentNullException.ThrowIfNull(argument: settings);
+        return settings.Write(key: key, value: DatesNode(dates: dates));
+    }
+
+    /// A time as it's saved: seconds since 1970, as the Mac saves times, to the tick, so that it reads back exactly as it
+    /// was. A double can't hold every tick of today's dates, and a seen time that came back a tick early would make the
+    /// comment it was set to new again.
+    public static JsonValue DateNode(DateTimeOffset date) =>
+        JsonValue.Create(value: (date - DateTimeOffset.UnixEpoch).Ticks / (decimal)TimeSpan.TicksPerSecond);
+
+    /// The time `node` saved, as `DateNode` saves it; null for anything else, or a time outside the years 1 to 9999, which
+    /// is all a DateTimeOffset holds.
+    public static DateTimeOffset? DateFrom(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue(value: out decimal seconds) && seconds is > -62_135_596_800m and < 253_402_300_799m
+            ? DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)decimal.Round(d: seconds * TimeSpan.TicksPerSecond))
+            : null;
+
+    /// Names and times, as `Dates` reads them, the names in order.
+    public static JsonObject DatesNode(IReadOnlyDictionary<string, DateTimeOffset> dates)
+    {
+        ArgumentNullException.ThrowIfNull(argument: dates);
+        var saved = new JsonObject();
+        foreach (var (name, date) in dates.OrderBy(keySelector: pair => pair.Key, comparer: StringComparer.Ordinal))
         {
-            return dates;
+            saved[propertyName: name] = DateNode(date: date);
         }
+        return saved;
+    }
+
+    /// The names and times `node` saved, without entries of another kind, and without any when their names can't be read,
+    /// as text .NET can't make a string of.
+    public static Dictionary<string, DateTimeOffset> DatesFrom(JsonObject node)
+    {
+        ArgumentNullException.ThrowIfNull(argument: node);
+        var dates = new Dictionary<string, DateTimeOffset>(comparer: StringComparer.Ordinal);
         try
         {
-            foreach (var (name, node) in saved)
+            foreach (var (name, value) in node)
             {
-                // Within the years 1 to 9999, which is all a DateTimeOffset holds.
-                if (node is JsonValue value && value.TryGetValue(value: out double seconds) && double.IsFinite(d: seconds)
-                    && seconds is > -62_135_596_800 and < 253_402_300_799)
+                if (DateFrom(node: value) is { } date)
                 {
-                    dates[name] = DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)Math.Round(a: seconds * TimeSpan.TicksPerSecond));
+                    dates[name] = date;
                 }
             }
         }
@@ -61,18 +95,5 @@ public static class SettingsValues
             dates.Clear();
         }
         return dates;
-    }
-
-    /// Saves `dates` under `key`, as `Dates` reads them; returns whether everything is saved (`ISettingsStorage.Write`).
-    public static bool SetDates(this ISettingsStorage settings, string key, IReadOnlyDictionary<string, DateTimeOffset> dates)
-    {
-        ArgumentNullException.ThrowIfNull(argument: settings);
-        ArgumentNullException.ThrowIfNull(argument: dates);
-        var saved = new JsonObject();
-        foreach (var (name, date) in dates.OrderBy(keySelector: pair => pair.Key, comparer: StringComparer.Ordinal))
-        {
-            saved[propertyName: name] = JsonValue.Create(value: (date - DateTimeOffset.UnixEpoch).Ticks / (double)TimeSpan.TicksPerSecond);
-        }
-        return settings.Write(key: key, value: saved);
     }
 }

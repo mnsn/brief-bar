@@ -103,10 +103,10 @@ public sealed class SessionStoreTests
         Assert.Equal(expected: 0, actual: store.Counts.Done);
     }
 
-    /// With the Copilot app on this PC, sessions open in it; without it, they'd open with the Copilot CLI, which isn't on
-    /// Windows yet, so nothing opens. It's looked at again on each click, in case you installed or removed the app since.
+    /// With the Copilot app on this PC, sessions open in it; without it, in a terminal with the Copilot CLI, or nowhere
+    /// without a way to. It's looked at again on each click, in case you installed or removed the app since.
     [Fact]
-    public void OpensInTheAppWhenItsInstalledAndOtherwiseOnlyWhereThatsPorted()
+    public void OpensInTheAppWhenItsInstalledAndOtherwiseInATerminal()
     {
         var installed = true;
         var inApp = new List<string>();
@@ -116,19 +116,19 @@ public sealed class SessionStoreTests
         store.Receive(snapshot: new EngineSnapshot { Records = [Ended(id: "finished", at: now.AddSeconds(seconds: -120))] }, now: now);
         var session = store.Sessions[0];
         Assert.True(condition: store.AppInstalled);
-        Assert.True(condition: store.CanOpen);
+        Assert.Equal(expected: SessionOpening.App, actual: store.Opening);
         store.Open(session: session, now: now);
         Assert.Equal(expected: ["finished"], actual: inApp);
 
         installed = false;
         store.Open(session: session, now: now);
         Assert.False(condition: store.AppInstalled);
-        Assert.False(condition: store.CanOpen);
+        Assert.Equal(expected: SessionOpening.Nowhere, actual: store.Opening);
         Assert.Equal(expected: ["finished"], actual: inApp);
 
         var withTerminal = new SessionStore(settings: settings, openSession: inApp.Add, isAppInstalled: () => false, isAppFrontmost: () => false, openCLISession: withCLI.Add);
         withTerminal.Receive(snapshot: new EngineSnapshot { Records = [Ended(id: "finished", at: now.AddSeconds(seconds: -120))] }, now: now);
-        Assert.True(condition: withTerminal.CanOpen);
+        Assert.Equal(expected: SessionOpening.Terminal, actual: withTerminal.Opening);
         withTerminal.Open(session: withTerminal.Sessions[0], now: now);
         Assert.Equal(expected: ["finished"], actual: withCLI);
     }

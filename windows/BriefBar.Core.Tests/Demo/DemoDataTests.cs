@@ -1,5 +1,7 @@
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Demo;
 using BriefBar.Core.Presentation;
+using BriefBar.Core.Settings;
 
 namespace BriefBar.Core.Tests.Demo;
 
@@ -51,7 +53,25 @@ public sealed class DemoDataTests
     public void CountsWhatTheMockupShows()
     {
         var total = snapshots.Aggregate(seed: new StateCounts(), func: (sum, snapshot) => sum + snapshot.Counts);
-        Assert.Equal(expected: new StateCounts(NeedsYou: 8, Failing: 3, Running: 2, Done: 3), actual: total);
+        Assert.Equal(expected: new StateCounts(NeedsYou: 9, Failing: 4, Running: 2, Done: 4), actual: total);
+    }
+
+    /// The made-up pull requests go through the classifier, as Azure DevOps' do, into the groups they're made for.
+    [Fact]
+    public void PutsTheMadeUpPullRequestsInTheGroupsTheyAreMadeFor()
+    {
+        var now = Times.At(seconds: 0);
+        var settings = AzureDevOpsDemoData.Settings(storage: new MemorySettings(), now: now);
+        var store = new PRStore(settings: settings);
+        store.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: now), now: now);
+        Assert.All(collection: PRGroups.All, action: group => Assert.Equal(expected: AzureDevOpsDemoData.ExpectedCounts[group], actual: store.Counts[group]));
+        Assert.Null(@object: store.Problem);
+        var answered = Assert.Single(collection: store.Items, predicate: item => item.Group == PRGroup.Answered);
+        Assert.Equal(expected: PRReason.Answered, actual: answered.Reason);
+        // Sam's reply on the pull request you've opened since still waits on you, no longer as new.
+        var seen = Assert.Single(collection: store.Items, predicate: item => item.Key.Number == 4102);
+        Assert.Equal(expected: PRGroup.NeedsYou, actual: seen.Group);
+        Assert.False(condition: seen.HasNews);
     }
 
     [Fact]

@@ -2,11 +2,13 @@
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
 # Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
-# with Copilot's page and its settings, closing the panel as it comes to the front; Alt+F4 leaving a bar alone; each
-# bar keeping its display, its window open, as displays change, and still opening panels; a second start while it
-# starts opening its Overview; and every display's work area given back within a second of quitting, whether from
-# scripts\quit.ps1 or because another program asked a bar to close. Build first: it quits a BriefBar that's running,
-# and starts its own with --demo.
+# with Copilot's page and its settings, closing the panel as it comes to the front; Azure DevOps' panel, from its
+# made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, and its page in
+# Settings, whose Show To review in the bar changes what the bar counts; Alt+F4 leaving a bar alone; each bar keeping
+# its display, its window open, as displays change, and still opening panels; a second start while it starts opening
+# its Overview; and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or
+# because another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own
+# with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
 # panel's keys are sent only while it's in front.
@@ -155,6 +157,22 @@ function Get-GroupNames($list) {
     @($list.FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::Group)) | ForEach-Object { $_.Current.Name })
 }
 
+# Every group a panel's list shows, "Needs you: 3", in order, scrolling through it from its top: it has only those on
+# screen. It's back at its top after.
+function Get-AllGroupNames($list) {
+    $scroll = $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
+    $scroll.SetScrollPercent(-1, 0)
+    $names = [System.Collections.Generic.List[string]]::new()
+    for ($step = 0; $step -lt 30; $step++) {
+        Start-Sleep -Milliseconds 150
+        foreach ($name in Get-GroupNames $list) { if (-not $names.Contains($name)) { $names.Add($name) } }
+        if (-not $scroll.Current.VerticallyScrollable -or $scroll.Current.VerticalScrollPercent -ge 99.9) { break }
+        $scroll.Scroll([System.Windows.Automation.ScrollAmount]::NoAmount, [System.Windows.Automation.ScrollAmount]::LargeIncrement)
+    }
+    $scroll.SetScrollPercent(-1, 0)
+    @($names)
+}
+
 # Opens Copilot's panel under `$bar`, and returns its list.
 function Open-Copilot($bar) {
     Invoke-Item (Get-Button $bar 'GitHub Copilot sessions: *')
@@ -224,6 +242,61 @@ function Test-Copilot($process, $bar) {
     else {
         Write-Host "skip  Settings coming to the front (the session is disconnected, or the panel isn't in front)"
     }
+}
+
+# Opens Azure DevOps' panel under `$bar`, and returns its list.
+function Open-AzureDevOps($bar) {
+    Invoke-Item (Get-Button $bar 'Azure DevOps pull requests: *')
+    Wait-Until { $list = Get-PanelList $bar; if ($list -and $list.Current.Name -eq 'Pull requests') { $list } } 5
+}
+
+# Azure DevOps' panel, from its made-up pull requests (`AzureDevOpsDemoData`) through the classifier: the Mac's groups in
+# its order, Idle folded, Mark as seen keeping what waits on you, a pull request that opens closing the panel, and what
+# Answered showed going back to its group once the panel closes; then its page in Settings, whose Show To review in the
+# bar counts To review with what needs you.
+function Test-AzureDevOps($process, $bar) {
+    Check ($null -ne (Get-Button $bar 'Azure DevOps pull requests: 3 need you, 2 went wrong, 2 done or ready.*')) "Azure DevOps' item counts its made-up pull requests"
+    # Past the 600 ms in which a press counts as the one that closed the panel, should one have.
+    Start-Sleep -Milliseconds 700
+    $list = Open-AzureDevOps $bar
+    Check ($null -ne $list) "pressing it opens Azure DevOps' pull requests"
+    if (-not $list) { return }
+    $groups = Get-AllGroupNames $list
+    Check (($groups -join ' | ') -eq 'Needs you: 3 | Answered: 1 | Failing: 2 | Ready to complete: 2 | To review: 1 | Waiting: 2 | Done: 1 | Idle: 2') "its groups are the Mac's, in its order ($($groups -join ', '))"
+    Check ($null -ne (Get-Button $bar 'Open Azure DevOps') -and $null -ne (Get-Button $bar 'Refresh')) 'its foot opens Azure DevOps and refreshes'
+    $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern).SetScrollPercent(-1, 100)
+    $idleRows = { @(@($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Idle: 2')))[0].FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count }
+    Check ($null -ne (Wait-Until { Get-Button $list 'Show idle, 2' } 3) -and (& $idleRows) -eq 0) 'its idle pull requests start folded'
+    $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern).SetScrollPercent(-1, 0)
+    $seen = Get-Button $list 'Mark as seen'
+    if ($seen) { Invoke-Item $seen }
+    # The review request waits under To review; the reply and the mention, which wait on you, stay.
+    $marked = Wait-Until { $names = Get-AllGroupNames $list; if ($names -contains 'Needs you: 2' -and $names -contains 'To review: 2') { $names } } 5
+    Check ($null -ne $marked -and -not (Get-Button $list 'Mark as seen')) 'Mark as seen keeps what waits on you'
+    Check ($null -ne (Get-Button $bar 'Azure DevOps pull requests: 2 need you, 2 went wrong, 2 done or ready.*')) 'and the bar counts what still needs you'
+    $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
+    if ($row) { Invoke-Item $row }
+    Check ($null -ne (Wait-Until { if (-not (Get-PanelList $bar)) { $true } } 3)) 'pressing a pull request closes the panel, as it opens it'
+    Start-Sleep -Milliseconds 700
+    $list = Open-AzureDevOps $bar
+    $groups = if ($list) { Get-AllGroupNames $list } else { @() }
+    Check (-not ($groups -like 'Answered: *') -and $groups -contains 'Idle: 3') "what Answered showed goes back to its group once the panel closes ($($groups -join ', '))"
+
+    # Settings, from the panel's foot, at Azure DevOps' page.
+    if ($list) { Invoke-Item (Get-Button $bar 'Settings') }
+    $settings = Wait-Until { $A::RootElement.FindFirst($Scope::Children, [System.Windows.Automation.AndCondition]::new(
+                (Condition $A::ProcessIdProperty $process.Id), (Condition $A::NameProperty 'BriefBar Settings'))) } 5
+    $title = if ($settings) { Wait-Until { $found = $settings.FindFirst($Scope::Descendants, (Condition $A::AutomationIdProperty 'PageTitle')); if ($found -and $found.Current.Name -eq 'Azure DevOps') { $found } } 3 }
+    Check ($null -ne $title) "its Settings button opens Settings at Azure DevOps' page"
+    if (-not $title) { return }
+    $organization = Get-Button $settings 'contoso'
+    Check ($null -ne $organization) 'which lists its organization'
+    $toggle = Get-Button $settings 'Show To review in the bar'
+    $state = if ($toggle) { $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) }
+    Check ($null -ne $state -and $state.Current.ToggleState -eq 'Off') 'and its settings, as they start'
+    if (-not $state) { return }
+    $state.Toggle()
+    Check ($null -ne (Wait-Until { Get-Button $bar 'Azure DevOps pull requests: 4 need you, 2 went wrong, 2 done or ready.*' } 5)) 'Show To review in the bar counts To review with what needs you'
 }
 
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
@@ -339,6 +412,7 @@ function Test-Running($process, $before) {
     }
 
     Test-Copilot -process $process -bar $first
+    Test-AzureDevOps -process $process -bar $first
 
     # Alt+F4 doesn't close a bar.
     $handle = [IntPtr]$first.Current.NativeWindowHandle

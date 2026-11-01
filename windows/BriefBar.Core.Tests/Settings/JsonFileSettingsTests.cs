@@ -118,12 +118,35 @@ public sealed class JsonFileSettingsTests
         var settings = new MemorySettings();
         var dates = new Dictionary<string, DateTimeOffset> { ["b"] = TestTimes.T(seconds: 0.5), ["a"] = TestTimes.T(seconds: 0) };
         settings.SetDates(key: "copilot.clearedSessions", dates: dates);
-        Assert.Equal(expected: 1_792_317_600.0, actual: settings.Read(key: "copilot.clearedSessions")!["a"]!.GetValue<double>());
+        Assert.Equal(expected: 1_792_317_600m, actual: settings.Read(key: "copilot.clearedSessions")!["a"]!.GetValue<decimal>());
         Assert.Equal(expected: dates, actual: settings.Dates(key: "copilot.clearedSessions"));
         settings.Write(key: "copilot.clearedSessions", value: JsonNode.Parse(json: "{\"a\":\"yesterday\",\"b\":1e300}"));
         Assert.Empty(collection: settings.Dates(key: "copilot.clearedSessions"));
         // A name it can't make a string of, as half of an emoji: what can't be read is forgotten, and nothing ends.
         settings.Write(key: "copilot.clearedSessions", value: JsonNode.Parse(json: "{\"\\ud83d\":1,\"a\":1}"));
         Assert.Empty(collection: settings.Dates(key: "copilot.clearedSessions"));
+    }
+
+    /// A time reads back to the tick, after a restart too: a seen time equal to a comment's must stay equal, or the comment
+    /// would be new again. A double of seconds since 1970 can't hold every tick of today's dates.
+    [Fact]
+    public void KeepsEveryTickOfADate()
+    {
+        using var folder = new TemporaryFolder();
+        var path = folder.Combine("Settings.json");
+        var random = new Random(Seed: 2026);
+        var dates = new Dictionary<string, DateTimeOffset>(comparer: StringComparer.Ordinal)
+        {
+            // Saved as a double, this one read back two ticks early.
+            ["known"] = new DateTimeOffset(year: 2026, month: 7, day: 12, hour: 23, minute: 5, second: 20, offset: TimeSpan.Zero).AddTicks(ticks: 8_140_000),
+        };
+        for (var index = 0; index < 200; index++)
+        {
+            dates["random " + index.ToString(provider: System.Globalization.CultureInfo.InvariantCulture)] =
+                TestTimes.T(seconds: 0).AddTicks(ticks: random.NextInt64(minValue: -TimeSpan.TicksPerDay * 365, maxValue: TimeSpan.TicksPerDay * 365));
+        }
+        new JsonFileSettings(path: path).SetDates(key: "copilot.clearedSessions", dates: dates);
+        Assert.Equal(expected: dates, actual: new JsonFileSettings(path: path).Dates(key: "copilot.clearedSessions"));
+        Assert.Equal(expected: dates["known"], actual: SettingsValues.DateFrom(node: SettingsValues.DateNode(date: dates["known"])));
     }
 }

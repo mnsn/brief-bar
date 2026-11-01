@@ -31,4 +31,16 @@ public interface ISectionSource
     /// Deletes what it saved about your data, but not its settings, as you turn it off, on the UI thread: maybe before
     /// its stop has begun, or on a source that never started. It saves nothing from then on.
     void DeleteSavedData();
+
+    /// A panel is about to show `section`, on its own or in the Overview, on the UI thread: a source that reads every so
+    /// often reads again if what it shows is out of date, as Azure DevOps does. Nothing, by default.
+    void PanelWillShow(SectionId section)
+    {
+    }
+
+    /// `section`'s own panel opened (`isShowing`) or closed, on the UI thread: Azure DevOps sees what its panel showed in
+    /// Answered once it closes. Nothing, by default.
+    void PanelVisibilityChanged(SectionId section, bool isShowing)
+    {
+    }
 }

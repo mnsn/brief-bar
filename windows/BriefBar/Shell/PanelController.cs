@@ -52,9 +52,11 @@ internal sealed class PanelController(AppShell shell)
         panel.ViewModel.Update(target: target, snapshots: shell.Snapshots(), palette: shell.Palette, now: DateTimeOffset.Now, isDemo: shell.IsDemo);
         anchor = itemAnchor;
         shownAt = PlaceUnder(bar: bar, panel: panel);
+        var previous = OpenTarget;
         OpenTarget = target;
         Owner = bar;
         shell.ShowOpen(owner: bar, target: target);
+        shell.PanelChanged(previous: previous, current: target);
         panel.ShowAt(rect: shownAt, owner: bar.Hwnd);
         // Once it's laid out on screen, its rows may wrap differently than measured: it's fitted again, then settled.
         var opening = ++openings;
@@ -82,6 +84,7 @@ internal sealed class PanelController(AppShell shell)
         window?.HideWindow();
         toggle.Closed(target: target, bar: owner?.Hwnd ?? 0, reason: reason, now: Environment.TickCount64);
         shell.ShowOpen(owner: null, target: null);
+        shell.PanelChanged(previous: target, current: null);
         Log.Write(line: $"panel: {target} closed, {reason}");
     }
 
@@ -223,11 +226,12 @@ internal sealed class PanelController(AppShell shell)
         }
         window = null;
         Log.Write(line: $"panel: its window is gone");
-        if (OpenTarget is not null)
+        if (OpenTarget is { } target)
         {
             OpenTarget = null;
             Owner = null;
             shell.ShowOpen(owner: null, target: null);
+            shell.PanelChanged(previous: target, current: null);
         }
     }
 }

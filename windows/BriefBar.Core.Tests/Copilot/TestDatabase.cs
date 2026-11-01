@@ -1,5 +1,5 @@
 using Microsoft.Data.Sqlite;
-using static BriefBar.Core.Tests.Copilot.TestTimes;
+using static BriefBar.Core.Tests.TestTimes;
 
 namespace BriefBar.Core.Tests.Copilot;
 

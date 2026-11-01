@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BriefBar.Core;
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
 using BriefBar.Interop;
@@ -114,11 +115,17 @@ internal sealed class AppShell : IDisposable
         panel.Dismiss(reason: PanelCloseReason.Opened);
         if (settings is null)
         {
-            var viewModel = new SettingsViewModel(sources: appSources.Switch, copilot: appSources.Copilot, palette: Palette);
+            var viewModel = new SettingsViewModel(
+                sources: appSources.Switch,
+                azureDevOps: appSources.AzureDevOps,
+                copilot: appSources.Copilot,
+                palette: Palette,
+                findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)));
             settings = new SettingsWindow(shell: this, viewModel: viewModel);
             var opened = settings;
             opened.Closed += (_, _) =>
             {
+                viewModel.Detach();
                 if (settings == opened)
                 {
                     settings = null;
@@ -283,6 +290,10 @@ internal sealed class AppShell : IDisposable
             bar.ViewModel.ShowOpen(target: bar == owner ? target : null);
         }
     }
+
+    /// The panel shows `current` now, or nothing, in place of `previous`: the sources whose sections it showed or shows
+    /// hear of it.
+    public void PanelChanged(PanelTarget? previous, PanelTarget? current) => sources.PanelChanged(previous: previous, current: current);
 
     /// A bar on each display, from the windows BriefBar has where it can (`BarArrangement`): a bar keeps its display or
     /// takes another, a spare shows again, and only a display left over gets a new window. A bar that takes no display

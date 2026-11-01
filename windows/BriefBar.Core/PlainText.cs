@@ -1,8 +1,9 @@
 using System.Text.RegularExpressions;
 
-namespace BriefBar.Core.Copilot;
+namespace BriefBar.Core;
 
-/// Flattens the app's markdown snippets into one readable line. The Mac's `PlainText`.
+/// Flattens markdown snippets, such as a Copilot session's preview or a pull request's comment, into one readable line.
+/// The Mac's `PlainText`, which CopilotCore and AzureDevOpsCore each have a copy of.
 public static partial class PlainText
 {
     /// Its words, one space apart, on one line.

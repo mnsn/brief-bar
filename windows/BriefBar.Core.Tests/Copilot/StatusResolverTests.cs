@@ -1,6 +1,6 @@
 using BriefBar.Core.Copilot;
 using static BriefBar.Core.Tests.Copilot.Line;
-using static BriefBar.Core.Tests.Copilot.TestTimes;
+using static BriefBar.Core.Tests.TestTimes;
 
 namespace BriefBar.Core.Tests.Copilot;
 

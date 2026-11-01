@@ -477,14 +477,15 @@
             Grid.Row="3"
             Padding="8,4,6,4"
             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-            BorderThickness="0,1,0,0"
-            ColumnSpacing="4">
+            BorderThickness="0,1,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel
+                Margin="0,0,4,0"
                 VerticalAlignment="Center"
                 Orientation="Horizontal"
                 Spacing="8">
@@ -505,7 +506,7 @@
                                     <views:FluentIcon
                                         VerticalAlignment="Center"
                                         Fill="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                        Icon="Open"
+                                        Icon="{x:Bind Icon}"
                                         Size="14" />
                                     <TextBlock
                                         VerticalAlignment="Center"
@@ -525,9 +526,37 @@
                     Text="Made-up data"
                     Visibility="{x:Bind ViewModel.IsDemo, Mode=OneWay}" />
             </StackPanel>
+            <!-- Icons beside Settings, as the Mac's refresh is. -->
+            <ItemsControl
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                IsTabStop="False"
+                ItemsSource="{x:Bind ViewModel.IconCommands, Mode=OneWay}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="presentation:PanelCommand">
+                        <Button
+                            Margin="0,0,4,0"
+                            AutomationProperties.Name="{x:Bind Title}"
+                            Click="OnSectionCommandClick"
+                            Style="{StaticResource IconButtonStyle}"
+                            ToolTipService.ToolTip="{x:Bind Help}">
+                            <views:FluentIcon
+                                Fill="{ThemeResource TextFillColorPrimaryBrush}"
+                                Icon="{x:Bind Icon}"
+                                Size="16" />
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <Button
                 x:Name="SettingsButton"
-                Grid.Column="1"
+                Grid.Column="2"
+                Margin="0,0,4,0"
                 AutomationProperties.Name="Settings"
                 Click="OnSettingsClick"
                 Style="{StaticResource IconButtonStyle}"
@@ -536,7 +565,7 @@
             </Button>
             <Button
                 x:Name="MoreButton"
-                Grid.Column="2"
+                Grid.Column="3"
                 AutomationProperties.Name="More"
                 Style="{StaticResource IconButtonStyle}"
                 ToolTipService.ToolTip="More">

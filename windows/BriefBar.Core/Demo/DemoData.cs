@@ -1,3 +1,4 @@
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
@@ -57,57 +58,15 @@ public static class DemoData
                 sentence: "Launch crew & Design: shipping at 5 unless someone objects."),
         ]);
 
-    public static SectionSnapshot AzureDevOpsPullRequests(DateTimeOffset now) => new(
-        Info: Sections.AzureDevOpsPullRequests,
-        Status: SectionStatus.Updated(time: now.AddSeconds(seconds: -20)),
-        Groups:
-        [
-            new RowGroup(Key: "needsYou", Title: "Needs you", State: ItemState.NeedsYou),
-            new RowGroup(Key: "failing", Title: "Failing", State: ItemState.Failing),
-            new RowGroup(Key: "ready", Title: "Ready to complete", State: ItemState.Done),
-        ],
-        Rows:
-        [
-            new ItemRow
-            {
-                Id = "checkout", Section = SectionId.AzureDevOpsPullRequests, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.Send, Title = "Speed up the checkout page",
-                Status = "Dana Whitfield sent this in Teams · shop-web", Detail = "By Jordan Lee",
-                Date = Ago(now: now, minutes: 8), IsNew = true,
-            },
-            new ItemRow
-            {
-                Id = "retry", Section = SectionId.AzureDevOpsPullRequests, Group = "needsYou", State = ItemState.NeedsYou,
-                Icon = IconKey.ArrowReply, Title = "Add retry with backoff to the payments client",
-                Status = "Sam Rivera replied · payments-api",
-                Detail = "Could we cap the backoff at 30 seconds? Otherwise a slow dependency can stall checkout for minutes.",
-                Date = Ago(now: now, minutes: 12), Chips = [new RowChip(Kind: RowChipKind.WorkItem, Text: "5160")],
-            },
-            new ItemRow
-            {
-                Id = "delivery", Section = SectionId.AzureDevOpsPullRequests, Group = "failing", State = ItemState.Failing,
-                Icon = IconKey.Dismiss, Title = "Show delivery estimates on the product page",
-                Status = "Failed at Run unit tests · shop-web", Detail = "3 tests failed in DeliveryEstimateTests",
-                Date = Ago(now: now, minutes: 18),
-            },
-            new ItemRow
-            {
-                Id = "coupon", Section = SectionId.AzureDevOpsPullRequests, Group = "ready", State = ItemState.Done,
-                Icon = IconKey.Checkmark, Title = "Fix the coupon rounding error",
-                Status = "Approved and ready to complete · shop-web", Date = Ago(now: now, minutes: 6),
-            },
-        ],
-        BriefLines:
-        [
-            Line(id: "checkout", section: SectionId.AzureDevOpsPullRequests, state: ItemState.NeedsYou, now: now, minutes: 8,
-                sentence: "Dana Whitfield sent you “Speed up the checkout page” in Teams."),
-            Line(id: "retry", section: SectionId.AzureDevOpsPullRequests, state: ItemState.NeedsYou, now: now, minutes: 12,
-                sentence: "Sam Rivera replied on “Add retry with backoff to the payments client”."),
-            Line(id: "delivery", section: SectionId.AzureDevOpsPullRequests, state: ItemState.Failing, now: now, minutes: 18,
-                sentence: "“Show delivery estimates on the product page” failed at Run unit tests."),
-            Line(id: "coupon", section: SectionId.AzureDevOpsPullRequests, state: ItemState.Done, now: now, minutes: 6,
-                sentence: "“Fix the coupon rounding error” is approved and ready to complete."),
-        ]);
+    /// Azure DevOps' made-up pull requests (`AzureDevOpsDemoData`), as `AzureDevOpsSource` shows them, with its settings as
+    /// the demo starts them.
+    public static SectionSnapshot AzureDevOpsPullRequests(DateTimeOffset now)
+    {
+        var settings = AzureDevOpsDemoData.Settings(storage: new MemorySettings(), now: now);
+        var store = new PRStore(settings: settings);
+        store.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: now), now: now);
+        return AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+    }
 
     /// Copilot's made-up sessions (`CopilotDemoData`), as `CopilotSource` shows them, with its settings as they start.
     public static SectionSnapshot CopilotSessions(DateTimeOffset now)

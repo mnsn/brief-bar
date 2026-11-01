@@ -15,6 +15,9 @@ public sealed record SectionSnapshot(
     /// What its panel says when it has nothing to list, such as "No sessions yet"; a general sentence when null.
     public string? EmptyText { get; init; }
 
+    /// What the banner offers for its problem or out-of-date list, such as signing in.
+    public PanelCommand? ProblemCommand { get; init; }
+
     /// What its panel says when nothing in it is counted, such as Copilot's "All quiet" over its idle sessions; none for
     /// a section that just lists nothing.
     public QuietNote? Quiet { get; init; }

@@ -54,18 +54,22 @@ public static class SessionStateScanner
         return sessions;
     }
 
+    /// The folder a session works in, as the `cwd` in its folder's `workspace.yaml` says: null when it doesn't say, or
+    /// names a folder that isn't a whole path, or isn't there anymore, such as a worktree that was removed.
+    public static string? WorkingFolder(string directory)
+    {
+        ArgumentNullException.ThrowIfNull(argument: directory);
+        var folder = WorkspaceValue(directory: directory, key: "cwd");
+        return folder is not null && Path.IsPathFullyQualified(path: folder) && Directory.Exists(path: folder) ? folder : null;
+    }
     /// The `name` in a session folder's `workspace.yaml`, on one line; null when there's none.
     internal static string? WorkspaceName(string directory)
     {
-        var file = Path.Combine(path1: directory, path2: "workspace.yaml");
-        if (SharedFile.ReadAll(path: file, maxBytes: MaxWorkspaceBytes) is not { } bytes)
-        {
-            return null;
-        }
         // A name in double quotes can have line breaks, written `\n`.
-        var name = Value(key: "name", workspaceText: Encoding.UTF8.GetString(bytes: bytes));
+        var name = WorkspaceValue(directory: directory, key: "name");
         return name is null ? null : PlainText.SingleLine(text: name) is { Length: > 0 } single ? single : null;
     }
+
 
     /// One of the top-level values in a session's `workspace.yaml`, such as its `name`, or its `cwd`, the folder it works
     /// in, as YAML reads it (`Scalar`); null when it isn't there or is empty.
@@ -84,6 +88,7 @@ public static class SessionStateScanner
         }
         return null;
     }
+
 
     /// A value on one line, without its quotes: in single quotes, `''` is a quote; in double quotes, `\` starts an
     /// escape, such as `\"`, `\\`, `\n` or `\u00e9`. One that isn't quoted is as it is.
@@ -151,5 +156,14 @@ public static class SessionStateScanner
             }
         }
         return result.ToString();
+    }
+
+    /// A value, `key`, in a session folder's `workspace.yaml`; null when the file can't be read, or doesn't have it.
+    static string? WorkspaceValue(string directory, string key)
+    {
+        var file = Path.Combine(path1: directory, path2: "workspace.yaml");
+        return SharedFile.ReadAll(path: file, maxBytes: MaxWorkspaceBytes) is { } bytes
+            ? Value(key: key, workspaceText: Encoding.UTF8.GetString(bytes: bytes))
+            : null;
     }
 }

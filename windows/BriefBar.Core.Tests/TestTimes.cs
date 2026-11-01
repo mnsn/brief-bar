@@ -1,8 +1,9 @@
 using System.Globalization;
 
-namespace BriefBar.Core.Tests.Copilot;
+namespace BriefBar.Core.Tests;
 
-/// The Swift tests' fixed times: `T(seconds)` after 2026-10-18T10:00:00Z, and the CLI's timestamp format.
+/// The Swift tests' fixed times: `T(seconds)` after 2026-10-18T10:00:00Z, and the format the Copilot CLI and Azure DevOps
+/// write times in.
 internal static class TestTimes
 {
     public static DateTimeOffset Reference { get; } = DateTimeOffset.FromUnixTimeSeconds(seconds: 1_792_317_600);
