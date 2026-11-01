@@ -37,13 +37,7 @@ public static class SharedFile
         try
         {
             using var stream = Open(path: path);
-            if (stream.Length > maxBytes)
-            {
-                return null;
-            }
-            var buffer = new byte[stream.Length];
-            var read = stream.ReadAtLeast(buffer: buffer, minimumBytes: buffer.Length, throwOnEndOfStream: false);
-            return read == buffer.Length ? buffer : buffer[..read];
+            return ReadAll(stream: stream, maxBytes: maxBytes);
         }
         catch (IOException)
         {
@@ -53,6 +47,21 @@ public static class SharedFile
         {
             return null;
         }
+    }
+
+    /// All of `stream`, if it's at most `maxBytes`; null when it's larger. Its length is asked once: the app may write to
+    /// the file as it's read, which sharing allows, and a second look could find it larger.
+    internal static byte[]? ReadAll(Stream stream, int maxBytes)
+    {
+        ArgumentNullException.ThrowIfNull(argument: stream);
+        var length = stream.Length;
+        if (length > maxBytes)
+        {
+            return null;
+        }
+        var buffer = new byte[length];
+        var read = stream.ReadAtLeast(buffer: buffer, minimumBytes: buffer.Length, throwOnEndOfStream: false);
+        return read == buffer.Length ? buffer : buffer[..read];
     }
 
     static FileStream Open(string path) => new(
