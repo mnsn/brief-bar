@@ -90,6 +90,19 @@ public sealed class CLISessionTests
         Assert.NotNull(@object: setup.Session.Open(id: Id));
     }
 
+    /// A `copilot.cmd` at a path with a percent sign, which `cmd.exe` would read as a variable, can't run: `ProcessRunner`
+    /// refuses it. That's said too, and the next click tries again, rather than one that opens nothing and says nothing.
+    [Fact]
+    public async Task SaysWhenTheTerminalDidntOpenForACliCmdCantRun()
+    {
+        using var setup = new Setup();
+        setup.Processes.FailToStart(failure: Assert.Throws<ArgumentException>(testCode: () => new ProcessRunner().StartInConsole(
+            program: @"C:\Made up 100%\copilot.cmd", arguments: ["--resume", Id], workingDirectory: null, environment: new Dictionary<string, string?>(), keepOpen: false)));
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(expected: "The session didn't open in a terminal", actual: Assert.Single(collection: setup.Said).Message);
+        Assert.NotNull(@object: setup.Session.Open(id: Id));
+    }
+
     /// Copilot turned off while a session starts: it opens nothing, and says nothing.
     [Fact]
     public async Task OpensNothingOnceStopped()

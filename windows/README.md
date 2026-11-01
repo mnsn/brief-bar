@@ -274,7 +274,8 @@ SDK ships inside the app.
   expansion, refuses a path with quotes, `%` or line breaks, and treats `az.cmd.` as the batch file Windows would run.
   An `az.cmd` it refuses, like one removed since BriefBar found it, can't run: the panel says BriefBar couldn't get a
   token from the Azure CLI, which it looks for again within a minute, and Sign in opens the page that says how to
-  install it, rather than ending BriefBar or its reading.
+  install it, rather than ending BriefBar or its reading. A `copilot.cmd` it refuses can't open a session in a
+  terminal: BriefBar says so, with the command to run instead.
   `az.cmd` runs Python, which can hold its output open after `az` ends: the runner waits half a second for the rest,
   then ends what's left, and a timeout ends the whole tree.
 - **A console program started by an app without a console gets a window of its own**, in Windows' default

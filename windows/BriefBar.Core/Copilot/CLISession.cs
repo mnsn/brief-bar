@@ -132,8 +132,10 @@ public sealed class CLISession
             // It stays starting until its CLI holds it, or for a while.
             return;
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException)
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or ArgumentException)
         {
+            // It was uninstalled or moved since BriefBar found it, or it's a batch file at a path that `cmd.exe` can't take,
+            // with a percent sign (`ProcessRunner` refuses it).
             Log.Write(error: error, context: $"copilot: couldn't open a session in a terminal");
         }
         Fail(id: id, message: "The session didn't open in a terminal", information: "Open it in a terminal yourself with " + command + ".");
