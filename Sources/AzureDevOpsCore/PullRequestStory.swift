@@ -226,14 +226,15 @@ public enum PullRequestStory {
         )
     }
 
-    /// The pipelines that ran after it merged, as one run: the one that failed or waits, or all of them while they run
-    /// and once they passed.
+    /// The pipelines that ran after it merged, as one run: the one that failed, waits or was canceled, or all of them while
+    /// they run and once they passed.
     static func run(_ merge: MergeSummary) -> ItemStory.Run {
         let (state, status): (ItemState?, String) = switch merge.outcome {
         case .failed: (.failing, merge.failure.map { "Failed at \($0.step)" } ?? "Failed")
         case .waiting: (nil, merge.stage.map { "Waiting for approval to \($0)" } ?? "Waiting for approval")
         case .running: (.running, "Running")
         case .passed: (.done, "Passed")
+        case .canceled: (.done, "Canceled")
         }
         return ItemStory.Run(
             name: merge.pipeline ?? "Pipelines after merge", state: state, status: status,
