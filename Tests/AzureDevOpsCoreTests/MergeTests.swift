@@ -223,12 +223,15 @@ import BriefBarCore
         old.since = t(-2 * hour)
         #expect(plan([snapshot(running)], [snapshot(old)]).isEmpty)
 
-        // One canceled once they'd been running is news too, as it is, rather than that they passed.
-        let canceled = MergeSummary(outcome: .canceled, total: 2, pipeline: "shop-web CD", runId: 10, since: t(0))
+        // One canceled once they'd been running is news too, as it is, rather than that they passed. It opens the run.
+        let canceledRun = URL(string: "https://dev.azure.com/contoso/Shop/_build/results?buildId=10")!
+        let canceled = MergeSummary(outcome: .canceled, total: 2, pipeline: "shop-web CD", runId: 10, runURL: canceledRun, since: t(0))
         let stopped = plan([snapshot(running)], [snapshot(canceled)])
         #expect(stopped.map(\.title) == ["Pipeline canceled"])
         #expect(stopped.first?.body == "“shop-web CD” was canceled after it merged.")
         #expect(stopped.first?.state == .done)
+        #expect(stopped.first?.url == canceledRun)
+        #expect(stopped.first?.key == PRKey(Fixture.org, 7))
         var alone = canceled
         alone.total = 1
         #expect(plan([snapshot(waiting)], [snapshot(alone)]).first?.body == "Its pipeline was canceled after it merged.")

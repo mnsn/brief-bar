@@ -417,9 +417,10 @@ public actor PulseEngine {
                 }
             case .failure(let error):
                 errors.append((organization, error))
-                // Keep what we had until it can be read again.
-                for (key, item) in active where key.organization == organization { listed[key] = item }
-                for (key, pr) in done where key.organization == organization { completed[key] = pr }
+                // Keep what we had until it can be read again, however its name was spelled then.
+                let name = organization.lowercased()
+                for (key, item) in active where key.organization.lowercased() == name { listed[key] = item }
+                for (key, pr) in done where key.organization.lowercased() == name { completed[key] = pr }
             case nil:
                 break
             }
@@ -434,8 +435,8 @@ public actor PulseEngine {
 
         // Your pull requests that left the active list without completing were abandoned (or completed
         // just now): look each up by its ID, a few per refresh, and again next time if that fails.
-        let succeeded = Set(organizations).subtracting(errors.map(\.0))
-        for item in active.values where item.role == .author && succeeded.contains(item.pullRequest.key.organization) {
+        let succeeded = Self.folded(organizations).subtracting(errors.map { $0.0.lowercased() })
+        for item in active.values where item.role == .author && succeeded.contains(item.pullRequest.key.organization.lowercased()) {
             let key = item.pullRequest.key
             if listed[key] == nil, completed[key] == nil, vanished[key] == nil {
                 vanished[key] = Vanished(pullRequest: item.pullRequest, since: startedAt)
@@ -446,7 +447,7 @@ public actor PulseEngine {
         // The ones never looked up first, then the ones looked up longest ago: a few that keep failing don't hold up
         // the rest.
         let due = vanished.values
-            .filter { succeeded.contains($0.pullRequest.key.organization) && $0.isDue(at: startedAt, interval: configuration.interval) }
+            .filter { succeeded.contains($0.pullRequest.key.organization.lowercased()) && $0.isDue(at: startedAt, interval: configuration.interval) }
             .sorted {
                 ($0.lastLookup ?? .distantPast, $0.since, $0.pullRequest.key) < ($1.lastLookup ?? .distantPast, $1.since, $1.pullRequest.key)
             }

@@ -173,6 +173,34 @@ import BriefBarCore
         #expect(book.others["tenant/sam"]?.cutoff(for: key) == t(25 * day))
         #expect(book.state(for: "tenant/kim", now: t(30 * day)) == SeenState.firstRun(now: t(30 * day), account: "tenant/kim"))
     }
+
+    /// What you've seen of a pull request, and took off Needs You, is the same however its organization is spelled: Azure
+    /// DevOps ignores the case of organizations' names.
+    @Test func whatYouveSeenIsTheSameHoweverTheOrganizationIsSpelled() throws {
+        let listed = PRKey("contoso", 7)
+        let linked = PRKey("Contoso", 7)
+        var seen = SeenState.firstRun(now: t(0))
+        seen.dismiss([listed], at: t(-20))
+        seen.markSeen([linked], at: t(-10))
+        #expect(seen.cutoff(for: PRKey("CONTOSO", 7)) == t(-10))
+        #expect(seen.dismissedCutoff(for: linked) == t(-20))
+        #expect(seen.seenAt.keys.sorted() == ["contoso/7"])
+        let data = try JSONEncoder().encode(seen)
+        #expect(try JSONDecoder().decode(SeenState.self, from: data) == seen)
+
+        // Kept while it's listed, by either spelling.
+        var kept = seen
+        kept.prune(keeping: [linked], olderThan: t(0))
+        #expect(kept.cutoff(for: listed) == t(-10))
+        #expect(kept.dismissedCutoff(for: listed) == t(-20))
+
+        // Saved by an earlier build spelled two ways: the later counts.
+        let twice = try JSONDecoder().decode(
+            SeenState.self, from: Data(#"{"baseline": 0, "seenAt": {"contoso/7": 864000, "Contoso/7": 864500}}"#.utf8)
+        )
+        #expect(twice.cutoff(for: listed) == Date(timeIntervalSinceReferenceDate: 864_500))
+        #expect(twice.seenAt.count == 1)
+    }
 }
 
 @Suite struct NotificationTests {
@@ -613,6 +641,31 @@ import BriefBarCore
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 1)])
         #expect(Set(snapshot.firstLoaded.keys) == [Fixture.org])
+    }
+
+    /// Spelled another way, as when finding your organizations again spells one as Azure DevOps does, an organization is
+    /// the same one: what was read there stays listed, even while it can't be read.
+    @Test func anOrganizationSpelledAnotherWayKeepsItsPullRequests() async throws {
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.serveOrganization("fabrikam")
+        let engine = PulseEngine(
+            client: server.client(), configuration: PulseEngine.Configuration(organizations: [Fixture.org, "fabrikam"])
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.map(\.id.number) == [1])
+
+        server.on("/Contoso/_apis") { _ in .status(500) }
+        await engine.setConfiguration(PulseEngine.Configuration(organizations: ["Contoso", "fabrikam"]))
+        #expect(await engine.currentSnapshot().records.map(\.id.number) == [1])
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id.number) == [1])
+        #expect(snapshot.records.first?.id.organization == Fixture.org)
+        guard case .someOrganizations? = snapshot.problem else {
+            Issue.record("Expected Contoso to be unreadable, got \(String(describing: snapshot.problem))")
+            return
+        }
     }
 
     @Test func fetchesDetailsOnABudgetAfterTheFirstLoad() async {

@@ -159,11 +159,12 @@ public enum NotificationPlanner {
                 url: snapshot.url, key: snapshot.key, at: at
             )
         case .canceled where old?.outcome == .running || old?.outcome == .waiting:
+            // It names the run, so it opens it, as a failed one's does; the row still opens the pull request.
             return PulseNotification(
                 id: "\(snapshot.id):merge:canceled:\(merge.runId ?? 0)", state: .done, title: "Pipeline canceled",
                 subtitle: snapshot.title,
                 body: merge.total == 1 ? "Its pipeline was canceled after it merged." : "\(pipeline) was canceled after it merged.",
-                url: snapshot.url, key: snapshot.key, at: at
+                url: merge.runURL ?? snapshot.url, key: snapshot.key, at: at
             )
         default:
             return nil

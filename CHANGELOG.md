@@ -7,8 +7,8 @@
   "its pipeline was canceled", or which one, such as "“shop-web CD” was canceled", and so do its
   notification, **Pipeline canceled**, its page and the Pipelines page, rather than that they passed.
 - **A pull request you watch is listed once.** Watched by a link that spells its organization's name with
-  other capital letters, such as `Contoso` for `contoso`, it was listed twice. Azure DevOps ignores the
-  difference, and now so does BriefBar.
+  other capital letters, such as `Contoso` for `contoso`, it was listed twice, and seeing one left the
+  other new. Azure DevOps ignores the difference, and now so does BriefBar.
 - **New comments come in while many builds run.** With eight or more pull requests whose builds were
   running, BriefBar kept reading only those, and new comments on your other pull requests waited until
   the builds finished. Each now takes its turn, the one that's waited longest first.

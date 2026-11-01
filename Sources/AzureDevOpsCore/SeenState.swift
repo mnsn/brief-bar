@@ -7,7 +7,7 @@ import Foundation
 public struct SeenState: Sendable, Codable, Equatable {
     /// Activity before this was there before BriefBar first ran.
     public var baseline: Date
-    /// Pull request (`PRKey.description`) → when you last looked at it.
+    /// Pull request (`name(of:)`) → when you last looked at it.
     public var seenAt: [String: Date]
     /// Pull request → when you last removed it from Needs You, or sent its comments to Copilot: comments up to then
     /// that still wait on you don't need you anymore. Never later than when you last looked at it.
@@ -20,8 +20,8 @@ public struct SeenState: Sendable, Codable, Equatable {
 
     public init(baseline: Date, seenAt: [String: Date] = [:], dismissedAt: [String: Date] = [:], account: String? = nil) {
         self.baseline = baseline
-        self.seenAt = seenAt
-        self.dismissedAt = dismissedAt
+        self.seenAt = Self.folded(seenAt)
+        self.dismissedAt = Self.folded(dismissedAt)
         self.account = account
     }
 
@@ -29,12 +29,13 @@ public struct SeenState: Sendable, Codable, Equatable {
         case baseline, seenAt, dismissedAt, account
     }
 
-    /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`.
+    /// What builds from before you could remove a pull request from Needs You saved has no `dismissedAt`, and earlier
+    /// builds named pull requests spelled as given.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         baseline = try container.decode(Date.self, forKey: .baseline)
-        seenAt = try container.decode([String: Date].self, forKey: .seenAt)
-        dismissedAt = try container.decodeIfPresent([String: Date].self, forKey: .dismissedAt) ?? [:]
+        seenAt = try Self.folded(container.decode([String: Date].self, forKey: .seenAt))
+        dismissedAt = try Self.folded(container.decodeIfPresent([String: Date].self, forKey: .dismissedAt) ?? [:])
         account = try container.decodeIfPresent(String.self, forKey: .account)
     }
 
@@ -42,18 +43,25 @@ public struct SeenState: Sendable, Codable, Equatable {
         SeenState(baseline: now.addingTimeInterval(-firstRunLookback), account: account)
     }
 
+    /// A pull request's name in what you've seen: `PRKey.description`, its organization lowercased. Azure DevOps ignores
+    /// the case of an organization's name, so what you've seen of a pull request is the same however it's spelled.
+    public static func name(of key: PRKey) -> String {
+        "\(key.organization.lowercased())/\(key.number)"
+    }
+
     public func cutoff(for key: PRKey) -> Date {
-        max(baseline, seenAt[key.description] ?? .distantPast)
+        max(baseline, seenAt[Self.name(of: key)] ?? .distantPast)
     }
 
     /// Comments up to this that still wait on you don't need you anymore.
     public func dismissedCutoff(for key: PRKey) -> Date {
-        max(baseline, dismissedAt[key.description] ?? .distantPast)
+        max(baseline, dismissedAt[Self.name(of: key)] ?? .distantPast)
     }
 
     public mutating func markSeen<S: Sequence>(_ keys: S, at date: Date) where S.Element == PRKey {
         for key in keys {
-            seenAt[key.description] = max(date, seenAt[key.description] ?? .distantPast)
+            let name = Self.name(of: key)
+            seenAt[name] = max(date, seenAt[name] ?? .distantPast)
         }
     }
 
@@ -62,7 +70,8 @@ public struct SeenState: Sendable, Codable, Equatable {
     public mutating func dismiss<S: Sequence>(_ keys: S, at date: Date) where S.Element == PRKey {
         let keys = Array(keys)
         for key in keys {
-            dismissedAt[key.description] = max(date, dismissedAt[key.description] ?? .distantPast)
+            let name = Self.name(of: key)
+            dismissedAt[name] = max(date, dismissedAt[name] ?? .distantPast)
         }
         markSeen(keys, at: date)
     }
@@ -72,17 +81,28 @@ public struct SeenState: Sendable, Codable, Equatable {
         (seenAt, dismissedAt) = Self.pruned(seenAt: seenAt, dismissedAt: dismissedAt, keeping: keys, olderThan: date)
     }
 
-    /// What's left of when you last looked at pull requests and took them off Needs You, by `PRKey.description`, once
-    /// those no longer listed and last seen before `date` are forgotten: for `prune`, and for what's kept elsewhere, such
-    /// as in memory. When you took one off goes with when you last looked at it, never before: you may have taken it off
-    /// long ago and looked at it since, and forgetting only that would bring back what you took off, once it's listed again.
+    /// What's left of when you last looked at pull requests and took them off Needs You, by `name(of:)`, once those no
+    /// longer listed and last seen before `date` are forgotten: for `prune`, and for what's kept elsewhere, such as in
+    /// memory. When you took one off goes with when you last looked at it, never before: you may have taken it off long
+    /// ago and looked at it since, and forgetting only that would bring back what you took off, once it's listed again.
     public static func pruned(
         seenAt: [String: Date], dismissedAt: [String: Date], keeping keys: Set<PRKey>, olderThan date: Date
     ) -> (seenAt: [String: Date], dismissedAt: [String: Date]) {
-        let kept = Set(keys.map(\.description))
-        let seen = seenAt.filter { kept.contains($0.key) || $0.value > date }
-        let dismissed = dismissedAt.filter { seen[$0.key] != nil || kept.contains($0.key) || $0.value > date }
+        let kept = Set(keys.map { name(of: $0) })
+        let seen = folded(seenAt).filter { kept.contains($0.key) || $0.value > date }
+        let dismissed = folded(dismissedAt).filter { seen[$0.key] != nil || kept.contains($0.key) || $0.value > date }
         return (seen, dismissed)
+    }
+
+    /// `dates` by `name(of:)`, however they named the pull requests: of one named two ways, the later time counts.
+    static func folded(_ dates: [String: Date]) -> [String: Date] {
+        var byName: [String: Date] = [:]
+        for (name, date) in dates {
+            // The number after the slash has no case.
+            let lowercased = name.lowercased()
+            byName[lowercased] = max(date, byName[lowercased] ?? .distantPast)
+        }
+        return byName
     }
 }
 

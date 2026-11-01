@@ -1215,8 +1215,8 @@ mentions; one you are on is listed as it is. What you've seen of it is kept in t
 your own. Once it's completed or abandoned, or can't be found or read anymore, BriefBar stops watching
 it (`PulseSnapshot.closedLinks`); a failure that may pass doesn't count. The command line lists the ones
 the app watches too. Azure DevOps ignores the letter case of an organization's name, and so does BriefBar
-(`PRKey`): a link that spells it differently is to the pull request in your lists, listed once, as one you
-watch.
+(`PRKey`, `SeenState.name(of:)`): a link that spells it differently is to the pull request in your lists,
+listed once, as one you watch, and what you've seen of it is the same however it's spelled.
 
 ### Pipelines after your merges
 
@@ -1242,9 +1242,9 @@ Together they decide what the pull request's row says:
 While they run or wait, the pull request stays in Done even once you've opened it; once they've all
 finished, passed or canceled, it leaves Done as before, when you've seen it. A notification says when one
 fails, when one starts waiting for an approval, and when they've all finished after running: that they
-passed, or that one was canceled. What happened before BriefBar started isn't announced. The Pipelines
-page lists them under **After Your Merges**, above the pipelines you pin. **Follow Pipelines After You
-Merge** turns it off, and BriefBar then forgets the runs it found.
+passed, or that one was canceled, which opens that run. What happened before BriefBar started isn't
+announced. The Pipelines page lists them under **After Your Merges**, above the pipelines you pin.
+**Follow Pipelines After You Merge** turns it off, and BriefBar then forgets the runs it found.
 
 ### Pull requests sent in chats
 
