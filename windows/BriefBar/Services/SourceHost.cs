@@ -54,15 +54,17 @@ internal sealed class SourceHost : IDisposable
         Log.Write(line: $"sources: {sources.Count} started");
     }
 
-    /// Stops every source, waiting at most `timeout` for them, and lets go of their events.
+    /// Stops every source, waiting at most `timeout` for them, cancelling included, and lets go of their events.
     public async Task StopAsync(TimeSpan timeout)
     {
-        await stopping.CancelAsync().ConfigureAwait(continueOnCapturedContext: true);
+        // Within the timeout too: the cancellation finishes only once every callback registered on the token has run,
+        // and a callback, such as one stopping a program a source started, may block.
+        var cancelled = stopping.CancelAsync();
         foreach (var source in sources)
         {
             source.Changed -= OnSourceChanged;
         }
-        var stopped = Task.WhenAll(tasks: sources.Select(selector: source => source.StopAsync()));
+        var stopped = Task.WhenAll(tasks: [cancelled, .. sources.Select(selector: source => source.StopAsync())]);
         if (await Task.WhenAny(task1: stopped, task2: Task.Delay(delay: timeout)).ConfigureAwait(continueOnCapturedContext: true) != stopped)
         {
             Log.Write(line: $"sources: still stopping after {timeout}; quitting anyway");
