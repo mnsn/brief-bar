@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.1 - 2026-11-01
 
 - **A menu-bar item's list opens on the desktop you're on.** Clicking a BriefBar item after you'd
   switched desktops (Spaces) could open its list out of sight, on a desktop you'd left, and keep doing
