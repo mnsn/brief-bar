@@ -134,6 +134,32 @@ public sealed class SeenStateTests
         Assert.Equal(expected: FirstRun(now: T(seconds: 30 * Make.Day), account: "tenant/kim"), actual: book.State(account: "tenant/kim", now: T(seconds: 30 * Make.Day)));
     }
 
+    /// What you've seen of a pull request, and took off Needs you, is the same whichever way its organization is spelled:
+    /// organization names are case-insensitive in Azure DevOps.
+    [Fact]
+    public void WhatYouveSeenIsTheSameWhicheverWayTheOrganizationIsSpelled()
+    {
+        var listed = new PRKey(Organization: "contoso", Number: 7);
+        var linked = new PRKey(Organization: "Contoso", Number: 7);
+        var seen = FirstRun(now: T(seconds: 0)).Dismissing(keys: [listed], date: T(seconds: -20)).MarkingSeen(keys: [linked], date: T(seconds: -10));
+        Assert.Equal(expected: T(seconds: -10), actual: seen.Cutoff(key: new PRKey(Organization: "CONTOSO", Number: 7)));
+        Assert.Equal(expected: T(seconds: -20), actual: seen.DismissedCutoff(key: linked));
+        Assert.Equal(expected: ["contoso/7"], actual: seen.SeenAt.Keys.Order(comparer: StringComparer.Ordinal));
+        Assert.Equal(expected: seen, actual: SavedAndRead(state: seen));
+
+        // Kept while it's listed, by either spelling.
+        var kept = seen.Pruning(keeping: new HashSet<PRKey> { linked }, olderThan: T(seconds: 0));
+        Assert.Equal(expected: T(seconds: -10), actual: kept.Cutoff(key: listed));
+        Assert.Equal(expected: T(seconds: -20), actual: kept.DismissedCutoff(key: listed));
+
+        // Saved twice, spelled two ways: the later counts.
+        var twice = new SeenState(
+            baseline: T(seconds: -Make.Day),
+            seenAt: new Dictionary<string, DateTimeOffset>(comparer: StringComparer.Ordinal) { ["contoso/7"] = T(seconds: -30), ["Contoso/7"] = T(seconds: -5) });
+        Assert.Equal(expected: T(seconds: -5), actual: twice.Cutoff(key: listed));
+        Assert.Single(collection: twice.SeenAt);
+    }
+
     /// `state`, saved as text and read back.
     static SeenState? SavedAndRead(SeenState state) => FromJson(node: JsonNode.Parse(json: state.ToJson().ToJsonString()));
 }

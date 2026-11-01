@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using BriefBar.Core.AzureDevOps;
 using static BriefBar.Core.Tests.TestTimes;
 
@@ -57,6 +58,31 @@ public sealed class WatchTests
         // Not asked for anymore: not reported.
         engine.SetLinkedPullRequests(keys: new HashSet<PRKey> { Key(number: 8), Key(number: 10) });
         Assert.Equal(expected: [Key(number: 10)], actual: engine.CurrentSnapshot().ClosedLinks.Order());
+    }
+
+    /// Organization names are case-insensitive in Azure DevOps: a pull request you watch by a link that spells its
+    /// organization another way is the one your lists have, listed once, as they spell it.
+    [Fact]
+    public async Task OneYouWatchByALinkSpelledAnotherWayIsTheOneListed()
+    {
+        var server = new StubServer();
+        server.ServeOrganization(mine: [Fixture.PullRequest(id: 8)]);
+        // Azure DevOps would answer the link's spelling too.
+        server.On(path: "/CONTOSO/_apis/connectionData", json: new JsonObject
+        {
+            ["authenticatedUser"] = new JsonObject { ["id"] = Fixture.Me.ToUpperInvariant() },
+        });
+        server.On(path: "/CONTOSO/_apis/git/pullrequests/8", json: Fixture.PullRequest(id: 8));
+        using var client = server.Client();
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { });
+        engine.SetLinkedPullRequests(keys: new HashSet<PRKey> { new(Organization: "CONTOSO", Number: 8) });
+        await engine.RefreshNowAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var record = Assert.Single(collection: engine.CurrentSnapshot().Records);
+        Assert.Equal(expected: Key(number: 8), actual: record.Id);
+        Assert.Equal(expected: Fixture.Org, actual: record.Id.Organization);
+        Assert.Equal(expected: PRRole.Author, actual: record.Role);
+        Assert.DoesNotContain(collection: server.Requests, filter: request => request.Path.Contains(value: "/CONTOSO/", comparisonType: StringComparison.Ordinal));
     }
 
     /// What the panel says of `record` at the reference time, when you last looked a day before.

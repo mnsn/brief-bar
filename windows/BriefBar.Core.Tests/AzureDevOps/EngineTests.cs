@@ -283,6 +283,45 @@ public sealed class EngineTests
         Assert.Equal(expected: [Fixture.Org], actual: snapshot.FirstLoaded.Keys);
     }
 
+    /// Organization names are case-insensitive in Azure DevOps: watched under another spelling, as when finding your
+    /// organizations again spells one as Azure DevOps does, an organization keeps its pull requests.
+    [Fact]
+    public async Task AnOrganizationSpelledAnotherWayKeepsItsPullRequests()
+    {
+        var server = new StubServer();
+        server.ServeOrganization(mine: [Fixture.PullRequest(id: 1)]);
+        using var client = server.Client();
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { });
+        await engine.RefreshNowAsync(cancellationToken: TestContext.Current.CancellationToken);
+        engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso"] });
+        Assert.Equal(expected: [new PRKey(Organization: Fixture.Org, Number: 1)], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id));
+    }
+
+    /// Spelled another way while its lists load, an organization keeps what they had.
+    [Fact]
+    public async Task AnOrganizationSpelledAnotherWayDuringARefreshKeepsItsPullRequests()
+    {
+        var server = new StubServer();
+        server.ServeOrganization(mine: [Fixture.PullRequest(id: 1)]);
+        using var client = server.Client();
+        using var engine = new PulseEngine(client: client, configuration: new PulseEngineConfiguration { Organizations = [Fixture.Org] }, onChange: _ => { });
+        var respelled = 0;
+        server.On(
+            path: "/" + Fixture.Org + "/_apis/git/pullrequests",
+            reply: _ =>
+            {
+                if (Interlocked.Exchange(location1: ref respelled, value: 1) == 0)
+                {
+                    engine.SetConfiguration(newConfiguration: new PulseEngineConfiguration { Organizations = ["Contoso"] });
+                }
+                return StubReply.Json(body: Fixture.List(items: [Fixture.PullRequest(id: 1)]));
+            },
+            query: new Dictionary<string, string> { ["searchCriteria.creatorId"] = Fixture.Me, ["searchCriteria.status"] = "active" });
+        await engine.RefreshNowAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(expected: 1, actual: respelled);
+        Assert.Equal(expected: [new PRKey(Organization: Fixture.Org, Number: 1)], actual: engine.CurrentSnapshot().Records.Select(selector: record => record.Id));
+    }
+
     [Fact]
     public async Task FetchesDetailsOnABudgetAfterTheFirstLoad()
     {

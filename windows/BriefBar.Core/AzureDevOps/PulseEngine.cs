@@ -137,7 +137,8 @@ public sealed class PulseEngine : IPulseEngine
             configuration = newConfiguration;
             if (organizationsChanged)
             {
-                var kept = newConfiguration.Organizations.ToHashSet(comparer: StringComparer.Ordinal);
+                // Spelled another way, an organization is the same one: Azure DevOps compares names ignoring case.
+                var kept = newConfiguration.Organizations.ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
                 // Pull requests sent to you or watched stay, whichever organizations are watched.
                 active = active.Where(predicate: pair => kept.Contains(item: pair.Key.Organization) || linked.ContainsKey(key: pair.Key))
                     .ToDictionary(keySelector: pair => pair.Key, elementSelector: pair => pair.Value);
@@ -388,8 +389,8 @@ public sealed class PulseEngine : IPulseEngine
             {
                 completed[key] = pr;
             }
-            // The organizations may have changed while the lists loaded: only the ones still watched stay.
-            var watched = this.configuration.Organizations.ToHashSet(comparer: StringComparer.Ordinal);
+            // The organizations may have changed while the lists loaded: only the ones still watched stay, by any spelling.
+            var watched = this.configuration.Organizations.ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
             RemoveWhere(dictionary: listed, predicate: key => !watched.Contains(item: key.Organization));
             RemoveWhere(dictionary: completed, predicate: key => !watched.Contains(item: key.Organization));
             RemoveWhere(dictionary: vanished, predicate: key => !watched.Contains(item: key.Organization));

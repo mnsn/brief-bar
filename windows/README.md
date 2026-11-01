@@ -103,18 +103,20 @@ section names and the like, so nothing you see can reach it: a line with a strin
 - **Azure DevOps pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#azure-devops)): yours and the
   ones you review, in the organizations you choose, which it finds the first time, and the ones you watch by their
   links, read with the Azure CLI's sign-in (`az account get-access-token`, its token kept in memory only) and GET
-  requests only, every minute. Its groups are the Mac's: Needs you (with **Mark as seen** while something there is
-  new), Answered (until you've seen it in the panel), Failing, Ready to complete, To review, Waiting, Done (with
-  **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To review too if you
-  turn that on. A row says why it's there, with the comment, the failed step or who approved; it opens the pull
-  request in your browser, at the comment that needs you, and sees it; its menu removes it from Needs you, or stops
-  watching it. After you merge one, Done says how the pipelines that run on its merge go: running, waiting for an
-  approval, and then passed or canceled, until you've seen it; one that fails moves it to Failing. Its foot has
-  **Open Azure DevOps**, and an icon beside Settings refreshes now, as the Mac's does.
-  Signed out, it offers to sign in, which runs `az login` in a console window; without the Azure CLI,
-  it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle after no activity for,
-  Show To review in the bar, Follow pipelines after you merge, your organizations (with Add an organization and
-  Find my organizations again), and the pull requests you watch (with Watch a pull request, by its link).
+  requests only, every minute. Organization names are compared ignoring case, as Azure DevOps does: a pull request
+  you watch by a link that spells its organization another way is the one your lists have, listed once. Its groups
+  are the Mac's: Needs you (with **Mark as seen** while something there is new), Answered (until you've seen it in
+  the panel), Failing, Ready to complete, To review, Waiting, Done (with **Clear**) and Idle, folded; the bar counts
+  Needs you, Failing and Ready to complete, and To review too if you turn that on. A row says why it's there, with
+  the comment, the failed step or who approved; it opens the pull request in your browser, at the comment that needs
+  you, and sees it; its menu removes it from Needs you, or stops watching it. After you merge one, Done says how the
+  pipelines that run on its merge go: running, waiting for an approval, and then passed or canceled, until you've
+  seen it; one that fails moves it to Failing. Its foot has **Open Azure DevOps**, and an icon beside Settings
+  refreshes now, as the Mac's does. Signed out, it offers to sign in, which runs `az login` in a console window;
+  without the Azure CLI, it links to its installation. Its settings are the Mac's: Refresh, Keep done for, Idle
+  after no activity for, Show To review in the bar, Follow pipelines after you merge, your organizations (with Add
+  an organization and Find my organizations again), and the pull requests you watch (with Watch a pull request, by
+  its link).
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text

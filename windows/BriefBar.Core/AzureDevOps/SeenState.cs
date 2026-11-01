@@ -6,9 +6,13 @@ namespace BriefBar.Core.AzureDevOps;
 /// What you've seen, and what you've taken off Needs you, by one account. Azure DevOps has no read or unread state for pull
 /// requests, so BriefBar keeps its own: activity up to `Baseline`, or up to when you last opened a pull request from
 /// BriefBar or marked it seen, counts as seen. Comments you've seen still need you while they wait on you, until you take
-/// the pull request off Needs you. Pull requests are named by `PRKey`'s `organization/number`. The Mac's `SeenState`.
+/// the pull request off Needs you. Pull requests are named by `PRKey`'s `organization/number`, the organization in any
+/// case, as Azure DevOps compares it. The Mac's `SeenState`.
 public sealed record SeenState
 {
+    /// Names compared as Azure DevOps compares organizations: ignoring case.
+    static readonly StringComparer names = StringComparer.OrdinalIgnoreCase;
+
     /// The first time, only the last few days count as new, so that years of old threads don't all need you.
     public static TimeSpan FirstRunLookback { get; } = TimeSpan.FromDays(value: 3);
 
@@ -19,8 +23,8 @@ public sealed record SeenState
         string? account = null)
     {
         Baseline = baseline;
-        SeenAt = new Dictionary<string, DateTimeOffset>(collection: seenAt ?? new Dictionary<string, DateTimeOffset>(), comparer: StringComparer.Ordinal);
-        DismissedAt = new Dictionary<string, DateTimeOffset>(collection: dismissedAt ?? new Dictionary<string, DateTimeOffset>(), comparer: StringComparer.Ordinal);
+        SeenAt = Merged(dates: seenAt);
+        DismissedAt = Merged(dates: dismissedAt);
         Account = account;
     }
 
@@ -49,7 +53,7 @@ public sealed record SeenState
     public SeenState MarkingSeen(IEnumerable<PRKey> keys, DateTimeOffset date)
     {
         ArgumentNullException.ThrowIfNull(argument: keys);
-        var seen = new Dictionary<string, DateTimeOffset>(collection: SeenAt, comparer: StringComparer.Ordinal);
+        var seen = new Dictionary<string, DateTimeOffset>(collection: SeenAt, comparer: names);
         foreach (var key in keys)
         {
             var name = key.ToString();
@@ -64,7 +68,7 @@ public sealed record SeenState
     {
         ArgumentNullException.ThrowIfNull(argument: keys);
         var all = keys.ToList();
-        var dismissed = new Dictionary<string, DateTimeOffset>(collection: DismissedAt, comparer: StringComparer.Ordinal);
+        var dismissed = new Dictionary<string, DateTimeOffset>(collection: DismissedAt, comparer: names);
         foreach (var key in all)
         {
             var name = key.ToString();
@@ -90,11 +94,9 @@ public sealed record SeenState
         ArgumentNullException.ThrowIfNull(argument: seenAt);
         ArgumentNullException.ThrowIfNull(argument: dismissedAt);
         ArgumentNullException.ThrowIfNull(argument: keeping);
-        var kept = keeping.Select(selector: key => key.ToString()).ToHashSet(comparer: StringComparer.Ordinal);
-        var seen = seenAt.Where(predicate: pair => kept.Contains(item: pair.Key) || pair.Value > olderThan)
-            .ToDictionary(keySelector: pair => pair.Key, elementSelector: pair => pair.Value, comparer: StringComparer.Ordinal);
-        var dismissed = dismissedAt.Where(predicate: pair => seen.ContainsKey(key: pair.Key) || kept.Contains(item: pair.Key) || pair.Value > olderThan)
-            .ToDictionary(keySelector: pair => pair.Key, elementSelector: pair => pair.Value, comparer: StringComparer.Ordinal);
+        var kept = keeping.Select(selector: key => key.ToString()).ToHashSet(comparer: names);
+        var seen = Merged(dates: seenAt.Where(predicate: pair => kept.Contains(item: pair.Key) || pair.Value > olderThan));
+        var dismissed = Merged(dates: dismissedAt.Where(predicate: pair => seen.ContainsKey(key: pair.Key) || kept.Contains(item: pair.Key) || pair.Value > olderThan));
         return (seen, dismissed);
     }
 
@@ -138,6 +140,17 @@ public sealed record SeenState
     static bool SameDates(IReadOnlyDictionary<string, DateTimeOffset> first, IReadOnlyDictionary<string, DateTimeOffset> second) =>
         first.Count == second.Count
             && first.All(predicate: pair => second.TryGetValue(key: pair.Key, value: out var date) && date == pair.Value);
+
+    /// `dates` by name, the organization in any case: of a name spelled two ways, the later time counts.
+    static Dictionary<string, DateTimeOffset> Merged(IEnumerable<KeyValuePair<string, DateTimeOffset>>? dates)
+    {
+        var merged = new Dictionary<string, DateTimeOffset>(comparer: names);
+        foreach (var (name, date) in dates ?? [])
+        {
+            merged[name] = Later(first: date, second: merged.GetValueOrDefault(key: name, defaultValue: DateTimeOffset.MinValue));
+        }
+        return merged;
+    }
 
     static DateTimeOffset Later(DateTimeOffset first, DateTimeOffset second) => first > second ? first : second;
 }

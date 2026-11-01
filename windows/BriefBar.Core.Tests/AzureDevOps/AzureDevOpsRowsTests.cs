@@ -121,6 +121,22 @@ public sealed class AzureDevOpsRowsTests
         Assert.Contains(expectedSubstring: "You watch it", actualString: watched.ToolTip, comparisonType: StringComparison.Ordinal);
     }
 
+    /// Organization names are case-insensitive in Azure DevOps: a link that spells its organization another way watches
+    /// the same pull request, and stopping watching it there stops.
+    [Fact]
+    public void WatchesALinkSpelledAnotherWay()
+    {
+        var (store, settings) = LoadDemo();
+        Assert.True(condition: settings.Watch(link: new PullRequestLink(Organization: "CONTOSO", Project: "Storefront", Repository: "search", Number: 4071)));
+        Assert.False(condition: settings.Watch(link: new PullRequestLink(Organization: AzureDevOpsDemoData.Organization, Project: "Storefront", Repository: "search", Number: 4071)));
+        store.Recompute(now: now);
+        var watched = Row(snapshot: AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now), number: 4071);
+        Assert.Equal(expected: [AzureDevOpsCommands.Open, AzureDevOpsCommands.StopWatching], actual: watched.Commands.Select(selector: command => command.Key));
+
+        settings.Unwatch(keys: new HashSet<PRKey> { new(Organization: AzureDevOpsDemoData.Organization, Number: 4071) });
+        Assert.Empty(collection: settings.WatchedPullRequests);
+    }
+
     /// Until you've signed in, what it lists may be someone else's: nothing's counted, nor in the brief, and the bar says
     /// to sign in, which the banner offers.
     [Fact]
