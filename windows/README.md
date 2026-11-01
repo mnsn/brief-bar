@@ -109,7 +109,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   its pull requests, even while it can't be read. Its groups are the Mac's: Needs you (with **Mark as seen** while
   something there is new), Answered (until you've seen it in the panel), Failing, Ready to complete, To review,
   Waiting, Done (with **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To
-  review too if you turn that on. A row says why it's there, with
+  review too if you turn that on. As on the Mac, a merge Azure DevOps couldn't make (it failed, or a policy rejected
+  it) is under Failing, and a person it requires as a reviewer keeps it out of Ready to complete until they approve,
+  as Azure DevOps does. A row says why it's there, with
   the comment, the failed step or who approved; it opens the pull request in your browser, at the comment that needs
   you, and sees it; its menu removes it from Needs you, or stops watching it. After you merge one, Done says how the
   pipelines that run on its merge go: running, waiting for an approval, and then passed or canceled, until you've
@@ -318,7 +320,8 @@ this order:
    PC with only the Copilot CLI open in a terminal. Not ported yet, for later layers: Show Links, a work item's
    details and summaries, tasks sent to the Copilot CLI, and `--mcp`.
 2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request.
-   Not ported yet, for later layers: the Sprint and Pipelines sections, a pull request's page with its story, the
+   Not ported yet, for later layers: the line under each of your pull requests that says what's left before it can
+   complete, sorting the list by date, the Sprint and Pipelines sections, a pull request's page with its story, the
    brief's summaries, notifications, pull requests sent in chats (with Teams, as it reads notifications), Show
    Links, sending work to Copilot, and `--mcp`.
 3. **GitHub pull requests**: `gh auth token --hostname github.com`, then its one GraphQL query. Port

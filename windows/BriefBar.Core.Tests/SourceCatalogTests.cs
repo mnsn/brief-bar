@@ -34,6 +34,11 @@ public sealed class SourceCatalogTests
         Assert.Equal(expected: "A", actual: ListWords.Join(names: ["A"]));
         Assert.Equal(expected: "A and B", actual: ListWords.Join(names: ["A", "B"]));
         Assert.Equal(expected: "A, B, and C", actual: ListWords.Join(names: ["A", "B", "C"]));
+        // Past a limit, the first names and how many more, as the Mac's `PullRequestStory.names` says them.
+        Assert.Equal(expected: "A, B, and C", actual: ListWords.Join(names: ["A", "B", "C"], limit: 3));
+        Assert.Equal(expected: "A, B, C, and 2 more", actual: ListWords.Join(names: ["A", "B", "C", "D", "E"], limit: 3));
+        Assert.Equal(expected: "A and 1 more", actual: ListWords.Join(names: ["A", "B"], limit: 1));
+        Assert.Throws<ArgumentOutOfRangeException>(testCode: () => ListWords.Join(names: ["A"], limit: 0));
     }
 
     /// A source that reads more than you saw reads nothing, and says so, with a way to review it.

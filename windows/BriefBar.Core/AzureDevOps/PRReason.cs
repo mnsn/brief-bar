@@ -16,6 +16,9 @@ public enum PRReason
     BuildFailed,
     CheckFailed,
     Conflicts,
+
+    /// Azure DevOps couldn't merge it, for something other than conflicts: the merge failed, or a policy rejected it.
+    MergeFailed,
     BuildExpired,
 
     /// A pipeline that ran after it merged failed.

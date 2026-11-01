@@ -518,7 +518,10 @@ public static class PRClassifier
         var failedBuilds = blocking.Where(predicate: check => check.Kind == CheckKind.Build && check.State == CheckState.Failed).ToList();
         var failedChecks = blocking.Where(predicate: check => check.Kind == CheckKind.Status && check.State == CheckState.Failed).ToList();
         var expired = blocking.Where(predicate: check => check.Kind == CheckKind.Build && check.State == CheckState.Expired).ToList();
-        var conflicts = pr.HasConflicts ? " · merge conflicts" : string.Empty;
+        // What's wrong with its merge too, after a failed build or check: " · merge conflicts", " · merge failed".
+        var conflicts = pr.HasConflicts ? " · merge conflicts"
+            : pr.MergeProblem is { } failedMerge ? " · " + failedMerge.Headline.ToLowerInvariant()
+            : string.Empty;
         if (failedBuilds.Count > 0)
         {
             // Each build with where it failed, once its timeline has been read: "shop-web CI · Run unit tests: …".
@@ -543,6 +546,11 @@ public static class PRClassifier
         {
             return new PRPlacement(Group: PRGroup.Failing, Reason: PRReason.Conflicts, Headline: "Merge conflicts", Detail: pr.SourceBranch + " into " + pr.TargetBranch);
         }
+        // Azure DevOps couldn't merge it otherwise, so it can't be completed either, however its policies stand.
+        if (pr.MergeProblem is { } problem)
+        {
+            return new PRPlacement(Group: PRGroup.Failing, Reason: PRReason.MergeFailed, Headline: problem.Headline, Detail: problem.Detail);
+        }
         if (expired.Count > 0)
         {
             return new PRPlacement(Group: PRGroup.Failing, Reason: PRReason.BuildExpired, Headline: "Build expired", Detail: Names(checks: expired) + " · queue it again");
@@ -566,8 +574,12 @@ public static class PRClassifier
         var requirements = blocking.Where(predicate: check => check.Kind == CheckKind.Requirement && check.State != CheckState.Passed).ToList();
         var hasReviewerPolicy = checks.Any(predicate: check => check.Kind == CheckKind.Reviewers && check.IsBlocking);
         var approvedBy = approvals.Count == 0 ? null : "Approved by " + string.Join(separator: ", ", values: approvals.Select(selector: reviewer => reviewer.Person.Name));
+        // A reviewer it requires holds it up until they approve, whether a policy or someone added them, even one who
+        // declined: Azure DevOps won't complete it before. A team, such as one a policy adds, counts as its policy says.
+        var requiredWaiting = pr.Reviewers.Where(predicate: reviewer => reviewer.IsRequired && !reviewer.IsGroup && !reviewer.Vote.IsApproval()).ToList();
 
-        if (known && running.Count == 0 && notRun.Count == 0 && reviewersPending.Count == 0 && requirements.Count == 0 && (hasReviewerPolicy || approvals.Count > 0))
+        if (known && running.Count == 0 && notRun.Count == 0 && reviewersPending.Count == 0 && requirements.Count == 0 && requiredWaiting.Count == 0
+            && (hasReviewerPolicy || approvals.Count > 0))
         {
             return new PRPlacement(
                 Group: PRGroup.Ready,
@@ -585,6 +597,11 @@ public static class PRClassifier
         {
             progress.Add(item: approvedBy ?? "No approvals yet");
         }
+        if (requiredWaiting.Count > 0)
+        {
+            var names = ListWords.Join(names: requiredWaiting.Select(selector: reviewer => reviewer.Person.Name).ToList(), limit: 3);
+            progress.Add(item: names + (requiredWaiting.Count == 1 ? " is required" : " are required"));
+        }
         if (running.Count > 0)
         {
             progress.Add(item: running.Exists(match: check => check.Kind == CheckKind.Build) ? "build running" : "checks running");
@@ -598,7 +615,7 @@ public static class PRClassifier
         {
             return new PRPlacement(Group: PRGroup.Waiting, Reason: PRReason.RequirementsPending, Headline: "Can't read its policies", Detail: progress[0]);
         }
-        if (reviewersPending.Count > 0 || (!hasReviewerPolicy && approvals.Count == 0))
+        if (reviewersPending.Count > 0 || requiredWaiting.Count > 0 || (!hasReviewerPolicy && approvals.Count == 0))
         {
             return new PRPlacement(Group: PRGroup.Waiting, Reason: PRReason.WaitingForReviewers, Headline: "Waiting for reviewers", Detail: string.Join(separator: " · ", values: progress));
         }

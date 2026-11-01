@@ -47,6 +47,16 @@ public sealed record PullRequest
 
     public bool HasConflicts => MergeStatus == "conflicts";
 
+    /// What went wrong with the merge Azure DevOps checks it with, other than conflicts, in a word or two and then in a
+    /// line: the merge failed, or a policy rejected it. It can't be completed until it merges, usually once you push again.
+    /// Null while nothing did. The Mac's `mergeProblem`.
+    public (string Headline, string Detail)? MergeProblem => MergeStatus switch
+    {
+        "failure" => ("Merge failed", "Azure DevOps couldn't merge " + SourceBranch + " into " + TargetBranch),
+        "rejectedByPolicy" => ("Merge rejected", "A policy rejected merging " + SourceBranch + " into " + TargetBranch),
+        _ => null,
+    };
+
     public Uri WebUrl => ADOEndpoint.PullRequestPage(organization: Key.Organization, project: ProjectName, repository: RepositoryName, id: Key.Number);
 
     /// Changes whenever something the list reports changes, so that its details are read again.

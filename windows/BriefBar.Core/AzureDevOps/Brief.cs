@@ -26,6 +26,7 @@ public static class Brief
                 ? title + " failed at " + failure.Step + "."
                 : title + " failed" + (snapshot.Detail is { } detail ? ": " + detail + "." : "."),
             PRReason.Conflicts => title + " has merge conflicts.",
+            PRReason.MergeFailed => title + " can't be merged.",
             PRReason.BuildExpired => title + " needs its build queued again.",
             PRReason.FailedAfterMerge => pipeline + " failed after " + title + " merged.",
             PRReason.WaitingForApproval => pipeline + " waits for approval after " + title + " merged.",

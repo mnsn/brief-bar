@@ -105,6 +105,7 @@ public static class AzureDevOpsRows
         PRReason.BuildFailed => IconKey.DismissCircle,
         PRReason.CheckFailed => IconKey.ErrorCircle,
         PRReason.Conflicts => IconKey.BranchCompare,
+        PRReason.MergeFailed => IconKey.Warning,
         PRReason.BuildExpired => IconKey.ClockDismiss,
         PRReason.FailedAfterMerge or PRReason.Completed => IconKey.Merge,
         PRReason.ReadyToComplete => IconKey.CheckmarkCircle,

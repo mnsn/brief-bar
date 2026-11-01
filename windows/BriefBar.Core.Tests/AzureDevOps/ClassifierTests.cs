@@ -419,11 +419,105 @@ public sealed class ClassifierTests
             actual: State(checks: [new Check(Name: "scan", Kind: CheckKind.Status, State: CheckState.Failed)]));
         Assert.Equal(expected: (PRGroup.Failing, PRReason.Conflicts, "Merge conflicts", "fix-total into main"), actual: State(checks: [], merge: "conflicts"));
         Assert.Equal(
+            expected: (PRGroup.Failing, PRReason.MergeFailed, "Merge failed", "Azure DevOps couldn't merge fix-total into main"),
+            actual: State(checks: [], merge: "failure"));
+        Assert.Equal(
             expected: (PRGroup.Failing, PRReason.BuildExpired, "Build expired", "web-ci · queue it again"),
             actual: State(checks: [new Check(Name: "web-ci", Kind: CheckKind.Build, State: CheckState.Expired)]));
         // An optional build doesn't count.
         var optional = new Check(Name: "perf", Kind: CheckKind.Build, State: CheckState.Failed, IsBlocking: false);
         Assert.Equal(expected: PRGroup.Ready, actual: State(checks: Passing(extra: [optional])).Group);
+    }
+
+    /// A merge Azure DevOps couldn't make, for something other than conflicts, holds it up as conflicts do, however its
+    /// policies stand.
+    [Fact]
+    public void AMergeAzureDevOpsCouldntMakeIsFailing()
+    {
+        Reviewer[] approved = [new Reviewer(Person: People.Sam, Vote: Vote.Approved)];
+        PRSnapshot Row(string merge, IEnumerable<Check> checks)
+        {
+            var pr = Make.PR(reviewers: approved, merge: merge);
+            var snapshot = Classify(pr: pr, details: Make.Details(pr: pr, checks: checks, lastActivity: T(seconds: -Make.Hour)));
+            Assert.NotNull(@object: snapshot);
+            return snapshot;
+        }
+        (string Merge, string Headline, string Detail)[] cases =
+        [
+            ("failure", "Merge failed", "Azure DevOps couldn't merge fix-total into main"),
+            ("rejectedByPolicy", "Merge rejected", "A policy rejected merging fix-total into main"),
+        ];
+        foreach (var (merge, headline, detail) in cases)
+        {
+            var failed = Row(merge: merge, checks: Passing());
+            Assert.Equal(expected: (PRGroup.Failing, PRReason.MergeFailed, headline, detail), actual: (failed.Group, failed.Reason, failed.Headline, failed.Detail));
+            Assert.Equal(expected: "“Fix the checkout total” can't be merged.", actual: Brief.Item(snapshot: failed).Sentence);
+        }
+        // After a failed build or check, its merge is said too, as conflicts are.
+        Assert.Equal(
+            expected: "web-ci · merge failed",
+            actual: Row(merge: "failure", checks: [new Check(Name: "web-ci", Kind: CheckKind.Build, State: CheckState.Failed)]).Detail);
+        Assert.Equal(
+            expected: "scan · merge rejected",
+            actual: Row(merge: "rejectedByPolicy", checks: [new Check(Name: "scan", Kind: CheckKind.Status, State: CheckState.Failed)]).Detail);
+        // Merges still being checked, or never checked, aren't failures.
+        Assert.All(collection: ["queued", "notSet"], action: merge => Assert.Equal(expected: PRGroup.Ready, actual: Row(merge: merge, checks: Passing()).Group));
+    }
+
+    /// A person it requires as a reviewer, whether a policy or someone added them, keeps it out of Ready to complete until
+    /// they approve, even one who declined: Azure DevOps won't complete it before. A team counts as its policy says.
+    [Fact]
+    public void ARequiredReviewerWhoHasntApprovedHoldsItUp()
+    {
+        var priya = new Reviewer(Person: People.Priya, Vote: Vote.Approved);
+        PRSnapshot Row(IEnumerable<Reviewer> reviewers, IEnumerable<Check>? checks = null)
+        {
+            var pr = Make.PR(reviewers: reviewers);
+            var snapshot = Classify(pr: pr, details: Make.Details(pr: pr, checks: checks ?? Passing(), lastActivity: T(seconds: -Make.Hour)));
+            Assert.NotNull(@object: snapshot);
+            return snapshot;
+        }
+
+        var waiting = Row(reviewers: [priya, new Reviewer(Person: People.Sam, Vote: Vote.None, IsRequired: true)]);
+        Assert.Equal(
+            expected: (PRGroup.Waiting, PRReason.WaitingForReviewers, "Waiting for reviewers", "Approved by Priya Shah · Sam Rivera is required"),
+            actual: (waiting.Group, waiting.Reason, waiting.Headline, waiting.Detail));
+
+        // Two, and one who declined.
+        Assert.Equal(
+            expected: "Approved by Priya Shah · Sam Rivera and Alex Kim are required",
+            actual: Row(reviewers: [
+                priya,
+                new Reviewer(Person: People.Sam, Vote: Vote.None, IsRequired: true),
+                new Reviewer(Person: People.Alex, Vote: Vote.None, IsRequired: true, HasDeclined: true),
+            ]).Detail);
+
+        // More than three, the first three and how many more.
+        var jordan = new Person(id: "66666666-6666-6666-6666-666666666666", name: "Jordan Lee");
+        var casey = new Person(id: "77777777-7777-7777-7777-777777777777", name: "Casey Park");
+        Assert.Equal(
+            expected: "Approved by Priya Shah · Sam Rivera, Alex Kim, Jordan Lee, and 1 more are required",
+            actual: Row(reviewers: [
+                priya,
+                new Reviewer(Person: People.Sam, Vote: Vote.None, IsRequired: true),
+                new Reviewer(Person: People.Alex, Vote: Vote.None, IsRequired: true),
+                new Reviewer(Person: jordan, Vote: Vote.None, IsRequired: true),
+                new Reviewer(Person: casey, Vote: Vote.None, IsRequired: true),
+            ]).Detail);
+
+        // Once they approved, it's ready.
+        Assert.Equal(expected: PRGroup.Ready, actual: Row(reviewers: [priya, new Reviewer(Person: People.Sam, Vote: Vote.ApprovedWithSuggestions, IsRequired: true)]).Group);
+
+        // A team counts as its policy says.
+        var team = new Reviewer(Person: new Person(id: "team", name: "Team"), Vote: Vote.None, IsRequired: true, IsGroup: true);
+        Assert.Equal(
+            expected: PRGroup.Ready,
+            actual: Row(reviewers: [priya, team], checks: Passing(extra: [new Check(Name: "Required reviewers", Kind: CheckKind.Reviewers, State: CheckState.Passed)])).Group);
+
+        // Before its policies are read again after a vote or a push, it says the approvals, as before.
+        var pr = Make.PR(reviewers: [priya, new Reviewer(Person: People.Sam, Vote: Vote.None, IsRequired: true)]);
+        var outdated = Classify(pr: pr with { SourceCommit = "abd" }, details: Make.Details(pr: pr, checks: Passing(), lastActivity: T(seconds: -Make.Hour)));
+        Assert.Equal(expected: (PRGroup.Waiting, "Approved by Priya Shah"), actual: (outdated?.Group, outdated?.Detail));
     }
 
     [Fact]
