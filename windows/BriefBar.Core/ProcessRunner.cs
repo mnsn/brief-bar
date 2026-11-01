@@ -6,13 +6,15 @@ using BriefBar.Core.Logging;
 
 namespace BriefBar.Core;
 
-/// The only place BriefBar starts programs, such as the Azure CLI for a sign-in's token, or looks into those running, such
-/// as the Copilot CLI that has a session open, so that what it starts, and how, is checked in one place
+/// The only place BriefBar starts programs, such as the Azure CLI or the GitHub CLI for a sign-in's token, or looks into
+/// those running, such as the Copilot CLI that has a session open, so that what it starts, and how, is checked in one place
 /// (`BoundaryTests`). The Mac's `ProcessRunner` and `DetachedProgram`.
 ///
 /// A batch file, such as `az.cmd`, runs in `cmd.exe`, which reads its whole command line as commands: nothing of yours may
 /// reach it. So a batch file gets only fixed arguments, made of letters, digits and `-._:/=`, or this throws; and `cmd.exe`
-/// runs it without AutoRun commands or delayed expansion, the batch file's path quoted.
+/// runs it without AutoRun commands or delayed expansion, the batch file's path quoted. A program whose console window
+/// stays open once it's done, as `gh auth login`'s does, runs in `cmd.exe` the same way, unless its path is one that
+/// `cmd.exe` can't take: then it runs directly, in a window that closes once it's done.
 public sealed partial class ProcessRunner : IProcessRunner
 {
     /// Windows' `ERROR_FILE_NOT_FOUND`.
@@ -142,24 +144,34 @@ public sealed partial class ProcessRunner : IProcessRunner
             || string.Equals(a: extension, b: ".bat", comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    /// `cmd.exe`'s arguments that run `batchFile` with `arguments`, which must be fixed words: `/d` without AutoRun
-    /// commands, `/v:off` without delayed expansion, and `/s` so that the outer quotes are the only ones it takes off.
-    public static string BatchCommandLine(string batchFile, IReadOnlyList<string> arguments, bool keepOpen)
+    /// Whether `cmd.exe` can run `program`: a path without quotes, percent signs or line breaks, which it would read as
+    /// part of a command. Windows allows a percent sign in a folder's name, so a program found there runs only directly,
+    /// and a batch file there can't run at all.
+    public static bool CmdCanRun(string program)
     {
-        ArgumentException.ThrowIfNullOrEmpty(argument: batchFile);
+        ArgumentNullException.ThrowIfNull(argument: program);
+        return program.IndexOfAny(anyOf: ['"', '%', '\r', '\n']) < 0;
+    }
+
+    /// `cmd.exe`'s arguments that run `program`, a batch file or a program whose window stays open (`keepOpen`), with
+    /// `arguments`, which must be fixed words: `/d` without AutoRun commands, `/v:off` without delayed expansion, and `/s`
+    /// so that the outer quotes are the only ones it takes off.
+    public static string CmdArguments(string program, IReadOnlyList<string> arguments, bool keepOpen)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(argument: program);
         ArgumentNullException.ThrowIfNull(argument: arguments);
-        if (batchFile.IndexOfAny(anyOf: ['"', '%', '\r', '\n']) >= 0)
+        if (!CmdCanRun(program: program))
         {
-            throw new ArgumentException(message: "A batch file's path can't hold quotes, percent signs or line breaks.", paramName: nameof(batchFile));
+            throw new ArgumentException(message: "A path that cmd.exe runs can't hold quotes, percent signs or line breaks.", paramName: nameof(program));
         }
         foreach (var argument in arguments)
         {
             if (!FixedWord().IsMatch(input: argument))
             {
-                throw new ArgumentException(message: "A batch file takes only fixed arguments.", paramName: nameof(arguments));
+                throw new ArgumentException(message: "cmd.exe runs a program with fixed arguments only.", paramName: nameof(arguments));
             }
         }
-        var command = "\"" + batchFile + "\"" + string.Concat(values: arguments.Select(selector: argument => " " + argument));
+        var command = "\"" + program + "\"" + string.Concat(values: arguments.Select(selector: argument => " " + argument));
         return (keepOpen ? "/d /v:off /s /k \"" : "/d /v:off /s /c \"") + command + "\"";
     }
 
@@ -184,13 +196,16 @@ public sealed partial class ProcessRunner : IProcessRunner
         }
     }
 
-    static ProcessStartInfo StartInfo(string program, IReadOnlyList<string> arguments, bool keepOpen)
+    /// How `program` starts: a batch file, or a program whose window stays open once it's done (`keepOpen`), in `cmd.exe`,
+    /// which keeps it open, with fixed arguments only; any other program directly, with whatever arguments, as is one whose
+    /// window should stay open at a path `cmd.exe` can't take (`CmdCanRun`), whose window closes once it's done then.
+    internal static ProcessStartInfo StartInfo(string program, IReadOnlyList<string> arguments, bool keepOpen)
     {
         ArgumentException.ThrowIfNullOrEmpty(argument: program);
         ArgumentNullException.ThrowIfNull(argument: arguments);
-        if (IsBatchFile(program: program))
+        if (IsBatchFile(program: program) || (keepOpen && CmdCanRun(program: program)))
         {
-            var commandLine = BatchCommandLine(batchFile: program, arguments: arguments, keepOpen: keepOpen);
+            var commandLine = CmdArguments(program: program, arguments: arguments, keepOpen: keepOpen);
             // `cmd.exe` would start without it, and only say so in what it prints: it fails as a program that isn't there
             // does, so that what runs it can tell, as the Azure CLI's sign-in does to look for it again.
             if (Path.IsPathFullyQualified(path: program) && !File.Exists(path: program))

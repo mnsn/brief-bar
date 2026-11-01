@@ -240,6 +240,15 @@ public sealed partial class PanelView : UserControl
         }
     }
 
+    /// A notice's button, about the panel's section.
+    void OnNoticeCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NoticeViewModel { Command: { } command } } && ViewModel.Target.Section is { } section)
+        {
+            RequestOf(section: section, command: command);
+        }
+    }
+
     void RequestOf(SectionId section, PanelCommand command) =>
         CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(
             request: new CommandRequest(Section: section, Command: command.Key), opens: command.Opens));

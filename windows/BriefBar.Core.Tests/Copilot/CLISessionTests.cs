@@ -14,15 +14,13 @@ public sealed class CLISessionTests
     const string Id = "6f1c1a52-0000-4000-8000-00000000d001";
     const string Cli = @"C:\Tools\copilot.exe";
 
-    static readonly TimeSpan wait = TimeSpan.FromSeconds(value: 10);
-
     [Fact]
     public async Task OpensASessionNoCliHoldsInANewTerminal()
     {
         using var setup = new Setup();
         var opening = setup.Session.Open(id: Id.ToUpperInvariant());
         Assert.NotNull(@object: opening);
-        await opening.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await opening.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         var console = Assert.Single(collection: setup.Processes.Consoles);
         Assert.Equal(expected: Cli, actual: console.Program);
         // The ID as it names the session's folder, and nothing of yours.
@@ -43,7 +41,7 @@ public sealed class CLISessionTests
     {
         using var setup = new Setup();
         var opening = setup.Session.Open(id: Id);
-        await opening!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await opening!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         setup.Holder = 4_120;
         Assert.Null(@object: setup.Session.Open(id: Id));
         Assert.Equal(expected: [4_120], actual: setup.Shown);
@@ -51,7 +49,7 @@ public sealed class CLISessionTests
 
         // Once that CLI has quit, the next click opens it in a terminal again.
         setup.Holder = null;
-        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: 2, actual: setup.Processes.Consoles.Count);
     }
 
@@ -59,7 +57,7 @@ public sealed class CLISessionTests
     public async Task SaysWhenItCantFindTheCli()
     {
         using var setup = new Setup(cliInstalled: false);
-        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         var (message, information) = Assert.Single(collection: setup.Said);
         Assert.Equal(expected: "BriefBar couldn't find the Copilot CLI", actual: message);
         Assert.Equal(
@@ -75,7 +73,7 @@ public sealed class CLISessionTests
     {
         using var setup = new Setup();
         Directory.Delete(path: setup.Work);
-        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "The session's folder isn't there anymore", actual: Assert.Single(collection: setup.Said).Message);
         Assert.Empty(collection: setup.Processes.Consoles);
     }
@@ -85,7 +83,7 @@ public sealed class CLISessionTests
     {
         using var setup = new Setup();
         setup.Processes.FailToStart(failure: new Win32Exception(error: 2));
-        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "The session didn't open in a terminal", actual: Assert.Single(collection: setup.Said).Message);
         Assert.NotNull(@object: setup.Session.Open(id: Id));
     }
@@ -98,7 +96,7 @@ public sealed class CLISessionTests
         using var setup = new Setup();
         setup.Processes.FailToStart(failure: Assert.Throws<ArgumentException>(testCode: () => new ProcessRunner().StartInConsole(
             program: @"C:\Made up 100%\copilot.cmd", arguments: ["--resume", Id], workingDirectory: null, environment: new Dictionary<string, string?>(), keepOpen: false)));
-        await setup.Session.Open(id: Id)!.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await setup.Session.Open(id: Id)!.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "The session didn't open in a terminal", actual: Assert.Single(collection: setup.Said).Message);
         Assert.NotNull(@object: setup.Session.Open(id: Id));
     }
@@ -116,15 +114,15 @@ public sealed class CLISessionTests
             if (Interlocked.Increment(location: ref calls) == 2)
             {
                 asked.Set();
-                holding.Wait(timeout: wait);
+                holding.Wait(timeout: Waiting.Limit);
             }
             return null;
         };
         var opening = setup.Session.Open(id: Id)!;
-        Assert.True(condition: asked.Wait(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(condition: asked.Wait(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
         setup.Session.Stop();
         holding.Set();
-        await opening.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await opening.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(collection: setup.Processes.Consoles);
         Assert.Empty(collection: setup.Said);
     }
@@ -140,13 +138,13 @@ public sealed class CLISessionTests
         setup.Processes.Starting = () =>
         {
             starting.Set();
-            started.Wait(timeout: wait);
+            started.Wait(timeout: Waiting.Limit);
         };
         var opening = setup.Session.Open(id: Id)!;
         Task stopping;
         try
         {
-            Assert.True(condition: starting.Wait(timeout: wait, cancellationToken: TestContext.Current.CancellationToken));
+            Assert.True(condition: starting.Wait(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
             stopping = Task.Run(action: setup.Session.Stop, cancellationToken: TestContext.Current.CancellationToken);
             await Task.WhenAny(task1: stopping, task2: Task.Delay(delay: TimeSpan.FromMilliseconds(value: 300), cancellationToken: TestContext.Current.CancellationToken));
             Assert.False(condition: stopping.IsCompleted, userMessage: "It stopped while a terminal was still starting.");
@@ -157,8 +155,8 @@ public sealed class CLISessionTests
             started.Set();
         }
 
-        await stopping.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
-        await opening.WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await stopping.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+        await opening.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(collection: setup.Processes.Consoles);
         Assert.Empty(collection: setup.Said);
     }
@@ -200,14 +198,14 @@ public sealed class CLISessionTests
             app: new CopilotAppAccess(OpenSession: _ => throw new InvalidOperationException(message: "The app isn't installed."), Activate: () => { }, IsInstalled: () => false, IsFrontmost: () => false),
             cliSessions: setup.Session);
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await Until(condition: () => made?.Starts == 1);
+        await Waiting.Until(condition: () => made?.Starts == 1);
         made!.Publish(snapshot: new EngineSnapshot { Records = [Ended(id: Id)] });
         var row = Assert.Single(collection: source.Snapshot(section: SectionId.CopilotSessions).Rows);
         Assert.Equal(expected: "Open in a terminal", actual: row.Commands[0].Title);
 
         source.Perform(request: new CommandRequest(Section: SectionId.CopilotSessions, Command: CopilotCommands.Open, RowId: Id));
-        await Until(condition: () => setup.Processes.Consoles.Count == 1);
-        await source.StopAsync().WaitAsync(timeout: wait, cancellationToken: TestContext.Current.CancellationToken);
+        await Waiting.Until(condition: () => setup.Processes.Consoles.Count == 1);
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     static SessionRecord Ended(string id)
@@ -217,16 +215,6 @@ public sealed class CLISessionTests
         log.Apply(logEvent: new LogEvent(Timestamp: at.AddSeconds(seconds: -30), Kind: LogEventKind.UserMessage));
         log.Apply(logEvent: new LogEvent(Timestamp: at, Kind: LogEventKind.AgentStop(isSubagent: false)));
         return new SessionRecord(Meta: new SessionMeta { Id = id, Name = "Made-up session", WorkspaceId = id }, Log: log);
-    }
-
-    static async Task Until(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + wait;
-        while (!condition())
-        {
-            Assert.True(condition: DateTime.UtcNow < deadline, userMessage: "It didn't happen in time.");
-            await Task.Delay(millisecondsDelay: 10, cancellationToken: TestContext.Current.CancellationToken);
-        }
     }
 
     /// A Copilot folder of made-up sessions, with one whose `workspace.yaml` says it works in `Work`, a CLI in `C:\Tools`

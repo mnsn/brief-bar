@@ -64,6 +64,19 @@ public sealed class PanelViewModel : Observable
 
     public string QuietDetail { get; private set => Set(storage: ref field, value: value); } = string.Empty;
 
+    /// What the section says about what it shows, beside it, such as that there's more on GitHub.
+    public IReadOnlyList<NoticeViewModel> Notices { get; private set => Set(storage: ref field, value: value); } = [];
+
+    public bool HasNotices { get; private set => Set(storage: ref field, value: value); }
+
+    /// Who the section reads as, at its foot, such as the GitHub CLI's login.
+    public string AccountName { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    /// What the account is: "Signed in to the GitHub CLI as robin".
+    public string AccountHelp { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    public bool HasAccount { get; private set => Set(storage: ref field, value: value); }
+
     public ObservableCollection<RowGroupViewModel> Groups { get; } = [];
 
     public bool IsEmpty { get; private set => Set(storage: ref field, value: value); }
@@ -145,6 +158,8 @@ public sealed class PanelViewModel : Observable
         ShowProblem(snapshot: trouble, now: now);
         ShowBrief(lines: PanelLists.Brief(snapshots: snapshots), palette: palette);
         ShowQuiet(quiet: null);
+        ShowNotices(notices: []);
+        ShowAccount(account: null);
         ShowGroups(groups: PanelLists.ForOverview(snapshots: snapshots), section: null, palette: palette, now: now);
         EmptyText = snapshots.Count == 0
             ? "No source is on. Turn one on in Settings, and what needs you shows here."
@@ -169,6 +184,8 @@ public sealed class PanelViewModel : Observable
             ShowProblem(snapshot: null, now: now);
             ShowBrief(lines: [], palette: palette);
             ShowQuiet(quiet: null);
+            ShowNotices(notices: []);
+            ShowAccount(account: null);
             ShowGroups(groups: [], section: section, palette: palette, now: now);
             EmptyText = "This source is off.";
             Commands = [];
@@ -182,6 +199,8 @@ public sealed class PanelViewModel : Observable
         ShowProblem(snapshot: snapshot, now: now);
         ShowBrief(lines: PanelLists.Brief(snapshots: [snapshot]), palette: palette);
         ShowQuiet(quiet: snapshot.Quiet);
+        ShowNotices(notices: snapshot.Notices);
+        ShowAccount(account: snapshot.Account);
         ShowGroups(groups: PanelLists.ForSection(snapshot: snapshot), section: section, palette: palette, now: now);
         // A section may say what it's doing as it starts, such as finding your organizations.
         EmptyText = snapshot.EmptyText
@@ -247,6 +266,23 @@ public sealed class PanelViewModel : Observable
         HasQuiet = quiet is not null;
         QuietTitle = quiet?.Title ?? string.Empty;
         QuietDetail = quiet?.Detail ?? string.Empty;
+    }
+
+    /// Only notices that changed are put on screen again, not the same ones at every refresh.
+    void ShowNotices(IReadOnlyList<SectionNotice> notices)
+    {
+        if (!notices.SequenceEqual(second: Notices.Select(selector: shown => shown.Notice)))
+        {
+            Notices = [.. notices.Select(selector: notice => new NoticeViewModel(notice: notice))];
+        }
+        HasNotices = notices.Count > 0;
+    }
+
+    void ShowAccount(SectionAccount? account)
+    {
+        AccountName = account?.Name ?? string.Empty;
+        AccountHelp = account?.Help ?? string.Empty;
+        HasAccount = account is not null;
     }
 
     void ShowGroups(IReadOnlyList<PanelGroup> groups, SectionId? section, ThemePalette palette, DateTimeOffset now)

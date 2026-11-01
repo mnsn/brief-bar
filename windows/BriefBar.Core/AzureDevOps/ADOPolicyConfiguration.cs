@@ -6,11 +6,11 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOPolicyConfiguration(bool? IsEnabled, bool? IsBlocking, string TypeName, ADOPolicySettings? Settings = null)
 {
     internal static ADOPolicyConfiguration? Read(JsonElement element) =>
-        ADOJson.Text(element: ADOJson.Node(element: element, name: "type"), name: "displayName") is { } typeName
+        LenientJson.Text(element: LenientJson.Node(element: element, name: "type"), name: "displayName") is { } typeName
             ? new ADOPolicyConfiguration(
-                IsEnabled: ADOJson.Flag(element: element, name: "isEnabled"),
-                IsBlocking: ADOJson.Flag(element: element, name: "isBlocking"),
+                IsEnabled: LenientJson.Flag(element: element, name: "isEnabled"),
+                IsBlocking: LenientJson.Flag(element: element, name: "isBlocking"),
                 TypeName: typeName,
-                Settings: ADOJson.Node(element: element, name: "settings") is { } settings ? ADOPolicySettings.Read(element: settings) : null)
+                Settings: LenientJson.Node(element: element, name: "settings") is { } settings ? ADOPolicySettings.Read(element: settings) : null)
             : null;
 }

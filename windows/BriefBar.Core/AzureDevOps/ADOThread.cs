@@ -36,17 +36,17 @@ public sealed record ADOThread(int Id)
         Property(name: name) is { } key && Identities is not null && Identities.TryGetValue(key: key, value: out var identity) ? identity : null;
 
     internal static ADOThread? Read(JsonElement element) =>
-        ADOJson.WholeNumber(element: element, name: "id") is { } id
+        LenientJson.WholeNumber(element: element, name: "id") is { } id
             ? new ADOThread(Id: id)
             {
-                PublishedDate = ADOJson.Date(element: element, name: "publishedDate"),
-                LastUpdatedDate = ADOJson.Date(element: element, name: "lastUpdatedDate"),
-                Status = ADOJson.Text(element: element, name: "status"),
-                IsDeleted = ADOJson.Flag(element: element, name: "isDeleted"),
-                ThreadContext = ADOJson.Node(element: element, name: "threadContext") is { } context ? ADOThreadContext.Read(element: context) : null,
-                Comments = ADOJson.Items(element: element, name: "comments", read: ADOComment.Read),
-                Properties = ADOJson.Members(element: element, name: "properties", read: ADOProperty.Read),
-                Identities = ADOJson.Members(element: element, name: "identities", read: ADOIdentity.Read),
+                PublishedDate = LenientJson.Date(element: element, name: "publishedDate"),
+                LastUpdatedDate = LenientJson.Date(element: element, name: "lastUpdatedDate"),
+                Status = LenientJson.Text(element: element, name: "status"),
+                IsDeleted = LenientJson.Flag(element: element, name: "isDeleted"),
+                ThreadContext = LenientJson.Node(element: element, name: "threadContext") is { } context ? ADOThreadContext.Read(element: context) : null,
+                Comments = LenientJson.Items(element: element, name: "comments", read: ADOComment.Read),
+                Properties = LenientJson.Members(element: element, name: "properties", read: ADOProperty.Read),
+                Identities = LenientJson.Members(element: element, name: "identities", read: ADOIdentity.Read),
             }
             : null;
 }

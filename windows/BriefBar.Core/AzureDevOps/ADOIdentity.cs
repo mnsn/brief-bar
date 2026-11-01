@@ -6,11 +6,11 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOIdentity(string Id, string? DisplayName = null, string? UniqueName = null, bool? IsContainer = null)
 {
     internal static ADOIdentity? Read(JsonElement element) =>
-        ADOJson.Text(element: element, name: "id") is { } id
+        LenientJson.Text(element: element, name: "id") is { } id
             ? new ADOIdentity(
                 Id: id,
-                DisplayName: ADOJson.Text(element: element, name: "displayName"),
-                UniqueName: ADOJson.Text(element: element, name: "uniqueName"),
-                IsContainer: ADOJson.Flag(element: element, name: "isContainer"))
+                DisplayName: LenientJson.Text(element: element, name: "displayName"),
+                UniqueName: LenientJson.Text(element: element, name: "uniqueName"),
+                IsContainer: LenientJson.Flag(element: element, name: "isContainer"))
             : null;
 }

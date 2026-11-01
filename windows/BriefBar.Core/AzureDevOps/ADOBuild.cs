@@ -36,25 +36,25 @@ public sealed record ADOBuild(int Id, ADOBuildDefinitionRef Definition)
 
     internal static ADOBuild? Read(JsonElement element)
     {
-        if (ADOJson.WholeNumber(element: element, name: "id") is not { } id
-            || ADOJson.Node(element: element, name: "definition") is not { } node || ADOBuildDefinitionRef.Read(element: node) is not { } definition)
+        if (LenientJson.WholeNumber(element: element, name: "id") is not { } id
+            || LenientJson.Node(element: element, name: "definition") is not { } node || ADOBuildDefinitionRef.Read(element: node) is not { } definition)
         {
             return null;
         }
         return new ADOBuild(Id: id, Definition: definition)
         {
-            BuildNumber = ADOJson.Text(element: element, name: "buildNumber"),
-            Status = ADOJson.Text(element: element, name: "status"),
-            Result = ADOJson.Text(element: element, name: "result"),
-            Reason = ADOJson.Text(element: element, name: "reason"),
-            SourceBranch = ADOJson.Text(element: element, name: "sourceBranch"),
-            QueueTime = ADOJson.Date(element: element, name: "queueTime"),
-            StartTime = ADOJson.Date(element: element, name: "startTime"),
-            FinishTime = ADOJson.Date(element: element, name: "finishTime"),
-            Project = ADOJson.Node(element: element, name: "project") is { } project ? ADOProjectRef.Read(element: project) : null,
-            RequestedFor = ADOJson.Node(element: element, name: "requestedFor") is { } requester ? ADOIdentity.Read(element: requester) : null,
-            SourceVersion = ADOJson.Text(element: element, name: "sourceVersion"),
-            TriggeredByBuildId = ADOJson.WholeNumber(element: ADOJson.Node(element: element, name: "triggeredByBuild"), name: "id"),
+            BuildNumber = LenientJson.Text(element: element, name: "buildNumber"),
+            Status = LenientJson.Text(element: element, name: "status"),
+            Result = LenientJson.Text(element: element, name: "result"),
+            Reason = LenientJson.Text(element: element, name: "reason"),
+            SourceBranch = LenientJson.Text(element: element, name: "sourceBranch"),
+            QueueTime = LenientJson.Date(element: element, name: "queueTime"),
+            StartTime = LenientJson.Date(element: element, name: "startTime"),
+            FinishTime = LenientJson.Date(element: element, name: "finishTime"),
+            Project = LenientJson.Node(element: element, name: "project") is { } project ? ADOProjectRef.Read(element: project) : null,
+            RequestedFor = LenientJson.Node(element: element, name: "requestedFor") is { } requester ? ADOIdentity.Read(element: requester) : null,
+            SourceVersion = LenientJson.Text(element: element, name: "sourceVersion"),
+            TriggeredByBuildId = LenientJson.WholeNumber(element: LenientJson.Node(element: element, name: "triggeredByBuild"), name: "id"),
         };
     }
 }

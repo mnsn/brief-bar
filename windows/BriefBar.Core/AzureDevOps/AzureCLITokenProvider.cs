@@ -91,13 +91,13 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
         {
             using var document = JsonDocument.Parse(json: output);
             var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || ADOJson.Text(element: root, name: "accessToken") is not { Length: > 0 } value)
+            if (root.ValueKind != JsonValueKind.Object || LenientJson.Text(element: root, name: "accessToken") is not { Length: > 0 } value)
             {
                 throw new AuthException(error: AuthError.Failed(message: "The Azure CLI returned no token."));
             }
-            var expiry = ADOJson.Member(element: root, name: "expires_on") is { ValueKind: JsonValueKind.Number } seconds && seconds.TryGetDouble(value: out var epoch)
+            var expiry = LenientJson.Member(element: root, name: "expires_on") is { ValueKind: JsonValueKind.Number } seconds && seconds.TryGetDouble(value: out var epoch)
                 ? DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)Math.Round(a: epoch * TimeSpan.TicksPerSecond))
-                : (ADOJson.Text(element: root, name: "expiresOn") is { } local ? ParseLocalTime(text: local) : null) ?? now.AddMinutes(minutes: 30);
+                : (LenientJson.Text(element: root, name: "expiresOn") is { } local ? ParseLocalTime(text: local) : null) ?? now.AddMinutes(minutes: 30);
             return new AccessToken(Value: value, ExpiresOn: expiry, Account: AccessToken.AccountInJwt(token: value));
         }
         catch (JsonException error)

@@ -37,31 +37,31 @@ public sealed record ADOPullRequest(
 
     internal static ADOPullRequest? Read(JsonElement element)
     {
-        if (ADOJson.WholeNumber(element: element, name: "pullRequestId") is not { } id
-            || ADOJson.Text(element: element, name: "title") is not { } title
-            || ADOJson.Text(element: element, name: "status") is not { } status
-            || ADOJson.Node(element: element, name: "createdBy") is not { } creator || ADOIdentity.Read(element: creator) is not { } createdBy
-            || ADOJson.Date(element: element, name: "creationDate") is not { } created
-            || ADOJson.Node(element: element, name: "repository") is not { } repositoryNode
+        if (LenientJson.WholeNumber(element: element, name: "pullRequestId") is not { } id
+            || LenientJson.Text(element: element, name: "title") is not { } title
+            || LenientJson.Text(element: element, name: "status") is not { } status
+            || LenientJson.Node(element: element, name: "createdBy") is not { } creator || ADOIdentity.Read(element: creator) is not { } createdBy
+            || LenientJson.Date(element: element, name: "creationDate") is not { } created
+            || LenientJson.Node(element: element, name: "repository") is not { } repositoryNode
             || ADORepositoryRef.Read(element: repositoryNode) is not { } repository)
         {
             return null;
         }
         return new ADOPullRequest(PullRequestId: id, Title: title, Status: status, CreatedBy: createdBy, CreationDate: created, Repository: repository)
         {
-            ClosedDate = ADOJson.Date(element: element, name: "closedDate"),
-            SourceRefName = ADOJson.Text(element: element, name: "sourceRefName"),
-            TargetRefName = ADOJson.Text(element: element, name: "targetRefName"),
-            MergeStatus = ADOJson.Text(element: element, name: "mergeStatus"),
-            IsDraft = ADOJson.Flag(element: element, name: "isDraft"),
-            Reviewers = ADOJson.Items(element: element, name: "reviewers", read: ADOReviewer.Read),
+            ClosedDate = LenientJson.Date(element: element, name: "closedDate"),
+            SourceRefName = LenientJson.Text(element: element, name: "sourceRefName"),
+            TargetRefName = LenientJson.Text(element: element, name: "targetRefName"),
+            MergeStatus = LenientJson.Text(element: element, name: "mergeStatus"),
+            IsDraft = LenientJson.Flag(element: element, name: "isDraft"),
+            Reviewers = LenientJson.Items(element: element, name: "reviewers", read: ADOReviewer.Read),
             LastMergeSourceCommit = Commit(element: element, name: "lastMergeSourceCommit"),
             LastMergeTargetCommit = Commit(element: element, name: "lastMergeTargetCommit"),
             LastMergeCommit = Commit(element: element, name: "lastMergeCommit"),
-            AutoCompleteSetBy = ADOJson.Node(element: element, name: "autoCompleteSetBy") is { } setBy ? ADOIdentity.Read(element: setBy) : null,
+            AutoCompleteSetBy = LenientJson.Node(element: element, name: "autoCompleteSetBy") is { } setBy ? ADOIdentity.Read(element: setBy) : null,
         };
     }
 
     static string? Commit(JsonElement element, string name) =>
-        ADOJson.Text(element: ADOJson.Node(element: element, name: name), name: "commitId");
+        LenientJson.Text(element: LenientJson.Node(element: element, name: name), name: "commitId");
 }

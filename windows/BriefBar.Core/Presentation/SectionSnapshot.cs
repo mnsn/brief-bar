@@ -22,6 +22,12 @@ public sealed record SectionSnapshot(
     /// a section that just lists nothing.
     public QuietNote? Quiet { get; init; }
 
+    /// What its panel says about what it shows, beside it, such as that there's more on GitHub.
+    public IReadOnlyList<SectionNotice> Notices { get; init; } = [];
+
+    /// Who it reads as, at its panel's foot, such as the GitHub CLI's login.
+    public SectionAccount? Account { get; init; }
+
     /// Its rows' states, counted: the bar's counts are always its rows'.
     public StateCounts Counts
     {

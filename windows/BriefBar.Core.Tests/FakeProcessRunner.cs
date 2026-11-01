@@ -1,9 +1,9 @@
 namespace BriefBar.Core.Tests;
 
 /// Stands in for `ProcessRunner`, as the Swift tests' `ProcessRunning` stubs do, and starts nothing: it notes every run it
-/// was asked for, answering with what `answer` makes of the run's number, from 1, and what it was asked to start in a
-/// console window.
-internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null) : IProcessRunner
+/// was asked for, answering with what `answer` makes of the run's number, from 1, after `delay`, if any, so that callers
+/// can overlap; and what it was asked to start in a console window.
+internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null, TimeSpan? delay = null) : IProcessRunner
 {
     readonly Lock gate = new();
     readonly List<FakeProcessRun> runs = [];
@@ -37,7 +37,7 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
     /// while to start.
     public Action? Starting { get; set; }
 
-    public Task<ProcessResult> RunAsync(
+    public async Task<ProcessResult> RunAsync(
         string program,
         IReadOnlyList<string> arguments,
         IReadOnlyDictionary<string, string?> environment,
@@ -54,9 +54,15 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null)
                 Timeout: timeout));
             number = runs.Count;
         }
-        return answer is null
-            ? throw new InvalidOperationException(message: "Nothing should run without a window here.")
-            : Task.FromResult(result: answer(arg: number));
+        if (answer is null)
+        {
+            throw new InvalidOperationException(message: "Nothing should run without a window here.");
+        }
+        if (delay is { } wait)
+        {
+            await Task.Delay(delay: wait, cancellationToken: cancellationToken);
+        }
+        return answer(arg: number);
     }
 
     public void StartInConsole(

@@ -99,7 +99,7 @@ public sealed class AuthTests
             actual: AzureCLITokenProvider.Arguments);
         Assert.EndsWith(
             expectedEndString: "\" account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json\"",
-            actualString: ProcessRunner.BatchCommandLine(batchFile: InstalledCLI, arguments: AzureCLITokenProvider.Arguments, keepOpen: false));
+            actualString: ProcessRunner.CmdArguments(program: InstalledCLI, arguments: AzureCLITokenProvider.Arguments, keepOpen: false));
     }
 
     [Fact]

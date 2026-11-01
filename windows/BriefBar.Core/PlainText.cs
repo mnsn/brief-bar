@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace BriefBar.Core;
@@ -11,6 +12,16 @@ public static partial class PlainText
     {
         ArgumentNullException.ThrowIfNull(argument: text);
         return string.Join(separator: ' ', value: text.Split(separator: (char[]?)null, options: StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// Its first `length` characters as people see them, as Swift's `prefix` counts them: one made of several, such as an
+    /// emoji, isn't cut in two.
+    public static string Prefix(string text, int length)
+    {
+        ArgumentNullException.ThrowIfNull(argument: text);
+        ArgumentOutOfRangeException.ThrowIfNegative(value: length);
+        var characters = new StringInfo(value: text);
+        return characters.LengthInTextElements <= length ? text : characters.SubstringByTextElements(startingTextElement: 0, lengthInTextElements: length);
     }
 
     public static string FromMarkdown(string markdown)

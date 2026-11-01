@@ -33,8 +33,8 @@ public sealed record AccessToken(string Value, DateTimeOffset ExpiresOn, string?
             {
                 return null;
             }
-            var subject = ADOJson.Text(element: claims.RootElement, name: "oid") ?? ADOJson.Text(element: claims.RootElement, name: "sub");
-            return subject is null ? null : ((ADOJson.Text(element: claims.RootElement, name: "tid") ?? string.Empty) + "/" + subject).ToLowerInvariant();
+            var subject = LenientJson.Text(element: claims.RootElement, name: "oid") ?? LenientJson.Text(element: claims.RootElement, name: "sub");
+            return subject is null ? null : ((LenientJson.Text(element: claims.RootElement, name: "tid") ?? string.Empty) + "/" + subject).ToLowerInvariant();
         }
         catch (JsonException)
         {

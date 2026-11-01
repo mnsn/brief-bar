@@ -30,6 +30,7 @@ public sealed partial class SettingsView : UserControl
             {
                 SourceId.AzureDevOps => new AzureDevOpsSettingsView(viewModel: viewModel.AzureDevOps),
                 SourceId.Copilot => new CopilotSettingsView(viewModel: viewModel.Copilot),
+                SourceId.GitHub => new GitHubSettingsView(viewModel: viewModel.GitHub),
                 _ => null,
             };
             var page = new SourceSettingsPage(viewModel: source, settings: settings);

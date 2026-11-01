@@ -1,5 +1,6 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Demo;
+using BriefBar.Core.GitHub;
 using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
 
@@ -53,7 +54,17 @@ public sealed class DemoDataTests
     public void CountsWhatTheMockupShows()
     {
         var total = snapshots.Aggregate(seed: new StateCounts(), func: (sum, snapshot) => sum + snapshot.Counts);
-        Assert.Equal(expected: new StateCounts(NeedsYou: 9, Failing: 4, Running: 2, Done: 4), actual: total);
+        Assert.Equal(expected: new StateCounts(NeedsYou: 11, Failing: 5, Running: 2, Done: 4), actual: total);
+    }
+
+    /// The made-up pull requests go through the classifier, as GitHub's do, into the groups they're made for.
+    [Fact]
+    public void PutsTheMadeUpGitHubPullRequestsInTheGroupsTheyAreMadeFor()
+    {
+        var load = GitHubDemoData.Load(now: Times.At(seconds: 0));
+        Assert.All(collection: GitHubPRGroups.All, action: group => Assert.Equal(expected: GitHubDemoData.ExpectedCounts[group], actual: load.Counts[group]));
+        Assert.Null(@object: load.Notice);
+        Assert.False(condition: load.MoreThanShown);
     }
 
     /// The made-up pull requests go through the classifier, as Azure DevOps' do, into the groups they're made for.

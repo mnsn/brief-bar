@@ -6,7 +6,7 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOBuildDefinitionRef(int Id, string? Name = null, string? Path = null)
 {
     internal static ADOBuildDefinitionRef? Read(JsonElement element) =>
-        ADOJson.WholeNumber(element: element, name: "id") is { } id
-            ? new ADOBuildDefinitionRef(Id: id, Name: ADOJson.Text(element: element, name: "name"), Path: ADOJson.Text(element: element, name: "path"))
+        LenientJson.WholeNumber(element: element, name: "id") is { } id
+            ? new ADOBuildDefinitionRef(Id: id, Name: LenientJson.Text(element: element, name: "name"), Path: LenientJson.Text(element: element, name: "path"))
             : null;
 }

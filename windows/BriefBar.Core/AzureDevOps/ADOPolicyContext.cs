@@ -6,7 +6,7 @@ namespace BriefBar.Core.AzureDevOps;
 public sealed record ADOPolicyContext(int? BuildId = null, string? BuildDefinitionName = null, bool? IsExpired = null)
 {
     internal static ADOPolicyContext Read(JsonElement element) => new(
-        BuildId: ADOJson.WholeNumber(element: element, name: "buildId"),
-        BuildDefinitionName: ADOJson.Text(element: element, name: "buildDefinitionName"),
-        IsExpired: ADOJson.Flag(element: element, name: "isExpired"));
+        BuildId: LenientJson.WholeNumber(element: element, name: "buildId"),
+        BuildDefinitionName: LenientJson.Text(element: element, name: "buildDefinitionName"),
+        IsExpired: LenientJson.Flag(element: element, name: "isExpired"));
 }

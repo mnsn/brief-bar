@@ -4,11 +4,12 @@
 # Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
 # with Copilot's page and its settings, closing the panel as it comes to the front; Azure DevOps' panel, from its
 # made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, and its page in
-# Settings, whose Show To review in the bar changes what the bar counts; Alt+F4 leaving a bar alone; each bar keeping
-# its display, its window open, as displays change, and still opening panels; a second start while it starts opening
-# its Overview; and every display's work area given back within a second of quitting, whether from scripts\quit.ps1 or
-# because another program asked a bar to close. Build first: it quits a BriefBar that's running, and starts its own
-# with --demo.
+# Settings, whose Show To review in the bar changes what the bar counts; GitHub's panel, from its made-up pull
+# requests, with the Mac's groups, its foot and the account it reads as, rows that open, and its page in Settings;
+# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
+# panels; a second start while it starts opening its Overview; and every display's work area given back within a
+# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
+# quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
 # panel's keys are sent only while it's in front.
@@ -299,6 +300,48 @@ function Test-AzureDevOps($process, $bar) {
     Check ($null -ne (Wait-Until { Get-Button $bar 'Azure DevOps pull requests: 4 need you, 2 went wrong, 2 done or ready.*' } 5)) 'Show To review in the bar counts To review with what needs you'
 }
 
+# Opens GitHub's panel under `$bar`, and returns its list: titled Pull requests too, it's told from Azure DevOps' by its
+# first group.
+function Open-GitHub($bar) {
+    Invoke-Item (Get-Button $bar 'GitHub pull requests: *')
+    Wait-Until { $list = Get-PanelList $bar; if ($list -and $list.Current.Name -eq 'Pull requests' -and (Get-GroupNames $list) -contains 'To review: 2') { $list } } 5
+}
+
+# GitHub's panel, from its made-up pull requests (`GitHubDemoData`) through the classifier: the Mac's groups in its order,
+# Waiting listed but not counted, its foot with Open GitHub, the account it reads as and a refresh, a pull request that
+# opens closing the panel; then its page in Settings, with how often it reads.
+function Test-GitHub($process, $bar) {
+    Check ($null -ne (Get-Button $bar 'GitHub pull requests: 3 need you, 2 went wrong, 1 done or ready.*')) "GitHub's item counts its made-up pull requests, not those that wait"
+    # Past the 600 ms in which a press counts as the one that closed the panel, should one have.
+    Start-Sleep -Milliseconds 700
+    $list = Open-GitHub $bar
+    Check ($null -ne $list) "pressing it opens GitHub's pull requests"
+    if (-not $list) { return }
+    $groups = Get-AllGroupNames $list
+    Check (($groups -join ' | ') -eq 'To review: 2 | Changes requested: 1 | Failing: 2 | Ready to merge: 1 | Waiting: 2') "its groups are the Mac's, in its order ($($groups -join ', '))"
+    Check ($null -ne (Get-Button $bar 'Open GitHub') -and $null -ne (Get-Button $bar 'Refresh')) 'its foot opens GitHub and refreshes'
+    $account = $bar.FindFirst($Scope::Descendants, (Condition $A::NameProperty 'Signed in to the GitHub CLI as robin'))
+    Check ($null -ne $account) 'and says who it reads as'
+    $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
+    Check ($null -ne $row -and $row.Current.Name -like '*, Review requested, By *, contoso/*#*') "its rows say why each is there, and which it is ($(if ($row) { $row.Current.Name -replace ',.*$', '' }))"
+    if ($row) { Invoke-Item $row }
+    Check ($null -ne (Wait-Until { if (-not (Get-PanelList $bar)) { $true } } 3)) 'pressing a pull request closes the panel, as it opens it'
+
+    # Settings, from the panel's foot, at GitHub's page.
+    Start-Sleep -Milliseconds 700
+    $list = Open-GitHub $bar
+    if ($list) { Invoke-Item (Get-Button $bar 'Settings') }
+    $settings = Wait-Until { $A::RootElement.FindFirst($Scope::Children, [System.Windows.Automation.AndCondition]::new(
+                (Condition $A::ProcessIdProperty $process.Id), (Condition $A::NameProperty 'BriefBar Settings'))) } 5
+    $title = if ($settings) { Wait-Until { $found = $settings.FindFirst($Scope::Descendants, (Condition $A::AutomationIdProperty 'PageTitle')); if ($found -and $found.Current.Name -eq 'GitHub') { $found } } 3 }
+    Check ($null -ne $title) "its Settings button opens Settings at GitHub's page"
+    if (-not $title) { return }
+    $refresh = $settings.FindFirst($Scope::Descendants, [System.Windows.Automation.AndCondition]::new(
+            (Condition $A::ControlTypeProperty $Type::ComboBox), (Condition $A::NameProperty 'Refresh')))
+    $chosen = if ($refresh) { $refresh.GetCurrentPattern([System.Windows.Automation.SelectionPattern]::Pattern).Current.GetSelection() | ForEach-Object { $_.Current.Name } }
+    Check ($chosen -eq 'Every 2 minutes') "which reads every 2 minutes, as it starts ($chosen)"
+}
+
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
 # ends within three, without an error: an unexpected error gives the space back too, and ends with 1.
 function Test-Quit($process, $before, [scriptblock] $ask, [string] $how) {
@@ -413,6 +456,7 @@ function Test-Running($process, $before) {
 
     Test-Copilot -process $process -bar $first
     Test-AzureDevOps -process $process -bar $first
+    Test-GitHub -process $process -bar $first
 
     # Alt+F4 doesn't close a bar.
     $handle = [IntPtr]$first.Current.NativeWindowHandle

@@ -1,5 +1,6 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
+using BriefBar.Core.GitHub;
 
 namespace BriefBar.Core;
 
@@ -22,7 +23,15 @@ public static class SourceCatalog
         Description: CopilotSource.Description,
         Sections: [Sections.CopilotSessions]);
 
-    public static IReadOnlyList<SourceEntry> OnWindows { get; } = [AzureDevOps, Copilot];
+    public static SourceEntry GitHub { get; } = new(
+        Id: SourceId.GitHub,
+        Name: SourceIds.DisplayName(source: SourceId.GitHub),
+        Glyph: IconKey.BranchFork,
+        Tint: Sections.GitHubPullRequests.Tint,
+        Description: GitHubSource.Description,
+        Sections: [Sections.GitHubPullRequests]);
+
+    public static IReadOnlyList<SourceEntry> OnWindows { get; } = [AzureDevOps, Copilot, GitHub];
 
     /// The sources the Mac has that Windows doesn't yet, by name: "Azure DevOps, GitHub, and Microsoft Teams".
     public static string StillToCome => ListWords.Join(names: Enum.GetValues<SourceId>()

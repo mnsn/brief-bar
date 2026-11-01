@@ -2,6 +2,7 @@ using BriefBar.Core;
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Demo;
+using BriefBar.Core.GitHub;
 using BriefBar.Core.Settings;
 using Microsoft.UI.Dispatching;
 
@@ -17,6 +18,9 @@ internal sealed class AppSources
 
     /// What the demo's Azure DevOps opens: nothing, as made-up pull requests aren't anywhere.
     static readonly AzureDevOpsAccess demoAzureDevOps = new(OpenLink: _ => { });
+
+    /// What the demo's GitHub opens: nothing, as made-up pull requests aren't anywhere.
+    static readonly GitHubAccess demoGitHub = new(OpenLink: _ => { });
 
     static readonly ProcessRunner processes = new();
 
@@ -35,6 +39,7 @@ internal sealed class AppSources
             ? AzureDevOpsDemoData.Settings(storage: Settings, now: madeAt)
             : new AzureDevOpsSettings(settings: Settings, now: madeAt);
         Copilot = new CopilotSettings(settings: Settings, now: madeAt);
+        GitHub = new GitHubSettings(settings: Settings);
         Switch = new SourceSwitch(settings: Settings, entries: SourceCatalog.OnWindows, make: Make);
     }
 
@@ -43,6 +48,8 @@ internal sealed class AppSources
     public AzureDevOpsSettings AzureDevOps { get; }
 
     public CopilotSettings Copilot { get; }
+
+    public GitHubSettings GitHub { get; }
 
     public SourceSwitch Switch { get; }
 
@@ -66,7 +73,7 @@ internal sealed class AppSources
     }
 
     /// BriefBar's environment's `names`, as a locator or a folder's default reads them: where the Copilot app keeps its
-    /// data, or where `BRIEFBAR_COPILOT_DIR` says; where the Azure CLI or the Copilot CLI may be.
+    /// data, or where `BRIEFBAR_COPILOT_DIR` says; where the Azure CLI, the GitHub CLI or the Copilot CLI may be.
     static Dictionary<string, string?> EnvironmentOf(IReadOnlyList<string> names) => names.ToDictionary(
         keySelector: name => name, elementSelector: name => Environment.GetEnvironmentVariable(variable: name), comparer: StringComparer.OrdinalIgnoreCase);
 
@@ -77,17 +84,29 @@ internal sealed class AppSources
         return AzureDevOpsReading.Live(tokens: new AzureCLITokenProvider(locator: locator, runner: processes), locator: locator);
     }
 
+    /// GitHub itself, with the GitHub CLI's sign-in.
+    static GitHubReading LiveGitHub()
+    {
+        var locator = new GitHubCLILocator(environment: EnvironmentOf(names: GitHubCLILocator.Variables));
+        return GitHubReading.Live(tokens: new GitHubCLITokenProvider(locator: locator, runner: processes), locator: locator);
+    }
+
     /// A source of `entry`, not started yet.
     ISectionSource Make(SourceEntry entry) => entry.Id switch
     {
         SourceId.AzureDevOps => new AzureDevOpsSource(
             settings: AzureDevOps,
             reading: isDemo ? DemoAzureDevOps() : LiveAzureDevOps(),
-            access: isDemo ? demoAzureDevOps : AzureDevOpsShell.Access,
+            access: isDemo ? demoAzureDevOps : new AzureDevOpsAccess(OpenLink: link => BrowserShell.Open(link: link, source: SourceId.AzureDevOps)),
             processes: processes),
         SourceId.Copilot => isDemo
             ? new CopilotSource(settings: Copilot, makeEngine: onChange => new DemoSessionEngine(madeAt: madeAt, onChange: onChange), app: demoApp)
             : LiveCopilot(),
+        SourceId.GitHub => new GitHubSource(
+            settings: GitHub,
+            reading: isDemo ? DemoGitHub() : LiveGitHub(),
+            access: isDemo ? demoGitHub : new GitHubAccess(OpenLink: link => BrowserShell.Open(link: link, source: SourceId.GitHub)),
+            processes: processes),
         _ => throw new ArgumentOutOfRangeException(paramName: nameof(entry), actualValue: entry.Id, message: "Not a source BriefBar for Windows has."),
     };
 
@@ -112,4 +131,7 @@ internal sealed class AppSources
         makeEngine: onChange => new DemoPulseEngine(madeAt: madeAt, onChange: onChange),
         findOrganizations: _ => Task.FromResult(result: new OrganizationsFound(All: [AzureDevOpsDemoData.Organization], WithPullRequests: [AzureDevOpsDemoData.Organization])),
         locateCli: () => null);
+
+    /// The demo's made-up pull requests on GitHub, read again as often as GitHub's would be, without the GitHub CLI.
+    GitHubReading DemoGitHub() => new(load: _ => Task.FromResult(result: GitHubDemoData.Load(now: madeAt)), locateCli: () => null);
 }
