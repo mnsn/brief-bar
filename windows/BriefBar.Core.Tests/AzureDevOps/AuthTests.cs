@@ -253,4 +253,31 @@ public sealed class AuthTests
         Assert.Equal(expected: "second", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
         Assert.Equal(expected: Path.Combine(path1: second, path2: "az.cmd"), actual: provider.Program);
     }
+
+    /// An `az.cmd` at a path with a percent sign, which `cmd.exe` would read as a variable, can't run: `ProcessRunner`
+    /// refuses it. That's a failure to run the Azure CLI, which the panel says, rather than an error that stops Azure
+    /// DevOps reading until it's turned off. It's looked for again next time, so once it's somewhere it can run, it does.
+    [Fact]
+    public async Task ReportsACLIThatCmdCantRunAndLooksAgain()
+    {
+        using var folder = new TemporaryFolder();
+        const string refused = @"C:\Made up 100%\az.cmd";
+        var refusedIsThere = true;
+        File.WriteAllText(path: folder.Combine("az.cmd"), contents: "@echo {\"accessToken\": \"moved\", \"expires_on\": 1792564306}\r\n");
+        var provider = new AzureCLITokenProvider(
+            locator: new AzureCLILocator(
+                environment: new Dictionary<string, string?> { ["PATH"] = @"C:\Made up 100%;" + folder.Path },
+                exists: path => path == refused ? refusedIsThere : File.Exists(path: path)),
+            time: new TestClock(start: TestTimes.T(seconds: 0)));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(cancellationToken: cancellationToken));
+        Assert.Equal(expected: AuthError.Failed(message: "Couldn't run the Azure CLI."), actual: error.Error);
+        Assert.Null(@object: provider.Program);
+
+        // Moved where it can run.
+        refusedIsThere = false;
+        Assert.Equal(expected: "moved", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: folder.Combine("az.cmd"), actual: provider.Program);
+    }
 }

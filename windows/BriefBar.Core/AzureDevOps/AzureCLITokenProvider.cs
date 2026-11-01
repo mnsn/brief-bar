@@ -178,9 +178,10 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
             result = await runner.RunAsync(program: found, arguments: Arguments, environment: quiet, timeout: runLimit, cancellationToken: CancellationToken.None)
                 .ConfigureAwait(continueOnCapturedContext: false);
         }
-        catch (Exception error) when (error is Win32Exception or TimeoutException or IOException or InvalidOperationException)
+        catch (Exception error) when (error is Win32Exception or TimeoutException or IOException or InvalidOperationException or ArgumentException)
         {
-            // It may have been uninstalled or moved: it's looked for again next time.
+            // It may have been uninstalled or moved, or be at a path that `cmd.exe` can't take, with a percent sign
+            // (`ProcessRunner` refuses it): it's looked for again next time. The Mac's catches whatever running it throws.
             lock (gate)
             {
                 program = null;

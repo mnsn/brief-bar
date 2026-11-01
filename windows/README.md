@@ -272,8 +272,9 @@ SDK ships inside the app.
   words only (letters, digits and `-._:/=`, checked to the end of the text, since a regex's `$` lets a final line
   break through), runs it as `cmd.exe /d /v:off /s /c "<path> <words>"`, without AutoRun commands or delayed
   expansion, refuses a path with quotes, `%` or line breaks, and treats `az.cmd.` as the batch file Windows would run.
-  An `az.cmd` it refuses, like one removed since BriefBar found it, can't run: Sign in opens the page that says how
-  to install the Azure CLI, rather than ending BriefBar.
+  An `az.cmd` it refuses, like one removed since BriefBar found it, can't run: the panel says BriefBar couldn't get a
+  token from the Azure CLI, which it looks for again within a minute, and Sign in opens the page that says how to
+  install it, rather than ending BriefBar or its reading.
   `az.cmd` runs Python, which can hold its output open after `az` ends: the runner waits half a second for the rest,
   then ends what's left, and a timeout ends the whole tree.
 - **A console program started by an app without a console gets a window of its own**, in Windows' default
