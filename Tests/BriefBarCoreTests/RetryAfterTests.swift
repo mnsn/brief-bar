@@ -26,10 +26,14 @@ import Testing
         #expect(RetryAfter.date("Sun Nov  6 08:49:37 1994", now: now) == example)
     }
 
-    /// A two-digit year is this century's, or the last's when this century's would be more than 50 years away.
+    /// A two-digit year is this century's, or the last's when this century's would be more than 50 years from now, to the
+    /// second.
     @Test func readsATwoDigitYearAsTheNearestThatIsntTooFarAhead() {
         #expect(RetryAfter.date("Wednesday, 01-Jan-76 00:00:00 GMT", now: now) == Date(timeIntervalSince1970: 3_345_062_400))
         #expect(RetryAfter.date("Saturday, 01-Jan-77 00:00:00 GMT", now: now) == Date(timeIntervalSince1970: 220_924_800))
+        #expect(RetryAfter.date("Sunday, 18-Oct-76 10:00:00 GMT", now: now) == Date(timeIntervalSince1970: 3_370_240_800))
+        #expect(RetryAfter.date("Monday, 18-Oct-76 10:00:01 GMT", now: now) == Date(timeIntervalSince1970: 214_480_801))
+        #expect(RetryAfter.date("Monday, 01-Nov-76 00:00:00 GMT", now: now) == Date(timeIntervalSince1970: 215_654_400))
     }
 
     @Test func aDateThatsPassedIsNoWait() {

@@ -28,7 +28,7 @@ public enum RetryAfter {
             guard parts.count == 3, parts[0].count == 2, let day = number(parts[0]), let month = monthNumber(parts[1]),
                   parts[2].count == 2, let year = number(parts[2])
             else { return nil }
-            return date(year: fullYear(year, now: now), month: month, day: day, time: words[2])
+            return date(twoDigitYear: year, month: month, day: day, time: words[2], now: now)
         case 5 where shortDays.contains(String(words[0])):
             guard let month = monthNumber(words[1]), (1...2).contains(words[2].count), let day = number(words[2]),
                   words[4].count == 4, let year = number(words[4])
@@ -65,12 +65,16 @@ public enum RetryAfter {
         return Int(text)
     }
 
-    /// The year a two-digit one names: in `now`'s century, or the one before when that's more than 50 years after `now`.
-    private static func fullYear(_ twoDigits: Int, now: Date) -> Int {
+    /// The date with a two-digit year: in `now`'s century, or the one before when that would put it more than 50 years
+    /// after `now`.
+    private static func date(twoDigitYear: Int, month: Int, day: Int, time: Substring, now: Date) -> Date? {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .gmt
         let current = calendar.component(.year, from: now)
-        let year = current - current % 100 + twoDigits
-        return year > current + 50 ? year - 100 : year
+        let century = current - current % 100
+        guard let candidate = date(year: century + twoDigitYear, month: month, day: day, time: time),
+              let limit = calendar.date(byAdding: .year, value: 50, to: now)
+        else { return nil }
+        return candidate > limit ? date(year: century + twoDigitYear - 100, month: month, day: day, time: time) : candidate
     }
 }
