@@ -4,6 +4,9 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     case auth(AuthError)
     /// Azure DevOps rejected the token, even a fresh one.
     case unauthorized
+    /// The organization is in another directory (a Microsoft Entra tenant), which the Azure CLI isn't signed in to:
+    /// `az login --tenant` with its ID signs in there.
+    case otherDirectory(organization: String, tenant: String)
     /// Signed in, but without access to this organization or project.
     case forbidden
     case notFound
@@ -18,6 +21,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
         switch self {
         case .auth(let error): return error.description
         case .unauthorized: return "Azure DevOps didn't accept the sign-in."
+        // Without its name or its directory's ID: this goes to the log.
+        case .otherDirectory: return "The organization is in a directory your Azure CLI isn't signed in to."
         case .forbidden: return "No access to this organization."
         case .notFound: return "Not found."
         case .throttled: return "Azure DevOps asked BriefBar to slow down."
@@ -34,6 +39,8 @@ public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
     let gate: RateLimitGate
+    /// The directory of each organization in another one than your sign-in's, as Azure DevOps named it.
+    let directories: OrganizationDirectories
 
     /// With its own session. The app's code makes clients with this, so that only this module uses
     /// networking APIs (scripts/check-boundaries.sh).
@@ -45,6 +52,7 @@ public struct ADOClient: Sendable {
         self.tokens = tokens
         self.session = session
         gate = RateLimitGate()
+        directories = OrganizationDirectories()
     }
 
     /// No cookies, no cache and no credentials kept: every request carries its own bearer token.
@@ -72,13 +80,20 @@ public struct ADOClient: Sendable {
         }
     }
 
-    /// The only way requests are made: GET, with a bearer token, retried once with a fresh token if it's rejected.
+    /// The only way requests are made: GET, with a bearer token for the organization's directory, retried once with a
+    /// fresh token if it's rejected, and once with a token for the organization's own directory if Azure DevOps names
+    /// another one than the token's.
     func data(_ url: URL) async throws -> Data {
         if let wait = await gate.remainingWait(), wait > 0 {
             throw ADOError.throttled(retryAfter: wait)
         }
-        var token = try await accessToken()
-        for attempt in 0..<2 {
+        let organization = Self.organization(of: url)
+        var tenant: String?
+        if let organization { tenant = await directories.tenant(of: organization) }
+        var token = try await accessToken(tenant: tenant, for: organization)
+        var refreshed = false
+        var movedDirectory = false
+        for _ in 0..<3 {
             let (data, response): (Data, URLResponse)
             do {
                 (data, response) = try await session.data(for: Self.request(url, token: token.value))
@@ -100,10 +115,19 @@ public struct ADOClient: Sendable {
             case 200..<300 where http.statusCode != 203 && Self.isJSON(http):
                 return data
             case 200..<300, 401:
-                // 203 with a sign-in page is how Azure DevOps answers a request it didn't authenticate.
-                if attempt == 0 {
-                    await tokens.invalidate()
-                    token = try await accessToken()
+                // 203 with a sign-in page is how Azure DevOps answers a request it didn't authenticate. An organization
+                // in another directory names its own: it's read with a token from there, from now on.
+                if let organization, !movedDirectory, let other = Self.otherDirectory(of: http, token: token) {
+                    movedDirectory = true
+                    tenant = other
+                    await directories.remember(other, for: organization)
+                    token = try await accessToken(tenant: other, for: organization)
+                    continue
+                }
+                if !refreshed {
+                    refreshed = true
+                    await tokens.invalidate(tenant: tenant)
+                    token = try await accessToken(tenant: tenant, for: organization)
                     continue
                 }
                 throw ADOError.unauthorized
@@ -121,10 +145,15 @@ public struct ADOClient: Sendable {
         throw ADOError.unauthorized
     }
 
-    private func accessToken() async throws -> AccessToken {
+    /// A token for `tenant`'s directory, or for your sign-in's. When the Azure CLI isn't signed in to an organization's
+    /// directory, that's the organization's problem, which signing in there fixes: the others are still read.
+    private func accessToken(tenant: String?, for organization: String?) async throws -> AccessToken {
         do {
-            return try await tokens.token()
+            return try await tokens.token(tenant: tenant)
         } catch let error as AuthError {
+            if let tenant, let organization, case .signedOut = error {
+                throw ADOError.otherDirectory(organization: organization, tenant: tenant)
+            }
             throw ADOError.auth(error)
         }
     }
@@ -141,6 +170,34 @@ public struct ADOClient: Sendable {
 
     static func isJSON(_ response: HTTPURLResponse) -> Bool {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
+    }
+
+    /// The organization a request reads, by name: the first part of a dev.azure.com path. Nil for one that reads no
+    /// organization, such as finding yours.
+    static func organization(of url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.host?.lowercased() == "dev.azure.com",
+              let name = components.path.split(separator: "/").first, !name.isEmpty
+        else { return nil }
+        return String(name)
+    }
+
+    /// The directory an organization that rejected `token` is in, when it's another one than the token's: Azure DevOps
+    /// names the organization's directories in `X-VSS-ResourceTenant`. Nil when it names the token's, or none.
+    static func otherDirectory(of response: HTTPURLResponse, token: AccessToken) -> String? {
+        guard let tokenTenant = token.tenant?.lowercased() else { return nil }
+        let named = resourceTenants(response)
+        guard !named.contains(tokenTenant) else { return nil }
+        return named.first
+    }
+
+    /// The directories in `X-VSS-ResourceTenant`, lowercased: only tenant IDs, which are GUIDs, since one goes to
+    /// `az login --tenant`; and not the empty one.
+    static func resourceTenants(_ response: HTTPURLResponse) -> [String] {
+        (response.value(forHTTPHeaderField: "X-VSS-ResourceTenant") ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { UUID(uuidString: $0) != nil && $0 != "00000000-0000-0000-0000-000000000000" }
     }
 
     static func retryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
@@ -187,6 +244,20 @@ actor RateLimitGate {
     func remainingWait() -> TimeInterval? {
         let wait = notBefore.timeIntervalSinceNow
         return wait > 0 ? wait : nil
+    }
+}
+
+/// Which directory each organization in another one than your sign-in's is in, as Azure DevOps named it when it
+/// rejected a token from yours: by organization name, which Azure DevOps compares ignoring case.
+actor OrganizationDirectories {
+    private var tenants: [String: String] = [:]
+
+    func tenant(of organization: String) -> String? {
+        tenants[organization.lowercased()]
+    }
+
+    func remember(_ tenant: String, for organization: String) {
+        tenants[organization.lowercased()] = tenant
     }
 }
 

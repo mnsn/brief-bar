@@ -100,7 +100,7 @@ struct WidgetSectionView: View {
                     .font(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if problem.needsSignIn {
+                if problem.offersSignIn {
                     Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
                         .controlSize(.small)
                 }

@@ -7,25 +7,57 @@ public struct AccessToken: Sendable, Equatable {
     public var expiresOn: Date
     /// Who it's for, when the token says: a different one means someone else signed in.
     public var account: String?
+    /// The directory (a Microsoft Entra tenant's ID, lowercased) it's for, when known: Azure DevOps reads an
+    /// organization only with a token from the organization's own directory.
+    public var tenant: String?
+    /// The directory the account itself is in, when known: for a guest from another directory, that one; otherwise
+    /// the token's own.
+    public var accountTenant: String?
 
-    public init(value: String, expiresOn: Date, account: String? = nil) {
+    public init(value: String, expiresOn: Date, account: String? = nil, tenant: String? = nil, accountTenant: String? = nil) {
         self.value = value
         self.expiresOn = expiresOn
         self.account = account
+        self.tenant = tenant
+        self.accountTenant = accountTenant
     }
 
     /// The tenant and object ID in a Microsoft Entra token (a JWT), read without checking its signature: it
     /// only tells one sign-in from another. Nil for a token that isn't a JWT.
     public static func account(inJWT token: String) -> String? {
+        guard let claims = claims(inJWT: token) else { return nil }
+        let subject = (claims["oid"] as? String) ?? (claims["sub"] as? String)
+        return subject.map { "\(claims["tid"] as? String ?? "")/\($0)".lowercased() }
+    }
+
+    /// The directory a Microsoft Entra token (a JWT) is for, lowercased, read without checking its signature. Nil when
+    /// it doesn't say.
+    public static func tenant(inJWT token: String) -> String? {
+        guard let tenant = claims(inJWT: token)?["tid"] as? String, !tenant.isEmpty else { return nil }
+        return tenant.lowercased()
+    }
+
+    /// The directory a Microsoft Entra token's account is in, lowercased: for a guest from another directory, the one
+    /// its `idp` names, such as `https://sts.windows.net/<tenant>/`; otherwise the token's own. Nil when it doesn't say.
+    public static func accountTenant(inJWT token: String) -> String? {
+        guard let claims = claims(inJWT: token) else { return nil }
+        guard let idp = claims["idp"] as? String else { return tenant(inJWT: token) }
+        return idp.split(separator: "/").map(String.init).first(where: { UUID(uuidString: $0) != nil })?.lowercased()
+    }
+
+    /// The directory in an account, as `account(inJWT:)` writes it. Nil when it doesn't say.
+    public static func tenant(ofAccount account: String) -> String? {
+        guard let slash = account.firstIndex(of: "/"), slash > account.startIndex else { return nil }
+        return String(account[..<slash])
+    }
+
+    private static func claims(inJWT token: String) -> [String: Any]? {
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3 else { return nil }
         var payload = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        guard let data = Data(base64Encoded: payload),
-              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        let subject = (claims["oid"] as? String) ?? (claims["sub"] as? String)
-        return subject.map { "\(claims["tid"] as? String ?? "")/\($0)".lowercased() }
+        guard let data = Data(base64Encoded: payload) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
     /// Valid for at least `margin` more seconds.
@@ -53,60 +85,103 @@ public enum AuthError: Error, Sendable, Equatable, CustomStringConvertible {
 /// Where tokens come from. BriefBar ships the Azure CLI provider; an MSAL provider can implement
 /// this too once there's an app registration (a client ID) to sign in with.
 public protocol AccessTokenProvider: Sendable {
-    func token() async throws -> AccessToken
-    /// Forgets a token the server rejected, so the next call gets a fresh one.
-    func invalidate() async
+    /// A token for your sign-in's directory; with `tenant`, for that directory (a Microsoft Entra tenant's ID), which an
+    /// organization in another directory needs.
+    func token(tenant: String?) async throws -> AccessToken
+    /// Forgets a token the server rejected, so the next call for the same directory gets a fresh one.
+    func invalidate(tenant: String?) async
 }
 
-/// Gets tokens from the Azure CLI's sign-in (`az login`), silently, the way `az` itself does.
+extension AccessTokenProvider {
+    /// A token for your sign-in's directory.
+    public func token() async throws -> AccessToken {
+        try await token(tenant: nil)
+    }
+
+    /// Forgets the token for your sign-in's directory.
+    public func invalidate() async {
+        await invalidate(tenant: nil)
+    }
+}
+
+/// Gets tokens from the Azure CLI's sign-in (`az login`), silently, the way `az` itself does: for your sign-in's
+/// directory, and with `--tenant` for each other directory an organization is in.
 public actor AzureCLITokenProvider: AccessTokenProvider {
     /// The application ID of Azure DevOps, the resource tokens are requested for.
     public static let azureDevOpsResource = "499b84ac-1321-427f-aa17-267ca6975798"
 
     private let locator: AzureCLILocator
     private let runner: any ProcessRunning
-    private let tenant: String?
     private let now: @Sendable () -> Date
     private var executable: URL?
-    private var cached: AccessToken?
-    private var pending: Task<AccessToken, Error>?
+    /// Your sign-in's directory, once known. Tokens for it are asked for there with `--tenant`, rather than in the
+    /// Azure CLI's default directory, which signing in to another directory changes: so who BriefBar reads as stays the
+    /// same, and so do the organizations it reads in your directory. It follows the default directory only when that's
+    /// someone else's.
+    private var homeTenant: String?
+    /// By directory: nil for your sign-in's.
+    private var cached: [String?: AccessToken] = [:]
+    private var pending: [String?: Task<AccessToken, Error>] = [:]
 
+    /// `homeTenant` is your sign-in's directory, when it's known from before: the one BriefBar last read your pull
+    /// requests with.
     public init(
-        tenant: String? = nil, locator: AzureCLILocator = AzureCLILocator(), runner: any ProcessRunning = ProcessRunner(),
+        homeTenant: String? = nil, locator: AzureCLILocator = AzureCLILocator(), runner: any ProcessRunning = ProcessRunner(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.tenant = tenant
+        self.homeTenant = AzureCLITokenProvider.directory(homeTenant)
         self.locator = locator
         self.runner = runner
         self.now = now
     }
 
-    public func token() async throws -> AccessToken {
-        if let cached, cached.isValid(at: now()) { return cached }
-        // Callers asking at the same time share one `az` run.
-        if let pending { return try await pending.value }
-        let task = Task { try await self.fetch() }
-        pending = task
-        defer { pending = nil }
+    public func token(tenant: String?) async throws -> AccessToken {
+        let directory = Self.directory(tenant)
+        if let cached = cached[directory], cached.isValid(at: now()) { return cached }
+        // Callers asking for the same directory at the same time share one `az` run.
+        if let pending = pending[directory] { return try await pending.value }
+        let task = Task { try await self.fetch(directory) }
+        pending[directory] = task
+        defer { pending[directory] = nil }
         let token = try await task.value
-        cached = token
+        cached[directory] = token
         return token
     }
 
-    public func invalidate() {
-        cached = nil
+    public func invalidate(tenant: String?) {
+        cached[Self.directory(tenant)] = nil
     }
 
     /// The `az` executable this provider runs, once it has looked for it.
     public var executablePath: String? { executable?.path }
 
-    private func fetch() async throws -> AccessToken {
+    /// A token for `directory`, or for yours: in the directory BriefBar knows as yours. When the Azure CLI can't give one
+    /// there, it's someone else's sign-in, if the CLI's default directory has another account: then that directory
+    /// becomes yours. If it's your account there, as a guest, your directory only needs you to sign in again.
+    private func fetch(_ directory: String?) async throws -> AccessToken {
+        if let directory { return try await run(tenant: directory) }
+        guard let homeTenant else {
+            let token = try await run(tenant: nil)
+            self.homeTenant = token.tenant
+            return token
+        }
+        do {
+            return try await run(tenant: homeTenant)
+        } catch AuthError.signedOut(let message) {
+            let current = try await run(tenant: nil)
+            if current.tenant != homeTenant, current.accountTenant == homeTenant { throw AuthError.signedOut(message) }
+            if let tenant = current.tenant { self.homeTenant = tenant }
+            return current
+        }
+    }
+
+    private func run(tenant: String?) async throws -> AccessToken {
         if executable == nil {
             executable = await locator.locate()
         }
         guard let executable else { throw AuthError.cliNotFound }
         var arguments = ["account", "get-access-token", "--resource", Self.azureDevOpsResource, "--output", "json"]
-        if let tenant, !tenant.isEmpty {
+        if let tenant {
             arguments += ["--tenant", tenant]
         }
         let result: ProcessResult
@@ -136,6 +211,12 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         return environment
     }
 
+    /// A directory as tokens are kept by: its ID, lowercased; nil for none, which is your sign-in's.
+    static func directory(_ tenant: String?) -> String? {
+        guard let tenant = tenant?.trimmingCharacters(in: .whitespaces), !tenant.isEmpty else { return nil }
+        return tenant.lowercased()
+    }
+
     /// Parses `az account get-access-token --output json`.
     static func parseToken(_ data: Data, now: Date) throws -> AccessToken {
         struct Output: Decodable {
@@ -144,6 +225,8 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
             var expires_on: Double?
             /// Local time, such as `2026-10-21 10:31:46.000000`.
             var expiresOn: String?
+            /// The directory it's for.
+            var tenant: String?
         }
         guard let output = try? JSONDecoder().decode(Output.self, from: data), !output.accessToken.isEmpty else {
             throw AuthError.failed("The Azure CLI returned no token.")
@@ -151,7 +234,11 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         let expiry = output.expires_on.map { Date(timeIntervalSince1970: $0) }
             ?? output.expiresOn.flatMap(parseLocalTime)
             ?? now.addingTimeInterval(30 * 60)
-        return AccessToken(value: output.accessToken, expiresOn: expiry, account: AccessToken.account(inJWT: output.accessToken))
+        return AccessToken(
+            value: output.accessToken, expiresOn: expiry, account: AccessToken.account(inJWT: output.accessToken),
+            tenant: AccessToken.tenant(inJWT: output.accessToken) ?? directory(output.tenant),
+            accountTenant: AccessToken.accountTenant(inJWT: output.accessToken)
+        )
     }
 
     static func parseLocalTime(_ string: String) -> Date? {

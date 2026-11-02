@@ -168,16 +168,16 @@ struct OrganizationsMenuContent: View {
             ))
         }
         if !names.isEmpty { Divider() }
-        Button("Add Organization…") { OrganizationPrompt.ask(settings: settings) }
+        Button("Add Organization…") { OrganizationPrompt.ask(settings: settings, store: store) }
         Button("Find My Organizations Again") { store.discoverOrganizations() }
             .disabled(store.discovery == .running || store.mode == .demo)
     }
 }
 
-/// Asks for an organization's name (or any of its URLs).
+/// Asks for an organization's name (or any of its URLs), and checks that your sign-in can read it before watching it.
 @MainActor
 enum OrganizationPrompt {
-    static func ask(settings: AppSettings) {
+    static func ask(settings: AppSettings, store: PRStore) {
         let alert = NSAlert()
         alert.messageText = "Add an Azure DevOps Organization"
         alert.informativeText = "Enter its name, or paste a link from it, such as dev.azure.com/contoso or contoso.visualstudio.com."
@@ -196,8 +196,30 @@ enum OrganizationPrompt {
             error.runModal()
             return
         }
-        if !settings.isWatching(name) {
+        guard !settings.isWatching(name) else { return }
+        // The demo reads nothing.
+        guard store.mode == .live else {
             settings.toggleOrganization(name)
+            return
+        }
+        Task {
+            let access = await store.access(to: name)
+            if access.watches, !settings.isWatching(name) {
+                settings.toggleOrganization(name)
+            }
+            guard let explanation = access.explanation(for: name) else { return }
+            let alert = NSAlert()
+            alert.messageText = explanation.title
+            alert.informativeText = explanation.detail
+            if access.signInTenant != nil {
+                alert.addButton(withTitle: "Sign In…")
+                alert.addButton(withTitle: "Not Now")
+            }
+            NSApp.activate()
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn, let tenant = access.signInTenant {
+                store.signIn(toTenant: tenant)
+            }
         }
     }
 }

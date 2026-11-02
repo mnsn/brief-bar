@@ -222,6 +222,9 @@ public actor PipelinesEngine {
             return max(until.timeIntervalSince(now()), interval)
         case .cliNotFound?, .signedOut?, .authFailed?:
             return min(interval, 60)
+        case .otherDirectory? where failures > 0:
+            // Nothing was read until you sign in to its organization's directory.
+            return min(interval, 60)
         default:
             guard failures > 0 else { return interval }
             return min(interval * pow(2, Double(min(failures, 4))), 600)
@@ -417,7 +420,12 @@ public actor PipelinesEngine {
             problem = PulseProblem.from(error)
             failures += 1
         } else if let error = errors.first {
-            problem = .unreachable("Couldn't read some pipelines: \(error.description)")
+            if let elsewhere = errors.first(where: { if case .otherDirectory = $0 { true } else { false } }) {
+                // The other pipelines show: signing in to its organization's directory reads the rest.
+                problem = PulseProblem.from(elsewhere)
+            } else {
+                problem = .unreachable("Couldn't read some pipelines: \(error.description)")
+            }
             failures = 0
         } else {
             problem = nil

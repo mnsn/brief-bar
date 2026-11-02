@@ -55,7 +55,9 @@ final class PRStore: ObservableObject {
     /// How pull requests sent in chats are read: only the app's own store is given Notification Center.
     let chats: ChatReading
     private let notifier: Notifier?
-    private let tokens = AzureCLITokenProvider()
+    /// Asks for tokens in the directory BriefBar last read your pull requests with, so signing in to another directory
+    /// for an organization there, which makes it the Azure CLI's default, doesn't read you as someone else.
+    private let tokens: AzureCLITokenProvider
     /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
     let client: ADOClient
     private var engine: PulseEngine?
@@ -88,6 +90,8 @@ final class PRStore: ObservableObject {
         self.notifier = notifier
         self.mode = mode
         self.chats = chats
+        let tokens = AzureCLITokenProvider(homeTenant: settings.seen.account.flatMap(AccessToken.tenant(ofAccount:)))
+        self.tokens = tokens
         client = ADOClient(tokens: tokens)
         summarizer.isEnabled = settings.summaries
         notifier?.$isBlocked
@@ -486,15 +490,28 @@ final class PRStore: ObservableObject {
         AzureDevOps.openPullRequests(organizations: organizations)
     }
 
-    func signIn() {
+    /// Signs in to the Azure CLI, or installs it first: for `problem`, or the pull requests' when there's none, and in
+    /// its organizations' directory when that's what's wrong.
+    func signIn(for problem: PulseProblem? = nil) {
+        let problem = problem ?? self.problem
         if problem == .cliNotFound {
             AzureDevOps.open(AzureDevOps.installCLIPage)
             return
         }
+        signIn(toTenant: problem?.signInTenant)
+    }
+
+    /// Opens Terminal to sign in to the Azure CLI; with `tenant`, in that directory.
+    func signIn(toTenant tenant: String?) {
         Task {
             let path = await tokens.executablePath
-            AzureDevOps.signIn(azPath: path)
+            AzureDevOps.signIn(azPath: path, tenant: tenant)
         }
+    }
+
+    /// Whether your sign-in can read an organization you're adding, and if not, why.
+    func access(to organization: String) async -> OrganizationDiscovery.Access {
+        await OrganizationDiscovery.access(to: organization, client: client)
     }
 
     /// Finds your organizations, and watches the ones where you have pull requests.

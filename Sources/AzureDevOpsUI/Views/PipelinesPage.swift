@@ -42,7 +42,7 @@ struct PipelinesPage: View {
                 PageScroll {
                     VStack(alignment: .leading, spacing: 12) {
                         if let problem = pipelines.problem {
-                            ProblemView(problem: problem) { store.signIn() }
+                            ProblemView(problem: problem) { store.signIn(for: problem) }
                         }
                         if !store.merges.isEmpty {
                             PipelinesTitle(symbol: "arrow.triangle.merge", title: "After Your Merges", count: store.merges.count)

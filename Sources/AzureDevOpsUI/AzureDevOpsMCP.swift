@@ -17,7 +17,8 @@ extension AzureDevOpsCommandLine {
 
 /// What `--mcp` reads from Azure DevOps, as the app shows it. One engine reads the pull requests for the whole session,
 /// again only when a tool needs them and what it read is a minute old, as the app does at its most often: an agent's
-/// calls one after another share one read. A read that failed in a way you can fix, by signing in, say, isn't kept. Each
+/// calls one after another share one read. A read that failed in a way you can fix, by signing in to the Azure CLI, say,
+/// isn't kept; one that read other organizations is, even when signing in to a directory would read the rest. Each
 /// read runs on its own, so a call the agent cancels doesn't cut short what the next one reads.
 actor AzureDevOpsReader {
     static let freshFor: TimeInterval = 60
@@ -50,7 +51,7 @@ actor AzureDevOpsReader {
         self.demo = demo
         named = organizations
         self.defaults = defaults
-        self.client = demo ? nil : client ?? ADOClient(tokens: AzureCLITokenProvider())
+        self.client = demo ? nil : client ?? ADOClient(tokens: AzureDevOpsCommandLine.tokens(defaults))
         self.announce = announce
     }
 
@@ -85,15 +86,19 @@ actor AzureDevOpsReader {
         snapshot.records = snapshot.records.map { watched.contains($0.id) ? $0.watched() : $0 }
         let seen = AzureDevOpsCommandLine.seenBook(defaults).state(for: snapshot.account)
         let items = AzureDevOpsCommandLine.resolve(snapshot, seen: seen, options: AzureDevOpsCommandLine.classifierOptions(defaults), now: now)
-        var problem = snapshot.problem.map { problem in
-            // What fixes it, for an agent: the app has a button for it.
-            if case .signedOut = problem { return problem.message + " Run az login, then ask again." }
-            return problem.message
-        }
+        var problem = snapshot.problem.map(Self.text(of:))
         if snapshot.organizations.isEmpty, let discoveryProblem { problem = discoveryProblem }
         return PullRequests(
             records: snapshot.records, items: items, problem: problem, showToReview: showToReview, closedLinks: snapshot.closedLinks
         )
+    }
+
+    /// A problem, as an agent is told it: with what to run when signing in fixes it, since the app's Sign In button isn't
+    /// there, and when to ask again, since a read that other organizations' pull requests came from is kept for a minute.
+    /// Only this says a directory's ID, which signing in to it needs.
+    static func text(of problem: PulseProblem) -> String {
+        guard let command = problem.signInCommand else { return problem.message }
+        return "\(problem.message) Run \(command), then ask again\(keeps(problem) ? " in a minute" : "")."
     }
 
     /// Reads unless what it read is fresh; a call that comes while it reads waits for that read.
@@ -112,11 +117,12 @@ actor AzureDevOpsReader {
     }
 
     /// Whether what was read stays for a minute: unless it failed in a way that you can fix, by signing in to the Azure
-    /// CLI, say, or that a moment fixes, such as going offline. Some organizations failing still leaves the rest, and
-    /// Azure DevOps asking to slow down is a reason not to read again.
+    /// CLI, say, or that a moment fixes, such as going offline. Some organizations failing still leaves the rest, even
+    /// ones that signing in to their directory would read, and Azure DevOps asking to slow down is a reason not to read
+    /// again.
     static func keeps(_ problem: PulseProblem?) -> Bool {
         switch problem {
-        case nil, .someOrganizations?, .throttled?: return true
+        case nil, .someOrganizations?, .otherDirectory?, .throttled?: return true
         default: return false
         }
     }
@@ -163,7 +169,7 @@ actor AzureDevOpsReader {
         let pinned = pinnedPipelines
         guard let client, !pinned.isEmpty else { return ([], nil) }
         if let read = pipelinesRead, read.pinned == pinned, now.timeIntervalSince(read.at) < Self.freshFor {
-            return (read.snapshot.statuses, read.snapshot.problem?.message)
+            return (read.snapshot.statuses, read.snapshot.problem.map(Self.text(of:)))
         }
         let task: Task<PipelinesSnapshot, Never>
         if let load = pipelinesLoad, load.pinned == pinned {
@@ -175,7 +181,7 @@ actor AzureDevOpsReader {
         let snapshot = await task.value
         if pipelinesLoad?.task == task { pipelinesLoad = nil }
         if Self.keeps(snapshot.problem) { pipelinesRead = (now, pinned, snapshot) }
-        return (snapshot.statuses, snapshot.problem?.message)
+        return (snapshot.statuses, snapshot.problem.map(Self.text(of:)))
     }
 
     /// The sprint of the app's team, or with none chosen, of the first of yours with one going on today.
@@ -185,7 +191,7 @@ actor AzureDevOpsReader {
         let team = defaults.data(forKey: SettingsKey.sprintTeam).flatMap { try? JSONDecoder().decode(TeamRef.self, from: $0) }
         let configuration = SprintEngine.Configuration(organizations: await organizations(client: client), team: team)
         if let read = sprintRead, read.configuration == configuration, now.timeIntervalSince(read.at) < Self.freshFor {
-            return (read.snapshot.board, read.snapshot.problem?.message)
+            return (read.snapshot.board, read.snapshot.problem.map(Self.text(of:)))
         }
         let task: Task<SprintSnapshot, Never>
         if let load = sprintLoad, load.configuration == configuration {
@@ -197,7 +203,7 @@ actor AzureDevOpsReader {
         let snapshot = await task.value
         if sprintLoad?.task == task { sprintLoad = nil }
         if Self.keeps(snapshot.problem) { sprintRead = (now, configuration, snapshot) }
-        return (snapshot.board, snapshot.problem?.message)
+        return (snapshot.board, snapshot.problem.map(Self.text(of:)))
     }
 
     // MARK: Settings
@@ -364,6 +370,9 @@ actor AzureDevOpsReader {
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
                 if case .auth(.signedOut) = error { throw MCPToolError("You're signed out of the Azure CLI. Run az login, then ask again.") }
+                if case .otherDirectory(_, let tenant) = error {
+                    throw MCPToolError("\(WorkItemDetailsStore.message(for: error)) Run az login --tenant \(tenant), then ask again.")
+                }
                 throw MCPToolError(WorkItemDetailsStore.message(for: error))
             }
         }

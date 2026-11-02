@@ -112,6 +112,26 @@ import Testing
         }
     }
 
+    /// An agent has no Sign In button: it's told what to run, with the directory's ID, which signing in needs.
+    @Test func saysWhatToRunForAnOrganizationInAnotherDirectory() async {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, title: "Mine", created: now.addingTimeInterval(-day))])
+        server.serveOrganization("fabrikam")
+        server.put("fabrikam", in: Tenants.other)
+        let reader = AzureDevOpsReader(
+            demo: false, organizations: [], defaults: defaults(organizations: [Fixture.org, "fabrikam"]),
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        ) {}
+        let read = await reader.pullRequests(now: now)
+        #expect(read.items.map { $0.key.number } == [1])
+        #expect(read.problem == "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other), then ask again in a minute.")
+        // The others were read: calls within the minute share that read, as when any organization can't be read.
+        let once = server.requests.count
+        _ = await reader.pullRequests(now: now.addingTimeInterval(30))
+        #expect(server.requests.count == once)
+    }
+
     @Test func pinsAndUnpinsPipelinesByTheirLinks() async throws {
         let server = StubServer()
         server.on("/contoso/Shop/_apis/build/definitions/12", json: [

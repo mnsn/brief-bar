@@ -160,6 +160,18 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         )
     }
 
+    /// The Azure CLI's tokens, asked for in the directory the app last read your pull requests with, as the app asks
+    /// for them: so what's read is its account's.
+    static func tokens(_ defaults: UserDefaults? = appDefaults) -> AzureCLITokenProvider {
+        AzureCLITokenProvider(homeTenant: seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)))
+    }
+
+    /// A problem, as the command line says it: with what to run when signing in fixes it, since there's no Sign In
+    /// button. Only this says a directory's ID, which signing in to it needs.
+    static func text(of problem: PulseProblem) -> String {
+        problem.signInCommand.map { "\(problem.message) Run \($0)." } ?? problem.message
+    }
+
     /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
@@ -177,7 +189,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             return Loaded(organizations: snapshot.organizations,
                           items: resolve(snapshot, seen: DemoData.seenState(now: now), options: ClassifierOptions(), now: now))
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         var organizations = options.organizations
         if organizations.isEmpty {
             organizations = appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? []
@@ -209,7 +221,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         return Loaded(
             organizations: organizations,
             items: resolve(snapshot, seen: seenBook().state(for: snapshot.account), options: classifierOptions()),
-            problem: snapshot.problem?.message
+            problem: snapshot.problem.map(text(of:))
         )
     }
 
@@ -239,7 +251,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     private static func listOrganizations() -> Int32 {
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let result: Result<([String], OrganizationDiscovery.Probe), ADOError> = wait {
             do {
                 let all = try await OrganizationDiscovery.memberships(client: client)
@@ -343,7 +355,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         let printer = WatchPrinter(seen: seenBook(), options: classifierOptions())
         let queue = DispatchQueue(label: "BriefBar.AzureDevOps.watch")
         let engine = PulseEngine(
-            client: ADOClient(tokens: AzureCLITokenProvider()), configuration: PulseEngine.Configuration(organizations: organizations)
+            client: ADOClient(tokens: AzureDevOpsCommandLine.tokens()), configuration: PulseEngine.Configuration(organizations: organizations)
         ) { snapshot in queue.async { printer.print(snapshot) } }
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(organizations.joined(separator: ", ")), refreshing every minute — Ctrl-C to stop")
@@ -372,7 +384,7 @@ private final class WatchPrinter: @unchecked Sendable {
     func print(_ snapshot: PulseSnapshot) {
         guard !snapshot.isRefreshing else { return }
         let now = Date()
-        let message = snapshot.problem?.message
+        let message = snapshot.problem.map(AzureDevOpsCommandLine.text(of:))
         if message != problem {
             problem = message
             if let message { Swift.print("\(formatter.string(from: now))  ! \(message)") }

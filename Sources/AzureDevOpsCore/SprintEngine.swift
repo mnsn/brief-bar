@@ -203,6 +203,9 @@ public actor SprintEngine {
             return max(until.timeIntervalSince(now()), interval)
         case .cliNotFound?, .signedOut?, .authFailed?:
             return min(interval, 60)
+        case .otherDirectory? where failures > 0:
+            // Nothing was read until you sign in to its organization's directory.
+            return min(interval, 60)
         default:
             guard failures > 0 else { return interval }
             return min(interval * pow(2, Double(min(failures, 4))), 600)

@@ -13,6 +13,10 @@ public enum PulseProblem: Sendable, Equatable {
     case unreachable(String)
     /// Some organizations couldn't be read.
     case someOrganizations(String)
+    /// Organizations in a directory (a Microsoft Entra tenant) that the Azure CLI isn't signed in to: signing in to
+    /// `tenant`, the first one's, with `az login --tenant`, lets BriefBar read those in it. The other organizations'
+    /// pull requests are still listed; `others` says which other organizations couldn't be read, and why.
+    case otherDirectory(organizations: [String], tenant: String, others: String?)
 
     public var message: String {
         switch self {
@@ -25,14 +29,38 @@ public enum PulseProblem: Sendable, Equatable {
             return "Azure DevOps asked BriefBar to slow down, until \(until.formatted(date: .omitted, time: .shortened))."
         case .unreachable(let message): return "\(message) The list may be out of date."
         case .someOrganizations(let message): return message
+        // Its directory isn't named: its ID says nothing to you, and Sign In knows it.
+        case .otherDirectory(let organizations, _, let others):
+            let verb = organizations.count == 1 ? "is" : "are"
+            let message = "\(PullRequestStory.names(organizations)) \(verb) in a directory your Azure CLI isn't signed in to."
+            return others.map { "\(message) \($0)" } ?? message
         }
     }
 
-    /// Fixed by signing in (or installing the Azure CLI first).
+    /// Fixed by signing in (or installing the Azure CLI first): until then, nothing can be read.
     public var needsSignIn: Bool {
         switch self {
         case .cliNotFound, .signedOut: return true
         default: return false
+        }
+    }
+
+    /// The directory to sign in to, when signing in to one fixes it, for some organizations.
+    public var signInTenant: String? {
+        if case .otherDirectory(_, let tenant, _) = self { return tenant }
+        return nil
+    }
+
+    /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
+    public var offersSignIn: Bool { needsSignIn || signInTenant != nil }
+
+    /// What to run to fix it, for the command line and agents, which have no Sign In button. A directory's ID is only
+    /// ever said here, where signing in needs it.
+    public var signInCommand: String? {
+        switch self {
+        case .signedOut: return "az login"
+        case .otherDirectory(_, let tenant, _): return "az login --tenant \(tenant)"
+        default: return nil
         }
     }
 
@@ -44,10 +72,32 @@ public enum PulseProblem: Sendable, Equatable {
         case .offline: return .offline
         case .throttled(let seconds): return .throttled(until: Date().addingTimeInterval(seconds))
         case .unauthorized: return .signedOut(error.description)
+        case .otherDirectory(let named, let tenant): return .otherDirectory(organizations: [named], tenant: tenant, others: nil)
         default:
             let prefix = organization.map { "Can't read \($0): " } ?? ""
             return .unreachable(prefix + error.description)
         }
+    }
+
+    /// What's wrong when these organizations couldn't be read, while others could: signing in to a directory, which
+    /// fixes those in it, comes first; then each of the rest, with why. Nil when there are none.
+    public static func organizations(_ failures: [(organization: String, error: ADOError)]) -> PulseProblem? {
+        guard !failures.isEmpty else { return nil }
+        var elsewhere: [(organization: String, tenant: String)] = []
+        for failure in failures {
+            if case .otherDirectory(_, let tenant) = failure.error {
+                elsewhere.append((organization: failure.organization, tenant: tenant))
+            }
+        }
+        guard let tenant = elsewhere.first?.tenant else { return .someOrganizations("Couldn't read \(reasons(failures)).") }
+        let together = elsewhere.filter { $0.tenant == tenant }.map { $0.organization }
+        let rest = failures.filter { !together.contains($0.organization) }
+        return .otherDirectory(organizations: together, tenant: tenant, others: rest.isEmpty ? nil : "Couldn't read \(reasons(rest)).")
+    }
+
+    /// Each organization, and why it couldn't be read.
+    private static func reasons(_ failures: [(organization: String, error: ADOError)]) -> String {
+        failures.map { "\($0.organization) (\($0.error.description))" }.joined(separator: ", ")
     }
 }
 
@@ -405,7 +455,7 @@ public actor PulseEngine {
 
         var listed: [PRKey: Listed] = [:]
         var completed: [PRKey: PullRequest] = [:]
-        var errors: [(String, ADOError)] = []
+        var errors: [(organization: String, error: ADOError)] = []
         for organization in organizations {
             switch results[organization] {
             case .success(let lists):
@@ -427,7 +477,7 @@ public actor PulseEngine {
                     completed[pr.key] = pr
                 }
             case .failure(let error):
-                errors.append((organization, error))
+                errors.append((organization: organization, error: error))
                 // Keep what we had until it can be read again, however its name was spelled then.
                 let name = organization.lowercased()
                 for (key, item) in active where key.organization.lowercased() == name { listed[key] = item }
@@ -438,7 +488,12 @@ public actor PulseEngine {
         }
 
         if errors.count == organizations.count, let (organization, error) = errors.first {
-            problem = PulseProblem.from(error, organization: organizations.count > 1 ? organization : nil)
+            // Signing in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
+            if errors.contains(where: { if case .otherDirectory = $0.error { true } else { false } }) {
+                problem = PulseProblem.organizations(errors)
+            } else {
+                problem = PulseProblem.from(error, organization: organizations.count > 1 ? organization : nil)
+            }
             failures += 1
             return
         }
@@ -515,8 +570,8 @@ public actor PulseEngine {
         if let throttled {
             problem = PulseProblem.from(throttled)
         } else if !errors.isEmpty {
-            let names = errors.map { "\($0.0) (\($0.1.description))" }.joined(separator: ", ")
-            problem = .someOrganizations("Couldn't read \(names).")
+            // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
+            problem = PulseProblem.organizations(errors)
         } else {
             problem = nil
         }
@@ -938,6 +993,10 @@ public actor PulseEngine {
             return max(until.timeIntervalSince(now()), interval)
         case .cliNotFound?, .signedOut?, .authFailed?:
             // Pick up an `az login` within a minute; asking the CLI costs nothing on the network.
+            return min(interval, 60)
+        case .otherDirectory? where failures > 0:
+            // Nothing was read until you sign in to an organization's directory: pick that up within a minute too. While
+            // other organizations are read, they're read as often as usual.
             return min(interval, 60)
         default:
             guard failures > 0 else { return interval }

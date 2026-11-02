@@ -14,7 +14,7 @@ enum WorkCLI {
             printBoard(options.mine ? board.justMine() : board, whole: board, now: now)
             return 0
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let organizations = AzureDevOpsCommandLine.organizations(options)
         var team = AzureDevOpsCommandLine.appDefaults?.data(forKey: SettingsKey.sprintTeam).flatMap { try? JSONDecoder().decode(TeamRef.self, from: $0) }
         if let name = options.team {
@@ -31,7 +31,7 @@ enum WorkCLI {
         let configuration = SprintEngine.Configuration(organizations: organizations, team: team)
         let snapshot = AzureDevOpsCommandLine.wait { await SprintEngine.loadOnce(client: client, configuration: configuration, now: now) }
         if let problem = snapshot.problem {
-            print("! \(problem.message)")
+            print("! \(AzureDevOpsCommandLine.text(of: problem))")
         }
         guard let board = snapshot.board else {
             if snapshot.problem == nil {
@@ -141,7 +141,7 @@ enum WorkCLI {
             print("   \(DemoData.otherTeam.name) (\(DemoData.otherTeam.projectName)): no sprint today")
             return 0
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let organizations = AzureDevOpsCommandLine.organizations(options)
         let chosen = AzureDevOpsCommandLine.appDefaults?.data(forKey: SettingsKey.sprintTeam).flatMap { try? JSONDecoder().decode(TeamRef.self, from: $0) }
         let now = Date()
@@ -190,9 +190,9 @@ enum WorkCLI {
             print("No pipelines pinned in the app yet. Find some with --pipelines --search <text> --project <name>.")
             return 0
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let snapshot = AzureDevOpsCommandLine.wait { await PipelinesEngine.loadOnce(client: client, configuration: PipelinesEngine.Configuration(pipelines: pinned)) }
-        if let problem = snapshot.problem { print("! \(problem.message)") }
+        if let problem = snapshot.problem { print("! \(AzureDevOpsCommandLine.text(of: problem))") }
         snapshot.statuses.forEach { printPipeline($0, now: now) }
         return snapshot.problem == nil ? 0 : 1
     }
@@ -267,7 +267,7 @@ enum WorkCLI {
             fputs("Say which project to search in with --project <name> (and --org <name> if it isn't the app's first).\n", stderr)
             return 2
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let result: Result<[PipelineRef], ADOError> = AzureDevOpsCommandLine.wait {
             do {
                 return .success(try await PipelineSearch.pipelines(containing: text, organization: organization, projectId: project, client: client))
@@ -280,7 +280,7 @@ enum WorkCLI {
             // How the first few are doing, as the Pipelines page would show them pinned.
             let pipelines = Array(found.prefix(5))
             let snapshot = AzureDevOpsCommandLine.wait { await PipelinesEngine.loadOnce(client: client, configuration: PipelinesEngine.Configuration(pipelines: pipelines)) }
-            if let problem = snapshot.problem { print("! \(problem.message)") }
+            if let problem = snapshot.problem { print("! \(AzureDevOpsCommandLine.text(of: problem))") }
             let now = Date()
             snapshot.statuses.forEach { printPipeline($0, now: now) }
             return snapshot.problem == nil ? 0 : 1

@@ -714,13 +714,13 @@ private struct FailureView: View {
                      : WorkItemDetailsStore.message(for: error))
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: problem.needsSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+                Image(systemName: problem.offersSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             .font(size: 12)
             HStack(spacing: 8) {
-                if problem.needsSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
+                if problem.offersSignIn {
+                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("Try Again") { details.reload() }

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Organizations in another directory.** When an Azure DevOps organization is in a directory (tenant)
+  your Azure CLI isn't signed in to, BriefBar says so and names it, rather than asking you to sign in
+  again, and its **Sign In…** signs in to that directory (`az login --tenant`). Your other
+  organizations' pull requests stay listed meanwhile, and once you've signed in there, BriefBar reads
+  both, still as you. **Add Organization…** now checks that your sign-in can read an organization as
+  you add it, and says why when it can't, with where a project's organization is when you entered a
+  project's name.
+
 ## 0.10.2 - 2026-11-01
 
 - **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with

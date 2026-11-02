@@ -169,34 +169,74 @@ enum Fixture {
 
 // MARK: - Tokens and a stub Azure DevOps
 
+/// Made-up directories (Microsoft Entra tenants).
+enum Tenants {
+    /// Your sign-in's.
+    static let home = "0a0a0a0a-1111-4111-8111-111111111111"
+    /// Another one, where an organization such as fabrikam is.
+    static let other = "0b0b0b0b-2222-4222-8222-222222222222"
+    /// A third.
+    static let third = "0c0c0c0c-3333-4333-8333-333333333333"
+}
+
+/// Made-up tokens, as the Azure CLI gives them: for your sign-in's directory, and for the other directories it's
+/// signed in to. A token for a directory says it after an `@`, so the stub can tell which directory it's from.
 actor FakeTokens: AccessTokenProvider {
     private var value: String
     private var error: AuthError?
     private var account: String?
+    /// Your sign-in's directory, when the tokens say.
+    private var home: String?
+    /// The other directories it's signed in to.
+    private var others: Set<String> = []
     private(set) var fetches = 0
     private(set) var invalidations = 0
+    /// The directories asked for, in order: nil for your sign-in's.
+    private(set) var asked: [String?] = []
 
-    init(_ value: String, error: AuthError? = nil) {
+    init(_ value: String, error: AuthError? = nil, tenant: String? = nil) {
         self.value = value
         self.error = error
+        home = tenant
     }
 
-    func token() async throws -> AccessToken {
+    func token(tenant: String?) async throws -> AccessToken {
         fetches += 1
+        asked.append(tenant)
         if let error { throw error }
-        return AccessToken(value: value, expiresOn: .distantFuture, account: account)
+        if let tenant, tenant != home, !others.contains(tenant) {
+            throw AuthError.signedOut("AADSTS50076: Sign in to \(tenant) with multi-factor authentication.")
+        }
+        let directory = tenant ?? home
+        return AccessToken(
+            value: directory.map { "\(value)@\($0)" } ?? value, expiresOn: .distantFuture, account: account, tenant: directory
+        )
     }
 
     func signIn(as account: String?) {
         self.account = account
     }
 
-    func invalidate() {
+    /// Signs in to another directory too, as `az login --tenant` does.
+    func signIn(to tenant: String) {
+        others.insert(tenant)
+    }
+
+    func invalidate(tenant: String?) {
         invalidations += 1
     }
 
     func fail(with error: AuthError?) {
         self.error = error
+    }
+}
+
+extension URLRequest {
+    /// The directory a request's made-up token is from (`FakeTokens`), when it says.
+    var tenant: String? {
+        let token = value(forHTTPHeaderField: "Authorization") ?? ""
+        guard let at = token.firstIndex(of: "@") else { return nil }
+        return String(token[token.index(after: at)...])
     }
 }
 
@@ -231,6 +271,8 @@ final class StubServer: Sendable {
     let id = UUID().uuidString
     private let routes = Mutex<[Handler]>([])
     private let log = Mutex<[URLRequest]>([])
+    /// Organizations in a directory, by name in lowercase.
+    private let directories = Mutex<[String: String]>([:])
 
     init() {
         StubRegistry.servers.withLock { $0[id] = self }
@@ -240,6 +282,12 @@ final class StubServer: Sendable {
 
     func client(tokens: (any AccessTokenProvider)? = nil) -> ADOClient {
         ADOClient(tokens: tokens ?? FakeTokens(id), session: ADOClient.makeSession(protocolClasses: [StubURLProtocol.self]))
+    }
+
+    /// Puts an organization in a directory: a request for it with a token from another one gets 401, naming its
+    /// directory in `X-VSS-ResourceTenant`, as Azure DevOps answers, whatever its routes say.
+    func put(_ organization: String, in tenant: String) {
+        directories.withLock { $0[organization.lowercased()] = tenant }
     }
 
     /// Answers requests whose path contains `path` (and whose query has every given item).
@@ -265,6 +313,10 @@ final class StubServer: Sendable {
 
     func handle(_ request: URLRequest) -> Reply {
         log.withLock { $0.append(request) }
+        if let organization = request.url?.pathComponents.dropFirst().first,
+           let tenant = directories.withLock({ $0[organization.lowercased()] }), request.tenant != tenant {
+            return .status(401, headers: ["X-VSS-ResourceTenant": tenant])
+        }
         let handlers = routes.withLock { $0 }
         for handler in handlers {
             if let reply = handler(request) { return reply }
@@ -299,7 +351,9 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         let token = request.value(forHTTPHeaderField: "Authorization")?.replacingOccurrences(of: "Bearer ", with: "") ?? ""
-        guard let server = StubRegistry.servers.withLock({ $0[token] }), let url = request.url else {
+        // A token for a directory says it after the server's ID.
+        let id = String(token.prefix { $0 != "@" })
+        guard let server = StubRegistry.servers.withLock({ $0[id] }), let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.userAuthenticationRequired))
             return
         }
