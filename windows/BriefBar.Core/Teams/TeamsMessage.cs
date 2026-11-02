@@ -2,7 +2,8 @@ namespace BriefBar.Core.Teams;
 
 /// A chat message, from Teams' own data: its chat, its ID (when it arrived, in milliseconds since 1970), who sent it and
 /// whether that's you, Teams' type for it (`RichText/Html`, `Text`, `Event/Call`…), its text on one line, when it
-/// arrived, and whether it was deleted, which only Teams' message cache says, and which leaves it without text.
+/// arrived, and whether it was deleted, which Teams' message cache says of its messages and a chat's record of its
+/// newest, and which leaves it without text.
 public sealed record TeamsMessage(
     string ConversationId,
     long Id,
