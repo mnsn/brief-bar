@@ -15,8 +15,9 @@ public static class LevelDBLog
     const byte LastRecord = 4;
 
     /// Parses `bytes`, which start at `fileOffset` in the log: 0, or a previous `End`. Stops before a record or a batch
-    /// that isn't all there yet, and before a record at the end whose checksum doesn't match, which may still be being
-    /// written: reading on from `End` tries it again. Only writes to keys that `keep` accepts are kept.
+    /// that isn't all there yet, before zeros that run to the end, and before a record at the end whose checksum doesn't
+    /// match: LevelDB may still be writing any of them, and reading on from `End` tries them again. Only writes to keys
+    /// that `keep` accepts are kept.
     public static LevelDBLogParse Parse(byte[] bytes, long fileOffset = 0, Func<ArraySegment<byte>, bool>? keep = null)
     {
         ArgumentNullException.ThrowIfNull(argument: bytes);
@@ -39,10 +40,10 @@ public static class LevelDBLog
 
     /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
     /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits. Stops
-    /// before a record that isn't all there yet; and before a record at the end whose checksum doesn't match, unless
-    /// `damagedEndIsCorrupt`, as LevelDB has it for a MANIFEST, when it skips it like any other. Returns the file offset
-    /// after the last whole record, and how many records or blocks were skipped because they broke the format or their
-    /// checksum didn't match.
+    /// before a record that isn't all there yet, and before zeros that run to the end, which LevelDB may not have written
+    /// yet; and before a record at the end whose checksum doesn't match, unless `damagedEndIsCorrupt`, as LevelDB has it
+    /// for a MANIFEST, when it skips it like any other. Returns the file offset after the last whole record, and how many
+    /// records or blocks were skipped because they broke the format or their checksum didn't match.
     internal static (long End, int Corrupt) Records(byte[] bytes, long fileOffset, bool damagedEndIsCorrupt, Action<ReadOnlySpan<byte>> record)
     {
         var end = fileOffset;
@@ -50,10 +51,14 @@ public static class LevelDBLog
         var position = 0;
         List<byte>? pending = null;
 
-        // Drops the rest of a block, as LevelDB does with a record it can't trust.
-        void SkipBlock(int left)
+        // Drops the rest of a block, as LevelDB does with a record it can't trust, or one it never wrote, when that's only
+        // damaged if it broke off a record.
+        void SkipBlock(int left, bool damaged = true)
         {
-            corrupt += 1;
+            if (damaged)
+            {
+                corrupt += 1;
+            }
             pending = null;
             position += left;
             if (position <= bytes.Length)
@@ -79,10 +84,18 @@ public static class LevelDBLog
             var checksum = header.ReadFixed32();
             var size = (int)header.ReadLittleEndian(count: 2);
             var type = header.ReadByte();
-            // Space LevelDB hasn't written yet reads as zeros.
-            if (checksum == 0 && size == 0 && type == 0)
+            if (type == 0 && size == 0)
             {
-                break;
+                // Zeros that run to the end may be space LevelDB hasn't written yet: reading on from `End` reads what it
+                // writes there.
+                if (bytes.AsSpan(start: position).IndexOfAnyExcept(value: (byte)0) < 0)
+                {
+                    break;
+                }
+                // With more after them, the rest of the block was never written: LevelDB skips it, and counts a record it
+                // breaks off as damaged.
+                SkipBlock(left: left, damaged: pending is not null);
+                continue;
             }
             if (HeaderSize + size > left)
             {

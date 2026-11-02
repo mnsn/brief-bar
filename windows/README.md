@@ -509,8 +509,11 @@ SDK ships inside the app.
   makes it read every file and say some of Teams' data couldn't be read, once that stays so. LevelDB refuses one with a
   damaged record, even the last, though a log's last may be one still being written: going by the version before it
   would read tables that edit removed. It refuses files that are still missing too, so after three tries, BriefBar
-  counts them against the MANIFEST, or against CURRENT. Checked on this PC: Teams' MANIFEST lists all 18 tables there,
-  and its one log is live, so the chats read are the same.
+  counts them against the MANIFEST, or against CURRENT. Like LevelDB, BriefBar skips the rest of a block that reads as
+  zeros, as space never written, and reads on, rather than stopping there and missing the edits after it; only zeros
+  that run to the end may be space not written yet, which it reads again later. Checked on this PC: Teams' MANIFEST
+  listed every table there (18, then 20 after Teams compacted), and its one log was live, so the chats read are the
+  same.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on

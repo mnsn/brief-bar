@@ -101,6 +101,45 @@ public sealed class LevelDBManifestTests
         Assert.Equal(expected: FormatError.Corrupt(what: "manifest"), actual: error.Error);
     }
 
+    /// LevelDB skips the rest of a block that reads as zeros, as space it never wrote, and reads on: the edits after it
+    /// count, as the table one removed.
+    [Fact]
+    public void ReadsOnPastABlockLevelDBNeverFinished()
+    {
+        var first = ManifestWriter.Manifest(ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]));
+        byte[] manifest =
+        [
+            .. first,
+            .. new byte[LevelDBLog.BlockSize - first.Length],
+            .. ManifestWriter.Manifest(ManifestWriter.Edit(logNumber: 7, nextFile: 10, lastSequence: 4, deleted: [5], added: [9])),
+        ];
+
+        var version = LevelDBManifest.Parse(bytes: manifest);
+
+        Assert.Equal(expected: new HashSet<ulong> { 9 }, actual: version.Tables);
+        Assert.Equal(expected: 7UL, actual: version.LogNumber);
+    }
+
+    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, though it reads on after them.
+    [Fact]
+    public void RefusesAManifestWhoseEditBreaksOffAtZeros()
+    {
+        var log = new LogWriter();
+        log.Add(batch: ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]));
+        // An edit too long for the rest of the block, which LevelDB splits across blocks.
+        log.Add(batch: ManifestWriter.Edit(comparator: new string(c: 'c', count: 40_000)));
+        byte[] manifest =
+        [
+            .. log.Bytes[..LevelDBLog.BlockSize],
+            .. new byte[LevelDBLog.BlockSize],
+            .. ManifestWriter.Manifest(ManifestWriter.Edit(logNumber: 7, nextFile: 10, lastSequence: 4, deleted: [5], added: [9])),
+        ];
+
+        var error = Assert.Throws<FormatErrorException>(testCode: () => LevelDBManifest.Parse(bytes: manifest));
+
+        Assert.Equal(expected: FormatError.Corrupt(what: "manifest"), actual: error.Error);
+    }
+
     /// Microsoft Edge's, in the fixture: as LevelDB creates a database, with no tables, and its log number 0, which keeps
     /// every log.
     [Fact]
