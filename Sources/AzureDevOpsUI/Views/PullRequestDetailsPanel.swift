@@ -373,7 +373,7 @@ struct PullRequestDetailsPanel: View {
             }
             PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
                 .id(PullRequestDetailsStore.Anchor.section(.comments))
-            PullRequestChecksSection(panel: panel, highlighted: highlighted)
+            PullRequestChecksSection(item: item, pullRequest: record?.pullRequest, panel: panel, place: details.place, highlighted: highlighted)
                 .id(PullRequestDetailsStore.Anchor.section(.checks))
             PullRequestReviewersSection(panel: panel)
                 .id(PullRequestDetailsStore.Anchor.section(.reviewers))

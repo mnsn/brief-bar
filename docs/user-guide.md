@@ -323,6 +323,20 @@ left edge to make them wider or narrower: BriefBar keeps the width, separately f
 and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
 widgets, a click still opens the pull request in Azure DevOps.
 
+**Click a build that failed** in a pull request's details, or **Build failed** in What's Left, to find out why
+without leaving BriefBar: it opens under its row, and only then does BriefBar read its run. You see its stages,
+where it failed, from its stage to its task, and whether it's the change's doing: that it built an older commit
+than the pull request's latest, that it passed on the very same commit before, so it may be flaky, that it
+passed on this commit before the target branch changed, or that the pipeline's latest run on the target branch
+failed too or passed, each opening the run it names. Then its errors, the tests that failed, with what each
+said and its stack trace when you ask, and the last lines of the failed step's log, which you can select and
+scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**, **Open Log** and **Open Tests**
+open the rest in Azure DevOps, and, while Send Work to Copilot is on, **Fix the Build with Copilot…** sends it
+to Copilot, as the pull request's menu does, or says Copilot's on it. A build that's still going opens the same
+way, to show its stages as they are and what it runs now. **↻**, beside when it was read, reads it again, as
+BriefBar does once it finished or runs again; it keeps what it read in memory, so opening it again soon after
+reads little.
+
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
 a comment that waits on you, such as a reply to you, a mention or a comment on your pull request, stays
@@ -856,7 +870,11 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   they show, and kept in memory only: they're forgotten a quarter of an hour after they're read, unless
   they're still on screen. BriefBar draws their text
   itself, without a web page: nothing they link to or embed, such as an image, is loaded, until you
-  click it and it opens in your browser.
+  click it and it opens in your browser. A pull request's build is read only when you open it in the
+  pull request's details, and again once it finished or runs again while it shows: its steps and errors,
+  the end of the failed step's log, its failed tests with their messages and stack traces, and the
+  pipeline's other runs, to tell whether it's the change's doing. They're kept in memory only, for the
+  last 20 builds you opened, until you open others, someone else signs in or you turn Azure DevOps off.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests
@@ -960,9 +978,10 @@ lists only the review requests made to you by name too, and can't watch a team's
 
 Azure DevOps doesn't include a build's errors with a pull request's policies, so BriefBar reads the
 build's timeline once, as it does for a pinned pipeline, and shows where it failed and the first
-error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." The
-rest is in the build's log: ↗ beside the build in the pull request's details, in BriefBar's window, opens
-its run. Until the timeline has been read, or when it can't be, the list names the build that failed.
+error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." Until the
+timeline has been read, or when it can't be, the list names the build that failed. For the rest, click the
+build in the pull request's details, in BriefBar's window: it opens there with its errors, the tests that
+failed and the end of its log, read as it opens. ↗ beside it opens its run in Azure DevOps.
 
 ### How does it pick my team's sprint?
 

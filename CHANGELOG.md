@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
+  failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
+  to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
+  and may be flaky, or the target branch fails too), its errors, the tests that failed with what each said and
+  its stack trace, and the last lines of the failed step's log, selectable, with **Open Run**, **Open Log** and
+  **Open Tests** for the rest, and **Fix the Build with Copilot…** while Send Work to Copilot is on. A build
+  that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
+  ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
+  again once.
+
 ## 0.11.0 - 2026-11-02
 
 - **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
