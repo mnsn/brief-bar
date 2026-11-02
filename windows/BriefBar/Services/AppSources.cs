@@ -3,7 +3,9 @@ using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Demo;
 using BriefBar.Core.GitHub;
+using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
+using BriefBar.Core.Teams;
 using Microsoft.UI.Dispatching;
 
 namespace BriefBar.Services;
@@ -21,6 +23,9 @@ internal sealed class AppSources
 
     /// What the demo's GitHub opens: nothing, as made-up pull requests aren't anywhere.
     static readonly GitHubAccess demoGitHub = new(OpenLink: _ => { });
+
+    /// What the demo's Teams opens: nothing, as made-up chats aren't anywhere.
+    static readonly TeamsAccess demoTeams = new(OpenLink: _ => { }, OpenApp: () => { });
 
     static readonly ProcessRunner processes = new();
 
@@ -40,6 +45,8 @@ internal sealed class AppSources
             : new AzureDevOpsSettings(settings: Settings, now: madeAt);
         Copilot = new CopilotSettings(settings: Settings, now: madeAt);
         GitHub = new GitHubSettings(settings: Settings);
+        Teams = new TeamsSettings(settings: Settings);
+        Appearance = new AppearanceSettings(settings: Settings);
         Switch = new SourceSwitch(settings: Settings, entries: SourceCatalog.OnWindows, make: Make);
     }
 
@@ -51,13 +58,15 @@ internal sealed class AppSources
 
     public GitHubSettings GitHub { get; }
 
+    public TeamsSettings Teams { get; }
+
+    /// What the bar shows behind its words, as chosen in Settings.
+    public AppearanceSettings Appearance { get; }
+
     public SourceSwitch Switch { get; }
 
-    /// The sources to run as BriefBar starts: those you turned on, and, with --demo, made-up ones for the sources that
-    /// Windows doesn't have yet.
-    public IReadOnlyList<ISectionSource> Initial() => isDemo
-        ? [.. Switch.Initial(), .. DemoSource.All(madeAt: madeAt).Where(predicate: source => !SourceCatalog.OnWindows.Any(predicate: entry => entry.Id == source.Source))]
-        : Switch.Initial();
+    /// The sources to run as BriefBar starts: those you turned on, or, with --demo, every one.
+    public IReadOnlyList<ISectionSource> Initial() => Switch.Initial();
 
     /// Settings for the demo, in memory, with every source on.
     static MemorySettings DemoSettings(DateTimeOffset madeAt)
@@ -73,7 +82,8 @@ internal sealed class AppSources
     }
 
     /// BriefBar's environment's `names`, as a locator or a folder's default reads them: where the Copilot app keeps its
-    /// data, or where `BRIEFBAR_COPILOT_DIR` says; where the Azure CLI, the GitHub CLI or the Copilot CLI may be.
+    /// data, or where `BRIEFBAR_COPILOT_DIR` says; where Teams keeps its own, or where `BRIEFBAR_TEAMS_CACHE` says; where
+    /// the Azure CLI, the GitHub CLI or the Copilot CLI may be.
     static Dictionary<string, string?> EnvironmentOf(IReadOnlyList<string> names) => names.ToDictionary(
         keySelector: name => name, elementSelector: name => Environment.GetEnvironmentVariable(variable: name), comparer: StringComparer.OrdinalIgnoreCase);
 
@@ -94,6 +104,13 @@ internal sealed class AppSources
     /// A source of `entry`, not started yet.
     ISectionSource Make(SourceEntry entry) => entry.Id switch
     {
+        SourceId.Teams => isDemo
+            ? new TeamsSource(
+                settings: Teams,
+                makeEngine: onChange => new DemoTeamsEngine(madeAt: madeAt, onChange: onChange),
+                access: demoTeams,
+                makeMarks: TeamsReadMarks.InMemory)
+            : LiveTeams(),
         SourceId.AzureDevOps => new AzureDevOpsSource(
             settings: AzureDevOps,
             reading: isDemo ? DemoAzureDevOps() : LiveAzureDevOps(),
@@ -124,6 +141,18 @@ internal sealed class AppSources
                 locator: new CopilotCLILocator(environment: EnvironmentOf(names: CopilotCLILocator.Variables)),
                 processes: processes,
                 shell: CopilotCLIShell.Make(queue: queue)));
+    }
+
+    /// Teams' own data on this PC, or where `BRIEFBAR_TEAMS_CACHE` says; the chats you mark read are kept sealed for your
+    /// Windows account.
+    TeamsSource LiveTeams()
+    {
+        var location = TeamsCacheLocation.Default(environment: EnvironmentOf(names: [TeamsCacheLocation.Variable]));
+        return new TeamsSource(
+            settings: Teams,
+            makeEngine: onChange => new TeamsEngine(location: location, onChange: onChange),
+            access: TeamsShell.Access,
+            makeMarks: () => new TeamsReadMarks(path: TeamsReadMarks.DefaultPath, protector: new WindowsDataProtector(purpose: "BriefBar Teams read marks")));
     }
 
     /// The demo's made-up pull requests, in its one made-up organization, without the Azure CLI.

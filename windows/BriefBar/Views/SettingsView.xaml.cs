@@ -28,6 +28,7 @@ public sealed partial class SettingsView : UserControl
         {
             UIElement? settings = source.Entry.Id switch
             {
+                SourceId.Teams => new TeamsSettingsView(viewModel: viewModel.Teams),
                 SourceId.AzureDevOps => new AzureDevOpsSettingsView(viewModel: viewModel.AzureDevOps),
                 SourceId.Copilot => new CopilotSettingsView(viewModel: viewModel.Copilot),
                 SourceId.GitHub => new GitHubSettingsView(viewModel: viewModel.GitHub),
