@@ -1216,6 +1216,33 @@ which stays under Done, keeps the threads, builds and checks they read last; for
 they say BriefBar reads those only while a pull request is open. Someone else signing in to the Azure CLI
 closes it.
 
+**Its Copilot session.** With **Send Work to Copilot** on, a line under the heading names the Copilot session the
+pull request's work goes to (`PullRequestSessionLine`), one for each pull request (`PullRequestSession`): the
+session you chose for it, unless a task of BriefBar's started on it since, in whatever session; else its last
+task's, even while Copilot still works in it, which then says it's busy; else the session of the work item's task
+that opened it; else the Copilot app's session that the app records with it, that you linked to it in Show Links or
+that's on its branch. Two of those that go with it as well as each other, neither with every reason the other has
+and more, aren't ranked by which was active last: the line asks which is its, and goes on with the one you choose.
+One whose log only has a link to it, and that was there before it was created, is a guess (`PullRequestSession.guess`),
+which the line's menu offers and nothing picks; the logs are read for it only when no session goes with it, and what
+they said is kept for a quarter of an hour. The sessions are those the Send to Copilot window lists
+(`CopilotTasksStore.sessionChoices`), read the same way, off the main thread, as the details show and every ten
+seconds while they do (`PullRequestSessions`), so the line follows the app's sessions as they start, end, open and
+close; BriefBar's tasks, your choice and Show Links' links as they change. How work would reach the session
+(`PullRequestSession.Delivery`) is worked out as the window does (`CopilotTasksStore.cliProblem`, without its git
+check, which the window still makes): with the Copilot CLI while it can go on with it, in the Copilot app, with the
+prompt copied, when the app has it open or the CLI can't, or busy while a task of BriefBar's works in it or in its
+checkout. How it stands is what Copilot's list says of it through Show Links, or what BriefBar follows of its own
+task. While it waits for your answer, the line is orange, and opens the session in the Copilot app, where you answer
+it, as Copilot's list does; otherwise it shows the session's page in the details, and it isn't under **Also
+Linked**. **Use for This Pull Request**, in its menu, keeps your choice in the preferences
+(`ado.copilot.pullRequestSessions`), by references only, the pull request's and the session's, never names, as
+Show Links keeps the links you make, and for as long (`PullRequestSessionChoice`); turning Azure DevOps off forgets
+it. The Send to Copilot window goes there too, unless you choose otherwise (`CopilotTasksStore.suggestedChoice`), and
+so do agents ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
+the pull request, read from nothing else, to look at; with neither, nothing. The demo makes its sessions up from its
+own tasks and the Copilot demo's sessions that Show Links links, and reads nothing.
+
 ### What counts as new
 
 Azure DevOps has no read or unread state for pull requests, so BriefBar keeps its own
@@ -1573,8 +1600,9 @@ with it:
   `session-state` or the session's folder may be one, so the search reads nothing outside the app's
   sessions. A session's `workspace.yaml` is read the same way.
 
-The rest of the app's sessions follow, the most recently active first. A pull request's task goes on with
-its last task's session, as before; else with the session of the work item's task that opened it; else
+The rest of the app's sessions follow, the most recently active first. A pull request's task goes to the
+session you chose for it in its details ([above](#a-pull-requests-details)), unless a task started on it since;
+else on with its last task's session, as before; else with the session of the work item's task that opened it; else
 with the app's session that the app records with it, that you linked, or that's on its branch, the most
 recently active; else with one that mentions it and was there before it was created, which likely opened
 it (`CopilotTasksStore.suggestedChoice`). A work item's task starts a new session unless you choose
@@ -2069,17 +2097,19 @@ and never rebases. For a failed build, it reads each run's timeline first, with 
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
 
 While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
-Copilot session BriefBar sends its work to unless you choose another, as the composer suggests it (see
-[Send work to Copilot](#send-work-to-copilot)), by its name and session ID, with why and where it is.
-It's found the same way, by the composer's own ranking (`CopilotTasksStore.sessionChoices` and
-`suggestedChoice`, through `suggestedSession`): its last task's session; else the session of the work
-item's task that opened it; else the Copilot app's session that the app records with it, that you
-linked to it in Show Links, or that's on its branch, the most recently active; else one whose log
-mentions it and that was there before it was created. The logs are read for mentions only when none of
-the others is found, since only then do they matter. `--mcp` finds it with a store of its own
-(`AzureDevOpsReader.session`): over a copy of the tasks sent to Copilot, in memory, each as its log
-says it stands, with the pull request one opened while BriefBar was quit, as the app finds it when it
-next looks (`RunTranscript.openedPullRequest`), so nothing it does is saved; with the environment
+Copilot session BriefBar sends its work to, as its details show it (see [A pull request's
+details](#a-pull-requests-details)), by its name and session ID, with why and where it is, and whether Copilot
+still works in it. It's found the same way (`CopilotTasksStore.pullRequestSession`, with `PullRequestSession`):
+the session you chose for it, unless a task started on it since; else its last task's session; else the session
+of the work item's task that opened it; else the Copilot app's session that the app records with it, that you
+linked to it in Show Links, or that's on its branch. When you chose a new session, it says so; when two sessions
+go with it as well as each other, it names both, and that BriefBar asks you which; and when none does, it names
+one whose log mentions it and that was there before it was created as one that may have opened it, not as its
+session. The logs are read for mentions only when no session goes with it, since only then do they matter. `--mcp`
+finds it with a store of its own (`AzureDevOpsReader.session`): over a copy of the tasks sent to Copilot and of the
+sessions you chose for pull requests' work, in memory, each task as its log says it stands, with the pull request
+one opened while BriefBar was quit, as the app finds it when it next looks (`RunTranscript.openedPullRequest`), so
+nothing it does is saved; with the environment
 `--mcp` started with, rather than your login shell's, which it would have to start; and with the links
 you made, from the app's settings, only while Show Links is on. Like the composer, it reads the Copilot
 app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
@@ -2088,8 +2118,8 @@ store has a copy of the app's setting, so it reads the app's again every tenth o
 looks: turned off meanwhile, it reads nothing more, as the composer's search stops, and names none. It
 says whether the session is one the Copilot app has, which an agent there can send a message to: one
 of its own, one a task went on with, or a task's that you opened there, which its database lists, open
-or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When
-there's none, it says nothing.
+or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When no
+session goes with it and none may have opened it, it says nothing.
 
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
 it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few

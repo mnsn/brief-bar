@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Each pull request has one Copilot session, under its heading in its details.** With Send Work to
+  Copilot on, a line names the session its work goes to, why it's its, such as **on its branch**, and how
+  it stands, in its state's color: its last task's, the work item's task that opened it, or the Copilot
+  app's session that goes with it. Click it to see the session's page; while it waits for your answer, it's
+  orange, and a click opens it in the Copilot app, where you answer it. When two sessions go with it as well
+  as each other, it asks which is its rather than guess. **⌄** opens the session in Copilot, or in Terminal
+  for a task BriefBar runs, and **Use for This Pull Request** sends its work to another session, or to a
+  new one, from then on: the Send to Copilot window and agents' `pull_request` go there too.
+
 ## 0.11.0 - 2026-11-02
 
 - **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,

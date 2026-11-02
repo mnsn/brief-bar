@@ -44,7 +44,10 @@ its number or link, even when the user gave you its link. If it refuses, because
 is off, or it doesn't know that pull request, tell the user what it says and start nothing. Otherwise it says which of
 those actions apply to it: offer only those, and find its clone by the repository it names. Under Copilot, it may also
 name its session: the Copilot session BriefBar sends that pull request's work to, by its name and session ID, and why,
-such as that it's on its branch or opened it. It names one only while Send Work to Copilot is on in BriefBar.
+such as that it's on its branch or opened it. It names one only while Send Work to Copilot is on in BriefBar. It may
+say instead that its session isn't settled, naming the sessions that go with it as well as each other, or that it has
+none, naming one that may have opened it: then each of those is a session it names, below, and the user chooses which,
+if any, so never pick one for them.
 
 In the GitHub Copilot app, if you have `create_session`, the work goes to a session the user can follow and steer,
 unless they ask for it here. Wherever it goes, its prompt is only this, filled in:

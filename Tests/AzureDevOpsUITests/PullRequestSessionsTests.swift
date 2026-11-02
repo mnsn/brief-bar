@@ -223,9 +223,10 @@ import Testing
         #expect(session.session?.name == "Delivery estimates")
         #expect(session.basis == .onItsBranch)
         #expect(session.others.isEmpty)
-        let standing = PullRequestSessionLine.standing(of: try #require(session.session), links: links, entries: [], now: now)
+        let standing = PullRequestSessionLine.standing(of: try #require(session.session), links: links, entries: [])
         #expect(standing.text == "Waiting for your answer")
         #expect(standing.state == .needsYou)
+        #expect(standing.phrase(now: now) == "waiting for your answer")
         #expect(PullRequestSessionLine.shows(session))
 
         // Show Links off too: nothing.
@@ -252,7 +253,7 @@ import Testing
         #expect(fixing.session.map(PullRequestSession.name) == "Fix the Build")
         #expect(fixing.session?.isBusy == true)
         #expect(fixing.delivery == .busy("Copilot is still working in it."))
-        let standing = PullRequestSessionLine.standing(of: try #require(fixing.session), links: sessions.links, entries: store.entries, now: now)
+        let standing = PullRequestSessionLine.standing(of: try #require(fixing.session), links: sessions.links, entries: store.entries)
         #expect(standing.text == "Working" && standing.state == .running)
 
         let opener = try #require(sessions.session(for: opened.key))
@@ -272,7 +273,9 @@ import Testing
         let choice = SessionChoice(kind: .app(app), name: "Retry backoff", place: "payments-api · payments-retry", lastActive: app.lastActive, reasons: [.onItsBranch, .mentionsIt])
         let session = PullRequestSession.make([choice], chosen: nil, createdAt: nil, canChoose: true)
         #expect(PullRequestSessionLine.why(choice, in: session) == "on its branch")
-        #expect(PullRequestSessionLine.standing(of: choice, links: links, entries: [], now: now) == ("Active 1d ago", nil))
+        let quiet = PullRequestSessionLine.standing(of: choice, links: links, entries: [])
+        #expect(quiet == PullRequestSessionLine.Standing(text: "", state: nil, date: app.lastActive))
+        #expect(quiet.phrase(now: now) == "active 1d ago")
         #expect(PullRequestSessionLine.menuTitle(of: choice, in: session, links: links, entries: [], now: now)
             == "‘Retry backoff’ — on its branch · active 1d ago")
 
@@ -283,7 +286,9 @@ import Testing
             ref: ref, label: "Retry backoff", title: "Retry backoff", symbol: "checkmark.circle.fill", color: .secondary,
             status: "Finished", date: now.addingTimeInterval(-26 * 3_600)
         )])
-        #expect(PullRequestSessionLine.standing(of: choice, links: links, entries: [], now: now) == ("Finished 1d ago", nil))
+        let finished = PullRequestSessionLine.standing(of: choice, links: links, entries: [])
+        #expect(finished.text == "Finished" && finished.state == nil)
+        #expect(finished.phrase(now: now) == "finished 1d ago")
 
         // The app has it open; its checkout's busy.
         var open = choice
@@ -292,7 +297,10 @@ import Testing
             == "‘Retry backoff’ — on its branch · finished 1d ago · open in Copilot")
         var busy = choice
         busy.isFolderBusy = true
-        #expect(PullRequestSessionLine.standing(of: busy, links: links, entries: [], now: now) == ("Busy", nil))
+        #expect(PullRequestSessionLine.standing(of: busy, links: links, entries: []).phrase(now: now) == "busy")
+        // What needs you, or works, says so without since when, which the line shows apart.
+        let waiting = PullRequestSessionLine.Standing(text: "Waiting for your answer", state: .needsYou, date: now.addingTimeInterval(-240))
+        #expect(waiting.phrase(now: now) == "waiting for your answer")
 
         // Nothing's shown without a session, unless you can choose one.
         let none = PullRequestSession.make([], chosen: nil, createdAt: nil, canChoose: false)

@@ -33,26 +33,42 @@ struct PullRequestSessionLine: View {
         }
     }
 
-    /// "Waiting for your answer", "Working", "Finished 1d ago": how a session stands, as the source that lists it tells it
-    /// through Show Links; a task's as BriefBar follows it; else whether the Copilot app runs a turn in it, or when it was
-    /// last active. Busy, while a task of BriefBar's works in its checkout for another session.
-    static func standing(
-        of choice: SessionChoice, links: Links, entries: [CopilotTaskEntry], now: Date
-    ) -> (text: String, state: ItemState?) {
-        if choice.isFolderBusy, !choice.isBusy { return ("Busy", nil) }
+    /// How a session stands: what it does, in its state's color, and since when.
+    struct Standing: Equatable {
+        /// "Waiting for your answer", "Working", "Finished", "Busy"; empty when there's nothing more to say than when it
+        /// was last active.
+        var text: String
+        var state: ItemState?
+        var date: Date?
+
+        /// "finished 1d ago", "working", "active 3h ago", for a sentence: with since when, unless it needs you, works or
+        /// has just ended, which its state says.
+        func phrase(now: Date) -> String {
+            let ago = date.map { WorkItemDetailsPanel.ago($0, now: now) }
+            guard !text.isEmpty else { return ago.map { "active \($0)" } ?? "" }
+            let lowered = text.prefix(1).lowercased() + text.dropFirst()
+            guard state == nil, let ago, text != "Busy" else { return lowered }
+            return "\(lowered) \(ago)"
+        }
+    }
+
+    /// How a session stands (`Standing`): as the source that lists it tells it through Show Links; a task's as BriefBar
+    /// follows it; else whether the Copilot app runs a turn in it, and when it was last active. Busy, while a task of
+    /// BriefBar's works in its checkout for another session.
+    static func standing(of choice: SessionChoice, links: Links, entries: [CopilotTaskEntry]) -> Standing {
+        if choice.isFolderBusy, !choice.isBusy { return Standing(text: "Busy", state: nil, date: nil) }
         if choice.run != nil, let entry = entries.first(where: { $0.id == choice.id }) {
             let phase = entry.status.phase
-            return (phase.title, phase.state)
+            return Standing(text: phase.title, state: phase.state, date: entry.status.since ?? entry.startedAt)
         }
         if links.isOn, let ref = ItemRef.session(choice.id), links.isDescribed(ref) {
             let item = links.describe(ref)
             if let status = item.status, !status.isEmpty {
-                guard item.state == nil, let date = item.date else { return (status, item.state) }
-                return ("\(status) \(WorkItemDetailsPanel.ago(date, now: now))", nil)
+                return Standing(text: status, state: item.state, date: item.date ?? choice.lastActive)
             }
         }
-        if choice.appSession?.isRunning == true { return ("Running", .running) }
-        return choice.lastActive.map { ("Active \(WorkItemDetailsPanel.ago($0, now: now))", nil) } ?? ("", nil)
+        if choice.appSession?.isRunning == true { return Standing(text: "Running", state: .running, date: choice.lastActive) }
+        return Standing(text: "", state: nil, date: choice.lastActive)
     }
 
     /// "‘Retry backoff’ — on its branch · finished 1d ago", for a menu.
@@ -64,8 +80,8 @@ struct PullRequestSessionLine: View {
         var title = "‘\(name.count > 60 ? String(name.prefix(59)) + "…" : name)’"
         var parts: [String] = []
         if let why = why(choice, in: session) { parts.append(why) }
-        let standing = standing(of: choice, links: links, entries: entries, now: now).text
-        if !standing.isEmpty { parts.append(standing.prefix(1).lowercased() + standing.dropFirst()) }
+        let standing = standing(of: choice, links: links, entries: entries).phrase(now: now)
+        if !standing.isEmpty { parts.append(standing) }
         if choice.isOpenInApp, !choice.isUnavailable { parts.append("open in Copilot") }
         if !parts.isEmpty { title += " — " + parts.joined(separator: " · ") }
         return title
@@ -123,9 +139,9 @@ private struct SessionLineRow: View {
     @Environment(\.itemNavigation) private var navigation
     @LocalState private var isHovered = false
 
-    private var standing: (text: String, state: ItemState?) {
-        guard let choice else { return ("", nil) }
-        return PullRequestSessionLine.standing(of: choice, links: links, entries: copilot.entries, now: store.now)
+    private var standing: PullRequestSessionLine.Standing {
+        guard let choice else { return PullRequestSessionLine.Standing(text: "", state: nil, date: nil) }
+        return PullRequestSessionLine.standing(of: choice, links: links, entries: copilot.entries)
     }
 
     /// It waits for your answer, or your approval, which only the Copilot app takes.
@@ -200,6 +216,14 @@ private struct SessionLineRow: View {
                 .font(size: 12.5)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            // Since when, as a row says it.
+            if let date = standing.date {
+                Text(Elapsed.short(since: date, now: store.now))
+                    .font(size: 11, weight: .medium).monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .help(date.formatted(date: .abbreviated, time: .shortened))
+            }
             if waitsForYou {
                 Image(systemName: "arrow.up.forward.app")
                     .font(size: 11.5, weight: .medium)
@@ -262,11 +286,12 @@ private struct SessionLineRow: View {
         return lines.joined(separator: "\n")
     }
 
-    /// "Copilot session Retry backoff, on its branch, finished 1d ago".
+    /// "Copilot session Retry backoff, on its branch, finished 1d ago"; "Copilot: new session, none goes with it yet".
     private var accessibilityLabel: String {
-        var parts = ["Copilot session " + name.trimmingCharacters(in: CharacterSet(charactersIn: "‘’"))]
+        var parts = [choice == nil ? "Copilot: " + name.lowercased() : "Copilot session " + name.trimmingCharacters(in: CharacterSet(charactersIn: "‘’"))]
         if let why { parts.append(why) }
-        if !standing.text.isEmpty { parts.append(standing.text) }
+        let phrase = standing.phrase(now: store.now)
+        if !phrase.isEmpty { parts.append(phrase) }
         return parts.joined(separator: ", ")
     }
 }
@@ -280,8 +305,6 @@ private struct SessionQuestion: View {
     @ObservedObject var links: Links
 
     @EnvironmentObject private var sessions: PullRequestSessions
-    @EnvironmentObject private var copilot: CopilotTasksStore
-    @EnvironmentObject private var store: PRStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -345,18 +368,38 @@ private struct QuestionRow: View {
     @EnvironmentObject private var store: PRStore
     @LocalState private var isHovered = false
 
-    private var standing: (text: String, state: ItemState?) {
-        guard let choice else { return ("", nil) }
-        return PullRequestSessionLine.standing(of: choice, links: links, entries: copilot.entries, now: store.now)
+    private var standing: PullRequestSessionLine.Standing {
+        guard let choice else { return PullRequestSessionLine.Standing(text: "", state: nil, date: nil) }
+        return PullRequestSessionLine.standing(of: choice, links: links, entries: copilot.entries)
     }
 
     private var name: String {
         choice.map { "‘\(PullRequestSession.name(of: $0))’" } ?? "New session"
     }
 
-    private var detail: String {
+    /// "on its branch · finished 2d ago", how it stands in its state's color; where a new session works.
+    private var detail: Text {
+        guard let choice else { return Text("In a worktree at its latest commit").foregroundStyle(.secondary) }
+        var parts: [Text] = []
+        if let why = PullRequestSessionLine.why(choice, in: session) { parts.append(Text(why).foregroundStyle(.secondary)) }
+        // Where it works, unless that's the pull request's branch.
+        if let place = choice.place, !choice.reasons.contains(.onItsBranch) { parts.append(Text(place).foregroundStyle(.secondary)) }
+        let phrase = standing.phrase(now: store.now)
+        if !phrase.isEmpty {
+            parts.append(Text(phrase).foregroundStyle(standing.state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary)))
+        }
+        guard let first = parts.first else { return Text("") }
+        return parts.dropFirst().reduce(first) { $0 + Text(" · ").foregroundStyle(.tertiary) + $1 }
+    }
+
+    /// The same, for VoiceOver.
+    private var spokenDetail: String {
         guard let choice else { return "In a worktree at its latest commit" }
-        return [PullRequestSessionLine.why(choice, in: session), choice.place].compactMap { $0 }.joined(separator: " · ")
+        var parts = [PullRequestSessionLine.why(choice, in: session)].compactMap { $0 }
+        if let place = choice.place, !choice.reasons.contains(.onItsBranch) { parts.append(place) }
+        let phrase = standing.phrase(now: store.now)
+        if !phrase.isEmpty { parts.append(phrase) }
+        return parts.joined(separator: ", ")
     }
 
     var body: some View {
@@ -368,16 +411,13 @@ private struct QuestionRow: View {
                     .frame(width: 16)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 VStack(alignment: .leading, spacing: 2) {
-                    (Text(name).fontWeight(.medium) + standingText)
-                        .font(size: 12.5)
+                    Text(name)
+                        .font(size: 12.5, weight: .medium)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !detail.isEmpty {
-                        Text(detail)
-                            .font(size: 11.5)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    detail
+                        .font(size: 11.5)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Use")
@@ -401,15 +441,9 @@ private struct QuestionRow: View {
         .onHover { isHovered = $0 }
         .help(choice == nil ? "Send its work to a new session" : "Send its work to this session from now on")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([name.trimmingCharacters(in: CharacterSet(charactersIn: "‘’")), detail, standing.text].filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityLabel([name.trimmingCharacters(in: CharacterSet(charactersIn: "‘’")), spokenDetail].filter { !$0.isEmpty }.joined(separator: ", "))
         .accessibilityHint(choice == nil ? "Sends its work to a new session" : "Sends its work to this session from now on")
         .accessibilityAddTraits(.isButton)
-    }
-
-    private var standingText: Text {
-        guard !standing.text.isEmpty else { return Text("") }
-        let color = standing.state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary)
-        return Text(" · ").foregroundStyle(.tertiary) + Text(standing.text).foregroundStyle(color)
     }
 }
 

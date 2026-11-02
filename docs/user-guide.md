@@ -323,6 +323,23 @@ left edge to make them wider or narrower: BriefBar keeps the width, separately f
 and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
 widgets, a click still opens the pull request in Azure DevOps.
 
+**Its Copilot session.** With Send Work to Copilot on, a line under the heading names the Copilot session
+the pull request's work goes to, why it's its, and how it stands, in its state's color, such as **Copilot ·
+‘Retry backoff’ · on its branch · Finished 1d ago**: the session you chose for it; else its last task's;
+else the session of the work item's task that opened it; else the Copilot app's session that Copilot
+recorded with it, that you linked to it with Show Links, or that's on its branch. When two of those go with
+it as well as each other, the line asks **Which session is this pull request's?** instead of guessing, and
+its work goes to the one you choose. One whose log only has a link to it may have opened it, but that's a
+guess, so it's offered in the line's menu, never chosen for you. Click the line to see the session's page in
+the details; while it waits for your answer, the line is orange, and a click opens it in the Copilot app,
+where you answer it. While Copilot works in it, or in its checkout, for a task BriefBar sent, nothing more
+goes there until that's done. **⌄** opens it in Copilot, or **Continue in Terminal** for a task BriefBar runs
+with the Copilot CLI; and, under **Use for This Pull Request**, lists the sessions that go with it, each
+with why and how it stands, the app's other sessions, and **New Session**: the one you check is where the
+pull request's work goes from then on, in the Send to Copilot window too, until a task starts on it in
+another session. **Let BriefBar Choose** goes back to BriefBar's choice. Without Send Work to Copilot, the
+line shows only the sessions Show Links links to it, to look at.
+
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
 a comment that waits on you, such as a reply to you, a mention or a comment on your pull request, stays
@@ -499,9 +516,10 @@ instead: BriefBar's earlier tasks on the work item or pull request, and the task
 opened the pull request; then your Copilot app's sessions that go with it, such as the one on the pull
 request's branch, one the app records with it, one you linked to it with [Show Links](#links), or one
 whose log links to it; and, under **Other Copilot Sessions**, the rest, the most recently active first.
-A pull request's task goes on with its last task's session, as before; without one, it goes to the
-session of the work item's task that opened it, or to the app's session that likely did. Choose
-**New Session** for a new worktree instead.
+A pull request's task goes to the session you chose for it in its details, unless a task started on it
+since; else on with its last task's session, as before; without one, it goes to the session of the work
+item's task that opened it, or to the app's session that likely did. Choose **New Session** for a new
+worktree instead.
 
 | Send | What happens |
 |---|---|
@@ -608,7 +626,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, and why |
+| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, as its details show it, and why, or the ones it asks you to choose from |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
@@ -840,14 +858,15 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Send Work to Copilot** starts the Copilot CLI only if you turn it on, and only when you send a work
   item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
-  choose, with git, and Copilot's log of that session; and, as the window that sends one opens, the
-  Copilot app's sessions it could go to instead, read-only: their names, projects, branches, the pull
-  requests the app records with them and which run a turn now, from its database; the folder each works
-  in, from its session state; which ones the app has open; and which of those active lately link to it in
-  their logs. It reads nothing of Copilot's while the feature is off.
+  choose, with git, and Copilot's log of that session; and, as the window that sends one opens, and while
+  a pull request's details show, every ten seconds, the Copilot app's sessions its work could go to,
+  read-only: their names, projects, branches, the pull requests the app records with them and which run a
+  turn now, from its database; the folder each works in, from its session state; which ones the app has
+  open; and which of those active lately link to it in their logs. It reads nothing of Copilot's while
+  the feature is off.
   **Open in Copilot** puts the prompt on the clipboard. In its preferences, it keeps which work items you sent, where, with which model, and the link to
-  the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
-  ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
+  the pull request, not their titles; the session you choose for a pull request's work, by its ID only;
+  and, in a file only you can read, what Copilot printed when it ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.
 - **Your sprint and pipelines** are read only while something shows them on screen, with the same
   sign-in and GET requests as your pull requests. The pipelines that run after you merge a pull request
