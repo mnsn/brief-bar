@@ -30,8 +30,9 @@ import Testing
         return url
     }
 
-    /// A stand-in for the Copilot app's `data.db`: two sessions in shop-web, one on !4088's branch.
-    private func database(at home: URL) throws {
+    /// A stand-in for the Copilot app's `data.db`: two sessions in shop-web, one on !4088's branch; or these, in docs, on no
+    /// pull request's branch.
+    private func database(at home: URL, elsewhere: [String] = []) throws {
         var handle: OpaquePointer?
         guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw DatabaseError(message: "no database") }
         defer { sqlite3_close(handle) }
@@ -40,6 +41,21 @@ import Testing
         let (created, updated, older) = (formatter.string(from: now.addingTimeInterval(-30 * 86_400)),
                                          formatter.string(from: now.addingTimeInterval(-300)),
                                          formatter.string(from: now.addingTimeInterval(-7_200)))
+        let sessions = elsewhere.isEmpty
+            ? """
+                INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                    VALUES ('\(onBranch)', 'Delivery estimates', 'project', '\(created)', '\(updated)'),
+                           ('\(other)', 'Shipping rules', 'project', '\(created)', '\(older)');
+                INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
+                    VALUES ('w1', 'shop', '\(onBranch)', 'delivery-estimates', 'Delivery estimates', '\(updated)'),
+                           ('w2', 'shop', '\(other)', 'shipping', 'Shipping rules', '\(older)');
+                """
+            : elsewhere.enumerated().map { index, id in
+                """
+                INSERT INTO sessions (id, title, session_type, created_at, updated_at) VALUES ('\(id)', 'Docs', 'project', '\(created)', '\(updated)');
+                INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at) VALUES ('w\(index)', 'shop', '\(id)', 'docs-\(index)', 'Docs', '\(updated)');
+                """
+            }.joined(separator: "\n")
         let statements = """
             BEGIN;
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
@@ -52,12 +68,7 @@ import Testing
                 created_pr_repo_full_name TEXT, created_pr_number INTEGER, created_pr_html_url TEXT);
             CREATE TABLE workspace_pull_request_links (workspace_id TEXT PRIMARY KEY NOT NULL, uri TEXT NOT NULL);
             INSERT INTO projects (id, name) VALUES ('shop', 'shop-web');
-            INSERT INTO sessions (id, title, session_type, created_at, updated_at)
-                VALUES ('\(onBranch)', 'Delivery estimates', 'project', '\(created)', '\(updated)'),
-                       ('\(other)', 'Shipping rules', 'project', '\(created)', '\(older)');
-            INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
-                VALUES ('w1', 'shop', '\(onBranch)', 'delivery-estimates', 'Delivery estimates', '\(updated)'),
-                       ('w2', 'shop', '\(other)', 'shipping', 'Shipping rules', '\(older)');
+            \(sessions)
             COMMIT;
             """
         guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw DatabaseError(message: String(cString: sqlite3_errmsg(handle))) }
@@ -194,6 +205,108 @@ import Testing
         store.settings.copilotRuns = []
         try await until { sessions.session(for: key)?.delivery == .cli }
         #expect(sessions.session(for: key)?.delivery == .cli)
+    }
+
+    /// How work would reach its session is checked once, then with each read: not again and again as it's kept.
+    @Test func checksHowWorkWouldReachItOnceEachRead() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        var checked: [String] = []
+        sessions.deliveryCheckedForTests = { checked.append($0) }
+        let following = Task { await sessions.follow(item, record: record) }
+        defer { following.cancel() }
+
+        try await until { sessions.session(for: key)?.delivery != nil }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(checked == [onBranch])
+    }
+
+    /// A closed pull request's work goes nowhere: its details show the sessions Show Links links to it, to look at, and
+    /// nothing of Copilot's is read for it, though Send Work to Copilot is on.
+    @Test func readsNothingForAClosedPullRequest() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let links = Links(defaults: MemoryDefaults(), isDemo: false)
+        links.setOn(true)
+        let sessions = PullRequestSessions(copilot: store, links: links)
+        sessions.refreshEvery = .milliseconds(50)
+        let (item, record) = try await pullRequest(4085)
+        #expect(record.pullRequest.status == .completed)
+        sessions.record = { $0 == item.key ? record : nil }
+        let ref = try #require(ItemRef.session(onBranch))
+        links.publish(.copilot, links: [try #require(ItemLink(ref, item.key.linkRef, origin: .copilot))], items: [LinkedItem(
+            ref: ref, label: "Update the badges", title: "Update the badges", symbol: "waveform.path.ecg", color: .pink,
+            status: "Finished", date: now
+        )])
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        var read = 0
+        store.mentionReadForTests = { _ in read += 1 }
+        let following = Task { await sessions.follow(item, record: record) }
+        defer { following.cancel() }
+
+        try await until { sessions.session(for: item.key) != nil }
+        try await Task.sleep(for: .milliseconds(300))
+        let session = try #require(sessions.session(for: item.key))
+        #expect(!session.canChoose)
+        #expect(session.basis == .recordedByCopilot)
+        #expect(session.delivery == nil)
+        #expect(checked == 0 && read == 0)
+    }
+
+    /// Turned off, as when Azure DevOps stops, a search of the logs for mentions under way stops before the next log; and a
+    /// search whose task is cancelled, such as one for details that closed, reads none.
+    @Test func stopsASearchUnderWayWhenItStops() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // Three of the app's sessions active since !4088 was created, on other branches, whose logs don't mention it: none
+        // goes with it, so their logs are searched.
+        let ids = ["aaaaaaaa-aaaa-4aaa-8aaa-000000000001", "aaaaaaaa-aaaa-4aaa-8aaa-000000000002", "aaaaaaaa-aaaa-4aaa-8aaa-000000000003"]
+        try database(at: home, elsewhere: ids)
+        for id in ids {
+            let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            try Data("{}\n".utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        }
+        let store = copilot(home: home)
+        let (item, record) = try await pullRequest()
+        var read: [String] = []
+        store.mentionReadForTests = { read.append($0) }
+
+        let choices = ids.map { id in
+            SessionChoice(kind: .app(AppSession(id: id, name: id, lastActive: now)), name: id, lastActive: now, reasons: [])
+        }
+        let subject = TaskSubject.pullRequest(PullRequestTasks.task(for: record), .fixComments)
+        let searching = Task { await store.sessionsMentioning(subject, among: choices, since: .distantPast) }
+        searching.cancel()
+        #expect(await searching.value.isEmpty)
+        #expect(read.isEmpty)
+
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.record = { $0 == item.key ? record : nil }
+        store.mentionReadForTests = { id in
+            read.append(id)
+            sessions.stopAll()
+        }
+        let following = Task { await sessions.follow(item, record: record) }
+        // Should it not stop, the test ends all the same, and says so.
+        let limit = Task {
+            try? await Task.sleep(for: .seconds(5))
+            following.cancel()
+        }
+        let started = ContinuousClock.now
+        await following.value
+        limit.cancel()
+        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(read.count == 1)
+        #expect(sessions.session(for: item.key) == nil)
     }
 
     // MARK: Without Send Work to Copilot

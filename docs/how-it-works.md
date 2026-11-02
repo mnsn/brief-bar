@@ -1696,12 +1696,14 @@ with it:
   `session-state` or the session's folder may be one, so the search reads nothing outside the app's
   sessions. A session's `workspace.yaml` is read the same way.
 
-The rest of the app's sessions follow, the most recently active first. A pull request's task goes to the
-session you chose for it in its details ([above](#a-pull-requests-details)), unless a task started on it since;
-else on with its last task's session, as before; else with the session of the work item's task that opened it; else
-with the app's session that the app records with it, that you linked, or that's on its branch, the most
-recently active; else with one that mentions it and was there before it was created, which likely opened
-it (`CopilotTasksStore.suggestedChoice`). A work item's task starts a new session unless you choose
+The rest of the app's sessions follow, the most recently active first. A pull request's task goes where its
+details say its work goes ([above](#a-pull-requests-details)), by the same rules (`CopilotTasksStore.suggestedChoice`,
+with `PullRequestSession.pick`): to the session you chose for it there, unless a task started on it since; else on
+with its last task's session, as before; else with the session of the work item's task that opened it; else with the
+app's session that the app records with it, that you linked, or that's on its branch, when one goes with it better
+than the others. When two go with it as well as each other, which its details ask about, or only one whose log
+mentions it and that was there before it was created may have opened it, which they offer, it starts a new session
+unless you choose one, rather than guess. A work item's task starts a new session unless you choose
 one. What BriefBar finds while the composer is open changes where a task goes only until you choose a
 session or change the prompt (`CopilotComposerView.followsSuggestions`). A session that a task of
 BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting

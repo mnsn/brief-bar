@@ -263,7 +263,7 @@ extension CopilotTasksStore {
     /// Which of the app's sessions mention it in their logs, by a link (`SessionMentions`): only those active since it
     /// was created, or in the last 30 days for a work item, the most recently active 40. Read off the main thread, one
     /// log at a time, each only up to its first mention, and none once Send Work to Copilot is off, as when it's turned
-    /// off meanwhile.
+    /// off meanwhile, or once the task that waits for them is cancelled.
     func sessionsMentioning(_ subject: TaskSubject, among choices: [SessionChoice], since createdAt: Date?) async -> Set<String> {
         guard canSend, isOn else { return [] }
         let target: SessionMentions.Target
@@ -277,7 +277,8 @@ extension CopilotTasksStore {
         let home = appHome
         var mentioning = Set<String>()
         for id in candidates {
-            guard canSend, isOn else { break }
+            // Nor once whatever waits for it stopped, such as a pull request's details that closed.
+            guard canSend, isOn, !Task.isCancelled else { break }
             let mentions = await Task.detached(priority: .utility) { SessionMentions.mentions(target, inSession: id, home: home) }.value
             mentionReadForTests?(id)
             if mentions { mentioning.insert(id) }
@@ -299,37 +300,24 @@ extension CopilotTasksStore {
         return availability(of: marked.filter { $0.run != nil } + Self.sorted(marked.filter { $0.appSession != nil }, createdAt: createdAt))
     }
 
-    /// The session a task goes to unless you choose another. A pull request's goes to the session you chose for its work
-    /// (`PullRequestSessionChoice`), or a new one if you chose that, unless a task started on it since; else on with its
-    /// last task's, as before; else with the session of the work item's task that opened it; else with the app's session
-    /// that the app records with it, that you linked to it, or that works on its branch, the most recently active; else
-    /// with the one that mentions it and was there before it was created, which likely opened it. A work item's starts a
-    /// new session unless you choose one.
-    /// - Parameter chosen: what you chose for the pull request's work, unless a task started on it since
-    ///   (`chosenSession(for:)`).
+    /// The session a task goes to unless you choose another: for a pull request, the one its details name
+    /// (`PullRequestSession.pick`), among those that can be used now. The session you chose for its work, or a new one if
+    /// you chose that; else on with its last task's, as before; else with the session of the work item's task that opened
+    /// it; else with the Copilot app's session that the app records with it, that you linked to it, or that works on its
+    /// branch, when one goes with it better than the others. When two go with it as well as each other, or only a link in
+    /// one's log says it may have opened it, it suggests none, as its details ask which or offer it rather than guess. A
+    /// work item's starts a new session unless you choose one.
+    /// - Parameters:
+    ///   - continuable: the run its last task's session goes on with.
+    ///   - chosen: what you chose for the pull request's work, unless a task started on it since (`chosenSession(for:)`).
     static func suggestedChoice(
-        _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, createdAt: Date?,
-        chosen: PullRequestSessionChoice? = nil
+        _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, chosen: PullRequestSessionChoice? = nil
     ) -> SessionChoice? {
         guard case .pullRequest = subject else { return nil }
         let usable = choices.filter { !$0.isUnavailable }
-        if let chosen {
-            guard let id = chosen.session?.id else { return nil }
-            if let session = usable.first(where: { $0.id == id }) { return session }
-        }
-        if let continuable, let last = usable.first(where: { $0.id == continuable.id }) { return last }
-        if let opener = usable.first(where: { $0.run != nil && $0.reasons.contains(.openedIt) }) { return opener }
-        let strong: Set<SessionChoice.Reason> = [.recordedByCopilot, .linkedByYou, .onItsBranch]
-        let apps = usable.filter { $0.appSession != nil }
-        if let linked = apps.filter({ !strong.isDisjoint(with: $0.reasons) })
-            .max(by: { ($0.lastActive ?? .distantPast) < ($1.lastActive ?? .distantPast) }) {
-            return linked
-        }
-        guard let createdAt else { return nil }
-        return apps.filter { choice in
-            guard choice.reasons.contains(.mentionsIt), let born = choice.appSession?.createdAt else { return false }
-            return born < createdAt
-        }.min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
+        let lastTask = continuable.map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
+        if case .session(let choice, _) = PullRequestSession.pick(usable, chosen: chosen, lastTask: lastTask) { return choice }
+        return nil
     }
 
     /// The session you chose for a pull request's work, for a task on it, unless a task started on it since, which has taken

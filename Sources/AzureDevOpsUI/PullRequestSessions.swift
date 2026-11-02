@@ -23,6 +23,8 @@ final class PullRequestSessions: ObservableObject {
     var record: (PRKey) -> PRRecord? = { _ in nil }
     /// How often the Copilot app's sessions are read again while a pull request's details show: shorter in tests.
     var refreshEvery: Duration = .seconds(10)
+    /// Hears of each session whose way there is checked, in tests.
+    var deliveryCheckedForTests: ((_ sessionId: String) -> Void)?
 
     /// How long what the search for mentions found is kept: it reads up to 40 sessions' logs, so opening the same details
     /// again doesn't read them again.
@@ -45,6 +47,11 @@ final class PullRequestSessions: ObservableObject {
     private var followed: [PRKey: Followed] = [:]
     /// Which of the Copilot app's sessions mention each pull request, and when that was read (`mentionsFreshFor`).
     private var mentionsRead: [PRKey: (at: Date, ids: Set<String>)] = [:]
+    /// What's read or checked for each pull request outside the task that follows it, as things change, to stop it with
+    /// that task (`stop(following:)`, `stopAll`).
+    private var spawned: [PRKey: [UUID: Task<Void, Never>]] = [:]
+    /// Stopped for good: nothing more is read.
+    private var hasStopped = false
     /// The pull requests read for now, and the sessions whose way there is checked now: one at a time, each.
     private var reading: Set<PRKey> = []
     private var checking: Set<String> = []
@@ -75,10 +82,19 @@ final class PullRequestSessions: ObservableObject {
         let key = item.key
         start(following: key, record: record, createdAt: item.createdAt)
         defer { stop(following: key) }
-        while !Task.isCancelled {
-            await read(key)
-            try? await Task.sleep(for: refreshEvery)
+        let pause = refreshEvery
+        while !Task.isCancelled, !hasStopped {
+            // Each as a task of its own, which stopping cancels too, such as a search of the logs that's under way.
+            await awaitSpawned(for: key) { [weak self] in await self?.read(key) }
+            await awaitSpawned(for: key) { try? await Task.sleep(for: pause) }
         }
+    }
+
+    /// Does `work` in a task that stops with the pull request's following, or with everything (`spawn`), and with the
+    /// task that waits for it.
+    private func awaitSpawned(for key: PRKey, _ work: @escaping @MainActor () async -> Void) async {
+        guard let task = spawn(for: key, work) else { return }
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     /// Follows these pull requests for pictures, as they stand now: pictures don't follow anything.
@@ -106,15 +122,33 @@ final class PullRequestSessions: ObservableObject {
         } else {
             followed[key] = nil
             sessions[key] = nil
+            spawned.removeValue(forKey: key)?.values.forEach { $0.cancel() }
         }
     }
 
-    /// Stops for good, when Azure DevOps stops.
+    /// Stops for good, when Azure DevOps stops: what's being read stops too, such as a search of the logs for mentions.
     func stopAll() {
+        hasStopped = true
         subscriptions = []
+        spawned.values.flatMap(\.values).forEach { $0.cancel() }
+        spawned = [:]
         followed = [:]
         sessions = [:]
         mentionsRead = [:]
+    }
+
+    /// Reads or checks for a followed pull request, until it's no longer followed or everything stops.
+    @discardableResult
+    private func spawn(for key: PRKey, _ work: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard !hasStopped else { return nil }
+        let id = UUID()
+        // On the main actor, after it's kept: done, it goes.
+        let task = Task { [weak self] in
+            await work()
+            self?.spawned[key]?[id] = nil
+        }
+        spawned[key, default: [:]][id] = task
+        return task
     }
 
     // MARK: Choosing
@@ -166,9 +200,9 @@ final class PullRequestSessions: ObservableObject {
     /// Whether a followed pull request's sessions can be read now: Send Work to Copilot is on, outside the demo, and it's
     /// open.
     private func isReadable(_ key: PRKey) -> Bool {
-        guard copilot.mode == .live, copilot.canSend, copilot.isOn, let state = followed[key], let record = current(state, key) else {
-            return false
-        }
+        guard !hasStopped, !Task.isCancelled, copilot.mode == .live, copilot.canSend, copilot.isOn, let state = followed[key],
+              let record = current(state, key)
+        else { return false }
         return record.pullRequest.status == .active
     }
 
@@ -203,13 +237,15 @@ final class PullRequestSessions: ObservableObject {
     }
 
     /// How work would reach a followed pull request's session now, but for its repository, which doesn't change while its
-    /// details show and is checked as work goes there.
+    /// details show and is checked as work goes there: only for one whose work can go there, once its sessions were read.
     private func checkDelivery(_ key: PRKey) async {
-        guard copilot.mode == .live, let state = followed[key], let record = current(state, key),
-              let choice = sessions[key]?.session, !choice.isUnavailable, !checking.contains(choice.id)
+        guard isReadable(key), let state = followed[key], state.found != nil, let record = current(state, key),
+              let session = sessions[key], session.canChoose, let choice = session.session, !choice.isUnavailable,
+              !checking.contains(choice.id)
         else { return }
         checking.insert(choice.id)
         defer { checking.remove(choice.id) }
+        deliveryCheckedForTests?(choice.id)
         let value = await copilot.delivery(to: choice, for: PullRequestTasks.task(for: record), checksRepository: false)
         // Busy says itself as it changes (`update`).
         guard followed[key] != nil, copilot.isOn else { return }
@@ -253,10 +289,12 @@ final class PullRequestSessions: ObservableObject {
         }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }
-        if state.found == nil, isReadable(key), !reading.contains(key) {
-            Task { await read(key) }
-        } else if let choice = session?.session, session?.delivery == nil, !choice.isUnavailable, copilot.mode == .live, copilot.isOn {
-            Task { await checkDelivery(key) }
+        guard isReadable(key) else { return }
+        if state.found == nil {
+            if !reading.contains(key) { spawn(for: key) { [weak self] in await self?.read(key) } }
+        } else if let session, session.canChoose, session.delivery == nil, let choice = session.session, !choice.isUnavailable,
+                  !checking.contains(choice.id) {
+            spawn(for: key) { [weak self] in await self?.checkDelivery(key) }
         }
     }
 

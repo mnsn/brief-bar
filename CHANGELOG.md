@@ -9,7 +9,8 @@
   orange, and a click opens it in the Copilot app, where you answer it. When two sessions go with it as well
   as each other, it asks which is its rather than guess. **⌄** opens the session in Copilot, or in Terminal
   for a task BriefBar runs, and **Use for This Pull Request** sends its work to another session, or to a
-  new one, from then on: the Send to Copilot window and agents' `pull_request` go there too.
+  new one, from then on. The Send to Copilot window and agents' `pull_request` go where the line says, so
+  when the line asks, the window starts a new session unless you choose one, rather than guess.
 
 ## 0.11.0 - 2026-11-02
 

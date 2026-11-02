@@ -518,10 +518,11 @@ instead: BriefBar's earlier tasks on the work item or pull request, and the task
 opened the pull request; then your Copilot app's sessions that go with it, such as the one on the pull
 request's branch, one the app records with it, one you linked to it with [Show Links](#links), or one
 whose log links to it; and, under **Other Copilot Sessions**, the rest, the most recently active first.
-A pull request's task goes to the session you chose for it in its details, unless a task started on it
-since; else on with its last task's session, as before; without one, it goes to the session of the work
-item's task that opened it, or to the app's session that likely did. Choose **New Session** for a new
-worktree instead.
+A pull request's task goes where its details say its work goes ([above](#azure-devops)): to the session you
+chose for it there, unless a task started on it since; else on with its last task's session, as before; without
+one, to the session of the work item's task that opened it, or to the app's session that goes with it best. When
+two go with it as well as each other, it starts a new session unless you choose one, as its details ask which.
+Choose **New Session** for a new worktree instead.
 
 | Send | What happens |
 |---|---|

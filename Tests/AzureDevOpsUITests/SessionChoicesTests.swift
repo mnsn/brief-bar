@@ -238,11 +238,13 @@ private struct DatabaseError: Error {
         return SessionChoice(kind: kind, name: id, lastActive: now.addingTimeInterval(active), reasons: reasons, isBusy: busy)
     }
 
+    /// Where the pull request's details say its work goes (`PullRequestSession.pick`): its last task's session, then the
+    /// work item's task that opened it, then the app's session that goes with it best; none when two go with it as well as
+    /// each other, which its details ask about, or only a link in one's log says it may have opened it.
     @Test func goesOnWithTheLastTaskThenTheOneThatOpenedItThenTheAppsSession() {
         let worktree = URL(fileURLWithPath: "/tmp/pr-4071")
         let last = run(fixing, worktree: worktree, onPullRequest: 4071)
         let openedIt = run(opener, worktree: worktree, workItem: 4217, opened: 4071)
-        let created = now.addingTimeInterval(-86_400)
         var choices = [
             choice(fixing, reasons: [.earlierTask], active: -60, task: last),
             choice(opener, reasons: [.openedIt], active: -600, task: openedIt),
@@ -252,17 +254,20 @@ private struct DatabaseError: Error {
             choice(other, reasons: [.mentionsIt], active: -5, born: -3_600),
         ]
         func suggested(continuable: CopilotRun? = nil) -> String? {
-            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuable, createdAt: created)?.id
+            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuable)?.id
         }
         #expect(suggested(continuable: last) == fixing)
         #expect(suggested() == opener)
         choices.removeAll { $0.id == opener }
-        // Of what the app records, you linked, or works on its branch: the most recently active.
+        // Linked by you, and on its branch: neither goes with it better than the other.
+        #expect(suggested() == nil)
+        choices.removeAll { $0.id == onBranch }
         #expect(suggested() == linkedChat)
+        // One with every reason the other has, and more, goes with it better, however long ago it was active.
+        choices.append(choice(onBranch, reasons: [.onItsBranch, .linkedByYou], active: -9_999))
+        #expect(suggested() == onBranch)
         choices.removeAll { $0.id == linkedChat || $0.id == onBranch }
-        // Else the one that mentions it and was there before it was created, which likely opened it.
-        #expect(suggested() == recorded)
-        choices.removeAll { $0.id == recorded }
+        // One whose log only mentions it is a guess, offered, never suggested.
         #expect(suggested() == nil)
         // One that's working is never where it goes.
         choices = [choice(fixing, reasons: [.earlierTask], active: -60, task: last, busy: true)]
@@ -270,7 +275,7 @@ private struct DatabaseError: Error {
         // A work item's starts a new session, unless you choose one.
         let item = TaskWorkItem(organization: "contoso", project: "Storefront", id: 4217, type: "Task", title: "Totals",
                                 url: URL(string: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217")!)
-        #expect(CopilotTasksStore.suggestedChoice([choice(onBranch, reasons: [.linkedByYou], active: 0)], for: .workItem(item), continuable: nil, createdAt: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice([choice(onBranch, reasons: [.linkedByYou], active: 0)], for: .workItem(item), continuable: nil) == nil)
     }
 
     @Test func listsTheAppsSessionsByWhyThenByWhen() {
@@ -354,7 +359,7 @@ private struct DatabaseError: Error {
         let busy = try #require(choices.first { $0.id == onBranch })
         #expect(busy.isBusy)
         #expect(busy.reasons == [.onItsBranch])
-        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil, createdAt: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil) == nil)
 
         var opened = 0
         store.openForTests = { _, _ in opened += 1; return true }
@@ -416,7 +421,7 @@ private struct DatabaseError: Error {
         // Sharing the checkout, both are on the pull request's branch.
         #expect(other.reasons == [.recordedByCopilot, .onItsBranch])
         #expect(choices.first { $0.id == onBranch }?.isBusy == true)
-        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil, createdAt: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil) == nil)
         #expect(store.busyReason(for: other)?.hasPrefix("Copilot is working in its checkout") == true)
 
         var opened = 0
@@ -448,7 +453,7 @@ private struct DatabaseError: Error {
         #expect(freed.allSatisfy { !$0.isUnavailable })
         #expect(freed.map(\.id) == choices.map(\.id))
         #expect(freed.map(\.reasons) == choices.map(\.reasons))
-        #expect(CopilotTasksStore.suggestedChoice(freed, for: subject, continuable: nil, createdAt: nil) != nil)
+        #expect(CopilotTasksStore.suggestedChoice(freed, for: subject, continuable: nil) != nil)
 
         // A task that starts in one of them takes both again, as it gets ready.
         store.launchForTests = { _, _, _ in throw LaunchError.couldntStart("not now") }

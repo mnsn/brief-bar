@@ -186,14 +186,14 @@ import Testing
         let lastTask = task(fixing, startedAgo: 3_600)
         let choices = [lastTask, app(onBranch, [.onItsBranch], active: -60), app(other, [], active: -7_200)]
         func suggested(_ chosen: PullRequestSessionChoice?) -> String? {
-            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: lastTask.run, createdAt: nil, chosen: chosen)?.id
+            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: lastTask.run, chosen: chosen)?.id
         }
         #expect(suggested(nil) == fixing)
         #expect(suggested(chosen(other, ago: 60)) == other)
         #expect(suggested(chosen(nil, ago: 60)) == nil)
         var busy = choices
         busy[2].isBusy = true
-        #expect(CopilotTasksStore.suggestedChoice(busy, for: subject, continuable: lastTask.run, createdAt: nil, chosen: chosen(other, ago: 60))?.id == fixing)
+        #expect(CopilotTasksStore.suggestedChoice(busy, for: subject, continuable: lastTask.run, chosen: chosen(other, ago: 60))?.id == fixing)
 
         // What it's given: what you chose, unless a task started on it since, in whatever session.
         let settings = AppSettings(defaults: MemoryDefaults())
