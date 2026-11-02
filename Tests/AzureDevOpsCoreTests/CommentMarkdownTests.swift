@@ -52,6 +52,13 @@ import Testing
             .paragraph([RichText.Run("Unused variable "), RichText.Run("delay", style: .code), RichText.Run(".")]),
         ])
         #expect(plain("<p>First</p><p>Second</p>") == "First\nSecond")
+        // A block starts on a line of its own as it ends on one, and blocks one after another, or one in another, break
+        // the line once.
+        #expect(plain("Before<div>Inside</div>After") == "Before\nInside\nAfter")
+        #expect(plain("<div><p>One</p></div> <div><p>Two</p></div>") == "One\nTwo")
+        #expect(plain("Line<br><div>Block</div>") == "Line\nBlock")
+        #expect(plain("Before\n<div>Inside</div>") == "Before\nInside")
+        #expect(plain("`code`<div>Block</div>") == "code\nBlock")
         #expect(plain("<table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>") == "File Issues\na.cs 2")
     }
 
@@ -103,6 +110,11 @@ import Testing
         #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
         #expect(plain("<img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "Build [Linux] *1*")
         #expect(plain("<img src=data:image/png;base64,AAAA>") == "")
+        // A tag its description mentions is text, as the rest of it is.
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Use &lt;br /&gt; here\">").blocks == [
+            .paragraph([RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
+        ])
+        #expect(plain("<img alt='Use &lt;span class=\"x\"&gt; here'>") == "Use <span class=\"x\"> here")
     }
 
     @Test func leavesCodeAsItIs() {
@@ -168,6 +180,7 @@ import Testing
             String(repeating: "<!-- `x` ", count: 10_000),
             String(repeating: "<a title=\"<!--\"> ", count: 3_000),
             String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
+            "<div>" + String(repeating: "<b></b>", count: 3_000) + String(repeating: "<p></p>", count: 3_000),
             String(repeating: "> <!--\nx\n-->\n", count: 3_000),
             "- " + String(repeating: "<!-- a --> ", count: 6_000) + "text",
         ] {

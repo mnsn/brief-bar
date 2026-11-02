@@ -1413,11 +1413,11 @@ can't be read leave the rest. Its long text fields come as HTML, or as Markdown 
 it (`multilineFieldsFormat`), and its comments as HTML too (`renderedText`). BriefBar draws them
 itself (`RichText`, `RichTextView`), without a web view: headings, lists and task lists, quotes, code,
 tables, links and their styles. HTML in Markdown shows as Azure DevOps shows it, outside code: an HTML
-comment shows nothing, a line break or the end of a paragraph breaks the line, and the other tags that
-format text keep their text. Scripts and styles are left out, only links to web pages and email
-addresses open (in your browser), and an image is a link to it, never loaded. What's read stays in
-memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but for
-the details on screen, which stay while they show; it shows again without being read for a minute.
+comment shows nothing, a line break breaks the line, a paragraph starts and ends on lines of its own,
+and the other tags that format text keep their text. Scripts and styles are left out, only links to web
+pages and email addresses open (in your browser), and an image is a link to it, never loaded. What's read
+stays in memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but
+for the details on screen, which stay while they show; it shows again without being read for a minute.
 The sprint's refresh tells when a work item changed (`System.ChangedDate`), which reads its details
 again while they show, or tries again when they couldn't be read, once more when it changed while they
 were read, and a linked work item shows as
