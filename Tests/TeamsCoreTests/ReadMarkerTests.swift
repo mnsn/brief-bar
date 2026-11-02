@@ -211,6 +211,21 @@ final class MarkerCollector: Sendable {
         #expect(PulseProblem.readMarkersChanged.isBlocking == false)
     }
 
+    /// On an account whose chats were never opened, as a new one, no chat has a read marker, but each has the field that
+    /// holds one: Teams' data is understood. Without the field in its form anywhere, as after an update to Teams that
+    /// renames it, it isn't.
+    @Test func understandsChatsNeverOpened() {
+        var report = ReadMarkerReport()
+        report.folders = 1
+        report.stores = 1
+        report.conversations = 10
+        report.withHorizon = 10
+        #expect(report.withMarker == 0)
+        #expect(report.problem == nil)
+        report.withHorizon = 0
+        #expect(report.problem == .readMarkersChanged)
+    }
+
     @Test func followsTheLogAsTeamsWritesIt() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
