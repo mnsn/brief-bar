@@ -188,7 +188,74 @@ public sealed class TeamsRecordsTests
             actual: messages[0]);
         Assert.True(condition: messages[1].IsFromMe);
         Assert.False(condition: messages[2].IsContent);
-        Assert.Empty(collection: TeamsRecords.Messages(value: Decoded(body: writer => writer.Members(properties: [("conversationId", value => value.Text(text: Fixture.Crew))])), userId: Fixture.Me));
+        Assert.Empty(collection: TeamsRecords.Messages(value: Decoded(body: writer => writer.Members(properties: [("messageMap", value => value.Members(properties: []))])), userId: Fixture.Me));
+    }
+
+    /// A reply chain or a message BriefBar doesn't understand, as after an update to Teams, may hold an unread message: it
+    /// isn't taken for none.
+    [Fact]
+    public void RefusesReplyChainsItDoesntUnderstand()
+    {
+        var message = new MadeUpMessage(Id: TeamsData.Id(seconds: 10), Sender: "Jordan Lee", Html: "<p>Staging is green</p>");
+        JSValue Chain(params (string Name, Action<V8Writer> Value)[] members) => Decoded(body: writer => writer.Members(properties: members));
+        (string, Action<V8Writer>) Map(Action<V8Writer> entry) => ("messageMap", value => value.Members(properties: [(TeamsData.Digits(value: message.Id), entry)]));
+
+        foreach (var chain in new[]
+        {
+            Chain(("conversationId", value => value.Text(text: Fixture.Crew))),
+            Chain(("conversationId", value => value.Text(text: Fixture.Crew)), ("messageMap", value => value.Text(text: "Made-up"))),
+            Chain(("conversationId", value => value.Text(text: Fixture.Crew)), Map(entry: value => value.Text(text: "Made-up"))),
+            Chain(Map(entry: value => value.Members(properties: [("id", id => id.Text(text: TeamsData.Digits(value: message.Id)))]))),
+            Chain(("conversationId", value => value.Text(text: Fixture.Crew)), Map(entry: value => value.Members(properties: [("id", id => id.Text(text: "draft"))]))),
+        })
+        {
+            Assert.Throws<FormatErrorException>(testCode: () => TeamsRecords.Messages(value: chain, userId: Fixture.Me).ToList());
+        }
+        Assert.Single(collection: TeamsRecords.Messages(value: Chain(Map(entry: writer => message.WriteInReplyChain(writer: writer, conversationId: Fixture.Crew))), userId: Fixture.Me));
+    }
+
+    /// A chat's read marker field: none, or `0;0;0`, for a chat never read, as Teams has both; and one BriefBar can't read
+    /// makes the record one it couldn't read, rather than a chat never read, whose every message would be unread.
+    [Fact]
+    public void ReadsTheReadMarkerOnlyInItsForm()
+    {
+        TeamsChat? WithHorizon(string horizon) => Chat(chat: new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: 0, Newest: null, Horizon: horizon));
+
+        Assert.Null(@object: WithHorizon(horizon: "0;0;0")!.Marker);
+        Assert.Null(@object: WithHorizon(horizon: string.Empty)!.Marker);
+        // Teams' client message ID, its third part, can be longer than a number holds.
+        Assert.Equal(expected: TeamsData.Id(seconds: 10), actual: WithHorizon(horizon: TeamsData.Digits(value: TeamsData.Id(seconds: 10)) + ";" + TeamsData.Digits(value: TeamsData.Id(seconds: 11)) + ";98765432109876543210")!.Marker?.MessageId);
+        var without = Decoded(body: writer => writer.Members(properties:
+        [
+            ("id", value => value.Text(text: Fixture.Crew)),
+            ("type", value => value.Text(text: "Chat")),
+            ("properties", value => value.Members(properties: [("alerts", alerts => alerts.Text(text: "true"))])),
+        ]));
+        Assert.Null(@object: TeamsRecords.Chat(value: without, recordKey: null, userId: Fixture.Me)!.Marker);
+
+        foreach (var horizon in new[] { "{\"id\":1}", "abc;1;1", "-5;1;1" })
+        {
+            Assert.Throws<FormatErrorException>(testCode: () => WithHorizon(horizon: horizon));
+        }
+        var number = Decoded(body: writer => writer.Members(properties:
+        [
+            ("id", value => value.Text(text: Fixture.Crew)),
+            ("type", value => value.Text(text: "Chat")),
+            ("properties", value => value.Members(properties: [("consumptionhorizon", horizon => horizon.Real(value: 5))])),
+        ]));
+        Assert.Throws<FormatErrorException>(testCode: () => TeamsRecords.Chat(value: number, recordKey: null, userId: Fixture.Me));
+    }
+
+    /// A chat's newest message, once deleted, says so in the chat's record too: without its text.
+    [Fact]
+    public void TellsWhenTheNewestMessageWasDeleted()
+    {
+        var oops = new MadeUpMessage(Id: TeamsData.Id(seconds: 30), Sender: "Avery Quinn", Html: "Oops, wrong chat", Deleted: true);
+
+        var newest = Chat(chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: oops.Id, Newest: oops))?.Newest;
+
+        Assert.Equal(expected: (oops.Id, true, string.Empty), actual: (newest?.Id, newest?.IsDeleted, newest?.Text));
+        Assert.False(condition: Chat(chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: oops.Id, Newest: oops with { Deleted = false }))?.Newest?.IsDeleted);
     }
 
     static TeamsChat? Chat(MadeUpChat chat) => TeamsRecords.Chat(value: Decoded(body: chat.Write), recordKey: chat.Id, userId: Fixture.Me);

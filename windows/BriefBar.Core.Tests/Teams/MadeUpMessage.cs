@@ -9,18 +9,23 @@ internal sealed record MadeUpMessage(long Id, string Sender, string Html, bool F
     /// Its sender's user ID, as Teams names them: the account's own for yours.
     public string UserId => FromMe ? Fixture.Me : TeamsData.SomeoneElse;
 
-    /// As a conversation's `lastMessage`.
+    /// As a conversation's `lastMessage`: once deleted, without its text, and saying so, as a reply chain's message does.
     public void WriteAsLast(V8Writer writer)
     {
         ArgumentNullException.ThrowIfNull(argument: writer);
-        writer.Members(properties:
+        List<(string Name, Action<V8Writer> Value)> members =
         [
             ("id", value => value.Text(text: TeamsData.Digits(value: Id))),
             ("messagetype", value => value.Text(text: Type)),
-            ("content", value => value.Text(text: Html)),
+            ("content", value => value.Text(text: Deleted ? string.Empty : Html)),
             ("imdisplayname", value => value.Text(text: Sender)),
             ("from", value => value.Text(text: "https://example.invalid/v1/users/ME/contacts/8:orgid:" + UserId)),
-        ]);
+        ];
+        if (Deleted)
+        {
+            members.Add(item: ("deletionInfo", value => value.Members(properties: [("deletionTime", time => time.Real(value: Id + 1000))])));
+        }
+        writer.Members(properties: [.. members]);
     }
 
     /// As a reply chain's `messageMap` holds it.

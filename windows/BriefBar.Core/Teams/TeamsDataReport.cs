@@ -59,7 +59,7 @@ public sealed record TeamsDataReport
             {
                 return TeamsProblem.DataChanged;
             }
-            if (UnreadableCount * 4 > total || UnreadableFiles > 0 || ChatsPartlyRead > 0)
+            if (UnreadableCount * 4 > total || UnreadableFiles > 0 || ChatsPartlyRead > 0 || CorruptLogRecords > 0)
             {
                 return TeamsProblem.PartlyUnreadable;
             }

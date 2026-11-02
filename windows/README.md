@@ -467,11 +467,14 @@ SDK ships inside the app.
   unchanged for 5 seconds. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
   doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`). A conversation of a type
   BriefBar doesn't know counts as one it couldn't read, not as one that isn't a chat, as it may be a chat after an
-  update to Teams; so does a folder it can't list, and with no folder it could read, the sections say it couldn't read
-  Teams' data rather than that Teams' data changed. A chat whose messages Teams' message cache can't all give is read
-  again at each change, and the sections say some chats may stay unread until it is: a table it can't read counts only
-  once it has stayed so, as above, and a message whose blob entry Chromium hasn't written yet, which it writes after
-  the message, only if it's still missing when the chat is read again.
+  update to Teams, and so does a chat whose read marker field it can't read, rather than one never read, whose every
+  message would be unread; so does a folder it can't list, and with no folder it could read, the sections say it
+  couldn't read Teams' data rather than that Teams' data changed. A log record whose checksum says it's damaged makes
+  the sections say some of Teams' data couldn't be read. A chat whose messages Teams' message cache can't all give,
+  including a record or a message BriefBar doesn't understand, is read again at each change, and the sections say some
+  chats may stay unread until it is: a table it can't read counts only once it has stayed so, as above, and a message
+  whose blob entry Chromium hasn't written yet, which it writes after the message, only if it's still missing when the
+  chat is read again.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on

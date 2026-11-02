@@ -224,6 +224,22 @@ public sealed class TeamsStoreTests
         Assert.Equal(expected: TeamsData.At(seconds: 10), actual: unread.LastActivity);
     }
 
+    /// A chat read in Teams, whose messages BriefBar doesn't keep, whose newest message the chat's record says was
+    /// deleted: it shows nothing of it, and isn't recent for it.
+    [Fact]
+    public void ShowsNothingOfANewestMessageDeletedInARecordOnly()
+    {
+        var oops = Messages(chat: Fixture.Avery, (990, "Oops, wrong chat"))[0] with { Text = string.Empty, IsDeleted = true };
+        var read = new TeamsChat(
+            Id: Fixture.Avery, Kind: ConversationKind.OneOnOne, Title: "Avery Quinn", FullTitle: null, Marker: new ReadMarker(MessageId: oops.Id), Newest: oops, IsMuted: false);
+
+        var store = Store((read, []));
+
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Empty(collection: store.Recent(group: ChatGroup.Chats));
+        Assert.Null(@object: store.Find(id: Fixture.Avery));
+    }
+
     /// Teams doesn't notify you of a muted chat: it's neither unread nor recent.
     [Fact]
     public void ListsNoMutedChat()

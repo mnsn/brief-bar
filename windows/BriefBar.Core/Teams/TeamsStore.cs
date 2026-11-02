@@ -113,11 +113,12 @@ public sealed class TeamsStore
     }
 
     /// `chat`'s newest message that wasn't deleted: the cache may have one the chat's record doesn't name yet, or the
-    /// other way round, and only the cache says a message was deleted.
+    /// other way round. Both say a message was deleted: the cache, of the messages it has, and the chat's record, of its
+    /// newest, once BriefBar no longer reads the cache for it.
     static TeamsMessage? Latest(TeamsChat chat, IReadOnlyList<TeamsMessage> messages)
     {
         var cached = messages.LastOrDefault(predicate: message => !message.IsDeleted);
-        var named = chat.Newest is { } newest && !messages.Any(predicate: message => message.IsDeleted && message.Id == newest.Id) ? newest : null;
+        var named = chat.Newest is { IsDeleted: false } newest && !messages.Any(predicate: message => message.IsDeleted && message.Id == newest.Id) ? newest : null;
         return cached is not null && cached.Id > (named?.Id ?? 0) ? cached : named ?? cached;
     }
 

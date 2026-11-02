@@ -3,8 +3,9 @@ using BriefBar.Core.Tests.ChromiumIndexedDB;
 namespace BriefBar.Core.Tests.Teams;
 
 /// A made-up conversation record: its ID, Teams' type for it ("Chat", "Meeting", "Topic"…), how far it was read in Teams
-/// (0 for never), its newest message, its topic and titles, whether its alerts are on, as Teams spells them, and what
-/// Mark as unread left in it (`consumptionHorizonBookmark`, such as "<message ID>;<when>;0", or "0;<when>;0" once read).
+/// (0 for never), its newest message, its topic and titles, whether its alerts are on, as Teams spells them, what Mark as
+/// unread left in it (`consumptionHorizonBookmark`, such as "<message ID>;<when>;0", or "0;<when>;0" once read), and its
+/// read marker field as written, when it's to be something other than what `ReadUpTo` makes it.
 internal sealed record MadeUpChat(
     string Id,
     string Type,
@@ -14,14 +15,15 @@ internal sealed record MadeUpChat(
     string? ShortTitle = null,
     string? LongTitle = null,
     string? Alerts = null,
-    string? Bookmark = null)
+    string? Bookmark = null,
+    string? Horizon = null)
 {
     public void Write(V8Writer writer)
     {
         ArgumentNullException.ThrowIfNull(argument: writer);
-        var horizon = ReadUpTo > 0
+        var horizon = Horizon ?? (ReadUpTo > 0
             ? TeamsData.Digits(value: ReadUpTo) + ";" + TeamsData.Digits(value: ReadUpTo + 900) + ";" + TeamsData.Digits(value: ReadUpTo + 7)
-            : "0;0;0";
+            : "0;0;0");
         List<(string Name, Action<V8Writer> Value)> properties = [("consumptionhorizon", value => value.Text(text: horizon))];
         if (Alerts is not null)
         {

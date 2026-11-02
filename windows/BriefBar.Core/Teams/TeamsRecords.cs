@@ -10,8 +10,8 @@ internal static class TeamsRecords
 {
     /// The chat a conversation record holds, or null for one that isn't a chat, such as a channel. `recordKey` is the
     /// record's key, which is its ID; `userId` tells your messages apart. Throws `FormatErrorException` for a conversation
-    /// BriefBar doesn't know, as after an update to Teams, so that it counts as one that couldn't be read rather than one
-    /// that isn't a chat.
+    /// BriefBar doesn't know, as after an update to Teams, or with a read marker it can't read, so that it counts as one
+    /// that couldn't be read rather than one that isn't a chat, or one never read.
     public static TeamsChat? Chat(JSValue value, string? recordKey, string userId)
     {
         ArgumentNullException.ThrowIfNull(argument: value);
@@ -32,8 +32,9 @@ internal static class TeamsRecords
         var properties = value["properties"];
         var thread = value["threadProperties"];
         var newest = value["lastMessage"] is { Kind: JSValueKind.PlainObject } last
-            ? Message(value: last, conversationId: id, userId: userId, isFromMe: Flag(value: thread?["isLastMessageFromMe"]))
-            : null;
+            && Message(value: last, conversationId: id, userId: userId, isFromMe: Flag(value: thread?["isLastMessageFromMe"])) is { } named
+                ? WithDeletion(value: last, message: named)
+                : null;
         var topic = Text(value: thread?["topic"]);
         var shortTitle = Text(value: value["chatTitle"]?["shortTitle"]);
         var longTitle = Text(value: value["chatTitle"]?["longTitle"]);
@@ -47,7 +48,7 @@ internal static class TeamsRecords
             Kind: kind,
             Title: title,
             FullTitle: longTitle is not null && longTitle != title ? longTitle : null,
-            Marker: ReadMarker.Parse(consumptionHorizon: properties?["consumptionhorizon"]?.AsString),
+            Marker: Marker(value: properties?["consumptionhorizon"]),
             Newest: newest,
             IsMuted: Flag(value: properties?["alerts"]) == false,
             // Mark as unread leaves the read marker as it was: it sets this, in the same form, to a message before the
@@ -64,32 +65,25 @@ internal static class TeamsRecords
 
     /// The messages a reply chain's record holds: in a chat, each message is a reply chain of its own. A deleted message
     /// keeps its place, without its text, so that the conversation's newest message, which may not say it's deleted yet,
-    /// isn't counted for it.
+    /// isn't counted for it. Throws `FormatErrorException` for a record or a message it doesn't understand, as after an
+    /// update to Teams, so that its chat counts as one whose messages couldn't all be read rather than one without them.
     public static IEnumerable<TeamsMessage> Messages(JSValue value, string userId)
     {
         ArgumentNullException.ThrowIfNull(argument: value);
         if (value["messageMap"] is not { Kind: JSValueKind.PlainObject } messages)
         {
-            yield break;
+            throw FormatErrorException.Unsupported(what: "reply chain");
         }
         var conversationId = value["conversationId"]?.AsString;
         foreach (var message in messages.Properties.Values)
         {
-            if (message.Kind != JSValueKind.PlainObject)
+            if (message.Kind != JSValueKind.PlainObject
+                || (message["conversationId"]?.AsString ?? conversationId) is not { } chat
+                || Message(value: message, conversationId: chat, userId: userId, isFromMe: Flag(value: message["isSentByCurrentUser"])) is not { } read)
             {
-                continue;
+                throw FormatErrorException.Unsupported(what: "message");
             }
-            var chat = message["conversationId"]?.AsString ?? conversationId;
-            if (chat is null)
-            {
-                continue;
-            }
-            if (Message(value: message, conversationId: chat, userId: userId, isFromMe: Flag(value: message["isSentByCurrentUser"])) is { } read)
-            {
-                yield return message["deletionInfo"] is { Kind: not (JSValueKind.Undefined or JSValueKind.Null) }
-                    ? read with { Text = string.Empty, IsDeleted = true }
-                    : read;
-            }
+            yield return WithDeletion(value: message, message: read);
         }
     }
 
@@ -144,6 +138,28 @@ internal static class TeamsRecords
 
     /// Text that says something: null when it's missing, empty or only spaces.
     static string? Text(JSValue? value) => value?.AsString is { } text && !string.IsNullOrWhiteSpace(value: text) ? text.Trim() : null;
+
+    /// A chat's read marker (`consumptionhorizon`): none for a chat without the field, which Teams has for some chats it
+    /// never had you read, or one never read (`0;0;0`). Throws `FormatErrorException` for a field it can't read, so that
+    /// the chat counts as one that couldn't be read, rather than one never read, whose every message would be unread.
+    static ReadMarker? Marker(JSValue? value)
+    {
+        if (value is null || value.Kind is JSValueKind.Undefined or JSValueKind.Null)
+        {
+            return null;
+        }
+        if (value.AsString is not { } horizon || (horizon.Length > 0 && !ReadMarker.IsHorizon(consumptionHorizon: horizon)))
+        {
+            throw FormatErrorException.Unsupported(what: "read marker");
+        }
+        return ReadMarker.Parse(consumptionHorizon: horizon);
+    }
+
+    /// `message` as Teams has it now: once it's deleted (`deletionInfo`), which both kinds of record say, without its text.
+    static TeamsMessage WithDeletion(JSValue value, TeamsMessage message) =>
+        value["deletionInfo"] is { Kind: not (JSValueKind.Undefined or JSValueKind.Null) }
+            ? message with { Text = string.Empty, IsDeleted = true }
+            : message;
 
     static string KindTitle(ConversationKind kind) => kind switch
     {

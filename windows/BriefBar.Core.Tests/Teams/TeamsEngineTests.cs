@@ -110,6 +110,8 @@ public sealed class TeamsEngineTests
         Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: partlyRead.Problem);
         Assert.Equal(expected: 2, actual: partlyRead.Adding(other: partlyRead).ChatsPartlyRead);
         Assert.NotEqual(expected: partlyRead, actual: partlyRead with { ChatsPartlyRead = 0 });
+        // A damaged log record may have held anything.
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: (report with { UnreadableFiles = 0, CorruptLogRecords = 1 }).Problem);
 
         Assert.Equal(expected: TeamsProblem.NotFound, actual: new TeamsSnapshot().Problem);
         Assert.Equal(expected: TeamsProblem.ReadFailed, actual: new TeamsSnapshot { Found = true, Failed = true }.Problem);
@@ -211,6 +213,92 @@ public sealed class TeamsEngineTests
         Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Sync }, actual: snapshot.Chats.Select(selector: chat => chat.Id).ToHashSet());
         Assert.Equal(expected: new Dictionary<string, int> { ["unsupported conversation type"] = 1 }, actual: snapshot.Report.Unreadable);
         Assert.Null(@object: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A chat whose read marker field BriefBar can't read isn't taken for one never read, whose every message would be
+    /// unread: it counts as a conversation that couldn't be read.
+    [Fact]
+    public void CountsAReadMarkerItCantReadAsUnreadable()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: Avery(seconds: 30, text: "See you there")),
+                new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null),
+                new MadeUpChat(Id: Fixture.Sync, Type: "Meeting", ReadUpTo: 0, Newest: null),
+                new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: 0, Newest: new MadeUpMessage(Id: TeamsData.Id(seconds: 40), Sender: "Jordan Lee", Html: "Shipping at 5"), Horizon: "{\"id\":1}"),
+            ],
+            replyChains: []);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Sync }, actual: snapshot.Chats.Select(selector: chat => chat.Id).ToHashSet());
+        Assert.Equal(expected: new Dictionary<string, int> { ["unsupported read marker"] = 1 }, actual: snapshot.Report.Unreadable);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A message cache record BriefBar doesn't understand, as after an update to Teams, may hold an unread message: its
+    /// chat counts as one whose messages couldn't all be read.
+    [Fact]
+    public void SaysWhenAMessageRecordIsntUnderstood()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var noon = Avery(seconds: 20, text: "Noon works");
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 5), Newest: noon, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+        TeamsData.Append(
+            path: log,
+            LogWriter.Batch(
+                sequence: 50,
+                writes:
+                [
+                    (IndexedDBKeys.Record(database: TeamsData.ReplyChainsDatabase, objectStore: TeamsData.Store, key: Chain(chat: Fixture.Avery, noon).Key),
+                        V8Writer.Record(body: writer => writer.Members(properties:
+                        [
+                            ("conversationId", value => value.Text(text: Fixture.Avery)),
+                            ("replyChainId", value => value.Text(text: TeamsData.Digits(value: noon.Id))),
+                            ("messages", value => value.Members(properties: [])),
+                        ]))),
+                ]));
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: 1, actual: snapshot.Report.ChatsPartlyRead);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+        Assert.Equal(expected: [lunch.Id], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// A log record whose checksum says it's damaged, before others, may have held anything: some of Teams' data
+    /// couldn't be read.
+    [Fact]
+    public void SaysWhenALogRecordIsDamaged()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null)],
+            replyChains: []);
+        var damaged = new FileInfo(fileName: log).Length;
+        TeamsData.Append(
+            path: log,
+            TeamsData.Batch(sequence: 50, chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: null)),
+            TeamsData.Batch(sequence: 51, chat: new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: null)));
+        var bytes = File.ReadAllBytes(path: log);
+        bytes[damaged + 20] ^= 0xFF;
+        File.WriteAllBytes(path: log, bytes: bytes);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: [Fixture.Sam], actual: snapshot.Chats.Select(selector: chat => chat.Id));
+        Assert.Equal(expected: 1, actual: snapshot.Report.CorruptLogRecords);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: snapshot.Problem);
         Assert.False(condition: snapshot.IsComplete);
     }
 
