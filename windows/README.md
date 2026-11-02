@@ -255,10 +255,11 @@ SDK ships inside the app.
   down Alt+F4 (`SC_CLOSE`), and turns any other close into quitting BriefBar.
 - **Acrylic turns into a flat color in an inactive window**, and the bar is never active: `ActiveAcrylic` keeps
   `IsInputActive` on.
-- **A backdrop with its own configuration ends the app when Windows switches between light and dark**, unless it
-  overrides `OnDefaultSystemBackdropConfigurationChanged`: WinUI calls it then, and the base implementation throws
-  (`E_INVALIDARG`), which ended BriefBar. `ActiveAcrylic` follows the theme as its content does instead, and
-  `SystemBackdropTests` checks that every backdrop in the app overrides it.
+- **A backdrop of the app's own ends it when Windows switches between light and dark**, unless it overrides
+  `OnDefaultSystemBackdropConfigurationChanged` and doesn't call the base: WinUI calls it then with a target or
+  `XamlRoot` it holds only weakly, so either can be null despite the signature, and the base implementation rejects a
+  null one (`E_INVALIDARG`), which ended BriefBar. `ActiveAcrylic` follows the theme as its content does instead, and
+  `SystemBackdropTests` checks that every backdrop in the app overrides it, and that nothing calls the base.
 - **Windows 11 draws a 1-pixel border** around windows; the bar turns it off (`DWMWA_BORDER_COLOR`).
 - **A click on the bar could be spent activating it** while some apps were in front, such as the Xbox app or a
   Windows Security prompt; the bar answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`.

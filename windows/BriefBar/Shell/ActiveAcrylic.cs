@@ -47,9 +47,10 @@ internal sealed partial class ActiveAcrylic(DesktopAcrylicKind kind) : SystemBac
         controller = null;
     }
 
-    /// WinUI calls this as Windows switches between light and dark, to apply its default configuration. This backdrop
-    /// keeps its own, always active, which follows the theme as its content does (`OnThemeChanged`). The base
-    /// implementation throws for it, which ended BriefBar.
+    /// WinUI calls this as Windows switches between light and dark, to apply its default configuration, with a target
+    /// or XamlRoot it holds only weakly, so either can be null despite the signature. WinUI's base implementation
+    /// rejects a null one (`E_INVALIDARG`), which ended BriefBar, so don't call it. This backdrop keeps its own
+    /// configuration, always active, which follows the theme as its content does (`OnThemeChanged`).
     protected override void OnDefaultSystemBackdropConfigurationChanged(ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
     {
     }
