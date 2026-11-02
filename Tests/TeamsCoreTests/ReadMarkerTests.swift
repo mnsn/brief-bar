@@ -226,6 +226,19 @@ final class MarkerCollector: Sendable {
         #expect(report.problem == .readMarkersChanged)
     }
 
+    /// A log record whose checksum says it's damaged, before others, may have held any read marker: some couldn't be read.
+    @Test func saysWhenALogRecordIsDamaged() {
+        var report = ReadMarkerReport()
+        report.folders = 1
+        report.stores = 1
+        report.conversations = 10
+        report.withMarker = 8
+        report.withHorizon = 10
+        #expect(report.problem == nil)
+        report.corruptLogRecords = 1
+        #expect(report.problem == .readMarkersPartlyUnreadable)
+    }
+
     @Test func followsTheLogAsTeamsWritesIt() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
