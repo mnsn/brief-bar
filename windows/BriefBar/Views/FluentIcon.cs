@@ -9,7 +9,8 @@ using XamlPath = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace BriefBar.Views;
 
-/// A Fluent icon, `Size` pixels square, filled with `Fill`. It's decoration: Narrator reads what's next to it.
+/// A Fluent icon, `Size` pixels square, filled with `Fill`, from its drawing for that size (`IconPaths`). It's
+/// decoration: Narrator reads what's next to it.
 public sealed partial class FluentIcon : Grid
 {
     public static readonly DependencyProperty IconProperty = DependencyProperty.Register(
@@ -30,11 +31,13 @@ public sealed partial class FluentIcon : Grid
         ownerType: typeof(FluentIcon),
         typeMetadata: new PropertyMetadata(defaultValue: null, propertyChangedCallback: OnFillChanged));
 
-    /// Each icon's path data in XAML's syntax, converted once.
-    static readonly ConcurrentDictionary<IconKey, string> xamlData = new();
+    /// Each drawing's path data in XAML's syntax, converted once.
+    static readonly ConcurrentDictionary<IconPath, string> xamlData = new();
 
     readonly Viewbox box = new();
     XamlPath? path;
+    /// The drawing path shows.
+    IconPath? shown;
 
     public FluentIcon()
     {
@@ -66,7 +69,12 @@ public sealed partial class FluentIcon : Grid
 
     static void OnIconChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) => ((FluentIcon)sender).DrawIcon();
 
-    static void OnSizeChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) => ((FluentIcon)sender).ApplySize();
+    static void OnSizeChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        var icon = (FluentIcon)sender;
+        icon.ApplySize();
+        icon.DrawIcon();
+    }
 
     static void OnFillChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
     {
@@ -87,8 +95,13 @@ public sealed partial class FluentIcon : Grid
 
     void DrawIcon()
     {
-        var drawing = IconPaths.Of(icon: Icon);
-        var data = xamlData.GetOrAdd(key: Icon, valueFactory: _ => SvgPathData.ToXaml(svg: drawing.Svg, rule: drawing.Rule));
+        var drawing = IconPaths.Of(icon: Icon, size: Size);
+        if (path is not null && drawing == shown)
+        {
+            return;
+        }
+        shown = drawing;
+        var data = xamlData.GetOrAdd(key: drawing, valueFactory: made => SvgPathData.ToXaml(svg: made.Svg, rule: made.Rule));
         path = (XamlPath)XamlReader.Load(
             xaml: $"<Path xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Data=\"{data}\" />");
         path.Width = drawing.Size;

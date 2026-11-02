@@ -43,7 +43,7 @@
                     VerticalAlignment="Center"
                     Fill="{x:Bind ViewModel.TileGlyphBrush, Mode=OneWay}"
                     Icon="{x:Bind ViewModel.TileGlyph, Mode=OneWay}"
-                    Size="18" />
+                    Size="20" />
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock
@@ -148,7 +148,7 @@
                                     VerticalAlignment="Center"
                                     Fill="{x:Bind ViewModel.SparkleBrush, Mode=OneWay}"
                                     Icon="Sparkle"
-                                    Size="14" />
+                                    Size="16" />
                                 <TextBlock
                                     AutomationProperties.HeadingLevel="Level2"
                                     FontSize="12"
@@ -320,7 +320,7 @@
                             VerticalAlignment="Top"
                             Fill="{x:Bind SourceBrush, Mode=OneWay}"
                             Icon="{x:Bind SourceGlyph, Mode=OneWay}"
-                            Size="14"
+                            Size="16"
                             Visibility="{x:Bind ShowsSource, Mode=OneWay}" />
                         <Grid
                             Grid.Column="1"
@@ -594,7 +594,7 @@
                                         VerticalAlignment="Center"
                                         Fill="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                         Icon="{x:Bind Icon}"
-                                        Size="14" />
+                                        Size="16" />
                                     <TextBlock
                                         VerticalAlignment="Center"
                                         FontSize="12"

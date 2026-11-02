@@ -8,14 +8,14 @@ using Microsoft.UI.Xaml.Media;
 namespace BriefBar.Views;
 
 /// A Fluent icon as an `IconElement`, for controls that take one, such as a page's item in Settings: drawn 16 pixels
-/// square, as Windows draws icons there.
+/// square, as Windows draws icons there, from its drawing for that size (`IconPaths`).
 internal static class FluentIconElement
 {
     const double Size = 16;
 
     public static PathIcon Make(IconKey icon)
     {
-        var drawing = IconPaths.Of(icon: icon);
+        var drawing = IconPaths.Of(icon: icon, size: Size);
         var data = SvgPathData.ToXaml(svg: drawing.Svg, rule: drawing.Rule);
         var made = (PathIcon)XamlReader.Load(
             xaml: string.Create(

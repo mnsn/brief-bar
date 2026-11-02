@@ -43,7 +43,7 @@
                                     VerticalAlignment="Center"
                                     Fill="{x:Bind OnTileBrush, Mode=OneWay}"
                                     Icon="{x:Bind Glyph}"
-                                    Size="18" />
+                                    Size="20" />
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="{x:Bind Name}" />

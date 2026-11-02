@@ -151,7 +151,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
   links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
-  Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
+  each shown at a size Fluent drew it for, so it lines up with the pixels, Segoe UI Variable, sentence case, and the
+  panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
   4.5:1, icons 3:1), which a test checks. States never rely on color alone: each has its own icon and words.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
@@ -294,6 +295,11 @@ SDK ships inside the app.
   `combase.dll`, no managed exception and nothing in the log, only a dump in `%LOCALAPPDATA%\CrashDumps`. A list
   reuses its rows' elements as it scrolls and changes, so a view model must never hold a `Geometry`: Copilot's
   context ring draws its own (`MeterRing`).
+- **Fluent draws each icon anew for each size**, on that size's pixels, and an icon scaled to another size blurs, at
+  100% and 150% most: the bar's state icons were 16-unit drawings shown at 14 pixels, and Copilot's 20-unit pulse at
+  16. Icons show at 12, 16, 20 or 24 pixels, each from its drawing for that size (`IconPaths.Of(icon, size)`). Where
+  Fluent has none, the nearest is scaled: Pulse at 16, Branch Request at 24, and the plan's, the clock's and the power
+  icon's at 16, in a row's badge.
 - **A read-only SQLite connection to a database in WAL mode creates its `-wal` and `-shm` files** when they're
   gone, as when the Copilot app isn't running: `AppDatabase` opens such a database immutable instead, without locks.
   That holds only while the app leaves the file alone, so it checks the file's size and time, and that there's still
