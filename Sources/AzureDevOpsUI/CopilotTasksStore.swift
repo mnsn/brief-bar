@@ -527,11 +527,7 @@ final class CopilotTasksStore: ObservableObject {
                 let needsLink = run.pullRequest == nil
                 let found = await Task.detached { () -> (String?, URL?) in
                     let printed = LocalFile.tail(of: output, maxBytes: 8_192).map { String(decoding: $0, as: UTF8.self) }
-                    guard needsLink else { return (printed, nil) }
-                    let words = RunTranscript.lastWords(events: events)
-                    let link = [words.summary, words.message, printed].compactMap { $0 }.lazy
-                        .compactMap { RunTranscript.pullRequest(in: $0) }.first
-                    return (printed, link)
+                    return (printed, needsLink ? RunTranscript.openedPullRequest(events: events, printed: printed) : nil)
                 }.value
                 let status = RunStatus.derive(
                     log: log, isRunning: false, exitStatus: exitStatuses[run.id], stoppedByYou: wasStoppedByYou(run.id),

@@ -183,6 +183,13 @@ public enum RunTranscript {
         return (words.summary?.text, words.message?.text)
     }
 
+    /// The pull request a run that ended opened: the last link to one in the summary it called the task done with, else in
+    /// its last message, else in what it printed.
+    public static func openedPullRequest(events: URL, printed: String?) -> URL? {
+        let words = lastWords(events: events)
+        return [words.summary, words.message, printed].compactMap { $0 }.lazy.compactMap { pullRequest(in: $0) }.first
+    }
+
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the
     /// pull request's page. A link that's part of another, in its query say, doesn't count.
     public static func pullRequest(in text: String) -> URL? {

@@ -693,11 +693,7 @@ final class PRStore: ObservableObject {
     func composeCopilot(_ action: PullRequestAction, for item: PRSnapshot, copilot: CopilotTasksStore) {
         guard let record = record(for: item.key) else { return }
         let pr = record.pullRequest
-        let task = TaskPullRequest(
-            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
-            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch,
-            projectId: pr.projectId, repositoryId: pr.repositoryId
-        )
+        let task = PullRequestTasks.task(for: record)
         let client = mode == .live ? client : nil
         let handOff = commentHandOff(action, for: record)
         Task {
