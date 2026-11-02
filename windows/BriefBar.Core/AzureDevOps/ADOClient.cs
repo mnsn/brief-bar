@@ -103,8 +103,9 @@ public sealed class ADOClient : IDisposable
                     var slowDown = retryAfter ?? RetryAfterUnsaid;
                     gate.Hold(wait: slowDown);
                     throw new ADOException(error: ADOError.Throttled(retryAfter: slowDown));
-                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: url) is { } host:
-                    throw new ADOException(error: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, " + host + ", which it doesn't connect to."));
+                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: url) is not null:
+                    // Without the host, as the Mac's says it: one can carry an organization's name.
+                    throw new ADOException(error: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."));
                 default:
                     // A redirect that stays on the same host too: Azure DevOps answers each request where it's sent.
                     throw new ADOException(error: ADOError.Http(status: status));

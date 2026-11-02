@@ -478,9 +478,10 @@ SDK ships inside the app.
   rather than only the ones it had checked, and the first time, it tries again a minute later.
 - **`HttpClient` follows a redirect to any host** by default, and sends the request there, with its body for a 307 or
   a 308: a proxy's sign-in page could send BriefBar's requests to a host its sources' descriptions don't name. Neither
-  client follows one (`Redirects`): one to another host is refused in words that name it, and one that stays on the
-  same host is an HTTP error like any other. Neither source needs one: checked with real data, none of about 200
-  answers from api.github.com, dev.azure.com and app.vssps.visualstudio.com, to the requests a refresh sends, was one.
+  client follows one (`Redirects`): one to another host is refused in words that don't name it, as on the Mac, since a
+  host can carry an organization's name, and one that stays on the same host is an HTTP error like any other. Neither
+  source needs one: checked with real data, none of about 200 answers from api.github.com, dev.azure.com and
+  app.vssps.visualstudio.com, to the requests a refresh sends, was one.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 - **New Teams posts no notifications that Windows keeps**: it shows its own, by default, so Windows' notification
