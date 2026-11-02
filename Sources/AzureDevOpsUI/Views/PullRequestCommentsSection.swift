@@ -81,13 +81,13 @@ struct PullRequestCommentsSection: View {
                     thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
                     isHighlighted: highlighted == .thread(thread.id)
                 )
-                .id(PullRequestDetailsStore.Anchor.thread(thread.id))
             }
         }
     }
 }
 
-/// A file's threads, under its name and folder, or those on the pull request itself.
+/// A file's threads, under its name and folder, or those on the pull request itself. The details scroll to each thread
+/// by its ID, and to the first with the file's name above it.
 private struct FileThreadsView<Card: View>: View {
     let file: PullRequestPanel.FileThreads
     @ViewBuilder var card: (PullRequestPanel.Thread) -> Card
@@ -96,9 +96,16 @@ private struct FileThreadsView<Card: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            header
-            ForEach(file.threads) { thread in
+            if let first = file.threads.first {
+                VStack(alignment: .leading, spacing: 6) {
+                    header
+                    card(first)
+                }
+                .id(PullRequestDetailsStore.Anchor.thread(first.id))
+            }
+            ForEach(file.threads.dropFirst()) { thread in
                 card(thread)
+                    .id(PullRequestDetailsStore.Anchor.thread(thread.id))
             }
         }
         .padding(.top, 4)

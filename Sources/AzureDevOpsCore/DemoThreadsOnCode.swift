@@ -19,8 +19,8 @@ extension DemoData {
                 ReviewThread(id: 16, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 46, comments: [
                     comment(1, priya, "This threw on any failure before. Does a 400 still throw right away, rather than "
                         + "being sent again?", 21),
-                    comment(2, me, "Yes: only what `IsTransient` lists is sent again, and the rest throws on the first "
-                        + "answer, as before.", 19.5),
+                    comment(2, me, "Yes: only what `RetryPolicy.IsTransient` lists is sent again, and the rest throws on "
+                        + "the first answer, as before.", 19.5),
                 ], location: .init(path: "/src/PaymentsClient.cs", left: .init(lines: 46...49), madeOn: .init(base: 1), changeTrackingId: 1)),
                 // On the tests the second push added.
                 ReviewThread(id: 17, status: "closed", filePath: "/tests/PaymentsClientTests.cs", line: 13, comments: [
