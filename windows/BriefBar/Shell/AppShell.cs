@@ -362,7 +362,7 @@ internal sealed class AppShell : IDisposable
             var display = displays[index];
             var bar = plan.ForDisplays[index] is { } taken ? windows[taken] : new BarWindow(shell: this, display: display);
             bar.TakeOver(display: display);
-            bar.ViewModel.Update(snapshots: snapshots, palette: BarPalette, now: now);
+            bar.Update(snapshots: snapshots, palette: BarPalette, now: now);
             arranged.Add(item: bar);
         }
         bars.Clear();
@@ -409,7 +409,7 @@ internal sealed class AppShell : IDisposable
         var snapshots = sources.Snapshots();
         foreach (var bar in bars)
         {
-            bar.ViewModel.Update(snapshots: snapshots, palette: BarPalette, now: now);
+            bar.Update(snapshots: snapshots, palette: BarPalette, now: now);
         }
         panel.Refresh(now: now);
     }

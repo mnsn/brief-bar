@@ -159,7 +159,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   It follows light, dark, the accent and High Contrast as Windows changes, the panel's and Settings' window frames
   included, with Windows' own colors in a contrast theme. Its state colors meet WCAG AA in light and dark (text 4.5:1,
   icons 3:1) on the acrylic and on that flat color alike, and on the accent, and the bar's behind an item that's open
-  and pointed at too, where Windows' highlight lies under them twice, which tests check. States never rely on color
+  and pointed at too, where Windows' highlight lies under them twice, which tests check. The bar's words are in
+  Windows' colors wherever those read, and a little lighter (or darker) where they don't. States never rely on color
   alone: each has its own icon and words. Narrator reads each item in the bar and each row as one, in words, and
   Settings' section titles are headings.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a

@@ -61,6 +61,23 @@ public static class StatePalette
     /// place.
     public static IReadOnlyList<uint> Backgrounds(bool dark) => dark ? [DarkAcrylic, DarkFlat] : [LightAcrylic, LightFlat];
 
+    /// Words in Windows' colors, as WinUI's `TextFillColorPrimary`: counts and other words that matter most.
+    public static uint Words(bool dark) => dark ? White : 0xE4000000u;
+
+    /// Words a step quieter, as WinUI's `TextFillColorSecondary`: the bar's labels.
+    public static uint SecondaryWords(bool dark) => dark ? 0xC5FFFFFFu : 0x9E000000u;
+
+    /// The quietest, as WinUI's `TextFillColorTertiary`: what only sets words apart, such as the dots between them.
+    public static uint TertiaryWords(bool dark) => dark ? 0x87FFFFFFu : 0x72000000u;
+
+    /// `words`, which may be translucent, as they are while they stand `least` to 1 apart from `background`; else
+    /// opaque, and as little lighter in dark (darker in light) as it takes.
+    public static uint ReadableWords(uint words, uint background, bool dark, double least)
+    {
+        var shown = Over(argb: words, background: background);
+        return Wcag.Contrast(first: shown, second: background) >= least ? words : Readable(color: shown, background: background, dark: dark, least: least);
+    }
+
     /// What the bar's colors are worked out against (`Readable`): the taskbar's `accent` color while the bar shows it,
     /// or else the bar's own background they stand out least on, behind an item that's open and pointed at.
     public static uint BarBackground(uint? accent, bool dark) => UnderBarItem(background: accent ?? Background(dark: dark), dark: dark);

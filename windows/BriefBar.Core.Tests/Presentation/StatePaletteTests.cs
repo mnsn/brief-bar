@@ -159,6 +159,17 @@ public sealed class StatePaletteTests
             }
             AssertContrast(foreground: Readable(color: StatePalette.Caution(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
             AssertContrast(foreground: Readable(color: StatePalette.Quiet(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
+            // Its words, labels and quietest words, which may be translucent, as they show.
+            foreach (var (words, least) in new[]
+            {
+                (StatePalette.Words(dark: dark), Wcag.TextContrast),
+                (StatePalette.SecondaryWords(dark: dark), Wcag.TextContrast),
+                (StatePalette.TertiaryWords(dark: dark), Wcag.GraphicsContrast),
+            })
+            {
+                var readable = StatePalette.ReadableWords(words: words, background: workedOutAgainst, dark: dark, least: least);
+                AssertContrast(foreground: StatePalette.Over(argb: readable, background: shown), background: shown, least: least);
+            }
             // Needs you's pill, and its words on it.
             var pill = Readable(color: StatePalette.PillFill(dark: dark), least: Wcag.GraphicsContrast);
             AssertContrast(foreground: pill, background: shown, least: Wcag.GraphicsContrast);
@@ -171,6 +182,26 @@ public sealed class StatePaletteTests
                     least: Wcag.GraphicsContrast);
             }
         }
+    }
+
+    [Fact]
+    public void KeepsWindowsWordsWhereTheyRead()
+    {
+        // On the bar's own backgrounds, Windows' words read behind an open item pointed at as they are, translucent.
+        foreach (var dark in new[] { false, true })
+        {
+            var background = StatePalette.BarBackground(accent: null, dark: dark);
+            Assert.Equal(
+                expected: StatePalette.SecondaryWords(dark: dark),
+                actual: StatePalette.ReadableWords(words: StatePalette.SecondaryWords(dark: dark), background: background, dark: dark, least: Wcag.TextContrast));
+        }
+        // On a dark gold accent, labels stand about 4 to 1 there as they are, so they're lightened, and opaque.
+        var gold = StatePalette.BarBackground(accent: 0xFF6B5300u, dark: true);
+        var labels = StatePalette.SecondaryWords(dark: true);
+        Assert.True(condition: Wcag.Contrast(first: StatePalette.Over(argb: labels, background: gold), second: gold) < Wcag.TextContrast, userMessage: "Under 4.5 to 1 as they are.");
+        var readable = StatePalette.ReadableWords(words: labels, background: gold, dark: true, least: Wcag.TextContrast);
+        Assert.Equal(expected: 0xFFu, actual: readable >> 24);
+        AssertContrast(foreground: readable, background: gold, least: Wcag.TextContrast);
     }
 
     [Fact]

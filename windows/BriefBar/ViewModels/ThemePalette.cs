@@ -87,6 +87,18 @@ public sealed class ThemePalette
             ? System(element: UIElementType.WindowText)
             : Brush(argb: OnBackground(argb: StatePalette.Glyph(tint: tint, dark: IsDark), least: Wcag.GraphicsContrast));
 
+    /// Words, in Windows' colors where they read on `Background`, and as little lighter in dark (darker in light) as
+    /// it takes where they don't, such as on some of the accent's shades behind an item that's open and pointed at.
+    public Color Words => WordsColor(argb: StatePalette.Words(dark: IsDark), element: UIElementType.WindowText, least: Wcag.TextContrast);
+
+    /// Labels, a step quieter than words.
+    public Color SecondaryWords =>
+        WordsColor(argb: StatePalette.SecondaryWords(dark: IsDark), element: UIElementType.WindowText, least: Wcag.TextContrast);
+
+    /// What only sets words apart, such as the dots between them: 3 to 1, as for icons.
+    public Color TertiaryWords =>
+        WordsColor(argb: StatePalette.TertiaryWords(dark: IsDark), element: UIElementType.GrayText, least: Wcag.GraphicsContrast);
+
     /// A source's tile, or a chat's avatar, with `OnTint` drawn on it.
     public Brush Tint(uint tint) => IsHighContrast ? System(element: UIElementType.Highlight) : Brush(argb: tint);
 
@@ -135,6 +147,13 @@ public sealed class ThemePalette
     }
 
     SolidColorBrush System(UIElementType element) => Brush(argb: ArgbOf(color: systemColors[element]));
+
+    /// Words `argb`, or Windows' `element` in High Contrast, made to stand `least` to 1 apart from `Background` if
+    /// there's one.
+    Color WordsColor(uint argb, UIElementType element, double least) =>
+        IsHighContrast
+            ? systemColors[element]
+            : ColorOf(argb: Background is { } background ? StatePalette.ReadableWords(words: argb, background: background, dark: IsDark, least: least) : argb);
 
     /// `argb`, made to stand `least` to 1 apart from `Background` if there's one.
     uint OnBackground(uint argb, double least) =>
