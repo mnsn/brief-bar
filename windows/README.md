@@ -156,10 +156,22 @@ section names and the like, so nothing you see can reach it: a line with a strin
   running, waiting for an approval, and then passed or canceled, until you've seen it; one that fails moves it to
   Failing. Its foot has **Open Azure DevOps**, and an icon beside Settings
   refreshes now, as the Mac's does. Signed out, it offers to sign in, which runs `az login` in a console window;
-  without the Azure CLI, or with one it can't start, it links to its installation. Its settings are the Mac's:
+  without the Azure CLI, or with one it can't start, it links to its installation. An organization in another
+  directory (a Microsoft Entra tenant) than your sign-in's, which Azure DevOps names as it rejects a token from yours,
+  is read with a token from there once the Azure CLI is signed in there, as on the Mac ([Organizations in other
+  directories](../docs/how-it-works.md#organizations-in-other-directories)). Until then, the banner names it, "fabrikam
+  is in a directory your Azure CLI isn't signed in to", says what to do if it's a project's name rather than an
+  organization's, and **Sign in…** runs `az login --tenant` with that directory's ID; the other organizations' pull
+  requests stay listed and counted, and what it listed from there stays as it was read, without asking for more. Signing
+  in there changes neither whom BriefBar reads as nor which directory it reads your own pull requests in: it keeps
+  asking for your sign-in's directory, with `--tenant`. When that directory wants you to sign in again, Sign in signs in
+  there, and that isn't taken for someone else signing in, even after a restart, as BriefBar keeps where the account it
+  reads as is from (`ado.accountOrigin`, forgotten as Azure DevOps is turned off). When someone else does sign in, every
+  token kept, and any on its way, goes. What the Azure CLI says when it can't give a token is shown without IDs, email
+  addresses or the names of directories it gives, quoted or not. Its settings are the Mac's:
   Refresh, Keep done for, Idle after no activity for, Show To review in the bar, Follow pipelines after you merge,
-  your organizations (with Add an organization and Find my organizations again), and the pull requests you watch
-  (with Watch a pull request, by its link).
+  your organizations (with Add an organization, which checks that your sign-in can read one first, and Find my
+  organizations again), and the pull requests you watch (with Watch a pull request, by its link).
 - **GitHub pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#github)): the open pull requests on
   github.com that ask for your review by name, and your own, read with the GitHub CLI's sign-in (`gh auth token
   --hostname github.com`, its token kept in memory only, for half an hour, and forgotten as GitHub is turned off, which
@@ -255,9 +267,13 @@ Where Windows differs, these were decided:
     nobody opened stay unread in Teams for good: Keep unread for's day leaves them out, as it does on the Mac.
   - Pull requests sent to you in chats, for Azure DevOps, and summaries aren't ported yet.
 - **Azure DevOps signs in with `az login` in a console window**, which stays open so you can read what it said, where
-  the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac, that reads the
-  notifications Teams posts, which new Teams doesn't leave in Windows' notification database, so on Windows it would
-  read Teams' own data, as Teams chats do.
+  the Mac opens Terminal; for an organization in another directory, `az login --tenant`, there. It doesn't list pull
+  requests sent to you in chats yet: on the Mac, that reads the notifications Teams posts, which new Teams doesn't leave
+  in Windows' notification database, so on Windows it would read Teams' own data, as Teams chats do.
+- **Add an organization says what its check found under the box**, as Settings' other errors do, where the Mac shows an
+  alert: one your sign-in reads, or that couldn't be checked for now, is added at once; one in another directory is added
+  too, with **Sign in…** to its directory; one that isn't yours, or that you have no access to, isn't, with why and where
+  a project's organization is. With `--demo`, which reads nothing, it's added at once.
 - **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
   `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
   where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
@@ -429,6 +445,7 @@ SDK ships inside the app.
   words only (letters, digits and `-._:/=`, checked to the end of the text, since a regex's `$` lets a final line
   break through), runs it as `cmd.exe /d /v:off /s /c "<path> <words>"`, without AutoRun commands or delayed
   expansion, refuses a path with quotes, `%` or line breaks, and treats `az.cmd.` as the batch file Windows would run.
+  A directory's ID, which `--tenant` takes, is only ever a GUID, from Azure DevOps' answer or a token (`TenantId`).
   An `az.cmd` it refuses, like one removed since BriefBar found it, can't run: the panel says BriefBar couldn't get a
   token from the Azure CLI, which it looks for again within a minute, and Sign in opens the page that says how to
   install it, rather than ending BriefBar or its reading. A `copilot.cmd` it refuses can't open a session in a
@@ -478,9 +495,10 @@ SDK ships inside the app.
   rather than only the ones it had checked, and the first time, it tries again a minute later.
 - **`HttpClient` follows a redirect to any host** by default, and sends the request there, with its body for a 307 or
   a 308: a proxy's sign-in page could send BriefBar's requests to a host its sources' descriptions don't name. Neither
-  client follows one (`Redirects`): one to another host is refused in words that name it, and one that stays on the
-  same host is an HTTP error like any other. Neither source needs one: checked with real data, none of about 200
-  answers from api.github.com, dev.azure.com and app.vssps.visualstudio.com, to the requests a refresh sends, was one.
+  client follows one (`Redirects`): one to another host is refused in words that don't name it, as on the Mac, since a
+  host can carry an organization's name, and one that stays on the same host is an HTTP error like any other. Neither
+  source needs one: checked with real data, none of about 200 answers from api.github.com, dev.azure.com and
+  app.vssps.visualstudio.com, to the requests a refresh sends, was one.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 - **New Teams posts no notifications that Windows keeps**: it shows its own, by default, so Windows' notification
@@ -503,6 +521,10 @@ SDK ships inside the app.
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
   this PC, in counts). Teams' taskbar badge doesn't count chats marked unread.
+- **Teams' chat records and its message cache each learn of a deleted message on their own**: a chat's record says its
+  newest message was deleted (`deletionInfo`, as a cached message does), and the cache says it of the messages it has,
+  and either can be first. BriefBar takes a deletion from either copy (`ChatReading.Known`), so it neither counts nor
+  shows a deleted message while the other copy catches up.
 - **A chat never opened in Teams has no read marker, but has its field**: `consumptionhorizon` is `0;…` for it
   (checked on this PC, in counts). So BriefBar takes Teams' data as changed, as after an update that renames the
   field, only when no conversation has the field in that form, not when no chat has a read marker, as the Mac does:
@@ -535,8 +557,8 @@ this order:
 2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request,
    with what's left before each of yours can complete and sorting the list by date. Not ported yet, for later layers:
    the Sprint and Pipelines sections, a pull request's page with its story, the brief's summaries, notifications,
-   pull requests sent in chats (with Teams, as it reads notifications), Show Links, sending work to Copilot, and
-   `--mcp`.
+   pull requests sent in chats (with Teams, as it reads notifications), Show Links, sending work to Copilot, the
+   sign-in's state in Settings, and `--mcp`.
 3. ~~**GitHub pull requests**~~, done: the pull requests' section, its setting, and opening each pull request, with
    the GitHub CLI's sign-in and its one GraphQL query. Not ported yet, for later layers: a pull request's page with its
    story (`PullRequestStory`), the brief's summaries, Show Links, and the sign-in's state in Settings.

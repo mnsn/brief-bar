@@ -21,6 +21,10 @@ public sealed class AzureDevOpsSettings
     public const string SeenKey = "ado.seenState";
     public const string OtherSeenKey = "ado.otherAccountsSeenState";
 
+    /// Where the account BriefBar last read your pull requests with is from (`AccessToken.AccountTenant`): a directory's ID,
+    /// or an identity provider such as live.com.
+    public const string AccountOriginKey = "ado.accountOrigin";
+
     /// How long a pull request no longer listed is remembered as seen, after you last looked at it.
     static readonly TimeSpan seenKept = TimeSpan.FromDays(value: 60);
 
@@ -38,6 +42,7 @@ public sealed class AzureDevOpsSettings
     bool hasDiscovered;
     SeenState seen;
     Dictionary<string, SeenState> otherSeen;
+    string? accountOrigin;
     /// What you've seen is saved once Azure DevOps is on (`StartSeeing`), so that its first run is when you turn it on.
     bool hasSavedSeen;
 
@@ -58,6 +63,7 @@ public sealed class AzureDevOpsSettings
         knownOrganizations = ReadNames(node: settings.Read(key: KnownOrganizationsKey));
         hasDiscovered = settings.Bool(key: HasDiscoveredKey);
         otherSeen = ReadOtherSeen(node: settings.Read(key: OtherSeenKey));
+        accountOrigin = settings.Read(key: AccountOriginKey) is JsonValue origin && origin.TryGetValue(value: out string? kept) && kept.Length > 0 ? kept : null;
         if (SeenState.FromJson(node: settings.Read(key: SeenKey)) is { } stored)
         {
             seen = stored;
@@ -173,6 +179,16 @@ public sealed class AzureDevOpsSettings
     /// The Azure CLI account whose seen state is in use, once known.
     public string? Account => Read(value: () => seen.Account);
 
+    /// Where that account is from (`AccessToken.AccountTenant`), so that after a restart, your own directory wanting you to
+    /// sign in again isn't taken for someone else's sign-in. Turning Azure DevOps off forgets it (`ForgetSeen`).
+    public string? AccountOrigin
+    {
+        get => Read(value: () => accountOrigin);
+        set => Write(
+            change: () => Swap(field: ref accountOrigin, value: string.IsNullOrEmpty(value: value) ? null : value),
+            save: () => settings.Write(key: AccountOriginKey, value: accountOrigin is null ? null : JsonValue.Create(value: accountOrigin)));
+    }
+
     /// What the engine reads, as these settings say.
     public PulseEngineConfiguration EngineConfiguration => Read(value: () => new PulseEngineConfiguration
     {
@@ -229,17 +245,19 @@ public sealed class AzureDevOpsSettings
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
     }
 
-    /// Forgets what you've seen, with every account, as turning Azure DevOps off does. Your organizations and the pull
-    /// requests you watch stay, with the other settings.
+    /// Forgets what you've seen, with every account, and where the account is from, as turning Azure DevOps off does. Your
+    /// organizations and the pull requests you watch stay, with the other settings.
     public void ForgetSeen(DateTimeOffset now)
     {
         lock (gate)
         {
             settings.Write(key: SeenKey, value: null);
             settings.Write(key: OtherSeenKey, value: null);
+            settings.Write(key: AccountOriginKey, value: null);
             hasSavedSeen = false;
             seen = SeenState.FirstRun(now: now);
             otherSeen = new Dictionary<string, SeenState>(comparer: StringComparer.Ordinal);
+            accountOrigin = null;
         }
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
     }

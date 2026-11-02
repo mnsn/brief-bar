@@ -495,7 +495,7 @@ struct CopilotComposerView: View {
 
     // MARK: The prompt
 
-    /// The prompt, which you can change, where it came from, and the model that works on it, on a card below it.
+    /// The prompt, which you can change and copy, where it came from, and the model that works on it, on a card below it.
     private var promptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -518,6 +518,9 @@ struct CopilotComposerView: View {
                 .disabled(prompt == filledIn)
                 .accessibilityHidden(prompt == filledIn)
                 .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
+                ComposerCopyButton(text: prompt)
+                    // A little apart from Reset, beside it once you change the prompt.
+                    .padding(.leading, 4)
             }
             VStack(spacing: 0) {
                 TextEditor(text: $prompt)

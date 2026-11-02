@@ -756,14 +756,8 @@ struct SignInStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             row(
-                ok: store.problem?.needsSignIn != true,
-                title: store.problem == .cliNotFound ? "The Azure CLI isn't installed"
-                    : store.problem?.needsSignIn == true ? "Not signed in to the Azure CLI"
-                    : store.hasLoaded ? "Signed in with the Azure CLI" : "Checking the Azure CLI's sign-in…",
-                detail: store.problem?.needsSignIn == true
-                    ? "BriefBar reads Azure DevOps with the Azure CLI's sign-in."
-                    : "It renews itself, usually for months.",
-                action: store.problem?.needsSignIn == true
+                ok: store.problem?.offersSignIn != true, title: signInTitle, detail: signInDetail,
+                action: store.problem?.offersSignIn == true
                     ? (store.problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") : nil
             ) { store.signIn() }
             if settings.notifications && notifier.isAvailable {
@@ -780,6 +774,20 @@ struct SignInStatusView: View {
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
         .onAppear { notifier.refreshStatus() }
+    }
+
+    private var signInTitle: String {
+        guard let problem = store.problem, problem.offersSignIn else {
+            return store.hasLoaded ? "Signed in with the Azure CLI" : "Checking the Azure CLI's sign-in…"
+        }
+        if problem == .cliNotFound { return "The Azure CLI isn't installed" }
+        return problem.needsSignIn ? "Not signed in to the Azure CLI" : "Not signed in to every organization's directory"
+    }
+
+    private var signInDetail: String {
+        guard let problem = store.problem, problem.offersSignIn else { return "It renews itself, usually for months." }
+        // Which organizations, without their directory's ID.
+        return problem.needsSignIn ? "BriefBar reads Azure DevOps with the Azure CLI's sign-in." : problem.message
     }
 
     private func row(ok: Bool, title: String, detail: String, action: String?, perform: @escaping () -> Void) -> some View {

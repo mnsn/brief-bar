@@ -17,9 +17,11 @@ internal sealed class BuildFailureReader
     /// The builds whose timelines couldn't be read: when last tried, and how many tries in a row failed.
     readonly Dictionary<FailedBuild, (DateTimeOffset Last, int Failures)> attempts = [];
 
-    /// Reads the timelines due of `wanted`, the failed builds as their policies report them now, and forgets the others.
-    /// Returns the error when Azure DevOps asked BriefBar to slow down.
-    public async Task<ADOError?> ReadAsync(IReadOnlySet<FailedBuild> wanted, ADOClient client, DateTimeOffset date, TimeSpan interval, CancellationToken cancellationToken)
+    /// Reads the timelines due of `wanted`, the failed builds as their policies report them now, but for those in the
+    /// organizations `waitingOnSignIn`, which are asked nothing more until you've signed in to their directory; and forgets
+    /// the others. Returns the error when Azure DevOps asked BriefBar to slow down.
+    public async Task<ADOError?> ReadAsync(
+        IReadOnlySet<FailedBuild> wanted, IReadOnlySet<string> waitingOnSignIn, ADOClient client, DateTimeOffset date, TimeSpan interval, CancellationToken cancellationToken)
     {
         List<FailedBuild> due;
         lock (gate)
@@ -34,7 +36,7 @@ internal sealed class BuildFailureReader
                 attempts.Remove(key: build);
             }
             due = wanted
-                .Where(predicate: build => !read.Contains(item: build)
+                .Where(predicate: build => !read.Contains(item: build) && !waitingOnSignIn.Contains(item: build.Organization)
                     && (!attempts.TryGetValue(key: build, value: out var tried) || tried.Failures <= 1 || date - tried.Last >= Backoff.Delay(interval: interval, failures: tried.Failures)))
                 .OrderBy(keySelector: build => attempts.TryGetValue(key: build, value: out var tried) ? tried.Last : DateTimeOffset.MinValue)
                 .ThenBy(keySelector: build => build.Organization, comparer: StringComparer.Ordinal)
