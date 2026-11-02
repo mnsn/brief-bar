@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace BriefBar.Core.GitHub;
 
@@ -6,7 +7,12 @@ namespace BriefBar.Core.GitHub;
 /// never asks for a personal access token, and never stores the token: it keeps it in memory for half an hour, then asks
 /// `gh` again, in case you signed in as someone else, and asks again at once when GitHub rejects it (`Invalidate`).
 /// Always those arguments, and each run is limited to 30 seconds, without prompts, update checks, spinners or colors;
-/// callers asking at the same time share one run. The Mac's `GitHubCLITokenProvider`.
+/// callers asking at the same time share one run. Stopped, as GitHub is turned off, it ends a run under way and forgets
+/// the token, and nothing that run gets is kept or given to anyone (`StopAsync`). The Mac's `GitHubCLITokenProvider`.
+[SuppressMessage(
+    category: "Design",
+    checkId: "CA1001:Types that own disposable fields should be disposable",
+    Justification = "It holds a token source only while a run of gh is under way, and that's disposed once the run has ended: by the run, or by StopAsync when it took it.")]
 public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
 {
     /// BriefBar reads github.com only, not GitHub Enterprise Server.
@@ -34,6 +40,8 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
     string? program;
     GitHubToken? cached;
     Task<GitHubToken>? pending;
+    /// Ends `pending`, as GitHub is turned off: whichever lets go of it, the run as it ends or `StopAsync`, disposes it.
+    CancellationTokenSource? ending;
 
     public GitHubCLITokenProvider(GitHubCLILocator locator, IProcessRunner? runner = null, TimeProvider? time = null)
     {
@@ -63,17 +71,26 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
 
     public async Task<GitHubToken> TokenAsync(CancellationToken cancellationToken)
     {
-        // A caller that gave up, as a source that's stopping, starts no run of `gh`; one under way finishes, as on the Mac.
-        cancellationToken.ThrowIfCancellationRequested();
         Task<GitHubToken> fetching;
         lock (gate)
         {
+            // A caller that gave up, as a source that's stopping, starts no run of `gh`. Checked under the lock that
+            // `StopAsync` takes, so that a run starts before a stop, which ends it, or not at all; one under way goes on
+            // for whoever shares it, until the provider stops.
+            cancellationToken.ThrowIfCancellationRequested();
             if (cached is { } token && time.GetUtcNow() - token.FetchedAt < Lifetime)
             {
                 return token;
             }
-            // On the thread pool, so that it never finishes before it's noted as pending.
-            fetching = pending ??= Task.Run(function: FetchAndKeepAsync, cancellationToken: CancellationToken.None);
+            if (pending is null)
+            {
+                var run = new CancellationTokenSource();
+                var runEnding = run.Token;
+                ending = run;
+                // On the thread pool, so that it never finishes before it's noted as pending.
+                pending = Task.Run(function: () => FetchAndKeepAsync(run: run, cancellationToken: runEnding), cancellationToken: CancellationToken.None);
+            }
+            fetching = pending;
         }
         return await fetching.WaitAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
@@ -84,6 +101,24 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
         {
             cached = null;
         }
+    }
+
+    /// Ends a run of `gh` under way, and forgets the token, as GitHub is turned off: what that run gets, should it finish
+    /// all the same, is kept by nothing and given to no one. Calls from then on run `gh` again. Returns once the run has
+    /// ended, and what ending it set off has finished: that runs on the thread pool (`CancelAsync`), not in the caller.
+    public Task StopAsync()
+    {
+        CancellationTokenSource? run;
+        Task<GitHubToken>? running;
+        lock (gate)
+        {
+            run = ending;
+            running = pending;
+            ending = null;
+            pending = null;
+            cached = null;
+        }
+        return run is null || running is null ? Task.CompletedTask : EndAsync(run: run, running: running);
     }
 
     /// The token in what `gh auth token` printed: the first line that isn't blank, which must be one word.
@@ -117,27 +152,58 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
             : GitHubAuthError.Failed(message: message);
     }
 
-    async Task<GitHubToken> FetchAndKeepAsync()
+    /// Ends `running`, the run that `run` ends, which `StopAsync` took, then lets go of `run`, which nothing uses by then.
+    static async Task EndAsync(CancellationTokenSource run, Task running)
     {
         try
         {
-            var token = await FetchAsync().ConfigureAwait(continueOnCapturedContext: false);
+            await run.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
+            await running.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
+        }
+        finally
+        {
+            run.Dispose();
+        }
+    }
+
+    /// Runs `gh` until it ends, or `cancellationToken`, `run`'s, ends it, and keeps the token it got, unless the provider
+    /// stopped meanwhile: then it keeps nothing, and throws rather than give the token to anyone. Lets go of `run` as it
+    /// ends, unless `StopAsync` took it.
+    async Task<GitHubToken> FetchAndKeepAsync(CancellationTokenSource run, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var token = await FetchAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             lock (gate)
             {
+                if (!ReferenceEquals(objA: ending, objB: run))
+                {
+                    throw new OperationCanceledException(message: "GitHub was turned off while the GitHub CLI ran.", token: cancellationToken);
+                }
                 cached = token;
             }
             return token;
         }
         finally
         {
+            bool stillPending;
             lock (gate)
             {
-                pending = null;
+                stillPending = ReferenceEquals(objA: ending, objB: run);
+                if (stillPending)
+                {
+                    ending = null;
+                    pending = null;
+                }
+            }
+            if (stillPending)
+            {
+                run.Dispose();
             }
         }
     }
 
-    async Task<GitHubToken> FetchAsync()
+    async Task<GitHubToken> FetchAsync(CancellationToken cancellationToken)
     {
         string? found;
         lock (gate)
@@ -151,7 +217,7 @@ public sealed class GitHubCLITokenProvider : IGitHubTokenProvider
         ProcessResult result;
         try
         {
-            result = await runner.RunAsync(program: found, arguments: Arguments, environment: quiet, timeout: runLimit, cancellationToken: CancellationToken.None)
+            result = await runner.RunAsync(program: found, arguments: Arguments, environment: quiet, timeout: runLimit, cancellationToken: cancellationToken)
                 .ConfigureAwait(continueOnCapturedContext: false);
         }
         catch (Exception error) when (error is Win32Exception or TimeoutException or IOException or InvalidOperationException or ArgumentException)

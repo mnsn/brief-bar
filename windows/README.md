@@ -125,17 +125,17 @@ section names and the like, so nothing you see can reach it: a line with a strin
   (with Watch a pull request, by its link).
 - **GitHub pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#github)): the open pull requests on
   github.com that ask for your review by name, and your own, read with the GitHub CLI's sign-in (`gh auth token
-  --hostname github.com`, its token kept in memory only, for half an hour) and one GraphQL query that only reads, every
-  2 minutes, and as you open the list, unless it read in the last 10 seconds. Its groups are the Mac's: To review,
-  Changes requested, Failing, Ready to merge and Waiting; the bar counts all but Waiting. Where GitHub gives no review
-  decision, as for a repository that doesn't require reviews, the latest reviews decide, a deleted account's too. A row
-  says why it's there and who ("Changes requested · By sam"), and which pull request it is (`owner/repo#123`); it opens
-  the pull request on GitHub. Notes beside the list say what GitHub couldn't read, as for an organization that needs
-  single sign-on, and when there are more than the 50 it reads of each kind, with **More on GitHub**. Its foot has
-  **Open GitHub**, the account the GitHub CLI is signed in to, and an icon beside Settings that refreshes now. Signed
-  out, it offers to sign in, which runs `gh auth login --hostname github.com --web` in a console window; without the
-  GitHub CLI, or with one it can't start, it links to its installation. Its setting is the Mac's: Refresh, every 1, 2,
-  5 or 15 minutes.
+  --hostname github.com`, its token kept in memory only, for half an hour, and forgotten as GitHub is turned off, which
+  ends a run of `gh` under way) and one GraphQL query that only reads, every 2 minutes, and as you open the list,
+  unless it read in the last 10 seconds. Its groups are the Mac's: To review, Changes requested, Failing, Ready to merge
+  and Waiting; the bar counts all but Waiting. Where GitHub gives no review decision, as for a repository that doesn't
+  require reviews, the latest reviews decide, a deleted account's too. A row says why it's there and who ("Changes
+  requested · By sam"), and which pull request it is (`owner/repo#123`); it opens the pull request on GitHub. Notes
+  beside the list say what GitHub couldn't read, as for an organization that needs single sign-on, and when there are
+  more than the 50 it reads of each kind, with **More on GitHub**. Its foot has **Open GitHub**, the account the GitHub
+  CLI is signed in to, and an icon beside Settings that refreshes now. Signed out, it offers to sign in, which runs `gh
+  auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
+  links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text

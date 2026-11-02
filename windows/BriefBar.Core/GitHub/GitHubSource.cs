@@ -10,7 +10,8 @@ namespace BriefBar.Core.GitHub;
 ///
 /// It reads on the thread pool, one read at a time, and hands what it found to its store under its own lock, on whichever
 /// thread that happens; then it says so with `Changed`. Every 15 seconds it reads again if it's due. Stopped, it forgets
-/// everything: it saves nothing, as the list and the token are only ever in memory.
+/// everything, the GitHub CLI's token included, and ends a run of the GitHub CLI under way: it saves nothing, as the list
+/// and the token are only ever in memory.
 public sealed class GitHubSource : ISectionSource, IDisposable
 {
     /// What it reads. Raise `Version` when it reads more, so that a source you turned on waits until you've seen what.
@@ -103,10 +104,11 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         return Task.CompletedTask;
     }
 
-    /// Stops reading, and forgets what it read; returns once a read under way has ended, and what cancelling it set off,
-    /// such as ending its request to GitHub, has finished. That runs on the thread pool, not in the caller, so a callback
-    /// that blocks holds up only the stop's own task, which BriefBar waits for only so long as it quits (`SourceHost`).
-    /// Stopped already, it returns the last stop, which may not have finished.
+    /// Stops reading, and forgets what it read and the GitHub CLI's token; returns once a read under way has ended, and
+    /// what cancelling it set off, such as ending its request to GitHub, has finished, and so has a run of the GitHub CLI
+    /// under way, which nothing it gets outlasts. That runs on the thread pool, not in the caller, so a callback that blocks
+    /// holds up only the stop's own task, which BriefBar waits for only so long as it quits (`SourceHost`). Stopped
+    /// already, it returns the last stop, which may not have finished.
     public Task StopAsync()
     {
         ITimer? timer;
@@ -124,8 +126,11 @@ public sealed class GitHubSource : ISectionSource, IDisposable
             var read = refreshing;
             refreshing = null;
             store.Stop();
-            // `CancelAsync` runs no callback here, under the lock: it starts them on the thread pool.
-            finished = stopped = FinishStoppingAsync(before: stopped, read: read, cancelled: cancel.CancelAsync(), cancel: cancel);
+            // `CancelAsync` runs no callback here, under the lock: it starts them on the thread pool. The read's own
+            // cancellation comes first, so that it ends as stopped, not failed, whichever it hears of first; and the
+            // reading's stop comes before a start that may follow, whose read runs `gh` anew.
+            var cancelled = cancel.CancelAsync();
+            finished = stopped = FinishStoppingAsync(before: stopped, read: read, cancelled: cancelled, cancel: cancel, readingStopped: reading.StopAsync());
         }
         timer?.Dispose();
         return finished;
@@ -204,9 +209,10 @@ public sealed class GitHubSource : ISectionSource, IDisposable
         scheduler: TaskScheduler.Default);
 
     /// Waits for the stop `before` this one, which a start in between may have left unfinished, then for `read`, which
-    /// `cancel` asks to end, and for what cancelling it set off (`cancelled`); then lets go of `cancel`, which nothing
-    /// uses by then. How `before` and `read` ended is theirs to say, to whatever waited for them.
-    static async Task FinishStoppingAsync(Task before, Task? read, Task cancelled, CancellationTokenSource cancel)
+    /// `cancel` asks to end, for what cancelling it set off (`cancelled`), and for what stopping the reading ended
+    /// (`readingStopped`); then lets go of `cancel`, which nothing uses by then. How `before` and `read` ended is theirs to
+    /// say, to whatever waited for them.
+    static async Task FinishStoppingAsync(Task before, Task? read, Task cancelled, CancellationTokenSource cancel, Task readingStopped)
     {
         try
         {
@@ -215,7 +221,7 @@ public sealed class GitHubSource : ISectionSource, IDisposable
             {
                 await read.ConfigureAwait(options: ConfigureAwaitOptions.SuppressThrowing);
             }
-            await cancelled.ConfigureAwait(continueOnCapturedContext: false);
+            await Task.WhenAll(tasks: [cancelled, readingStopped]).ConfigureAwait(continueOnCapturedContext: false);
         }
         finally
         {
