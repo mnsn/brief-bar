@@ -198,6 +198,9 @@ export function listen(session, options = {}) {
             return scanning;
         }
         scanning = (async () => {
+            // Only once `scanning` holds this scan, so that one its first steps ask for, as setting the outbox up again
+            // does, waits for it rather than running beside it.
+            await null;
             try {
                 do {
                     again = false;

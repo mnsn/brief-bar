@@ -592,6 +592,29 @@ describe("cleaning up and recovering", () => {
         assert.equal(readResult(value.requestId).ok, true);
         assert.equal(calls.sent.length, 1);
     });
+
+    test("still handles one request at a time when a scan starts by setting the outbox up again", async () => {
+        const answers = [];
+        const { session, calls } = fakeSession(undefined, { send: () => new Promise((resolve) => answers.push(resolve)) });
+        const outbox = listenTo(session);
+        await outbox.scan();
+        // Made again, so the next scan finds a requests folder that isn't the one it watches, and sets it up first.
+        fs.rmSync(path.join(folder, "requests"), { recursive: true });
+        fs.mkdirSync(path.join(folder, "requests"), { mode: 0o700 });
+        const values = [request(session.sessionId), request(session.sessionId)];
+        for (const value of values) writeRequest(value);
+        void outbox.scan();
+        const first = await waitFor(() => answers[0], "the first send");
+        // A scan asked for while it sends, as a change in the folder asks, waits for the send.
+        void outbox.scan();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.equal(calls.sent.length, 1);
+        first("message-1");
+        const second = await waitFor(() => answers[1], "the second send");
+        assert.equal(calls.sent.length, 2);
+        second("message-2");
+        for (const value of values) assert.equal((await waitFor(() => readResult(value.requestId), "a result")).ok, true);
+    });
 });
 
 describe("its outbox's path", () => {
