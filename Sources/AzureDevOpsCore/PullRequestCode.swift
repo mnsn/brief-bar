@@ -294,6 +294,15 @@ public actor PullRequestCode {
     /// The files it keeps, first read first, and how big they are.
     private var files: [(key: ReadKey, size: Int)] = []
     private var excerpts: [ExcerptKey: ThreadExcerpt] = [:]
+    /// The comparisons being made, or made last, by the versions they compare: threads on one file share one.
+    private var diffs: [DiffKey: Task<[DiffLine], Error>] = [:]
+    private var diffOrder: [DiffKey] = []
+    /// How many comparisons it made, for tests.
+    private(set) var comparisonsMade = 0
+    /// Lets two comparisons run at a time.
+    private let comparisons = RequestLimiter(limit: 2)
+    /// How many comparisons it keeps once made.
+    static let keptComparisons = 4
 
     /// Reads Azure DevOps through `client`, `concurrency` requests at a time.
     public init(_ pullRequest: PullRequest, client: ADOClient, concurrency: Int = 4) {
@@ -319,6 +328,7 @@ public actor PullRequestCode {
 
     deinit {
         for task in reads.values { task.cancel() }
+        for task in diffs.values { task.cancel() }
     }
 
     /// The code a thread on lines of a file is on, as its reviewer saw it: in the diff it was made on, before Azure DevOps
@@ -382,19 +392,21 @@ public actor PullRequestCode {
         let change = changes.change(to: anchor.path, trackingId: anchor.changeTrackingId)
         // Among the files left out of a diff that changed more than it reads, it can't tell whether this one changed.
         if change == nil, !changes.isComplete { throw ThreadExcerpt.Problem.tooManyFiles }
-        // The file after the change, then before it: a file the diff didn't change is the same on both sides.
-        let newText: String
-        let oldText: String
+        // The file after the change, then before it, by what each is read as: none for a side without the file, and a file
+        // the diff didn't change is the same on both sides.
+        let newFile: ReadKey?
+        let oldFile: ReadKey?
         if let change {
-            newText = change.kind.contains(.delete)
-                ? "" : try Self.text(await file(change.objectId, change.path, at: right.sourceCommit))
-            oldText = change.kind.contains(.add)
-                ? "" : try Self.text(await file(change.originalObjectId, change.originalPath ?? change.path, at: leftCommit))
+            newFile = change.kind.contains(.delete) ? nil : try Self.file(change.objectId, change.path, at: right.sourceCommit)
+            oldFile = change.kind.contains(.add)
+                ? nil : try Self.file(change.originalObjectId, change.originalPath ?? change.path, at: leftCommit)
         } else {
-            newText = try Self.text(await file(nil, anchor.path, at: right.sourceCommit))
-            oldText = newText
+            newFile = try Self.file(nil, anchor.path, at: right.sourceCommit)
+            oldFile = newFile
         }
-        let diff = await Self.compare(oldText, newText)
+        let newText = try await text(newFile)
+        let oldText = try await text(oldFile)
+        let diff = try await compare(DiffKey(old: oldFile, new: newFile), oldText, newText)
         guard let window = ThreadExcerpt.window(of: diff, side: anchor.side, lines: anchor.lines, context: context) else {
             throw ThreadExcerpt.Problem.linesNotFound
         }
@@ -431,9 +443,29 @@ public actor PullRequestCode {
         }
     }
 
-    /// Diffs off the actor, so that other threads' reads go on meanwhile.
-    private static func compare(_ old: String, _ new: String) async -> [DiffLine] {
-        LineDiff.compare(old, new)
+    /// Two versions compared off the actor, so that other threads' reads go on meanwhile: once for all the threads on
+    /// them, two comparisons at a time, and the last few kept.
+    private func compare(_ key: DiffKey, _ old: String, _ new: String) async throws -> [DiffLine] {
+        let task: Task<[DiffLine], Error>
+        if let kept = diffs[key] {
+            task = kept
+        } else {
+            let comparisons = comparisons
+            task = Task { try await comparisons.run { LineDiff.compare(old, new) } }
+            diffs[key] = task
+            diffOrder.append(key)
+            comparisonsMade += 1
+            while diffOrder.count > Self.keptComparisons { diffs[diffOrder.removeFirst()] = nil }
+        }
+        do {
+            return try await task.value
+        } catch {
+            if diffs[key] == task {
+                diffs[key] = nil
+                diffOrder.removeAll { $0 == key }
+            }
+            throw error
+        }
     }
 
     /// The pull request's iterations, oldest first: read again for a push it hadn't seen or a move to another target, or
@@ -455,18 +487,18 @@ public actor PullRequestCode {
         return changes
     }
 
-    /// A file by its object ID, or else by its path at a commit.
-    private func file(_ objectId: String?, _ path: String, at commit: String?) async throws -> FileText {
-        let key: ReadKey
-        if let objectId, !objectId.isEmpty {
-            key = .object(objectId)
-        } else if let commit, !commit.isEmpty {
-            key = .file(path, commit: commit)
-        } else {
-            throw ThreadExcerpt.Problem.noIterations
-        }
-        guard case .file(let text) = try await read(key) else { return .binary }
-        return text
+    /// What a file is read as: by its object ID, or else by its path at a commit.
+    private static func file(_ objectId: String?, _ path: String, at commit: String?) throws -> ReadKey {
+        if let objectId, !objectId.isEmpty { return .object(objectId) }
+        if let commit, !commit.isEmpty { return .file(path, commit: commit) }
+        throw ThreadExcerpt.Problem.noIterations
+    }
+
+    /// A version's text, read once for every thread on it: none without the file.
+    private func text(_ file: ReadKey?) async throws -> String {
+        guard let file else { return "" }
+        guard case .file(let text) = try await read(file) else { return "" }
+        return try Self.text(text)
     }
 
     /// What's read under a key: read once, and kept, unless it failed in a way that asking again might not. Nothing is
@@ -593,6 +625,12 @@ public actor PullRequestCode {
         case iterations([PRIteration])
         case changes(FileChanges)
         case file(FileText)
+    }
+
+    /// Two versions of a file compared: nil for a side without it.
+    struct DiffKey: Hashable {
+        var old: ReadKey?
+        var new: ReadKey?
     }
 
     struct ExcerptKey: Hashable {

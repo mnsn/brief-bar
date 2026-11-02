@@ -17,6 +17,12 @@ import Testing
         #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
         #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
         #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
+        // One that ends on the line it starts is a block of its own: what follows it is what it would be after any other.
+        #expect(RichText(markdown: "<!-- bot -->\n    <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
+        // What follows one's end stays in the list's item it's in, which goes on, counting on.
+        let numbered = RichText(markdown: "1. one\n   <!--\n   x\n   --> after\n1. two")
+        #expect(numbered.plainText == "1. one\nafter\n2. two")
+        #expect(numbered.blocks.last == .listItem(.number(2), depth: 0, [RichText.Run("two")]))
         // In a list's item, starting it too, and in a quote.
         #expect(plain("- one\n\n  <!--\n  hidden\n\n  -->\n- two") == "• one\n• two")
         #expect(plain("- <!--\n  hidden\n\n  more\n  -->\n- shown") == "• shown")
@@ -102,16 +108,16 @@ import Testing
         ])
     }
 
-    /// Each in well under a second, where reading them in quadratic time would take minutes: plenty of room for a slow
-    /// runner.
+    /// Each in a fraction of a second, where reading them in quadratic time would take far longer than the limit: kept
+    /// small, since every test runs on one thread in `make test`.
     @Test func readsAManyTaggedCommentInLinearTime() {
         for long in [
-            String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 5_000),
-            "<img " + String(repeating: "a", count: 100_000) + ">",
-            "<img src=" + String(repeating: "a-b ", count: 25_000) + ">",
-            String(repeating: "` <!-- ``", count: 20_000),
-            String(repeating: "<span title=\"`x` > ", count: 10_000),
-            "<span title=\"" + String(repeating: "<a b ", count: 20_000),
+            String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 1_000),
+            "<img " + String(repeating: "a", count: 25_000) + ">",
+            "<img src=" + String(repeating: "a-b ", count: 6_000) + ">",
+            String(repeating: "<!-- `", count: 10_000),
+            String(repeating: "<span title=\"`x` > ", count: 2_000),
+            "<span title=\"" + String(repeating: "<a b ", count: 6_000),
         ] {
             let start = ContinuousClock.now
             _ = RichText(markdown: long)

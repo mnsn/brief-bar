@@ -738,12 +738,15 @@ private final class Running: Sendable {
     }
 }
 
+/// Waits for `condition`. `make test` runs every test on one thread, which a long test can keep for seconds on a slow
+/// runner, so the deadline is long, and the condition is checked once more after it.
 private func waitUntil(_ what: String, _ condition: () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(60)
     while ContinuousClock.now < deadline {
         if await condition() { return }
         try await Task.sleep(for: .milliseconds(5))
     }
+    if await condition() { return }
     throw TestError("Timed out waiting for \(what)")
 }
 
@@ -846,6 +849,15 @@ private actor LaterCode: CodeSource {
             Issue.record("A thread that stopped waiting showed its code, without whether it changed since")
             return
         }
+    }
+
+    @Test func comparesAFileOnceForTheThreadsOnIt() async throws {
+        let fake = FakeCode()
+        let code = PullRequestCode(pr, source: fake)
+        let together = await code.excerpts(of: [thread(1, "a"), thread(2, "a", line: 2), thread(3, "b")], in: pr)
+        #expect(try together[2]?.get().lines.first { $0.isCommented }?.text == "a 2")
+        _ = try await code.excerpt(of: thread(4, "a", line: 2), in: pr).get()
+        #expect(await code.comparisonsMade == 2)
     }
 
     @Test func forgetsTheFilesReadFirstPastTheMemoryItMayUse() async throws {

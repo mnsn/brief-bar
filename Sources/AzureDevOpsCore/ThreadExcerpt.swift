@@ -22,13 +22,18 @@ public struct ThreadExcerpt: Sendable, Equatable {
         public var newNumber: Int?
         /// One of the lines the thread is on.
         public var isCommented: Bool
+        /// How many lines are left out after it: those of a long run of the other side's lines, between its ends.
+        public var omittedAfter: Int
 
-        public init(kind: DiffLine.Kind, text: String, oldNumber: Int?, newNumber: Int?, isCommented: Bool = false) {
+        public init(
+            kind: DiffLine.Kind, text: String, oldNumber: Int?, newNumber: Int?, isCommented: Bool = false, omittedAfter: Int = 0
+        ) {
             self.kind = kind
             self.text = text
             self.oldNumber = oldNumber
             self.newNumber = newNumber
             self.isCommented = isCommented
+            self.omittedAfter = omittedAfter
         }
     }
 
@@ -74,9 +79,11 @@ public struct ThreadExcerpt: Sendable, Equatable {
     public var change: FileChange.Kind?
     public var side: Side
     public var lines: [Line]
-    /// Nothing of the diff comes before its lines: they start at the top of the file.
+    /// Nothing of the diff comes before its lines: they start at the top of the file, with all that was removed or added
+    /// above it.
     public var reachesStart: Bool
-    /// Nothing of the diff comes after its lines: they end at the end of the file.
+    /// Nothing of the diff comes after its lines: they end at the end of the file, with all that was removed or added
+    /// below it.
     public var reachesEnd: Bool
     /// The thread is on more lines than it shows: how many of its first ones are left out.
     public var hiddenCommentedLines: Int
@@ -112,6 +119,10 @@ public struct ThreadExcerpt: Sendable, Equatable {
     public static let maxCommentedLines = 20
     /// How many characters of a line it keeps.
     public static let maxLineLength = 1_000
+    /// How many of the other side's lines it shows in a row, such as lines removed among those the thread is on: past
+    /// that, as many from the run's two ends, with the rest left out between them; or, above the file's first line or
+    /// below its last, the ones nearest it.
+    public static let maxOtherLines = 10
 
     /// The part of a diff an excerpt shows.
     struct Window: Equatable {
@@ -123,10 +134,11 @@ public struct ThreadExcerpt: Sendable, Equatable {
 
     /// The lines of `diff` around those numbered `lines` on `side`: `context` of that side's before and after them, with
     /// the other side's lines between, and at the top or the bottom of the file, the other side's lines beyond, which have
-    /// nothing else to come before or after. Of a thread's own lines, it keeps the last `maxCommented`. Nil when that side
-    /// doesn't have the first of them.
+    /// nothing else to come before or after; `maxOther` of the other side's in a row at most. Of a thread's own lines, it
+    /// keeps the last `maxCommented`. Nil when that side doesn't have the first of them.
     static func window(
-        of diff: [DiffLine], side: Side, lines: ClosedRange<Int>, context: Int = context, maxCommented: Int = maxCommentedLines
+        of diff: [DiffLine], side: Side, lines: ClosedRange<Int>, context: Int = context, maxCommented: Int = maxCommentedLines,
+        maxOther: Int = maxOtherLines
     ) -> Window? {
         let number: (DiffLine) -> Int? = side == .right ? { $0.newNumber } : { $0.oldNumber }
         // Where each of the side's lines is in the diff, by its number less one.
@@ -138,14 +150,46 @@ public struct ThreadExcerpt: Sendable, Equatable {
         let to = min(rows.count, last + max(0, context))
         let start = from == 1 ? 0 : rows[from - 1]
         let end = to == rows.count ? diff.count - 1 : rows[to - 1]
-        let shown = diff[start...end].map { line in
-            Line(
-                kind: line.kind, text: Self.cut(line.text), oldNumber: line.oldNumber, newNumber: line.newNumber,
-                isCommented: number(line).map { (first...last).contains($0) } ?? false
-            )
+        var shown: [Line] = []
+        var reachesStart = start == 0
+        var reachesEnd = end == diff.count - 1
+        func show(_ rows: some Sequence<Int>) {
+            for row in rows {
+                let line = diff[row]
+                shown.append(Line(
+                    kind: line.kind, text: Self.cut(line.text), oldNumber: line.oldNumber, newNumber: line.newNumber,
+                    isCommented: number(line).map { (first...last).contains($0) } ?? false
+                ))
+            }
         }
-        return Window(lines: shown, reachesStart: start == 0, reachesEnd: end == diff.count - 1,
-                      hiddenCommentedLines: first - lines.lowerBound)
+        let limit = max(2, maxOther)
+        var row = start
+        while row <= end {
+            guard number(diff[row]) == nil else {
+                show(row...row)
+                row += 1
+                continue
+            }
+            // A run of the other side's lines.
+            var runEnd = row
+            while runEnd < end, number(diff[runEnd + 1]) == nil { runEnd += 1 }
+            let count = runEnd - row + 1
+            if count <= limit {
+                show(row...runEnd)
+            } else if row == start {
+                show((runEnd - limit + 1)...runEnd)
+                reachesStart = false
+            } else if runEnd == end {
+                show(row...(row + limit - 1))
+                reachesEnd = false
+            } else {
+                show(row...(row + limit / 2 - 1))
+                shown[shown.count - 1].omittedAfter = count - limit / 2 * 2
+                show((runEnd - limit / 2 + 1)...runEnd)
+            }
+            row = runEnd + 1
+        }
+        return Window(lines: shown, reachesStart: reachesStart, reachesEnd: reachesEnd, hiddenCommentedLines: first - lines.lowerBound)
     }
 
     private static func cut(_ text: String) -> String {

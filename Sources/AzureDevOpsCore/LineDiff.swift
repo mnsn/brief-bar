@@ -80,16 +80,22 @@ public enum LineDiff {
 
     /// Every line of both versions, in order.
     public static func compare(_ old: String, _ new: String, maxChanges: Int = maxChanges) -> [DiffLine] {
-        compare(lines(old), lines(new), maxChanges: maxChanges)
+        var old = old
+        var new = new
+        old.makeContiguousUTF8()
+        new.makeContiguousUTF8()
+        return compare(lines(old), lines(new), maxChanges: maxChanges)
     }
 
     /// Every line of both versions, in order.
     public static func compare(_ old: [Substring], _ new: [Substring], maxChanges: Int = maxChanges) -> [DiffLine] {
-        // Each different line as a number, so that lines compare as numbers do.
-        var ids: [Substring: Int] = [:]
+        // Each different line as a number, so that lines compare as numbers do, by their bytes: lines that only look
+        // alike, such as with an accent written as one character or as two, differ.
+        var ids: [Bytes: Int] = [:]
         func id(_ line: Substring) -> Int {
-            if let id = ids[line] { return id }
-            ids[line] = ids.count
+            let bytes = Bytes(line)
+            if let id = ids[bytes] { return id }
+            ids[bytes] = ids.count
             return ids.count - 1
         }
         let a = old.map(id)
@@ -169,6 +175,24 @@ public enum LineDiff {
                 oldStart: start(\.oldNumber), oldCount: slice.filter { $0.oldNumber != nil }.count,
                 newStart: start(\.newNumber), newCount: slice.filter { $0.newNumber != nil }.count, lines: Array(slice)
             )
+        }
+    }
+
+    /// A line that compares and hashes as its UTF-8 bytes, where strings compare as what they look like.
+    private struct Bytes: Hashable {
+        let line: Substring
+
+        init(_ line: Substring) {
+            self.line = line
+        }
+
+        static func == (lhs: Bytes, rhs: Bytes) -> Bool {
+            lhs.line.utf8.elementsEqual(rhs.line.utf8)
+        }
+
+        func hash(into hasher: inout Hasher) {
+            let hashed: Void? = line.utf8.withContiguousStorageIfAvailable { hasher.combine(bytes: UnsafeRawBufferPointer($0)) }
+            if hashed == nil { Array(line.utf8).withUnsafeBytes { hasher.combine(bytes: $0) } }
         }
     }
 

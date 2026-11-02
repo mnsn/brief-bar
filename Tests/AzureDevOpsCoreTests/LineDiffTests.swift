@@ -45,6 +45,11 @@ import Testing
         #expect(unified(LineDiff.compare("same\n", "same\n")) == [" same"])
     }
 
+    @Test func comparesLinesByTheirBytes() {
+        // An accent written as one character, then as two: alike to the eye, but another line.
+        #expect(unified(LineDiff.compare("caf\u{E9}\n", "cafe\u{301}\n")) == ["-caf\u{E9}", "+cafe\u{301}"])
+    }
+
     @Test func aLineEndingsChangeIsntAChange() {
         #expect(unified(LineDiff.compare("one\r\ntwo\r\n", "one\ntwo\n")) == [" one", " two"])
     }
@@ -192,6 +197,28 @@ import Testing
         let window = ThreadExcerpt.window(of: diff, side: .right, lines: 9...14, context: 3)
         #expect(window?.lines.filter(\.isCommented).map { $0.newNumber ?? 0 } == [9, 10])
         #expect(window?.reachesEnd == true)
+    }
+
+    @Test func showsALongRunOfTheOtherSidesLinesByItsEnds() throws {
+        // Fifty lines removed between the two the thread is on.
+        let removed = LineDiff.compare((["a"] + (1...50).map { "x\($0)" } + ["b"]).joined(separator: "\n"), "a\nb")
+        let between = try #require(ThreadExcerpt.window(of: removed, side: .right, lines: 1...2, context: 0))
+        #expect(between.lines.map(\.text) == ["a"] + (1...5).map { "x\($0)" } + (46...50).map { "x\($0)" } + ["b"])
+        #expect(between.lines.map(\.omittedAfter) == [0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0])
+        #expect(between.reachesStart && between.reachesEnd)
+
+        // A file rewritten from end to end: above its first line, the removed lines nearest it.
+        let rewritten = LineDiff.compare((1...100).map { "old \($0)" }.joined(separator: "\n"),
+                                         (1...100).map { "new \($0)" }.joined(separator: "\n"), maxChanges: 10)
+        let top = try #require(ThreadExcerpt.window(of: rewritten, side: .right, lines: 1...1, context: 3))
+        #expect(top.lines.map(\.text) == (91...100).map { "old \($0)" } + (1...4).map { "new \($0)" })
+        #expect(!top.reachesStart)
+
+        // Below its last line, the removed lines nearest it.
+        let gone = LineDiff.compare("a\n" + (1...30).map { "x\($0)" }.joined(separator: "\n"), "a")
+        let bottom = try #require(ThreadExcerpt.window(of: gone, side: .right, lines: 1...1, context: 3))
+        #expect(bottom.lines.map(\.text) == ["a"] + (1...10).map { "x\($0)" })
+        #expect(!bottom.reachesEnd)
     }
 
     @Test func hasNoWindowForLinesTheFileDoesntHave() {

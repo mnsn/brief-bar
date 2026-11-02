@@ -844,18 +844,27 @@ private enum MarkdownReader {
                 if !text.isEmpty { blocks.append(.code(text)) }
                 continue
             }
-            // An HTML comment that starts a line and ends on a later one, as bots leave them in their comments, blank lines
-            // and all, shows nothing; without an end, it's all the rest. What follows its end on that line goes on. One that
-            // ends on the line it starts goes with the rest of the line's inline HTML.
-            if trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->") {
+            // An HTML comment that starts a line, as bots leave them in their comments, is a block of its own, which shows
+            // nothing, blank lines and all, to the line it ends on; without an end, it's all the rest. What follows its end
+            // there goes on, in the list's item it's in.
+            if trimmed.hasPrefix("<!--"), let opening = raw[index].range(of: "<!--") {
                 flush()
                 closeLists(at: indent)
-                var end = index + 1
-                while end < lines.count, !lines[end].contains("-->") { end += 1 }
-                guard end < lines.count, let close = raw[end].range(of: "-->") else { break }
-                raw[end] = String(raw[end][close.upperBound...])
-                lines[end] = Self.expandingIndentation(raw[end])
-                index = end
+                var end = index
+                var close = raw[index][opening.upperBound...].range(of: "-->")
+                while close == nil, end + 1 < raw.count {
+                    end += 1
+                    close = raw[end].range(of: "-->")
+                }
+                guard let close else { break }
+                let rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
+                if rest.isEmpty {
+                    index = end + 1
+                } else {
+                    raw[end] = String(repeating: " ", count: inside) + rest
+                    lines[end] = Self.expandingIndentation(raw[end])
+                    index = end
+                }
                 continue
             }
             if let fence = Self.fence(trimmed) {
