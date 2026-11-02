@@ -1,16 +1,16 @@
 # Checks BriefBar for Windows end to end with made-up data, through UI Automation: a bar at the top of each display,
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
-# Teams' two panels, from its made-up chats, with the Mac's groups, Recent folded, Mark all read, chats that open and
-# read, and its page in Settings, whose Show message previews off has chats say how many messages are unread;
 # Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
 # with Copilot's page and its settings, closing the panel as it comes to the front; Azure DevOps' panel, from its
 # made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, sorting by date and
 # back, and its page in Settings, whose Show To review in the bar changes what the bar counts; GitHub's panel, from its
 # made-up pull requests, with the Mac's groups, its foot and the account it reads as, rows that open, and its page in
-# Settings; Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still
-# opening panels; a second start while it starts opening its Overview; and every display's work area given back within
-# a second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
+# Settings; Teams' two panels, from its made-up chats, with the Mac's groups, Recent folded, Mark all read, chats that
+# open and read, and its page in Settings, whose Show message previews off has chats say how many messages are unread;
+# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
+# panels; a second start while it starts opening its Overview; and every display's work area given back within a
+# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
 # quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
@@ -161,10 +161,10 @@ function Get-GroupNames($list) {
 }
 
 # Every group a panel's list shows, "Needs you: 3", in order, scrolling through it from its top: it has only those on
-# screen. It's back at its top after.
+# screen. It's back at its top after. A list short enough to show whole doesn't scroll, and refuses to be scrolled.
 function Get-AllGroupNames($list) {
     $scroll = $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
-    $scroll.SetScrollPercent(-1, 0)
+    if ($scroll.Current.VerticallyScrollable) { $scroll.SetScrollPercent(-1, 0) }
     $names = [System.Collections.Generic.List[string]]::new()
     for ($step = 0; $step -lt 30; $step++) {
         Start-Sleep -Milliseconds 150
@@ -172,7 +172,7 @@ function Get-AllGroupNames($list) {
         if (-not $scroll.Current.VerticallyScrollable -or $scroll.Current.VerticalScrollPercent -ge 99.9) { break }
         $scroll.Scroll([System.Windows.Automation.ScrollAmount]::NoAmount, [System.Windows.Automation.ScrollAmount]::LargeIncrement)
     }
-    $scroll.SetScrollPercent(-1, 0)
+    if ($scroll.Current.VerticallyScrollable) { $scroll.SetScrollPercent(-1, 0) }
     @($names)
 }
 
@@ -411,7 +411,7 @@ function Test-Teams($process, $bar) {
     Check ($null -ne (Get-Button $bar 'Open Teams')) 'its foot opens Teams'
     $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
     Check ($null -ne $row -and $row.Current.Name -like 'Avery Quinn, I moved the deck to the shared folder. 2 unread messages, *') "its newest unread chat comes first, with its newest message and how many are unread ($(if ($row) { $row.Current.Name -replace ',.*$', '' }))"
-    $recentRows = { @(@($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Recent: 1')))[0].FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count }
+    $recentRows = { $recent = @($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Recent: 1')))[0]; if ($recent) { @($recent.FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count } else { -1 } }
     Check ($null -ne (Get-Button $list 'Show recent, 1') -and (& $recentRows) -eq 0) 'its recent chats start folded'
     $markAll = Get-Button $list 'Mark all read'
     if ($markAll) { Invoke-Item $markAll }
@@ -448,9 +448,14 @@ function Test-Teams($process, $bar) {
     Check ($null -ne $state -and $state.Current.ToggleState -eq 'On') 'and shows message previews'
     if (-not $state) { return }
     $state.Toggle()
-    $list = Open-Teams $bar 'Teams group chats' 'Group chats'
-    $counted = Wait-Until { if ($list) { $found = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem)); if ($found -and $found.Current.Name -like 'Weekly sync, 1 new message, 1 unread message, *') { $found } } } 5
-    Check ($null -ne $counted) 'Show message previews off has a chat say how many messages are unread, not what they say'
+    Check ($null -ne (Wait-Until { if ($state.Current.ToggleState -eq 'Off') { $true } } 3)) 'which turns off'
+    # Past the 600 ms in which a press on its item counts as the one that closed the panel, should one have.
+    Start-Sleep -Milliseconds 700
+    [void](Open-Teams $bar 'Teams group chats' 'Group chats')
+    $first = { $shown = Get-PanelList $bar; if ($shown -and $shown.Current.Name -eq 'Group chats') { $shown.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem)) } }
+    $counted = Wait-Until { $found = & $first; if ($found -and $found.Current.Name -like 'Weekly sync, 1 new message, 1 unread message, *') { $found } } 5
+    $seen = if ($counted) { 'Weekly sync' } else { $found = & $first; if ($found) { $found.Current.Name -replace ' \d+ (minute|hour)s? ago$', '' } else { 'no panel' } }
+    Check ($null -ne $counted) "Show message previews off has a chat say how many messages are unread, not what they say ($seen)"
 }
 
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
@@ -565,10 +570,12 @@ function Test-Running($process, $before) {
         Write-Host 'skip  the same item on another display (one display)'
     }
 
-    Test-Teams -process $process -bar $first
     Test-Copilot -process $process -bar $first
     Test-AzureDevOps -process $process -bar $first
     Test-GitHub -process $process -bar $first
+    # Last, as it leaves Settings open in front, which keeps a panel opened through UI Automation from coming to the
+    # front, as Copilot's checks need it to.
+    Test-Teams -process $process -bar $first
 
     # Alt+F4 doesn't close a bar.
     $handle = [IntPtr]$first.Current.NativeWindowHandle

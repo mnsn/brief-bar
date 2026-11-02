@@ -303,17 +303,18 @@ public sealed class TeamsSource : ISectionSource, IDisposable
         Volatile.Write(location: ref chats, value: builtChats);
         Volatile.Write(location: ref groups, value: builtGroups);
         var report = store!.Snapshot?.Report ?? new TeamsDataReport();
+        var complete = store.Snapshot?.IsComplete ?? false;
         var unreadChats = store.Unread(group: ChatGroup.Chats).Count;
         var unreadGroups = store.Unread(group: ChatGroup.Groups).Count;
         var recentChats = store.Recent(group: ChatGroup.Chats).Count;
         var recentGroups = store.Recent(group: ChatGroup.Groups).Count;
         var state = string.Create(
             provider: System.Globalization.CultureInfo.InvariantCulture,
-            handler: $"{builtChats.Status.Condition}|{store.Problem}|{unreadChats}|{unreadGroups}|{recentChats}|{recentGroups}|{report.Chats}");
+            handler: $"{builtChats.Status.Condition}|{store.Problem}|{complete}|{unreadChats}|{unreadGroups}|{recentChats}|{recentGroups}|{report.Chats}");
         if (state != loggedState)
         {
             loggedState = state;
-            Log.Write(line: $"teams: {builtChats.Status.Condition}, problem {store.Problem}; {report.Chats} chats of {report.Conversations} conversations, {report.WithMarker} with a read marker; unread {unreadChats} chats and {unreadGroups} group chats, recent {recentChats} and {recentGroups}");
+            Log.Write(line: $"teams: {builtChats.Status.Condition}, problem {store.Problem}, complete {complete}; {report.Chats} chats of {report.Conversations} conversations, {report.WithMarker} with a read marker; unread {unreadChats} chats and {unreadGroups} group chats, recent {recentChats} and {recentGroups}");
         }
     }
 

@@ -31,16 +31,13 @@ public sealed class TeamsStore
 
     public TeamsProblem? Problem => Snapshot?.Problem;
 
-    /// Takes in what the engine read: the marks Teams' own markers have passed are forgotten, once Teams' data was read in
-    /// full, which alone says which chats are gone.
+    /// Takes in what the engine read: the marks Teams' own markers have passed are forgotten, and those of chats Teams no
+    /// longer has, once Teams' data was read in full, which alone says which chats are gone.
     public void Receive(TeamsSnapshot snapshot, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshot);
         Snapshot = snapshot;
-        if (snapshot.Problem is null)
-        {
-            marks.Prune(chats: snapshot.Chats);
-        }
+        marks.Prune(chats: snapshot.Chats, dropAbsent: snapshot.IsComplete);
         Recompute(now: now);
     }
 

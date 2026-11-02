@@ -39,7 +39,7 @@ public sealed class TeamsSourceLogTests
             }
 
             var lines = sink.Lines;
-            Assert.Contains(collection: lines, filter: line => line.Contains(value: "teams: Ready, problem none; 6 chats of 6 conversations, 6 with a read marker; unread 2 chats and 2 group chats, recent 1 and 1", comparisonType: StringComparison.Ordinal));
+            Assert.Contains(collection: lines, filter: line => line.Contains(value: "teams: Ready, problem none, complete True; 6 chats of 6 conversations, 6 with a read marker; unread 2 chats and 2 group chats, recent 1 and 1", comparisonType: StringComparison.Ordinal));
             Assert.Contains(collection: lines, filter: line => line.Contains(value: "unread 1 chats and 2 group chats, recent 2 and 1", comparisonType: StringComparison.Ordinal));
             foreach (var secret in new[] { "Avery", "Quinn", "Sam", "Launch", "Weekly", "deck", "19:", "@", "aaaaaaaa", "msteams" })
             {

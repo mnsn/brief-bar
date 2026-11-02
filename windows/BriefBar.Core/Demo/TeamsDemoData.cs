@@ -34,6 +34,7 @@ public static class TeamsDemoData
         return new TeamsSnapshot
         {
             Found = true,
+            IsComplete = true,
             Chats =
             [
                 Chat(id: Avery, kind: ConversationKind.OneOnOne, title: "Avery Quinn", newest: avery[^1], readUpTo: Id(now: now, minutes: 180)),

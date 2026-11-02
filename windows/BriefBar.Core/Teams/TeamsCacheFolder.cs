@@ -36,6 +36,9 @@ internal sealed class TeamsCacheFolder(string path)
     /// Message records that couldn't be read, since the folder was last read from scratch.
     public int UnreadableMessages { get; private set; }
 
+    /// Files vanished as the folder was last read from scratch, on every attempt: what they held may be missing.
+    public bool Vanished { get; private set; }
+
     /// Each chat, with the account it's in.
     public IEnumerable<(TeamsChat Chat, string Account)> Chats => conversations.Values
         .Where(predicate: conversation => conversation.Chat is not null)
@@ -80,6 +83,7 @@ internal sealed class TeamsCacheFolder(string path)
             .Select(selector: name => System.IO.Path.Combine(path1: folder.Path, path2: name))
             .ToDictionary(keySelector: table => table, elementSelector: table => FileStamp.Of(path: table), comparer: StringComparer.Ordinal);
         corruptLogRecords = records.Read.CorruptLogRecords;
+        Vanished = catalogRead.Vanished || records.Read.Vanished;
         blocksRead = catalogRead.BlocksRead + records.Read.BlocksRead;
         blocksSkipped = catalogRead.BlocksSkipped + records.Read.BlocksSkipped;
         UnreadableMessages = 0;

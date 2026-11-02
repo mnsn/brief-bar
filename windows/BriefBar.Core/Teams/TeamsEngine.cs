@@ -423,19 +423,29 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
 
     TeamsSnapshot CurrentSnapshot()
     {
-        var report = folders.Values.Aggregate(seed: new TeamsDataReport(), func: (total, folder) => total.Adding(other: folder.Report));
+        var read = folders.Values.Aggregate(seed: new TeamsDataReport(), func: (total, folder) => total.Adding(other: folder.Report));
+        var report = read with
+        {
+            Folders = read.Folders + unreadableFolders,
+            UnreadableFiles = unreadableTables + unreadableFolders,
+        };
         return new TeamsSnapshot
         {
             Found = found,
             Failed = failed,
+            // Read in full, and understood: tables that may only be being written count, though they're not unreadable
+            // yet; and data that changed says nothing of which chats are gone.
+            IsComplete = found
+                && !failed
+                && report.Problem is null
+                && suspectTables.Count == 0
+                && report.UnreadableCount == 0
+                && report.CorruptLogRecords == 0
+                && !folders.Values.Any(predicate: folder => folder.Vanished),
             Chats = MergedChats(),
             Messages = messages.ToDictionary(
                 keySelector: pair => pair.Key, elementSelector: pair => pair.Value.Messages, comparer: StringComparer.Ordinal),
-            Report = report with
-            {
-                Folders = report.Folders + unreadableFolders,
-                UnreadableFiles = unreadableTables + unreadableFolders,
-            },
+            Report = report,
             ReadAt = readAt,
         };
     }

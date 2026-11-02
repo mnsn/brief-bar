@@ -21,6 +21,10 @@ public sealed class LevelDBFolderRead
 
     public LevelDBLogPosition? Log { get; set; }
 
+    /// Files vanished as they were read, on every attempt, as when compaction kept replacing them: what they held may be
+    /// missing.
+    public bool Vanished { get; set; }
+
     /// The keys that have a value, with it.
     public Dictionary<byte[], byte[]> Values => Latest
         .Where(predicate: pair => pair.Value.Value is not null)

@@ -92,8 +92,10 @@ public sealed class TeamsReadMarks
         Save();
     }
 
-    /// Forgets the marks Teams' own markers have passed, and those of chats Teams no longer has, and saves what's left.
-    public void Prune(IEnumerable<TeamsChat> chats)
+    /// Forgets the marks Teams' own markers have passed and, with `dropAbsent`, those of chats that aren't in `chats`, and
+    /// saves what's left. Only a read of all of Teams' data says a chat is gone: one that missed something may only have
+    /// missed that chat.
+    public void Prune(IEnumerable<TeamsChat> chats, bool dropAbsent)
     {
         ArgumentNullException.ThrowIfNull(argument: chats);
         if (marks.Count == 0)
@@ -102,7 +104,7 @@ public sealed class TeamsReadMarks
         }
         var byId = chats.ToDictionary(keySelector: chat => chat.Id, comparer: StringComparer.Ordinal);
         var passed = marks
-            .Where(predicate: mark => !byId.TryGetValue(key: mark.Key, value: out var chat) || (chat.Marker?.MessageId ?? 0) >= mark.Value)
+            .Where(predicate: mark => byId.TryGetValue(key: mark.Key, value: out var chat) ? (chat.Marker?.MessageId ?? 0) >= mark.Value : dropAbsent)
             .Select(selector: mark => mark.Key)
             .ToList();
         if (passed.Count == 0)

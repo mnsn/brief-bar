@@ -105,16 +105,16 @@ public sealed class TeamsStoreTests
         store.MarkAllRead(group: ChatGroup.Chats, now: now);
         Assert.Equal(expected: 2, actual: marks.Marks.Count);
 
-        // Part of Teams' data couldn't be read: a chat that's missing may only be unreadable.
-        var partly = Snapshot(chats[0] with { Item1 = chats[0].Item1 with { Marker = new ReadMarker(MessageId: TeamsData.Id(seconds: 20)) } }) with
-        {
-            Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 2, Chats = 1, WithMarker = 1, UnreadableFiles = 1 },
-        };
+        // Avery's chat read in Teams, and Sam's missing from a read that missed something, though not enough to say so:
+        // it may only have missed Sam's chat.
+        var averyRead = chats[0] with { Item1 = chats[0].Item1 with { Marker = new ReadMarker(MessageId: TeamsData.Id(seconds: 20)) } };
+        var partly = Snapshot(averyRead) with { IsComplete = false };
+        Assert.Null(@object: partly.Problem);
         store.Receive(snapshot: partly, now: now);
-        Assert.Equal(expected: 2, actual: marks.Marks.Count);
+        Assert.Equal(expected: [Fixture.Sam], actual: marks.Marks.Keys);
 
-        // Avery's chat read in Teams, and Sam's gone.
-        store.Receive(snapshot: Snapshot(chats[0] with { Item1 = chats[0].Item1 with { Marker = new ReadMarker(MessageId: TeamsData.Id(seconds: 20)) } }), now: now);
+        // Read in full, without Sam's chat: it's gone.
+        store.Receive(snapshot: Snapshot(averyRead), now: now);
         Assert.Empty(collection: marks.Marks);
         Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
     }
@@ -173,6 +173,7 @@ public sealed class TeamsStoreTests
     static TeamsSnapshot Snapshot(params (TeamsChat Chat, TeamsMessage[] Messages)[] chats) => new()
     {
         Found = true,
+        IsComplete = true,
         Chats = [.. chats.Select(selector: chat => chat.Chat)],
         Messages = chats.ToDictionary(keySelector: chat => chat.Chat.Id, elementSelector: chat => (IReadOnlyList<TeamsMessage>)chat.Messages, comparer: StringComparer.Ordinal),
         Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = chats.Length, Chats = chats.Length, WithMarker = chats.Length },

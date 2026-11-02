@@ -21,6 +21,7 @@ public sealed class TeamsEngineTests
 
         Assert.True(condition: snapshot.Found);
         Assert.Null(@object: snapshot.Problem);
+        Assert.True(condition: snapshot.IsComplete);
         var chats = snapshot.Chats.ToDictionary(keySelector: chat => chat.Id);
         // The channel was deleted, and Teams' own notes aren't a chat.
         Assert.Equal(
@@ -71,6 +72,7 @@ public sealed class TeamsEngineTests
         var snapshot = TeamsEngine.LoadOnce(location: new TeamsCacheLocation(Root: folder.Combine("EBWebView"), IsTeamsOwn: false));
 
         Assert.False(condition: snapshot.Found);
+        Assert.False(condition: snapshot.IsComplete);
         Assert.Empty(collection: snapshot.Chats);
         Assert.Equal(expected: TeamsProblem.NotFound, actual: snapshot.Problem);
     }
@@ -99,6 +101,29 @@ public sealed class TeamsEngineTests
 
         Assert.Equal(expected: TeamsProblem.NotFound, actual: new TeamsSnapshot().Problem);
         Assert.Equal(expected: TeamsProblem.ReadFailed, actual: new TeamsSnapshot { Found = true, Failed = true }.Problem);
+    }
+
+    /// Teams' data found but not understood, as after an update that renames its stores, says nothing of which chats are
+    /// gone.
+    [Fact]
+    public void IsntCompleteWhenTeamsDataIsntUnderstood()
+    {
+        using var folder = new TemporaryFolder();
+        var leveldb = Path.Combine(paths: [folder.Path, "EBWebView", "WV2Profile_tfw", "IndexedDB", TeamsData.FolderName]);
+        Directory.CreateDirectory(path: leveldb);
+        var log = new LogWriter();
+        log.Add(batch: LogWriter.Batch(
+            sequence: 1,
+            (IndexedDBKeys.DatabaseName(name: Fixture.ConversationsDatabase), IndexedDBKeys.DatabaseId(id: TeamsData.ConversationsDatabase)),
+            (IndexedDBKeys.ObjectStoreName(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store), IndexedDBKeys.Name(name: "conversations-v2"))));
+        File.WriteAllBytes(path: Path.Combine(path1: leveldb, path2: TeamsData.LogName), bytes: log.Bytes);
+
+        var snapshot = TeamsEngine.LoadOnce(location: new TeamsCacheLocation(Root: folder.Combine("EBWebView"), IsTeamsOwn: false));
+
+        Assert.True(condition: snapshot.Found);
+        Assert.Empty(collection: snapshot.Chats);
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
     }
 
     /// Of Teams' message cache, only the chats that may be unread are read: those whose newest message isn't yours, past
@@ -217,12 +242,16 @@ public sealed class TeamsEngineTests
 
         // Chromium writes the record first, and which blob file it's in only when the transaction commits.
         TeamsData.AppendBytes(path: log, bytes: bytes[TeamsData.WrappedRecord..TeamsData.WrappedBlobEntry]);
-        await collector.Until(what: "the record", predicate: snapshot => snapshot.Report.Unreadable.GetValueOrDefault(key: "corrupt blob reference") == 1);
-        Assert.DoesNotContain(collection: collector.Latest!.Chats, filter: chat => chat.Id == Fixture.Wrapped);
+        var record = await collector.Until(what: "the record", predicate: snapshot => snapshot.Report.Unreadable.GetValueOrDefault(key: "corrupt blob reference") == 1);
+        Assert.DoesNotContain(collection: record.Chats, filter: chat => chat.Id == Fixture.Wrapped);
+        // Too few to say some of Teams' data couldn't be read, but its chat may be the one missing.
+        Assert.Null(@object: record.Problem);
+        Assert.False(condition: record.IsComplete);
         TeamsData.AppendBytes(path: log, bytes: bytes[TeamsData.WrappedBlobEntry..Fixture.FirstRunLength]);
         var read = await collector.Until(what: "its blob entry", predicate: snapshot => snapshot.Chats.Any(predicate: chat => chat.Id == Fixture.Wrapped));
         Assert.Equal(expected: Fixture.Base + 300, actual: MarkerOf(snapshot: read, chat: Fixture.Wrapped));
         Assert.Empty(collection: read.Report.Unreadable);
+        Assert.True(condition: read.IsComplete);
     }
 
     [Fact]
@@ -239,6 +268,8 @@ public sealed class TeamsEngineTests
         var first = collector.First!;
         Assert.Equal(expected: 0, actual: first.Report.UnreadableFiles);
         Assert.Null(@object: first.Problem);
+        // The table may only be being written, but what it holds is missing meanwhile.
+        Assert.False(condition: first.IsComplete);
 
         var later = await collector.Until(what: "a second look", predicate: snapshot => snapshot.Report.UnreadableFiles == 1);
         Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: later.Problem);
@@ -261,6 +292,7 @@ public sealed class TeamsEngineTests
 
         var readable = await collector.Until(what: "the removed table", predicate: snapshot => snapshot.Report.UnreadableFiles == 0);
         Assert.Null(@object: readable.Problem);
+        Assert.True(condition: readable.IsComplete);
         Assert.Equal(expected: unreadable.Chats, actual: readable.Chats);
     }
 

@@ -51,14 +51,27 @@ public sealed class TeamsReadMarksTests
         marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
         marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
 
-        marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 20)), Chat(id: Fixture.Sam, readUpTo: TeamsData.Id(seconds: 10))]);
+        marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 20)), Chat(id: Fixture.Sam, readUpTo: TeamsData.Id(seconds: 10))], dropAbsent: true);
         Assert.Equal(expected: [Fixture.Avery], actual: marks.Marks.Keys);
         Assert.True(condition: File.Exists(path: path));
 
-        marks.Prune(chats: []);
+        marks.Prune(chats: [], dropAbsent: true);
         Assert.Empty(collection: marks.Marks);
         Assert.False(condition: File.Exists(path: path));
         Assert.False(condition: Directory.Exists(path: folder.Combine("Teams")));
+    }
+
+    /// A read that missed something may only have missed the chat: its mark stays, while Teams' marker ends the others'.
+    [Fact]
+    public void KeepsTheMarksOfChatsAReadMayHaveMissed()
+    {
+        var marks = TeamsReadMarks.InMemory();
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
+        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
+
+        marks.Prune(chats: [Chat(id: Fixture.Sam, readUpTo: TeamsData.Id(seconds: 10))], dropAbsent: false);
+
+        Assert.Equal(expected: [Fixture.Avery], actual: marks.Marks.Keys);
     }
 
     /// A file it can't open, sealed for someone else or damaged, is useless, so it goes.
@@ -127,7 +140,7 @@ public sealed class TeamsReadMarksTests
         marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
         Assert.Single(collection: marks.Marks);
 
-        marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 30))]);
+        marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 30))], dropAbsent: false);
         Assert.Empty(collection: marks.Marks);
     }
 

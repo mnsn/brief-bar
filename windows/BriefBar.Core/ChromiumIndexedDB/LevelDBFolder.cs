@@ -12,8 +12,8 @@ public sealed class LevelDBFolder(string path)
 
     /// Reads the folder's tables and logs, keeping the writes to keys that `keep` accepts, from the table blocks that
     /// `mayHold` doesn't rule out (see `LevelDBTable.Read`). A table that compaction removes while it's read makes it start
-    /// over, since its keys are in a new table then. Throws `IOException` when the folder can't be listed, as when it's
-    /// gone.
+    /// over, since its keys are in a new table then, up to three times; after that, the read says files vanished
+    /// (`LevelDBFolderRead.Vanished`). Throws `IOException` when the folder can't be listed, as when it's gone.
     public LevelDBFolderRead Read(Func<byte[]?, byte[], bool>? mayHold = null, Func<ArraySegment<byte>, bool>? keep = null)
     {
         mayHold ??= (_, _) => true;
@@ -22,6 +22,7 @@ public sealed class LevelDBFolder(string path)
         for (var attempt = 0; attempt < 3; attempt++)
         {
             (read, var vanished) = Attempt(mayHold: mayHold, keep: keep);
+            read.Vanished = vanished;
             if (!vanished)
             {
                 break;

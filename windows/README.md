@@ -40,12 +40,12 @@ third-party notices ([Releases](#releases)) for every pull request that changes 
 pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
-another display right after a press on this one, Teams' two panels (their groups, Recent folded, Mark all read, a chat
-that opens and is read) and its page in Settings (Show message previews), Copilot's panel (its groups, Idle folded,
-Clear, a row that opens), Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps'
-panel (its groups, Idle folded, Mark as seen, Answered seen once the panel closes, sorting by date and back) and its
-page in Settings, GitHub's panel (its groups, its foot with the account it reads as, a row that opens) and its page in
-Settings, Alt+F4, each bar keeping its display as displays change, a second start while BriefBar starts opening its
+another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
+Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps' panel (its groups, Idle
+folded, Mark as seen, Answered seen once the panel closes, sorting by date and back) and its page in Settings, GitHub's
+panel (its groups, its foot with the account it reads as, a row that opens) and its page in Settings, Teams' two panels
+(their groups, Recent folded, Mark all read, a chat that opens and is read) and its page in Settings (Show message
+previews), Alt+F4, each bar keeping its display as displays change, a second start while BriefBar starts opening its
 Overview, and the space given back within a second of quitting or of another program asking BriefBar to close. Run it
 before you open a pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere closes the
 panel it's checking; it sends keys only while the panel is in front, and it works over a disconnected remote session
@@ -470,7 +470,7 @@ The repository is public, and chats, pull requests and sessions are private, oft
 - Check each source against its own app or site: Azure DevOps, GitHub, the Copilot app and Teams. Compare
   every count, state and row, and what opens from it. The log says each source's counts by state as it changes
   (`copilot: Ready, 36 sessions…`, `azureDevOps: Ready, problem none, organizations 1: 4 need you…`, `github: Ready,
-  problem none, notice False, more than shown False: 2 to review…`, `teams: Ready, problem none; 40 chats of 90
+  problem none, notice False, more than shown False: 2 to review…`, `teams: Ready, problem none, complete True; 40 chats of 90
   conversations…`), without names.
   The screen tool can't read the Copilot app's window, so ask whoever's at the PC to compare it; what a row opened
   is in the app's own `lastRoutePath`, in `data.db`. For Azure DevOps, a throwaway program that reads the same

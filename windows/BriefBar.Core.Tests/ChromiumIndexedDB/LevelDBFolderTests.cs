@@ -35,6 +35,7 @@ public sealed class LevelDBFolderTests
         Assert.Equal(expected: "000006.log", actual: Path.GetFileName(path: read.Log?.Path));
         Assert.Equal(expected: log.Bytes.Length, actual: read.Log?.Offset);
         Assert.Empty(collection: read.Unreadable);
+        Assert.False(condition: read.Vanished);
     }
 
     [Fact]
