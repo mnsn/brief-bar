@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
 - **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
   the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
   said it was done, as that earlier task had.

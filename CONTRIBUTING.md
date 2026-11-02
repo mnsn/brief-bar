@@ -35,6 +35,7 @@ Other targets:
 
 ```sh
 make build              # debug build
+make plugin-test        # test BriefBar's extension for the Copilot app's sessions, with Node
 make demo-check         # check that each source's made-up data lands in the expected groups and states
 make check-boundaries   # check that only AzureDevOpsCore and GitHubCore use the network, and only
                         # BriefBarCore starts programs
@@ -111,10 +112,12 @@ Sources/BriefBar/              the app: sources and consent, menu-bar items, wid
                                starting the updater, the command line and --render
 Sources/BriefBarUpdater/       the updater: Sparkle, in a helper app inside BriefBar.app, with library
                                validation off and none of BriefBar's permissions
-Resources/CopilotPlugin/       BriefBar's plugin for Copilot, which the app installs only when you ask: a
-                               marketplace on this Mac with one plugin, whose skill is /briefbar
+Resources/CopilotPlugin/       BriefBar's plugins for Copilot, which the app installs only when you ask: a
+                               marketplace on this Mac with two plugins, one whose skill is /briefbar,
+                               and one with BriefBar's extension for the Copilot app's sessions
 Tests/                         Swift Testing suites for the shared code, each source's core and some of
                                its app code, with made-up data
+Tests/CopilotPlugin/           the tests of that extension, with Node's test runner (make plugin-test)
 Tests/Fixtures/                made-up data that other programs wrote, such as an IndexedDB that
                                Microsoft Edge wrote (Tests/Fixtures/ChromiumIndexedDB/make-fixture.html)
 scripts/                       app bundling, signing and checks, the optional signing certificate,
@@ -204,13 +207,16 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
   BriefBar's own lists, says so (`readOnly: false`), keeps the demo's changes in memory, and tells a
   running BriefBar with `AgentChanges`, whose notification carries nothing. The Copilot CLI's
   configuration changes only through its own commands (`CopilotMCPRegistration`, and
-  `CopilotPluginRegistration` for BriefBar's plugin, which only **Install** installs), when you turn
+  `CopilotPluginRegistration` for BriefBar's plugins, which only **Install** and **Send Prompts to
+  Copilot Sessions** install), when you turn
   agents on or off or ask on the Agents page, and other agents' apps get BriefBar only through their own install
   links (`AgentApp`), which ask you first: BriefBar never reads or writes their settings. It changes a
   plugin marketplace only once it knows it's its own, in an app with BriefBar's bundle identifier, never
   by its name or its folder's name alone, and never with `--force`. The plugin's
   skill (`Resources/CopilotPlugin`) only says how to use the tools: what it names must be what `--mcp`
-  lists, which `CopilotPluginTests` checks.
+  lists, which `CopilotPluginTests` checks. The other plugin holds only BriefBar's extension for the
+  Copilot app's sessions, which has no tools, hooks or commands, acts only on the requests BriefBar
+  writes for its own session, and never logs or keeps a prompt; `Tests/CopilotPlugin` checks it.
 - **Whoever starts BriefBar as an app chooses its arguments and environment, and can read its
   output.** Started by LaunchServices (`open --env … --stdout … --args …`), or by a program that
   disclaimed it, BriefBar has its own Full Disk Access (`Attribution.itself`). So nothing a caller
@@ -278,7 +284,8 @@ log show --last 10m --info --predicate 'subsystem == "com.asaf.BriefBar"' --styl
 ## Pull requests
 
 - Keep each pull request focused, and describe the change users will see.
-- Run `make test`, `make check-boundaries` and `make demo-check` first. CI runs them on macOS 26,
+- Run `make test`, `make check-boundaries` and `make demo-check` first, and `make plugin-test` when you
+  change BriefBar's extension for the Copilot app's sessions. CI runs them on macOS 26,
   checks the signing keys' protection, packages the app and checks its updater, on Apple silicon only.
   After you merge, CI on `main` also runs them on macOS 15 (with Xcode 16, so without summaries) and
   runs the app there.
@@ -321,7 +328,8 @@ security delete-keychain "$BRIEFBAR_SIGNING_KEYCHAIN" && rmdir "$(dirname "$BRIE
 pull requests, and when started by hand. A new run cancels the one in progress on the same pull request or branch,
 `main` included.
 
-- It builds and tests on Apple silicon on macOS 26. It runs the boundary and demo checks and
+- It builds and tests on Apple silicon on macOS 26, and tests BriefBar's extension for the Copilot app's
+  sessions with the runner's Node. It runs the boundary and demo checks and
   `make signing-key-check`, packages the arm64 app with a throwaway certificate, signs its update with
   a throwaway key, the way a release does (`scripts/appcast-dry-run.sh`), checks that its updater can't
   use BriefBar's permissions (`scripts/test-updater-isolation.sh`), installs an update through it

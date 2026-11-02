@@ -1,4 +1,4 @@
-.PHONY: build test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
+.PHONY: build test plugin-test check-boundaries signing-key-check homebrew-cask-check updater-check update-rehearsal app package install uninstall run demo demo-data demo-check dump watch diagnose render screenshots readme-tour icon signing-identity pppc-profile clean
 
 # With only the Command Line Tools installed, the compiler sometimes misses Swift Testing's macro
 # plugin (it lives in a subfolder), so point it there explicitly.
@@ -27,6 +27,11 @@ build:
 # waiting for async work hangs here too, as it would on a runner with few cores.
 test:
 	LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 swift test --arch arm64 $(if $(wildcard $(TESTING_PLUGINS)),-Xswiftc -plugin-path -Xswiftc $(TESTING_PLUGINS))
+
+# BriefBar's extension for the Copilot app's sessions (Resources/CopilotPlugin/briefbar-sessions), with Node's test
+# runner and a stand-in for the Copilot SDK, in Tests/CopilotPlugin so that the tests don't ship. CI runs it.
+plugin-test:
+	node --test --experimental-vm-modules Tests/CopilotPlugin/*.test.mjs
 
 # Only the Azure DevOps and GitHub sources may use the network, and only BriefBarCore starts programs.
 check-boundaries: build
