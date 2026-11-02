@@ -35,7 +35,10 @@ public sealed class SettingsViewModel
         "Every source is off until you turn it on. Each one first says what it reads, where it connects and what it needs, "
         + "and turning it on is your consent: BriefBar never turns a source on by itself.";
 
-    public static string StillToCome => SourceCatalog.StillToCome + " come to BriefBar for Windows one at a time.";
+    /// The sources still to come on Windows, under General's list, while there are any.
+    public static string StillToCome => SourceCatalog.StillToComeNote ?? string.Empty;
+
+    public static bool HasStillToCome => SourceCatalog.StillToComeNote is not null;
 
     /// Whether each source is on, as it stands now.
     public void Refresh()
