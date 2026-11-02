@@ -324,11 +324,15 @@ actor AzureDevOpsReader {
         let found = await store.suggestedSession(for: pullRequest, createdAt: record.pullRequest.createdAt)
         watch.cancel()
         guard let found, sendsToCopilot else { return nil }
-        if found.appSession != nil || found.run?.isAppSession == true { return SuggestedSession(choice: found, isInApp: true) }
-        // A task's session that you opened in the app, which its database lists now, whether the app has it open or not.
-        let home = await MainActor.run { store.appHome }
-        let listed = await Task.detached { ((try? AppSessions.load(home: home)) ?? []).contains { $0.id == found.id } }.value
-        return SuggestedSession(choice: found, isInApp: listed)
+        var isInApp = found.appSession != nil || found.run?.isAppSession == true
+        if !isInApp {
+            // A task's session that you opened in the app, which its database lists now, whether the app has it open or not.
+            let home = await MainActor.run { store.appHome }
+            isInApp = await Task.detached { ((try? AppSessions.load(home: home)) ?? []).contains { $0.id == found.id } }.value
+        }
+        // Once more, after the last read: turned off meanwhile, it names none.
+        guard sendsToCopilot else { return nil }
+        return SuggestedSession(choice: found, isInApp: isInApp)
     }
 
     /// The links you made in Show Links, while it's on, as it keeps them in the app's settings. The ones Copilot records and
