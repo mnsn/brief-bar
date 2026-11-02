@@ -451,4 +451,5 @@ update signing key, not both.
 ## License
 
 BriefBar is licensed under the GNU General Public License, version 3 or later. By contributing, you
-agree that your contributions are licensed under the same terms.
+agree that your contributions are licensed under the same terms, and that those to BriefBar for Windows
+(`windows/`) come with its additional permission too, in [GPL-ADDITIONAL-PERMISSION.md](GPL-ADDITIONAL-PERMISSION.md).

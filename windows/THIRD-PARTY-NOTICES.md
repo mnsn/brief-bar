@@ -1,5 +1,10 @@
 # Third-party notices
 
+BriefBar for Windows is licensed under the GNU General Public License, version 3 or later, with an additional
+permission, under its section 7, to combine it with the Windows App SDK, the Windows SDK's projection for .NET and
+WinRT.Runtime, below: see `LICENSE` and `GPL-ADDITIONAL-PERMISSION.md` in BriefBar's source,
+https://github.com/mnsn/brief-bar.
+
 BriefBar for Windows includes the following. A table under each says which files a package puts beside
 `BriefBar.exe`, the same for x64 and Arm64, and its version as built; `scripts\check-notices.ps1` checks that the
 tables name every file in the app that BriefBar doesn't build itself.

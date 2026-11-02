@@ -425,3 +425,11 @@ that the build no longer has; and when the build's copy of the notices isn't the
 Release builds for x64 and Arm64, so a pull request that adds, updates or removes a package can't pass until the
 notices say so. The Windows SDK's projection is the one version it doesn't check: the .NET SDK picks it, so it follows
 whichever SDK builds.
+
+## License
+
+BriefBar is licensed under the GNU General Public License, version 3 or later ([LICENSE](../LICENSE)). BriefBar for
+Windows ships Microsoft's Windows App SDK, the Windows SDK's projection for .NET and WinRT.Runtime inside its app, so
+its licensors add a permission, under the GPL's section 7, to combine it with them:
+[GPL-ADDITIONAL-PERMISSION.md](../GPL-ADDITIONAL-PERMISSION.md). `THIRD-PARTY-NOTICES.md` lists their files, with
+their license terms.
