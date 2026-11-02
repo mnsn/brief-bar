@@ -50,6 +50,44 @@ private func outline(_ snapshots: [SessionSnapshot]) -> [String] {
         ])
     }
 
+    @Test func aFinishedParentWaitsForItsRunningChildren() {
+        var lead = snapshot("lead", .done, since: 0)
+        lead.reason = .finished
+        lead.headline = StatusReason.finished.headline
+        let sessions = nested([
+            lead,
+            snapshot("child", .running, since: 20),
+        ], parents: ["child": "lead"])
+
+        #expect(outline(sessions) == ["lead", "  child"])
+        #expect(sessions[0].phase == .running)
+        #expect(sessions[0].reason == .waitingForChildren)
+        #expect(sessions[0].headline == "Waiting for child sessions")
+        #expect(sessions[0].detail == "1 running")
+        #expect(sessions[0].since == t(20))
+        #expect(sessions[1].depth == 1)
+        #expect(PhaseCounts(sessions).running == 2)
+        #expect(PhaseCounts(sessions).done == 0)
+    }
+
+    @Test func aFinishedParentSurfacesAChildThatNeedsYou() {
+        var lead = snapshot("lead", .done, since: 0)
+        lead.reason = .finished
+        lead.headline = StatusReason.finished.headline
+        let sessions = nested([
+            lead,
+            snapshot("running", .running, since: 20),
+            snapshot("question", .needsYou, since: 10),
+        ], parents: ["running": "lead", "question": "lead"])
+
+        #expect(outline(sessions) == ["lead", "  question", "running"])
+        #expect(sessions[0].phase == .needsYou)
+        #expect(sessions[0].reason == .waitingForChildren)
+        #expect(sessions[0].detail == "1 needs you · 1 running")
+        #expect(sessions[1].depth == 1)
+        #expect(sessions[2].depth == 0)
+    }
+
     /// A session whose parent is in another group stays where it was, and knows its parent, for its tag.
     @Test func aSessionWhoseParentIsInAnotherGroupStaysInItsPlace() {
         let snapshots = [
