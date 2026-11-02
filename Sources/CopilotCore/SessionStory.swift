@@ -26,6 +26,11 @@ public enum SessionStory {
                 about: ItemRef.session(asking?.id ?? snapshot.id)
             )]
         }
+        if snapshot.reason == .waitingForChildren {
+            let waitsFor: ItemStory.Wait.Who = snapshot.phase == .needsYou ? .you : .copilot
+            let who = snapshot.phase == .needsYou ? "you" : "Copilot"
+            return [ItemStory.Wait(waitsFor, "\(who), in child sessions", about: ItemRef.session(snapshot.id))]
+        }
         switch snapshot.phase {
         case .needsYou:
             let what = switch snapshot.reason {
@@ -66,7 +71,7 @@ public enum SessionStory {
     static func isGoingOn(_ reason: StatusReason) -> Bool {
         switch reason {
         case .question, .planApproval, .permission, .working, .starting, .relayed: return true
-        case .finished, .interrupted, .failed, .unresponsive, .idle: return false
+        case .waitingForChildren, .finished, .interrupted, .failed, .unresponsive, .idle: return false
         }
     }
 }
@@ -82,6 +87,7 @@ extension SessionSnapshot {
         case .permission: return "Needs your permission" + (detail.map { " to run \($0)" } ?? "")
         case .working, .starting: return "Working" + (detail.map { ": \($0)" } ?? "")
         case .relayed: return "Waits for your answer in " + (answerIn.map { "“\($0.name)”" } ?? "another session")
+        case .waitingForChildren: return "Waiting for child sessions" + (detail.map { ": \($0)" } ?? "")
         case .finished: return "Finished"
         case .interrupted: return "Interrupted"
         case .failed: return "Stopped with an error" + (detail.map { ": \($0)" } ?? "")
