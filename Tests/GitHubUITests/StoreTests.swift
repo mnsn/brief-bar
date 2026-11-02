@@ -156,15 +156,21 @@ import Testing
         #expect(!store.isRefreshing)
     }
 
-    /// Turning GitHub off stops a run of `gh` that's under way, so what it would print reaches nothing.
-    @Test func stoppingStopsTheCLIRunUnderWay() async {
-        let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(30))
+    /// Turning GitHub off stops a run of `gh` that's under way, so what it would print reaches nothing. The run would take
+    /// longer than the test may, so it ends only when it's stopped, however slow the machine.
+    @Test(.timeLimit(.minutes(1)))
+    func stoppingStopsTheCLIRunUnderWay() async throws {
+        let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(3_600))
         let store = liveStore({ FakeCLI.signedOut(runner) })
         store.start()
-        await eventually { !runner.calls.isEmpty }
+        while runner.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         store.stop()
 
-        await eventually { runner.stopped == 1 }
+        while runner.stopped == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(runner.calls.count == 1)
         #expect(runner.stopped == 1)
         #expect(store.problem == nil)
