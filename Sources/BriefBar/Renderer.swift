@@ -438,6 +438,8 @@ enum Renderer {
             if model.agents.state == .off {
                 model.agents.useForRendering(on: true)
                 page(.agents, name: "agents-on")
+                model.agents.useForRendering(on: true, sessionPrompts: true)
+                page(.agents, name: "agents-on-session-prompts")
                 model.agents.useForRenderingLeftovers()
                 page(.agents, name: "agents-off-leftovers")
                 model.agents.useForRendering(on: false)

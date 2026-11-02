@@ -10,6 +10,11 @@
   Settings › Agents. Until then, and whenever BriefBar can't send it, it copies the prompt and opens the session
   for you to paste, as **Open in Copilot** did, or for a fork `/fork` and the prompt. The window says which
   before you send it.
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
 
 ## 0.11.0 - 2026-11-02
 

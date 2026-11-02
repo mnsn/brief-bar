@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "briefbar-sessions",
+  "description": "Lets BriefBar send a prompt to one of the GitHub Copilot app's sessions, or fork the session and send the prompt to the fork, when you ask it to in BriefBar. It runs a small extension in each session, which does nothing else. It comes with BriefBar.app, which installs it when you turn on Send Prompts to Copilot Sessions in Settings › Agents, and updates it with itself.",
+  "author": {
+    "name": "BriefBar"
+  },
+  "homepage": "https://github.com/mnsn/brief-bar",
+  "repository": "https://github.com/mnsn/brief-bar",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["briefbar", "copilot-sessions", "fork"],
+  "extensions": {
+    "com.github.copilot": {}
+  }
+}

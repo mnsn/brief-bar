@@ -9,7 +9,7 @@
 # - It's set up for signed updates. On this Mac it launches, starts the updater, which loads its Sparkle, and sorts
 #   every source's demo data into the expected groups. (That the updater can't use BriefBar's permissions is
 #   checked where it shows, in a copy macOS opens: scripts/test-updater-isolation.sh.)
-# - It carries BriefBar's plugin for Copilot (Contents/Resources/CopilotPlugin), at its own version.
+# - It carries BriefBar's plugins for Copilot (Contents/Resources/CopilotPlugin), at its own version, without their tests.
 # - BriefBar and its updater contain only arm64 code; Sparkle supports arm64 too.
 #   scripts/check-app.sh [app] [--release] [--allow-ad-hoc]   (default: build/BriefBar.app)
 #   --release       also requires the update signing key in Info.plist (scripts/make-release-keys.sh).
@@ -140,17 +140,26 @@ done
 [[ "$(plist CFBundleVersion)" == "$(plist CFBundleShortVersionString)" ]] ||
     fail "has a CFBundleVersion that isn't its version."
 [[ -f "$APP/Contents/Resources/AppIcon.icns" ]] || fail "has no icon."
-# BriefBar's plugin for Copilot, at BriefBar's version (Resources/CopilotPlugin): a marketplace with the plugin's skill.
+# BriefBar's plugins for Copilot, at BriefBar's version (Resources/CopilotPlugin): a marketplace with the plugin's skill,
+# and the one with its extension for the Copilot app's sessions, without its tests.
 PLUGIN="$APP/Contents/Resources/CopilotPlugin"
 json() { plutil -extract "$1" raw -o - "$2" 2>/dev/null; }
-for file in marketplace.json briefbar/plugin.json briefbar/skills/briefbar/SKILL.md; do
+for file in marketplace.json briefbar/plugin.json briefbar/skills/briefbar/SKILL.md briefbar-sessions/plugin.json \
+    briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/extension.mjs \
+    briefbar-sessions/com.github.copilot/extensions/briefbar-sessions/outbox.mjs; do
     [[ -f "$PLUGIN/$file" ]] || fail "has no CopilotPlugin/$file."
 done
-[[ "$(json name "$PLUGIN/marketplace.json")" == briefbar && "$(json plugins.0.source "$PLUGIN/marketplace.json")" == ./briefbar ]] ||
-    fail "has a Copilot marketplace that doesn't list BriefBar's plugin."
-[[ "$(json version "$PLUGIN/briefbar/plugin.json")" == "$(plist CFBundleShortVersionString)" &&
-    "$(json plugins.0.version "$PLUGIN/marketplace.json")" == "$(plist CFBundleShortVersionString)" ]] ||
-    fail "has a Copilot plugin at another version than its own, $(plist CFBundleShortVersionString)."
+[[ "$(json name "$PLUGIN/marketplace.json")" == briefbar && "$(json plugins "$PLUGIN/marketplace.json")" == 2 &&
+    "$(json plugins.0.source "$PLUGIN/marketplace.json")" == ./briefbar &&
+    "$(json plugins.1.source "$PLUGIN/marketplace.json")" == ./briefbar-sessions ]] ||
+    fail "has a Copilot marketplace that doesn't list BriefBar's plugins."
+for i in 0 1; do
+    NAME="$(json "plugins.$i.name" "$PLUGIN/marketplace.json")"
+    [[ "$(json version "$PLUGIN/$NAME/plugin.json")" == "$(plist CFBundleShortVersionString)" &&
+        "$(json "plugins.$i.version" "$PLUGIN/marketplace.json")" == "$(plist CFBundleShortVersionString)" ]] ||
+        fail "has a Copilot plugin, $NAME, at another version than its own, $(plist CFBundleShortVersionString)."
+done
+[[ -z "$(find "$PLUGIN" -name '*.test.*' -print -quit)" ]] || fail "ships the Copilot plugins' tests."
 # Summaries need macOS 26's FoundationModels; linked weakly, the app still opens on macOS 15.
 if otool -l "$BIN" | grep -B2 'FoundationModels.framework' | grep 'cmd LC_LOAD_DYLIB$' >/dev/null; then
     fail "links FoundationModels strongly, so it won't open before macOS 26."
