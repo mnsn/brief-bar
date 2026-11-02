@@ -298,6 +298,10 @@ enum InvestigationFixture {
         // An answer with more than was asked for, such as the whole log, keeps its end, numbered the same.
         let whole = BuildLog(stepId: "task", logId: 4, lineCount: 300, lines: (1...300).map { "line \($0)" }, keep: 200)
         #expect(whole.lines == log.lines)
+        // A line that couldn't be read keeps its number, and the lines after it theirs.
+        let gap = BuildLog(stepId: "task", logId: 4, lineCount: 3, lines: ["a", nil, "b"], keep: 200)
+        #expect(gap.lines == [BuildLogLine(number: 1, text: "a"), BuildLogLine(number: 3, text: "b")])
+        #expect(!gap.isCut)
         // A log that grew since its line count was read still ends on its last line.
         #expect(BuildLog(stepId: "task", logId: 4, lineCount: 2, lines: ["a", "b", "c"], keep: 200).lines.map(\.number) == [1, 2, 3])
         // A short log is all there, and the ends of its groups leave gaps in the numbers, even at its start.

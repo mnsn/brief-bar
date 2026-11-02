@@ -370,14 +370,16 @@ public struct BuildLog: Sendable, Equatable {
         self.firstLine = firstLine
     }
 
-    /// The last `keep` of the lines that end a log of `lineCount` lines, as Azure DevOps keeps them.
-    init(stepId: String, logId: Int, lineCount: Int, lines raw: [String], keep: Int) {
+    /// The last `keep` of the lines that end a log of `lineCount` lines, as Azure DevOps keeps them: nil for one that
+    /// couldn't be read, which keeps its number but doesn't show.
+    init(stepId: String, logId: Int, lineCount: Int, lines raw: [String?], keep: Int) {
         let kept = raw.suffix(keep)
         let count = max(lineCount, raw.count)
         let first = count - kept.count + 1
         self.init(
             stepId: stepId, logId: logId,
-            lines: kept.enumerated().compactMap { BuildLogLine(raw: $1, number: first + $0) }, lineCount: count, firstLine: first
+            lines: kept.enumerated().compactMap { index, line in line.flatMap { BuildLogLine(raw: $0, number: first + index) } },
+            lineCount: count, firstLine: first
         )
     }
 
@@ -536,13 +538,17 @@ public struct BuildTests: Sendable, Equatable {
     /// The first tests that failed, from the first test runs with failures: at most
     /// `BuildInvestigationReader.failedTestsListed`.
     public var failures: [FailedTest]
+    /// Whether the totals count all its test runs: not when it has more than `BuildInvestigationReader.testRunsCounted`,
+    /// whose totals count that many.
+    public var countsAllRuns: Bool
 
-    public init(total: Int, passed: Int, failed: Int, runs: Int, failures: [FailedTest]) {
+    public init(total: Int, passed: Int, failed: Int, runs: Int, failures: [FailedTest], countsAllRuns: Bool = true) {
         self.total = total
         self.passed = passed
         self.failed = failed
         self.runs = runs
         self.failures = failures
+        self.countsAllRuns = countsAllRuns
     }
 
     /// Neither passed nor failed: skipped, not run, inconclusive…
@@ -558,10 +564,10 @@ public struct BuildTests: Sendable, Equatable {
     /// Outcomes that count as failed.
     static let failedOutcomes = ["Failed", "Error", "Timeout", "Aborted"]
 
-    init(runs: [ADOTestRun], failures: [FailedTest]) {
+    init(runs: [ADOTestRun], failures: [FailedTest], countsAllRuns: Bool = true) {
         self.init(
             total: runs.reduce(0) { $0 + max(0, $1.totalTests ?? 0) }, passed: runs.reduce(0) { $0 + max(0, $1.passedTests ?? 0) },
-            failed: runs.reduce(0) { $0 + Self.failed(in: $1) }, runs: runs.count, failures: failures
+            failed: runs.reduce(0) { $0 + Self.failed(in: $1) }, runs: runs.count, failures: failures, countsAllRuns: countsAllRuns
         )
     }
 

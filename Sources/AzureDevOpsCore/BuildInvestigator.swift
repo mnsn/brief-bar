@@ -17,18 +17,35 @@ public struct ADOBuildLog: Decodable, Sendable {
 }
 
 /// A log's lines, from `{project}/_apis/build/builds/{id}/logs/{logId}` asked for as JSON: `{"count": 2, "value": ["…",
-/// "…"]}`, or the bare array. Each still has its timestamp. A line that isn't a string is left out.
+/// "…"]}`, or the bare array. Each still has its timestamp. A line that isn't a string is nil, in its place, so the lines
+/// after it keep their numbers.
 struct ADOLogLines: Decodable, Sendable {
-    var lines: [String]
+    var lines: [String?]
 
     private enum CodingKeys: String, CodingKey { case value }
 
+    /// Consumes one element of any shape, to step over one that isn't a string.
+    private struct Skip: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+
     init(from decoder: Decoder) throws {
+        var items: UnkeyedDecodingContainer
         if let container = try? decoder.container(keyedBy: CodingKeys.self) {
-            lines = try container.decode(LenientArray<String>.self, forKey: .value).elements
+            items = try container.nestedUnkeyedContainer(forKey: .value)
         } else {
-            lines = try LenientArray<String>(from: decoder).elements
+            items = try decoder.unkeyedContainer()
         }
+        var lines: [String?] = []
+        while !items.isAtEnd {
+            if let line = try? items.decode(String.self) {
+                lines.append(line)
+            } else {
+                _ = try items.decode(Skip.self)
+                lines.append(nil)
+            }
+        }
+        self.lines = lines
     }
 }
 
@@ -152,10 +169,12 @@ extension ADOEndpoint {
         ])
     }
 
-    /// The test runs a pipeline's run published, with how many tests had each outcome.
-    public static func testRuns(organization: String, projectId: String, buildId: Int) -> URL {
+    /// The test runs a pipeline's run published, with how many tests had each outcome: `top` of them, after the first
+    /// `skip`.
+    public static func testRuns(organization: String, projectId: String, buildId: Int, skip: Int = 0, top: Int = 100) -> URL {
         url("https://dev.azure.com", [organization, projectId, "_apis", "test", "runs"], [
-            ("buildUri", "vstfs:///Build/Build/\(buildId)"), ("includeRunDetails", "true"), ("$top", "100"), ("api-version", apiVersion),
+            ("buildUri", "vstfs:///Build/Build/\(buildId)"), ("includeRunDetails", "true"), ("$skip", String(skip)),
+            ("$top", String(top)), ("api-version", apiVersion),
         ])
     }
 
@@ -183,14 +202,17 @@ extension ADOEndpoint {
 /// Reads what `BuildInvestigation` holds for one of a pull request's builds, with GETs: the run first; then, at the same
 /// time, its timeline, its logs, its test runs, the pipeline's runs on the pull request and its latest finished runs on
 /// the target branch; then, at the same time again, the end of the failed step's log and the failed tests of the first
-/// test runs with failures. Ten requests at most. What isn't there, or may not be read, is just missing; what can't be
-/// read otherwise is `unread`.
+/// test runs with failures. Ten requests at most, and one more for each hundred test runs past the first hundred, up to
+/// five hundred. What isn't there, or may not be read, is just missing; what can't be read otherwise is `unread`.
 public enum BuildInvestigationReader {
     /// The most lines of the failed step's log it reads: its last.
     public static let logLines = 200
     /// The most test runs whose failed tests it reads, and the most failed tests it lists.
     public static let testRunsRead = 3
     public static let failedTestsListed = 20
+    /// How many test runs it lists a request, and the most it adds up: a run with more says its totals are partial.
+    static let testRunsPerRequest = 100
+    public static let testRunsCounted = 500
     /// How many of the pipeline's runs on the pull request it looks through for one that passed on the same commit.
     static let earlierRunsRead = 25
     /// How many of the pipeline's latest finished runs on the target branch it looks through for one that passed or
@@ -237,8 +259,7 @@ public enum BuildInvestigationReader {
                                  as: ADOList<ADOBuildLog>.self).value
         }
         async let testRuns = attempt {
-            try await client.get(ADOEndpoint.testRuns(organization: organization, projectId: projectId, buildId: buildId),
-                                 as: ADOList<ADOTestRun>.self).value
+            try await readTestRuns(client: client, organization: organization, projectId: projectId, buildId: buildId)
         }
         async let earlierRuns = attempt {
             try await client.get(ADOEndpoint.builds(
@@ -319,14 +340,31 @@ public enum BuildInvestigationReader {
         }
     }
 
+    /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once, and whether that's all of
+    /// them.
+    static func readTestRuns(client: ADOClient, organization: String, projectId: String, buildId: Int) async throws
+        -> (runs: [ADOTestRun], all: Bool) {
+        var runs: [ADOTestRun] = []
+        var seen: Set<Int> = []
+        for skip in stride(from: 0, to: testRunsCounted, by: testRunsPerRequest) {
+            let page = try await client.get(ADOEndpoint.testRuns(
+                organization: organization, projectId: projectId, buildId: buildId, skip: skip, top: testRunsPerRequest
+            ), as: ADOList<ADOTestRun>.self)
+            runs += page.value.filter { seen.insert($0.id).inserted }
+            if page.value.count + page.skipped < testRunsPerRequest { return (runs, true) }
+        }
+        return (runs, false)
+    }
+
     /// The run's tests, added up, and the failed tests of its first test runs with failures, each read at the same time:
     /// nil when it published none.
     static func readTests(
-        client: ADOClient, organization: String, projectId: String, runs read: Result<[ADOTestRun], ADOError>
+        client: ADOClient, organization: String, projectId: String, runs read: Result<(runs: [ADOTestRun], all: Bool), ADOError>
     ) async -> (tests: BuildTests?, error: ADOError?) {
         let runs: [ADOTestRun]
+        let all: Bool
         switch read {
-        case .success(let value): runs = value
+        case .success(let value): (runs, all) = (value.runs, value.all)
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
         guard !runs.isEmpty else { return (nil, nil) }
@@ -355,7 +393,7 @@ public enum BuildInvestigationReader {
             default: break
             }
         }
-        return (BuildTests(runs: runs, failures: Array(failures.prefix(failedTestsListed))), problem)
+        return (BuildTests(runs: runs, failures: Array(failures.prefix(failedTestsListed)), countsAllRuns: all), problem)
     }
 
     /// The value read, or nil: when it isn't there, or may not be read, it's missing; when it couldn't be read
@@ -425,12 +463,19 @@ public actor BuildInvestigator {
         var task: Task<BuildInvestigationReader.Read, Error>
     }
 
+    /// A look at a kept run, to tell whether it's been run again since: nil when it can't be read.
+    private struct Checking {
+        var id = UUID()
+        var task: Task<ADOBuild?, Never>
+    }
+
     private let client: ADOClient
     private let now: @Sendable () -> Date
     private var kept: [Key: BuildInvestigationReader.Read] = [:]
     private var reading: [Key: Reading] = [:]
+    private var checking: [Key: Checking] = [:]
     private var generation = 0
-    /// How many callers wait for reads under way, for tests.
+    /// How many callers wait for reads, or looks at kept runs, under way, for tests.
     private(set) var waiting = 0
 
     public init(client: ADOClient, now: @escaping @Sendable () -> Date = { Date() }) {
@@ -464,6 +509,7 @@ public actor BuildInvestigator {
     public func forget() {
         kept = [:]
         reading = [:]
+        checking = [:]
         generation += 1
     }
 
@@ -473,14 +519,17 @@ public actor BuildInvestigator {
     }
 
     /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once the run,
-    /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again.
+    /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again. Callers
+    /// at the same time share that look at the run.
     private func stillKept(_ key: Key, buildId: Int, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
         guard let read = kept[key], isFresh(read.investigation, for: pullRequest) else { return nil }
         guard read.investigation.run.status.isFinished else { return read }
         let generation = generation
-        let run = try? await client.get(
-            ADOEndpoint.build(organization: pullRequest.key.organization, project: pullRequest.projectId, id: buildId), as: ADOBuild.self
-        )
+        let check = checking[key] ?? startCheck(key, buildId: buildId, pullRequest: pullRequest)
+        waiting += 1
+        let run = await check.task.value
+        waiting -= 1
+        if checking[key]?.id == check.id { checking[key] = nil }
         // What's kept now: it may have gone, or been read again, meanwhile.
         guard generation == self.generation, let kept = kept[key], isFresh(kept.investigation, for: pullRequest) else { return nil }
         guard let run else { return kept }
@@ -491,6 +540,14 @@ public actor BuildInvestigator {
         guard investigation.unread.isEmpty, investigation.comparison.targetBranch == pullRequest.targetBranch else { return false }
         let keptFor = investigation.run.status.isFinished ? Self.keptFor : Self.keptWhileRunningFor
         return now().timeIntervalSince(investigation.readAt) < keptFor
+    }
+
+    private func startCheck(_ key: Key, buildId: Int, pullRequest: PullRequest) -> Checking {
+        let client = client
+        let address = ADOEndpoint.build(organization: pullRequest.key.organization, project: pullRequest.projectId, id: buildId)
+        let check = Checking(task: Task { try? await client.get(address, as: ADOBuild.self) })
+        checking[key] = check
+        return check
     }
 
     private func start(_ key: Key, buildId: Int, pullRequest: PullRequest) -> Reading {

@@ -242,6 +242,46 @@ private final class TestClock: Sendable {
         #expect(partial.steps.count == 2)
     }
 
+    @Test func aLineThatIsntTextKeepsTheOthersNumbers() async throws {
+        let server = StubServer()
+        FailedRun.serve(server, replies: [
+            "logs": .json(Fixture.list([["id": 9, "lineCount": 3]])),
+            "lines": .json(["count": 3, "value": ["2026-10-18T09:09:00.0000000Z one", NSNull(), "2026-10-18T09:09:02.0000000Z three"]]),
+        ])
+        let log = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).log)
+        #expect(log.lines == [BuildLogLine(number: 1, text: "one"), BuildLogLine(number: 3, text: "three")])
+        #expect(!log.isCut)
+    }
+
+    @Test func addsUpTestRunsAHundredARequest() async throws {
+        /// Serves `count` test runs of two passed tests each, as pages of what's asked for.
+        func serveTestRuns(_ server: StubServer, count: Int) {
+            server.on("/\(Fixture.org)/p1/_apis/test/runs") { request in
+                let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let skip = Int(items.first { $0.name == "$skip" }?.value ?? "") ?? 0
+                let top = Int(items.first { $0.name == "$top" }?.value ?? "") ?? 0
+                let page = (skip..<min(count, skip + top)).map { ["id": 1_000 + $0, "totalTests": 2, "passedTests": 2] as [String: Any] }
+                return .json(Fixture.list(page))
+            }
+        }
+        let server = StubServer()
+        FailedRun.serve(server)
+        serveTestRuns(server, count: 250)
+        let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        #expect(tests.runs == 250)
+        #expect(tests.total == 500)
+        #expect(tests.countsAllRuns)
+        #expect(requests(server, to: "/_apis/test/runs").map { query($0)["$skip"] } == ["0", "100", "200"])
+
+        let many = StubServer()
+        FailedRun.serve(many)
+        serveTestRuns(many, count: 750)
+        let partial = try #require(try await BuildInvestigationReader.read(client: many.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        #expect(partial.runs == BuildInvestigationReader.testRunsCounted)
+        #expect(!partial.countsAllRuns)
+        #expect(requests(many, to: "/_apis/test/runs").count == 5)
+    }
+
     @Test func aRunWithoutALogOrTestsHasNone() async throws {
         let server = StubServer()
         FailedRun.serve(server, replies: [
@@ -270,7 +310,7 @@ private final class TestClock: Sendable {
     }
 
     @Test func readsLogLinesAsAListOrAnArray() throws {
-        #expect(try Fixture.decode(ADOLogLines.self, ["count": 3, "value": ["a", NSNull(), "b"]]).lines == ["a", "b"])
+        #expect(try Fixture.decode(ADOLogLines.self, ["count": 4, "value": ["a", NSNull(), 3, "b"]]).lines == ["a", nil, nil, "b"])
         #expect(try Fixture.decode(ADOLogLines.self, ["a", "b"]).lines == ["a", "b"])
         #expect(throws: (any Error).self) { try Fixture.decode(ADOLogLines.self, ["count": 0]) }
         let logs = try Fixture.decode(ADOList<ADOBuildLog>.self, Fixture.list([["id": 1, "lineCount": "many"], ["lineCount": 3], ["id": 2]]))
@@ -296,6 +336,9 @@ private final class TestClock: Sendable {
         let runs = ADOEndpoint.testRuns(organization: "contoso", projectId: "p1", buildId: 77)
         #expect(runs.absoluteString.contains("buildUri=vstfs%3A%2F%2F%2FBuild%2FBuild%2F77"))
         #expect(items(runs)["buildUri"] == "vstfs:///Build/Build/77")
+        #expect(items(runs)["$skip"] == "0")
+        #expect(items(runs)["$top"] == "100")
+        #expect(items(ADOEndpoint.testRuns(organization: "contoso", projectId: "p1", buildId: 77, skip: 200, top: 100))["$skip"] == "200")
         let lines = ADOEndpoint.buildLogLines(organization: "contoso", projectId: "p1", buildId: 77, logId: 9, startLine: 1, endLine: 200)
         #expect(lines.path == "/contoso/p1/_apis/build/builds/77/logs/9")
         #expect(items(lines) == ["startLine": "1", "endLine": "200", "api-version": "7.1"])
@@ -428,6 +471,25 @@ private final class TestClock: Sendable {
         #expect(requests(server, to: "/_apis/build/builds/77").count == 1)
         #expect(requests(server, to: "/timeline").count == 1)
         #expect(await investigator.waiting == 0)
+    }
+
+    @Test func callersAtTheSameTimeShareALookAtAKeptRun() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests, then the look at the run it kept.
+        let tokens = HeldTokens(server.id, holdAt: 9)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let first = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        let one = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let two = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        let bothWait = (try? await waitUntil("both to wait for the look") { await investigator.waiting == 2 }) != nil
+        await tokens.release()
+        #expect(bothWait)
+        #expect(try await one.value == first)
+        #expect(try await two.value == first)
+        #expect(requests(server, to: "/_apis/build/builds/77").count == 2)
+        #expect(requests(server, to: "/timeline").count == 1)
     }
 
     @Test func aReadForAnotherTargetBranchIsntShared() async throws {
