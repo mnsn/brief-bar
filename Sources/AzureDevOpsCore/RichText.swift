@@ -1005,8 +1005,10 @@ private enum MarkdownReader {
                     }
                 }
                 // An item that starts with an HTML comment ending on a later line: the comment shows nothing, blank lines
-                // and all, and the item's text is what follows its end; without an end, it's all the rest.
-                if content.hasPrefix("<!--"), !content.dropFirst(4).contains("-->") {
+                // and all, and the item's text is what follows its end; without an end, it's all the rest. With nothing
+                // after it, the item has no paragraph for the lines after it to go on with.
+                let startsWithComment = content.hasPrefix("<!--") && !content.dropFirst(4).contains("-->")
+                if startsWithComment {
                     var end = index + 1
                     while end < lines.count, !lines[end].contains("-->") { end += 1 }
                     if end < lines.count, let close = raw[end].range(of: "-->") {
@@ -1019,7 +1021,7 @@ private enum MarkdownReader {
                 }
                 pendingKind = .listItem(marker, depth: depth)
                 pending = [content]
-                paragraphOpen = true
+                paragraphOpen = !(startsWithComment && content.isEmpty)
                 index += 1
                 continue
             }
@@ -1232,15 +1234,25 @@ private enum MarkdownReader {
         }
     }
 
-    /// Text without its HTML comments: each from `<!--` to the next `-->`. Once one has no end, none after it has.
+    /// Text without its HTML comments: each from `<!--` to the next `-->`, outside tags, whose quoted attributes are
+    /// theirs, whatever is in them. Once one has no end, none after it has.
     private static func withoutComments(_ text: Substring) -> String {
         var result = ""
-        var rest = text[...]
-        while let start = rest.range(of: "<!--"), let end = rest[start.upperBound...].range(of: "-->") {
-            result += rest[..<start.lowerBound]
-            rest = rest[end.upperBound...]
+        var plain = text.startIndex
+        var index = text.startIndex
+        while let open = text[index...].firstIndex(of: "<") {
+            if text[open...].hasPrefix("<!--") {
+                guard let end = text[text.index(open, offsetBy: 4)...].range(of: "-->") else { break }
+                result += text[plain..<open]
+                plain = end.upperBound
+                index = end.upperBound
+            } else if let tag = text[open...].prefixMatch(of: anyTag) {
+                index = tag.range.upperBound
+            } else {
+                index = text.index(after: open)
+            }
         }
-        return result + rest
+        return result + text[plain...]
     }
 
     /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.

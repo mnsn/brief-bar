@@ -28,6 +28,8 @@ import Testing
         #expect(plain("- one\n\n  <!--\n  hidden\n\n  -->\n- two") == "• one\n• two")
         #expect(plain("- <!--\n  hidden\n\n  more\n  -->\n- shown") == "• shown")
         #expect(plain("- <!--\n  hidden\n  --> kept\n- shown") == "• kept\n• shown")
+        // An item that's only a comment has no paragraph for indented code after it to go on with.
+        #expect(RichText(markdown: "- <!--\n  hidden\n  -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
         // What looks like code in one is the comment's; code that starts first is code.
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
@@ -53,6 +55,7 @@ import Testing
         #expect(plain("<a href=\"https://example.invalid/rules\">The rule</a> says so") == "The rule says so")
         // What's in an attribute's quotes is the tag's, a bracket or backticks included.
         #expect(plain("<span title=\"a > b\">shown</span>") == "shown")
+        #expect(plain("<span title=\"<!--\">Shown</span><!-- bot marker --> after") == "Shown after")
         #expect(plain("<span title=\"use `x`\">Shown</span> and `<b>`") == "Shown and <b>")
         #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.svg\" alt=\"A > B\">").blocks == [
             .paragraph([RichText.Run("A > B", link: URL(string: "https://example.invalid/badge.svg"))]),
@@ -120,6 +123,7 @@ import Testing
             String(repeating: "<span title=\"`x` > ", count: 2_000),
             "<span title=\"" + String(repeating: "<a b ", count: 6_000),
             String(repeating: "<!-- -->", count: 10_000),
+            String(repeating: "<a title=\"<!--\"> ", count: 3_000),
             String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
         ] {
             let start = ContinuousClock.now
