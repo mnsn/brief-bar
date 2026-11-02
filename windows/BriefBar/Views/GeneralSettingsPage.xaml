@@ -70,7 +70,8 @@
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             Style="{StaticResource CaptionTextBlockStyle}"
             Text="{x:Bind vm:SettingsViewModel.StillToCome}"
-            TextWrapping="Wrap" />
+            TextWrapping="Wrap"
+            Visibility="{x:Bind vm:SettingsViewModel.HasStillToCome}" />
 
         <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="BriefBar" />
         <Grid Style="{StaticResource SettingsCardStyle}">
