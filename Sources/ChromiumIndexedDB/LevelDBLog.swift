@@ -15,7 +15,7 @@ public struct LevelDBEntry: Sendable, Equatable {
 
 /// LevelDB's write-ahead log: every write goes there first, in 32 KiB blocks of checksummed records, each a write
 /// batch or a fragment of one. LevelDB only ever appends to it, so it can be read while it's written, and read on
-/// from where the last complete batch ended.
+/// from where the last complete batch ended. Its MANIFEST is in the same format (`LevelDBManifest`).
 public enum LevelDBLog {
     static let blockSize = 32_768
     static let headerSize = 7
@@ -38,24 +38,37 @@ public enum LevelDBLog {
     public static func parse(
         _ bytes: [UInt8], fileOffset: Int = 0, keep: (ArraySlice<UInt8>) -> Bool = { _ in true }
     ) -> Parsed {
-        var parsed = Parsed(entries: [], end: fileOffset, corrupt: 0)
+        var entries: [LevelDBEntry] = []
+        var corruptBatches = 0
+        let (end, corrupt) = records(bytes, fileOffset: fileOffset) { batch in
+            do {
+                entries += try writes(in: Array(batch), keep: keep)
+            } catch {
+                corruptBatches += 1
+            }
+        }
+        return Parsed(entries: entries, end: end, corrupt: corrupt + corruptBatches)
+    }
+
+    /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
+    /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits.
+    /// Stops before a record that isn't all there yet. Returns the file offset after the last whole record, and how
+    /// many records or blocks were skipped because they broke the format or their checksum didn't match.
+    static func records(
+        _ bytes: [UInt8], fileOffset: Int = 0, _ record: (ArraySlice<UInt8>) throws -> Void
+    ) rethrows -> (end: Int, corrupt: Int) {
+        var end = fileOffset
+        var corrupt = 0
         var position = 0
         var pending: [UInt8]?
 
-        func batch<Bytes: Collection<UInt8>>(_ data: Bytes) {
-            do {
-                parsed.entries += try writes(in: Array(data), keep: keep)
-            } catch {
-                parsed.corrupt += 1
-            }
-        }
         // Drops the rest of a block, as LevelDB does with a record it can't trust.
         func skipBlock(left: Int) {
-            parsed.corrupt += 1
+            corrupt += 1
             pending = nil
             position += left
             if position <= bytes.count {
-                parsed.end = fileOffset + position
+                end = fileOffset + position
             }
         }
 
@@ -89,29 +102,29 @@ public enum LevelDBLog {
             position += headerSize + size
             switch RecordType(rawValue: type) {
             case .full:
-                if pending != nil { parsed.corrupt += 1 }
+                if pending != nil { corrupt += 1 }
                 pending = nil
-                batch(data)
-                parsed.end = fileOffset + position
+                try record(data)
+                end = fileOffset + position
             case .first:
-                if pending != nil { parsed.corrupt += 1 }
+                if pending != nil { corrupt += 1 }
                 pending = Array(data)
             case .middle:
-                if pending == nil { parsed.corrupt += 1 } else { pending! += data }
+                if pending == nil { corrupt += 1 } else { pending! += data }
             case .last:
                 if var whole = pending {
                     whole += data
-                    batch(whole)
-                    parsed.end = fileOffset + position
+                    try record(whole[...])
+                    end = fileOffset + position
                 } else {
-                    parsed.corrupt += 1
+                    corrupt += 1
                 }
                 pending = nil
             case nil:
-                parsed.corrupt += 1
+                corrupt += 1
             }
         }
-        return parsed
+        return (end, corrupt)
     }
 
     /// A write batch: its first sequence number, how many writes it holds, then each write.

@@ -177,8 +177,9 @@ struct TeamsCacheFolder {
     /// so they're read again when it arrives.
     private var inBlobFiles: [IndexedDBFolder.RecordKey: [UInt8]] = [:]
     private(set) var log: LevelDBFolder.LogPosition?
-    /// Tables that couldn't be read, as they were then. LevelDB writes a table where it'll stay, so one being written
-    /// reads as broken until it's done.
+    /// Tables that couldn't be read, as they were then, with the MANIFEST or CURRENT if they couldn't. A table LevelDB is
+    /// still writing isn't listed yet, so isn't read, but without the MANIFEST every table is, and LevelDB writes a table
+    /// where it'll stay, so one being written reads as broken until it's done.
     private(set) var unreadableTables: [String: FileInfo] = [:]
     private var files = (corruptLogRecords: 0, blocksRead: 0, blocksSkipped: 0)
 

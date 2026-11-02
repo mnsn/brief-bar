@@ -248,6 +248,7 @@ import Testing
             let read = try LevelDBFolder(url: directory).read()
             #expect(Self.texts(read) == ["b": "b1", "c": "c1", "d": "d1"])
             #expect(read.tables == 1 && read.logs == 1)
+            #expect(read.unlisted == 2)
             #expect(read.log?.url.lastPathComponent == "000008.log")
             #expect(read.unreadable.isEmpty)
         }
@@ -263,7 +264,7 @@ import Testing
 
             let read = try LevelDBFolder(url: directory).read()
             #expect(Self.texts(read) == ["a": "a1"])
-            #expect(read.tables == 1)
+            #expect(read.tables == 1 && read.unlisted == 1)
             #expect(read.unreadable.isEmpty)
         }
     }
@@ -283,6 +284,7 @@ import Testing
             let unknown = try LevelDBFolder(url: directory).read()
             #expect(unknown.unreadable == [name: .corrupt("version edit")])
             #expect(Self.texts(unknown) == everything)
+            #expect(unknown.unlisted == 0)
 
             try write(Array("../\(name)\n".utf8), to: directory.appendingPathComponent("CURRENT"))
             let elsewhere = try LevelDBFolder(url: directory).read()

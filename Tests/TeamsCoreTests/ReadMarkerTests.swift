@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
+@testable import ChromiumIndexedDB
 @testable import TeamsCore
 import BriefBarCore
 import NotificationCenterDB
@@ -44,6 +45,49 @@ enum TeamsData {
     /// The log's bytes after the first run's.
     static func secondRun() throws -> Data {
         try Data(contentsOf: fixture.appendingPathComponent(folderName).appendingPathComponent(logName)).dropFirst(firstRunLength)
+    }
+
+    /// Beside the copy's `log`, a table that can't be read, which a MANIFEST lists; returns it. A table LevelDB is still
+    /// writing isn't listed yet, but one read without the MANIFEST may be, so one counts only once it stays so.
+    @discardableResult
+    static func listBrokenTable(beside log: URL) throws -> URL {
+        let table = log.deletingLastPathComponent().appendingPathComponent("000010.ldb")
+        try Data(repeating: 7, count: 100).write(to: table)
+        try saveManifest(listing: [10], number: 11, beside: log)
+        return table
+    }
+
+    /// Writes MANIFEST-`number` beside the copy's `log`, as LevelDB does as it opens a database: one version edit, as
+    /// one record of a log, that lists the tables `tables` and keeps every log; then CURRENT, which names it, through a
+    /// file it renames. ChromiumIndexedDBTests' `ManifestWriter` writes any.
+    static func saveManifest(listing tables: [UInt64], number: UInt64, beside log: URL) throws {
+        func varint(_ value: UInt64) -> [UInt8] {
+            var value = value
+            var bytes: [UInt8] = []
+            while value >= 0x80 {
+                bytes.append(UInt8(value & 0x7F) | 0x80)
+                value >>= 7
+            }
+            return bytes + [UInt8(value)]
+        }
+        // A key with its sequence number and kind, as each table's smallest and largest are.
+        let key: [UInt8] = [0x61, 1, 0, 0, 0, 0, 0, 0, 0]
+        var edit = varint(2) + varint(0) + varint(3) + varint(number + 1) + varint(4) + varint(0)
+        for table in tables {
+            edit += varint(7) + varint(0) + varint(table) + varint(1_000)
+            edit += varint(UInt64(key.count)) + key + varint(UInt64(key.count)) + key
+        }
+        let checksum = CRC32C.mask(CRC32C.checksum(edit, extending: CRC32C.checksum([UInt8(1)])))
+        var record = (0..<4).map { UInt8(truncatingIfNeeded: checksum >> (8 * $0)) }
+        record += [UInt8(edit.count & 0xFF), UInt8(edit.count >> 8), 1] + edit
+        let folder = log.deletingLastPathComponent()
+        let name = String(format: "MANIFEST-%06llu", number)
+        try Data(record).write(to: folder.appendingPathComponent(name))
+        let temporary = folder.appendingPathComponent(String(format: "%06llu.dbtmp", number))
+        try Data((name + "\n").utf8).write(to: temporary)
+        guard rename(temporary.path, folder.appendingPathComponent("CURRENT").path) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
     }
 }
 
@@ -347,8 +391,7 @@ final class MarkerCollector: Sendable {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let (location, log) = try TeamsData.copy(to: directory)
-        // As LevelDB writes a table: where it'll stay, footer last.
-        try Data(repeating: 7, count: 100).write(to: log.deletingLastPathComponent().appendingPathComponent("000010.ldb"))
+        try TeamsData.listBrokenTable(beside: log)
         let collector = MarkerCollector()
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.3) { collector.add($0) }
         engine.start()
@@ -365,13 +408,14 @@ final class MarkerCollector: Sendable {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let (location, log) = try TeamsData.copy(to: directory)
-        let table = log.deletingLastPathComponent().appendingPathComponent("000010.ldb")
-        try Data(repeating: 7, count: 100).write(to: table)
+        let table = try TeamsData.listBrokenTable(beside: log)
         let collector = MarkerCollector()
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.5) { collector.add($0) }
         engine.start()
         defer { engine.stop() }
         let unreadable = try await collector.wait("the confirmed warning") { $0.report.unreadableFiles == 1 }
+        // As compaction does: the MANIFEST stops listing the table, then LevelDB removes it.
+        try TeamsData.saveManifest(listing: [], number: 12, beside: log)
         try FileManager.default.removeItem(at: table)
         let readable = try await collector.wait("the removed table") { $0.report.unreadableFiles == 0 }
         #expect(readable.problem == nil)

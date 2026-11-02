@@ -833,6 +833,13 @@ far as it needs:
   number wins, so the folder reads as it was when the read ended, without LevelDB's lock: LevelDB
   never changes a table once written, and only appends to its log. A table that compaction removes
   while it's read starts the read over. Nothing is written, and nothing copied.
+- **The MANIFEST**, which `CURRENT` names, lists the tables and logs that make up the database: its
+  version edits, applied in order, leave the tables, and the logs from its log number on. LevelDB
+  leaves a file it no longer needs until it can remove it, and one may hold a write that compaction
+  has since dropped, a deletion included, so BriefBar reads only those, as LevelDB does as it opens the
+  database: otherwise a conversation that was deleted would come back. A table it lists that's
+  missing starts the read over, as when compaction replaces tables meanwhile. A MANIFEST that can't be
+  read, or that LevelDB would refuse, makes BriefBar read every file, as a file that can't be read.
 - **IndexedDB's keys** each start with a database, object store and index (`KeyPrefix`), and Chromium
   sorts keys by that first. So BriefBar reads the databases' and object stores' names first, then
   only the `conversations` stores' records, and skips every table block whose index entries say it
@@ -992,11 +999,12 @@ All three formats are undocumented, so every read is checked:
 - **Teams' read markers.** Files, log records and values that can't be read are counted, values by
   why. If Teams' folder has no `conversations` store, or none of its conversations has a marker
   BriefBar understands, the lists say Teams' read markers have changed; if more than a quarter can't
-  be read, or a file can't, they say some couldn't be read. A table counts only after it has stayed
-  unchanged and unreadable for at least 5 s: LevelDB writes a table where it'll stay, so one being
-  written reads as broken until it's done. Each read rechecks those table paths, so finishing or
-  removing one clears its warning even if the current log hasn't changed. Neither keeps the lists
-  from showing: chats you read in Teams then stay
+  be read, or a file can't, they say some couldn't be read. A table LevelDB is still writing isn't in
+  its MANIFEST yet, so isn't read; one that can't be read counts only after it has stayed unchanged
+  and unreadable for at least 5 s, since without the MANIFEST, LevelDB writes a table where it'll
+  stay, and one being written reads as broken until it's done. Each read rechecks those table paths,
+  so finishing or removing one clears its warning even if the current log hasn't changed. Neither
+  keeps the lists from showing: chats you read in Teams then stay
   unread until another rule reads them. Lengths, nesting, blocks' keys and sparse arrays are checked
   against what's there and capped, so a value can't make BriefBar read past it, or hold much more
   than it.
