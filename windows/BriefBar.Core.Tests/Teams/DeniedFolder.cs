@@ -4,19 +4,19 @@ using System.Security.Principal;
 
 namespace BriefBar.Core.Tests.Teams;
 
-/// A folder you can't list until it's disposed of, as Windows' access control can deny a program a folder: it's there, but
-/// what it holds can't be found.
+/// A folder Windows' access control denies you some of, until it's disposed of, as it can deny a program a folder: listing
+/// it, unless `rights` says otherwise.
 [SupportedOSPlatform(platformName: "windows")]
-internal sealed class UnlistableFolder : IDisposable
+internal sealed class DeniedFolder : IDisposable
 {
     readonly DirectoryInfo directory;
     readonly FileSystemAccessRule denial;
 
-    public UnlistableFolder(string path)
+    public DeniedFolder(string path, FileSystemRights rights = FileSystemRights.ListDirectory)
     {
         directory = Directory.CreateDirectory(path: path);
         using var identity = WindowsIdentity.GetCurrent();
-        denial = new FileSystemAccessRule(identity: identity.User!, fileSystemRights: FileSystemRights.ListDirectory, type: AccessControlType.Deny);
+        denial = new FileSystemAccessRule(identity: identity.User!, fileSystemRights: rights, type: AccessControlType.Deny);
         var security = directory.GetAccessControl();
         security.AddAccessRule(rule: denial);
         directory.SetAccessControl(directorySecurity: security);

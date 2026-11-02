@@ -50,18 +50,16 @@ public sealed partial record TeamsCacheLocation(string Root, bool IsTeamsOwn)
     public static bool IsTeamsFolder(string name) => TeamsFolder().IsMatch(input: name);
 
     /// The folders in `path`, in order: none when it isn't there, and none, counted in `unlistable`, when it can't be
-    /// listed.
+    /// listed. Listing it is what tells: `Directory.Exists` says a folder isn't there when Windows can't say whether it is.
     static List<string> Subfolders(string path, ref int unlistable)
     {
         try
         {
-            return Directory.Exists(path: path)
-                ? Directory.EnumerateDirectories(path: path).Order(comparer: StringComparer.Ordinal).ToList()
-                : [];
+            return Directory.EnumerateDirectories(path: path).Order(comparer: StringComparer.Ordinal).ToList();
         }
         catch (DirectoryNotFoundException)
         {
-            // Gone since it was there, as a profile Teams removes: it holds nothing.
+            // Not there, or gone since, as a profile Teams removes: it holds nothing.
             return [];
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)

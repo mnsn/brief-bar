@@ -55,6 +55,7 @@ internal sealed class TeamsCacheFolder(string path)
                 Conversations = read.Count,
                 Chats = read.Count(predicate: conversation => conversation.Chat is not null),
                 WithMarker = read.Count(predicate: conversation => conversation.Chat?.Marker is not null),
+                WithHorizon = read.Count(predicate: conversation => conversation.HasHorizon),
                 Formats = Tally(values: read.Select(selector: conversation => conversation.Format)),
                 Unreadable = Tally(values: conversations.Values
                     .Select(selector: conversation => conversation.Unreadable)
@@ -366,7 +367,8 @@ internal sealed class TeamsCacheFolder(string path)
                 Chat: TeamsRecords.Chat(value: value.Value, recordKey: key.Key.Text, userId: account.UserId),
                 Account: account.Account,
                 Format: value.Format + (value.FromBlobFile ? ", from a blob file" : string.Empty),
-                Unreadable: null);
+                Unreadable: null,
+                HasHorizon: TeamsRecords.HasHorizon(value: value.Value));
         }
         catch (FormatErrorException error)
         {

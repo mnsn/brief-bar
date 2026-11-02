@@ -51,7 +51,7 @@ public static class TeamsDemoData
                 [LaunchCrew] = crew,
                 [WeeklySync] = sync,
             },
-            Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 6, Chats = 6, WithMarker = 6 },
+            Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 6, Chats = 6, WithMarker = 6, WithHorizon = 6 },
             ReadAt = now,
         };
     }

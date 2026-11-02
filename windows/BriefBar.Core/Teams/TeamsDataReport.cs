@@ -19,6 +19,10 @@ public sealed record TeamsDataReport
     /// Chats with a read marker.
     public int WithMarker { get; init; }
 
+    /// Conversations whose read marker field is in its form, read or not: none at all, as after an update to Teams that
+    /// renames it, says BriefBar can't tell what's read.
+    public int WithHorizon { get; init; }
+
     /// Values read, by format.
     public IReadOnlyDictionary<string, int> Formats { get; init; } = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
 
@@ -50,7 +54,8 @@ public sealed record TeamsDataReport
             {
                 return TeamsProblem.DataChanged;
             }
-            if (total > 0 && WithMarker == 0)
+            // Chats never opened, as on a new account, have no read marker, but have the field that holds one.
+            if (total > 0 && WithHorizon == 0)
             {
                 return TeamsProblem.DataChanged;
             }
@@ -73,6 +78,7 @@ public sealed record TeamsDataReport
             Conversations = Conversations + other.Conversations,
             Chats = Chats + other.Chats,
             WithMarker = WithMarker + other.WithMarker,
+            WithHorizon = WithHorizon + other.WithHorizon,
             Formats = Merged(first: Formats, second: other.Formats),
             Unreadable = Merged(first: Unreadable, second: other.Unreadable),
             UnreadableFiles = UnreadableFiles + other.UnreadableFiles,
@@ -90,6 +96,7 @@ public sealed record TeamsDataReport
         && Conversations == other.Conversations
         && Chats == other.Chats
         && WithMarker == other.WithMarker
+        && WithHorizon == other.WithHorizon
         && SameCounts(first: Formats, second: other.Formats)
         && SameCounts(first: Unreadable, second: other.Unreadable)
         && UnreadableFiles == other.UnreadableFiles

@@ -28,6 +28,12 @@ public sealed record ReadMarker(long MessageId, DateTimeOffset? ReadAt = null)
         return new ReadMarker(MessageId: id, ReadAt: readAt);
     }
 
+    /// Whether `consumptionHorizon` is in the form Teams writes for every chat, read or not: a message ID, 0 for a chat
+    /// never read, then the rest. A conversation without one in that form says nothing of whether it was read.
+    public static bool IsHorizon(string? consumptionHorizon) =>
+        !string.IsNullOrEmpty(value: consumptionHorizon)
+        && long.TryParse(s: consumptionHorizon.Split(separator: ';')[0], style: NumberStyles.None, provider: CultureInfo.InvariantCulture, result: out _);
+
     /// Whether the message `messageId` is one of those read.
     public bool Covers(long messageId) => messageId <= MessageId;
 }

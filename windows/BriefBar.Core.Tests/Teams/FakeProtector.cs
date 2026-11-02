@@ -8,9 +8,13 @@ internal sealed class FakeProtector(byte key = 0x5A) : ISecretProtector
 {
     public static byte[] Header { get; } = "SEAL"u8.ToArray();
 
+    /// How many times it sealed something.
+    public int Sealed { get; private set; }
+
     public byte[] Protect(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(argument: data);
+        Sealed += 1;
         return [.. Header, key, .. data.Select(selector: value => (byte)(value ^ key))];
     }
 

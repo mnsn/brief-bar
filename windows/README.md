@@ -476,6 +476,10 @@ SDK ships inside the app.
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
   this PC, in counts). Teams' taskbar badge doesn't count chats marked unread.
+- **A chat never opened in Teams has no read marker, but has its field**: `consumptionhorizon` is `0;…` for it
+  (checked on this PC, in counts). So BriefBar takes Teams' data as changed, as after an update that renames the
+  field, only when no conversation has the field in that form, not when no chat has a read marker, as the Mac does:
+  that would say a new account's data had changed.
 - **`FileSystemWatcher` reports Teams' writes to its LevelDB log** as they happen (checked on this PC), so BriefBar
   reads what was added half a second after a write, from where it stopped, rather than on a timer; and everything
   again every 10 minutes, which also finds Teams' data once you sign in.

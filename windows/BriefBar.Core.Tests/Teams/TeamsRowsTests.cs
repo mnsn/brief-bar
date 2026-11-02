@@ -176,7 +176,7 @@ public sealed class TeamsRowsTests
                 Found = true,
                 IsComplete = true,
                 Chats = [chat],
-                Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 1, Chats = 1, WithMarker = 1 },
+                Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 1, Chats = 1, WithMarker = 1, WithHorizon = 1 },
             },
             now: now);
 

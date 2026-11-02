@@ -43,6 +43,22 @@ public sealed class TeamsReadMarksTests
         Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: TeamsData.Id(seconds: 30), At: at), [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) }, actual: marks.Marks);
     }
 
+    /// Marking many chats at once, as Mark all read does, seals and writes them once; marks that change nothing, not at all.
+    [Fact]
+    public void SavesManyMarksAtOnce()
+    {
+        using var folder = new TemporaryFolder();
+        var protector = new FakeProtector();
+        var marks = new TeamsReadMarks(path: folder.Combine("Teams", "read"), protector: protector);
+
+        marks.MarkAll(chats: [(Fixture.Avery, TeamsData.Id(seconds: 30)), (Fixture.Sam, TeamsData.Id(seconds: 10)), (Fixture.Crew, 0)], at: at);
+
+        Assert.Equal(expected: 1, actual: protector.Sealed);
+        Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Crew }, actual: marks.Marks.Keys.ToHashSet());
+        marks.MarkAll(chats: [(Fixture.Avery, TeamsData.Id(seconds: 20)), (Fixture.Sam, TeamsData.Id(seconds: 10))], at: at);
+        Assert.Equal(expected: 1, actual: protector.Sealed);
+    }
+
     /// Teams' marker passing a mark, or its chat leaving Teams' data, ends it; with none left, the file and its folder go.
     [Fact]
     public void DeletesTheFileWhenNothingIsLeft()

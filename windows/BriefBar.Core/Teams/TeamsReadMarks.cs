@@ -82,22 +82,26 @@ public sealed class TeamsReadMarks
 
     /// Marks `chat` read up to `messageId` at `at`, which also reads a Mark as unread that Teams has from before then, and
     /// saves it.
-    public void Mark(string chat, long messageId, DateTimeOffset at)
+    public void Mark(string chat, long messageId, DateTimeOffset at) => MarkAll(chats: [(chat, messageId)], at: at);
+
+    /// Marks each of `chats` read up to its message at `at`, as `Mark` does, and saves them once: sealing and writing them
+    /// for each chat would hold up Mark all read.
+    public void MarkAll(IEnumerable<(string Chat, long MessageId)> chats, DateTimeOffset at)
     {
-        ArgumentNullException.ThrowIfNull(argument: chat);
+        ArgumentNullException.ThrowIfNull(argument: chats);
         if (deleted)
         {
             return;
         }
-        var mark = marks.TryGetValue(key: chat, value: out var known)
-            ? new TeamsReadMark(UpTo: Math.Max(val1: known.UpTo, val2: messageId), At: known.At > at ? known.At : at)
-            : new TeamsReadMark(UpTo: messageId, At: at);
-        if (mark == known)
+        var changed = false;
+        foreach (var (chat, messageId) in chats)
         {
-            return;
+            changed |= Merge(chat: chat, messageId: messageId, at: at);
         }
-        marks[chat] = mark;
-        Save();
+        if (changed)
+        {
+            Save();
+        }
     }
 
     /// Forgets the marks that have nothing left to do, and, with `dropAbsent`, those of chats that aren't in `chats`, and
@@ -136,6 +140,22 @@ public sealed class TeamsReadMarks
         deleted = true;
         marks.Clear();
         Remove();
+    }
+
+    /// Takes a mark of `chat` up to `messageId` at `at` into what's kept: the further message, and the later time. Whether
+    /// that changed anything.
+    bool Merge(string chat, long messageId, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(argument: chat);
+        var mark = marks.TryGetValue(key: chat, value: out var known)
+            ? new TeamsReadMark(UpTo: Math.Max(val1: known.UpTo, val2: messageId), At: known.At > at ? known.At : at)
+            : new TeamsReadMark(UpTo: messageId, At: at);
+        if (mark == known)
+        {
+            return false;
+        }
+        marks[chat] = mark;
+        return true;
     }
 
     /// Writes the marks, sealed, atomically; deletes the file when there are none.

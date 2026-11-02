@@ -1,6 +1,7 @@
 using BriefBar.Core.Settings;
 using BriefBar.Core.Teams;
 using BriefBar.Core.Tests.ChromiumIndexedDB;
+using BriefBar.Core.Tests.Copilot;
 
 namespace BriefBar.Core.Tests.Teams;
 
@@ -86,6 +87,28 @@ public sealed class TeamsStoreTests
         Assert.Empty(collection: store.Unread(group: ChatGroup.Groups));
         Assert.Equal(expected: ["Avery Quinn"], actual: store.Unread(group: ChatGroup.Chats).Select(selector: chat => chat.Title));
         Assert.Equal(expected: ["Weekly sync", "Launch crew"], actual: store.Recent(group: ChatGroup.Groups).Select(selector: chat => chat.Title));
+    }
+
+    /// Mark all read saves its marks once, however many chats it reads: sealing and writing them for each would hold up
+    /// the panel it's pressed in.
+    [Fact]
+    public void SavesWhatMarkAllReadMarksOnce()
+    {
+        using var folder = new TemporaryFolder();
+        var protector = new FakeProtector();
+        var marks = new TeamsReadMarks(path: folder.Combine("Teams", "read"), protector: protector);
+        var crew = Messages(chat: Fixture.Crew, (20, "Shipping at 5"));
+        var sync = Messages(chat: Fixture.Sync, (30, "Notes"));
+        var store = Store(
+            marks: marks,
+            (Chat(id: Fixture.Crew, kind: ConversationKind.Group, title: "Launch crew", newest: crew[^1]), crew),
+            (Chat(id: Fixture.Sync, kind: ConversationKind.Meeting, title: "Weekly sync", newest: sync[^1]), sync));
+
+        store.MarkAllRead(group: ChatGroup.Groups, now: now);
+
+        Assert.Equal(expected: 1, actual: protector.Sealed);
+        Assert.Equal(expected: 2, actual: marks.Marks.Count);
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Groups));
     }
 
     /// A mark is kept only until Teams' own marker gets there, or the chat is gone from Teams' data: and only once Teams'
@@ -258,7 +281,7 @@ public sealed class TeamsStoreTests
         IsComplete = true,
         Chats = [.. chats.Select(selector: chat => chat.Chat)],
         Messages = chats.ToDictionary(keySelector: chat => chat.Chat.Id, elementSelector: chat => (IReadOnlyList<TeamsMessage>)chat.Messages, comparer: StringComparer.Ordinal),
-        Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = chats.Length, Chats = chats.Length, WithMarker = chats.Length },
+        Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = chats.Length, Chats = chats.Length, WithMarker = chats.Length, WithHorizon = chats.Length },
     };
 
     /// A chat whose newest message arrived `seconds` after the tests' base time, read in Teams.

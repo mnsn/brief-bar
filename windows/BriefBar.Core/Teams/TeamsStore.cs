@@ -85,28 +85,31 @@ public sealed class TeamsStore
     public void MarkRead(ConversationSummary conversation, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: conversation);
-        Mark(conversation: conversation, now: now);
+        marks.MarkAll(chats: MarksFor(conversations: [conversation]), at: now);
         Recompute(now: now);
     }
 
-    /// Reads every chat that `group` lists as unread.
+    /// Reads every chat that `group` lists as unread, saving what it marks once.
     public void MarkAllRead(ChatGroup group, DateTimeOffset now)
     {
-        foreach (var conversation in Unread(group: group))
-        {
-            Mark(conversation: conversation, now: now);
-        }
+        marks.MarkAll(chats: MarksFor(conversations: Unread(group: group)), at: now);
         Recompute(now: now);
     }
 
-    /// Reads `conversation` up to its newest message, and a Mark as unread that Teams has for it now, even without one.
-    void Mark(ConversationSummary conversation, DateTimeOffset now)
+    /// What reading each of `conversations` marks: up to its newest message, and a Mark as unread that Teams has for it
+    /// now, even without one.
+    static List<(string Chat, long MessageId)> MarksFor(IEnumerable<ConversationSummary> conversations)
     {
-        var upTo = Math.Max(val1: conversation.Unread.Count > 0 ? conversation.Unread[^1].Id : 0, val2: conversation.Latest?.Id ?? 0);
-        if (upTo > 0 || conversation.IsMarkedUnread)
+        var read = new List<(string Chat, long MessageId)>();
+        foreach (var conversation in conversations)
         {
-            marks.Mark(chat: conversation.Id, messageId: upTo, at: now);
+            var upTo = Math.Max(val1: conversation.Unread.Count > 0 ? conversation.Unread[^1].Id : 0, val2: conversation.Latest?.Id ?? 0);
+            if (upTo > 0 || conversation.IsMarkedUnread)
+            {
+                read.Add(item: (conversation.Id, upTo));
+            }
         }
+        return read;
     }
 
     /// `chat`'s newest message that wasn't deleted: the cache may have one the chat's record doesn't name yet, or the

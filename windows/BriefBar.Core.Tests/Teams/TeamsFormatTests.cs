@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using BriefBar.Core.Teams;
 using BriefBar.Core.Tests.ChromiumIndexedDB;
 using BriefBar.Core.Tests.Copilot;
@@ -22,6 +23,16 @@ public sealed class TeamsFormatTests
         foreach (var never in new[] { "0;0;0", "", "0;900;7", "-5;1;1", "abc;1;1", ";1792317605000;1", null })
         {
             Assert.Null(@object: ReadMarker.Parse(consumptionHorizon: never));
+        }
+
+        // Every chat has the field, read or not: a chat never read has it as `0;…`.
+        foreach (var horizon in new[] { "1792317605000;1792317605900;1792317605007", "1792317605000", "0;0;0", "0;900;7" })
+        {
+            Assert.True(condition: ReadMarker.IsHorizon(consumptionHorizon: horizon));
+        }
+        foreach (var other in new[] { "", "-5;1;1", "abc;1;1", ";1792317605000;1", "{\"id\":1}", null })
+        {
+            Assert.False(condition: ReadMarker.IsHorizon(consumptionHorizon: other));
         }
     }
 
@@ -214,13 +225,13 @@ public sealed class TeamsFormatTests
         Directory.CreateDirectory(path: teams);
         var location = new TeamsCacheLocation(Root: root, IsTeamsOwn: false);
 
-        using (new UnlistableFolder(path: Path.Combine(paths: [root, "WV2Profile_tfl", "IndexedDB"])))
+        using (new DeniedFolder(path: Path.Combine(paths: [root, "WV2Profile_tfl", "IndexedDB"])))
         {
             var partly = location.FindFolders();
             Assert.Equal(expected: [teams], actual: partly.Folders);
             Assert.Equal(expected: 1, actual: partly.Unlistable);
         }
-        using (new UnlistableFolder(path: root))
+        using (new DeniedFolder(path: root))
         {
             var none = location.FindFolders();
             Assert.Empty(collection: none.Folders);
@@ -230,6 +241,28 @@ public sealed class TeamsFormatTests
         var all = location.FindFolders();
         Assert.Equal(expected: [teams], actual: all.Folders);
         Assert.Equal(expected: 0, actual: all.Unlistable);
+    }
+
+    /// Where Windows can't say whether a folder is there, as when you can't read its attributes or list the folder it's
+    /// in, it counts as one that couldn't be listed, rather than as one that isn't there.
+    [Fact]
+    [SupportedOSPlatform(platformName: "windows")]
+    public void CountsAFolderWindowsCantSayIsThere()
+    {
+        Assert.SkipUnless(condition: OperatingSystem.IsWindows(), reason: "Only Windows' access control keeps a folder's attributes from being read here.");
+        using var folder = new TemporaryFolder();
+        var root = folder.Combine("EBWebView");
+        var profile = Path.Combine(path1: root, path2: "WV2Profile_tfw");
+        var indexedDB = Path.Combine(path1: profile, path2: "IndexedDB");
+        Directory.CreateDirectory(path: Path.Combine(path1: indexedDB, path2: "https_teams.microsoft.com_0.indexeddb.leveldb"));
+        using var attributes = new DeniedFolder(path: indexedDB, rights: FileSystemRights.ReadAttributes);
+        using var listing = new DeniedFolder(path: profile);
+        Assert.False(condition: Directory.Exists(path: indexedDB));
+
+        var found = new TeamsCacheLocation(Root: root, IsTeamsOwn: false).FindFolders();
+
+        Assert.Empty(collection: found.Folders);
+        Assert.Equal(expected: 1, actual: found.Unlistable);
     }
 
     [Fact]

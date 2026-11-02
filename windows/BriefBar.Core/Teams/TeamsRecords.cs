@@ -55,6 +55,13 @@ internal static class TeamsRecords
             MarkedUnread: ReadMarker.Parse(consumptionHorizon: properties?["consumptionHorizonBookmark"]?.AsString));
     }
 
+    /// Whether a conversation record's read marker field (`properties.consumptionhorizon`) is in its form, read or not.
+    public static bool HasHorizon(JSValue value)
+    {
+        ArgumentNullException.ThrowIfNull(argument: value);
+        return ReadMarker.IsHorizon(consumptionHorizon: value["properties"]?["consumptionhorizon"]?.AsString);
+    }
+
     /// The messages a reply chain's record holds: in a chat, each message is a reply chain of its own. A deleted message
     /// keeps its place, without its text, so that the conversation's newest message, which may not say it's deleted yet,
     /// isn't counted for it.

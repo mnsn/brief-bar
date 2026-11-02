@@ -87,6 +87,9 @@ public sealed class TeamsEngineTests
         Assert.Equal(expected: TeamsProblem.DataChanged, actual: report.Problem);
         report = report with { Stores = 1, Conversations = 10 };
         Assert.Equal(expected: TeamsProblem.DataChanged, actual: report.Problem);
+        // Chats never opened, as on a new account, have no read marker, but have the field that holds one.
+        report = report with { WithHorizon = 10 };
+        Assert.Null(@object: report.Problem);
         report = report with { WithMarker = 8 };
         Assert.Null(@object: report.Problem);
         report = report with { Unreadable = new Dictionary<string, int> { ["corrupt property count"] = 1 } };
@@ -98,7 +101,9 @@ public sealed class TeamsEngineTests
 
         var both = report.Adding(other: report with { Unreadable = new Dictionary<string, int> { ["truncated"] = 2 } });
         Assert.Equal(expected: (2, 2, 20, 16, 2), actual: (both.Folders, both.Stores, both.Conversations, both.WithMarker, both.UnreadableFiles));
+        Assert.Equal(expected: 20, actual: both.WithHorizon);
         Assert.Equal(expected: new Dictionary<string, int> { ["truncated"] = 2 }, actual: both.Unreadable);
+        Assert.NotEqual(expected: report, actual: report with { WithHorizon = 9 });
 
         // A chat whose messages couldn't all be read may have more unread than it shows.
         var partlyRead = report with { UnreadableFiles = 0, ChatsPartlyRead = 1 };
@@ -129,6 +134,56 @@ public sealed class TeamsEngineTests
 
         Assert.True(condition: snapshot.Found);
         Assert.Empty(collection: snapshot.Chats);
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// On an account whose chats were never opened, as a new one, no chat has a read marker, but each has the field that
+    /// holds one: Teams' data is understood, and its chats are unread.
+    [Fact]
+    public void UnderstandsChatsNeverOpened()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: 0, Newest: lunch, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Null(@object: snapshot.Problem);
+        Assert.True(condition: snapshot.IsComplete);
+        Assert.Equal(expected: (0, 1), actual: (snapshot.Report.WithMarker, snapshot.Report.WithHorizon));
+        Assert.Equal(expected: [lunch.Id], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// Chats without the read marker field in its form, as after an update to Teams that renames it, say Teams' data
+    /// changed: BriefBar can't tell what's read.
+    [Fact]
+    public void SaysTeamsDataChangedWithoutTheReadMarkerField()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Write(folder: folder.Path, chats: [], replyChains: []);
+        static byte[] Renamed(string id) => V8Writer.Record(body: writer => writer.Members(properties:
+        [
+            ("id", value => value.Text(text: id)),
+            ("type", value => value.Text(text: "Chat")),
+            ("properties", value => value.Members(properties: [("readHorizon", horizon => horizon.Text(text: "{\"id\":1}"))])),
+        ]));
+        TeamsData.Append(
+            path: log,
+            LogWriter.Batch(
+                sequence: 10,
+                writes:
+                [
+                    (IndexedDBKeys.Record(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, key: Fixture.Avery), Renamed(id: Fixture.Avery)),
+                    (IndexedDBKeys.Record(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, key: Fixture.Crew), Renamed(id: Fixture.Crew)),
+                ]));
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: 2, actual: snapshot.Chats.Count);
         Assert.Equal(expected: TeamsProblem.DataChanged, actual: snapshot.Problem);
         Assert.False(condition: snapshot.IsComplete);
     }
@@ -193,7 +248,7 @@ public sealed class TeamsEngineTests
         using var folder = new TemporaryFolder();
         var (location, _) = TeamsData.Copy(folder: folder.Path);
 
-        using (new UnlistableFolder(path: Path.Combine(path1: location.Root, path2: "WV2Profile_tfl", path3: "IndexedDB")))
+        using (new DeniedFolder(path: Path.Combine(path1: location.Root, path2: "WV2Profile_tfl", path3: "IndexedDB")))
         {
             var partly = TeamsEngine.LoadOnce(location: location);
             Assert.True(condition: partly.Found);
@@ -202,7 +257,7 @@ public sealed class TeamsEngineTests
             Assert.Equal(expected: 6, actual: partly.Chats.Count);
             Assert.Equal(expected: (2, 1), actual: (partly.Report.Folders, partly.Report.UnreadableFiles));
         }
-        using (new UnlistableFolder(path: location.Root))
+        using (new DeniedFolder(path: location.Root))
         {
             var none = TeamsEngine.LoadOnce(location: location);
             Assert.True(condition: none.Found);
@@ -216,7 +271,7 @@ public sealed class TeamsEngineTests
         // Started while it can't be listed, it reads Teams' data as a panel opens once it can.
         var collector = new TeamsCollector();
         using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
-        using (new UnlistableFolder(path: location.Root))
+        using (new DeniedFolder(path: location.Root))
         {
             engine.Start();
             Assert.Equal(expected: TeamsProblem.ReadFailed, actual: collector.Latest!.Problem);
