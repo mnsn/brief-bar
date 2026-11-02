@@ -25,6 +25,9 @@ public static class StatePalette
     const uint LightHighlight = 0x09000000u;
     const uint DarkHighlight = 0x0FFFFFFFu;
 
+    /// How opaque the bar's see-through tint is: 80%, the taskbar's acrylic's tint.
+    public const uint SeeThroughAlpha = 0xCC000000u;
+
     public static uint Fill(ItemState state, bool dark) => state switch
     {
         ItemState.NeedsYou => dark ? 0xFFFF8C3Au : 0xFFD85F0Bu,
@@ -57,6 +60,20 @@ public static class StatePalette
     /// The colors the bar and the panel can have: their acrylic's usual color, and the flat one Windows shows in its
     /// place.
     public static IReadOnlyList<uint> Backgrounds(bool dark) => dark ? [DarkAcrylic, DarkFlat] : [LightAcrylic, LightFlat];
+
+    /// The flat color Windows shows in place of the bar's acrylic, as under the taskbar.
+    public static uint Flat(bool dark) => dark ? DarkFlat : LightFlat;
+
+    /// `words` on a see-through bar, worked out against `background`, its tint over the wallpaper they stand out least
+    /// on: opaque, as translucent words darken with a darker wallpaper behind them, or lighten with a lighter one, and
+    /// would read less there; and as little lighter in dark (darker in light) as it takes to stand `least` to 1 apart.
+    public static uint WordsOver(uint words, uint background, bool dark, double least) =>
+        Readable(color: Over(argb: words, background: background), background: background, dark: dark, least: least);
+
+    /// A see-through `tint` as it shows over the wallpaper its words stand out least on: white behind light words (in
+    /// dark), black behind dark ones; and behind a bar item that's open and pointed at.
+    public static uint UnderSeeThrough(uint tint, bool dark) =>
+        UnderBarItem(background: Over(argb: tint, background: dark ? White : Black), dark: dark);
 
     /// Words in Windows' colors, as WinUI's `TextFillColorPrimary`: counts and other words that matter most.
     public static uint Words(bool dark) => dark ? White : 0xE4000000u;
@@ -117,6 +134,21 @@ public static class StatePalette
     public static uint Readable(uint color, uint background, bool dark, double least) =>
         Toward(color: color, target: dark ? White : Black, background: background, least: least);
 
+    /// `from`, opaque, `amount` of the way to `to`.
+    internal static uint Mix(uint from, uint to, double amount)
+    {
+        static uint Channel(uint from, uint to, int shift, double amount)
+        {
+            var start = (from >> shift) & 0xFF;
+            var end = (to >> shift) & 0xFF;
+            return (uint)Math.Round(value: start + ((end - (double)start) * amount), mode: MidpointRounding.AwayFromZero) << shift;
+        }
+        return 0xFF000000u
+            | Channel(from: from, to: to, shift: 16, amount: amount)
+            | Channel(from: from, to: to, shift: 8, amount: amount)
+            | Channel(from: from, to: to, shift: 0, amount: amount);
+    }
+
     /// `color`, mixed with `target` in steps of 5% until it stands `least` to 1 apart from `background`; `target`
     /// itself if nothing short of it does.
     static uint Toward(uint color, uint target, uint background, double least)
@@ -134,18 +166,4 @@ public static class StatePalette
 
     static uint ChipTint(RowChipKind kind, bool dark) =>
         Text(state: kind == RowChipKind.WorkItem ? ItemState.Running : ItemState.Done, dark: dark);
-
-    static uint Mix(uint from, uint to, double amount)
-    {
-        static uint Channel(uint from, uint to, int shift, double amount)
-        {
-            var start = (from >> shift) & 0xFF;
-            var end = (to >> shift) & 0xFF;
-            return (uint)Math.Round(value: start + ((end - (double)start) * amount), mode: MidpointRounding.AwayFromZero) << shift;
-        }
-        return 0xFF000000u
-            | Channel(from: from, to: to, shift: 16, amount: amount)
-            | Channel(from: from, to: to, shift: 8, amount: amount)
-            | Channel(from: from, to: to, shift: 0, amount: amount);
-    }
 }
