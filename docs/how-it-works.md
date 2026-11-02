@@ -1579,7 +1579,9 @@ failed, it names the first task that failed, the stage it's in and its first err
 Azure DevOps itself, such as scheduled ones, don't name who started them. The timelines never read
 go first, then the ones read longest ago; one that fails is tried again on the next refresh, then
 less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
-the run changes. Stages are kept by organization, project and run, since run IDs are unique only
+the run changes. One whose organization waits on a sign-in to its directory isn't one that fails: it
+takes its turn again at each refresh, behind the others, and the sign-in is said, read then or not,
+until one of that organization's timelines answers or the run is no longer shown. Stages are kept by organization, project and run, since run IDs are unique only
 within an organization.
 
 Below pinned pipelines, **Your Pull Requests** groups validation runs into one expandable card per

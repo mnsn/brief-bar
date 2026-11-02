@@ -1066,6 +1066,130 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
     }
 
+    @Test func runsWaitingOnASignInAreSaidWhileTheOthersTakeTheirTurns() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        // Six of fabrikam's pipelines, whose runs' stages wait on a sign-in to its directory, and six of northwind's.
+        let fabrikam = (1...6).map {
+            PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: $0, name: "CI \($0)")
+        }
+        let northwind = (7...12).map {
+            PipelineRef(organization: "northwind", projectId: "p1", projectName: "Shop", definitionId: $0, name: "deploy \($0)")
+        }
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list((1...6).map {
+            WorkFixture.build(100 + $0, definition: $0, status: "inProgress", result: nil, queued: t(-hour))
+        }))
+        server.on("/northwind/p1/_apis/build/builds", json: Fixture.list((7...12).map {
+            WorkFixture.build(200 + $0, definition: $0, status: "inProgress", result: nil, queued: t(-hour))
+        }))
+        for build in 101...106 {
+            server.on("/fabrikam/p1/_apis/build/builds/\(build)/timeline") { _ in .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other]) }
+        }
+        for build in 207...212 {
+            server.on("/northwind/p1/_apis/build/builds/\(build)/timeline", json: WorkFixture.timeline([
+                WorkFixture.record("s", "Stage", "Deploy", order: 1, state: "inProgress", result: nil),
+            ]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: fabrikam + northwind),
+            now: { clock.value }
+        ) { _ in }
+        let waiting = PulseProblem.otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil)
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == waiting)
+
+        // Then northwind's take every turn: fabrikam's aren't tried, but they still wait on that sign-in, which is still said.
+        clock.set(t(60))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        let northwindStatuses = snapshot.statuses.filter { $0.pipeline.organization == "northwind" }
+        #expect(northwindStatuses.count == 6)
+        #expect(northwindStatuses.allSatisfy { $0.stages.map(\.name) == ["Deploy"] })
+        #expect(snapshot.problem == waiting)
+    }
+
+    @Test func aRunSetAsideForASignInIsReadOnceSignedInThereWhateverItFailedBefore() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let first = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 1, name: "CI")
+        let second = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 2, name: "deploy")
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(101, definition: 1, status: "inProgress", result: nil, queued: t(-hour)),
+            WorkFixture.build(102, definition: 2, status: "inProgress", result: nil, queued: t(-hour)),
+        ]))
+        // The first run's stages are read until fabrikam's directory wants a sign-in; the second's fail, three times.
+        let signedOut = Locked(false)
+        server.on("/fabrikam/p1/_apis/build/builds/101/timeline") { _ in
+            signedOut.value
+                ? .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other])
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1, state: "inProgress", result: nil)]))
+        }
+        let failing = Locked(true)
+        server.on("/fabrikam/p1/_apis/build/builds/102/timeline") { _ in
+            failing.value
+                ? .status(500)
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Deploy", order: 1, state: "inProgress", result: nil)]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [first, second]),
+            now: { clock.value }
+        ) { _ in }
+        for time in [0.0, 60, 120] {
+            clock.set(t(time))
+            await engine.refreshNow()
+        }
+        // When the second's turn comes again, fabrikam's directory wants a sign-in, which the first's stages tell: the
+        // second is set aside, untried.
+        signedOut.set(true)
+        clock.set(t(240))
+        await engine.refreshNow()
+        // Signed in there again a minute later, it's read, rather than waited on longer and longer as one that keeps failing.
+        signedOut.set(false)
+        failing.set(false)
+        clock.set(t(300))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.statuses.first { $0.pipeline.definitionId == 2 }?.stages.map(\.name) == ["Deploy"])
+        #expect(snapshot.problem == nil)
+    }
+
+    @Test func aRunNoLongerShownNoLongerWaitsOnASignIn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let ci = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 1, name: "CI")
+        let release = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 2, name: "release")
+        server.on("/fabrikam/p1/_apis/build/builds", json: Fixture.list([
+            WorkFixture.build(101, definition: 1, status: "inProgress", result: nil, queued: t(-hour)),
+            WorkFixture.build(201, definition: 2, queued: t(-2 * hour)),
+        ]))
+        server.on("/fabrikam/p1/_apis/build/builds/201/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Release", order: 1)]))
+        // CI's run, still running, has its stages read, until fabrikam's directory wants a sign-in.
+        let signedOut = Locked(false)
+        server.on("/fabrikam/p1/_apis/build/builds/101/timeline") { _ in
+            signedOut.value
+                ? .status(401, headers: ["X-VSS-ResourceTenant": Tenants.other])
+                : .json(WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1, state: "inProgress", result: nil)]))
+        }
+        let clock = Locked(t(0))
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [ci, release]),
+            now: { clock.value }
+        ) { _ in }
+        await engine.refreshNow()
+        signedOut.set(true)
+        clock.set(t(60))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+
+        // CI is unpinned: release's run, finished and read, isn't asked for again, and nothing shown waits on that sign-in.
+        await engine.setConfiguration(PipelinesEngine.Configuration(pipelines: [release]))
+        clock.set(t(120))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == nil)
+    }
+
     @Test func theSprintSaysWhichOrganizationsTeamsAreInAnotherDirectory() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
