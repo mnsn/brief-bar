@@ -1046,8 +1046,9 @@ It remembers the organization's directory while it runs, once a token from there
 requests get such a token right away; one that moves to yet another directory is followed the same way.
 Only GUIDs from the header are used, never the empty one. When the CLI can't give a token from there,
 because it isn't signed in to that directory, that organization's problem says so: "fabrikam is in a
-directory your Azure CLI isn't signed in to", with **Sign In…**, which opens Terminal to run `az login
---tenant` with the directory's ID. Until then, each refresh asks Azure DevOps once, with a token from your
+directory your Azure CLI isn't signed in to", with **Sign In…**, which opens Terminal to run
+`az login --tenant` with the directory's ID, and `--allow-no-subscriptions`, as every sign-in does, for an
+account without Azure subscriptions. Until then, each refresh asks Azure DevOps once, with a token from your
 directory, which directory the organization is in, so a move is noticed too. The other organizations'
 pull requests stay listed and counted, as when any of them can't be read, and once the CLI is signed in
 there, the organization is read with the rest. A pull request you watch, or that was sent to you, in such
@@ -1063,20 +1064,24 @@ directory the CLI's default. So signing in to an organization's directory change
 sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
 the account it last read your pull requests with, and the command line and agents do too. When the CLI
 can't give a token in your directory, BriefBar looks at its default directory's token: a guest's names
-the directory its account is from (`idp`). When that's your account's, your directory only wants you to
-sign in again, and BriefBar says so; otherwise someone else has signed in to the CLI, and their
-directory becomes the one BriefBar reads with. Tokens kept for other directories are for the same
-account as yours: when someone else signs in, those go too, and one from another directory for an
-account from elsewhere isn't kept, and makes BriefBar ask for yours again, which tells who's signed in.
+where its account is from (`idp`), its own directory or, for a personal Microsoft account, `live.com`.
+When that's your account's, your directory only wants you to sign in again, and BriefBar says so;
+otherwise someone else has signed in to the CLI, and their directory becomes the one BriefBar reads
+with. Tokens kept for other directories are for the same account as yours: when someone else signs in,
+those go too, and one from another directory for an account from elsewhere isn't kept, and makes
+BriefBar ask for yours again, which tells who's signed in.
 
 **Add Organization…** checks that your sign-in can read the organization, with `_apis/connectionData`,
-before watching it, and says why when it can't. One in a directory the CLI isn't signed in to is
-watched, and **Sign In…** signs in there; one that Azure DevOps can't find, that isn't one of your
-organizations (`_apis/accounts`), or that you have no access to, isn't. A project's name, entered as an
-organization's, can be another organization's, even one in another directory: so when an organization is
-in another directory, or isn't one of yours, BriefBar also says where a project's organization is, the
-first part of its link. One that couldn't be checked, offline say, is watched, and its list says what's
-wrong. Turning Azure DevOps off while it checks stops the check, and nothing is added.
+before watching it, and says why when it can't. One it reads is watched. One in a directory the CLI
+isn't signed in to is watched too, and **Sign In…** signs in there. One it can't read otherwise isn't:
+one that Azure DevOps can't find, that isn't one of your organizations (`_apis/accounts`), or that you
+have no access to. Only those are checked against your organizations: one read in another directory is
+read as your guest account there, which `_apis/accounts`, asked as you, may not list. A project's name,
+entered as an organization's, can be another organization's, even one in another directory: so when an
+organization is in another directory, or isn't one of yours, BriefBar also says where a project's
+organization is, the first part of its link. One that couldn't be checked, offline say, or whose
+membership couldn't be, is watched, and its list says what's wrong. Turning Azure DevOps off while it
+checks stops the check, and nothing is added.
 
 An app started from Finder or as a login item doesn't get your shell's `PATH`, so BriefBar looks
 for `az` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual places, then asks your login

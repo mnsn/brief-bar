@@ -35,10 +35,10 @@ import Testing
     @Test func theCommandLineAndAgentsSayWhatToRun() {
         let error = ADOError.otherDirectory(organization: "fabrikam", tenant: Self.tenant)
         let sentence = "fabrikam is in a directory your Azure CLI isn't signed in to."
-        #expect(AzureDevOpsCommandLine.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant).")
-        #expect(AzureDevOpsReader.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant), then ask again.")
+        #expect(AzureDevOpsCommandLine.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant) --allow-no-subscriptions.")
+        #expect(AzureDevOpsReader.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant) --allow-no-subscriptions, then ask again.")
         #expect(AzureDevOpsCommandLine.describe(ADOError.forbidden) == "No access to this organization.")
-        #expect(AzureDevOpsCommandLine.text(of: .signedOut("")) == "Sign in to the Azure CLI to see your pull requests. Run az login.")
+        #expect(AzureDevOpsCommandLine.text(of: .signedOut("")) == "Sign in to the Azure CLI to see your pull requests. Run az login --allow-no-subscriptions.")
         // The log gets neither the organization's name nor its directory's ID.
         #expect(!error.description.contains("fabrikam") && !error.description.contains(Self.tenant))
     }

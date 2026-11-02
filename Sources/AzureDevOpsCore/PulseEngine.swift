@@ -54,12 +54,12 @@ public enum PulseProblem: Sendable, Equatable {
     /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
     public var offersSignIn: Bool { needsSignIn || signInTenant != nil }
 
-    /// What to run to fix it, for the command line and agents, which have no Sign In button. A directory's ID is only
-    /// ever said here, where signing in needs it.
+    /// What to run to fix it, for the command line and agents, which have no Sign In button: as Sign In runs it, for
+    /// an account without Azure subscriptions too. A directory's ID is only ever said here, where signing in needs it.
     public var signInCommand: String? {
         switch self {
-        case .signedOut: return "az login"
-        case .otherDirectory(_, let tenant, _): return "az login --tenant \(tenant)"
+        case .signedOut: return "az login --allow-no-subscriptions"
+        case .otherDirectory(_, let tenant, _): return "az login --tenant \(tenant) --allow-no-subscriptions"
         default: return nil
         }
     }

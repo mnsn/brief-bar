@@ -4,14 +4,14 @@ import Testing
 @testable import AzureDevOpsCore
 import BriefBarCore
 
-/// A made-up Microsoft Entra token for a directory, unsigned: only what BriefBar reads from it. A guest's names the
-/// directory its account is from in `idp`.
+/// A made-up Microsoft Entra token for a directory, unsigned: only what BriefBar reads from it. A guest's names where
+/// its account is from in `idp`: another directory, or an identity provider such as live.com.
 private func madeUpToken(tenant: String, object: String = "robin", guestFrom home: String? = nil) -> String {
     func encoded(_ json: String) -> String {
         Data(json.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
-    let idp = home.map { #","idp":"https://sts.windows.net/\#($0)/""# } ?? ""
+    let idp = home.map { UUID(uuidString: $0) == nil ? $0 : "https://sts.windows.net/\($0)/" }.map { #","idp":"\#($0)""# } ?? ""
     return [encoded(#"{"alg":"none"}"#), encoded(#"{"tid":"\#(tenant)","oid":"\#(object)"\#(idp)}"#), "c2ln"].joined(separator: ".")
 }
 
@@ -91,6 +91,8 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(AccessToken.accountTenant(inJWT: token) == Tenants.other)
         let guest = madeUpToken(tenant: Tenants.other, object: "robin-guest", guestFrom: Tenants.home.uppercased())
         #expect(AccessToken.accountTenant(inJWT: guest) == Tenants.home)
+        // A personal Microsoft account's names its identity provider.
+        #expect(AccessToken.accountTenant(inJWT: madeUpToken(tenant: Tenants.other, guestFrom: "live.com")) == "live.com")
         // What the token says counts, over what the Azure CLI says it asked for.
         let parsed = try AzureCLITokenProvider.parseToken(
             Data(#"{"accessToken": "\#(guest)", "tenant": "\#(Tenants.third)", "expires_on": 4102444800}"#.utf8), now: t(0)
@@ -184,6 +186,20 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
             try await provider.token()
         }
         #expect(cli.asked == [nil, Tenants.other, nil])
+    }
+
+    @Test func aPersonalAccountsDirectoryWantingYouToSignInAgainIsntSomeoneElses() async throws {
+        // A personal Microsoft account, a guest in each directory: its tokens name live.com, not a directory.
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home], accountFrom: "live.com")
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        #expect(try await provider.token().accountTenant == "live.com")
+        cli.signIn(to: Tenants.other)
+        cli.expire(Tenants.home)
+        await provider.invalidate()
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.")) {
+            try await provider.token()
+        }
+        #expect(cli.asked == [nil, Tenants.home, nil])
     }
 
     @Test func someoneElsesSignInDropsTheLastAccountsTokens() async throws {
@@ -340,7 +356,7 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         // A directory's ID only goes where signing in needs it.
         #expect(!problem.message.contains(Tenants.other) && !problem.message.contains(Tenants.third))
         #expect(problem.signInTenant == Tenants.other)
-        #expect(problem.signInCommand == "az login --tenant \(Tenants.other)")
+        #expect(problem.signInCommand == "az login --tenant \(Tenants.other) --allow-no-subscriptions")
         #expect(problem.offersSignIn && !problem.needsSignIn)
 
         let one = PulseProblem.from(.otherDirectory(organization: "fabrikam", tenant: Tenants.other))
@@ -354,7 +370,7 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         ]
         #expect(PulseProblem.organizations(twice)?.message == "fabrikam is in a directory your Azure CLI isn't signed in to.")
         #expect(PulseProblem.organizations([]) == nil)
-        #expect(PulseProblem.signedOut("").signInCommand == "az login")
+        #expect(PulseProblem.signedOut("").signInCommand == "az login --allow-no-subscriptions")
         #expect(PulseProblem.offline.signInCommand == nil)
     }
 
@@ -509,6 +525,16 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(await OrganizationDiscovery.access(to: "locked", client: client) == .unreadable(.forbidden))
         #expect(await OrganizationDiscovery.access(to: "offline", client: client) == .unchecked(.offline))
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    @Test func anOrganizationThatCantBeToldYoursIsWatched() async {
+        let server = StubServer()
+        server.on("/_apis/profile/profiles/me") { _ in .failure(.notConnectedToInternet) }
+        server.on("/locked/_apis/connectionData") { _ in .status(403) }
+        // Its list says why it can't be read, once it's watched.
+        let access = await OrganizationDiscovery.access(to: "locked", client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home)))
+        #expect(access == .unchecked(.offline))
+        #expect(access.watches)
     }
 
     @Test func saysWhyAnOrganizationIsntAddedAndWhereAProjectsOrganizationIs() throws {

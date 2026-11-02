@@ -10,8 +10,8 @@ public struct AccessToken: Sendable, Equatable {
     /// The directory (a Microsoft Entra tenant's ID, lowercased) it's for, when known: Azure DevOps reads an
     /// organization only with a token from the organization's own directory.
     public var tenant: String?
-    /// The directory the account itself is in, when known: for a guest from another directory, that one; otherwise
-    /// the token's own.
+    /// The directory the account itself is in, when known: for a guest from another directory, that one, or for one
+    /// from elsewhere, such as a personal Microsoft account, its identity provider; otherwise the token's own.
     public var accountTenant: String?
 
     public init(value: String, expiresOn: Date, account: String? = nil, tenant: String? = nil, accountTenant: String? = nil) {
@@ -38,11 +38,13 @@ public struct AccessToken: Sendable, Equatable {
     }
 
     /// The directory a Microsoft Entra token's account is in, lowercased: for a guest from another directory, the one
-    /// its `idp` names, such as `https://sts.windows.net/<tenant>/`; otherwise the token's own. Nil when it doesn't say.
+    /// its `idp` names, such as `https://sts.windows.net/<tenant>/`, or, for one from elsewhere, such as a personal
+    /// Microsoft account, its identity provider (`live.com`); otherwise the token's own. Nil when it doesn't say.
     public static func accountTenant(inJWT token: String) -> String? {
         guard let claims = claims(inJWT: token) else { return nil }
-        guard let idp = claims["idp"] as? String else { return tenant(inJWT: token) }
-        return idp.split(separator: "/").map(String.init).first(where: { UUID(uuidString: $0) != nil })?.lowercased()
+        guard let idp = claims["idp"] as? String, !idp.isEmpty else { return tenant(inJWT: token) }
+        let directory = idp.split(separator: "/").map(String.init).first(where: { UUID(uuidString: $0) != nil })
+        return (directory ?? idp).lowercased()
     }
 
     /// The directory in an account, as `account(inJWT:)` writes it. Nil when it doesn't say.

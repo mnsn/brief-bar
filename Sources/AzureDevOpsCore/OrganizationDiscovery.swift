@@ -148,7 +148,13 @@ public enum OrganizationDiscovery {
             case .notFound:
                 return .notYours
             case .unauthorized, .forbidden:
-                guard let yours = try? await memberships(client: client) else { return .unreadable(error) }
+                let yours: [String]
+                do {
+                    yours = try await memberships(client: client)
+                } catch {
+                    // Whether it's yours can't be told now: it's watched, and its list says why it can't be read.
+                    return .unchecked((error as? ADOError) ?? .network(error.localizedDescription))
+                }
                 let isYours = yours.contains { $0.caseInsensitiveCompare(organization) == .orderedSame }
                 return isYours ? .unreadable(error) : .notYours
             default:

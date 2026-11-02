@@ -106,7 +106,8 @@ actor AzureDevOpsReader {
     static func describe(_ error: Error) -> String {
         guard let error = error as? ADOError else { return error.localizedDescription }
         guard case .otherDirectory(let organization, let tenant) = error else { return error.description }
-        return "\(organization) is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(tenant), then ask again."
+        return "\(organization) is in a directory your Azure CLI isn't signed in to. "
+            + "Run az login --tenant \(tenant) --allow-no-subscriptions, then ask again."
     }
 
     /// Reads unless what it read is fresh; a call that comes while it reads waits for that read.
@@ -377,7 +378,9 @@ actor AzureDevOpsReader {
             case .failure(let error):
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
-                if case .auth(.signedOut) = error { throw MCPToolError("You're signed out of the Azure CLI. Run az login, then ask again.") }
+                if case .auth(.signedOut) = error {
+                    throw MCPToolError("You're signed out of the Azure CLI. Run az login --allow-no-subscriptions, then ask again.")
+                }
                 if case .otherDirectory = error { throw MCPToolError(AzureDevOpsReader.describe(error)) }
                 throw MCPToolError(WorkItemDetailsStore.message(for: error))
             }

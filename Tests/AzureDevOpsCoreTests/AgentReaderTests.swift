@@ -106,7 +106,7 @@ import Testing
             _ = try await agent.needsYou()
             Issue.record("Read without signing in")
         } catch let error as MCPToolError {
-            #expect(error.description == "Sign in to the Azure CLI to see your pull requests. Run az login, then ask again.")
+            #expect(error.description == "Sign in to the Azure CLI to see your pull requests. Run az login --allow-no-subscriptions, then ask again.")
         } catch {
             Issue.record("Unexpected \(error)")
         }
@@ -125,7 +125,7 @@ import Testing
         ) {}
         let read = await reader.pullRequests(now: now)
         #expect(read.items.map { $0.key.number } == [1])
-        #expect(read.problem == "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other), then ask again in a minute.")
+        #expect(read.problem == "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other) --allow-no-subscriptions, then ask again in a minute.")
         // The others were read: calls within the minute share that read, as when any organization can't be read.
         let once = server.requests.count
         _ = await reader.pullRequests(now: now.addingTimeInterval(30))
