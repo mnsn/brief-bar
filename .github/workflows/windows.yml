@@ -1,9 +1,9 @@
 name: Windows
 
 # BriefBar for Windows (windows/), on pushes to main that change it, on every pull request, and when started by hand.
-# Checks formatting, tests BriefBar.Core and builds the WinUI 3 app for x64 and Arm64 on Windows. The macOS CI doesn't
-# build it, and this doesn't build the Mac app. A pull request that doesn't change it skips the build, which counts as
-# passing, so main can require this check.
+# Checks formatting, tests BriefBar.Core, builds the WinUI 3 app for x64 and Arm64 on Windows and checks its third-party
+# notices. The macOS CI doesn't build it, and this doesn't build the Mac app. A pull request that doesn't change it skips
+# the build, which counts as passing, so main can require this check.
 on:
   # With the repository's settings that its format check applies (scripts/ci-changes.sh).
   push:
@@ -83,3 +83,11 @@ jobs:
 
       - name: Build for Arm64
         run: dotnet build BriefBar/BriefBar.csproj --configuration Release --runtime win-arm64
+
+      # Every file in both builds that BriefBar doesn't build itself must be in THIRD-PARTY-NOTICES.md, in the table of
+      # the package it comes from, with the version built.
+      - name: Check the third-party notices
+        run: >-
+          scripts/check-notices.ps1 -Output
+          BriefBar/bin/Release/net10.0-windows10.0.26100.0/win-x64,
+          BriefBar/bin/Release/net10.0-windows10.0.26100.0/win-arm64
