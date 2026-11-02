@@ -22,7 +22,7 @@ public sealed class ReadableTintTests
                     {
                         for (var hue = 0; hue < 360; hue += saturation == 0 ? 360 : 30)
                         {
-                            colors.Add(item: (alpha << 24) | Hsl(hue: hue, saturation: saturation, lightness: lightness));
+                            colors.Add(item: (alpha << 24) | (Hsl(hue: hue, saturation: saturation, lightness: lightness) & 0x00FFFFFFu));
                         }
                     }
                 }
