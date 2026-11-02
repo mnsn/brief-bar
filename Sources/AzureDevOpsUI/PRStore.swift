@@ -68,6 +68,8 @@ final class PRStore: ObservableObject {
     private var delivered: Set<String> = []
     private var lastDiscovery: Date?
     private var discoveryProblem: PulseProblem?
+    /// Checking the organizations you're adding, while it runs: by name, in lowercase.
+    private var accessChecks: [String: Task<Void, Never>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -386,6 +388,8 @@ final class PRStore: ObservableObject {
         ticker = nil
         monitor?.cancel()
         monitor = nil
+        accessChecks.values.forEach { $0.cancel() }
+        accessChecks = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -509,9 +513,21 @@ final class PRStore: ObservableObject {
         }
     }
 
-    /// Whether your sign-in can read an organization you're adding, and if not, why.
-    func access(to organization: String) async -> OrganizationDiscovery.Access {
-        await OrganizationDiscovery.access(to: organization, client: client)
+    /// Whether your sign-in can read an organization you're adding, and if not, why: it's watched unless it can't be
+    /// read for a reason that neither signing in nor waiting fixes, then `found` hears what the check found. Stopping
+    /// Azure DevOps cancels it, and then nothing is watched or told.
+    func add(organization name: String, found: @escaping (OrganizationDiscovery.Access) -> Void) {
+        // Adding it again checks again; adding another checks that one too.
+        let key = name.lowercased()
+        accessChecks[key]?.cancel()
+        accessChecks[key] = Task { [weak self] in
+            guard let self else { return }
+            let access = await OrganizationDiscovery.access(to: name, client: client)
+            guard !Task.isCancelled else { return }
+            accessChecks[key] = nil
+            if access.watches, !settings.isWatching(name) { settings.toggleOrganization(name) }
+            found(access)
+        }
     }
 
     /// Finds your organizations, and watches the ones where you have pull requests.

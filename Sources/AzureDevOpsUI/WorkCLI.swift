@@ -51,7 +51,7 @@ enum WorkCLI {
                     let list = try await client.get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
                     teams += list.value.compactMap { TeamRef(organization: organization, $0) }
                 } catch {
-                    return .failure(ErrorMessage("Can't read your teams in \(organization): \((error as? ADOError)?.description ?? error.localizedDescription)"))
+                    return .failure(ErrorMessage("Can't read your teams in \(organization): \(AzureDevOpsCommandLine.describe(error))"))
                 }
             }
             return .success(teams)
@@ -154,7 +154,7 @@ enum WorkCLI {
                         .value.compactMap { TeamRef(organization: organization, $0) }
                         .sorted { ($0.projectName.lowercased(), $0.name.lowercased()) < ($1.projectName.lowercased(), $1.name.lowercased()) }
                 } catch {
-                    return .failure(ErrorMessage("Can't read your teams in \(organization): \((error as? ADOError)?.description ?? error.localizedDescription)"))
+                    return .failure(ErrorMessage("Can't read your teams in \(organization): \(AzureDevOpsCommandLine.describe(error))"))
                 }
                 for team in teams {
                     let current = try? await client.get(ADOEndpoint.currentIteration(team: team), as: ADOList<ADOIteration>.self)
@@ -292,7 +292,7 @@ enum WorkCLI {
             }
             return 0
         case .failure(let error):
-            fputs("\(error.description)\n", stderr)
+            fputs("\(AzureDevOpsCommandLine.describe(error))\n", stderr)
             return 1
         }
     }

@@ -633,6 +633,8 @@ private struct AddPipelineSheet: View {
     @LocalState private var results: [PipelineRef] = []
     @LocalState private var isSearching = false
     @LocalState private var error: String?
+    /// When a link's organization is in a directory the Azure CLI isn't signed in to: a way to sign in there.
+    @LocalState private var directoryProblem: PulseProblem?
     @LocalState private var pending: Task<Void, Never>?
 
     var body: some View {
@@ -704,10 +706,18 @@ private struct AddPipelineSheet: View {
     @ViewBuilder
     private var list: some View {
         if let error {
-            Label(error, systemImage: "exclamationmark.triangle")
-                .font(style: .body)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 10) {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(style: .body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let directoryProblem {
+                    Button("Sign In…") { store.signIn(for: directoryProblem) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {
             Text("Choose a project to search in.")
                 .font(style: .body)
@@ -778,13 +788,18 @@ private struct AddPipelineSheet: View {
             case .success(let found):
                 results = found
                 error = nil
+                directoryProblem = nil
             case .failure(.notFound) where link != nil, .failure(.forbidden) where link != nil:
                 // Says there's no pipeline there, in the list.
                 results = []
                 error = nil
+                directoryProblem = nil
             case .failure(let failure):
                 results = []
-                error = failure.description
+                // One in a directory to sign in to names its organization, with a way to sign in there.
+                let problem = PulseProblem.from(failure)
+                directoryProblem = problem.signInTenant == nil ? nil : problem
+                error = problem.signInTenant == nil ? failure.description : problem.message
             }
         }
     }

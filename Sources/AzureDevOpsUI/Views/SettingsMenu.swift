@@ -202,11 +202,7 @@ enum OrganizationPrompt {
             settings.toggleOrganization(name)
             return
         }
-        Task {
-            let access = await store.access(to: name)
-            if access.watches, !settings.isWatching(name) {
-                settings.toggleOrganization(name)
-            }
+        store.add(organization: name) { access in
             guard let explanation = access.explanation(for: name) else { return }
             let alert = NSAlert()
             alert.messageText = explanation.title
@@ -216,8 +212,7 @@ enum OrganizationPrompt {
                 alert.addButton(withTitle: "Not Now")
             }
             NSApp.activate()
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn, let tenant = access.signInTenant {
+            if alert.runModal() == .alertFirstButtonReturn, let tenant = access.signInTenant {
                 store.signIn(toTenant: tenant)
             }
         }

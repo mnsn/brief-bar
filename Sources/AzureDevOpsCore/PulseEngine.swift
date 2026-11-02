@@ -80,18 +80,23 @@ public enum PulseProblem: Sendable, Equatable {
     }
 
     /// What's wrong when these organizations couldn't be read, while others could: signing in to a directory, which
-    /// fixes those in it, comes first; then each of the rest, with why. Nil when there are none.
+    /// fixes those in it, comes first; then each of the rest, with why: the first reason for each, however its name is
+    /// spelled. Nil when there are none.
     public static func organizations(_ failures: [(organization: String, error: ADOError)]) -> PulseProblem? {
-        guard !failures.isEmpty else { return nil }
+        var unique: [(organization: String, error: ADOError)] = []
+        for failure in failures where !unique.contains(where: { $0.organization.lowercased() == failure.organization.lowercased() }) {
+            unique.append(failure)
+        }
+        guard !unique.isEmpty else { return nil }
         var elsewhere: [(organization: String, tenant: String)] = []
-        for failure in failures {
+        for failure in unique {
             if case .otherDirectory(_, let tenant) = failure.error {
                 elsewhere.append((organization: failure.organization, tenant: tenant))
             }
         }
-        guard let tenant = elsewhere.first?.tenant else { return .someOrganizations("Couldn't read \(reasons(failures)).") }
+        guard let tenant = elsewhere.first?.tenant else { return .someOrganizations("Couldn't read \(reasons(unique)).") }
         let together = elsewhere.filter { $0.tenant == tenant }.map { $0.organization }
-        let rest = failures.filter { !together.contains($0.organization) }
+        let rest = unique.filter { !together.contains($0.organization) }
         return .otherDirectory(organizations: together, tenant: tenant, others: rest.isEmpty ? nil : "Couldn't read \(reasons(rest)).")
     }
 
@@ -545,7 +550,7 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
-        await addLinked(to: &listed, at: startedAt)
+        let linkedElsewhere = await addLinked(to: &listed, at: startedAt)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
@@ -569,9 +574,9 @@ public actor PulseEngine {
         refreshedAt = now()
         if let throttled {
             problem = PulseProblem.from(throttled)
-        } else if !errors.isEmpty {
+        } else if !errors.isEmpty || !linkedElsewhere.isEmpty {
             // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
-            problem = PulseProblem.organizations(errors)
+            problem = PulseProblem.organizations(errors + linkedElsewhere)
         } else {
             problem = nil
         }
@@ -581,14 +586,18 @@ public actor PulseEngine {
     /// first, then the ones read longest ago. Each stays listed as it was last read in between. One that's closed
     /// or couldn't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest wait for the next
     /// refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores
-    /// their case, as Azure DevOps does.
-    private func addLinked(to listed: inout [PRKey: Listed], at date: Date) async {
+    /// their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to is read at
+    /// the next refresh, with the others there, rather than an hour later, since signing in there is what reads it:
+    /// those organizations are returned, to say so.
+    private func addLinked(to listed: inout [PRKey: Listed], at date: Date) async -> [(organization: String, error: ADOError)] {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
         let due = wanted
             .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
             .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
+        var elsewhere: [(organization: String, error: ADOError)] = []
         for key in due.prefix(10) {
+            if elsewhere.contains(where: { $0.organization.lowercased() == key.organization.lowercased() }) { continue }
             do {
                 let me: String
                 if let known = identities[key.organization] {
@@ -613,6 +622,9 @@ public actor PulseEngine {
             } catch ADOError.throttled {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
                 break
+            } catch ADOError.otherDirectory(let organization, let tenant) {
+                // Not this pull request's failure either: it stays as it was last read, until you sign in there.
+                elsewhere.append((organization: key.organization, error: .otherDirectory(organization: organization, tenant: tenant)))
             } catch {
                 linkedFailures[key] = date
                 // Gone, or no access: nothing to list. Otherwise it stays as last read.
@@ -627,6 +639,7 @@ public actor PulseEngine {
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
+        return elsewhere
     }
 
     /// Without organizations to watch or pull requests sent to you, there's nothing to read, or to list.

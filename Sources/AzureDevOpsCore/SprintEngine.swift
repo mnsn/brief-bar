@@ -81,6 +81,9 @@ public actor SprintEngine {
     /// Organization → your identity ID there.
     private var identities: [String: String] = [:]
     private var teams: [String: (teams: [TeamRef], readAt: Date)] = [:]
+    /// The organizations whose teams couldn't be read, in a directory the Azure CLI isn't signed in to: the sprint can't
+    /// be looked for there until you sign in.
+    private var teamsElsewhere: [(organization: String, error: ADOError)] = []
     private var foundTeam: TeamRef?
     /// Teams checked for a sprint going on today, and when.
     private var checkedTeams: Date?
@@ -274,13 +277,15 @@ public actor SprintEngine {
         }
         let date = now()
         try await loadTeams(configuration.organizations, at: date)
+        // Shown with the sprint, or without one: its team may be there.
+        let elsewhere = PulseProblem.organizations(teamsElsewhere)
         guard let team = try await chosenTeam(configuration, at: date) else {
             board = nil
-            return nil
+            return elsewhere
         }
         guard let sprint = try await currentSprint(of: team, at: date) else {
             board = nil
-            return nil
+            return elsewhere
         }
         let me = try await identity(in: team.organization)
         let setup = try await boardSetup(of: team)
@@ -301,15 +306,16 @@ public actor SprintEngine {
             items += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
         }
         // The team may have changed while this loaded.
-        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return nil }
+        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return elsewhere }
         board = SprintBoard.build(team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes)
-        return nil
+        return elsewhere
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
-    /// teams it had.
+    /// teams it had; one in a directory the Azure CLI isn't signed in to is tried again every refresh, and said.
     private func loadTeams(_ organizations: [String], at date: Date) async throws {
         var lastError: ADOError?
+        var elsewhere: [(organization: String, error: ADOError)] = []
         for organization in organizations where teams[organization].map({ date.timeIntervalSince($0.readAt) > Self.teamsLifetime }) ?? true {
             do {
                 let list = try await get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
@@ -319,11 +325,14 @@ public actor SprintEngine {
             } catch let error as ADOError {
                 switch error {
                 case .forbidden, .notFound: teams[organization] = ([], date)
+                case .otherDirectory: elsewhere.append((organization: organization, error: error))
                 default: lastError = error
                 }
             }
         }
-        if let lastError, allTeams.isEmpty { throw lastError }
+        teamsElsewhere = elsewhere
+        // With no teams at all, signing in to a directory is what to do first.
+        if allTeams.isEmpty, let error = elsewhere.first?.error ?? lastError { throw error }
     }
 
     private var allTeams: [TeamRef] {
@@ -357,8 +366,9 @@ public actor SprintEngine {
         }
         guard candidates.count > 1 else {
             foundTeam = candidates.first?.team
-            // None has a sprint today: don't look again for a while, unless some couldn't be read.
-            if foundTeam == nil && !incomplete { checkedTeams = date }
+            // None has a sprint today: don't look again for a while, unless some couldn't be read, or some organizations'
+            // teams are in a directory to sign in to.
+            if foundTeam == nil && !incomplete && teamsElsewhere.isEmpty { checkedTeams = date }
             return foundTeam
         }
         var best: (team: TeamRef, mine: Int)?
@@ -400,6 +410,7 @@ public actor SprintEngine {
     private func forgetAccount() {
         identities = [:]
         teams = [:]
+        teamsElsewhere = []
         foundTeam = nil
         checkedTeams = nil
         sprints = [:]

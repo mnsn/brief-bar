@@ -172,6 +172,14 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         problem.signInCommand.map { "\(problem.message) Run \($0)." } ?? problem.message
     }
 
+    /// What went wrong, as the command line says it: for an organization in a directory the Azure CLI isn't signed in
+    /// to, which one, and what to run.
+    static func describe(_ error: Error) -> String {
+        guard let error = error as? ADOError else { return error.localizedDescription }
+        if case .otherDirectory = error { return text(of: PulseProblem.from(error)) }
+        return error.description
+    }
+
     /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in

@@ -90,7 +90,16 @@ public struct ADOClient: Sendable {
         let organization = Self.organization(of: url)
         var tenant: String?
         if let organization { tenant = await directories.tenant(of: organization) }
-        var token = try await accessToken(tenant: tenant, for: organization)
+        var token: AccessToken
+        do {
+            token = try await accessToken(tenant: tenant, for: organization)
+        } catch ADOError.otherDirectory {
+            // Signed out of the directory it was in: with a token from yours, Azure DevOps names the one it's in now,
+            // which may be another.
+            if let organization { await directories.forget(organization) }
+            tenant = nil
+            token = try await accessToken(tenant: nil, for: organization)
+        }
         var refreshed = false
         var movedDirectory = false
         for _ in 0..<3 {
@@ -116,12 +125,12 @@ public struct ADOClient: Sendable {
                 return data
             case 200..<300, 401:
                 // 203 with a sign-in page is how Azure DevOps answers a request it didn't authenticate. An organization
-                // in another directory names its own: it's read with a token from there, from now on.
+                // in another directory names its own: once a token from there works, it's read with one from there.
                 if let organization, !movedDirectory, let other = Self.otherDirectory(of: http, token: token) {
                     movedDirectory = true
                     tenant = other
-                    await directories.remember(other, for: organization)
                     token = try await accessToken(tenant: other, for: organization)
+                    await directories.remember(other, for: organization)
                     continue
                 }
                 if !refreshed {
@@ -248,7 +257,8 @@ actor RateLimitGate {
 }
 
 /// Which directory each organization in another one than your sign-in's is in, as Azure DevOps named it when it
-/// rejected a token from yours: by organization name, which Azure DevOps compares ignoring case.
+/// rejected a token from yours, while a token from there works: by organization name, which Azure DevOps compares
+/// ignoring case.
 actor OrganizationDirectories {
     private var tenants: [String: String] = [:]
 
@@ -258,6 +268,10 @@ actor OrganizationDirectories {
 
     func remember(_ tenant: String, for organization: String) {
         tenants[organization.lowercased()] = tenant
+    }
+
+    func forget(_ organization: String) {
+        tenants[organization.lowercased()] = nil
     }
 }
 

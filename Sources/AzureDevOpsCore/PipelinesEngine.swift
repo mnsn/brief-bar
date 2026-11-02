@@ -309,7 +309,7 @@ public actor PipelinesEngine {
             groups["\(pipeline.organization)/\(pipeline.projectId)/\(pipeline.branch ?? "")", default: []].append(pipeline)
         }
         // Errors reading the lists, which say whether the page is up to date; a run's stages are extra.
-        var errors: [ADOError] = []
+        var errors: [(organization: String, error: ADOError)] = []
         var attemptedLists = 0
         var throttled: ADOError?
         for key in groups.keys.sorted() {
@@ -328,7 +328,7 @@ public actor PipelinesEngine {
                         .sorted { ($0.queuedAt ?? .distantPast, $0.id) > ($1.queuedAt ?? .distantPast, $1.id) }
                 }
             } catch let error as ADOError {
-                errors.append(error)
+                errors.append((organization: first.organization, error: error))
                 if case .throttled = error {
                     throttled = error
                     break
@@ -349,7 +349,7 @@ public actor PipelinesEngine {
                     pullRequestBuilds[pr.key] = builds
                 }
             } catch let error as ADOError {
-                errors.append(error)
+                errors.append((organization: pr.key.organization, error: error))
                 if case .throttled = error { throttled = error }
             }
         }
@@ -413,19 +413,18 @@ public actor PipelinesEngine {
         stages = stages.filter { latestKeys.contains($0.key) }
         attempts = attempts.filter { latestKeys.contains($0.key) }
 
+        // Signing in to a directory comes first, after waiting for Azure DevOps: it's the one thing you can do about it.
+        let elsewhere = errors.contains { if case .otherDirectory = $0.error { true } else { false } }
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
-        } else if let error = errors.first, errors.count == attemptedLists {
-            problem = PulseProblem.from(error)
+        } else if let first = errors.first, errors.count == attemptedLists {
+            problem = elsewhere ? PulseProblem.organizations(errors) : PulseProblem.from(first.error)
             failures += 1
-        } else if let error = errors.first {
-            if let elsewhere = errors.first(where: { if case .otherDirectory = $0 { true } else { false } }) {
-                // The other pipelines show: signing in to its organization's directory reads the rest.
-                problem = PulseProblem.from(elsewhere)
-            } else {
-                problem = .unreachable("Couldn't read some pipelines: \(error.description)")
-            }
+        } else if let first = errors.first {
+            // The other pipelines show.
+            problem = elsewhere
+                ? PulseProblem.organizations(errors) : PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
             failures = 0
         } else {
             problem = nil

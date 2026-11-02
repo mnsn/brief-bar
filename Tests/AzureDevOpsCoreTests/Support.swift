@@ -222,6 +222,11 @@ actor FakeTokens: AccessTokenProvider {
         others.insert(tenant)
     }
 
+    /// Signs out of another directory.
+    func signOut(of tenant: String) {
+        others.remove(tenant)
+    }
+
     func invalidate(tenant: String?) {
         invalidations += 1
     }

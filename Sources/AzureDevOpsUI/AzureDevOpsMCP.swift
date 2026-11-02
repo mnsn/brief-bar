@@ -101,6 +101,14 @@ actor AzureDevOpsReader {
         return "\(problem.message) Run \(command), then ask again\(keeps(problem) ? " in a minute" : "")."
     }
 
+    /// An error reading something on its own, as an agent is told it: for an organization in a directory the Azure CLI
+    /// isn't signed in to, which one, and what to run.
+    static func describe(_ error: Error) -> String {
+        guard let error = error as? ADOError else { return error.localizedDescription }
+        guard case .otherDirectory(let organization, let tenant) = error else { return error.description }
+        return "\(organization) is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(tenant), then ask again."
+    }
+
     /// Reads unless what it read is fresh; a call that comes while it reads waits for that read.
     private func readIfStale(now: Date) async {
         if let reading {
@@ -370,9 +378,7 @@ actor AzureDevOpsReader {
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
                 if case .auth(.signedOut) = error { throw MCPToolError("You're signed out of the Azure CLI. Run az login, then ask again.") }
-                if case .otherDirectory(_, let tenant) = error {
-                    throw MCPToolError("\(WorkItemDetailsStore.message(for: error)) Run az login --tenant \(tenant), then ask again.")
-                }
+                if case .otherDirectory = error { throw MCPToolError(AzureDevOpsReader.describe(error)) }
                 throw MCPToolError(WorkItemDetailsStore.message(for: error))
             }
         }
@@ -744,7 +750,7 @@ struct AzureDevOpsAgent: Sendable {
         do {
             pipeline = try await PipelineSearch.pipeline(for: found, client: client)
         } catch {
-            throw MCPToolError("Couldn't read that pipeline: \((error as? ADOError)?.description ?? error.localizedDescription)")
+            throw MCPToolError("Couldn't read that pipeline: \(AzureDevOpsReader.describe(error))")
         }
         guard await reader.pin(pipeline) else { return "“\(pipeline.name)” is pinned already." }
         return "Pinned “\(pipeline.name)”\(pipeline.branch.map { ", showing runs of \($0)" } ?? "")."

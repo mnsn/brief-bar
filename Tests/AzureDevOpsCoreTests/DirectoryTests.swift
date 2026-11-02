@@ -52,6 +52,15 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         _ = state.withLock { state in state.signedIn.remove(tenant) }
     }
 
+    /// Someone else signs in, with an account from `tenant`, to these directories.
+    func switchAccount(to tenant: String, signedIn: Set<String>) {
+        state.withLock { state in
+            state.accountTenant = tenant
+            state.signedIn = signedIn
+            state.defaultTenant = tenant
+        }
+    }
+
     func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
         let (tenant, isSignedIn, accountTenant) = state.withLock { state -> (String, Bool, String) in
             state.runs.append(arguments)
@@ -162,6 +171,48 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(cli.asked == [Tenants.home, nil, Tenants.other])
     }
 
+    @Test func yourGuestDirectoryWantingYouToSignInAgainIsntSomeoneElses() async throws {
+        // The Azure CLI's default was a directory your account is a guest in, from yours.
+        let cli = FakeAzureCLI(defaultTenant: Tenants.other, signedIn: [Tenants.other], accountFrom: Tenants.home)
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        #expect(try await provider.token().tenant == Tenants.other)
+        // You sign in to a third one, a guest there too; then the first wants you to sign in again.
+        cli.signIn(to: Tenants.third)
+        cli.expire(Tenants.other)
+        await provider.invalidate()
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.")) {
+            try await provider.token()
+        }
+        #expect(cli.asked == [nil, Tenants.other, nil])
+    }
+
+    @Test func someoneElsesSignInDropsTheLastAccountsTokens() async throws {
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other])
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        _ = try await provider.token()
+        #expect(try await provider.token(tenant: Tenants.other).accountTenant == Tenants.home)
+        // Someone from the third directory signs in, a guest in fabrikam's too.
+        cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other])
+        await provider.invalidate()
+        #expect(try await provider.token().tenant == Tenants.third)
+        // fabrikam's token was the last account's: it's asked for again, as theirs.
+        #expect(try await provider.token(tenant: Tenants.other).accountTenant == Tenants.third)
+        #expect(cli.asked == [nil, Tenants.other, Tenants.home, nil, Tenants.other])
+    }
+
+    @Test func anotherDirectorysTokenForSomeoneElseIsntKept() async throws {
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other])
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        _ = try await provider.token()
+        // Someone else signs in while yours is kept: a token from fabrikam's directory is theirs.
+        cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other])
+        #expect(try await provider.token(tenant: Tenants.other).accountTenant == Tenants.third)
+        // It isn't kept, and yours is asked for again, which tells who's signed in now.
+        _ = try await provider.token(tenant: Tenants.other)
+        #expect(try await provider.token().tenant == Tenants.third)
+        #expect(cli.asked == [nil, Tenants.other, Tenants.other, Tenants.home, nil])
+    }
+
     // MARK: Requests
 
     @Test func readsAnOrganizationInAnotherDirectoryWithATokenFromThere() async throws {
@@ -194,13 +245,36 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         // Not a sign-in a fresh token of yours fixes: nothing more is sent once the Azure CLI can't give one from there.
         #expect(server.requests.count == 1)
         #expect(await tokens.invalidations == 0)
+        // Until it can, each try asks Azure DevOps where it is, which may have changed, once.
         await #expect(throws: ADOError.otherDirectory(organization: "fabrikam", tenant: Tenants.other)) {
             try await client.get(url, as: ADOConnectionData.self)
         }
-        #expect(server.requests.count == 1)
+        #expect(server.requests.count == 2)
         // Once the Azure CLI is signed in there, it's read.
         await tokens.signIn(to: Tenants.other)
         #expect(try await client.get(url, as: ADOConnectionData.self).authenticatedUser.id == "ME")
+    }
+
+    @Test func followsAnOrganizationThatMovesToAnotherDirectory() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        await tokens.signIn(to: Tenants.third)
+        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
+        server.put("fabrikam", in: Tenants.other)
+        let client = server.client(tokens: tokens)
+        let url = ADOEndpoint.connectionData(organization: "fabrikam")
+        _ = try await client.get(url, as: ADOConnectionData.self)
+        // It moves to the third directory, and the Azure CLI signs out of the one it was in.
+        server.put("fabrikam", in: Tenants.third)
+        await tokens.signOut(of: Tenants.other)
+        _ = try await client.get(url, as: ADOConnectionData.self)
+        #expect(server.requests.map(\.tenant) == [Tenants.home, Tenants.other, Tenants.home, Tenants.third])
+        // Still signed in to the one it was in, it's followed all the same.
+        server.put("fabrikam", in: Tenants.other)
+        await tokens.signIn(to: Tenants.other)
+        _ = try await client.get(url, as: ADOConnectionData.self)
+        #expect(server.requests.map(\.tenant).suffix(2) == [Tenants.third, Tenants.other])
     }
 
     @Test func aTokenRejectedByItsOwnDirectoryIsStillUnauthorized() async {
@@ -273,6 +347,12 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(one.message == "fabrikam is in a directory your Azure CLI isn't signed in to.")
         let locked: [(organization: String, error: ADOError)] = [(organization: "locked", error: ADOError.forbidden)]
         #expect(PulseProblem.organizations(locked) == .someOrganizations("Couldn't read locked (No access to this organization.)."))
+        // One reason for each organization, however it's spelled, as when several of its pipelines couldn't be read.
+        let twice: [(organization: String, error: ADOError)] = [
+            (organization: "fabrikam", error: ADOError.otherDirectory(organization: "fabrikam", tenant: Tenants.other)),
+            (organization: "Fabrikam", error: ADOError.otherDirectory(organization: "Fabrikam", tenant: Tenants.other)),
+        ]
+        #expect(PulseProblem.organizations(twice)?.message == "fabrikam is in a directory your Azure CLI isn't signed in to.")
         #expect(PulseProblem.organizations([]) == nil)
         #expect(PulseProblem.signedOut("").signInCommand == "az login")
         #expect(PulseProblem.offline.signInCommand == nil)
@@ -313,6 +393,79 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem == .otherDirectory(
             organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read northwind (Azure DevOps answered with HTTP 500.)."
         ))
+    }
+
+    @Test func aPullRequestYouWatchInAnotherDirectorySaysSoAndIsReadOnceSignedInThere() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.serveOrganization(mine: [Fixture.pullRequest(1)])
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/git/pullrequests/9", json: Fixture.pullRequest(9, title: "Theirs", author: People.sam))
+        server.put("fabrikam", in: Tenants.other)
+        let engine = PulseEngine(
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [Fixture.org])
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey("fabrikam", 9)])
+        await engine.refreshNow()
+        var snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 1)])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        // Signed in there, it's read at the next refresh, rather than an hour later.
+        await tokens.signIn(to: Tenants.other)
+        await engine.refreshNow()
+        snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 1), PRKey("fabrikam", 9)])
+        #expect(snapshot.problem == nil)
+    }
+
+    @Test func pinnedPipelinesInAnotherDirectorySayWhichOrganization() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let contoso = PipelineRef(organization: "contoso", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        let fabrikam = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        let northwind = PipelineRef(organization: "northwind", projectId: "p1", projectName: "Shop", definitionId: 7, name: "deploy")
+        server.on("/contoso/p1/_apis/build/builds", json: Fixture.list([WorkFixture.build(42, definition: 31, queued: t(-hour))]))
+        server.on("/_apis/build/builds/42/timeline", json: WorkFixture.timeline([WorkFixture.record("s", "Stage", "Build", order: 1)]))
+        server.put("fabrikam", in: Tenants.other)
+        server.on("/northwind/p1/_apis/build/builds") { _ in .status(500) }
+        let others = "Couldn't read northwind (Azure DevOps answered with HTTP 500.)."
+        let engine = PipelinesEngine(
+            client: server.client(tokens: tokens), configuration: PipelinesEngine.Configuration(pipelines: [contoso, fabrikam, northwind])
+        ) { _ in }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        // contoso's still show; signing in to fabrikam's directory comes first, then why northwind's don't.
+        #expect(snapshot.statuses.first { $0.pipeline.organization == "contoso" }?.runs.map(\.id) == [42])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: others))
+
+        // With none read, one that failed before it doesn't hide it.
+        let failing = StubServer()
+        failing.on("/contoso/p1/_apis/build/builds") { _ in .status(500) }
+        failing.put("fabrikam", in: Tenants.other)
+        let none = await PipelinesEngine.loadOnce(
+            client: failing.client(tokens: FakeTokens(failing.id, tenant: Tenants.home)),
+            configuration: PipelinesEngine.Configuration(pipelines: [contoso, fabrikam])
+        )
+        #expect(none.problem == .otherDirectory(
+            organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read contoso (Azure DevOps answered with HTTP 500.)."
+        ))
+    }
+
+    @Test func theSprintSaysWhichOrganizationsTeamsAreInAnotherDirectory() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        server.put("fabrikam", in: Tenants.other)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        // Your team's sprint shows, and fabrikam's teams, which may have yours, say what to do.
+        #expect(snapshot.board?.sprint.name == "Sprint 7")
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
     }
 
     // MARK: Finding and adding organizations
