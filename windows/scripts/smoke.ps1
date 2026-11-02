@@ -6,11 +6,12 @@
 # made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, sorting by date and
 # back, and its page in Settings, whose Show To review in the bar changes what the bar counts; GitHub's panel, from its
 # made-up pull requests, with the Mac's groups, its foot and the account it reads as, rows that open, and its page in
-# Settings; Teams' two panels, from its made-up chats, with the Mac's groups, Recent folded, Mark all read, chats that
-# open and read, and its page in Settings, whose Show message previews off has chats say how many messages are unread;
-# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
-# panels; a second start while it starts opening its Overview; and every display's work area given back within a
-# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
+# Settings; Settings' Appearance, whose bar background goes from Automatic to a color of your own and back; Teams' two
+# panels, from its made-up chats, with the Mac's groups, Recent folded, Mark all read, chats that open and read, and its
+# page in Settings, whose Show message previews off has chats say how many messages are unread; Alt+F4 leaving a bar
+# alone; each bar keeping its display, its window open, as displays change, and still opening panels; a second start
+# while it starts opening its Overview; and every display's work area given back within a second of quitting, whether
+# from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
 # quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
@@ -398,6 +399,40 @@ function Test-GitHub($process, $bar) {
     Check ($chosen -eq 'Every 2 minutes') "which reads every 2 minutes, as it starts ($chosen)"
 }
 
+# Settings' General page, from Settings as GitHub's test leaves it, or from GitHub's panel: Appearance's bar background
+# starts Automatic, and Custom color offers a color of your own, with the bar still showing; then Automatic again. With
+# --demo, nothing is saved.
+function Test-Appearance($process, $bar) {
+    $named = { $A::RootElement.FindFirst($Scope::Children, [System.Windows.Automation.AndCondition]::new(
+                (Condition $A::ProcessIdProperty $process.Id), (Condition $A::NameProperty 'BriefBar Settings'))) }
+    $settings = & $named
+    if (-not $settings) {
+        Start-Sleep -Milliseconds 700
+        if (Open-GitHub $bar) { Invoke-Item (Get-Button $bar 'Settings') }
+        $settings = Wait-Until $named 5
+    }
+    $general = if ($settings) { Wait-Until { $settings.FindFirst($Scope::Descendants, [System.Windows.Automation.AndCondition]::new(
+                    (Condition $A::ControlTypeProperty $Type::ListItem), (Condition $A::NameProperty 'General'))) } 3 }
+    if ($general) { $general.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() }
+    $background = if ($general) { Wait-Until { $settings.FindFirst($Scope::Descendants, [System.Windows.Automation.AndCondition]::new(
+                    (Condition $A::ControlTypeProperty $Type::ComboBox), (Condition $A::NameProperty 'Bar background'))) } 3 }
+    $chosen = if ($background) { $background.GetCurrentPattern([System.Windows.Automation.SelectionPattern]::Pattern).Current.GetSelection() | ForEach-Object { $_.Current.Name } }
+    Check ($chosen -eq 'Automatic') "Settings' General page offers the bar's background, Automatic as it starts ($chosen)"
+    if ($chosen -ne 'Automatic') { return }
+    $choose = {
+        param([string] $name)
+        $background.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+        $item = Wait-Until { $background.FindFirst($Scope::Descendants, (Condition $A::NameProperty $name)) } 3
+        if ($item) { $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() }
+        try { $background.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Collapse() } catch { Write-Host "      couldn't close the bar background's list: $($_.Exception.Message)" }
+    }
+    & $choose 'Custom color'
+    $color = Wait-Until { Get-Button $settings 'Choose color' } 3
+    Check ($null -ne $color -and -not $process.HasExited -and $null -ne (Get-OverviewItem $bar)) 'Custom color offers a color of your own, and the bar shows it'
+    & $choose 'Automatic'
+    Check ($null -ne (Wait-Until { if (-not (Get-Button $settings 'Choose color')) { $true } } 3) -and -not $process.HasExited) 'and Automatic again'
+}
+
 # Opens one of Teams' panels under `$bar` by its item, `$item` ("Teams chats"), and returns its list, `$title` ("Chats").
 function Open-Teams($bar, [string] $item, [string] $title) {
     Invoke-Item (Get-Button $bar "${item}: *")
@@ -583,6 +618,7 @@ function Test-Running($process, $before) {
     Test-Copilot -process $process -bar $first
     Test-AzureDevOps -process $process -bar $first
     Test-GitHub -process $process -bar $first
+    Test-Appearance -process $process -bar $first
     # Last, as it leaves Settings open in front, which keeps a panel opened through UI Automation from coming to the
     # front, as Copilot's checks need it to.
     Test-Teams -process $process -bar $first

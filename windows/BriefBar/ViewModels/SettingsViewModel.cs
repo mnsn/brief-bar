@@ -18,11 +18,14 @@ public sealed class SettingsViewModel
         AzureDevOpsSettings azureDevOps,
         CopilotSettings copilot,
         GitHubSettings gitHub,
+        AppearanceSettingsViewModel appearance,
         ThemePalette palette,
         Action findOrganizations)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);
+        ArgumentNullException.ThrowIfNull(argument: appearance);
         this.sources = sources;
+        Appearance = appearance;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
         Teams = new TeamsSettingsViewModel(settings: teams);
         AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
@@ -40,6 +43,9 @@ public sealed class SettingsViewModel
     public CopilotSettingsViewModel Copilot { get; }
 
     public GitHubSettingsViewModel GitHub { get; }
+
+    /// What the bar shows behind its words.
+    public AppearanceSettingsViewModel Appearance { get; }
 
     public static string Intro =>
         "Every source is off until you turn it on. Each one first says what it reads, where it connects and what it needs, "

@@ -58,6 +58,7 @@ internal sealed class AppShell : IDisposable
         ticker.Interval = TimeSpan.FromSeconds(value: 15);
         ticker.Tick += (_, _) => Refresh();
         Look = ShellColors.Read(appsAreDark: AppsAreDark());
+        Surface = SurfaceNow();
         Palette = ThemePalette.For(theme: ShellTheme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
         BarPalette = BarPaletteFor(palette: Palette);
     }
@@ -82,6 +83,9 @@ internal sealed class AppShell : IDisposable
     /// How the bar and the panel look in Windows' colors, as the taskbar does.
     public ShellLook Look { get; private set; }
 
+    /// What the bar shows behind its words, as chosen in Settings: acrylic, or a color the desktop shows through.
+    public BarSurface Surface { get; private set; }
+
     /// The theme of the bar and the panel: Windows' mode, as the taskbar's, which can differ from the apps' mode that
     /// Settings follows.
     public ElementTheme ShellTheme => Look.IsDark ? ElementTheme.Dark : ElementTheme.Light;
@@ -102,6 +106,9 @@ internal sealed class AppShell : IDisposable
         });
         // Light, dark, accent and High Contrast changes; AccessibilitySettings' own event needs a UWP window.
         uiSettings.ColorValuesChanged += (_, _) => queue.TryEnqueue(callback: ColorsChanged);
+        // Transparency effects, turned on or off, and what you chose the bar to show.
+        uiSettings.AdvancedEffectsEnabledChanged += (_, _) => queue.TryEnqueue(callback: ColorsChanged);
+        appSources.Appearance.Changed += (_, _) => queue.TryEnqueue(callback: ColorsChanged);
         ArrangeBars();
         desktop.Start();
         ticker.Start();
@@ -144,6 +151,8 @@ internal sealed class AppShell : IDisposable
                 azureDevOps: appSources.AzureDevOps,
                 copilot: appSources.Copilot,
                 gitHub: appSources.GitHub,
+                appearance: new AppearanceSettingsViewModel(
+                    settings: appSources.Appearance, transparencyEffects: () => uiSettings.AdvancedEffectsEnabled, barColorNow: BarColorNow),
                 palette: Palette,
                 findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)));
             settings = new SettingsWindow(shell: this, viewModel: viewModel);
@@ -292,9 +301,10 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// Windows' colors changed: its mode or the apps', the accent, or High Contrast. The bars and the panel take on
-    /// Windows' mode and the taskbar's accent, and everything's colors follow. Windows says so twice, through
-    /// `UISettings` and to the bars' windows, and a change that's already shown is left alone.
+    /// Windows' colors changed: its mode or the apps', the accent, High Contrast or Transparency effects; or what you
+    /// chose the bar to show, or a Remote Desktop session came or went. The bars and the panel take on Windows' mode and
+    /// the taskbar's accent, the bars show what they should behind their words, and everything's colors follow. Windows
+    /// says so twice, through `UISettings` and to the bars' windows, and a change that's already shown is left alone.
     public void ColorsChanged()
     {
         if (quitting)
@@ -308,18 +318,25 @@ internal sealed class AppShell : IDisposable
             Log.Write(line: $"shell: dark {look.IsDark}, accent {look.UsesAccent}");
             panel.UseTheme(theme: ShellTheme);
         }
-        // The accent color may have changed too.
+        var surface = SurfaceNow();
+        if (surface != Surface)
+        {
+            Surface = surface;
+            Log.Write(line: $"bar: {surface.Material}, dark {surface.IsDark}");
+        }
         foreach (var bar in bars.Concat(second: spares))
         {
-            bar.UseLook(look: Look, accent: Accent);
+            bar.UseSurface(surface: Surface);
         }
-        ThemeChanged(theme: ShellTheme);
+        settings?.AppearanceChanged();
+        ThemeChanged();
     }
 
-    /// The bar's or the panel's theme changed, or Windows' High Contrast or accent color: everything's colors follow.
-    public void ThemeChanged(ElementTheme theme)
+    /// The bar's or the panel's theme changed, or Windows' High Contrast, its accent color or what the bar shows:
+    /// everything's colors follow.
+    public void ThemeChanged()
     {
-        var palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
+        var palette = ThemePalette.For(theme: ShellTheme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
         var barPalette = BarPaletteFor(palette: palette);
         if (palette.Matches(other: Palette) && barPalette.Matches(other: BarPalette))
         {
@@ -395,6 +412,8 @@ internal sealed class AppShell : IDisposable
         panel.Dismiss(reason: PanelCloseReason.DisplaysChanged);
         ArrangeBars();
         desktop.Check();
+        // Connecting over Remote Desktop, or at the PC again, changes the displays, and whether Windows draws acrylic.
+        ColorsChanged();
     }
 
     void PlaceBars(bool force)
@@ -433,18 +452,35 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// The bar's colors with `palette`: worked out against its background behind an item that's open and pointed at,
-    /// the accent color while the taskbar shows it; Windows' own in High Contrast.
+    /// The bar's colors with `palette`: for its words' theme on what it shows behind them, worked out against that
+    /// behind an item that's open and pointed at, over the wallpaper they stand out least on where it's see-through
+    /// (`BarSurface.WorkedOutAgainst`); Windows' own in High Contrast.
     ThemePalette BarPaletteFor(ThemePalette palette) =>
         palette.IsHighContrast
             ? palette
             : ThemePalette.For(
-                theme: palette.IsDark ? ElementTheme.Dark : ElementTheme.Light,
+                theme: Surface.IsDark ? ElementTheme.Dark : ElementTheme.Light,
                 isHighContrast: false,
                 settings: uiSettings,
-                background: StatePalette.BarBackground(
-                    accent: Look.UsesAccent ? ThemePalette.ArgbOf(color: Accent) : null,
-                    dark: palette.IsDark));
+                background: Surface.WorkedOutAgainst,
+                seeThrough: Surface.Material == BarMaterial.SeeThrough);
+
+    /// The color the bar shows now, which a color of your own starts from: as it shows through, or its flat color or the
+    /// accent's shade, as Automatic would show it see-through.
+    uint BarColorNow() => Surface is { Material: BarMaterial.SeeThrough, Color: { } shown }
+        ? shown
+        : ((Surface.Color ?? StatePalette.Flat(dark: Surface.IsDark)) & 0x00FFFFFFu) | StatePalette.SeeThroughAlpha;
+
+    /// What the bar shows behind its words now: what you chose, in Windows' colors, where Windows draws acrylic or not,
+    /// as over Remote Desktop, with Transparency effects on or off.
+    BarSurface SurfaceNow() => BarSurface.For(
+        background: appSources.Appearance.BarBackground,
+        customColor: appSources.Appearance.BarColor,
+        look: Look,
+        accent: ThemePalette.ArgbOf(color: Accent),
+        drawsAcrylic: User32.GetSystemMetrics(index: User32.SM_REMOTESESSION) == 0,
+        transparencyEffects: uiSettings.AdvancedEffectsEnabled,
+        highContrast: accessibility.HighContrast);
 
     /// Whether the apps' mode is dark, as `UISettings` says it now.
     bool AppsAreDark() => uiSettings.GetColorValue(desiredColor: UIColorType.Background).R < 128;
