@@ -165,8 +165,23 @@ public enum AppSessions {
         guard let snapshot = try? AppDatabase.load(at: CopilotPaths(root: home).database), let forks = snapshot.forks else {
             return .unreadable
         }
-        if let original = forks[id] { return .forked(from: original) }
+        if let fork = forks[id] { return .forked(from: fork.original) }
         return snapshot.sessions.contains { $0.id == id } ? .notAFork : .notListed
+    }
+}
+
+extension AppSessions {
+    /// The forks the app's database records of a session, made at `since` or later, read-only: their IDs, the newest
+    /// first; nil when it can't be read now, or records no forks.
+    public static func forks(of original: String, since: Date, home: URL) -> [String]? {
+        guard let snapshot = try? AppDatabase.load(at: CopilotPaths(root: home).database), let forks = snapshot.forks else {
+            return nil
+        }
+        return forks.filter { id, fork in
+            fork.original == original && isSessionID(id) && (fork.createdAt.map { $0 >= since } ?? false)
+        }
+        .sorted { ($0.value.createdAt ?? .distantPast) > ($1.value.createdAt ?? .distantPast) }
+        .map(\.key)
     }
 }
 

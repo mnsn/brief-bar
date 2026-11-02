@@ -1643,7 +1643,9 @@ session to load and 30 more for its extension, a minute for a send's result and 
 took about 22 seconds. To fork, the session's extension runs the app's own `fork_session`, which says the
 fork's session ID. BriefBar sends the fork the prompt only once the app's database records it as a fork
 of the session (`forked_from_session_id`, read-only), and the fork's own extension, which listens by the
-time the fork is made, takes it. Then the session, or the fork, shows the way BriefBar opens one: in the
+time the fork is made, takes it. When the extension couldn't name the fork it made, or didn't say how the
+fork went, the fork is the one the database records of the session since the request, if there's just one;
+with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
 app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
 it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
 Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and

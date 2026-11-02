@@ -188,6 +188,7 @@ extension CopilotTasksStore {
             },
             isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
             forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
+            forks: { original, since in AppSessions.forks(of: original, since: since, home: appHome) },
             mayGoOn: { [weak self] in
                 await MainActor.run { self?.maySendToSessions ?? false }
             }

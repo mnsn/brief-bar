@@ -267,6 +267,10 @@ import Testing
         let allowed = Mutex(true)
         /// The send is stopped as BriefBar asks whether it may go on, as when its window closes then.
         let stopsWhenAsked = Mutex(false)
+        /// The forks the app's database records, made since the time asked: nil while it can't be read.
+        let madeForks = Mutex<[String]?>(nil)
+        /// The times the forks were asked for since.
+        let forksSince = Mutex<[Date]>([])
 
         var sender: SessionSender.Effects {
             SessionSender.Effects(
@@ -276,6 +280,10 @@ import Testing
                 },
                 isHeld: { [self] id in held.withLock { $0.contains(id) } },
                 forkRecord: { [self] _ in record.withLock { $0 } },
+                forks: { [self] _, since in
+                    forksSince.withLock { $0.append(since) }
+                    return madeForks.withLock { $0 }
+                },
                 mayGoOn: { [self] in
                     if stopsWhenAsked.withLock({ $0 }) { withUnsafeCurrentTask { $0?.cancel() } }
                     return allowed.withLock { $0 }
@@ -577,6 +585,56 @@ import Testing
         forking.cancel()
         #expect(await forking.value == .forkedNotSent(fork: fork, .cancelled))
         #expect(forked.received.isEmpty)
+    }
+
+    /// The extension may fork the session but not name the fork, as when it can't read the fork's ID from what the app's
+    /// fork says: the one fork of the session that the app records since the request gets the prompt, as if it had. With
+    /// none, or more than one, there's no telling which, so nothing's sent.
+    @Test func findsTheForkItsExtensionCouldntName() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let original = FakeExtension(outbox: outbox.url, sessionId: session)
+        let forked = FakeExtension(outbox: outbox.url, sessionId: fork)
+        try original.listen()
+        try forked.listen()
+        original.start { _ in .failed("fork_failed", "The fork gave no session ID") }
+        forked.start()
+        defer {
+            original.stop()
+            forked.stop()
+        }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session, fork] }
+        let sender = sender(outbox, effects, timing: .patient.with { $0.confirm = 0.3 })
+        let before = Date()
+
+        effects.madeForks.withLock { $0 = [fork] }
+        #expect(await sender.forkAndSend("Try it another way", from: session) == .forkedAndSent(fork: fork))
+        #expect(forked.received.map(\.prompt) == ["Try it another way"])
+        // Made since the request: no earlier than when it was written, to the second.
+        let since = try #require(effects.forksSince.withLock { $0.last })
+        #expect(since <= before.addingTimeInterval(1))
+        #expect(since > before.addingTimeInterval(-2))
+
+        let failed = SendOutcome.notSent(.failed(.forkFailed, "The fork gave no session ID"))
+        effects.madeForks.withLock { $0 = [fork, other] }
+        #expect(await sender.forkAndSend("Try it", from: session) == failed)
+        effects.madeForks.withLock { $0 = [] }
+        #expect(await sender.forkAndSend("Try it", from: session) == failed)
+        // A database that can't be read is read again, then given up on.
+        effects.madeForks.withLock { $0 = nil }
+        #expect(await sender.forkAndSend("Try it", from: session) == failed)
+        #expect(forked.received.count == 1)
+
+        // Nor when the session can't be forked: nothing's looked for.
+        original.stop()
+        let unavailable = FakeExtension(outbox: outbox.url, sessionId: session)
+        unavailable.start { _ in .failed("fork_unavailable", "Not offered") }
+        defer { unavailable.stop() }
+        effects.madeForks.withLock { $0 = [fork] }
+        let asked = effects.forksSince.withLock { $0.count }
+        #expect(await sender.forkAndSend("Try it", from: session) == .notSent(.failed(.forkUnavailable, "Not offered")))
+        #expect(effects.forksSince.withLock { $0.count } == asked)
     }
 
     /// One that the session's extension doesn't do, or that can't be forked, isn't.

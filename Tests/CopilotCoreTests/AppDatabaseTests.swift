@@ -247,7 +247,9 @@ import BriefBarCore
                 "elsewhere": nil, "detached": nil, "moved": nil, "asked": "lead", "handed-over": "plan",
             ])
             // What each fork was forked from, for Send to a Fork to confirm the fork it made.
-            #expect(try AppDatabase.load(at: url).forks == ["fork": "lead"])
+            let forks = try AppDatabase.load(at: url).forks
+            #expect(forks?.mapValues(\.original) == ["fork": "lead"])
+            #expect(forks?["fork"]?.createdAt != nil)
 
             // Older app versions record no links: only the chats that started sessions are known.
             try db.exec("""

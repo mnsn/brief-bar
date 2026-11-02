@@ -93,6 +93,9 @@ public struct SessionSender: Sendable {
         public var isHeld: @Sendable (String) -> Bool
         /// What the app records of a session that's said to be a fork (`AppSessions.forkRecord`).
         public var forkRecord: @Sendable (String) -> ForkRecord
+        /// The forks the app records of a session, made at a given time or later (`AppSessions.forks`): nil when it can't
+        /// tell now.
+        public var forks: @Sendable (_ original: String, _ since: Date) -> [String]?
         /// Whether an extension that says it listens still runs (`CopilotOutbox.isLive`).
         public var isLive: @Sendable (OutboxListener) -> Bool
         /// Whether BriefBar may still send, as you turned it on: asked before each request, and while one waits for an
@@ -103,12 +106,14 @@ public struct SessionSender: Sendable {
         public init(
             open: @escaping @Sendable (String) async -> Bool, isHeld: @escaping @Sendable (String) -> Bool,
             forkRecord: @escaping @Sendable (String) -> ForkRecord,
+            forks: @escaping @Sendable (_ original: String, _ since: Date) -> [String]? = { _, _ in nil },
             isLive: @escaping @Sendable (OutboxListener) -> Bool = { CopilotOutbox.isLive($0) },
             mayGoOn: @escaping @Sendable () async -> Bool = { true }, now: @escaping @Sendable () -> Date = { Date() }
         ) {
             self.open = open
             self.isHeld = isHeld
             self.forkRecord = forkRecord
+            self.forks = forks
             self.isLive = isLive
             self.mayGoOn = mayGoOn
             self.now = now
@@ -156,18 +161,23 @@ public struct SessionSender: Sendable {
     }
 
     /// Forks the session, then sends the fork the prompt. The session itself gets no message: the app only notes the fork
-    /// in it.
+    /// in it. A fork its extension couldn't name, or didn't say it made, is the one fork of the session that the app's
+    /// database records since the request, if there's just one: otherwise there's no telling which, if any.
     public func forkAndSend(_ prompt: String, from session: String) async -> SendOutcome {
+        let forking = OutboxRequest.fork(session, now: effects.now())
         let fork: String
-        switch await request(.fork(session, now: effects.now())) {
-        case .failure(let why):
-            return .notSent(why)
+        switch await request(forking) {
         case .success(let result):
             guard let id = result.forkSessionId else { return .notSent(.failed(.forkFailed, nil)) }
+            guard await isConfirmed(id, asForkOf: session) else {
+                return Task.isCancelled ? .forkedNotSent(fork: id, .cancelled) : .notSent(.unconfirmedFork)
+            }
             fork = id
-        }
-        guard await isConfirmed(fork, asForkOf: session) else {
-            return Task.isCancelled ? .forkedNotSent(fork: fork, .cancelled) : .notSent(.unconfirmedFork)
+        case .failure(let why):
+            guard Self.mayHaveForked(why), let found = await theFork(of: session, madeSince: forking.createdAt) else {
+                return .notSent(why)
+            }
+            fork = found
         }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
         switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
@@ -257,6 +267,27 @@ public struct SessionSender: Sendable {
             if Task.isCancelled || effects.now().timeIntervalSince(start) > timing.confirm { return false }
             await pause()
         }
+    }
+
+    /// The app may have forked the session all the same: the extension couldn't read the fork's ID from what the app's
+    /// fork said, or didn't say how it went.
+    static func mayHaveForked(_ why: SendFailure) -> Bool {
+        switch why {
+        case .lost, .failed(.forkFailed, _): return true
+        default: return false
+        }
+    }
+
+    /// The one fork of the session that the app's database records, made since `since`, read again while it can't be read,
+    /// for a fork its extension didn't name: nil when there's none, or more than one, or the database can't be read in time.
+    func theFork(of original: String, madeSince since: Date) async -> String? {
+        let start = effects.now()
+        while !Task.isCancelled {
+            if let forks = effects.forks(original, since) { return forks.count == 1 ? forks.first : nil }
+            if effects.now().timeIntervalSince(start) > timing.confirm { return nil }
+            await pause()
+        }
+        return nil
     }
 
     private func liveListener(of session: String) -> OutboxListener? {
