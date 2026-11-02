@@ -387,6 +387,26 @@ final class MarkerCollector: Sendable {
         }
     }
 
+    /// LevelDB appends to its MANIFEST as it flushes and compacts, which doesn't make one that can't be read readable:
+    /// unlike a table being written, it counts once it has stayed unreadable for the full interval, though it grows.
+    @Test func confirmsAManifestThatCantBeReadThoughItKeepsGrowing() throws {
+        try withTemporaryDirectory { directory in
+            let manifest = directory.appendingPathComponent("MANIFEST-000011")
+            try Data(repeating: 7, count: 100).write(to: manifest)
+            let file = try #require(FileInfo(path: manifest.path))
+            let start = ContinuousClock.now
+            var tracker = UnreadableTableTracker(confirmation: 5)
+            #expect(tracker.update([manifest.path: file], at: start) == 0)
+
+            try Data(repeating: 7, count: 200).write(to: manifest)
+            let grown = try #require(FileInfo(path: manifest.path))
+            #expect(tracker.filesChanged)
+            #expect(tracker.update([manifest.path: grown], at: start.advanced(by: .seconds(3))) == 0)
+            #expect(!tracker.filesChanged)
+            #expect(tracker.update([manifest.path: grown], at: start.advanced(by: .seconds(5))) == 1)
+        }
+    }
+
     @Test func countsATableAsUnreadableOnlyWhenItStaysSo() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
