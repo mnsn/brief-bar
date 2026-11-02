@@ -679,6 +679,48 @@ private final class ExtensionStandIn: Sendable {
         #expect(!store.isWorking(inFolder: now))
     }
 
+    /// A task that went on with one of the app's sessions works where that session works now, which may have moved since
+    /// the task started: that checkout is the one that has to be free, and the one that stays as it is while the prompt is
+    /// on its way, rather than the task's.
+    @Test func usesTheCheckoutATasksAppSessionWorksInNow() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.showForTests = { _ in true }
+        let before = home.appendingPathComponent("checkouts/before", isDirectory: true)
+        let now = home.appendingPathComponent("checkouts/now", isDirectory: true)
+        for folder in [before, now] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let state = home.appendingPathComponent("session-state/\(session)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("cwd: \(now.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+        let run = CopilotRun(
+            id: session, workItem: nil, options: CopilotModel.standard, repository: before, worktree: before, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished, isAppSession: true
+        )
+        let task = SessionChoice(kind: .task(run), name: "Fix Comments", reasons: [.earlierTask])
+        let other = "c6666666-6666-4666-8666-66666666666d"
+
+        // A prompt is on its way to another session in the checkout it works in now: this one doesn't go.
+        store.deliveringFolders[other] = now
+        let busy = try #require(store.busyReason(for: task, in: now))
+        #expect(await store.deliver("Fix the comments", to: task) == .notSent(busy))
+        #expect(requests(home).isEmpty)
+
+        // Its task's own worktree is busy instead: it goes, and the checkout it works in now stays as it is meanwhile.
+        store.deliveringFolders[other] = before
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+        let sending = Task { await store.deliver("Fix the comments", to: task) }
+        for _ in 0..<400 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(store.deliveringFolders[session]?.standardizedFileURL.path == now.standardizedFileURL.path)
+        ext.start()
+        #expect(await sending.value == .sent)
+        #expect(ext.received == ["Fix the comments"])
+        #expect(store.deliveringFolders[session] == nil)
+    }
+
     /// A fork that didn't open as its prompt was written shows once the prompt has reached it.
     @Test func showsAForkThatDidntOpenOnceItHasThePrompt() async throws {
         let (store, home) = try store()

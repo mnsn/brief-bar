@@ -215,22 +215,24 @@ extension CopilotTasksStore {
         guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return .notSent(Self.cantSendNow) }
         let id = choice.id
         if forking, !choice.canFork { return .notSent("The Copilot app can't fork this session.") }
-        // Sending to it while Copilot works in it would fork its history; while Copilot works in its checkout, their work would mix.
-        if let busy = busyReason(for: choice) { return .notSent(busy) }
+        // Sending to it while Copilot works in it would fork its history; while Copilot works in the checkout it works in
+        // now, their work would mix.
+        if let busy = busyReason(for: choice, in: currentFolder(of: choice) ?? choice.folder) { return .notSent(busy) }
         guard !delivering.contains(id) else { return .notSent("BriefBar is sending it a prompt already.") }
         delivering.insert(id)
         defer { delivering.remove(id) }
         let reach = await reach(of: choice)
-        // Again, after that wait: Send Work to Copilot may have been turned off, or a task started in it, meanwhile.
+        // Again, after that wait: Send Work to Copilot may have been turned off, or a task started in it, meanwhile. Where it
+        // works now, where the window found it only when that can't be told now, is the checkout that has to be free, and
+        // that stays as it is until the prompt has gone, or been taken back.
         guard canSend, isOn, !hasStopped, let reach else { return .notSent(Self.cantSendNow) }
-        if let busy = busyReason(for: choice) { return .notSent(busy) }
+        let checkout = currentFolder(of: choice) ?? choice.folder
+        if let busy = busyReason(for: choice, in: checkout) { return .notSent(busy) }
         if let why = reach.whyNot(forking: forking) {
             return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, handOff: handOff)
         }
         if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
-        // Where it works now stays as it is until the prompt has gone, or been taken back: where the window found it, only
-        // when that can't be told now.
-        if let folder = folder(of: choice) ?? choice.folder { deliveringFolders[id] = folder }
+        if let checkout { deliveringFolders[id] = checkout }
         defer { deliveringFolders[id] = nil }
 
         let opened = SessionIDs()

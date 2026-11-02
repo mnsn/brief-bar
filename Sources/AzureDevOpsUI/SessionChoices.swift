@@ -154,10 +154,21 @@ extension CopilotTasksStore {
         }
     }
 
-    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its checkout, for a task BriefBar sent.
-    func busyReason(for choice: SessionChoice) -> String? {
+    /// The folder a session works in now, for a prompt sent to it through BriefBar's extension: the one the app's session
+    /// state says, for one of the app's sessions and for a task that went on with one, which may have moved since the task
+    /// started; an earlier task's own worktree otherwise.
+    func currentFolder(of choice: SessionChoice) -> URL? {
+        if case .task(let run) = choice.kind, run.isAppSession == true {
+            return AppSessions.folder(of: run.id, home: appHome) ?? run.worktree
+        }
+        return folder(of: choice)
+    }
+
+    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its checkout, for a task BriefBar sent. Its
+    /// checkout is the one in `folder` when given, or the one it works in (`folder(of:)`).
+    func busyReason(for choice: SessionChoice, in folder: URL? = nil) -> String? {
         if isWorking(inSession: choice.id) { return "Copilot is still working in it. Try again once it's done." }
-        if let folder = folder(of: choice), isWorking(inFolder: folder) {
+        if let folder = folder ?? self.folder(of: choice), isWorking(inFolder: folder) {
             return "Copilot is working in its checkout for another task BriefBar sent. Try again once that's done."
         }
         return nil
