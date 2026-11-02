@@ -11,6 +11,9 @@
   that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
   ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
   again once.
+- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
+  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
+  errors, which showed as `[31m`.
 
 ## 0.11.0 - 2026-11-02
 
@@ -22,6 +25,9 @@
   Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
   has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
   menu-bar list and widgets still open pull requests in Azure DevOps.
+- **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
+  clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
+  you like. It sends nothing, so the comments it quotes stay on **Needs You**.
 - **With Nest Sessions Under Their Parents, a finished parent stays in Running or Needs You while its child sessions do.**
   Its row says it's waiting for child sessions and how many need you or are running.
 - **GitHub's list says All quiet only once it has read all your pull requests.** It said so under a note
@@ -44,9 +50,24 @@
   offers to send the work there, rather than always starting a new session, and asks which you want
   unless you've said; asked in that very session, it can also fork it, so the work goes another way while
   the session stays as it is. Since agents get more, they wait until you've seen what they get now.
-- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
-  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
-  errors, which showed as `[31m`.
+- **Organizations in another directory.** When an Azure DevOps organization is in a directory (tenant)
+  your Azure CLI isn't signed in to, BriefBar says so and names it, rather than asking you to sign in
+  again, and its **Sign In…** signs in to that directory (`az login --tenant`). Your other
+  organizations' pull requests stay listed meanwhile, and once you've signed in there, BriefBar reads
+  both, still as you. **Add Organization…** now checks that your sign-in can read an organization as
+  you add it, and says why when it can't, with where a project's organization is when you entered a
+  project's name.
+- **Teams' read markers come only from the files Teams still uses.** Teams can leave behind a file it no
+  longer needs, which may hold a conversation it has since deleted. BriefBar read those files too, so a
+  deleted conversation's old read marker could come back; it now reads only the files Teams' database
+  lists, as Teams does. If that list is damaged, or names files that aren't there, the lists say some read
+  markers couldn't be read.
+- **A Teams account whose chats were never opened no longer says Teams' read markers have changed.** None
+  of its chats had a read marker yet, which BriefBar took for a Teams update that changed them. It now goes
+  by the field that holds one, which a chat never read has too.
+- **A damaged record in Teams' data says some read markers couldn't be read.** A record whose checksum
+  doesn't match may have held any chat's read marker, and the lists said nothing of it, so a chat you'd
+  read in Teams could stay unread here without a word.
 
 ## 0.10.2 - 2026-11-01
 

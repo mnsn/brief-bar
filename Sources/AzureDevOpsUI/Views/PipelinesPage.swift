@@ -42,7 +42,7 @@ struct PipelinesPage: View {
                 PageScroll {
                     VStack(alignment: .leading, spacing: 12) {
                         if let problem = pipelines.problem {
-                            ProblemView(problem: problem) { store.signIn() }
+                            ProblemView(problem: problem) { store.signIn(for: problem) }
                         }
                         if !store.merges.isEmpty {
                             PipelinesTitle(symbol: "arrow.triangle.merge", title: "After Your Merges", count: store.merges.count)
@@ -535,6 +535,10 @@ private struct AddPipelineSheet: View {
     @LocalState private var results: [PipelineRef] = []
     @LocalState private var isSearching = false
     @LocalState private var error: String?
+    /// When signing in fixes it, in an organization's directory or to the Azure CLI: a way to.
+    @LocalState private var signInProblem: PulseProblem?
+    /// When some organizations' projects couldn't be listed for want of a sign-in to their directory.
+    @LocalState private var projectsProblem: PulseProblem?
     @LocalState private var pending: Task<Void, Never>?
 
     var body: some View {
@@ -566,6 +570,20 @@ private struct AddPipelineSheet: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+            }
+            if let projectsProblem {
+                // Some organizations' projects aren't in the menu, whichever project is chosen: they wait on a sign-in to
+                // their directory.
+                HStack(spacing: 8) {
+                    Label(projectsProblem.message, systemImage: "exclamationmark.triangle")
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Sign In…") { store.signIn(for: projectsProblem) }
+                    Button("Try Again") { Task { await loadProjects() } }
+                }
+                .controlSize(.small)
             }
             list
         }
@@ -606,10 +624,27 @@ private struct AddPipelineSheet: View {
     @ViewBuilder
     private var list: some View {
         if let error {
-            Label(error, systemImage: "exclamationmark.triangle")
-                .font(style: .body)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 10) {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(style: .body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if let signInProblem {
+                        Button(signInProblem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: signInProblem) }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    // Once signed in there, or back online, the projects and the same search again.
+                    Button("Try Again") {
+                        Task {
+                            await loadProjects()
+                            search(after: 0)
+                        }
+                    }
+                }
+                .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {
             Text("Choose a project to search in.")
                 .font(style: .body)
@@ -642,7 +677,8 @@ private struct AddPipelineSheet: View {
     private func loadProjects() async {
         suggested = pipelines.suggestedProjects(pullRequests: store.items, teams: sprint.teams)
         if project == nil { project = suggested.first }
-        let all = await pipelines.allProjects()
+        let (all, problem) = await pipelines.allProjects()
+        projectsProblem = problem
         others = all.filter { candidate in
             !suggested.contains { $0.organization == candidate.organization && $0.name.caseInsensitiveCompare(candidate.name) == .orderedSame }
         }
@@ -680,13 +716,19 @@ private struct AddPipelineSheet: View {
             case .success(let found):
                 results = found
                 error = nil
+                signInProblem = nil
             case .failure(.notFound) where link != nil, .failure(.forbidden) where link != nil:
                 // Says there's no pipeline there, in the list.
                 results = []
                 error = nil
+                signInProblem = nil
             case .failure(let failure):
                 results = []
-                error = failure.description
+                // One that signing in fixes comes with a way to: one in a directory to sign in to names its
+                // organization, and your own directory wanting you to sign in again signs in there.
+                let problem = PulseProblem.from(failure)
+                signInProblem = problem.offersSignIn ? problem : nil
+                error = PulseProblem.isOtherDirectory(failure) ? problem.message : failure.description
             }
         }
     }

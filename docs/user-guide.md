@@ -39,7 +39,9 @@ consent.
   macOS gives the access to all of BriefBar, once. A later source that reads Notification Center
   (Outlook, say) would use it too, but only if you turn that source on.
 - **Azure DevOps** signs in with the Azure CLI: `brew install azure-cli`, then `az login`, or click
-  **Sign In…**, which opens Terminal to run it. macOS asks whether BriefBar may post notifications.
+  **Sign In…**, which opens Terminal to run it. An organization in another directory (tenant) than your
+  sign-in's says so, and its **Sign In…** runs `az login --tenant` for that directory; your other
+  organizations stay listed meanwhile. macOS asks whether BriefBar may post notifications.
   **Pull Requests Sent in Chats**, off until you turn it on in its settings, also needs Full Disk
   Access, the same window as Teams'.
 - **Copilot** needs nothing.
@@ -537,6 +539,9 @@ commit only if that's safe, and to ask you first otherwise; a work item's is Bri
 the same way before it branches, rather than the one in Settings, which is for a new worktree. Once you
 choose a session or change the prompt, BriefBar doesn't change where it goes. A prompt you changed stays
 as you wrote it when you choose another session, and **Reset** goes back to the one for that session.
+**Copy**, above the prompt, puts it on the clipboard as it stands, with your changes, whatever you chose
+under **Where It Goes**, to paste where you like. It sends nothing, so the comments it quotes stay on
+**Needs You**.
 
 ### GitHub Copilot
 
@@ -804,7 +809,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
 | | Idle After No Activity For | 1 week, 2 weeks, 1 month, never |
-| | Organizations | which to watch; **Add Organization…** takes a name or any link from it |
+| | Organizations | which to watch; **Add Organization…** takes a name or any link from it, and checks that your sign-in can read it: it says why when it can't, such as an organization in another directory, which **Sign In…** fixes, or a project's name, whose organization is the first part of its link |
 | | Watch a Pull Request | a pull request you're not on, by its link: listed as if you reviewed it, until it closes or you stop watching it |
 | | Sprint | on its page: **Everyone** or **Just Mine**, which team's sprint, and how wide you drag a work item's details |
 | | Pipelines | on its page: the pipelines you pin, in your order, each with all its branches' runs or one branch's |

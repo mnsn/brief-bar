@@ -34,7 +34,12 @@ struct BuildInvestigationView: View {
                     note(unread, symbol: "exclamationmark.triangle")
                 }
                 if let failure = look?.failure {
-                    note("Couldn't read it again: \(BuildInvestigationStore.message(for: failure))", symbol: "exclamationmark.triangle")
+                    if PulseProblem.from(failure).offersSignIn {
+                        // Signing in is what reads it again: a way to, above what was read before.
+                        BuildReadFailure(error: failure, readAgain: readAgain)
+                    } else {
+                        note("Couldn't read it again: \(BuildInvestigationStore.message(for: failure))", symbol: "exclamationmark.triangle")
+                    }
                 }
                 if !investigation.errors.isEmpty {
                     BuildErrors(errors: investigation.errors, failedStepId: investigation.failedStepId)
@@ -544,13 +549,13 @@ private struct BuildReadFailure: View {
                      : BuildInvestigationStore.message(for: error))
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: problem.needsSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+                Image(systemName: problem.offersSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             .font(size: 12)
             HStack(spacing: 8) {
-                if problem.needsSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
+                if problem.offersSignIn {
+                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("Try Again", action: readAgain)

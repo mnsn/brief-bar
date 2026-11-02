@@ -47,8 +47,8 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 @Suite struct BuildInvestigationStoreTests {
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
-        func token() async throws -> AccessToken { throw Unused() }
-        func invalidate() async {}
+        func token(tenant: String?) async throws -> AccessToken { throw Unused() }
+        func invalidate(tenant: String?) async {}
     }
 
     private let now = Date()
@@ -289,6 +289,8 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         #expect(BuildInvestigationStore.message(for: .notFound)
             == "Azure DevOps can't find this run. It may have been deleted, or moved where you can't see it.")
         #expect(BuildInvestigationStore.message(for: .forbidden) == "You don't have access to this run.")
+        #expect(BuildInvestigationStore.message(for: .otherDirectory(organization: "fabrikam", tenant: "t1"))
+            == "fabrikam is in a directory your Azure CLI isn't signed in to.")
         #expect(BuildInvestigationStore.message(for: .offline) == "You're offline.")
         #expect(BuildInvestigationStore.message(for: .throttled(retryAfter: 30)) == "Azure DevOps asked BriefBar to slow down. Try again in a minute.")
         #expect(BuildInvestigationStore.message(for: .http(500)) == ADOError.http(500).description)
