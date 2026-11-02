@@ -225,6 +225,7 @@ struct CopilotAgent: Sendable {
         case .working: return going("working")
         case .starting: return going("starting")
         case .relayed: return going("waiting for your answer in " + (session.answerIn.map { "“\($0.name)”" } ?? "another session"))
+        case .waitingForChildren: return going("waiting for child sessions" + (session.detail.map { " (\($0))" } ?? ""))
         case .finished: return ended("finished")
         case .interrupted: return ended("interrupted")
         case .failed: return ended("stopped with an error")

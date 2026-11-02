@@ -11,10 +11,11 @@ public sealed class BarViewModel
 
     public ObservableCollection<BarItemViewModel> Items { get; } = [];
 
-    public void Update(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now)
+    /// What the bar shows now, in `palette`, with icons `iconSize` square (`BarMetrics.IconSize`).
+    public void Update(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now, double iconSize)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshots);
-        Overview.Update(summary: OverviewSummary.Of(snapshots: snapshots), palette: palette);
+        Overview.Update(summary: OverviewSummary.Of(snapshots: snapshots), palette: palette, iconSize: iconSize);
         // After the Overview's, at 0, each item's place in the bar gives it its key (`PanelKeys`).
         var contents = snapshots
             .Select(selector: (snapshot, index) => BarItemContent.Of(snapshot: snapshot, position: index + 1, now: now))
@@ -23,8 +24,8 @@ public sealed class BarViewModel
             items: Items,
             values: contents,
             matches: (item, content) => item.Section == content.Section,
-            create: content => new BarItemViewModel(content: content, palette: palette),
-            update: (item, content) => item.Update(content: content, palette: palette));
+            create: content => new BarItemViewModel(content: content, palette: palette, iconSize: iconSize),
+            update: (item, content) => item.Update(content: content, palette: palette, iconSize: iconSize));
     }
 
     /// What its items show, in the bar's order, the Overview's first.

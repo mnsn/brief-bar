@@ -21,8 +21,8 @@
             </Grid.ColumnDefinitions>
             <Border
                 x:Name="TitleTile"
-                Width="18"
-                Height="18"
+                Width="20"
+                Height="20"
                 VerticalAlignment="Center"
                 CornerRadius="4">
                 <views:FluentIcon
@@ -30,7 +30,7 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Icon="Stack"
-                    Size="12" />
+                    Size="16" />
             </Border>
             <TextBlock
                 Grid.Column="1"
