@@ -79,6 +79,14 @@ struct SessionFallback: Equatable {
     var session: String
     /// The fork, when the session forked but the prompt didn't reach it.
     var fork: String?
+
+    /// What to look at before you paste it, when the session, or the fork, may have the prompt already, or the session
+    /// may have forked: nil when it can't.
+    var uncertainty: String? {
+        guard mayHaveSent else { return nil }
+        if fork != nil { return "If the fork has it already, don't." }
+        return pastesFork || forksFirst ? "If the session forked already, don't." : "If the session has it already, don't."
+    }
 }
 
 extension SessionFallback {
@@ -129,7 +137,21 @@ extension SessionChoice {
 extension CopilotTasksStore {
     static let cantSendNow = "BriefBar can't send anything now."
 
-    /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for it.
+    /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for it: why BriefBar couldn't send
+    /// it itself, unless the window said so already; where to paste it; and, when the session may have it already, to look
+    /// first.
+    static func cantBringUp(_ fallback: SessionFallback) -> String {
+        var parts = [fallback.forksFirst ? cantBringUpToFork : cantBringUp]
+        if !fallback.wasForeseen {
+            var reason = fallback.reason
+            if let last = reason.last, !".!?".contains(last) { reason += "." }
+            parts.insert(reason, at: 0)
+        }
+        if let uncertainty = fallback.uncertainty { parts.append(uncertainty) }
+        return parts.joined(separator: " ")
+    }
+
+    /// Where to paste the prompt when a CLI has the session open where BriefBar can't bring it up.
     static let cantBringUp = "BriefBar copied the prompt, but the Copilot CLI has the session open where BriefBar can't bring it up, such as in tmux or over SSH. Paste it there, and send it: opening the session in a second terminal, or in the app, would fork its history."
 
     /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for a fork of it that you make
@@ -206,8 +228,9 @@ extension CopilotTasksStore {
             return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, handOff: handOff)
         }
         if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
-        // Where it works stays as it is until the prompt has gone, or been taken back.
-        if let folder = choice.folder ?? folder(of: choice) { deliveringFolders[id] = folder }
+        // Where it works now stays as it is until the prompt has gone, or been taken back: where the window found it, only
+        // when that can't be told now.
+        if let folder = folder(of: choice) ?? choice.folder { deliveringFolders[id] = folder }
         defer { deliveringFolders[id] = nil }
 
         let opened = SessionIDs()
@@ -220,8 +243,10 @@ extension CopilotTasksStore {
                 await MainActor.run {
                     // Stopped, or turned off, while this waited for its turn: nothing opens.
                     guard !Task.isCancelled, let self, self.maySendToSessions else { return false }
+                    // One that didn't open shows again once the prompt has reached it.
+                    guard self.load(id) else { return false }
                     opened.ids.insert(id)
-                    return self.load(id)
+                    return true
                 }
             },
             isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
@@ -310,20 +335,21 @@ extension CopilotTasksStore {
         // terminal you fork the session first, then paste the prompt.
         let forksHere = forking && fork == nil
         let pastesFork = forksHere && place == .app
+        let fallback = SessionFallback(
+            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, forksFirst: forksHere && place == .terminal,
+            mayHaveSent: mayHaveSent, place: place, session: session, fork: fork
+        )
         guard copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             if case .terminal = way {
                 Log.app.error("Couldn't bring up the terminal of the Copilot CLI that has a session open")
-                return .notSent(forksHere ? Self.cantBringUpToFork : Self.cantBringUp)
+                return .notSent(Self.cantBringUp(fallback))
             }
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
         if let handOff { handedOff(handOff, prompt) }
-        return .fellBack(SessionFallback(
-            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, forksFirst: forksHere && place == .terminal,
-            mayHaveSent: mayHaveSent, place: place, session: session, fork: fork
-        ))
+        return .fellBack(fallback)
     }
 
     /// Puts the text on the clipboard, and shows the session the way it found it shows (`showing`): false when it didn't.

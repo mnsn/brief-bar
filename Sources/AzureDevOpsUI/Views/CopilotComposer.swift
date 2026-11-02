@@ -535,7 +535,8 @@ struct CopilotComposerView: View {
     /// itself, when that's the way chosen; why the CLI can't go on with it; and why the session can't open, or didn't go.
     private var notes: [String] {
         var notes: [String] = []
-        if !runsHere, let why = reach?.whyNot(forking: delivery.forks) { notes.append(why) }
+        // Once BriefBar copied it, the note by Send says why.
+        if !runsHere, fallback == nil, let why = reach?.whyNot(forking: delivery.forks) { notes.append(why) }
         notes += [cliProblem, appProblem, deliveryProblem].compactMap { $0 }
         return notes
     }
@@ -549,6 +550,8 @@ struct CopilotComposerView: View {
                 : "Copilot takes the prompt in the session now."
         case .loads?:
             return "Opens the session in Copilot, and sends the prompt there."
+        case .noListener(inApp: false)?:
+            return "Copies the prompt, to paste in the CLI's terminal."
         case .noListener?, .notInApp?, .off?:
             return "Copies the prompt and opens the session, to paste."
         case nil:
@@ -557,8 +560,13 @@ struct CopilotComposerView: View {
     }
 
     /// What Send to a Fork does, as things stand.
-    private var forkDetail: String {
-        reach?.sends(forking: true) == false
+    private var forkDetail: String { Self.forkDetail(reach) }
+
+    /// What Send to a Fork does, as BriefBar can reach the session: in a CLI's terminal, it copies the prompt alone, since
+    /// the CLI's own /fork takes a name for the fork rather than a prompt.
+    static func forkDetail(_ reach: SessionReach?) -> String {
+        if reach == .noListener(inApp: false) { return "Copies the prompt: /fork in the CLI's terminal, then paste it." }
+        return reach?.sends(forking: true) == false
             ? "Copies /fork and the prompt, and opens the session, to paste."
             : "Copilot takes the prompt in a fork, with its own worktree."
     }
@@ -780,10 +788,7 @@ struct CopilotComposerView: View {
             let then = fallback.forksFirst ? "fork it with /fork, then paste the prompt in the fork" : "paste it"
             text = "\(reason) BriefBar copied the prompt and brought up the terminal where a Copilot CLI has the \(session) open. Find the \(session)'s window or tab there, \(then), and send it."
         }
-        if fallback.mayHaveSent {
-            text += fallback.fork != nil ? " If the fork has it already, don't."
-                : fallback.pastesFork || fallback.forksFirst ? " If the session forked already, don't." : " If the session has it already, don't."
-        }
+        if let uncertainty = fallback.uncertainty { text += " " + uncertainty }
         return text
     }
 
