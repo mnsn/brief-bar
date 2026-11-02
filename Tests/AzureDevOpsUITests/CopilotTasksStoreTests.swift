@@ -102,6 +102,34 @@ import Testing
         #expect(settings.copilotOptions == CopilotModel.quick)
     }
 
+    /// The forks BriefBar couldn't delete yet are kept with its runs, by their sessions' IDs and their CLI's folder only,
+    /// until they're gone. Any program running as you can write the preferences: what isn't a session's is left out.
+    @Test func keepsTheForksStillToDeleteByTheirIDsOnly() async {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        let home = "/Users/robin/.copilot"
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: first))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: first))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: "../../Library/Messages"))
+        await settings.keepLeftoverFork(LeftoverFork(home: "copilot", id: second))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: second))
+        let kept = [LeftoverFork(home: home, id: first), LeftoverFork(home: home, id: second)]
+        #expect(await settings.leftoverForks() == kept)
+        // Turning Azure DevOps off doesn't forget them: they're BriefBar's own to delete, once it's on again.
+        settings.forgetCopilotRuns()
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == kept)
+        await settings.dropLeftoverFork(LeftoverFork(home: home, id: first))
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [LeftoverFork(home: home, id: second)])
+        let text = readable(defaults)
+        #expect(text.contains("ado.copilot.forksToDelete") && text.contains(second) && !text.contains(first))
+        // What another program wrote there that isn't a session's isn't used.
+        let written = try? JSONEncoder().encode([
+            LeftoverFork(home: home, id: second), LeftoverFork(home: home, id: "NOT-A-UUID"), LeftoverFork(home: "~/x", id: third),
+        ])
+        defaults.set(written, forKey: SettingsKey.copilotForksToDelete)
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [LeftoverFork(home: home, id: second)])
+    }
+
     /// A work item's row shows its latest send, whatever case its organization is written in.
     @Test func showsEachWorkItemsLatestSend() {
         let settings = AppSettings(defaults: MemoryDefaults())
@@ -272,6 +300,40 @@ import Testing
         #expect(settings.copilotRuns.first?.ended == nil)
         #expect(store.activeCount == 1)
         store.stop()
+    }
+
+    /// A task that forked a session, or went on with one, has that session's history in its log too. Gone before Copilot
+    /// wrote anything of its own, it failed, though the history ends with the task done, and it didn't open the pull
+    /// request the history names; a pull request it carried over from the task it went on with stays.
+    @Test func takesNeitherHowItWentNorItsPullRequestFromTheSessionsHistory() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let opened = "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4102"
+        // Written the day before the tasks started.
+        let history = [
+            #"{"type":"user.message","data":{"content":"Fix the totals"},"id":"e1","timestamp":"2026-10-17T10:00:00.000Z","parentId":null}"#,
+            #"{"type":"session.task_complete","data":{"summary":"Opened \#(opened)","success":true},"id":"e2","timestamp":"2026-10-17T10:05:00.000Z","parentId":null}"#,
+        ].joined(separator: "\n") + "\n"
+        for id in [first, second] {
+            let folder = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try history.write(to: folder.appendingPathComponent("events.jsonl"), atomically: true, encoding: .utf8)
+        }
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        var fork = run(first, startedAt: now)
+        fork.forkedFrom = third
+        var goneOn = run(second, startedAt: now)
+        goneOn.pullRequest = URL(string: opened)
+        settings.copilotRuns = [fork, goneOn]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        store.useEnvironment(["COPILOT_HOME": home.path])
+        store.refresh()
+        try await settle { store.statuses.count == 2 }
+        #expect(store.statuses[first]?.phase == .failed)
+        #expect(store.statuses[second]?.phase == .failed)
+        #expect(settings.copilotRuns.map(\.ended) == [.failed, .failed])
+        #expect(settings.copilotRuns.map(\.pullRequest) == [nil, URL(string: opened)])
     }
 
     /// The demo shows made-up sends of its own tasks, and never starts anything.

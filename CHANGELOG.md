@@ -10,6 +10,9 @@
 - **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
   prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
   errors, which showed as `[31m`.
+- **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
+  the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
+  said it was done, as that earlier task had.
 
 ## 0.11.0 - 2026-11-02
 

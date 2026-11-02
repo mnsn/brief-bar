@@ -47,11 +47,16 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// of BriefBar's: BriefBar never removes that folder, and goes on with it in the app rather than in Terminal. Nil
     /// otherwise, as runs that BriefBar kept before it had this were.
     public var isAppSession: Bool?
+    /// The session it forked, when it works in a fork of one, a new session with that one's whole history, in a worktree of
+    /// its own (`CopilotLauncher.Request.forking`): its ID, to say so, and not to read anything by, unless it's checked to be
+    /// a session's. Nil otherwise, as runs that BriefBar kept before it had this were.
+    public var forkedFrom: String?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
-        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil
+        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
+        forkedFrom: String? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -66,6 +71,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.pullRequest = pullRequest
         self.stoppedByYou = stoppedByYou
         self.isAppSession = isAppSession
+        self.forkedFrom = forkedFrom
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a
@@ -86,6 +92,13 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// one that went on with a work item's task, which kept its own checkout, nor with one of the Copilot app's sessions.
     public var worksInPullRequestWorktree: Bool {
         onPullRequest != nil && workItem == nil && isAppSession != true
+    }
+
+    /// When Copilot started on it: when its process started, as macOS records it, or else when BriefBar started it. Going on
+    /// with a session, or forking one, its log has that session's history too: what the log says from before then, this run
+    /// didn't (`RunStatus.derive`).
+    public var launchedAt: Date {
+        process.startedAt ?? startedAt
     }
 
     /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).
@@ -119,22 +132,35 @@ public struct RunStatus: Sendable, Equatable {
     /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
     /// - Parameters:
     ///   - log: nil until Copilot has written one.
+    ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log was put in before then, and not
+    ///     since, is the history of a session it went on with, or forked, not how this run went, and counts as nothing
+    ///     written yet; one it put the log in again, as with an error after the session's error, dates from when it did.
     ///   - exitStatus: how its process ended, when BriefBar saw it end.
     ///   - stoppedByYou: you stopped it.
     ///   - output: what it printed, which says why when it couldn't start.
     public static func derive(
-        log: SessionLogState?, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
+        log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
     ) -> RunStatus {
+        var log = log
+        var phaseSince = log?.phaseSince
+        if let startedAt, let state = log {
+            if let setAt = state.phaseSetAt, setAt < startedAt {
+                log = nil
+                phaseSince = nil
+            } else if let since = phaseSince, since < startedAt {
+                phaseSince = state.phaseSetAt
+            }
+        }
         if isRunning {
             return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
         }
         switch log?.phase {
         case .finished?:
-            return RunStatus(phase: .finished, since: log?.phaseSince, detail: log?.summary)
+            return RunStatus(phase: .finished, since: phaseSince, detail: log?.summary)
         case .failed?:
-            return RunStatus(phase: .failed, since: log?.phaseSince, detail: log?.errorMessage ?? lastLine(output))
+            return RunStatus(phase: .failed, since: phaseSince, detail: log?.errorMessage ?? lastLine(output))
         case .interrupted?:
-            return RunStatus(phase: .stopped, since: log?.phaseSince)
+            return RunStatus(phase: .stopped, since: phaseSince)
         case .running?, .unknown?, nil:
             if stoppedByYou {
                 return RunStatus(phase: .stopped, since: log?.lastEventAt)
@@ -178,10 +204,16 @@ public enum RunTranscript {
     }
 
     /// The pull request a run that ended opened: the last link to one in the summary it called the task done with, else in
-    /// its last message, else in what it printed.
-    public static func openedPullRequest(events: URL, printed: String?) -> URL? {
-        let words = lastWords(events: events)
-        return [words.summary, words.message, printed].compactMap { $0 }.lazy.compactMap { pullRequest(in: $0) }.first
+    /// its last message, else in what it printed. Going on with a session, or forking one, its log has that session's
+    /// history too: from `since` on (`CopilotRun.launchedAt`), only what Copilot said then counts, not a link the session
+    /// gave before. A link the run carries over from the one it went on with isn't looked for again.
+    public static func openedPullRequest(events: URL, printed: String?, since: Date? = nil) -> URL? {
+        let words = SessionTranscript.lastWords(events: events)
+        let said = [words.summary, words.message].compactMap { $0 }.filter { words in
+            guard let since else { return true }
+            return words.date.map { $0 >= since } ?? false
+        }
+        return (said.map(\.text) + [printed].compactMap { $0 }).lazy.compactMap { pullRequest(in: $0) }.first
     }
 
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the
