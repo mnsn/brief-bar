@@ -405,6 +405,11 @@ import Testing
         let outcome = await sender(outbox, Effects()).send("Fix it", to: session)
         #expect(outcome == .notSent(.failed(.sendFailed, "The session ended")))
         #expect(SendFailure.failed(.sendFailed, "The session ended").description == "The session didn't take the prompt: The session ended")
+        // What may have happened all the same, and so what a fallback warns of.
+        let uncertain: [SendFailure] = [.lost, .failed(.sendFailed, nil), .failed(.forkFailed, nil), .failed(.unreadable, nil), .unconfirmedFork]
+        #expect(uncertain.allSatisfy { $0.mayHaveGone })
+        let certain: [SendFailure] = [.noListener, .notLoaded, .unanswered, .unsupported, .failed(.forkUnavailable, nil), .cancelled, .turnedOff]
+        #expect(!certain.contains { $0.mayHaveGone })
     }
 
     /// The session's extension forks it with the app's own fork; the fork's own extension, which listens by the time the

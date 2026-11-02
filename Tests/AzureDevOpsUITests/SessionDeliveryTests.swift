@@ -326,7 +326,9 @@ private final class ExtensionStandIn: Sendable {
         try hold(session, home: home)
 
         let result = await store.deliver("Try it", to: choice(session), forking: true)
-        #expect(result == .fellBack(SessionFallback(reason: SendFailure.unconfirmedFork.description, pastesFork: true, session: session)))
+        #expect(result == .fellBack(SessionFallback(
+            reason: SendFailure.unconfirmedFork.description, pastesFork: true, mayHaveSent: true, session: session
+        )))
         #expect(forked.received.isEmpty)
         #expect(copied == ["\(session) /fork Try it"])
     }
@@ -604,6 +606,8 @@ private final class ExtensionStandIn: Sendable {
         #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))
         #expect(requests(home).isEmpty)
         #expect(await store.show(session) == false)
+        // Nor does an open window look any more at how a prompt would reach the session.
+        #expect(await store.reach(of: choice(session)) == nil)
         #expect(await store.deliver("Fix them again", to: choice(session)) == .notSent(CopilotTasksStore.cantSendNow))
         #expect(opened == 0)
     }

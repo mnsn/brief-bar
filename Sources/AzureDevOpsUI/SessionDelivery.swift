@@ -133,11 +133,14 @@ extension CopilotTasksStore {
     /// Copilot app or a CLI has it open already, as its lock says. Read off the main thread, and nothing while Send Work to
     /// Copilot is off, or in the demo.
     func reach(of choice: SessionChoice) async -> SessionReach? {
-        guard canSend, isOn, ItemRef.session(choice.id) != nil else { return nil }
+        guard canSend, isOn, !hasStopped, ItemRef.session(choice.id) != nil else { return nil }
         guard sessionPromptsAreOn else { return .off }
         let id = choice.id
         let outbox = outbox
         let homes = await sessionHomes()
+        // Again, after that wait.
+        guard canSend, isOn, !hasStopped else { return nil }
+        guard sessionPromptsAreOn else { return .off }
         let found = await Task.detached(priority: .userInitiated) { () -> (listener: OutboxListener?, holder: pid_t?) in
             let listener = outbox.listener(of: id).flatMap { CopilotOutbox.isLive($0) ? $0 : nil }
             return (listener, homes.lazy.compactMap { AppSessions.holder(of: id, home: $0) }.first)
@@ -182,8 +185,10 @@ extension CopilotTasksStore {
         let effects = SessionSender.Effects(
             open: { [weak self] id in
                 await MainActor.run {
+                    // Stopped, or turned off, while this waited for its turn: nothing opens.
+                    guard !Task.isCancelled, let self, self.maySendToSessions else { return false }
                     opened.ids.insert(id)
-                    return self?.load(id) ?? false
+                    return self.load(id)
                 }
             },
             isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
@@ -247,7 +252,9 @@ extension CopilotTasksStore {
         let pastesFork = forking && fork == nil
         let way: Showing? = openForTests != nil ? .app : await showing(session)
         guard !Task.isCancelled else { return .notSent(SendFailure.cancelled.description) }
-        guard canSend, isOn, !hasStopped else { return .notSent(Self.cantSendNow) }
+        // A fallback that the window said it would do goes on whether or not Send Prompts to Copilot Sessions is on; one
+        // from a send that BriefBar tried, only while it is.
+        guard canSend, isOn, !hasStopped, foreseen || sessionPromptsAreOn else { return .notSent(Self.cantSendNow) }
         guard let way, copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)

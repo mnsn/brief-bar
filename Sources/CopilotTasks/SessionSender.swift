@@ -51,11 +51,12 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 extension SendFailure {
-    /// It may have happened all the same: the extension took it but didn't say how it went; or it said the session didn't
-    /// take the prompt, or didn't fork, which it also says once it stops waiting for the session, which may still do it.
+    /// It may have happened all the same: the extension took it but didn't say how it went, or said what BriefBar couldn't
+    /// read; it said the session didn't take the prompt, as after a connection dropped once the session had it, or didn't
+    /// fork, as when it couldn't read the fork's ID; or it named a fork that the app doesn't record.
     public var mayHaveGone: Bool {
         switch self {
-        case .lost, .failed(.sendFailed, _), .failed(.forkFailed, _): return true
+        case .lost, .failed(.sendFailed, _), .failed(.forkFailed, _), .failed(.unreadable, _), .unconfirmedFork: return true
         default: return false
         }
     }
@@ -270,10 +271,10 @@ public struct SessionSender: Sendable {
     }
 
     /// The app may have forked the session all the same: the extension couldn't read the fork's ID from what the app's
-    /// fork said, or didn't say how it went.
+    /// fork said, or didn't say how it went, or said what BriefBar couldn't read.
     static func mayHaveForked(_ why: SendFailure) -> Bool {
         switch why {
-        case .lost, .failed(.forkFailed, _): return true
+        case .lost, .failed(.forkFailed, _), .failed(.unreadable, _): return true
         default: return false
         }
     }
