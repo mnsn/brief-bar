@@ -399,6 +399,21 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(partial.unread[.steps] != nil)
     }
 
+    @Test func runsThatCantAllBeReadSayNothingOfTheChange() async throws {
+        // A run that can't be read may be main's latest, or the one that passed on the same commit: what the others say
+        // could be wrong, so they say nothing, and they're read again next time.
+        let server = StubServer()
+        FailedRun.serve(server, replies: [
+            "earlier": .json(Fixture.list([FailedRun.build(70, result: "succeeded", queued: t(-2 * hour)), ["id": 71]])),
+            "target": .json(Fixture.list([["id": 91, "result": "succeeded"], FailedRun.build(89, result: "failed", branch: "refs/heads/main")])),
+        ])
+        let investigation = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(investigation.comparison.earlierPass == nil)
+        #expect(investigation.comparison.targetRun == nil)
+        #expect(investigation.hints.isEmpty)
+        #expect(Set(investigation.unread.keys) == [.earlierRuns, .targetBranch])
+    }
+
     @Test func aRunWithoutALogOrTestsHasNone() async throws {
         let server = StubServer()
         FailedRun.serve(server, replies: [

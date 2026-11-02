@@ -272,12 +272,12 @@ public enum BuildInvestigationReader {
         async let earlierRuns = attempt {
             try await client.get(ADOEndpoint.builds(
                 organization: organization, projectId: projectId, definitionIds: [definition], branch: branch, perDefinition: earlierRunsRead
-            ), as: ADOList<ADOBuild>.self).value
+            ), as: ADOList<ADOBuild>.self)
         }
         async let targetRuns = attempt {
             try await client.get(ADOEndpoint.finishedBuilds(
                 organization: organization, projectId: projectId, definitionId: definition, branch: pr.targetBranch, top: targetRunsRead
-            ), as: ADOList<ADOBuild>.self).value
+            ), as: ADOList<ADOBuild>.self)
         }
 
         var unread: [BuildInvestigation.Part: ADOError] = [:]
@@ -295,10 +295,12 @@ public enum BuildInvestigationReader {
         func run(_ dto: ADOBuild) -> PipelineRun {
             PipelineRun(organization: organization, projectName: pr.projectName, dto)
         }
-        let target = (found(await targetRuns, .targetBranch, unread: &unread) ?? [])
+        let target = whole(found(await targetRuns, .targetBranch, unread: &unread), .targetBranch, unread: &unread)
             .filter { $0.definition.id == definition }
             .first(where: BuildComparison.hasVerdict)
-        let earlierPass = BuildComparison.earlierPass(of: build, among: found(await earlierRuns, .earlierRuns, unread: &unread) ?? [])
+        let earlierPass = BuildComparison.earlierPass(
+            of: build, among: whole(found(await earlierRuns, .earlierRuns, unread: &unread), .earlierRuns, unread: &unread)
+        )
         let (logRead, testsRead) = await (log, tests)
         if let error = logRead.error { unread[.log] = error }
         if let error = testsRead.error { unread[.tests] = error }
@@ -439,6 +441,19 @@ public enum BuildInvestigationReader {
             if !isMissing(error) { unread[part] = error }
             return nil
         }
+    }
+
+    /// The runs a list has, when they could all be read. Otherwise none: one that couldn't may be the latest, or the one
+    /// that passed on the same commit, so what the rest say could be wrong, and the list is unread.
+    private static func whole(
+        _ list: ADOList<ADOBuild>?, _ part: BuildInvestigation.Part, unread: inout [BuildInvestigation.Part: ADOError]
+    ) -> [ADOBuild] {
+        guard let list else { return [] }
+        guard list.skipped == 0 else {
+            unread[part] = .decoding("runs that couldn't be read")
+            return []
+        }
+        return list.value
     }
 
     /// It isn't there, or isn't yours to read: reading it again won't change that.
