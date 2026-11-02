@@ -4,7 +4,8 @@
     xmlns:views="using:BriefBar.Views">
 
     <!-- The brief's card: a soft gradient with a lilac edge in light and dark, and Windows' own colors in High
-         Contrast. -->
+         Contrast. Under everything on the bar and the panel: nothing in light and dark, where their acrylic shows, and
+         Windows' window color in High Contrast, for its text colors, whatever the acrylic shows by then. -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
             <LinearGradientBrush x:Key="BriefBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
@@ -13,6 +14,7 @@
                 <GradientStop Offset="1" Color="#33C6DCFA" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="BriefBorderBrush" Color="#BFB9A3F3" />
+            <SolidColorBrush x:Key="BarAndPanelBackgroundBrush" Color="Transparent" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <LinearGradientBrush x:Key="BriefBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
@@ -21,10 +23,12 @@
                 <GradientStop Offset="1" Color="#2695BFF5" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="BriefBorderBrush" Color="#73B9A3F3" />
+            <SolidColorBrush x:Key="BarAndPanelBackgroundBrush" Color="Transparent" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="BriefBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="BriefBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="BarAndPanelBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
