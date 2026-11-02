@@ -857,7 +857,11 @@ private enum MarkdownReader {
                     close = raw[end].range(of: "-->")
                 }
                 guard let close else { break }
-                let rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
+                var rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
+                // Others that end on the same line, read on in place.
+                while rest.hasPrefix("<!--"), let next = rest.dropFirst(4).range(of: "-->") {
+                    rest = rest[next.upperBound...].drop { $0 == " " || $0 == "\t" }
+                }
                 if rest.isEmpty {
                     index = end + 1
                 } else {

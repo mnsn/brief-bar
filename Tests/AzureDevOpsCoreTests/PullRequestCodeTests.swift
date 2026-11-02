@@ -684,10 +684,10 @@ private actor FakeCode: CodeSource {
         return [PRIteration(id: 1, sourceCommit: "abc", commonCommit: "b1")]
     }
 
-    /// Three files added, and one edited that's now the same as "a".
+    /// Files added, and one edited that's now the same as "a".
     func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
         asked.append("changes")
-        let added = ["a", "b", "c"].map { (name: String) in FileChange(path: "/\(name).cs", kind: .add, objectId: name) }
+        let added = ["a", "b", "c", "d", "f", "g"].map { (name: String) in FileChange(path: "/\(name).cs", kind: .add, objectId: name) }
         return FileChanges(files: added + [FileChange(path: "/e.cs", kind: .edit, objectId: "a", originalObjectId: "e1")])
     }
 
@@ -735,6 +735,23 @@ private final class Running: Sendable {
 
     func finish() {
         counts.withLock { $0.now -= 1 }
+    }
+}
+
+/// Holds whatever passes it until it's released.
+private actor Gate {
+    private var isOpen = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func pass() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { held.append($0) }
+    }
+
+    func release() {
+        isOpen = true
+        for turn in held { turn.resume() }
+        held = []
     }
 }
 
@@ -858,6 +875,26 @@ private actor LaterCode: CodeSource {
         #expect(try together[2]?.get().lines.first { $0.isCommented }?.text == "a 2")
         _ = try await code.excerpt(of: thread(4, "a", line: 2), in: pr).get()
         #expect(await code.comparisonsMade == 2)
+    }
+
+    @Test func keepsEveryComparisonUnderWayHoweverMany() async throws {
+        let gate = Gate()
+        let code = PullRequestCode(pr, source: FakeCode(), comparison: { old, new in
+            await gate.pass()
+            return LineDiff.compare(old, new)
+        })
+        // A's comparison first, then five more files', more than it keeps once made, all held under way.
+        let first = Task { await code.excerpt(of: thread(1, "a"), in: pr) }
+        try await waitUntil("a's comparison") { await code.comparisonsMade == 1 }
+        let others = Task { await code.excerpts(of: ["b", "c", "d", "f", "g"].enumerated().map { thread(2 + $0.offset, $0.element) }, in: pr) }
+        try await waitUntil("every comparison") { await code.comparisonsMade == 6 }
+        // Another thread on A shares the comparison under way.
+        let again = Task { await code.excerpt(of: thread(10, "a", line: 2), in: pr) }
+        try await waitUntil("the other thread on A waiting") { await code.waitingOnComparisons == 7 }
+        await gate.release()
+        #expect(try await again.value.get().lines.first { $0.isCommented }?.text == "a 2")
+        _ = await (first.value, others.value)
+        #expect(await code.comparisonsMade == 6)
     }
 
     @Test func forgetsTheFilesReadFirstPastTheMemoryItMayUse() async throws {

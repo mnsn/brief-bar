@@ -17,6 +17,7 @@ import Testing
         #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
         #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
         #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
+        #expect(plain("<!-- one --><!-- two --> <!-- three\n--> Shown") == "Shown")
         // One that ends on the line it starts is a block of its own: what follows it is what it would be after any other.
         #expect(RichText(markdown: "<!-- bot -->\n    <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         // What follows one's end stays in the list's item it's in, which goes on, counting on.
@@ -118,6 +119,8 @@ import Testing
             String(repeating: "<!-- `", count: 10_000),
             String(repeating: "<span title=\"`x` > ", count: 2_000),
             "<span title=\"" + String(repeating: "<a b ", count: 6_000),
+            String(repeating: "<!-- -->", count: 10_000),
+            String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
         ] {
             let start = ContinuousClock.now
             _ = RichText(markdown: long)

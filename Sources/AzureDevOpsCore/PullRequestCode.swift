@@ -296,11 +296,15 @@ public actor PullRequestCode {
     private var excerpts: [ExcerptKey: ThreadExcerpt] = [:]
     /// The comparisons being made, or made last, by the versions they compare: threads on one file share one.
     private var diffs: [DiffKey: Task<[DiffLine], Error>] = [:]
+    /// The comparisons made, first made first.
     private var diffOrder: [DiffKey] = []
-    /// How many comparisons it made, for tests.
+    /// How many comparisons it made, and how many asks wait on one, for tests.
     private(set) var comparisonsMade = 0
+    private(set) var waitingOnComparisons = 0
     /// Lets two comparisons run at a time.
     private let comparisons = RequestLimiter(limit: 2)
+    /// How it compares two versions: `LineDiff`'s way, but in tests.
+    private let comparison: @Sendable (String, String) async -> [DiffLine]
     /// How many comparisons it keeps once made.
     static let keptComparisons = 4
 
@@ -311,9 +315,10 @@ public actor PullRequestCode {
 
     init(
         _ pullRequest: PullRequest, source: any CodeSource, concurrency: Int = 4, fileLimit: Int = FileText.limit,
-        memoryLimit: Int = 32 << 20
+        memoryLimit: Int = 32 << 20, comparison: @escaping @Sendable (String, String) async -> [DiffLine] = { LineDiff.compare($0, $1) }
     ) {
         key = pullRequest.key
+        self.comparison = comparison
         self.pullRequest = pullRequest
         self.source = source
         requests = RequestLimiter(limit: concurrency)
@@ -444,21 +449,26 @@ public actor PullRequestCode {
     }
 
     /// Two versions compared off the actor, so that other threads' reads go on meanwhile: once for all the threads on
-    /// them, two comparisons at a time, and the last few kept.
+    /// them, two comparisons at a time. Every one under way is kept, and the last few made.
     private func compare(_ key: DiffKey, _ old: String, _ new: String) async throws -> [DiffLine] {
         let task: Task<[DiffLine], Error>
         if let kept = diffs[key] {
             task = kept
         } else {
-            let comparisons = comparisons
-            task = Task { try await comparisons.run { LineDiff.compare(old, new) } }
+            let (comparisons, comparison) = (comparisons, comparison)
+            task = Task { try await comparisons.run { await comparison(old, new) } }
             diffs[key] = task
-            diffOrder.append(key)
             comparisonsMade += 1
-            while diffOrder.count > Self.keptComparisons { diffs[diffOrder.removeFirst()] = nil }
         }
+        waitingOnComparisons += 1
+        defer { waitingOnComparisons -= 1 }
         do {
-            return try await task.value
+            let diff = try await task.value
+            if diffs[key] == task, !diffOrder.contains(key) {
+                diffOrder.append(key)
+                while diffOrder.count > Self.keptComparisons { diffs[diffOrder.removeFirst()] = nil }
+            }
+            return diff
         } catch {
             if diffs[key] == task {
                 diffs[key] = nil
