@@ -9,11 +9,9 @@ import { randomUUID } from "node:crypto";
 import { after, beforeEach, describe, test } from "node:test";
 import {
     CLOCK_SLACK_MS,
-    FORK_TIMEOUT_MS,
     LONGEST_WAIT_MS,
     MOST_BYTES,
     OutboxError,
-    SEND_TIMEOUT_MS,
     checkRequest,
     defaultFolder,
     forked,
@@ -304,23 +302,20 @@ describe("sending", () => {
         for (const [file, text] of Object.entries(everything())) assert.ok(!text.includes("PROMPT-MARKER"), file);
     });
 
-    test("a send that never returns fails in time, and the next request still goes", async () => {
-        let calls = 0;
-        const { session } = fakeSession(undefined, {
-            send() {
-                calls += 1;
-                return calls === 1 ? new Promise(() => {}) : "message-2";
-            },
-        });
-        const outbox = listenTo(session, { sendTimeoutMs: 50 });
-        const stuck = request(session.sessionId);
-        writeRequest(stuck);
-        await outbox.scan();
-        assert.equal(readResult(stuck.requestId).error.code, "send_failed");
-        const next = request(session.sessionId);
-        writeRequest(next);
-        await outbox.scan();
-        assert.equal(readResult(next.requestId).messageId, "message-2");
+    test("says how a slow send went once it's done, and nothing before, so BriefBar never hears it failed", async () => {
+        let finish;
+        const { session } = fakeSession(undefined, { send: () => new Promise((resolve) => { finish = resolve; }) });
+        const outbox = listenTo(session);
+        const value = request(session.sessionId);
+        writeRequest(value);
+        const scanning = outbox.scan();
+        await waitFor(() => finish, "the send");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Still going: BriefBar, once it stops waiting, says the prompt may have reached the session.
+        assert.equal(readResult(value.requestId), undefined);
+        finish("message-late");
+        await scanning;
+        assert.equal(readResult(value.requestId).messageId, "message-late");
     });
 
     test("finishes a request it claimed even if it expires meanwhile", async () => {
@@ -518,13 +513,20 @@ describe("forking", () => {
         assert.equal(result.forkSessionId, undefined);
     });
 
-    test("a fork that takes too long fails, so BriefBar stops waiting", async () => {
-        const { session } = fakeSession(undefined, { execute: () => new Promise(() => {}) });
-        const outbox = listenTo(session, { forkTimeoutMs: 50 });
+    test("says how a slow fork went once it's done, and nothing before", async () => {
+        let finish;
+        const forkId = randomUUID();
+        const { session } = fakeSession(undefined, { execute: () => new Promise((resolve) => { finish = resolve; }) });
+        const outbox = listenTo(session);
         const value = request(session.sessionId, { kind: "fork" });
         writeRequest(value);
-        await outbox.scan();
-        assert.equal(readResult(value.requestId).error.code, "fork_failed");
+        const scanning = outbox.scan();
+        await waitFor(() => finish, "the fork");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.equal(readResult(value.requestId), undefined);
+        finish({ resultType: "success", textResultForLlm: `Forked session (workspace_id: ${randomUUID()}, session_id: ${forkId}).` });
+        await scanning;
+        assert.equal(readResult(value.requestId).forkSessionId, forkId);
     });
 });
 
@@ -567,16 +569,7 @@ describe("cleaning up and recovering", () => {
     });
 });
 
-describe("its own limits", () => {
-    test("gives up on a send or a fork before BriefBar stops waiting, so that BriefBar hears either way", () => {
-        // What BriefBar waits once a request is claimed (SessionSender.Timing: sent, forked), less a moment for it to
-        // write the result and for BriefBar to look.
-        assert.ok(SEND_TIMEOUT_MS <= 60_000 - 10_000, String(SEND_TIMEOUT_MS));
-        assert.ok(FORK_TIMEOUT_MS <= 120_000 - 10_000, String(FORK_TIMEOUT_MS));
-        // A fork took about 22 s.
-        assert.ok(FORK_TIMEOUT_MS >= 60_000);
-    });
-
+describe("its outbox's path", () => {
     test("stops using the outbox when a folder it's in becomes a link, even one to where it was", async () => {
         const { session, calls } = fakeSession();
         const home = path.dirname(folder);

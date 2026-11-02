@@ -19,10 +19,6 @@ export const MOST_BYTES = 256 * 1024;
 export const LONGEST_WAIT_MS = 120 * 1000;
 /** How far ahead of this clock a request may say it was made, for clocks a moment apart. */
 export const CLOCK_SLACK_MS = 5 * 1000;
-/** How long a send, or a fork, may take before it counts as failed: less than BriefBar waits for each once it's
- * claimed (60 s and 120 s), so that it hears either way. A fork takes about 20 s. */
-export const SEND_TIMEOUT_MS = 45 * 1000;
-export const FORK_TIMEOUT_MS = 100 * 1000;
 /** The longest error message a result carries. */
 export const LONGEST_MESSAGE = 200;
 
@@ -49,8 +45,6 @@ class Refusal extends Error {
         this.kind = kind;
     }
 }
-
-class TimedOut extends Error {}
 
 /** Where BriefBar keeps the outbox. */
 export function defaultFolder(home = os.homedir()) {
@@ -97,12 +91,13 @@ export function stopWithTheSession(outbox, proc = process) {
 
 /**
  * Says that this session listens, in `listening/<sessionId>.json`, then acts on each request BriefBar writes for it
- * in `requests/`, as it arrives (fs.watch) and any that were already there: one at a time, oldest first.
+ * in `requests/`, as it arrives (fs.watch) and any that were already there: one at a time, oldest first. Each says
+ * how it went once it's done, however long that takes: one that's still going when BriefBar stops waiting may still
+ * reach the session, which BriefBar says, so it never says it failed when it can't know.
  *
  * Options, for tests: `folder`, the outbox, and `root`, the folder it's in that's trusted as it is, below which no
  * folder is followed through a link, as BriefBar follows none (by default, your home folder, or `folder`'s own when
- * that's given); `pid`, `uid` and `startedAt` (ms), this process's; `now()`, the time in ms; `isRunning(pid)`; and
- * `sendTimeoutMs` and `forkTimeoutMs`.
+ * that's given); `pid`, `uid` and `startedAt` (ms), this process's; `now()`, the time in ms; and `isRunning(pid)`.
  */
 export function listen(session, options = {}) {
     const sessionId = typeof session?.sessionId === "string" ? session.sessionId.toLowerCase() : "";
@@ -119,7 +114,6 @@ export function listen(session, options = {}) {
     const uid = options.uid ?? process.getuid();
     const now = options.now ?? (() => Date.now());
     const running = options.isRunning ?? isRunning;
-    const timeouts = { send: options.sendTimeoutMs ?? SEND_TIMEOUT_MS, fork: options.forkTimeoutMs ?? FORK_TIMEOUT_MS };
     const announcement = {
         version: VERSION,
         sessionId,
@@ -293,7 +287,7 @@ export function listen(session, options = {}) {
         if (request.kind === "send") {
             let messageId;
             try {
-                messageId = await withTimeout(session.send({ prompt: request.prompt }), timeouts.send);
+                messageId = await session.send({ prompt: request.prompt });
             } catch {
                 return failed("send_failed", "Copilot didn't take the prompt.", "send");
             }
@@ -301,12 +295,8 @@ export function listen(session, options = {}) {
         }
         let answer;
         try {
-            answer = await withTimeout(
-                session.rpc.tools.execute({ name: "fork_session", arguments: {} }),
-                timeouts.fork,
-            );
+            answer = await session.rpc.tools.execute({ name: "fork_session", arguments: {} });
         } catch (error) {
-            if (error instanceof TimedOut) return failed("fork_failed", "The fork took too long.", "fork");
             return failed("fork_unavailable", because("Copilot didn't let this session fork", error?.message), "fork");
         }
         return forked(answer, sessionId);
@@ -584,13 +574,4 @@ function because(lead, detail) {
 function short(text) {
     const line = String(text).replace(/[\p{Cc}\p{Cf}]+/gu, " ").replace(/\s+/g, " ").trim();
     return line.length > LONGEST_MESSAGE ? `${line.slice(0, LONGEST_MESSAGE - 1)}…` : line;
-}
-
-function withTimeout(promise, ms) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new TimedOut()), ms);
-        timer.unref?.();
-    });
-    return Promise.race([Promise.resolve(promise), timeout]).finally(() => clearTimeout(timer));
 }
