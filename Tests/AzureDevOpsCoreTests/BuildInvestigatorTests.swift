@@ -657,6 +657,19 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(try await keeping.investigation(buildId: 77, of: pr, refresh: true).unread[.steps] == .http(500))
         #expect(await keeping.keptBuilds == [77])
         #expect(try await keeping.investigation(buildId: 77, of: pr) == first)
+
+        // Found run again by the look at it, though it can't be read again after: the failure kept before goes all the same.
+        let lost = StubServer()
+        FailedRun.serve(lost)
+        let losing = BuildInvestigator(client: lost.client())
+        _ = try await losing.investigation(buildId: 77, of: pr)
+        let runReads = Locked(0)
+        let runAgain = StubServer.Reply.json(passed)
+        // Only the run is asked for from here: each read stops when it can't be read.
+        lost.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
+        await #expect(throws: ADOError.offline) { try await losing.investigation(buildId: 77, of: pr) }
+        #expect(await losing.keptBuilds.isEmpty)
+        await #expect(throws: ADOError.offline) { try await losing.investigation(buildId: 77, of: pr) }
     }
 
     @Test func keepsARunningBuildBrieflyAndNotWhatCouldntBeRead() async throws {

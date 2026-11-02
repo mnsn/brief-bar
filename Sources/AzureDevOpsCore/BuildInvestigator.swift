@@ -604,8 +604,8 @@ public actor BuildInvestigator {
     }
 
     /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once the run,
-    /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again. Callers
-    /// at the same time share that look at the run.
+    /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again; when
+    /// it was run again, what's kept goes. Callers at the same time share that look at the run.
     private func stillKept(_ key: Key, readKey: ReadKey, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
         guard let read = kept[key], isFresh(read.investigation, for: pullRequest) else { return nil }
         guard read.investigation.run.status.isFinished else { return read }
@@ -619,7 +619,10 @@ public actor BuildInvestigator {
         guard generation == self.generation, reading[readKey] == nil, let kept = kept[key], isFresh(kept.investigation, for: pullRequest)
         else { return nil }
         guard let run else { return kept }
-        return BuildInvestigationReader.isSameRun(run, kept.build) ? kept : nil
+        if BuildInvestigationReader.isSameRun(run, kept.build) { return kept }
+        // Run again since: what's kept is of an earlier attempt, whether or not it can be read again now.
+        self.kept[key] = nil
+        return nil
     }
 
     private func isFresh(_ investigation: BuildInvestigation, for pullRequest: PullRequest) -> Bool {
