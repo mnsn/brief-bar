@@ -86,6 +86,35 @@ import Testing
         #expect(throws: FormatError.corrupt("manifest")) { try LevelDBManifest.parse(manifest) }
     }
 
+    /// LevelDB skips the rest of a block that reads as zeros, as space it never wrote, and reads on: the edits after it
+    /// count, as the table one removed.
+    @Test func readsOnPastABlockLevelDBNeverFinished() throws {
+        var manifest = ManifestWriter.manifest([
+            ManifestWriter.edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]),
+        ])
+        manifest += [UInt8](repeating: 0, count: LevelDBLog.blockSize - manifest.count)
+        manifest += ManifestWriter.manifest([
+            ManifestWriter.edit(logNumber: 7, nextFile: 10, lastSequence: 4, deleted: [5], added: [9]),
+        ])
+        let version = try LevelDBManifest.parse(manifest)
+        #expect(version.tables == [9])
+        #expect(version.logNumber == 7)
+    }
+
+    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, though it reads on after them.
+    @Test func refusesAManifestWhoseEditBreaksOffAtZeros() {
+        var log = LogWriter()
+        log.add(ManifestWriter.edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]))
+        // An edit too long for the rest of the block, which LevelDB splits across blocks.
+        log.add(ManifestWriter.edit(comparator: String(repeating: "c", count: 40_000)))
+        var manifest = Array(log.bytes.prefix(LevelDBLog.blockSize))
+        manifest += [UInt8](repeating: 0, count: LevelDBLog.blockSize)
+        manifest += ManifestWriter.manifest([
+            ManifestWriter.edit(logNumber: 7, nextFile: 10, lastSequence: 4, deleted: [5], added: [9]),
+        ])
+        #expect(throws: FormatError.corrupt("manifest")) { try LevelDBManifest.parse(manifest) }
+    }
+
     /// Microsoft Edge's, in the fixture: as LevelDB creates a database, with no tables, and its log number 0, which
     /// keeps every log.
     @Test func readsTheFixturesManifest() throws {

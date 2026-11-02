@@ -93,6 +93,35 @@ import Testing
         #expect(parsed.corrupt == 0)
     }
 
+    /// LevelDB skips the rest of a block that reads as zeros, as space it never wrote, and reads on, counting nothing
+    /// unless that breaks off a batch. Zeros that run to the end may be space it hasn't written yet: a log stops before
+    /// them, as before what isn't all there, and counts nothing.
+    @Test func skipsTheRestOfABlockLevelDBNeverWrote() {
+        var first = LogWriter()
+        first.add(LogWriter.batch(sequence: 1, [(key, Array("before".utf8))]))
+        var second = LogWriter()
+        second.add(LogWriter.batch(sequence: 2, [(key, Array("after".utf8))]))
+        var bytes = first.bytes
+        bytes += [UInt8](repeating: 0, count: LevelDBLog.blockSize - first.bytes.count)
+        bytes += second.bytes
+        let parsed = LevelDBLog.parse(bytes)
+        #expect(parsed.entries.map(\.sequence) == [1, 2])
+        #expect(parsed.end == bytes.count)
+        #expect(parsed.corrupt == 0)
+
+        // A batch split across blocks, whose second block reads as zeros to the end.
+        var split = LogWriter()
+        split.add(LogWriter.batch(sequence: 1, [(key, Array("before".utf8))]))
+        let firstEnd = split.bytes.count
+        split.add(LogWriter.batch(sequence: 2, [(key, [UInt8](repeating: 0, count: 40_000))]))
+        var cut = Array(split.bytes.prefix(LevelDBLog.blockSize))
+        cut += [UInt8](repeating: 0, count: 100)
+        let unwritten = LevelDBLog.parse(cut)
+        #expect(unwritten.entries.map(\.sequence) == [1])
+        #expect(unwritten.end == firstEnd)
+        #expect(unwritten.corrupt == 0)
+    }
+
     @Test func skipsABlockWithABadChecksum() {
         var log = LogWriter()
         log.add(LogWriter.batch(sequence: 1, [(key, Array("lost".utf8))]))
