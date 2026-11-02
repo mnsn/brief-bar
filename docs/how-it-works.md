@@ -844,7 +844,9 @@ far as it needs:
   LevelDB refuses one with a damaged record, even the last, though a log's last may be one still being
   written: going by the version before it would read tables that edit removed. It refuses files that
   are still missing too, so after three tries, BriefBar counts them against the MANIFEST, or against
-  `CURRENT`.
+  `CURRENT`. Like LevelDB, it skips the rest of a block that reads as zeros, as space never written,
+  and reads on, in the MANIFEST and in a log; only zeros that run to the end may be space not written
+  yet, which it reads again later.
 - **IndexedDB's keys** each start with a database, object store and index (`KeyPrefix`), and Chromium
   sorts keys by that first. So BriefBar reads the databases' and object stores' names first, then
   only the `conversations` stores' records, and skips every table block whose index entries say it
