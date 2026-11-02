@@ -567,6 +567,38 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
         #expect(requests(server).filter { $0 == "/iterations" }.count == 3)
     }
 
+    @Test func readsTheIterationsAgainForWhereAThreadWasFollowedTo() async throws {
+        let server = codeServer()
+        let code = PullRequestCode(pr, client: server.client())
+        let thread = CodeFixture.thread(21, at: CodeFixture.location(right: 2...2, madeOn: (2, 2)))
+        #expect(try await code.excerpt(of: thread, in: pr).get().latestIteration == 2)
+
+        // A third iteration that changed the file, before the pull request says so, and a thread made on the second
+        // that Azure DevOps followed to it.
+        server.on("/pullRequests/7/iterations", json: Fixture.list([
+            CodeFixture.iteration(1, source: "s1"), CodeFixture.iteration(2, source: "abc"), CodeFixture.iteration(3, source: "s3"),
+        ]))
+        server.on("/iterations/3/changes", query: ["$compareTo": "2"], json: CodeFixture.changes([
+            CodeFixture.change("/src/Payments.cs", objectId: "third", original: "second"),
+        ]))
+        var location = CodeFixture.location(right: 4...4, madeOn: (2, 2))
+        location.tracking = ReviewThread.Tracking(to: ReviewThread.Comparison(base: 3), originalRight: ReviewThread.Span(lines: 2...2))
+        let followed = try await code.excerpt(of: CodeFixture.thread(22, at: location), in: pr).get()
+        // Shown where it was made, and changed since.
+        #expect(followed.iteration == 2)
+        #expect(followed.lines.first { $0.isCommented }?.text == "line two")
+        #expect(followed.latestIteration == 3)
+        #expect(followed.changedSince == true)
+        #expect(requests(server).filter { $0 == "/iterations" }.count == 2)
+
+        // Followed to an iteration they don't have even then, it reads them again once, not each time it's asked.
+        location.tracking = ReviewThread.Tracking(to: ReviewThread.Comparison(base: 9), originalRight: ReviewThread.Span(lines: 2...2))
+        let lost = CodeFixture.thread(23, at: location)
+        #expect(try await code.excerpt(of: lost, in: pr).get().latestIteration == 3)
+        #expect(try await code.excerpt(of: lost, in: pr).get().latestIteration == 3)
+        #expect(requests(server).filter { $0 == "/iterations" }.count == 3)
+    }
+
     @Test func readsTheIterationsAgainWhenThePullRequestMovesToAnotherBranch() async throws {
         let server = codeServer()
         let code = PullRequestCode(pr, client: server.client())

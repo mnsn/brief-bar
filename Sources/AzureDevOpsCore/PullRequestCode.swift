@@ -273,7 +273,7 @@ actor RequestLimiter {
 /// that needs, a few requests at a time. What it reads is read once, however many threads need it: files by their
 /// object IDs, or their paths at commits, which never change. It never reads by itself, or again on a schedule: the
 /// pull request's iterations are read again only for a push it hadn't seen, a move to another target branch, or a thread
-/// made on an iteration it hadn't.
+/// made on, or followed to, an iteration it hadn't.
 /// A read that every thread waiting on it gave up on is called off. One reader for each pull request: asked about
 /// another, it says so.
 public actor PullRequestCode {
@@ -294,6 +294,9 @@ public actor PullRequestCode {
     /// The files it keeps, first read first, and how big they are.
     private var files: [(key: ReadKey, size: Int)] = []
     private var excerpts: [ExcerptKey: ThreadExcerpt] = [:]
+    /// The iterations threads knew of that the pull request's iterations, as read, didn't have, since its head last moved:
+    /// they're read again once for each.
+    private var sought: Set<Int> = []
     /// The comparisons made, first made first, of those it keeps: each under way is kept too, as any read is.
     private var diffOrder: [ReadKey] = []
     /// How many comparisons it began, for tests.
@@ -381,7 +384,7 @@ public actor PullRequestCode {
     }
 
     private func excerpt(of threadId: Int, at anchor: Anchor, context: Int) async throws -> ThreadExcerpt {
-        let iterations = try await iterations(including: anchor.comparison?.second)
+        let iterations = try await iterations(including: anchor.newest)
         guard let latest = iterations.last else { throw ThreadExcerpt.Problem.noIterations }
         let shown = ExcerptKey(threadId: threadId, anchor: anchor, latest: latest.id, context: context)
         if let kept = excerpts[shown] { return kept }
@@ -456,14 +459,15 @@ public actor PullRequestCode {
     }
 
     /// The pull request's iterations, oldest first: read again for a push it hadn't seen or a move to another target, or
-    /// for an iteration it doesn't have.
+    /// for an iteration a thread knows of that they don't have.
     private func iterations(including id: Int?) async throws -> [PRIteration] {
         let key = ReadKey.iterations(Self.head(of: pullRequest))
         let kept = reads[key]
         guard case .iterations(let iterations) = try await read(key) else { return [] }
         guard let id, !iterations.contains(where: { $0.id == id }), kept != nil else { return iterations }
-        // A thread made on an iteration after the ones read before: once, they're read again.
-        if reads[key] == kept { forget(key) }
+        // A thread made on, or followed to, an iteration after the ones read before: they're read again, once for each
+        // such iteration until the pull request's head moves, and the threads asking meanwhile wait on that read.
+        if sought.insert(id).inserted, reads[key] == kept { forget(key) }
         guard case .iterations(let again) = try await read(key) else { return [] }
         return again
     }
@@ -603,6 +607,7 @@ public actor PullRequestCode {
     private func update(_ pullRequest: PullRequest) {
         if Self.head(of: pullRequest) != Self.head(of: self.pullRequest) {
             reads = reads.filter { if case .iterations = $0.key { false } else { true } }
+            sought = []
         }
         self.pullRequest = pullRequest
     }
@@ -662,6 +667,9 @@ struct Anchor: Hashable, Sendable {
     var side: ThreadExcerpt.Side
     var lines: ClosedRange<Int>
     var changeTrackingId: Int?
+    /// The newest iteration the thread knows the pull request has: the one it was made on, or a later one Azure DevOps
+    /// followed it to.
+    var newest: Int?
 
     /// Nil for a thread that isn't on lines of a file.
     init?(_ thread: ReviewThread) {
@@ -683,20 +691,27 @@ struct Anchor: Hashable, Sendable {
                 comparison = tracking.to
             }
         }
+        let newest = [location.madeOn?.second, location.tracking?.to.second].compactMap { $0 }.max()
         if let right = spans.right {
-            self.init(comparison: comparison, path: path, side: .right, lines: right.lines, changeTrackingId: location.changeTrackingId)
+            self.init(comparison: comparison, path: path, side: .right, lines: right.lines, changeTrackingId: location.changeTrackingId,
+                      newest: newest)
         } else if let left = spans.left {
-            self.init(comparison: comparison, path: path, side: .left, lines: left.lines, changeTrackingId: location.changeTrackingId)
+            self.init(comparison: comparison, path: path, side: .left, lines: left.lines, changeTrackingId: location.changeTrackingId,
+                      newest: newest)
         } else {
             return nil
         }
     }
 
-    init(comparison: ReviewThread.Comparison?, path: String, side: ThreadExcerpt.Side, lines: ClosedRange<Int>, changeTrackingId: Int?) {
+    init(
+        comparison: ReviewThread.Comparison?, path: String, side: ThreadExcerpt.Side, lines: ClosedRange<Int>, changeTrackingId: Int?,
+        newest: Int? = nil
+    ) {
         self.comparison = comparison
         self.path = path
         self.side = side
         self.lines = lines
         self.changeTrackingId = changeTrackingId
+        self.newest = newest ?? comparison?.second
     }
 }

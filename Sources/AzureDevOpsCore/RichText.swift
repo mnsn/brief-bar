@@ -1128,9 +1128,10 @@ private enum MarkdownReader {
 
     /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
     /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment or tag goes on
-    /// to its end, whatever looks like code in it. A backslash before a run makes its first backtick just a backtick, but in code
-    /// a backslash is a backslash, so a run after one still ends a span. A bracket after a backslash starts no tag: it goes
-    /// to the Markdown reader as it is, which shows it.
+    /// to its end, whatever looks like code in it. A comment without an end is just text, as code after it is code. A
+    /// backslash before a run makes its first backtick just a backtick, but in code a backslash is a backslash, so a run
+    /// after one still ends a span. A bracket after a backslash starts no tag: it goes to the Markdown reader as it is,
+    /// which shows it.
     static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
         guard text.contains("<") else { return text }
         // The runs of backticks, in order, and whether an odd number of backslashes before each escapes it.
@@ -1160,14 +1161,10 @@ private enum MarkdownReader {
             return later[length]?.last
         }
         var result = ""
-        /// Adds a piece, keeping a mark between two that would join their backticks once HTML between them is gone, as
-        /// in `` `a`<!-- -->`b` ``: the inline reader takes it out after reading.
-        func append(_ piece: some StringProtocol) {
-            if result.last == "`", piece.first == "`" { result.append(Self.seam) }
-            result += piece
-        }
         var plain = text.startIndex
         var next = 0
+        // Whether a comment's end comes later: once one has none, none after it has.
+        var commentsEnd = true
         index = text.startIndex
         while index < text.endIndex {
             while next < runs.count, runs[next].range.lowerBound < index { next += 1 }
@@ -1177,8 +1174,8 @@ private enum MarkdownReader {
                 let opening = run.escaped ? text.index(after: index) : index
                 let length = run.escaped ? run.length - 1 : run.length
                 if length > 0, let end = closing(after: next, length: length) {
-                    append(transform(text[plain..<opening]))
-                    append(text[opening..<runs[end].range.upperBound])
+                    result += transform(text[plain..<opening])
+                    result += text[opening..<runs[end].range.upperBound]
                     index = runs[end].range.upperBound
                     plain = index
                 } else {
@@ -1187,8 +1184,8 @@ private enum MarkdownReader {
             } else if text[index] == "\\" {
                 let escaped = text.index(after: index)
                 if escaped < text.endIndex, text[escaped] == "<" {
-                    append(transform(text[plain..<index]))
-                    append(text[index...escaped])
+                    result += transform(text[plain..<index])
+                    result += text[index...escaped]
                     plain = text.index(after: escaped)
                     index = plain
                 } else if escaped < text.endIndex, text[escaped] != "`" {
@@ -1197,21 +1194,49 @@ private enum MarkdownReader {
                     // A run it escapes is read as a run.
                     index = escaped
                 }
-            } else if text[index...].hasPrefix("<!--") {
-                let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex)
-                index = end?.upperBound ?? text.endIndex
+            } else if commentsEnd, text[index...].hasPrefix("<!--") {
+                if let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex) {
+                    index = end.upperBound
+                } else {
+                    commentsEnd = false
+                    index = text.index(index, offsetBy: 4)
+                }
             } else if text[index] == "<", let tag = text[index...].prefixMatch(of: Self.anyTag) {
                 index = tag.range.upperBound
             } else {
                 index = text.index(after: index)
             }
         }
-        append(transform(text[plain...]))
-        return result
+        return result + transform(text[plain...])
     }
 
-    /// What keeps two pieces of inline Markdown apart where HTML between them was taken out.
-    static let seam: Character = "\u{FFFC}"
+    /// What's left where HTML is taken out, for as long as the inline reader may need it to keep what's on either side
+    /// apart: see `keptApart(_:)`.
+    static let seam: Unicode.Scalar = "\u{FFFC}"
+
+    /// Text with a seam only where it keeps two runs of a mark apart that HTML kept apart, as in `` `a`<!-- -->`b` `` or
+    /// `**one**<b></b>**two**`: elsewhere it would be in the way, as between the two spaces that break a line and its
+    /// end.
+    static func keptApart(_ text: String) -> String {
+        guard text.unicodeScalars.contains(seam) else { return text }
+        var result = String.UnicodeScalarView()
+        var apart = false
+        for scalar in text.unicodeScalars {
+            if scalar == seam {
+                apart = true
+                continue
+            }
+            if apart, result.last == scalar, "*_~`".unicodeScalars.contains(scalar) { result.append(seam) }
+            apart = false
+            result.append(scalar)
+        }
+        return String(result)
+    }
+
+    /// Text without its seams, once it's read.
+    static func withoutSeams(_ text: some StringProtocol) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != seam }))
+    }
 
     /// The HTML tags that format text, which keep their text: those ending a line or a block break the line there.
     nonisolated(unsafe) private static let htmlTag = #/
@@ -1226,26 +1251,31 @@ private enum MarkdownReader {
     /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, line breaks and the
     /// ends of blocks such as paragraphs break the line, a table's cells are apart, an image is Markdown's, and the other
     /// tags that format text keep their text. What isn't one of those stays, such as the `<T>` of `List<T>`, and so does
-    /// the start of a comment that doesn't end in the same paragraph, as CommonMark has it.
+    /// the start of a comment that doesn't end in the same paragraph, as CommonMark has it. Where HTML is taken out, a
+    /// seam is left.
     static func withoutHTML(_ text: Substring) -> String {
         guard text.contains("<") else { return String(text) }
+        let gone = String(seam)
         var text = withoutComments(text)
-        text = text.replacing(/<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()) { image(String($0.output)) }
+        text = text.replacing(/<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()) { tag in
+            let image = image(String(tag.output))
+            return image.isEmpty ? gone : image
+        }
         return text.replacing(htmlTag) { tag in
             let closes = !tag.output.1.isEmpty
             switch tag.output.2.lowercased() {
             case "br", "hr": return "\n"
             case "p", "div", "li", "tr", "summary", "details", "blockquote", "pre", "table", "dt", "dd", "h1", "h2", "h3", "h4",
                  "h5", "h6":
-                return closes ? "\n" : ""
-            case "td", "th": return closes ? " " : ""
-            default: return ""
+                return closes ? "\n" : gone
+            case "td", "th": return closes ? " " : gone
+            default: return gone
             }
         }
     }
 
-    /// Text without its HTML comments: each from `<!--` to the next `-->`, outside tags, whose quoted attributes are
-    /// theirs, whatever is in them. Once one has no end, none after it has.
+    /// Text without its HTML comments, each a seam: each from `<!--` to the next `-->`, outside tags, whose quoted
+    /// attributes are theirs, whatever is in them. Once one has no end, none after it has.
     private static func withoutComments(_ text: Substring) -> String {
         var result = ""
         var plain = text.startIndex
@@ -1254,6 +1284,7 @@ private enum MarkdownReader {
             if text[open...].hasPrefix("<!--") {
                 guard let end = text[text.index(open, offsetBy: 4)...].range(of: "-->") else { break }
                 result += text[plain..<open]
+                result.unicodeScalars.append(seam)
                 plain = end.upperBound
                 index = end.upperBound
             } else if let tag = text[open...].prefixMatch(of: anyTag) {
@@ -1284,16 +1315,16 @@ private enum MarkdownReader {
 
     /// Inline Markdown: emphasis, code, strikethrough, links and images, which link to where they are.
     private static func inline(_ text: String) -> [RichText.Run] {
-        let text = outsideCode(text, withoutHTML)
+        let text = keptApart(outsideCode(text, withoutHTML))
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible
         )
         guard let attributed = try? AttributedString(markdown: text, options: options) else {
-            return RichText.normalized([RichText.Run(text)])
+            return RichText.normalized([RichText.Run(withoutSeams(text))])
         }
         var runs: [RichText.Run] = []
         for run in attributed.runs {
-            var piece = String(attributed[run.range].characters.filter { $0 != seam })
+            var piece = withoutSeams(String(attributed[run.range].characters))
             var style = RichText.Style()
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.stronglyEmphasized) { style.insert(.bold) }

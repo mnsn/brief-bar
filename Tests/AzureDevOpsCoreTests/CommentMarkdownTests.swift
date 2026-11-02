@@ -62,6 +62,22 @@ import Testing
         ])
     }
 
+    @Test func keepsFormattingThatHTMLKeptApartApart() {
+        #expect(RichText(markdown: "**one**<b></b>**two**, ~~old~~<!-- x -->~~older~~ and *a*<img src=x>*b*").blocks == [
+            .paragraph([
+                RichText.Run("onetwo", style: .bold), RichText.Run(", "), RichText.Run("oldolder", style: .strikethrough),
+                RichText.Run(" and "), RichText.Run("ab", style: .italic),
+            ]),
+        ])
+        // What isn't two runs of a mark goes on as if the HTML had never been there.
+        #expect(RichText(markdown: "**bold**<b></b>text, `a`<i>x</i>`b`").blocks == [
+            .paragraph([
+                RichText.Run("bold", style: .bold), RichText.Run("text, "), RichText.Run("a", style: .code), RichText.Run("x"),
+                RichText.Run("b", style: .code),
+            ]),
+        ])
+    }
+
     @Test func readsImagesInHTMLAsImages() {
         #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
             .paragraph([RichText.Run("Quality gate: passed", link: URL(string: "https://example.invalid/badge.png"))]),
@@ -100,6 +116,10 @@ import Testing
         #expect(RichText(markdown: "`a`<!-- hidden -->`b` and `c`<b></b>`d`").blocks == [
             .paragraph([RichText.Run("ab", style: .code), RichText.Run(" and "), RichText.Run("cd", style: .code)]),
         ])
+        // A comment without an end is text, and code after it is still code.
+        #expect(RichText(markdown: "An unended <!-- and `<br>` in code").blocks == [
+            .paragraph([RichText.Run("An unended <!-- and "), RichText.Run("<br>", style: .code), RichText.Run(" in code")]),
+        ])
         // A backtick that nothing closes isn't code.
         #expect(plain("A lone ` and <b>bold</b>") == "A lone ` and bold")
     }
@@ -132,6 +152,7 @@ import Testing
             String(repeating: "<span title=\"`x` > ", count: 2_000),
             "<span title=\"" + String(repeating: "<a b ", count: 6_000),
             String(repeating: "<!-- -->", count: 10_000),
+            String(repeating: "<!-- `x` ", count: 10_000),
             String(repeating: "<a title=\"<!--\"> ", count: 3_000),
             String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
         ] {
