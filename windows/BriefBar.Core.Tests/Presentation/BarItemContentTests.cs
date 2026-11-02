@@ -7,7 +7,7 @@ public sealed class BarItemContentTests
     static readonly DateTimeOffset now = Times.At(seconds: 0);
 
     [Fact]
-    public void ShowsItsCountsInItsSectionsOrderWithNeedsYouEmphasized()
+    public void ShowsItsCountsInItsSectionsOrderWithEachStatesIcon()
     {
         var item = BarItemContent.Of(snapshot: Snapshots.BusyCopilot(status: SectionStatus.Live), position: 1, now: now);
         Assert.Equal(expected: "Copilot", actual: item.Label);
@@ -16,9 +16,10 @@ public sealed class BarItemContentTests
         Assert.Equal(
             expected: [(ItemState.NeedsYou, 2), (ItemState.Running, 1), (ItemState.Done, 1), (ItemState.Failing, 1)],
             actual: item.Chips.Select(selector: chip => (chip.State, chip.Count)));
-        Assert.Equal(expected: [true, false, false, false], actual: item.Chips.Select(selector: chip => chip.IsEmphasized));
-        // Copilot's stopped sessions show a warning, not a cross.
-        Assert.Equal(expected: IconKey.Warning, actual: item.Chips[3].Icon);
+        // Needs you is a raised hand, as on the Mac, and Copilot's stopped sessions show a warning, not a cross.
+        Assert.Equal(
+            expected: [IconKey.HandRaise, IconKey.Flash, IconKey.CheckmarkCircle, IconKey.Warning],
+            actual: item.Chips.Select(selector: chip => chip.Icon));
         Assert.False(condition: item.IsQuiet);
         Assert.Equal(expected: BarItemBadge.None, actual: item.Badge);
         Assert.Null(@object: item.BadgeText);

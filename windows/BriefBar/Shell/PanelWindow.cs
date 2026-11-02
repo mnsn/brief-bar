@@ -62,6 +62,7 @@ internal sealed partial class PanelWindow : Window
         view.SettingsRequested += (_, _) => controller.OpenSettings(source: ViewModel.Source);
         view.ContentResized += (_, _) => controller.Refit();
         Content = view;
+        FrameTheme.Follow(hwnd: Hwnd, content: view);
         SystemBackdrop = new ActiveAcrylic(kind: DesktopAcrylicKind.Base);
         Activated += OnActivated;
         // Alt+F4 hides it, as Esc does; only quitting closes it.
@@ -121,6 +122,9 @@ internal sealed partial class PanelWindow : Window
         AppWindow.ResizeClient(size: new SizeInt32(_Width: rect.Width, _Height: rect.Height));
         AppWindow.Move(position: new PointInt32(_X: rect.Left, _Y: rect.Top));
     }
+
+    /// Shows `theme`, Windows' mode, as the taskbar's flyouts do.
+    public void UseTheme(ElementTheme theme) => view.RequestedTheme = theme;
 
     public void HideWindow()
     {

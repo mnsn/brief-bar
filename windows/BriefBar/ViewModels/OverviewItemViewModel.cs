@@ -31,10 +31,14 @@ public sealed class OverviewItemViewModel : Observable
 
     public Brush MarkDoneBrush { get; private set => Set(storage: ref field, value: value); } = null!;
 
-    public void Update(OverviewSummary summary, ThemePalette palette)
+    /// How big its mark is, as Windows' text size makes the bar (`BarMetrics.IconSize`).
+    public double IconSize { get; private set => Set(storage: ref field, value: value); } = BarMetrics.SmallIconDip;
+
+    public void Update(OverviewSummary summary, ThemePalette palette, double iconSize)
     {
         ArgumentNullException.ThrowIfNull(argument: summary);
         ArgumentNullException.ThrowIfNull(argument: palette);
+        IconSize = iconSize;
         MarkNeedsYouBrush = palette.Fill(state: ItemState.NeedsYou);
         MarkRunningBrush = palette.Fill(state: ItemState.Running);
         MarkDoneBrush = palette.Fill(state: ItemState.Done);

@@ -33,6 +33,7 @@ internal sealed partial class SettingsWindow : Window
         view.TurnOffRequested += async (_, source) => await SwitchAsync(source: source, turnOn: false);
         view.QuitRequested += (_, _) => shell.Quit();
         Content = view;
+        FrameTheme.Follow(hwnd: Hwnd, content: view);
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(titleBar: view.TitleBarElement);
         SystemBackdrop = new MicaBackdrop { Kind = MicaKind.Base };
