@@ -7,10 +7,11 @@ import SwiftUI
 /// Whether agents may use BriefBar (`BriefBar --mcp`), and BriefBar among the Copilot CLI's MCP servers. Agents are off
 /// until you turn them on, like a source: turning them on adds BriefBar to the Copilot CLI, and turning them off
 /// removes it. BriefBar's plugin for Copilot, which gives the GitHub Copilot app and the CLI `/briefbar`, is installed
-/// only when you ask, once agents are on, and turning them off removes it too. If the CLI can't remove either, the page
-/// says so while agents are off, and tries again when you ask. Other agents' apps, such as VS Code, get
-/// BriefBar only when you install it in them, with their own install links, and keep it until you remove it there. The
-/// demo and `--render` never run the CLI or open another app, and show what the CLI would say.
+/// only when you ask, once agents are on, and so is its extension for the app's sessions, with Send Prompts to Copilot
+/// Sessions; turning agents off removes both too. If the CLI can't remove any of them, the page says so while agents are
+/// off, and tries again when you ask. Other agents' apps, such as VS Code, get BriefBar only when you install it in
+/// them, with their own install links, and keep it until you remove it there. The demo and `--render` never run the CLI
+/// or open another app, and show what the CLI would say.
 @MainActor
 final class AgentsModel: ObservableObject {
     /// BriefBar among the Copilot CLI's servers, as the CLI last said.
@@ -30,10 +31,15 @@ final class AgentsModel: ObservableObject {
     }
 
     @Published private(set) var state: SourceState
-    /// BriefBar's server and plugin in the CLI: working until the last check or change asked for is done, so that an
+    /// BriefBar's server and plugins in the CLI: working until the last check or change asked for is done, so that an
     /// earlier one's answer isn't shown while a later one is still to come (`CopilotCLIProgress`).
     @Published private var serverProgress = CopilotCLIProgress<CopilotMCPRegistration.Status>()
     @Published private var pluginProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+    @Published private var sessionPromptsProgress = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+    /// What you turned Send Prompts to Copilot Sessions to, while the CLI is at it.
+    @Published private var sessionPromptsAsked: Bool?
+    /// What you last turned it to, which Try Again asks the CLI for again.
+    private var sessionPromptsWanted: Bool?
 
     var registration: Registration {
         if serverProgress.isWorking { return .working }
@@ -43,6 +49,12 @@ final class AgentsModel: ObservableObject {
     var plugin: Plugin {
         if pluginProgress.isWorking { return .working }
         return pluginProgress.status.map(Plugin.known) ?? .unknown
+    }
+
+    /// BriefBar's extension for the app's sessions among the CLI's plugins: Send Prompts to Copilot Sessions.
+    var sessionPrompts: Plugin {
+        if sessionPromptsProgress.isWorking { return .working }
+        return sessionPromptsProgress.status.map(Plugin.known) ?? .unknown
     }
 
     private let defaults: UserDefaults
@@ -57,6 +69,7 @@ final class AgentsModel: ObservableObject {
     private var last: Task<Void, Never>?
     private var checkedAt: Date?
     private var pluginCheckedAt: Date?
+    private var sessionPromptsCheckedAt: Date?
 
     init(
         defaults: UserDefaults, isLive: Bool, executable: String = Bundle.main.executablePath ?? AppIdentity.name,
@@ -117,7 +130,7 @@ final class AgentsModel: ObservableObject {
     }
 
     /// With your consent to what agents get now. The first time, BriefBar adds itself to the Copilot CLI too, and asks
-    /// whether its plugin is there, which it never installs by itself; Keep Them On, after an update, leaves the CLI as
+    /// whether its plugins are there, which it never installs by itself; Keep Them On, after an update, leaves the CLI as
     /// it was.
     func turnOn() {
         guard state != .on else { return }
@@ -128,28 +141,36 @@ final class AgentsModel: ObservableObject {
         if wasOff {
             change(demo: .added(enabled: true)) { await $0.add() }
             refreshPlugin(force: true)
+            refreshSessionPrompts(force: true)
         } else {
             refresh(force: true)
         }
     }
 
-    /// `--mcp` refuses from now on, and BriefBar and its plugin leave the Copilot CLI.
+    /// `--mcp` refuses from now on, and BriefBar and its plugins leave the Copilot CLI. BriefBar stops sending prompts to
+    /// sessions at once, as the sessions that are open keep its extension until they start again.
     func turnOff() {
         guard state != .off else { return }
         AgentAccess.turnOff(in: defaults)
         state = .off
+        CopilotSessionPrompts.set(false, in: defaults)
+        // As turning it off does, so that the page shows it off meanwhile, and Try Again can't turn it back on.
+        sessionPromptsAsked = false
+        sessionPromptsWanted = false
         Log.app.info("Turned off agents")
         change(demo: .absent) { await $0.remove() }
         changePlugin(demo: .absent) { await $0.remove() }
+        changeSessionPrompts(demo: .absent) { await $0.remove() }
     }
 
-    /// Asks the Copilot CLI whether it has BriefBar and its plugin: when the page shows, unless it asked a moment ago.
+    /// Asks the Copilot CLI whether it has BriefBar and its plugins: when the page shows, unless it asked a moment ago.
     func refresh(force: Bool = false) {
         guard state == .on else { return }
         if registration != .working, force || checkedAt.map({ Date().timeIntervalSince($0) >= 30 }) ?? true {
             change(demo: .added(enabled: true)) { await $0.status() }
         }
         refreshPlugin(force: force)
+        refreshSessionPrompts(force: force)
     }
 
     func addToCopilotCLI() {
@@ -166,11 +187,13 @@ final class AgentsModel: ObservableObject {
     /// removing it, once it has, or when agents are on.
     var leftovers: AgentCleanup? {
         guard state == .off else { return nil }
-        return AgentCleanup.left(server: serverProgress, plugin: pluginProgress)
+        return AgentCleanup.left(server: serverProgress, plugin: pluginProgress, sessionPrompts: sessionPromptsProgress)
     }
 
-    /// While agents are off, BriefBar is removing itself, or its plugin, from the Copilot CLI.
-    var isLeaving: Bool { state == .off && (registration == .working || plugin == .working) }
+    /// While agents are off, BriefBar is removing itself, or its plugins, from the Copilot CLI.
+    var isLeaving: Bool {
+        state == .off && (registration == .working || plugin == .working || sessionPrompts == .working)
+    }
 
     /// Removes again what turning agents off couldn't.
     func removeLeftovers() {
@@ -178,6 +201,7 @@ final class AgentsModel: ObservableObject {
         Log.app.info("Removing what turning agents off left in the Copilot CLI")
         if leftovers.server != nil { change(demo: .absent) { await $0.remove() } }
         if leftovers.plugin != nil { changePlugin(demo: .absent) { await $0.remove() } }
+        if leftovers.sessionPrompts != nil { changeSessionPrompts(demo: .absent) { await $0.remove() } }
     }
 
     // MARK: The plugin
@@ -203,6 +227,93 @@ final class AgentsModel: ObservableObject {
         var demo = CopilotPluginRegistration.Status.absent
         if case .known(let status) = plugin { demo = status }
         changePlugin(demo: demo) { await $0.status() }
+    }
+
+    // MARK: Send Prompts to Copilot Sessions
+
+    /// It's on, as you chose and the Copilot CLI then installed it, which is what Send to Copilot goes by; while the CLI
+    /// is at it, what you turned it to.
+    var areSessionPromptsOn: Bool {
+        if sessionPrompts == .working, let asked = sessionPromptsAsked { return asked }
+        return CopilotSessionPrompts.isOn(in: defaults)
+    }
+
+    /// It's off, but the Copilot CLI still has BriefBar's extension, as when removing it failed: sessions that start
+    /// run it, though BriefBar sends them nothing.
+    var isSessionPromptsLeftOver: Bool {
+        guard !areSessionPromptsOn, case .known(let status) = sessionPrompts else { return false }
+        return Self.isOn(status)
+    }
+
+    /// You can turn it on or off: not while the CLI is at it, nor where a marketplace by BriefBar's name isn't its own,
+    /// nor turn it on in a copy of BriefBar without the plugin. Such a copy can turn it off, as another copy's may be on.
+    var canChangeSessionPrompts: Bool {
+        canAskForSessionPrompts && (hasPlugin || areSessionPromptsOn)
+    }
+
+    /// Installs BriefBar's extension for the app's sessions, or removes it: only when you ask. Any copy of BriefBar can
+    /// remove it, but only one with the plugin can install it. Turned off, BriefBar stops sending prompts to sessions at
+    /// once, whatever the CLI says, as the sessions that are open keep the extension until they start again.
+    func setSessionPrompts(_ isOn: Bool) {
+        guard canAskForSessionPrompts, hasPlugin || !isOn else { return }
+        sessionPromptsAsked = isOn
+        sessionPromptsWanted = isOn
+        Log.app.info("Turned \(isOn ? "on" : "off", privacy: .public) Send Prompts to Copilot Sessions")
+        if isOn {
+            changeSessionPrompts(demo: .installed(enabled: true), installing: true) { await $0.install() }
+        } else {
+            CopilotSessionPrompts.set(false, in: defaults)
+            changeSessionPrompts(demo: .absent) { await $0.remove() }
+        }
+    }
+
+    /// Asks the CLI again for what you last turned it to, or, when it last checked what the CLI has, checks again.
+    func retrySessionPrompts() {
+        if let sessionPromptsWanted {
+            setSessionPrompts(sessionPromptsWanted)
+        } else {
+            refreshSessionPrompts(force: true)
+        }
+    }
+
+    private func refreshSessionPrompts(force: Bool) {
+        guard sessionPrompts != .working else { return }
+        if !force, let sessionPromptsCheckedAt, Date().timeIntervalSince(sessionPromptsCheckedAt) < 30 { return }
+        // Try Again then asks the CLI again, rather than redo what you asked for before, which the CLI may have undone.
+        sessionPromptsWanted = nil
+        // The demo has only what you did on this page.
+        var demo = CopilotPluginRegistration.Status.absent
+        if case .known(let status) = sessionPrompts { demo = status }
+        changeSessionPrompts(demo: demo) { await $0.status() }
+    }
+
+    /// The CLI isn't at it, and a marketplace by BriefBar's name is its own, if there's one.
+    private var canAskForSessionPrompts: Bool {
+        switch sessionPrompts {
+        case .working, .known(.taken): return false
+        case .unknown, .known: return true
+        }
+    }
+
+    static func isOn(_ status: CopilotPluginRegistration.Status) -> Bool {
+        switch status {
+        case .installed(enabled: true), .installedElsewhere: return true
+        case .installed(enabled: false), .absent, .taken, .noCLI, .failed: return false
+        }
+    }
+
+    /// Keeps what the CLI said, for Send to Copilot, which sends prompts to sessions only while it's on: on only once the
+    /// CLI has installed it as you asked, and off once the CLI doesn't have it. A check never turns it back on, so
+    /// that it stays off when removing it failed; and when the CLI couldn't say, it stays as it was.
+    private func remember(sessionPrompts status: CopilotPluginRegistration.Status, installing: Bool) {
+        switch status {
+        case .failed, .noCLI:
+            break
+        case .installed(enabled: true), .installedElsewhere:
+            if installing { CopilotSessionPrompts.set(true, in: defaults) }
+        case .installed(enabled: false), .absent, .taken:
+            CopilotSessionPrompts.set(false, in: defaults)
+        }
     }
 
     // MARK: The CLI
@@ -238,20 +349,55 @@ final class AgentsModel: ObservableObject {
             return
         }
         let request = pluginProgress.ask()
-        let marketplace = pluginMarketplace
-        withCLI { [weak self] cli in
-            let status: CopilotPluginRegistration.Status
-            if let cli {
-                status = await action(CopilotPluginRegistration(
-                    cli: cli, marketplace: marketplace, bundleIdentifier: AppIdentity.bundleIdentifier
-                ))
-            } else {
-                status = .noCLI
-            }
+        withPlugin(.skill, action) { [weak self] status in
             guard let self else { return }
             pluginProgress.answer(request, with: status)
             pluginCheckedAt = Date()
             Log.app.info("BriefBar's plugin in the Copilot CLI: \(status.kind, privacy: .public)")
+        }
+    }
+
+    private func changeSessionPrompts(
+        demo: CopilotPluginRegistration.Status, installing: Bool = false,
+        _ action: @escaping @Sendable (CopilotPluginRegistration) async -> CopilotPluginRegistration.Status
+    ) {
+        guard isLive else {
+            sessionPromptsProgress = CopilotCLIProgress(status: demo)
+            sessionPromptsAsked = nil
+            remember(sessionPrompts: demo, installing: installing)
+            return
+        }
+        let request = sessionPromptsProgress.ask()
+        withPlugin(.sessions, action) { [weak self] status in
+            guard let self else { return }
+            sessionPromptsProgress.answer(request, with: status)
+            sessionPromptsCheckedAt = Date()
+            // Only what the last one asked for found counts, as the page shows.
+            if !sessionPromptsProgress.isWorking {
+                sessionPromptsAsked = nil
+                remember(sessionPrompts: status, installing: installing)
+            }
+            Log.app.info("BriefBar's extension for sessions in the Copilot CLI: \(status.kind, privacy: .public)")
+        }
+    }
+
+    /// Runs `action` on one of BriefBar's plugins, with the Copilot CLI once it's found, then `answer` with what it found.
+    private func withPlugin(
+        _ plugin: CopilotPluginRegistration.Plugin,
+        _ action: @escaping @Sendable (CopilotPluginRegistration) async -> CopilotPluginRegistration.Status,
+        answer: @escaping @MainActor @Sendable (CopilotPluginRegistration.Status) -> Void
+    ) {
+        let marketplace = pluginMarketplace
+        withCLI { cli in
+            let status: CopilotPluginRegistration.Status
+            if let cli {
+                status = await action(CopilotPluginRegistration(
+                    cli: cli, marketplace: marketplace, plugin: plugin, bundleIdentifier: AppIdentity.bundleIdentifier
+                ))
+            } else {
+                status = .noCLI
+            }
+            answer(status)
         }
     }
 
@@ -268,12 +414,15 @@ final class AgentsModel: ObservableObject {
         }
     }
 
-    /// For `--render`: agents on, BriefBar added to the Copilot CLI and its plugin not installed yet, or as they were,
-    /// without saving any of it.
-    func useForRendering(on: Bool) {
+    /// For `--render`: agents on, BriefBar added to the Copilot CLI and its plugins not installed yet, or the extension
+    /// for the app's sessions installed, or as they were, without saving any of it: `--render` keeps the preferences
+    /// in memory.
+    func useForRendering(on: Bool, sessionPrompts: Bool = false) {
         state = on ? .on : AgentAccess.state(in: defaults)
         serverProgress = CopilotCLIProgress(status: on ? .added(enabled: true) : nil)
         pluginProgress = CopilotCLIProgress(status: on ? .absent : nil)
+        sessionPromptsProgress = CopilotCLIProgress(status: on ? (sessionPrompts ? .installed(enabled: true) : .absent) : nil)
+        if on { CopilotSessionPrompts.set(sessionPrompts, in: defaults) }
     }
 
     /// For `--render`: agents just turned off, and the Copilot CLI couldn't remove the plugin, without saving either.
@@ -283,6 +432,8 @@ final class AgentsModel: ObservableObject {
         pluginProgress = CopilotCLIProgress(
             status: .failed("Couldn't save the settings: another Copilot process is writing them.")
         )
+        sessionPromptsProgress = CopilotCLIProgress(status: .absent)
+        CopilotSessionPrompts.set(false, in: defaults)
     }
 
     /// A path as a shell reads it.
@@ -356,7 +507,8 @@ struct AgentsPage: View {
                 Text("""
                     Turning them on adds BriefBar to the Copilot CLI's MCP servers, which the GitHub Copilot app's \
                     sessions use too. Then you can install its Copilot plugin, which adds \(AgentsText.command) \
-                    there. Turning agents off, at any time, removes both.
+                    there, and turn on \(CopilotSessionPrompts.title). Turning agents off, at any time, removes them \
+                    all.
                     """)
                     .font(style: .callout)
                     .foregroundStyle(.secondary)
@@ -380,6 +532,9 @@ struct AgentsPage: View {
                         .padding(.vertical, 10)
                     Divider()
                     CopilotPluginRow(agents: agents)
+                        .padding(.vertical, 10)
+                    Divider()
+                    SessionPromptsRow(agents: agents)
                         .padding(.vertical, 10)
                     Divider()
                     OtherAgentsRow(agents: agents)
@@ -423,6 +578,9 @@ private struct AgentsLeftoversRow: View {
                     }
                     if let plugin = leftovers.plugin {
                         Text("Its Copilot plugin: \(plugin)")
+                    }
+                    if let sessionPrompts = leftovers.sessionPrompts {
+                        Text("Its extension for \(CopilotSessionPrompts.title): \(sessionPrompts)")
                     }
                     Text("Agents are off either way: BriefBar's tools answer that they are.")
                         .foregroundStyle(.secondary)
@@ -648,6 +806,106 @@ private struct CopilotPluginRow: View {
                 Button("Try Again") { agents.refresh(force: true) }
             case .taken:
                 EmptyView()
+            }
+        }
+    }
+}
+
+/// Send Prompts to Copilot Sessions: BriefBar's extension for the GitHub Copilot app's sessions, among the Copilot CLI's
+/// plugins, installed only when you turn it on, and removed when you turn it off.
+private struct SessionPromptsRow: View {
+    @ObservedObject var agents: AgentsModel
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "paperplane")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(CopilotSessionPrompts.title)
+                    .font(style: .headline)
+                Text("""
+                    Send to Copilot can then send a prompt to one of the GitHub Copilot app's sessions itself, or fork \
+                    the session and send it to the fork, when you ask, instead of copying it for you to paste. It adds \
+                    a small extension to each session the app opens: a process of about 46\u{00A0}MB that does nothing \
+                    else.
+                    """)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                status
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle(CopilotSessionPrompts.title, isOn: Binding(
+                get: { agents.areSessionPromptsOn },
+                set: { agents.setSessionPrompts($0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .disabled(!agents.canChangeSessionPrompts)
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch agents.sessionPrompts {
+        case .unknown:
+            if !agents.hasPlugin {
+                Text("This copy of BriefBar doesn't have it: BriefBar.app does.")
+                    .foregroundStyle(.secondary)
+            }
+        case .working:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Asking the Copilot CLI…")
+                    .foregroundStyle(.secondary)
+            }
+        case .known(let status):
+            switch status {
+            case .installed(enabled: true), .installedElsewhere:
+                if agents.isSessionPromptsLeftOver {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("""
+                            Off, but the Copilot CLI still has it, so sessions that start run it, though BriefBar sends \
+                            them nothing.
+                            """)
+                            .foregroundStyle(.secondary)
+                        Button("Remove") { agents.setSessionPrompts(false) }
+                    }
+                } else if case .installedElsewhere(let path) = status {
+                    Text(agents.hasPlugin
+                         ? "On, from the copy of BriefBar at \(UserPath.abbreviate(path)). Turn it off and on to use this copy."
+                         : "On, from the copy of BriefBar at \(UserPath.abbreviate(path)).")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("""
+                        On, as \(CopilotPluginRegistration.Plugin.sessions.rawValue). Sessions get it as they start: \
+                        one that's open now, once it starts again.
+                        """, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            case .installed(enabled: false), .absent:
+                if !agents.hasPlugin {
+                    Text("This copy of BriefBar doesn't have it: BriefBar.app does.")
+                        .foregroundStyle(.secondary)
+                }
+            case .taken:
+                Text("""
+                    Copilot has a plugin marketplace named \(CopilotPluginRegistration.name) that BriefBar can't tell \
+                    is its own, so it leaves it. To turn this on, remove it with copilot plugin marketplace remove \
+                    \(CopilotPluginRegistration.name).
+                    """)
+                    .foregroundStyle(.secondary)
+            case .noCLI:
+                Text("It needs the Copilot CLI, which isn't installed: brew install copilot-cli installs it.")
+                    .foregroundStyle(.secondary)
+            case .failed(let message):
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Couldn't ask the Copilot CLI: \(message)")
+                        .foregroundStyle(.secondary)
+                    Button("Try Again") { agents.retrySessionPrompts() }
+                }
             }
         }
     }
