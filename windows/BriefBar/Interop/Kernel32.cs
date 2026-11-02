@@ -2,8 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace BriefBar.Interop;
 
-/// kernel32.dll: for hooks, the module and thread they belong to; which program a window belongs to; and, for a moment,
-/// another program's console, to find the terminal it's in.
+/// kernel32.dll: for hooks, the module and thread they belong to; which program a window belongs to; for a moment,
+/// another program's console, to find the terminal it's in; and freeing what Windows returns.
 internal static class Kernel32
 {
     /// Enough to ask a process its program's path.
@@ -44,6 +44,10 @@ internal static class Kernel32
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool CloseHandle(nint handle);
+
+    /// Frees what Windows allocated for a caller, such as what crypt32.dll returns.
+    [DllImport("kernel32.dll")]
+    public static extern nint LocalFree(nint memory);
 
     /// The path of the program the process `processId` runs, or null when Windows won't say, as for a process that's
     /// gone or runs as another user.

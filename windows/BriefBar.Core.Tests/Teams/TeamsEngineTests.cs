@@ -1,0 +1,817 @@
+using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using BriefBar.Core.Teams;
+using BriefBar.Core.Tests.ChromiumIndexedDB;
+using BriefBar.Core.Tests.Copilot;
+
+namespace BriefBar.Core.Tests.Teams;
+
+/// Reading Teams' own data: each chat from Teams' conversations, as Teams writes them, and the messages of those that may be
+/// unread from its message cache. The Mac's `ReadMarkerTests`, on the same fixture, with the message cache made up.
+public sealed class TeamsEngineTests
+{
+    static readonly TimeSpan quickly = TimeSpan.FromMilliseconds(value: 50);
+
+    [Fact]
+    public void ReadsEachChatFromTeamsData()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = TeamsData.Copy(folder: folder.Path);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.True(condition: snapshot.Found);
+        Assert.Null(@object: snapshot.Problem);
+        Assert.True(condition: snapshot.IsComplete);
+        var chats = snapshot.Chats.ToDictionary(keySelector: chat => chat.Id);
+        // The channel was deleted, and Teams' own notes aren't a chat.
+        Assert.Equal(
+            expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Crew, Fixture.Sync, Fixture.Big, Fixture.Wrapped },
+            actual: chats.Keys.ToHashSet());
+        Assert.Equal(expected: Marker(read: 5000), actual: chats[Fixture.Avery].Marker);
+        Assert.Equal(expected: Marker(read: 7000), actual: chats[Fixture.Sam].Marker);
+        Assert.Equal(expected: Marker(read: 2000), actual: chats[Fixture.Crew].Marker);
+        Assert.Equal(expected: Marker(read: 100), actual: chats[Fixture.Big].Marker);
+        Assert.Equal(expected: Marker(read: 300), actual: chats[Fixture.Wrapped].Marker);
+        // The meeting's chat was never opened.
+        Assert.Null(@object: chats[Fixture.Sync].Marker);
+        Assert.Equal(expected: ConversationKind.OneOnOne, actual: chats[Fixture.Avery].Kind);
+        Assert.Equal(expected: ConversationKind.Group, actual: chats[Fixture.Crew].Kind);
+        Assert.Equal(expected: "Made-up chat", actual: chats[Fixture.Avery].Title);
+        Assert.Equal(expected: "Made-up topic", actual: chats[Fixture.Crew].Title);
+        Assert.Equal(
+            expected: new TeamsMessage(
+                ConversationId: Fixture.Sam,
+                Id: Fixture.Base + 8000,
+                Sender: null,
+                IsFromMe: true,
+                Type: "RichText/Html",
+                Text: "Made-up text",
+                ArrivedAt: DateTimeOffset.FromUnixTimeMilliseconds(milliseconds: Fixture.Base + 8000)),
+            actual: chats[Fixture.Sam].Newest);
+        // Every chat's newest message is yours, so none may be unread, and its messages aren't read.
+        Assert.Empty(collection: snapshot.Messages);
+        var report = snapshot.Report;
+        Assert.Equal(expected: (1, 1, 7, 6, 5), actual: (report.Folders, report.Stores, report.Conversations, report.Chats, report.WithMarker));
+        Assert.Equal(
+            expected: new Dictionary<string, int>
+            {
+                ["Blink 21, V8 16"] = 5,
+                ["Blink 21, V8 16, compressed"] = 1,
+                ["Blink 21, V8 16, from a blob file"] = 1,
+            },
+            actual: report.Formats);
+        Assert.Empty(collection: report.Unreadable);
+        Assert.Equal(expected: 0, actual: report.UnreadableFiles);
+    }
+
+    [Fact]
+    public void HasNothingToSayWithoutTeamsData()
+    {
+        using var folder = new TemporaryFolder();
+
+        var snapshot = TeamsEngine.LoadOnce(location: new TeamsCacheLocation(Root: folder.Combine("EBWebView"), IsTeamsOwn: false));
+
+        Assert.False(condition: snapshot.Found);
+        Assert.False(condition: snapshot.IsComplete);
+        Assert.Empty(collection: snapshot.Chats);
+        Assert.Equal(expected: TeamsProblem.NotFound, actual: snapshot.Problem);
+    }
+
+    [Fact]
+    public void SaysWhenTeamsDataCantBeUnderstood()
+    {
+        var report = new TeamsDataReport();
+        Assert.Null(@object: report.Problem);
+        report = report with { Folders = 1 };
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: report.Problem);
+        report = report with { Stores = 1, Conversations = 10 };
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: report.Problem);
+        // Chats never opened, as on a new account, have no read marker, but have the field that holds one.
+        report = report with { WithHorizon = 10 };
+        Assert.Null(@object: report.Problem);
+        report = report with { WithMarker = 8 };
+        Assert.Null(@object: report.Problem);
+        report = report with { Unreadable = new Dictionary<string, int> { ["corrupt property count"] = 1 } };
+        Assert.Null(@object: report.Problem);
+        report = report with { Unreadable = new Dictionary<string, int> { ["unsupported V8 tag 92"] = 4 } };
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: report.Problem);
+        report = report with { Unreadable = new Dictionary<string, int>(), UnreadableFiles = 1 };
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: report.Problem);
+
+        var both = report.Adding(other: report with { Unreadable = new Dictionary<string, int> { ["truncated"] = 2 } });
+        Assert.Equal(expected: (2, 2, 20, 16, 2), actual: (both.Folders, both.Stores, both.Conversations, both.WithMarker, both.UnreadableFiles));
+        Assert.Equal(expected: 20, actual: both.WithHorizon);
+        Assert.Equal(expected: new Dictionary<string, int> { ["truncated"] = 2 }, actual: both.Unreadable);
+        Assert.NotEqual(expected: report, actual: report with { WithHorizon = 9 });
+
+        // A chat whose messages couldn't all be read may have more unread than it shows.
+        var partlyRead = report with { UnreadableFiles = 0, ChatsPartlyRead = 1 };
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: partlyRead.Problem);
+        Assert.Equal(expected: 2, actual: partlyRead.Adding(other: partlyRead).ChatsPartlyRead);
+        Assert.NotEqual(expected: partlyRead, actual: partlyRead with { ChatsPartlyRead = 0 });
+        // A damaged log record may have held anything.
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: (report with { UnreadableFiles = 0, CorruptLogRecords = 1 }).Problem);
+
+        Assert.Equal(expected: TeamsProblem.NotFound, actual: new TeamsSnapshot().Problem);
+        Assert.Equal(expected: TeamsProblem.ReadFailed, actual: new TeamsSnapshot { Found = true, Failed = true }.Problem);
+    }
+
+    /// Teams' data found but not understood, as after an update that renames its stores, says nothing of which chats are
+    /// gone.
+    [Fact]
+    public void IsntCompleteWhenTeamsDataIsntUnderstood()
+    {
+        using var folder = new TemporaryFolder();
+        var leveldb = Path.Combine(paths: [folder.Path, "EBWebView", "WV2Profile_tfw", "IndexedDB", TeamsData.FolderName]);
+        Directory.CreateDirectory(path: leveldb);
+        var log = new LogWriter();
+        log.Add(batch: LogWriter.Batch(
+            sequence: 1,
+            (IndexedDBKeys.DatabaseName(name: Fixture.ConversationsDatabase), IndexedDBKeys.DatabaseId(id: TeamsData.ConversationsDatabase)),
+            (IndexedDBKeys.ObjectStoreName(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store), IndexedDBKeys.Name(name: "conversations-v2"))));
+        File.WriteAllBytes(path: Path.Combine(path1: leveldb, path2: TeamsData.LogName), bytes: log.Bytes);
+
+        var snapshot = TeamsEngine.LoadOnce(location: new TeamsCacheLocation(Root: folder.Combine("EBWebView"), IsTeamsOwn: false));
+
+        Assert.True(condition: snapshot.Found);
+        Assert.Empty(collection: snapshot.Chats);
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// On an account whose chats were never opened, as a new one, no chat has a read marker, but each has the field that
+    /// holds one: Teams' data is understood, and its chats are unread.
+    [Fact]
+    public void UnderstandsChatsNeverOpened()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: 0, Newest: lunch, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Null(@object: snapshot.Problem);
+        Assert.True(condition: snapshot.IsComplete);
+        Assert.Equal(expected: (0, 1), actual: (snapshot.Report.WithMarker, snapshot.Report.WithHorizon));
+        Assert.Equal(expected: [lunch.Id], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// Chats without the read marker field in its form, as after an update to Teams that renames it, say Teams' data
+    /// changed: BriefBar can't tell what's read.
+    [Fact]
+    public void SaysTeamsDataChangedWithoutTheReadMarkerField()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Write(folder: folder.Path, chats: [], replyChains: []);
+        static byte[] Renamed(string id) => V8Writer.Record(body: writer => writer.Members(properties:
+        [
+            ("id", value => value.Text(text: id)),
+            ("type", value => value.Text(text: "Chat")),
+            ("properties", value => value.Members(properties: [("readHorizon", horizon => horizon.Text(text: "{\"id\":1}"))])),
+        ]));
+        TeamsData.Append(
+            path: log,
+            LogWriter.Batch(
+                sequence: 10,
+                writes:
+                [
+                    (IndexedDBKeys.Record(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, key: Fixture.Avery), Renamed(id: Fixture.Avery)),
+                    (IndexedDBKeys.Record(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, key: Fixture.Crew), Renamed(id: Fixture.Crew)),
+                ]));
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: 2, actual: snapshot.Chats.Count);
+        Assert.Equal(expected: TeamsProblem.DataChanged, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A conversation of a type BriefBar doesn't know, as after an update to Teams, may be a chat: it counts as one that
+    /// couldn't be read, so the read isn't complete, though one is too few to say some of Teams' data couldn't be read.
+    [Fact]
+    public void CountsConversationsItDoesntKnowAsUnreadable()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: Avery(seconds: 30, text: "See you there")),
+                new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null),
+                new MadeUpChat(Id: Fixture.Sync, Type: "Meeting", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null),
+                new MadeUpChat(Id: Fixture.Channel, Type: "Topic", ReadUpTo: 0, Newest: null),
+                new MadeUpChat(Id: Fixture.Crew, Type: "SomethingNew", ReadUpTo: TeamsData.Id(seconds: 10), Newest: null),
+            ],
+            replyChains: []);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Sync }, actual: snapshot.Chats.Select(selector: chat => chat.Id).ToHashSet());
+        Assert.Equal(expected: new Dictionary<string, int> { ["unsupported conversation type"] = 1 }, actual: snapshot.Report.Unreadable);
+        Assert.Null(@object: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A chat whose read marker field BriefBar can't read isn't taken for one never read, whose every message would be
+    /// unread: it counts as a conversation that couldn't be read.
+    [Fact]
+    public void CountsAReadMarkerItCantReadAsUnreadable()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: Avery(seconds: 30, text: "See you there")),
+                new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null),
+                new MadeUpChat(Id: Fixture.Sync, Type: "Meeting", ReadUpTo: 0, Newest: null),
+                new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: 0, Newest: new MadeUpMessage(Id: TeamsData.Id(seconds: 40), Sender: "Jordan Lee", Html: "Shipping at 5"), Horizon: "{\"id\":1}"),
+            ],
+            replyChains: []);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sam, Fixture.Sync }, actual: snapshot.Chats.Select(selector: chat => chat.Id).ToHashSet());
+        Assert.Equal(expected: new Dictionary<string, int> { ["unsupported read marker"] = 1 }, actual: snapshot.Report.Unreadable);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A message cache record BriefBar doesn't understand, as after an update to Teams, may hold an unread message: its
+    /// chat counts as one whose messages couldn't all be read.
+    [Fact]
+    public void SaysWhenAMessageRecordIsntUnderstood()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var noon = Avery(seconds: 20, text: "Noon works");
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 5), Newest: noon, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+        TeamsData.Append(
+            path: log,
+            LogWriter.Batch(
+                sequence: 50,
+                writes:
+                [
+                    (IndexedDBKeys.Record(database: TeamsData.ReplyChainsDatabase, objectStore: TeamsData.Store, key: Chain(chat: Fixture.Avery, noon).Key),
+                        V8Writer.Record(body: writer => writer.Members(properties:
+                        [
+                            ("conversationId", value => value.Text(text: Fixture.Avery)),
+                            ("replyChainId", value => value.Text(text: TeamsData.Digits(value: noon.Id))),
+                            ("messages", value => value.Members(properties: [])),
+                        ]))),
+                ]));
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: 1, actual: snapshot.Report.ChatsPartlyRead);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+        Assert.Equal(expected: [lunch.Id], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// A log record whose checksum says it's damaged, before others, may have held anything: some of Teams' data
+    /// couldn't be read.
+    [Fact]
+    public void SaysWhenALogRecordIsDamaged()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: null)],
+            replyChains: []);
+        var damaged = new FileInfo(fileName: log).Length;
+        TeamsData.Append(
+            path: log,
+            TeamsData.Batch(sequence: 50, chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: null)),
+            TeamsData.Batch(sequence: 51, chat: new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: null)));
+        var bytes = File.ReadAllBytes(path: log);
+        bytes[damaged + 20] ^= 0xFF;
+        File.WriteAllBytes(path: log, bytes: bytes);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Equal(expected: [Fixture.Sam], actual: snapshot.Chats.Select(selector: chat => chat.Id));
+        Assert.Equal(expected: 1, actual: snapshot.Report.CorruptLogRecords);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: snapshot.Problem);
+        Assert.False(condition: snapshot.IsComplete);
+    }
+
+    /// A conversation record whose key can't be read may be a chat's: it counts as unreadable, whether Teams writes it as
+    /// BriefBar watches or it's read from scratch, so the read isn't complete.
+    [Fact]
+    public async Task CountsConversationKeysItCantReadAsUnreadable()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = MadeUp(folder: folder);
+        byte[] unreadableKey = [.. IndexedDBKeys.Prefix(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, index: 1), 9];
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        Assert.True(condition: collector.Latest!.IsComplete);
+
+        TeamsData.Append(path: log, LogWriter.Batch(sequence: 100, (unreadableKey, V8Writer.Record(body: writer => writer.Flag(value: true)))));
+        var written = await collector.Until(what: "the record Teams wrote", predicate: snapshot => snapshot.Report.Unreadable.Count > 0);
+        Assert.Equal(expected: new Dictionary<string, int> { ["unreadable key"] = 1 }, actual: written.Report.Unreadable);
+        Assert.False(condition: written.IsComplete);
+
+        var fromScratch = TeamsEngine.LoadOnce(location: location);
+        Assert.Equal(expected: new Dictionary<string, int> { ["unreadable key"] = 1 }, actual: fromScratch.Report.Unreadable);
+        Assert.False(condition: fromScratch.IsComplete);
+    }
+
+    /// A folder that can't be listed may hold Teams' data. With others that could be read, some of Teams' data couldn't
+    /// be; alone, reading Teams' data failed, which isn't Teams' data changing, and a panel opening reads it all again.
+    /// Either way, the read isn't complete.
+    [Fact]
+    [SupportedOSPlatform(platformName: "windows")]
+    public void SaysWhenAFolderCantBeListed()
+    {
+        Assert.SkipUnless(condition: OperatingSystem.IsWindows(), reason: "Only Windows' access control keeps a folder from being listed here.");
+        using var folder = new TemporaryFolder();
+        var (location, _) = TeamsData.Copy(folder: folder.Path);
+
+        using (new DeniedFolder(path: Path.Combine(path1: location.Root, path2: "WV2Profile_tfl", path3: "IndexedDB")))
+        {
+            var partly = TeamsEngine.LoadOnce(location: location);
+            Assert.True(condition: partly.Found);
+            Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: partly.Problem);
+            Assert.False(condition: partly.IsComplete);
+            Assert.Equal(expected: 6, actual: partly.Chats.Count);
+            Assert.Equal(expected: (2, 1), actual: (partly.Report.Folders, partly.Report.UnreadableFiles));
+        }
+        using (new DeniedFolder(path: location.Root))
+        {
+            var none = TeamsEngine.LoadOnce(location: location);
+            Assert.True(condition: none.Found);
+            Assert.Equal(expected: TeamsProblem.ReadFailed, actual: none.Problem);
+            Assert.False(condition: none.IsComplete);
+            Assert.Empty(collection: none.Chats);
+        }
+
+        Assert.True(condition: TeamsEngine.LoadOnce(location: location).IsComplete);
+
+        // Started while it can't be listed, it reads Teams' data as a panel opens once it can.
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        using (new DeniedFolder(path: location.Root))
+        {
+            engine.Start();
+            Assert.Equal(expected: TeamsProblem.ReadFailed, actual: collector.Latest!.Problem);
+        }
+        engine.Refresh();
+        Assert.True(condition: collector.Latest!.IsComplete);
+        Assert.Equal(expected: 6, actual: collector.Latest.Chats.Count);
+    }
+
+    /// Of Teams' message cache, only the chats that may be unread are read: those whose newest message isn't yours, past
+    /// how far you've read them, and aren't muted.
+    [Fact]
+    public void ReadsTheMessagesOfChatsThatMayBeUnreadOnly()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = MadeUp(folder: folder);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Null(@object: snapshot.Problem);
+        Assert.Equal(expected: new HashSet<string> { Fixture.Avery, Fixture.Sync }, actual: snapshot.Messages.Keys.ToHashSet());
+        Assert.Equal(expected: [TeamsData.Id(seconds: 10), TeamsData.Id(seconds: 20), TeamsData.Id(seconds: 30)], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+        Assert.Equal(expected: [TeamsData.Id(seconds: 45), TeamsData.Id(seconds: 50)], actual: snapshot.Messages[Fixture.Sync].Select(selector: message => message.Id));
+        var report = snapshot.Report;
+        Assert.Equal(expected: (1, 1, 5, 5, 3), actual: (report.Folders, report.Stores, report.Conversations, report.Chats, report.WithMarker));
+
+        // Avery's two since you read it in Teams, and the meeting's message, without its call.
+        var chats = snapshot.Chats.ToDictionary(keySelector: chat => chat.Id);
+        var now = TeamsData.At(seconds: 100);
+        Assert.Equal(
+            expected: ["Noon works", "See you there"],
+            actual: ChatReading.Unread(chat: chats[Fixture.Avery], messages: snapshot.Messages[Fixture.Avery], mark: null, keepUnreadFor: null, now: now).Messages.Select(selector: message => message.Text));
+        Assert.Equal(
+            expected: ["Notes are in the chat"],
+            actual: ChatReading.Unread(chat: chats[Fixture.Sync], messages: snapshot.Messages[Fixture.Sync], mark: null, keepUnreadFor: null, now: now).Messages.Select(selector: message => message.Text));
+        Assert.True(condition: chats[Fixture.Big].IsMuted);
+    }
+
+    /// Marked unread in Teams, a chat may be unread though your reply is its newest message: its messages are read, and
+    /// what Mark as unread left in it with them.
+    [Fact]
+    public void ReadsTheMessagesOfAChatMarkedUnread()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var reply = new MadeUpMessage(Id: TeamsData.Id(seconds: 20), Sender: "Made-up Me", Html: "Sure", FromMe: true);
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(
+                    Id: Fixture.Avery, Type: "Chat", ReadUpTo: reply.Id, Newest: reply, ShortTitle: "Avery Quinn", Bookmark: TeamsData.Bookmark(after: reply.Id - 1, markedAtSeconds: 60)),
+            ],
+            replyChains: [Chain(chat: Fixture.Avery, lunch), Chain(chat: Fixture.Avery, reply)]);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        var chat = Assert.Single(collection: snapshot.Chats);
+        Assert.Equal(expected: new ReadMarker(MessageId: reply.Id - 1, ReadAt: TeamsData.At(seconds: 60)), actual: chat.MarkedUnread);
+        Assert.Equal(expected: 2, actual: snapshot.Messages[Fixture.Avery].Count);
+        var unread = ChatReading.Unread(chat: chat, messages: snapshot.Messages[Fixture.Avery], mark: null, keepUnreadFor: null, now: TeamsData.At(seconds: 100));
+        Assert.True(condition: unread.IsMarkedUnread);
+        Assert.Empty(collection: unread.Messages);
+    }
+
+    /// Marked unread in Teams, a chat may have no newest message to go by: its messages are read all the same.
+    [Fact]
+    public void ReadsAChatMarkedUnreadWithoutANewestMessage()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(
+                    Id: Fixture.Avery, Type: "Chat", ReadUpTo: lunch.Id, Newest: null, ShortTitle: "Avery Quinn", Bookmark: TeamsData.Bookmark(after: lunch.Id - 1, markedAtSeconds: 60)),
+            ],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        Assert.Null(@object: snapshot.Problem);
+        var chat = Assert.Single(collection: snapshot.Chats);
+        Assert.Null(@object: chat.Newest);
+        Assert.Equal(expected: [lunch.Id], actual: snapshot.Messages[Fixture.Avery].Select(selector: message => message.Id));
+        var unread = ChatReading.Unread(chat: chat, messages: snapshot.Messages[Fixture.Avery], mark: null, keepUnreadFor: null, now: TeamsData.At(seconds: 100));
+        Assert.True(condition: unread.IsMarkedUnread);
+        Assert.Equal(expected: ["Lunch?"], actual: unread.Messages.Select(selector: message => message.Text));
+    }
+
+    [Fact]
+    public async Task ReadsMessagesAsTheyArrive()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = MadeUp(folder: folder);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => Messages(snapshot: snapshot, chat: Fixture.Avery) == 3);
+
+        // Another message in a chat that may be unread, before Teams names it the chat's newest.
+        TeamsData.Append(path: log, TeamsData.Batch(sequence: 100, replyChain: Chain(chat: Fixture.Avery, new MadeUpMessage(Id: TeamsData.Id(seconds: 31), Sender: "Avery Quinn", Html: "One more thing"))));
+        await collector.Until(what: "Avery's new message", predicate: snapshot => Messages(snapshot: snapshot, chat: Fixture.Avery) == 4);
+
+        // A message in a chat that was read.
+        var sam = new MadeUpMessage(Id: TeamsData.Id(seconds: 70), Sender: "Sam Rivera", Html: "Can you look at my pull request?");
+        TeamsData.Append(
+            path: log,
+            TeamsData.Batch(sequence: 101, chat: new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: sam, ShortTitle: "Sam Rivera")),
+            TeamsData.Batch(sequence: 102, replyChain: Chain(chat: Fixture.Sam, sam)));
+        var arrived = await collector.Until(what: "Sam's message", predicate: snapshot => Messages(snapshot: snapshot, chat: Fixture.Sam) == 2);
+        Assert.Equal(expected: [TeamsData.Id(seconds: 20), TeamsData.Id(seconds: 70)], actual: arrived.Messages[Fixture.Sam].Select(selector: message => message.Id));
+
+        // Avery's chat, read in Teams: its messages are let go.
+        TeamsData.Append(
+            path: log,
+            TeamsData.Batch(sequence: 103, chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 30), Newest: Avery(seconds: 30, text: "See you there"), ShortTitle: "Avery Quinn")));
+        var read = await collector.Until(what: "Avery's chat read in Teams", predicate: snapshot => !snapshot.Messages.ContainsKey(key: Fixture.Avery));
+        Assert.Equal(expected: TeamsData.Id(seconds: 30), actual: read.Chats.Single(predicate: chat => chat.Id == Fixture.Avery).Marker?.MessageId);
+    }
+
+    /// A message record that can't be read, as one whose blob file can't be, may be one of a chat's unread messages: until
+    /// the chat's messages are all read, it's read again at each change and as a panel opens, and some of Teams' data is
+    /// said to be unreadable.
+    [Fact]
+    public async Task ReadsAgainTheChatsWhoseMessagesCouldntAllBeRead()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var noon = Avery(seconds: 20, text: "Noon works");
+        var noonChain = Chain(chat: Fixture.Avery, noon);
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 5), Newest: noon, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+        TeamsData.Append(path: log, TeamsData.BatchInBlobFile(sequence: 50, replyChain: noonChain, blobNumber: 5));
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        var partly = await collector.Until(what: "the first read", predicate: snapshot => snapshot.Report.ChatsPartlyRead == 1);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: partly.Problem);
+        Assert.False(condition: partly.IsComplete);
+        Assert.Equal(expected: [lunch.Id], actual: partly.Messages[Fixture.Avery].Select(selector: message => message.Id));
+
+        // Its blob file, which Teams' database doesn't say has changed.
+        TeamsData.WriteBlobFile(log: log, replyChain: noonChain, blobNumber: 5);
+        engine.Refresh();
+
+        var read = collector.Latest!;
+        Assert.Equal(expected: 0, actual: read.Report.ChatsPartlyRead);
+        Assert.Null(@object: read.Problem);
+        Assert.True(condition: read.IsComplete);
+        Assert.Equal(expected: [lunch.Id, noon.Id], actual: read.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// Chromium writes a record's blob entry, which says which blob file the record is in, after the record, often in a
+    /// later batch: a message waiting for its blob entry is read when the entry arrives, and its chat counts as partly
+    /// read only if it's still waiting when the chat is read again.
+    [Fact]
+    public void WaitsForAMessagesBlobEntry()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var noon = Avery(seconds: 20, text: "Noon works");
+        var noonChain = Chain(chat: Fixture.Avery, noon);
+        var (location, log) = TeamsData.Write(
+            folder: folder.Path,
+            chats: [new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 5), Newest: noon, ShortTitle: "Avery Quinn")],
+            replyChains: [Chain(chat: Fixture.Avery, lunch)]);
+        TeamsData.WriteBlobFile(log: log, replyChain: noonChain, blobNumber: 5);
+        TeamsData.Append(path: log, TeamsData.BatchInBlobFile(sequence: 50, replyChain: noonChain, blobNumber: 5, withBlobEntry: false));
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: TimeSpan.FromMinutes(value: 5));
+        engine.Start();
+
+        var waiting = collector.Latest!;
+        Assert.Null(@object: waiting.Problem);
+        Assert.Equal(expected: 0, actual: waiting.Report.ChatsPartlyRead);
+        Assert.Equal(expected: [lunch.Id], actual: waiting.Messages[Fixture.Avery].Select(selector: message => message.Id));
+
+        // Read again, as a panel opens, still without it.
+        engine.Refresh();
+        Assert.Equal(expected: 1, actual: collector.Latest!.Report.ChatsPartlyRead);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: collector.Latest.Problem);
+
+        TeamsData.Append(path: log, TeamsData.BlobEntryBatch(sequence: 51, replyChain: noonChain, blobNumber: 5));
+        engine.Refresh();
+
+        var read = collector.Latest!;
+        Assert.Null(@object: read.Problem);
+        Assert.Equal(expected: 0, actual: read.Report.ChatsPartlyRead);
+        Assert.Equal(expected: [lunch.Id, noon.Id], actual: read.Messages[Fixture.Avery].Select(selector: message => message.Id));
+    }
+
+    /// The messages of the chats that may be unread are in the same tables as the chats: a table Teams is still writing,
+    /// found as they're read, counts as unreadable only once it has stayed so, as one found reading the chats does.
+    [Fact]
+    public async Task CountsATableFoundReadingMessagesOnlyWhenItStaysSo()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = MadeUp(folder: folder);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 300));
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => Messages(snapshot: snapshot, chat: Fixture.Avery) == 3);
+
+        // A table Teams is still writing as it compacts, as a chat that may be unread gets a message.
+        File.WriteAllBytes(path: Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000010.ldb"), bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        TeamsData.Append(path: log, TeamsData.Batch(sequence: 100, replyChain: Chain(chat: Fixture.Avery, Avery(seconds: 31, text: "One more thing"))));
+        var arrived = await collector.Until(what: "Avery's new message", predicate: snapshot => Messages(snapshot: snapshot, chat: Fixture.Avery) == 4);
+        Assert.Null(@object: arrived.Problem);
+        Assert.Equal(expected: 0, actual: arrived.Report.ChatsPartlyRead);
+        Assert.False(condition: arrived.IsComplete);
+
+        var confirmed = await collector.Until(what: "a second look", predicate: snapshot => snapshot.Report.UnreadableFiles == 1);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: confirmed.Problem);
+        Assert.Equal(expected: 0, actual: confirmed.Report.ChatsPartlyRead);
+        Assert.Equal(expected: 4, actual: Messages(snapshot: confirmed, chat: Fixture.Avery));
+    }
+
+    [Fact]
+    public async Task FollowsTheLogAsTeamsWritesIt()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path, logLength: Fixture.FirstRunLength);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 1000);
+
+        // Half a record: LevelDB is still writing it.
+        var second = TeamsData.SecondRun();
+        TeamsData.AppendBytes(path: log, bytes: second[..100]);
+        await Task.Delay(millisecondsDelay: 400, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(expected: Fixture.Base + 1000, actual: MarkerOf(snapshot: collector.Latest!, chat: Fixture.Avery));
+
+        TeamsData.AppendBytes(path: log, bytes: second[100..]);
+        var read = await collector.Until(what: "Avery's chat read in Teams", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 5000);
+        Assert.Equal(expected: Fixture.Base + 8000, actual: read.Chats.Single(predicate: chat => chat.Id == Fixture.Sam).Newest?.Id);
+        Assert.Equal(expected: 7, actual: read.Report.Conversations);
+    }
+
+    [Fact]
+    public async Task FollowsANewLog()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 5000);
+
+        // LevelDB starts a new log, and drops the old one: here, one with only the first run's writes.
+        var newLog = Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000009.log");
+        var firstRun = File.ReadAllBytes(path: log)[..Fixture.FirstRunLength];
+        File.Delete(path: log);
+        File.WriteAllBytes(path: newLog, bytes: firstRun);
+        await collector.Until(what: "the new log", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 1000);
+
+        TeamsData.AppendBytes(path: newLog, bytes: TeamsData.SecondRun());
+        await collector.Until(what: "more written to it", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 5000);
+    }
+
+    [Fact]
+    public async Task ReadsAChatInABlobFileOnceItsBlobEntryArrives()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path, logLength: TeamsData.WrappedRecord);
+        var bytes = File.ReadAllBytes(path: Fixture.Log);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => snapshot.Chats.Any(predicate: chat => chat.Id == Fixture.Big));
+
+        // Chromium writes the record first, and which blob file it's in only when the transaction commits.
+        TeamsData.AppendBytes(path: log, bytes: bytes[TeamsData.WrappedRecord..TeamsData.WrappedBlobEntry]);
+        var record = await collector.Until(what: "the record", predicate: snapshot => snapshot.Report.Unreadable.GetValueOrDefault(key: "corrupt blob reference") == 1);
+        Assert.DoesNotContain(collection: record.Chats, filter: chat => chat.Id == Fixture.Wrapped);
+        // Too few to say some of Teams' data couldn't be read, but its chat may be the one missing.
+        Assert.Null(@object: record.Problem);
+        Assert.False(condition: record.IsComplete);
+        TeamsData.AppendBytes(path: log, bytes: bytes[TeamsData.WrappedBlobEntry..Fixture.FirstRunLength]);
+        var read = await collector.Until(what: "its blob entry", predicate: snapshot => snapshot.Chats.Any(predicate: chat => chat.Id == Fixture.Wrapped));
+        Assert.Equal(expected: Fixture.Base + 300, actual: MarkerOf(snapshot: read, chat: Fixture.Wrapped));
+        Assert.Empty(collection: read.Report.Unreadable);
+        Assert.True(condition: read.IsComplete);
+    }
+
+    [Fact]
+    public async Task CountsATableAsUnreadableOnlyWhenItStaysSo()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path);
+        // As LevelDB writes a table: where it'll stay, footer last.
+        File.WriteAllBytes(path: Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000010.ldb"), bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 300));
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => snapshot.Chats.Count > 0);
+        var first = collector.First!;
+        Assert.Equal(expected: 0, actual: first.Report.UnreadableFiles);
+        Assert.Null(@object: first.Problem);
+        // The table may only be being written, but what it holds is missing meanwhile.
+        Assert.False(condition: first.IsComplete);
+
+        var later = await collector.Until(what: "a second look", predicate: snapshot => snapshot.Report.UnreadableFiles == 1);
+        Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: later.Problem);
+        Assert.Equal(expected: first.Chats, actual: later.Chats);
+    }
+
+    [Fact]
+    public async Task ClearsTheWarningWhenATableIsRemoved()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path);
+        var table = Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000010.ldb");
+        File.WriteAllBytes(path: table, bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 500));
+        engine.Start();
+        var unreadable = await collector.Until(what: "the confirmed warning", predicate: snapshot => snapshot.Report.UnreadableFiles == 1);
+
+        File.Delete(path: table);
+
+        var readable = await collector.Until(what: "the removed table", predicate: snapshot => snapshot.Report.UnreadableFiles == 0);
+        Assert.Null(@object: readable.Problem);
+        Assert.True(condition: readable.IsComplete);
+        Assert.Equal(expected: unreadable.Chats, actual: readable.Chats);
+    }
+
+    /// Asked to read, as a panel opens, it reads what Teams wrote since, without waiting for its watcher.
+    [Fact]
+    public async Task ReadsWhatTeamsWroteWhenAsked()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path, logLength: Fixture.FirstRunLength);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: TimeSpan.FromMinutes(value: 5));
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => MarkerOf(snapshot: snapshot, chat: Fixture.Avery) == Fixture.Base + 1000);
+
+        TeamsData.AppendBytes(path: log, bytes: TeamsData.SecondRun());
+        engine.Refresh();
+
+        Assert.Equal(expected: Fixture.Base + 5000, actual: MarkerOf(snapshot: collector.Latest!, chat: Fixture.Avery));
+    }
+
+    /// Teams' data that wasn't there as it started, as before you sign in to Teams, is found when it's asked to read.
+    [Fact]
+    public async Task FindsTeamsDataOnceItsThere()
+    {
+        using var folder = new TemporaryFolder();
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: new TeamsCacheLocation(Root: folder.Combine("EBWebView"), IsTeamsOwn: false), onChange: collector.Add);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => snapshot.Problem == TeamsProblem.NotFound);
+
+        TeamsData.Copy(folder: folder.Path);
+        engine.Refresh();
+
+        Assert.True(condition: collector.Latest!.Found);
+        Assert.Equal(expected: Fixture.Base + 5000, actual: MarkerOf(snapshot: collector.Latest, chat: Fixture.Avery));
+    }
+
+    /// Stopped, it hands over nothing more, whatever Teams writes.
+    [Fact]
+    public async Task ReadsNothingOnceStopped()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path, logLength: Fixture.FirstRunLength);
+        var collector = new TeamsCollector();
+        var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => snapshot.Chats.Count > 0);
+        engine.Stop();
+        var count = collector.Count;
+
+        TeamsData.AppendBytes(path: log, bytes: TeamsData.SecondRun());
+        engine.Refresh();
+        await Task.Delay(millisecondsDelay: 400, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: count, actual: collector.Count);
+    }
+
+    /// BriefBar only reads Teams' data: every file stays as it was, and none is added, not even a lock.
+    [Fact]
+    public void LeavesTeamsDataAsItWas()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, _) = MadeUp(folder: folder);
+        TeamsData.Copy(folder: folder.Combine("Profile2"));
+        var before = Files(root: folder.Path);
+
+        TeamsEngine.LoadOnce(location: location);
+        TeamsEngine.LoadOnce(location: new TeamsCacheLocation(Root: folder.Combine("Profile2", "EBWebView"), IsTeamsOwn: false));
+
+        Assert.Equal(expected: before, actual: Files(root: folder.Path));
+    }
+
+    /// Each file under `root`, with what it holds and when it was last written.
+    static Dictionary<string, string> Files(string root) => Directory.EnumerateFiles(path: root, searchPattern: "*", searchOption: SearchOption.AllDirectories)
+        .ToDictionary(
+            keySelector: path => Path.GetRelativePath(relativeTo: root, path: path),
+            elementSelector: path => Convert.ToHexString(inArray: SHA256.HashData(source: File.ReadAllBytes(path: path))) + " "
+                + File.GetLastWriteTimeUtc(path: path).Ticks.ToString(provider: System.Globalization.CultureInfo.InvariantCulture));
+
+    /// Teams' data as these tests write it, with its message cache: Avery wrote since you read the chat, and Sam's chat is
+    /// read; your message is the newest in Launch crew; nobody has read the meeting's chat; and the muted chat has a
+    /// message.
+    static (TeamsCacheLocation Location, string Log) MadeUp(TemporaryFolder folder)
+    {
+        var jordan = new MadeUpMessage(Id: TeamsData.Id(seconds: 35), Sender: "Jordan Lee", Html: "Staging is green");
+        var mine = new MadeUpMessage(Id: TeamsData.Id(seconds: 40), Sender: "Made-up Me", Html: "Shipping at 5", FromMe: true);
+        var call = new MadeUpMessage(Id: TeamsData.Id(seconds: 45), Sender: "Priya Patel", Html: string.Empty, Type: "Event/Call");
+        var notes = new MadeUpMessage(Id: TeamsData.Id(seconds: 50), Sender: "Priya Patel", Html: "<p>Notes are in the chat</p>");
+        var muted = new MadeUpMessage(Id: TeamsData.Id(seconds: 60), Sender: "Jordan Lee", Html: "Muted chatter");
+        var sam = new MadeUpMessage(Id: TeamsData.Id(seconds: 20), Sender: "Sam Rivera", Html: "Thanks!");
+        return TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 10), Newest: Avery(seconds: 30, text: "See you there"), ShortTitle: "Avery Quinn"),
+                new MadeUpChat(Id: Fixture.Sam, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 20), Newest: sam, ShortTitle: "Sam Rivera"),
+                new MadeUpChat(Id: Fixture.Crew, Type: "Chat", ReadUpTo: TeamsData.Id(seconds: 10), Newest: mine, Topic: "Launch crew"),
+                new MadeUpChat(Id: Fixture.Sync, Type: "Meeting", ReadUpTo: 0, Newest: notes, Topic: "Weekly sync"),
+                new MadeUpChat(Id: Fixture.Big, Type: "Chat", ReadUpTo: 0, Newest: muted, Topic: "Muted chat", Alerts: "false"),
+            ],
+            replyChains:
+            [
+                Chain(chat: Fixture.Avery, Avery(seconds: 10, text: "Lunch?")),
+                Chain(chat: Fixture.Avery, Avery(seconds: 20, text: "Noon works")),
+                Chain(chat: Fixture.Avery, Avery(seconds: 30, text: "See you there")),
+                Chain(chat: Fixture.Sam, sam),
+                Chain(chat: Fixture.Crew, jordan),
+                Chain(chat: Fixture.Crew, mine),
+                Chain(chat: Fixture.Sync, call),
+                Chain(chat: Fixture.Sync, notes),
+                Chain(chat: Fixture.Big, muted),
+            ]);
+    }
+
+    static MadeUpMessage Avery(double seconds, string text) => new(Id: TeamsData.Id(seconds: seconds), Sender: "Avery Quinn", Html: text);
+
+    static MadeUpReplyChain Chain(string chat, params MadeUpMessage[] messages) => new(ConversationId: chat, Messages: messages);
+
+    static int Messages(TeamsSnapshot snapshot, string chat) => snapshot.Messages.TryGetValue(key: chat, value: out var messages) ? messages.Count : 0;
+
+    static long? MarkerOf(TeamsSnapshot snapshot, string chat) => snapshot.Chats.FirstOrDefault(predicate: each => each.Id == chat)?.Marker?.MessageId;
+
+    /// The fixture's marker for a chat read up to `read` milliseconds after its base time, read 900 milliseconds later.
+    static ReadMarker Marker(long read) => new(
+        MessageId: Fixture.Base + read,
+        ReadAt: DateTimeOffset.FromUnixTimeMilliseconds(milliseconds: Fixture.Base + read + 900));
+}

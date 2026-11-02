@@ -20,6 +20,19 @@ public static class SettingsValues
         return settings.Write(key: key, value: JsonValue.Create(value: value));
     }
 
+    public static string Text(this ISettingsStorage settings, string key)
+    {
+        ArgumentNullException.ThrowIfNull(argument: settings);
+        return settings.Read(key: key) is JsonValue value && value.TryGetValue(value: out string? text) ? text : string.Empty;
+    }
+
+    /// Saves `value` under `key`; returns whether everything is saved (`ISettingsStorage.Write`).
+    public static bool SetText(this ISettingsStorage settings, string key, string value)
+    {
+        ArgumentNullException.ThrowIfNull(argument: settings);
+        return settings.Write(key: key, value: JsonValue.Create(value: value));
+    }
+
     public static int Number(this ISettingsStorage settings, string key)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
