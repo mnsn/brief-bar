@@ -17,6 +17,9 @@ import Testing
         #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
         #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
         #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
+        // In a list's item, and in a quote.
+        #expect(plain("- one\n\n  <!--\n  hidden\n\n  -->\n- two") == "• one\n• two")
+        #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
         // What looks like code in one is the comment's; code that starts first is code.
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
         #expect(plain("<!-- template: describe `why`, not what --> Real text") == "Real text")
@@ -58,8 +61,15 @@ import Testing
             ]),
         ])
         #expect(RichText(markdown: "```html\n<!-- kept -->\n<p>Kept</p>\n```").blocks == [.code("<!-- kept -->\n<p>Kept</p>")])
-        // A fence indented four columns is code in a fenced block, and doesn't end it.
+        // A fence indented four columns is code in a fenced block, and doesn't end it, wherever the block's own fence is.
         #expect(RichText(markdown: "```\n    ```\n<!--\nkept\n-->\n```").blocks == [.code("    ```\n<!--\nkept\n-->")])
+        #expect(RichText(markdown: "   ```\n    ```\n<!--\nkept\n-->\n```").blocks == [.code(" ```\n<!--\nkept\n-->")])
+        // A code span that ends with a backslash, which is a backslash in code.
+        #expect(RichText(markdown: "`<br>\\` and <b>bold</b>").blocks == [
+            .paragraph([RichText.Run("<br>\\", style: .code), RichText.Run(" and bold")]),
+        ])
+        // An escaped backtick starts none.
+        #expect(plain("\\`<b>x</b>`") == "`x`")
         // Indented with tabs, as with spaces.
         #expect(RichText(markdown: "\t<!--\n\tliteral code\n\t-->").blocks == [.code("<!--\nliteral code\n-->")])
         #expect(RichText(markdown: "    <!--\n    literal code\n    -->").blocks == [.code("<!--\nliteral code\n-->")])

@@ -565,6 +565,24 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
         #expect(requests(server).filter { $0 == "/iterations" }.count == 3)
     }
 
+    @Test func readsTheIterationsAgainWhenThePullRequestMovesToAnotherBranch() async throws {
+        let server = codeServer()
+        let code = PullRequestCode(pr, client: server.client())
+        let thread = CodeFixture.thread(21, at: CodeFixture.location(right: 2...2, madeOn: (2, 2)))
+        #expect(try await code.excerpt(of: thread, in: pr).get().latestIteration == 2)
+        // Moved to another target, with the same head: an iteration of its own.
+        server.on("/pullRequests/7/iterations", json: Fixture.list([
+            CodeFixture.iteration(1, source: "s1"), CodeFixture.iteration(2, source: "abc"), CodeFixture.iteration(3, source: "abc", common: "b2"),
+        ]))
+        server.on("/iterations/3/changes", query: ["$compareTo": "2"], json: CodeFixture.changes([]))
+        var moved = pr
+        moved.targetBranch = "release"
+        let after = try await code.excerpt(of: thread, in: moved).get()
+        #expect(after.latestIteration == 3)
+        #expect(after.changedSince == false)
+        #expect(requests(server).filter { $0 == "/iterations" }.count == 2)
+    }
+
     @Test func saysWhyItCantShowTheCode() async throws {
         let server = codeServer()
         server.on("/blobs/first") { _ in StubServer.Reply(status: 200, headers: [:], body: Data([0x47, 0x49, 0x46, 0x00, 0x01])) }
@@ -760,6 +778,41 @@ private actor SwitchingCode: CodeSource {
     }
 }
 
+/// Code for a pull request with two iterations, holding back what changed from the first to the second while told to.
+private actor LaterCode: CodeSource {
+    private(set) var asked: [String] = []
+    private var held: CheckedContinuation<Void, Error>?
+
+    func iterations(of pullRequest: PullRequest) async throws -> [PRIteration] {
+        [PRIteration(id: 1, sourceCommit: "s1", commonCommit: "b"), PRIteration(id: 2, sourceCommit: "abc", commonCommit: "b")]
+    }
+
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
+        asked.append("changes \(iteration) \(comparedTo)")
+        if iteration == 2 {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { held = $0 }
+            } onCancel: {
+                Task { await self.cancel() }
+            }
+        }
+        return FileChanges(files: [FileChange(path: "/a.cs", kind: .add, objectId: "a")])
+    }
+
+    private func cancel() {
+        held?.resume(throwing: CancellationError())
+        held = nil
+    }
+
+    func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
+        .text("a 1\n")
+    }
+
+    func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {
+        throw ADOError.notFound
+    }
+}
+
 @Suite struct PullRequestCodeSharingTests {
     private let pr = makePR(7)
 
@@ -853,6 +906,19 @@ private actor SwitchingCode: CodeSource {
         // What only the thread that stopped waiting needed, the file before the change, wasn't read.
         #expect(await fake.count("e1") == 0)
         #expect(await fake.count("a") == 1)
+    }
+
+    @Test func showsNothingToAThreadThatStoppedWaitingAtTheEnd() async throws {
+        let fake = LaterCode()
+        let code = PullRequestCode(pr, source: fake)
+        let location = CodeFixture.location("/a.cs", right: 1...1, madeOn: (1, 1), tracking: nil)
+        let asked = Task { await code.excerpt(of: CodeFixture.thread(1, at: location), in: pr) }
+        try await waitUntil("what changed since") { await fake.asked.contains("changes 2 1") }
+        asked.cancel()
+        guard case .failure(.unreadable) = await asked.value else {
+            Issue.record("A thread that stopped waiting showed its code, without whether it changed since")
+            return
+        }
     }
 
     @Test func forgetsTheFilesReadFirstPastTheMemoryItMayUse() async throws {

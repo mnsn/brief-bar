@@ -405,8 +405,11 @@ public actor PullRequestCode {
             hiddenCommentedLines: window.hiddenCommentedLines, iteration: right.id, latestIteration: latest.id,
             changedSince: changedSince
         )
-        // Kept unless whether it changed since is still to be read, or it was for another pull request.
-        if changedSince != nil, generation == self.generation { excerpts[key] = excerpt }
+        // Nothing for an ask that stopped waiting, or for a pull request it no longer reads for; and kept unless whether it
+        // changed since is still to be read.
+        try Task.checkCancellation()
+        guard generation == self.generation else { throw CancellationError() }
+        if changedSince != nil { excerpts[key] = excerpt }
         return excerpt
     }
 
@@ -424,10 +427,10 @@ public actor PullRequestCode {
         LineDiff.compare(old, new)
     }
 
-    /// The pull request's iterations, oldest first: read again for a push it hadn't seen, or for an iteration it
-    /// doesn't have.
+    /// The pull request's iterations, oldest first: read again for a push it hadn't seen or a move to another target, or
+    /// for an iteration it doesn't have.
     private func iterations(including id: Int?, for generation: Int) async throws -> [PRIteration] {
-        let key = ReadKey.iterations(pullRequest.sourceCommit)
+        let key = ReadKey.iterations(Self.head(of: pullRequest))
         let kept = reads[key]
         guard case .iterations(let iterations) = try await read(key, for: generation) else { return [] }
         guard let id, !iterations.contains(where: { $0.id == id }), kept != nil else { return iterations }
@@ -552,11 +555,17 @@ public actor PullRequestCode {
             self.pullRequest = pullRequest
             return
         }
-        if pullRequest.sourceCommit != self.pullRequest.sourceCommit {
-            // The iterations as of the head before, which another push replaced.
+        if Self.head(of: pullRequest) != Self.head(of: self.pullRequest) {
+            // The iterations as of before a push, or before it was moved to another target branch, which made another.
             reads = reads.filter { if case .iterations = $0.key { false } else { true } }
         }
         self.pullRequest = pullRequest
+    }
+
+    /// What a pull request's iterations are read again for when it changes: its branch's head, and its target, which
+    /// moving it to another branch changes.
+    private static func head(of pullRequest: PullRequest) -> Head {
+        Head(source: pullRequest.sourceCommit, targetBranch: pullRequest.targetBranch, target: pullRequest.targetCommit)
     }
 
     /// A failure that asking again won't change: what isn't there or you may not read, or what BriefBar can't understand.
@@ -569,9 +578,15 @@ public actor PullRequestCode {
 
     // MARK: Keys
 
+    struct Head: Hashable, Sendable {
+        var source: String?
+        var targetBranch: String
+        var target: String?
+    }
+
     enum ReadKey: Hashable, Sendable {
-        /// The iterations, as of the pull request's head.
-        case iterations(String?)
+        /// The iterations, as of the pull request's head and target.
+        case iterations(Head)
         case changes(iteration: Int, comparedTo: Int)
         case object(String)
         case file(String, commit: String)

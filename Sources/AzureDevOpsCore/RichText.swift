@@ -763,11 +763,11 @@ private enum MarkdownReader {
     private static let quoteDepth = 8
 
     static func read(_ markdown: String, depth: Int = 0) -> [RichText.Block] {
-        let raw = droppingHTMLComments(markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
+        var raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
         // structure. What's after the indentation, and code, keep their tabs.
-        let lines = raw.map(Self.expandingIndentation)
+        var lines = raw.map(Self.expandingIndentation)
         var blocks: [RichText.Block] = []
         var pending: [String] = []
         var pendingKind = Pending.paragraph
@@ -842,6 +842,20 @@ private enum MarkdownReader {
                 }
                 let text = code.joined(separator: "\n").trimmingCharacters(in: .newlines)
                 if !text.isEmpty { blocks.append(.code(text)) }
+                continue
+            }
+            // An HTML comment that starts a line and ends on a later one, as bots leave them in their comments, blank lines
+            // and all, shows nothing; without an end, it's all the rest. What follows its end on that line goes on. One that
+            // ends on the line it starts goes with the rest of the line's inline HTML.
+            if trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->") {
+                flush()
+                closeLists(at: indent)
+                var end = index + 1
+                while end < lines.count, !lines[end].contains("-->") { end += 1 }
+                guard end < lines.count, let close = raw[end].range(of: "-->") else { break }
+                raw[end] = String(raw[end][close.upperBound...])
+                lines[end] = Self.expandingIndentation(raw[end])
+                index = end
                 continue
             }
             if let fence = Self.fence(trimmed) {
@@ -1084,70 +1098,39 @@ private enum MarkdownReader {
 
     // MARK: HTML in Markdown
 
-    /// The lines without the HTML comments that start a line and end on a later one, which show nothing, as bots leave
-    /// them in their comments, even with blank lines in them; what follows the end of one stays. Code keeps them: a fenced
-    /// block, which ends as the block reader ends it, and an indented one, tabs counted as the columns they reach. A
-    /// comment that ends on the line it starts goes with the rest of the line's inline HTML.
-    static func droppingHTMLComments(_ lines: [String]) -> [String] {
-        var kept: [String] = []
-        /// The fence of the code block it's in, and how far that's indented.
-        var fence: (mark: String, indent: Int)?
-        var index = 0
-        while index < lines.count {
-            let line = lines[index]
-            let expanded = expandingIndentation(line)
-            let indent = expanded.prefix { $0 == " " }.count
-            let trimmed = expanded.trimmingCharacters(in: .whitespaces)
-            index += 1
-            if let open = fence {
-                // As far into what it's in as its opening fence may be, three columns, or less: further, it's code.
-                if closes(open.mark, expanded, indentedUpTo: open.indent + 3) { fence = nil }
-                kept.append(line)
-            } else if let mark = Self.fence(trimmed) {
-                fence = (mark, indent)
-                kept.append(line)
-            } else if indent < 4, trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->") {
-                while index < lines.count, !lines[index].contains("-->") { index += 1 }
-                if index < lines.count, let end = lines[index].range(of: "-->") {
-                    let rest = String(lines[index][end.upperBound...])
-                    if !rest.allSatisfy(\.isWhitespace) { kept.append(rest) }
-                    index += 1
-                }
-            } else {
-                kept.append(line)
-            }
-        }
-        return kept
-    }
-
     /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
     /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment goes on to its
-    /// end, whatever looks like code in it. Without a run to end it, or after a backslash, backticks are just backticks,
-    /// and a bracket after a backslash starts no tag: it goes to the Markdown reader as it is, which shows it.
+    /// end, whatever looks like code in it. A backslash before a run makes its first backtick just a backtick, but in code
+    /// a backslash is a backslash, so a run after one still ends a span. A bracket after a backslash starts no tag: it goes
+    /// to the Markdown reader as it is, which shows it.
     static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
         guard text.contains("<") else { return text }
-        // The runs of backticks, outside backslashes' escapes, in order.
-        var runs: [(range: Range<String.Index>, length: Int)] = []
+        // The runs of backticks, in order, and whether an odd number of backslashes before each escapes it.
+        var runs: [(range: Range<String.Index>, length: Int, escaped: Bool)] = []
+        var backslashes = 0
         var index = text.startIndex
         while index < text.endIndex {
-            if text[index] == "\\" {
-                index = text.index(after: index)
-                if index < text.endIndex { index = text.index(after: index) }
-            } else if text[index] == "`" {
+            if text[index] == "`" {
                 let start = index
                 var length = 0
                 while index < text.endIndex, text[index] == "`" {
                     index = text.index(after: index)
                     length += 1
                 }
-                runs.append((start..<index, length))
+                runs.append((start..<index, length, backslashes % 2 == 1))
+                backslashes = 0
             } else {
+                backslashes = text[index] == "\\" ? backslashes + 1 : 0
                 index = text.index(after: index)
             }
         }
         // By length, where the runs are among them, the first last, to find the next of as many in one pass.
         var later: [Int: [Int]] = [:]
         for (position, run) in runs.enumerated().reversed() { later[run.length, default: []].append(position) }
+        func closing(after position: Int, length: Int) -> Int? {
+            while let next = later[length]?.last, next <= position { later[length]?.removeLast() }
+            return later[length]?.last
+        }
         var result = ""
         var plain = text.startIndex
         var next = 0
@@ -1156,11 +1139,13 @@ private enum MarkdownReader {
             while next < runs.count, runs[next].range.lowerBound < index { next += 1 }
             if next < runs.count, runs[next].range.lowerBound == index {
                 let run = runs[next]
-                while let after = later[run.length]?.last, after <= next { later[run.length]?.removeLast() }
-                if let closing = later[run.length]?.last {
-                    result += transform(text[plain..<index])
-                    result += text[index..<runs[closing].range.upperBound]
-                    index = runs[closing].range.upperBound
+                // Escaped, it's the rest of the run that may start one.
+                let opening = run.escaped ? text.index(after: index) : index
+                let length = run.escaped ? run.length - 1 : run.length
+                if length > 0, let end = closing(after: next, length: length) {
+                    result += transform(text[plain..<opening])
+                    result += text[opening..<runs[end].range.upperBound]
+                    index = runs[end].range.upperBound
                     plain = index
                 } else {
                     index = run.range.upperBound
@@ -1172,8 +1157,11 @@ private enum MarkdownReader {
                     result += text[index...escaped]
                     plain = text.index(after: escaped)
                     index = plain
+                } else if escaped < text.endIndex, text[escaped] != "`" {
+                    index = text.index(after: escaped)
                 } else {
-                    index = escaped < text.endIndex ? text.index(after: escaped) : escaped
+                    // A run it escapes is read as a run.
+                    index = escaped
                 }
             } else if text[index...].hasPrefix("<!--") {
                 let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex)
