@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-11-02
 
 - **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
   click a pull request to see it beside the list, or over it in a narrow window: where it stands,
