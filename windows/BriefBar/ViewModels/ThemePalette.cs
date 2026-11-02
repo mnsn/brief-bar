@@ -28,12 +28,13 @@ public sealed class ThemePalette
     /// In High Contrast, Windows' colors as they were when it was made; otherwise none.
     readonly Dictionary<UIElementType, Color> systemColors;
 
-    ThemePalette(bool isDark, bool isHighContrast, Dictionary<UIElementType, Color> systemColors, uint? background)
+    ThemePalette(bool isDark, bool isHighContrast, Dictionary<UIElementType, Color> systemColors, uint? background, bool isSeeThrough)
     {
         IsDark = isDark;
         IsHighContrast = isHighContrast;
         this.systemColors = systemColors;
         Background = background;
+        IsSeeThrough = isSeeThrough;
     }
 
     public bool IsDark { get; }
@@ -44,6 +45,11 @@ public sealed class ThemePalette
     /// such as the bar's behind an item that's open and pointed at (`StatePalette.BarBackground`), so they stand out
     /// there too (`StatePalette.Readable`).
     public uint? Background { get; }
+
+    /// What it's shown on is see-through, its color changing with the wallpaper behind it, and `Background` is that over
+    /// the wallpaper it stands out least on: words are opaque there, as translucent ones would change with the wallpaper
+    /// too (`StatePalette.WordsOver`).
+    public bool IsSeeThrough { get; }
 
     /// Icons, dots and badges in a state.
     public Brush Fill(ItemState state) =>
@@ -106,18 +112,22 @@ public sealed class ThemePalette
         IsHighContrast ? System(element: UIElementType.ButtonText) : Brush(argb: StatePalette.ChipText(kind: kind, dark: IsDark));
 
     /// The palette for what Windows shows now: in High Contrast, with Windows' colors from `settings`; on `background`
-    /// when it isn't the bar's and the panel's own.
-    public static ThemePalette For(ElementTheme theme, bool isHighContrast, UISettings settings, uint? background = null)
+    /// when it isn't the bar's and the panel's own, which `seeThrough` says changes with the wallpaper behind it.
+    public static ThemePalette For(ElementTheme theme, bool isHighContrast, UISettings settings, uint? background = null, bool seeThrough = false)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         Dictionary<UIElementType, Color> colors = isHighContrast
             ? systemElements.ToDictionary(keySelector: element => element, elementSelector: element => settings.UIElementColor(desiredElement: element))
             : [];
-        return new ThemePalette(isDark: theme == ElementTheme.Dark, isHighContrast: isHighContrast, systemColors: colors, background: background);
+        return new ThemePalette(
+            isDark: theme == ElementTheme.Dark, isHighContrast: isHighContrast, systemColors: colors, background: background, isSeeThrough: seeThrough);
     }
 
     /// `color` as ARGB.
     public static uint ArgbOf(Color color) => ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+
+    /// `argb` as a color.
+    public static Color ColorOf(uint argb) => Color.FromArgb(a: (byte)(argb >> 24), r: (byte)(argb >> 16), g: (byte)(argb >> 8), b: (byte)argb);
 
     /// Whether it shows what `other` does: the same theme and, in High Contrast, the same colors of Windows'.
     public bool Matches(ThemePalette other)
@@ -126,6 +136,7 @@ public sealed class ThemePalette
         return IsDark == other.IsDark
             && IsHighContrast == other.IsHighContrast
             && Background == other.Background
+            && IsSeeThrough == other.IsSeeThrough
             && systemColors.Count == other.systemColors.Count
             && systemColors.All(predicate: pair => other.systemColors.TryGetValue(key: pair.Key, value: out var color) && color == pair.Value);
     }
@@ -148,14 +159,16 @@ public sealed class ThemePalette
         IsHighContrast ? systemColors[element] : ColorOf(argb: WordsArgb(argb: argb, least: least));
 
     /// Words `argb`, made to stand `least` to 1 apart from `Background` if there's one.
-    uint WordsArgb(uint argb, double least) =>
-        Background is { } background ? StatePalette.ReadableWords(words: argb, background: background, dark: IsDark, least: least) : argb;
+    uint WordsArgb(uint argb, double least) => Background switch
+    {
+        { } seeThrough when IsSeeThrough => StatePalette.WordsOver(words: argb, background: seeThrough, dark: IsDark, least: least),
+        { } background => StatePalette.ReadableWords(words: argb, background: background, dark: IsDark, least: least),
+        _ => argb,
+    };
 
     /// `argb`, made to stand `least` to 1 apart from `Background` if there's one.
     uint OnBackground(uint argb, double least) =>
         Background is { } background ? StatePalette.Readable(color: argb, background: background, dark: IsDark, least: least) : argb;
 
-    static Color ColorOf(uint argb) => Color.FromArgb(
-        a: (byte)(argb >> 24), r: (byte)(argb >> 16), g: (byte)(argb >> 8), b: (byte)argb);
 
 }
