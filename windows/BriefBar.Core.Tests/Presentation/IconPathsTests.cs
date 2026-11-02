@@ -1,11 +1,14 @@
+using System.Globalization;
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Presentation;
 
 namespace BriefBar.Core.Tests.Presentation;
 
 public sealed class IconPathsTests
 {
-    /// The sizes a source's glyph shows at: in the bar, on its tile, and on its page in Settings.
-    static readonly int[] glyphSizes = [16, 20, 24];
+    static readonly bool[] requiredOrNot = [true, false];
+    /// 100% and 200%.
+    static readonly double[] wholeScales = [1.0, 2.0];
 
     [Fact]
     public void EveryDrawingIsOneXamlCanRead()
@@ -14,7 +17,7 @@ public sealed class IconPathsTests
         {
             foreach (var drawing in IconPaths.Drawings(icon: icon))
             {
-                Assert.True(condition: drawing.Size is 12 or 16 or 20 or 24, userMessage: $"{icon} is {drawing.Size} units square.");
+                Assert.True(condition: drawing.Size is 12 or 16 or 20 or 24 or 32, userMessage: $"{icon} is {drawing.Size} units square.");
                 var xaml = SvgPathData.ToXaml(svg: drawing.Svg, rule: drawing.Rule);
                 Assert.Matches(expectedRegexPattern: @"^F[01] [MmLlHhVvCcSsQqTtAaZz0-9.\- ]+$", actualString: xaml);
             }
@@ -44,55 +47,76 @@ public sealed class IconPathsTests
         }
     }
 
-    /// A source's glyph shows at 16 in the bar, in rows and in Settings' list, at 20 on its tile and at 24 on its page
-    /// in Settings, and the Overview's on its tile. Fluent doesn't draw every icon at every size: Pulse starts at 20, and
-    /// Branch Request stops at 20.
+    /// Every icon lines up with a display's pixels at Windows' usual scales, at the sizes BriefBar shows it: 16 pixels
+    /// square covers 16 of a display's pixels at 100%, 20 at 125%, 24 at 150% and 32 at 200%, its 16 doubled. Fluent
+    /// doesn't draw every icon at every size, so these don't: Copilot's pulse at 16, Branch Request at 24, and the plan,
+    /// the clock with a cross and the power icon at 16. The chevron shows only at 12.
     [Fact]
-    public void HasEverySourcesGlyphAtTheSizesItShows()
+    public void LinesUpWithTheDisplaysPixelsWhereFluentDrawsIt()
     {
-        var missing = Sections.InBarOrder
-            .Select(selector: section => section.Glyph)
-            .SelectMany(selector: glyph => glyphSizes.Select(selector: size => (Glyph: glyph, Size: size)))
-            .Append(element: (Glyph: IconKey.Stack, Size: 20))
-            .Where(predicate: shown => !(shown is (IconKey.Pulse, 16) or (IconKey.BranchRequest, 24)))
-            .Where(predicate: shown => IconPaths.Of(icon: shown.Glyph, size: shown.Size).Size != shown.Size)
-            .Select(selector: shown => shown.Glyph + " at " + shown.Size)
+        (double Size, double Scale)[] shown = [(16, 1), (16, 1.25), (16, 1.5), (16, 2), (20, 1), (20, 2), (24, 1), (24, 2)];
+        var blurred = Enum.GetValues<IconKey>()
+            .Where(predicate: icon => icon != IconKey.ChevronRight)
+            .SelectMany(selector: icon => shown.Select(selector: at => (Icon: icon, at.Size, at.Scale)))
+            .Where(predicate: at => !LinesUp(drawing: IconPaths.Of(icon: at.Icon, size: at.Size, scale: at.Scale), pixels: at.Size * at.Scale))
+            .Select(selector: at => string.Create(provider: CultureInfo.InvariantCulture, handler: $"{at.Icon} at {at.Size} on {at.Scale:0.##}"))
             .ToList();
-        Assert.Empty(collection: missing);
+        Assert.Equal(
+            expected:
+            [
+                "BranchRequest at 16 on 1.5", "BranchRequest at 24 on 1", "BranchRequest at 24 on 2",
+                "ClipboardTaskList at 16 on 1", "ClipboardTaskList at 16 on 2",
+                "ClockDismiss at 16 on 1", "ClockDismiss at 16 on 2",
+                "Power at 16 on 1", "Power at 16 on 2",
+                "Pulse at 16 on 1",
+            ],
+            actual: blurred.Order(comparer: StringComparer.Ordinal));
     }
 
-    /// The bar's state and badge icons show at 16, and at 20 with Windows' larger text sizes (`BarMetrics.IconSize`).
+    /// A pull request's checklist shows its icons at 12 pixels, and so do its links; Fluent draws the raised hand, Branch
+    /// Request and the plan at no 12, so those are scaled at 100%.
     [Fact]
-    public void HasTheBarsStateIconsAtBothItsSizes()
+    public void LinesUpOnAPullRequestsChecklist()
     {
-        var icons = StateCounts.AllStates
-            .SelectMany(selector: state => new[] { StateWords.Icon(state: state, section: SectionId.CopilotSessions), StateWords.Icon(state: state, section: SectionId.AzureDevOpsPullRequests) })
-            .Append(element: IconKey.PauseCircle)
-            .Distinct();
-        var missing = icons
-            .SelectMany(selector: icon => new[] { BarMetrics.SmallIconDip, BarMetrics.LargeIconDip }.Select(selector: size => (Icon: icon, Size: size)))
-            .Where(predicate: shown => IconPaths.Of(icon: shown.Icon, size: shown.Size).Size != (int)shown.Size)
-            .Select(selector: shown => shown.Icon + " at " + shown.Size)
+        var checklist = new ItemState?[] { ItemState.Done, ItemState.Failing, ItemState.NeedsYou, ItemState.Running, null }
+            .SelectMany(selector: state => requiredOrNot.Select(selector: required => AzureDevOpsRows.Icon(
+                item: new PRReadinessItem(Kind: default, State: state, Label: "An item", IsRequired: required))));
+        var blurred = checklist
+            .Concat(second: [IconKey.BranchRequest, IconKey.ClipboardTaskList])
+            .Distinct()
+            .SelectMany(selector: icon => wholeScales.Select(selector: scale => (Icon: icon, Scale: scale)))
+            .Where(predicate: at => !LinesUp(drawing: IconPaths.Of(icon: at.Icon, size: 12, scale: at.Scale), pixels: 12 * at.Scale))
+            .Select(selector: at => string.Create(provider: CultureInfo.InvariantCulture, handler: $"{at.Icon} on {at.Scale:0.##}"))
             .ToList();
-        Assert.Empty(collection: missing);
+        Assert.Equal(
+            expected: ["BranchRequest on 1", "BranchRequest on 2", "ClipboardTaskList on 1", "HandRaise on 1"],
+            actual: blurred.Order(comparer: StringComparer.Ordinal));
     }
 
     [Theory]
-    [InlineData(IconKey.Person, 16, 16)]
-    [InlineData(IconKey.Person, 20, 20)]
-    [InlineData(IconKey.CheckmarkCircle, 24, 24)]
-    [InlineData(IconKey.HandRaise, 16, 16)]
-    // The nearest drawing, where Fluent has none at that size; the larger of two as near.
-    [InlineData(IconKey.Pulse, 16, 20)]
-    [InlineData(IconKey.BranchRequest, 24, 20)]
-    [InlineData(IconKey.HandRaise, 20, 20)]
-    [InlineData(IconKey.Settings, 20, 16)]
-    [InlineData(IconKey.Person, 18, 20)]
-    public void ShowsTheDrawingMadeForTheSizeOrTheNearest(IconKey icon, double size, int drawn)
+    [InlineData(IconKey.CheckmarkCircle, 16, 1.0, 16)]
+    [InlineData(IconKey.CheckmarkCircle, 16, 1.25, 20)]
+    [InlineData(IconKey.CheckmarkCircle, 16, 1.5, 24)]
+    // Doubled at 200%, as no drawing is made for 32.
+    [InlineData(IconKey.CheckmarkCircle, 16, 2.0, 16)]
+    [InlineData(IconKey.CheckmarkCircle, 20, 2.0, 20)]
+    // One made for the pixels it covers before one doubled.
+    [InlineData(IconKey.CheckmarkCircle, 12, 2.0, 24)]
+    [InlineData(IconKey.ChevronRight, 12, 2.0, 12)]
+    [InlineData(IconKey.Pulse, 16, 2.0, 32)]
+    // Else the nearest, the larger of two as near: 28 pixels at 175%, and where Fluent has none at that size.
+    [InlineData(IconKey.CheckmarkCircle, 16, 1.75, 24)]
+    [InlineData(IconKey.Pulse, 16, 1.0, 20)]
+    [InlineData(IconKey.BranchRequest, 16, 1.5, 20)]
+    [InlineData(IconKey.HandRaise, 12, 1.0, 16)]
+    [InlineData(IconKey.Person, 18, 1.0, 20)]
+    // A scale that isn't one is taken as 100%.
+    [InlineData(IconKey.Person, 16, double.NaN, 16)]
+    [InlineData(IconKey.Person, 16, 0.0, 16)]
+    public void ShowsTheDrawingForThePixelsItCovers(IconKey icon, double size, double scale, int drawn)
     {
-        Assert.Equal(expected: drawn, actual: IconPaths.Of(icon: icon, size: size).Size);
+        Assert.Equal(expected: drawn, actual: IconPaths.Of(icon: icon, size: size, scale: scale).Size);
     }
-
     [Theory]
     [InlineData("M1.5.5L2,3Z", IconFillRule.Nonzero, "F1 M 1.5 0.5 L 2 3 Z")]
     [InlineData("M-1-2h3", IconFillRule.EvenOdd, "F0 M -1 -2 h 3")]
@@ -108,4 +132,7 @@ public sealed class IconPathsTests
     {
         Assert.Throws<FormatException>(testCode: () => SvgPathData.ToXaml(svg: "M 1 # 2", rule: IconFillRule.Nonzero));
     }
+
+    /// Whether `drawing` covers `pixels` as it was drawn, or doubled.
+    static bool LinesUp(IconPath drawing, double pixels) => drawing.Size == pixels || drawing.Size * 2 == pixels;
 }

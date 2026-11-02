@@ -9,8 +9,8 @@ using XamlPath = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace BriefBar.Views;
 
-/// A Fluent icon, `Size` pixels square, filled with `Fill`, from its drawing for that size (`IconPaths`). It's
-/// decoration: Narrator reads what's next to it.
+/// A Fluent icon, `Size` pixels square, filled with `Fill`, from the drawing made for the pixels it covers on its display
+/// (`IconPaths`). It's decoration: Narrator reads what's next to it.
 public sealed partial class FluentIcon : Grid
 {
     public static readonly DependencyProperty IconProperty = DependencyProperty.Register(
@@ -35,6 +35,7 @@ public sealed partial class FluentIcon : Grid
     static readonly ConcurrentDictionary<IconPath, string> xamlData = new();
 
     readonly Viewbox box = new();
+    readonly DisplayScaleWatcher display;
     XamlPath? path;
     /// The drawing path shows.
     IconPath? shown;
@@ -45,6 +46,7 @@ public sealed partial class FluentIcon : Grid
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
             element: this, value: Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         Children.Add(item: box);
+        display = new DisplayScaleWatcher(element: this, scaleChanged: _ => DrawIcon());
         ApplySize();
         DrawIcon();
     }
@@ -95,7 +97,7 @@ public sealed partial class FluentIcon : Grid
 
     void DrawIcon()
     {
-        var drawing = IconPaths.Of(icon: Icon, size: Size);
+        var drawing = IconPaths.Of(icon: Icon, size: Size, scale: display.Scale);
         if (path is not null && drawing == shown)
         {
             return;

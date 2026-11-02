@@ -151,12 +151,13 @@ section names and the like, so nothing you see can reach it: a line with a strin
   auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
   links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
-  each shown at a size Fluent drew it for, so it lines up with the pixels, Segoe UI Variable, sentence case, and the
-  panel's rounded corners and shadow. The bar's glyphs are in the color of its words, as the taskbar's icons are, and
-  a source's own color is on its panel's tile, in Settings and in the Overview's rows. The bar's icons grow with
-  Windows' text size, as its words do, from 16 pixels to 20 at 112.5% and up. It follows light, dark and High
-  Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
-  4.5:1, icons 3:1), which a test checks. States never rely on color alone: each has its own icon and words.
+  each from the drawing Fluent made for the pixels it covers on its display, so it lines up with them at 100%, 125%,
+  150% and 200%, Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. The bar's glyphs are in
+  the color of its words, as the taskbar's icons are, and a source's own color is on its panel's tile, in Settings and
+  in the Overview's rows. The bar's icons grow with Windows' text size, as its words do, from 16 pixels to 20 at
+  112.5% and up. It follows light, dark and High Contrast as Windows changes, and its state colors meet WCAG AA
+  against its background in light and dark (text 4.5:1, icons 3:1), which a test checks. States never rely on color
+  alone: each has its own icon and words.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
@@ -302,13 +303,17 @@ SDK ships inside the app.
   `combase.dll`, no managed exception and nothing in the log, only a dump in `%LOCALAPPDATA%\CrashDumps`. A list
   reuses its rows' elements as it scrolls and changes, so a view model must never hold a `Geometry`: Copilot's
   context ring draws its own (`MeterRing`).
-- **Fluent draws each icon anew for each size**, on that size's pixels, and an icon scaled to another size blurs, at
-  100% and 150% most: the bar's state icons were 16-unit drawings shown at 14 pixels, and Copilot's 20-unit pulse at
-  16. Icons show at 12, 16, 20 or 24 pixels, each from its drawing for that size (`IconPaths.Of(icon, size)`), in one
-  style, regular or filled, at every size. Where Fluent has none, the nearest is scaled: Pulse at 16, Branch Request
-  at 24, and the plan's, the clock's and the power icon's at 16, in a row's badge. Not every drawing is whole: Fluent's
-  Hourglass Half, filled, at 16 is only its sand, which showed as a small triangle on a pull request whose checks were
-  running. BriefBar has the regular one, and a test checks that each drawing reaches across its square.
+- **Fluent draws each icon anew for each size**, on that size's pixels, and an icon scaled to another size blurs: the
+  bar's state icons were 16-unit drawings shown at 14 pixels, and Copilot's 20-unit pulse at 16. That holds for a
+  display's pixels, not Windows' scaled ones: a 16-pixel icon covers 20 of a display's pixels at 125% and 24 at 150%,
+  where its 16 drawing blurred too. Each icon shows the drawing made for the pixels it covers (`IconPaths.Of(icon,
+  size, scale)`), or one for half as many, doubled, as at 200%, and picks again when its window moves to a display at
+  another scale (`DisplayScaleWatcher`). BriefBar has each icon at 16, 20 and 24, a checklist's at 12 and Copilot's
+  pulse at 32, in one style, regular or filled, at every size. Where Fluent has none, the nearest is scaled: the
+  pulse at 16, Branch Request at 24 and 12, the plan's, the clock's and the power icon's at 16 and 12, and the raised
+  hand at 12, as tests list. Not every drawing is whole: Fluent's Hourglass Half, filled, at 16 is only its sand, which
+  showed as a small triangle on a pull request whose checks were running. BriefBar has the regular one, and a test
+  checks that each drawing reaches across its square.
 - **A read-only SQLite connection to a database in WAL mode creates its `-wal` and `-shm` files** when they're
   gone, as when the Copilot app isn't running: `AppDatabase` opens such a database immutable instead, without locks.
   That holds only while the app leaves the file alone, so it checks the file's size and time, and that there's still
