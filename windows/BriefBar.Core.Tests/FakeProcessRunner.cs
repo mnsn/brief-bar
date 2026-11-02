@@ -2,8 +2,9 @@ namespace BriefBar.Core.Tests;
 
 /// Stands in for `ProcessRunner`, as the Swift tests' `ProcessRunning` stubs do, and starts nothing: it notes every run it
 /// was asked for, answering with what `answer` makes of the run's number, from 1, after `delay`, if any, so that callers
-/// can overlap; and what it was asked to start in a console window.
-internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null, TimeSpan? delay = null) : IProcessRunner
+/// can overlap, and once `hold` lets the run finish, if it's given: as a program that takes no notice of being ended, it
+/// finishes when `hold`'s task does, cancelled or not. It notes too what it was asked to start in a console window.
+internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null, TimeSpan? delay = null, Func<int, Task>? hold = null) : IProcessRunner
 {
     readonly Lock gate = new();
     readonly List<FakeProcessRun> runs = [];
@@ -51,7 +52,8 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null,
                 Program: program,
                 Arguments: [.. arguments],
                 Environment: new Dictionary<string, string?>(collection: environment, comparer: StringComparer.Ordinal),
-                Timeout: timeout));
+                Timeout: timeout,
+                CancellationToken: cancellationToken));
             number = runs.Count;
         }
         if (answer is null)
@@ -61,6 +63,10 @@ internal sealed class FakeProcessRunner(Func<int, ProcessResult>? answer = null,
         if (delay is { } wait)
         {
             await Task.Delay(delay: wait, cancellationToken: cancellationToken);
+        }
+        if (hold is not null)
+        {
+            await hold(arg: number);
         }
         return answer(arg: number);
     }

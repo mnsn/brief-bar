@@ -68,7 +68,10 @@ public sealed record GitHubPullRequest(
         _ => null,
     };
 
-    /// The reviewers whose latest review says `state`, each once, in order.
+    /// Whether a reviewer's latest review says `state`, a deleted account's too.
+    internal bool HasReview(GitHubReviewState state) => Reviews.Any(predicate: review => review.State == state);
+
+    /// The reviewers whose latest review says `state`, each once, in order: those with names, so not deleted accounts.
     internal IReadOnlyList<string> Reviewers(GitHubReviewState state)
     {
         var seen = new HashSet<string>(comparer: StringComparer.Ordinal);

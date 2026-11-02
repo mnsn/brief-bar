@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using BriefBar.Core.GitHub;
 using BriefBar.Core.Tests.Copilot;
 
@@ -172,6 +173,91 @@ public sealed class AuthTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(testCode: () => provider.TokenAsync(cancellationToken: new CancellationToken(canceled: true)));
         Assert.Empty(collection: cli.Runs);
+    }
+
+    /// Nor does one that gave up while it waited for the provider's lock, as a source that stops cancels its read, then
+    /// stops the provider: it checks under the lock that `StopAsync` takes, so that a run starts before a stop, which ends
+    /// it, or not at all. The test holds the lock, through its private field, as a thread that's slow to give it up would.
+    [Fact]
+    public async Task ACallerThatGaveUpWhileItWaitedRunsNothing()
+    {
+        var cli = new FakeProcessRunner(answer: _ => Output(text: "gho_never"));
+        var provider = new GitHubCLITokenProvider(locator: Locator(present: [InstalledCLI]), runner: cli, time: new TestClock(start: TestTimes.Reference));
+        var gate = typeof(GitHubCLITokenProvider).GetField(name: "gate", bindingAttr: BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(obj: provider) as Lock
+            ?? throw new InvalidOperationException(message: "GitHubCLITokenProvider has no lock named gate any more: update this test.");
+        using var giveUp = new CancellationTokenSource();
+        Task<GitHubToken> asking;
+        gate.Enter();
+        try
+        {
+            asking = Task.Run(function: () => provider.TokenAsync(cancellationToken: giveUp.Token), cancellationToken: CancellationToken.None);
+            // Long enough for it to be waiting for the lock.
+            Thread.Sleep(millisecondsTimeout: 200);
+            giveUp.Cancel();
+            _ = provider.StopAsync();
+        }
+        finally
+        {
+            gate.Exit();
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(testCode: () => asking);
+        // Long enough for a run that started to be noted.
+        await Task.Delay(millisecondsDelay: 200, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Empty(collection: cli.Runs);
+    }
+
+    /// Stopped while `gh auth token` runs, as GitHub is turned off, it tells the run to end; should `gh` finish all the same,
+    /// what it got is kept by nothing and given to no one. Asked again, it runs `gh` again.
+    [Fact]
+    public async Task StoppingEndsARunUnderWayAndKeepsNothingItGets()
+    {
+        var finish = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var cli = new FakeProcessRunner(answer: run => Output(text: run == 1 ? "gho_dropped" : "gho_fresh"), hold: run => run == 1 ? finish.Task : Task.CompletedTask);
+        var provider = new GitHubCLITokenProvider(locator: Locator(present: [InstalledCLI]), runner: cli, time: new TestClock(start: TestTimes.Reference));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var asking = provider.TokenAsync(cancellationToken: cancellationToken);
+        await Waiting.Until(condition: () => cli.Runs.Count == 1);
+        var stopping = provider.StopAsync();
+        Assert.True(condition: cli.Runs[0].CancellationToken.IsCancellationRequested);
+        // It returns once the run has ended.
+        await Task.Delay(millisecondsDelay: 100, cancellationToken: cancellationToken);
+        Assert.False(condition: stopping.IsCompleted);
+        finish.SetResult();
+        await stopping.WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(testCode: () => asking);
+        Assert.Equal(expected: "gho_fresh", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: 2, actual: cli.Runs.Count);
+    }
+
+    /// A run that ends as it's told to, as `ProcessRunner`'s does, holds the stop up no longer than that.
+    [Fact]
+    public async Task StoppingEndsARunThatHeedsIt()
+    {
+        var cli = new FakeProcessRunner(answer: _ => Output(text: "gho_never"), delay: TimeSpan.FromMinutes(value: 5));
+        var provider = new GitHubCLITokenProvider(locator: Locator(present: [InstalledCLI]), runner: cli, time: new TestClock(start: TestTimes.Reference));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var asking = provider.TokenAsync(cancellationToken: cancellationToken);
+        await Waiting.Until(condition: () => cli.Runs.Count == 1);
+        await provider.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(testCode: () => asking);
+    }
+
+    /// Stopped between runs, it forgets the token it kept: asked again, it runs `gh` again.
+    [Fact]
+    public async Task StoppingForgetsTheToken()
+    {
+        var cli = new FakeProcessRunner(answer: run => Output(text: run == 1 ? "gho_first" : "gho_second"));
+        var provider = new GitHubCLITokenProvider(locator: Locator(present: [InstalledCLI]), runner: cli, time: new TestClock(start: TestTimes.Reference));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        Assert.Equal(expected: "gho_first", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        await provider.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+        Assert.Equal(expected: "gho_second", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: 2, actual: cli.Runs.Count);
     }
 
     [Fact]
