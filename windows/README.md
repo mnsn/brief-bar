@@ -301,7 +301,9 @@ SDK ships inside the app.
 - **A window shows the desktop through it, without blur, one way**: Windows blurs behind it
   (`DwmEnableBlurBehindWindow`) only over a region outside it, which turns per-pixel transparency on and blurs
   nothing, and its own background is painted black, which Windows then shows as see-through (`SeeThroughWindow`).
-  Acrylic's and Mica's controllers show their flat color over Remote Desktop instead.
+  Acrylic's and Mica's controllers show their flat color over Remote Desktop instead. Turning it on while the window
+  shows needs a repaint at once (`RedrawWindow` with `RDW_ERASENOW`): WinUI paints the background white in light,
+  and nothing paints it again until the window is resized or shown again, so the bar stayed its color over white.
 - **A system backdrop of your own takes a brush of Windows' compositor**, Windows.UI.Composition's, not WinUI's,
   and that compositor needs a Windows.System dispatcher queue on the UI thread, which WinUI doesn't start
   (`SystemCompositor`).
