@@ -510,6 +510,21 @@ private final class ExtensionStandIn: Sendable {
         #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))
         #expect(requests(home).isEmpty)
         #expect(opened == 0)
+
+        // Turned off once the extension took one: it's sent, and handed off, but nothing opens.
+        CopilotSessionPrompts.set(true, in: store.settings.defaults)
+        var handed = 0
+        store.handedOff = { _, _ in handed += 1 }
+        ext.start(after: .milliseconds(600))
+        defer { ext.stop() }
+        let taken = Task { await store.deliver("Fix the comments", to: choice(session), handOff: handOff) }
+        for _ in 0..<400 where ext.received.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await taken.value == .sent)
+        #expect(handed == 1)
+        #expect(opened == 0)
     }
 
     /// The demo sends nothing, and reads nothing of yours.

@@ -265,6 +265,8 @@ import Testing
         let ahead = Mutex<TimeInterval>(0)
         /// Send Work to Copilot and Send Prompts to Copilot Sessions are on.
         let allowed = Mutex(true)
+        /// The send is stopped as BriefBar asks whether it may go on, as when its window closes then.
+        let stopsWhenAsked = Mutex(false)
 
         var sender: SessionSender.Effects {
             SessionSender.Effects(
@@ -274,7 +276,10 @@ import Testing
                 },
                 isHeld: { [self] id in held.withLock { $0.contains(id) } },
                 forkRecord: { [self] _ in record.withLock { $0 } },
-                mayGoOn: { [self] in allowed.withLock { $0 } },
+                mayGoOn: { [self] in
+                    if stopsWhenAsked.withLock({ $0 }) { withUnsafeCurrentTask { $0?.cancel() } }
+                    return allowed.withLock { $0 }
+                },
                 now: { [self] in Date().addingTimeInterval(ahead.withLock { $0 }) }
             )
         }
@@ -524,6 +529,13 @@ import Testing
         effects.allowed.withLock { $0 = false }
         #expect(await sending.value == .notSent(.turnedOff))
         #expect(names(requests).isEmpty)
+
+        // Stopped while BriefBar asks: nothing's written.
+        effects.allowed.withLock { $0 = true }
+        effects.stopsWhenAsked.withLock { $0 = true }
+        #expect(await sender(outbox, effects).send("Fix it", to: session) == .notSent(.cancelled))
+        #expect(names(requests).isEmpty)
+        #expect(effects.opened.withLock { $0 }.isEmpty)
     }
 
     /// Once an extension took it, a request goes on whatever BriefBar does: stopped, BriefBar still waits for how it went,

@@ -195,8 +195,9 @@ extension CopilotTasksStore {
         } onCancel: {
             work.cancel()
         }
-        // Once it's stopped, or Send Work to Copilot is turned off, nothing more shows, and nothing's copied.
-        let goesOn = canSend && isOn && !Task.isCancelled
+        // Once it's stopped, or Send Work to Copilot or Send Prompts to Copilot Sessions is turned off, nothing more shows,
+        // and nothing's copied.
+        let goesOn = canSend && isOn && sessionPromptsAreOn && !Task.isCancelled
         switch outcome {
         case .sent, .forkedAndSent:
             let shown: String

@@ -170,7 +170,10 @@ public struct SessionSender: Sendable {
     /// - Parameter opens: opens the session once the request is written, even when a program holds it already.
     func request(_ request: OutboxRequest, opens: Bool = false) async -> Result<OutboxResult, SendFailure> {
         guard !Task.isCancelled else { return .failure(.cancelled) }
-        guard await effects.mayGoOn() else { return .failure(.turnedOff) }
+        let mayGoOn = await effects.mayGoOn()
+        // Stopped while that was asked: nothing's written.
+        guard !Task.isCancelled else { return .failure(.cancelled) }
+        guard mayGoOn else { return .failure(.turnedOff) }
         let session = request.sessionId
         outbox.removeOld(now: effects.now())
         var listening: Date?
