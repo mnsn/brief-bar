@@ -17,8 +17,8 @@ struct PullRequestDetailsPanel: View {
 
     /// What you went back from, to show its row again where you return.
     @LocalState private var returnTo: ItemRef?
-    /// The thread or the run the details just went to, pointed out for a moment.
-    @LocalState private var highlighted: PullRequestDetailsStore.Place?
+    /// The thread, the build or the check the details just went to, pointed out for a moment.
+    @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
 
     var body: some View {
         if let item = details.selected {
@@ -74,18 +74,20 @@ struct PullRequestDetailsPanel: View {
         }
     }
 
-    /// To where the details were asked to go, once they show it, pointing out a thread or a run for a moment.
+    /// To where the details were asked to go, once they show it, pointing out a thread, a build or a check for a moment.
     private func go(_ proxy: ScrollViewProxy) {
-        guard let place = details.place, details.pages.isEmpty else { return }
+        guard let place = details.place, details.pages.isEmpty, let item = details.selected else { return }
+        let anchor = place.anchor(in: panel(for: item).checks)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(place, anchor: .top) }
             details.reached(place)
-            if case .section = place { return }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = place }
+            guard let anchor else { return }
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
+            if case .section = anchor { return }
+            withAnimation(.easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
-            if highlighted == place {
+            if highlighted == anchor {
                 withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
             }
         }
@@ -348,10 +350,18 @@ struct PullRequestDetailsPanel: View {
         return entry.action
     }
 
+    /// What the list read of it, as it is now, which a refresh can change without changing its row; once the list doesn't
+    /// have it anymore, as it was then, with the rest of it.
+    private func record(for item: PRSnapshot) -> PRRecord? {
+        details.isListed ? store.record(for: item.key) ?? details.record : details.record
+    }
+
+    private func panel(for item: PRSnapshot) -> PullRequestPanel {
+        PullRequestPanel(item, record: record(for: item))
+    }
+
     private func content(_ item: PRSnapshot) -> some View {
-        // What the list read of it, as it is now, which a refresh can change without changing its row; once the list
-        // doesn't have it anymore, as it was then, with the rest of it.
-        let record = details.isListed ? store.record(for: item.key) ?? details.record : details.record
+        let record = record(for: item)
         let panel = PullRequestPanel(item, record: record)
         let ref = item.key.linkRef
         return VStack(alignment: .leading, spacing: 20) {
@@ -365,11 +375,11 @@ struct PullRequestDetailsPanel: View {
                 }
             }
             PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
-                .id(PullRequestDetailsStore.Place.section(.comments))
+                .id(PullRequestDetailsStore.Anchor.section(.comments))
             PullRequestChecksSection(panel: panel, highlighted: highlighted)
-                .id(PullRequestDetailsStore.Place.section(.checks))
+                .id(PullRequestDetailsStore.Anchor.section(.checks))
             PullRequestReviewersSection(panel: panel)
-                .id(PullRequestDetailsStore.Place.section(.reviewers))
+                .id(PullRequestDetailsStore.Anchor.section(.reviewers))
             WhereItStandsSection(subject: ref, title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

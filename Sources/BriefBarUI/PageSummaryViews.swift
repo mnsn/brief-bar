@@ -4,8 +4,10 @@ import SwiftUI
 // A page's summary, as a pull request's or a Copilot session's page has it under its heading, and a pull request's
 // details: ✨ Summarize in the heading, the card under it, and writing it as the page opens, as a work item's details do.
 
-/// ✨ Summarize, in a page's heading, while summaries and Show Links are on, its source says what it is, and no summary
-/// shows or is about to be written as it opened; or Show Summary, once you closed it.
+/// ✨ Summarize, in a page's heading, while summaries and Show Links are on, there's something to sum up, and no summary
+/// shows or is about to be written as it opened; or Show Summary, once you closed it. There's something to sum up of a
+/// pull request or a session its source says what it is, and of a work item once something's linked to it, as a
+/// summary's written as it opens.
 package struct PageSummarizeButton: View {
     private let ref: ItemRef
 
@@ -32,13 +34,17 @@ package struct PageSummarizeButton: View {
                 }
                 .glassButtonStyle()
                 .help("Shows the summary you closed, as it was written")
-            } else if summaries.canSummarize(ref), summaries.state(for: ref) == nil, !summaries.isPending(ref) {
+            } else if canSummarize, summaries.state(for: ref) == nil, !summaries.isPending(ref) {
                 // Just "Summarize" where the whole of it doesn't fit.
                 ViewThatFits(in: .horizontal) {
                     summarize(summaries.actionTitle)
                     summarize("Summarize")
                 }
             }
+        }
+
+        private var canSummarize: Bool {
+            ref.kind == .workItem ? summaries.hasSomethingToSum(ref) : summaries.canSummarize(ref)
         }
 
         private func summarize(_ title: String) -> some View {

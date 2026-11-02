@@ -10,7 +10,7 @@ import SwiftUI
 struct PullRequestChecksSection: View {
     let panel: PullRequestPanel
     /// The build or the check the details just went to, pointed out for a moment.
-    let highlighted: PullRequestDetailsStore.Place?
+    let highlighted: PullRequestDetailsStore.Anchor?
 
     @EnvironmentObject private var store: PRStore
 
@@ -35,9 +35,10 @@ struct PullRequestChecksSection: View {
                                 .opacity(0.6)
                                 .padding(.leading, 34)
                         }
-                        let place = PullRequestDetailsStore.Place.of(line)
-                        CheckRow(line: line, now: store.now, isHighlighted: highlighted == place)
-                            .id(place)
+                        // Its own, which no other row has, whatever their names.
+                        let anchor = PullRequestDetailsStore.Anchor.check(line.id)
+                        CheckRow(line: line, now: store.now, isHighlighted: highlighted == anchor)
+                            .id(anchor)
                     }
                 }
                 .padding(.vertical, 3)

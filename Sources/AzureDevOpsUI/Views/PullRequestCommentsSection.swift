@@ -14,7 +14,7 @@ struct PullRequestCommentsSection: View {
     /// Where the details are asked to go: a resolved thread there unfolds the resolved ones.
     let place: PullRequestDetailsStore.Place?
     /// The thread the details just went to, pointed out for a moment.
-    let highlighted: PullRequestDetailsStore.Place?
+    let highlighted: PullRequestDetailsStore.Anchor?
 
     @EnvironmentObject private var store: PRStore
     @LocalState private var showsResolved = false
@@ -76,7 +76,7 @@ struct PullRequestCommentsSection: View {
     private func card(_ thread: PullRequestPanel.Thread, me: String?) -> some View {
         ThreadCard(thread: thread, url: item.pageURL(thread: thread.id), me: me, now: store.now,
                    isHighlighted: highlighted == .thread(thread.id))
-            .id(PullRequestDetailsStore.Place.thread(thread.id))
+            .id(PullRequestDetailsStore.Anchor.thread(thread.id))
     }
 }
 

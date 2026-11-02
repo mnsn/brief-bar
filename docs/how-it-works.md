@@ -1200,8 +1200,9 @@ does: at the comment that needs you or that you answered, or a merge's run; ↗ 
 that, and **⋯** has the row's menu, its Copilot actions among them while Send Work to Copilot is on.
 
 Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a
-thread, which unfolds the resolved ones when it's one of them, a run, or a part, such as its comments, which
-What's Left does. They scroll there once it shows, and point a thread or a run out for a moment.
+thread, which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the
+first of that name), or a part, such as its comments, which What's Left does. They scroll there once it shows,
+and point a thread, a build or a check out for a moment.
 `reveal(_:at:)` shows them on the window's page and opens it there, unless no window has that page. A pull
 request the list doesn't have anymore, such as a review that merged, stays as it was last, with what the list
 had read of it, until you close it: it says so, and its menu loses the row's actions. Someone else signing in

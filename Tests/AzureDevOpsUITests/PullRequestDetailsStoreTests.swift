@@ -153,9 +153,31 @@ import Testing
         #expect(store.selected != nil)
         store.accountChanged("sam@contoso.com")
         #expect(store.selected == nil)
-        // What the list had as the last one isn't revealed either.
-        store.hasPage = { true }
-        #expect(!store.reveal(PRKey(DemoData.organization, 4102)))
+        // The list stays as it is until the new one's is read, which may be the same: what it has shows as listed.
+        store.show(try item(4102))
+        #expect(store.isListed)
+    }
+
+    /// A place resolves to one thing to scroll to: a build by its run, a check by its name, the first of that name.
+    @Test func aPlaceLeadsToOneRow() throws {
+        let now = Date()
+        let seen = DemoData.seenState(now: now)
+        let record = try #require(DemoData.records(now: now).first { $0.id.number == 4088 })
+        var twins = record
+        twins.details?.checks += [
+            Check(name: "Status check", kind: .status, state: .pending), Check(name: "Status check", kind: .status, state: .passed),
+        ]
+        let row = try #require(PRClassifier.snapshot(
+            for: twins, seenCutoff: seen.cutoff(for: twins.id), dismissedCutoff: seen.dismissedCutoff(for: twins.id), now: now
+        ))
+        let lines = PullRequestPanel(row, record: twins).checks
+        typealias Place = PullRequestDetailsStore.Place
+        #expect(Place.run(204_417).anchor(in: lines) == .check("run 204417"))
+        #expect(Place.check("Status check").anchor(in: lines) == .check("check Status check"))
+        #expect(Set(lines.map { PullRequestDetailsStore.Anchor.check($0.id) }).count == lines.count)
+        #expect(Place.run(1).anchor(in: lines) == nil)
+        #expect(Place.thread(43).anchor(in: lines) == .thread(43))
+        #expect(Place.section(.reviewers).anchor(in: lines) == .section(.reviewers))
     }
 
     /// From a list, a widget or a notification: the details on the Pull Requests page, in BriefBar's window, while one

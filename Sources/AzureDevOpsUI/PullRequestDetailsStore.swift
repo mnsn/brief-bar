@@ -15,7 +15,7 @@ final class PullRequestDetailsStore: ObservableObject {
         case thread(Int)
         /// A build that validates it, or a run after its merge, by its ID, as the Pipelines page knows it.
         case run(Int)
-        /// A check without a run, such as a status another service posts, by its name.
+        /// A check without a run, such as a status another service posts, by its name: the first of that name.
         case check(String)
         case section(PullRequestPanel.Section)
 
@@ -23,6 +23,24 @@ final class PullRequestDetailsStore: ObservableObject {
         static func of(_ line: PullRequestPanel.CheckLine) -> Place {
             line.buildId.map { .run($0) } ?? .check(line.run.name)
         }
+
+        /// What the details scroll to for it: its part, its thread, or the row of the first build or check it names;
+        /// nil for a build or a check they don't have.
+        func anchor(in checks: [PullRequestPanel.CheckLine]) -> Anchor? {
+            switch self {
+            case .thread(let id): .thread(id)
+            case .section(let section): .section(section)
+            case .run, .check: checks.first { Place.of($0) == self }.map { .check($0.id) }
+            }
+        }
+    }
+
+    /// Something in the details to scroll to, and to point out: one of their parts, a thread, or a build's or a check's
+    /// row, by its ID (`PullRequestPanel.CheckLine.id`), which no other row has.
+    enum Anchor: Hashable {
+        case section(PullRequestPanel.Section)
+        case thread(Int)
+        case check(String)
     }
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
@@ -162,7 +180,6 @@ final class PullRequestDetailsStore: ObservableObject {
         defer { self.account = account }
         guard let known = self.account, known != account else { return }
         close()
-        listed = []
     }
 
     /// Stops for good, when Azure DevOps is turned off.
