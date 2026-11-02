@@ -114,6 +114,45 @@ private final class TestClock: Sendable {
     }
 }
 
+/// Hands out tokens, but holds the requests whose calls it's told (each request asks for a token first), each until it's
+/// released: two reads caught in the middle, in an order.
+private actor GatedTokens: AccessTokenProvider {
+    private let value: String
+    private let held: Set<Int>
+    private var calls = 0
+    private var gates: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    init(_ value: String, holding held: Set<Int>) {
+        self.value = value
+        self.held = held
+    }
+
+    func token() async throws -> AccessToken {
+        calls += 1
+        let call = calls
+        if held.contains(call) {
+            await withCheckedContinuation { gates[call] = $0 }
+        }
+        return AccessToken(value: value, expiresOn: .distantFuture)
+    }
+
+    func invalidate() {}
+
+    func isHolding(_ call: Int) -> Bool {
+        gates[call] != nil
+    }
+
+    func release(_ call: Int) {
+        gates.removeValue(forKey: call)?.resume()
+    }
+
+    /// Lets every request held go, for a test that's ending.
+    func releaseAll() {
+        for gate in gates.values { gate.resume() }
+        gates = [:]
+    }
+}
+
 @Suite struct BuildInvestigatorTests {
     private func query(_ request: URLRequest) -> [String: String] {
         let items = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
@@ -341,6 +380,23 @@ private final class TestClock: Sendable {
         #expect(unlisted.log == nil)
         #expect(unlisted.unread[.log].map { if case .decoding = $0 { true } else { false } } == true)
         #expect(requests(logs, to: "/logs/9").isEmpty)
+    }
+
+    @Test func stepsThatCantBeReadAreUnread() async throws {
+        // None of its records can be read: no steps, and that's an error, not a run without any.
+        let server = StubServer()
+        FailedRun.serve(server, replies: ["timeline": .json(WorkFixture.timeline([["name": "Build"], ["type": "Task"]]))])
+        let unreadable = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(unreadable.steps.isEmpty)
+        #expect(unreadable.unread[.steps].map { if case .decoding = $0 { true } else { false } } == true)
+        // Some of them: the steps that could be read show, and the rest are read again next time.
+        let some = StubServer()
+        var records = (FailedRun.timeline["records"] as? [[String: Any]]) ?? []
+        records.append(["name": "Without an ID"])
+        FailedRun.serve(some, replies: ["timeline": .json(WorkFixture.timeline(records))])
+        let partial = try await BuildInvestigationReader.read(client: some.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(partial.steps.map(\.name) == ["Build", "Test"])
+        #expect(partial.unread[.steps] != nil)
     }
 
     @Test func aRunWithoutALogOrTestsHasNone() async throws {
@@ -572,6 +628,50 @@ private final class TestClock: Sendable {
         #expect(try await refreshed.value.readAt == t(10))
         // The run was read twice, by the two reads, and never only to look at it.
         #expect(requests(server, to: "/_apis/build/builds/77").count == 2)
+    }
+
+    @Test func aRefreshStartedWhileAKeptRunIsLookedAtIsWaitedFor() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the look at the run it kept, and the refresh's first request.
+        let tokens = GatedTokens(server.id, holding: [9, 10])
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
+        let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
+        let refreshHeld = (try? await waitUntil("the refresh") { await tokens.isHolding(10) }) != nil
+        // The look ends while the refresh is under way: it waits for the refresh, rather than show what's kept.
+        await tokens.release(9)
+        let bothWait = (try? await waitUntil("both to wait for the refresh") { await investigator.waiting == 2 }) != nil
+        await tokens.releaseAll()
+        #expect(held && refreshHeld && bothWait)
+        #expect(try await looking.value.readAt == t(10))
+        #expect(try await refreshing.value.readAt == t(10))
+    }
+
+    @Test func readsForEachTargetBranchAreSharedApart() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let tokens = GatedTokens(server.id, holding: [1])
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let toMain = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the read for main") { await tokens.isHolding(1) }) != nil
+        var retargeted = FailedRun.pullRequest
+        retargeted.targetBranch = "release"
+        let reading = Task { try await investigator.investigation(buildId: 77, of: retargeted) }
+        let readAlone = (try? await waitUntil("the read for release") { requests(server, to: "/timeline").count == 1 }) != nil
+        // Another caller comparing it with main, once the read for release is done, shares the read for main.
+        _ = try? await reading.value
+        let alsoToMain = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let bothWait = (try? await waitUntil("both to wait for the read for main") { await investigator.waiting == 2 }) != nil
+        await tokens.releaseAll()
+        #expect(held && readAlone && bothWait)
+        #expect(try await toMain.value == alsoToMain.value)
+        #expect(try await reading.value.comparison.targetBranch == "release")
+        #expect(requests(server, to: "/timeline").count == 2)
     }
 
     @Test func aReadForAnotherTargetBranchIsntShared() async throws {

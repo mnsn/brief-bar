@@ -282,6 +282,10 @@ public enum BuildInvestigationReader {
 
         var unread: [BuildInvestigation.Part: ADOError] = [:]
         let read = found(await timeline, .steps, unread: &unread)
+        if let skipped = read?.records.skipped, skipped > 0 {
+            // Its steps, and where it failed, may be among those.
+            unread[.steps] = .decoding("steps that couldn't be read")
+        }
         let failed = read.flatMap(PipelineFailure.failedRecord(in:))
         let (logsRead, testRunsRead) = await (logs, testRuns)
         async let log = readLog(client: client, organization: organization, projectId: projectId, buildId: buildId, step: failed, logs: logsRead)
@@ -481,12 +485,16 @@ public actor BuildInvestigator {
         }
     }
 
+    /// A read of a run, to compare it with a target branch.
+    private struct ReadKey: Hashable {
+        var run: Key
+        var targetBranch: String
+    }
+
     private struct Reading {
         var id = UUID()
         /// What it's read for: `forget()` makes what's read before it, and comes after, not kept.
         var generation: Int
-        /// The branch it compares the run with: the pull request's target.
-        var targetBranch: String
         var task: Task<BuildInvestigationReader.Read, Error>
     }
 
@@ -499,7 +507,7 @@ public actor BuildInvestigator {
     private let client: ADOClient
     private let now: @Sendable () -> Date
     private var kept: [Key: BuildInvestigationReader.Read] = [:]
-    private var reading: [Key: Reading] = [:]
+    private var reading: [ReadKey: Reading] = [:]
     private var checking: [Key: Checking] = [:]
     private var generation = 0
     /// How many callers wait for reads, or looks at kept runs, under way, for tests.
@@ -514,20 +522,20 @@ public actor BuildInvestigator {
     /// - Parameter refresh: read it again even when it's kept, as when you ask to.
     public func investigation(buildId: Int, of pullRequest: PullRequest, refresh: Bool = false) async throws -> BuildInvestigation {
         let key = Key(pullRequest.key.organization, buildId)
+        let readKey = ReadKey(run: key, targetBranch: pullRequest.targetBranch)
         // A read under way is newer than what's kept: wait for it rather than look at the run.
-        if !refresh, underWay(key, for: pullRequest) == nil,
-           let read = await stillKept(key, buildId: buildId, pullRequest: pullRequest) {
+        if !refresh, reading[readKey] == nil, let read = await stillKept(key, readKey: readKey, pullRequest: pullRequest) {
             return read.revised(for: pullRequest)
         }
-        let current = underWay(key, for: pullRequest) ?? start(key, buildId: buildId, pullRequest: pullRequest)
+        let current = reading[readKey] ?? start(readKey, pullRequest: pullRequest)
         waiting += 1
         defer { waiting -= 1 }
         do {
             let read = try await current.task.value
-            finish(key, current, read: read)
+            finish(readKey, current, read: read)
             return read.revised(for: pullRequest)
         } catch {
-            finish(key, current, read: nil)
+            finish(readKey, current, read: nil)
             throw error
         }
     }
@@ -549,24 +557,20 @@ public actor BuildInvestigator {
     /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once the run,
     /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again. Callers
     /// at the same time share that look at the run.
-    private func stillKept(_ key: Key, buildId: Int, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
+    private func stillKept(_ key: Key, readKey: ReadKey, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
         guard let read = kept[key], isFresh(read.investigation, for: pullRequest) else { return nil }
         guard read.investigation.run.status.isFinished else { return read }
         let generation = generation
-        let check = checking[key] ?? startCheck(key, buildId: buildId, pullRequest: pullRequest)
+        let check = checking[key] ?? startCheck(key, pullRequest: pullRequest)
         waiting += 1
         let run = await check.task.value
         waiting -= 1
         if checking[key]?.id == check.id { checking[key] = nil }
-        // What's kept now: it may have gone, or been read again, meanwhile.
-        guard generation == self.generation, let kept = kept[key], isFresh(kept.investigation, for: pullRequest) else { return nil }
+        // What's kept now: it may have gone, or been read again, meanwhile; and a read started meanwhile is newer.
+        guard generation == self.generation, reading[readKey] == nil, let kept = kept[key], isFresh(kept.investigation, for: pullRequest)
+        else { return nil }
         guard let run else { return kept }
         return BuildInvestigationReader.isSameRun(run, kept.build) ? kept : nil
-    }
-
-    /// The read under way of the run, to compare it with the pull request's target branch.
-    private func underWay(_ key: Key, for pullRequest: PullRequest) -> Reading? {
-        reading[key].flatMap { $0.targetBranch == pullRequest.targetBranch ? $0 : nil }
     }
 
     private func isFresh(_ investigation: BuildInvestigation, for pullRequest: PullRequest) -> Bool {
@@ -575,29 +579,31 @@ public actor BuildInvestigator {
         return now().timeIntervalSince(investigation.readAt) < keptFor
     }
 
-    private func startCheck(_ key: Key, buildId: Int, pullRequest: PullRequest) -> Checking {
+    private func startCheck(_ key: Key, pullRequest: PullRequest) -> Checking {
         let client = client
-        let address = ADOEndpoint.build(organization: pullRequest.key.organization, project: pullRequest.projectId, id: buildId)
+        let address = ADOEndpoint.build(organization: pullRequest.key.organization, project: pullRequest.projectId, id: key.buildId)
         let check = Checking(task: Task { try? await client.get(address, as: ADOBuild.self) })
         checking[key] = check
         return check
     }
 
-    private func start(_ key: Key, buildId: Int, pullRequest: PullRequest) -> Reading {
+    private func start(_ readKey: ReadKey, pullRequest: PullRequest) -> Reading {
         let client = client
         let readAt = now()
-        let reading = Reading(generation: generation, targetBranch: pullRequest.targetBranch, task: Task {
+        let buildId = readKey.run.buildId
+        let reading = Reading(generation: generation, task: Task {
             try await BuildInvestigationReader.readRun(client: client, buildId: buildId, of: pullRequest, now: readAt)
         })
-        self.reading[key] = reading
+        self.reading[readKey] = reading
         return reading
     }
 
     /// Keeps what a read found, unless something couldn't be read, it was read before `forget()`, or something newer is
     /// kept already; then lets go of the oldest beyond `capacity`.
-    private func finish(_ key: Key, _ current: Reading, read: BuildInvestigationReader.Read?) {
-        if reading[key]?.id == current.id { reading[key] = nil }
+    private func finish(_ readKey: ReadKey, _ current: Reading, read: BuildInvestigationReader.Read?) {
+        if reading[readKey]?.id == current.id { reading[readKey] = nil }
         guard let read, current.generation == generation, read.investigation.unread.isEmpty else { return }
+        let key = readKey.run
         if let known = kept[key], known.investigation.readAt > read.investigation.readAt { return }
         kept[key] = read
         while kept.count > Self.capacity,
