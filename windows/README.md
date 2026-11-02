@@ -489,8 +489,10 @@ SDK ships inside the app.
   them without the lock, as the Mac does, and holds none open between reads, so Teams can compact and delete them. A
   table it can't read counts as unreadable only once it has stayed unchanged for 5 seconds: one Teams is still writing
   isn't in the MANIFEST yet, so isn't read (see the next point), but without the MANIFEST, it reads as broken until
-  it's done. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
-  doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`). A conversation of a type
+  it's done. The MANIFEST, CURRENT or a log that can't be read counts once it has stayed so for 5 seconds, though Teams
+  appends to it meanwhile: that doesn't make it readable. Meanwhile, and while some of its data can't be read, BriefBar
+  keeps the marks of chats it doesn't find: only a read of everything says a chat is gone
+  (`TeamsSnapshot.IsComplete`). A conversation of a type
   BriefBar doesn't know counts as one it couldn't read, not as one that isn't a chat, as it may be a chat after an
   update to Teams, and so does a chat whose read marker field it can't read, rather than one never read, whose every
   message would be unread; so does a folder it can't list, and with no folder it could read, the sections say it

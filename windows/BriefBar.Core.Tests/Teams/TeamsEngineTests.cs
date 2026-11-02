@@ -691,6 +691,51 @@ public sealed class TeamsEngineTests
         Assert.Equal(expected: unreadable.Chats, actual: readable.Chats);
     }
 
+    /// LevelDB appends to its MANIFEST as it flushes and compacts, which doesn't make one that can't be read readable:
+    /// unlike a table being written, it counts once it has stayed unreadable for the wait, though it keeps growing.
+    [Fact]
+    public async Task CountsAManifestThatCantBeReadThoughItKeepsGrowing()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = TeamsData.Copy(folder: folder.Path);
+        var leveldb = Path.GetDirectoryName(path: log)!;
+        // An edit LevelDB doesn't know, as a large value reference, which it no longer has.
+        var name = ManifestWriter.Save(
+            folder: leveldb,
+            number: 11,
+            ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 0, nextFile: 12, lastSequence: 0),
+            [.. Encodings.Varint(value: 8), .. Encodings.Varint(value: 1)]);
+        var manifest = Path.Combine(path1: leveldb, path2: name);
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 300));
+        engine.Start();
+        await collector.Until(what: "the first read", predicate: snapshot => snapshot.Chats.Count > 0);
+
+        // LevelDB appends edits more often than the wait lasts.
+        using var appending = new CancellationTokenSource();
+        var appender = Task.Run(
+            function: async () =>
+            {
+                ulong nextFile = 13;
+                while (!appending.IsCancellationRequested)
+                {
+                    TeamsData.Append(path: manifest, ManifestWriter.Edit(nextFile: nextFile++));
+                    await Task.Delay(millisecondsDelay: 50, cancellationToken: TestContext.Current.CancellationToken);
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        try
+        {
+            var counted = await collector.Until(what: "the MANIFEST counted", predicate: snapshot => snapshot.Report.UnreadableFiles == 1, seconds: 5);
+            Assert.Equal(expected: TeamsProblem.PartlyUnreadable, actual: counted.Problem);
+        }
+        finally
+        {
+            await appending.CancelAsync();
+            await appender;
+        }
+    }
+
     /// Asked to read, as a panel opens, it reads what Teams wrote since, without waiting for its watcher.
     [Fact]
     public async Task ReadsWhatTeamsWroteWhenAsked()

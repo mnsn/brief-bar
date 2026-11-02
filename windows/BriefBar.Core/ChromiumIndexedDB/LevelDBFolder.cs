@@ -66,6 +66,10 @@ public sealed class LevelDBFolder(string path)
     /// The log LevelDB writes to now: the one with the highest number.
     public static string? NewestLog(string folder) => Logs(names: Names(folder: folder)).LastOrDefault().Name;
 
+    /// Whether the file named `name`, or at that path, is one of LevelDB's tables.
+    internal static bool IsTable(string name) => name.EndsWith(value: ".ldb", comparisonType: StringComparison.Ordinal)
+        || name.EndsWith(value: ".sst", comparisonType: StringComparison.Ordinal);
+
     (LevelDBFolderRead Read, bool Vanished) Attempt(Func<byte[]?, byte[], bool> mayHold, Func<ArraySegment<byte>, bool> keep, bool isLastAttempt)
     {
         var names = Names(folder: Path);
@@ -223,9 +227,6 @@ public sealed class LevelDBFolder(string path)
         .Select(selector: file => System.IO.Path.GetFileName(path: file))
         .Order(comparer: StringComparer.Ordinal)
         .ToList();
-
-    static bool IsTable(string name) => name.EndsWith(value: ".ldb", comparisonType: StringComparison.Ordinal)
-        || name.EndsWith(value: ".sst", comparisonType: StringComparison.Ordinal);
 
     /// The number LevelDB named a table or a log with, as `000005.ldb`; null for a name without one.
     static ulong? Number(string name) => ulong.TryParse(
