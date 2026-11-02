@@ -29,6 +29,19 @@ import Testing
         #expect(scaled.height == bigger.lineHeight * 4)
     }
 
+    /// A form feed, a line separator or a vertical tab in a line would start another in the text, and every row after it
+    /// would be beside another's number: each is a space.
+    @Test func everyRowIsOneLine() {
+        _ = NSApplication.shared
+        let breaking = ["\u{0C}", "\u{0B}", "\u{85}", "\u{2028}", "\u{2029}", "\r"]
+        let rows = breaking.enumerated().map { CodeRow(.line(.unchanged), "a\($1)b", old: $0 + 1, new: $0 + 1) }
+        let view = CodeNSView()
+        view.update(rows: rows, metrics: CodeMetrics(scale: 1), showsOldNumbers: false, label: "Code", onOverflow: nil)
+        #expect(view.text.components(separatedBy: .newlines).count == rows.count)
+        #expect(view.text == Array(repeating: "a b", count: rows.count).joined(separator: "\n"))
+        #expect(CodeTextView.oneLine("\tlet a = 1") == "\tlet a = 1")
+    }
+
     @Test func itsTextCopiesWithoutTheNumbers() {
         _ = NSApplication.shared
         let view = CodeNSView()

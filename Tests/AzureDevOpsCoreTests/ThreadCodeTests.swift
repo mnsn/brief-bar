@@ -181,6 +181,19 @@ import BriefBarCore
             == ["/docs/x.md", "/src/a/z.cs", "/src/A.cs", "/src/b.cs", "/src/file9.cs", "/src/file10.cs", "/a.md", "/Z.md"])
         #expect(!PullRequestPanel.listsFirst("/src/a.cs", "/src/a.cs"))
         #expect(PullRequestPanel.listsFirst("/src/A.cs", "/src/a.cs") != PullRequestPanel.listsFirst("/src/a.cs", "/src/A.cs"))
+
+        // Every pair the same way both ways round, and in a chain, as sorting needs: names with "ß", case and numbers too.
+        let names = ["/src/Maß.cs", "/src/Mast.cs", "/src/Masse.cs", "/src/Massnahme.cs", "/src/MASS.cs", "/src/mass2.cs",
+                     "/src/mass10.cs", "/src/mass02.cs", "/src/Straße/a.cs", "/src/strasse.cs", "/src/Ärger.cs", "/src/Arger.cs"]
+        for a in names {
+            for b in names where a != b {
+                #expect(!(PullRequestPanel.listsFirst(a, b) && PullRequestPanel.listsFirst(b, a)), "\(a) and \(b)")
+                #expect(PullRequestPanel.listsFirst(a, b) || PullRequestPanel.listsFirst(b, a), "\(a) and \(b)")
+                for c in names where PullRequestPanel.listsFirst(a, b) && PullRequestPanel.listsFirst(b, c) {
+                    #expect(PullRequestPanel.listsFirst(a, c), "\(a), \(b) and \(c)")
+                }
+            }
+        }
     }
 
     // MARK: Who it waits on

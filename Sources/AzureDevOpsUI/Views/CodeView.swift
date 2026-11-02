@@ -233,8 +233,9 @@ final class CodeTextView: NSTextView {
         let text = NSMutableAttributedString()
         for (index, row) in rows.enumerated() {
             let isNote = row.kind == .gap
-            // Its text as it is, but for the line breaks and form feeds a line can't hold.
-            let shown = isNote ? "⋯ " + row.text : row.text.replacingOccurrences(of: "\r", with: "")
+            // Its text as it is, but for what would break it into more lines than one, such as a form feed or a line
+            // separator: a space each, so every row stays beside its number.
+            let shown = isNote ? "⋯ " + row.text : Self.oneLine(row.text)
             text.append(NSAttributedString(string: shown + (index < rows.count - 1 ? "\n" : ""), attributes: isNote ? note : line))
         }
         typingAttributes = line
@@ -244,6 +245,13 @@ final class CodeTextView: NSTextView {
             contentWidth = (layoutManager.usedRect(for: textContainer).width + Self.leading + Self.trailing).rounded(.up)
         }
         needsDisplay = true
+    }
+
+    /// A line's text with each character that starts a new line, as the text system sees it, as a space: a carriage
+    /// return, a form feed, a vertical tab, the next-line character, and the line and paragraph separators.
+    static func oneLine(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: CharacterSet.newlines.contains) else { return text }
+        return String(String.UnicodeScalarView(text.unicodeScalars.map { CharacterSet.newlines.contains($0) ? " " : $0 }))
     }
 
     override func drawBackground(in rect: NSRect) {

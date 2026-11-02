@@ -39,12 +39,18 @@ extension PullRequestPanel {
             let leftIsFolder = index < left.count - 1
             let rightIsFolder = index < right.count - 1
             if leftIsFolder != rightIsFolder { return leftIsFolder }
-            let order = left[index].compare(right[index], options: [.caseInsensitive, .numeric])
+            // Case folded first, so that every pair compares the same way both ways round, as sorting needs: comparing
+            // without case doesn't, for a name with "ß".
+            let order = Self.folded(left[index]).compare(Self.folded(right[index]), options: .numeric)
             if order != .orderedSame { return order == .orderedAscending }
             // Names that differ only in case, by their letters' code.
             if left[index] != right[index] { return left[index] < right[index] }
         }
         return left.count < right.count
+    }
+
+    private static func folded(_ name: Substring) -> String {
+        name.folding(options: .caseInsensitive, locale: nil)
     }
 }
 
