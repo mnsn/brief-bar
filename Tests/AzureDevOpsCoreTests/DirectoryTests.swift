@@ -190,6 +190,24 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(cli.asked == [nil, Tenants.other, nil])
     }
 
+    @Test func afterARestartYourGuestDirectoryWantingYouToSignInAgainIsntSomeoneElses() async throws {
+        // BriefBar last read as your guest account in fabrikam's directory, from yours, and kept where it's from. Since the
+        // restart, the Azure CLI's default is a third directory you're a guest in too, and fabrikam's wants a sign-in.
+        let cli = FakeAzureCLI(defaultTenant: Tenants.third, signedIn: [Tenants.third], accountFrom: Tenants.home)
+        let provider = AzureCLITokenProvider(
+            homeTenant: Tenants.other, homeAccountTenant: Tenants.home.uppercased(), locator: Self.locator, runner: cli
+        )
+        #expect(await provider.accountTenant == Tenants.home)
+        // It's still you: fabrikam's directory wants you to sign in again, there, rather than BriefBar reading as you there.
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.other)) {
+            try await provider.token()
+        }
+        // Signed in there again, yours comes from there, as before the restart.
+        cli.signIn(to: Tenants.other)
+        #expect(try await provider.token().tenant == Tenants.other)
+        #expect(cli.asked == [Tenants.other, nil, Tenants.other])
+    }
+
     @Test func aPersonalAccountsDirectoryWantingYouToSignInAgainIsntSomeoneElses() async throws {
         // A personal Microsoft account, a guest in each directory: its tokens name live.com, not a directory.
         let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home], accountFrom: "live.com")
@@ -222,13 +240,19 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other])
         let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
         _ = try await provider.token()
-        // Someone else signs in while yours is kept: a token from fabrikam's directory is theirs.
+        // Someone else signs in while yours is kept: a token from fabrikam's directory is theirs, and no caller gets it.
         cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other])
-        #expect(try await provider.token(tenant: Tenants.other).accountTenant == Tenants.third)
-        // It isn't kept, and yours is asked for again, which tells who's signed in now.
-        _ = try await provider.token(tenant: Tenants.other)
+        let first = Task { try await provider.token(tenant: Tenants.other) }
+        let second = Task { try await provider.token(tenant: Tenants.other) }
+        for caller in [first, second] {
+            await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) { try await caller.value }
+        }
+        // Nor is it kept, and yours is asked for again, which tells who's signed in now.
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) {
+            try await provider.token(tenant: Tenants.other)
+        }
         #expect(try await provider.token().tenant == Tenants.third)
-        #expect(cli.asked == [nil, Tenants.other, Tenants.other, Tenants.home, nil])
+        #expect(cli.asked.suffix(2) == [Tenants.home, nil])
     }
 
     // MARK: Requests
@@ -1018,6 +1042,96 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         await engine.refreshNow()
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.board?.team.id == shipping.id)
+        #expect(snapshot.foundTeam == nil)
+    }
+
+    @Test func whenEveryTeamReadBeforeWaitsOnASignInItsLookedAtAgainWithinAMinute() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        let clock = Locked(t(0))
+        // fabrikam's teams are read while contoso's team, which you chose, shows.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: ["fabrikam"], team: WorkFixture.team, interval: 300),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+
+        // Hours later, BriefBar looks for one of your teams, and the Azure CLI has signed out of fabrikam's directory: the
+        // teams read before wait on that sign-in, and nothing else can be read.
+        await tokens.signOut(of: Tenants.other)
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: ["fabrikam"], interval: 300))
+        clock.set(t(SprintEngine.teamsLifetime + 60))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        #expect(await engine.nextDelay() == 60)
+    }
+
+    @Test func teamsOfManyOrganizationsWaitingOnASignInDontUseUpTheTeamsTried() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        // As many organizations as teams are tried in a refresh, a team each, before contoso.
+        let elsewhere = (1...SprintEngine.teamsToTry).map { "adatum\($0)" }
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        for (index, organization) in elsewhere.enumerated() {
+            let team = TeamRef(organization: organization, projectId: "p\(index)", projectName: "Web", id: "w\(index)", name: "Web")
+            server.on("/\(organization)/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(team)]))
+            server.put(organization, in: Tenants.other)
+        }
+        let organizations = elsewhere + [Fixture.org]
+        // Your teams are read with the team you chose.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: organizations, team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().teams.count == SprintEngine.teamsToTry + 1)
+
+        // BriefBar then looks for one, once the Azure CLI has signed out of their directory: contoso's is tried after them.
+        await tokens.signOut(of: Tenants.other)
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: organizations))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().board?.team.id == WorkFixture.team.id)
+    }
+
+    @Test func aTeamFoundWhileAnOrganizationWaitsOnASignInStaysUnkeptWhenItsTeamsThenFailOtherwise() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        let failing = Locked(false)
+        server.on("/fabrikam/_apis/teams") { _ in failing.value ? .status(500) : .json(Fixture.list([WorkFixture.teamJSON(web)])) }
+        server.put("fabrikam", in: Tenants.other)
+        let organizations = [Fixture.org, "fabrikam"]
+        let clock = Locked(t(0))
+        // Your teams are read with the team you chose.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: organizations, team: WorkFixture.team),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+
+        // Hours later, BriefBar looks for one while fabrikam's directory wants a sign-in: contoso's is found, but not kept.
+        await tokens.signOut(of: Tenants.other)
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: organizations))
+        clock.set(t(SprintEngine.teamsLifetime + 60))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().foundTeam == nil)
+
+        // Signed in there, fabrikam's teams fail otherwise: they still haven't been compared, so it's still not kept.
+        await tokens.signIn(to: Tenants.other)
+        failing.set(true)
+        clock.set(t(2 * SprintEngine.teamsLifetime + 120))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == WorkFixture.team.id)
         #expect(snapshot.foundTeam == nil)
     }
 

@@ -342,8 +342,9 @@ public actor SprintEngine {
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
-    /// teams it had; one in a directory the Azure CLI isn't signed in to is tried again every refresh, and said. With no
-    /// teams to choose from when `choosing`, why is thrown; a team you chose is read whatever happens to them.
+    /// teams it had, but one in a directory the Azure CLI isn't signed in to: its teams are dropped, read again every
+    /// refresh, and said, until you've signed in there. With no teams to choose from when `choosing`, why is thrown; a
+    /// team you chose is read whatever happens to them.
     private func loadTeams(_ organizations: [String], at date: Date, choosing: Bool) async throws {
         var lastError: ADOError?
         var elsewhere: [(organization: String, error: ADOError)] = []
@@ -357,7 +358,10 @@ public actor SprintEngine {
             } catch let error as ADOError {
                 switch error {
                 case .forbidden, .notFound: teams[organization] = ([], date)
-                case .otherDirectory: elsewhere.append((organization: organization, error: error))
+                // Its teams wait on that sign-in: those read before aren't chosen from or compared meanwhile.
+                case .otherDirectory:
+                    teams[organization] = nil
+                    elsewhere.append((organization: organization, error: error))
                 // Nothing more goes out until then: that comes first, before any sign-in.
                 case .throttled: throw error
                 default:
@@ -416,8 +420,11 @@ public actor SprintEngine {
                 // Nothing else can be read either.
                 case .auth, .unauthorized, .offline, .throttled: throw error
                 // Its organization is in a directory to sign in to now: as when its teams can't be read, it's said, and its
-                // teams are read again, and compared with what's found meanwhile, once you've signed in there.
-                case .otherDirectory: waitForSignIn(to: team.organization, error)
+                // teams are read again, and compared with what's found meanwhile, once you've signed in there. It doesn't
+                // count among the teams tried: the rest of its organization's aren't.
+                case .otherDirectory:
+                    tried -= 1
+                    waitForSignIn(to: team.organization, error)
                 // Just this team: look at the others, and at this one again next time.
                 default: incomplete = true
                 }

@@ -163,7 +163,10 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     /// The Azure CLI's tokens, asked for in the directory the app last read your pull requests with, as the app asks
     /// for them: so what's read is its account's.
     static func tokens(_ defaults: UserDefaults? = appDefaults) -> AzureCLITokenProvider {
-        AzureCLITokenProvider(homeTenant: seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)))
+        AzureCLITokenProvider(
+            homeTenant: seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)),
+            homeAccountTenant: defaults?.string(forKey: SettingsKey.accountOrigin)
+        )
     }
 
     /// A problem, as the command line says it: with what to run when signing in fixes it, since there's no Sign In

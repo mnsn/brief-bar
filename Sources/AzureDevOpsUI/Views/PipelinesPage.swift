@@ -669,6 +669,20 @@ private struct AddPipelineSheet: View {
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
             }
+            if let projectsProblem {
+                // Some organizations' projects aren't in the menu, whichever project is chosen: they wait on a sign-in to
+                // their directory.
+                HStack(spacing: 8) {
+                    Label(projectsProblem.message, systemImage: "exclamationmark.triangle")
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Sign In…") { store.signIn(for: projectsProblem) }
+                    Button("Try Again") { Task { await loadProjects() } }
+                }
+                .controlSize(.small)
+            }
             list
         }
         .padding(20)
@@ -730,27 +744,10 @@ private struct AddPipelineSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {
-            if let projectsProblem {
-                // No project to choose from, as some organizations' projects wait on a sign-in to their directory.
-                VStack(spacing: 10) {
-                    Label(projectsProblem.message, systemImage: "exclamationmark.triangle")
-                        .font(style: .body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        Button("Sign In…") { store.signIn(for: projectsProblem) }
-                            .buttonStyle(.borderedProminent)
-                        Button("Try Again") { Task { await loadProjects() } }
-                    }
-                    .controlSize(.small)
-                }
+            Text("Choose a project to search in.")
+                .font(style: .body)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Text("Choose a project to search in.")
-                    .font(style: .body)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         } else if results.isEmpty && !isSearching {
             Text(link != nil ? "No pipeline at that link." : noResults)
                 .font(style: .body)

@@ -130,12 +130,17 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     private var pending: [String?: Task<AccessToken, Error>] = [:]
 
     /// `homeTenant` is your sign-in's directory, when it's known from before: the one BriefBar last read your pull
-    /// requests with.
+    /// requests with; and `homeAccountTenant` is where that account is from (`AccessToken.accountTenant`), so that after a
+    /// restart a sign-in your directory wants again, while the Azure CLI's default is another directory you're a guest in,
+    /// isn't taken for someone else's.
     public init(
-        homeTenant: String? = nil, locator: AzureCLILocator = AzureCLILocator(), runner: any ProcessRunning = ProcessRunner(),
-        now: @escaping @Sendable () -> Date = { Date() }
+        homeTenant: String? = nil, homeAccountTenant: String? = nil, locator: AzureCLILocator = AzureCLILocator(),
+        runner: any ProcessRunning = ProcessRunner(), now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.homeTenant = AzureCLITokenProvider.directory(homeTenant)
+        if let origin = AzureCLITokenProvider.directory(homeAccountTenant) {
+            homeAccount = (account: nil, tenant: origin)
+        }
         self.locator = locator
         self.runner = runner
         self.now = now
@@ -161,21 +166,15 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     /// The `az` executable this provider runs, once it has looked for it.
     public var executablePath: String? { executable?.path }
 
+    /// Where the account of your sign-in's tokens is from, once known: for the app to keep, and give back after a restart.
+    public var accountTenant: String? { homeAccount?.tenant }
+
     /// Keeps a token until it nears its expiry. One for your directory that's another account's means someone else
-    /// signed in to the Azure CLI: the other directories' tokens, the last account's, go. One from another directory
-    /// for an account from elsewhere than yours means the same, the other way round: it isn't kept, and yours goes, so
-    /// that the next one for yours tells.
+    /// signed in to the Azure CLI: the other directories' tokens, the last account's, go.
     private func keep(_ token: AccessToken, for directory: String?) {
-        guard directory != nil else {
+        if directory == nil {
             if let homeAccount, homeAccount.account != token.account { cached = [:] }
             homeAccount = (account: token.account, tenant: token.accountTenant)
-            cached[directory] = token
-            return
-        }
-        if let yours = homeAccount?.tenant, let theirs = token.accountTenant, yours != theirs {
-            let home: String? = nil
-            cached[home] = nil
-            return
         }
         cached[directory] = token
     }
@@ -185,7 +184,17 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     /// becomes yours. If it's your account there, as a guest, your directory only needs you to sign in again, there:
     /// a plain `az login` may sign in to another one without what yours asks for, such as multi-factor authentication.
     private func fetch(_ directory: String?) async throws -> AccessToken {
-        if let directory { return try await run(tenant: directory) }
+        if let directory {
+            let token = try await run(tenant: directory)
+            // For an account from elsewhere than yours: someone else signed in to the Azure CLI. No caller waiting for it
+            // gets it, and yours goes, so that the next one for yours tells, and what's read as them starts over.
+            if let yours = homeAccount?.tenant, let theirs = token.accountTenant, yours != theirs {
+                let home: String? = nil
+                cached[home] = nil
+                throw AuthError.failed("Someone else signed in to the Azure CLI.")
+            }
+            return token
+        }
         guard let homeTenant else {
             let token = try await run(tenant: nil)
             self.homeTenant = token.tenant
