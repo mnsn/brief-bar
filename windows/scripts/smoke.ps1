@@ -293,6 +293,16 @@ function Test-AzureDevOps($process, $bar) {
     $groups = Get-AllGroupNames $list
     Check (($groups -join ' | ') -eq 'Needs you: 3 | Answered: 1 | Failing: 2 | Ready to complete: 2 | To review: 1 | Waiting: 2 | Done: 1 | Idle: 2') "its groups are the Mac's, in its order ($($groups -join ', '))"
     Check ($null -ne (Get-Button $bar 'Open Azure DevOps') -and $null -ne (Get-Button $bar 'Refresh')) 'its foot opens Azure DevOps and refreshes'
+    # Narrator reads each row once, by its name, which says what its checklist and its links do: none of its words is
+    # read again after it. Its tag is a button of its own, with its own words.
+    $rows = @($list.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem)))
+    $texts = { param($element) @($element.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::Text))).Count }
+    $wordy = @($rows | Where-Object {
+        $inButtons = 0
+        foreach ($button in @($_.FindAll($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::Button)))) { $inButtons += & $texts $button }
+        (& $texts $_) -gt $inButtons
+    })
+    Check ($rows.Count -ge 1 -and $wordy.Count -eq 0) "Narrator reads each row once, its checklist and links included ($($wordy.Count) of $($rows.Count) rows on screen read words again)"
     $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern).SetScrollPercent(-1, 100)
     $idleRows = { @(@($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Idle: 2')))[0].FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count }
     Check ($null -ne (Wait-Until { Get-Button $list 'Show idle, 2' } 3) -and (& $idleRows) -eq 0) 'its idle pull requests start folded'

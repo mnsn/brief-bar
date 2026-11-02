@@ -173,8 +173,9 @@
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <!-- A heading over a group of cards, as Windows 11's Settings has. -->
+    <!-- A heading over a group of cards, as Windows 11's Settings has, which Narrator's H key reaches. -->
     <Style x:Key="SettingsSectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
         <Setter Property="Margin" Value="1,28,0,6" />
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
     </Style>
 </ResourceDictionary>
