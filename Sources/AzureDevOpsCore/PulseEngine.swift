@@ -58,6 +58,16 @@ public enum PulseProblem: Sendable, Equatable {
     /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
     public var offersSignIn: Bool { needsSignIn || signInTenant != nil }
 
+    /// What goes to the log: the message, but naming no organization when some are in another directory, since a pull
+    /// request sent to you comes from a link in a chat: how many are, and whether others couldn't be read, some of which
+    /// may be in yet another directory.
+    public var logMessage: String {
+        guard case .otherDirectory(let organizations, _, let others) = self else { return message }
+        let which = organizations.count == 1 ? "An organization is" : "\(organizations.count) organizations are"
+        let directory = "\(which) in a directory your Azure CLI isn't signed in to."
+        return others == nil ? directory : "\(directory) Others couldn't be read."
+    }
+
     /// What to run to fix it, for the command line and agents, which have no Sign In button: as Sign In runs it, for
     /// an account without Azure subscriptions too. A directory's ID is only ever said here, where signing in needs it.
     public var signInCommand: String? {
@@ -564,7 +574,7 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
-        let linkedElsewhere = await addLinked(to: &listed, at: startedAt)
+        let (linkedElsewhere, linkedRead) = await addLinked(to: &listed, at: startedAt)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
@@ -592,9 +602,10 @@ public actor PulseEngine {
             // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
             // Signing in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
             problem = PulseProblem.organizations(errors + linkedElsewhere)
-            // None of your organizations' lists, or only pull requests sent to you and none to list: nothing could be
-            // read, as when no organization could, so a sign-in there is picked up within a minute.
-            if readNone || (organizations.isEmpty && active.isEmpty) { failures += 1 }
+            // None of your organizations' lists, or only pull requests sent to you and none of them read, even if some are
+            // still listed as last read: nothing could be read, as when no organization could, so a sign-in there is
+            // picked up within a minute.
+            if readNone || (organizations.isEmpty && linkedRead == 0) { failures += 1 }
         } else {
             problem = nil
         }
@@ -606,14 +617,17 @@ public actor PulseEngine {
     /// refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores
     /// their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to is read at
     /// the next refresh, with the others there, rather than an hour later, since signing in there is what reads it:
-    /// those organizations are returned, to say so.
-    private func addLinked(to listed: inout [PRKey: Listed], at date: Date) async -> [(organization: String, error: ADOError)] {
+    /// those organizations are returned, to say so, with how many pull requests were read.
+    private func addLinked(
+        to listed: inout [PRKey: Listed], at date: Date
+    ) async -> (elsewhere: [(organization: String, error: ADOError)], read: Int) {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
         let due = wanted
             .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
             .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
         var elsewhere: [(organization: String, error: ADOError)] = []
+        var fetched = 0
         // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others:
         // each such organization is tried once a refresh, and the rest of its pull requests wait with it.
         var reads = 0
@@ -632,6 +646,7 @@ public actor PulseEngine {
                 }
                 let dto = try await client.get(ADOEndpoint.pullRequest(organization: key.organization, id: key.number), as: ADOPullRequest.self)
                 let pr = PullRequest(organization: key.organization, dto)
+                fetched += 1
                 // A closed one is read again an hour later too, in case it's reopened.
                 linkedFailures[key] = pr.status == .active ? nil : date
                 guard pr.status == .active, linkedKeys.contains(key) else {
@@ -664,7 +679,7 @@ public actor PulseEngine {
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
-        return elsewhere
+        return (elsewhere, fetched)
     }
 
     /// Without organizations to watch or pull requests sent to you, there's nothing to read, or to list.
@@ -1024,7 +1039,7 @@ public actor PulseEngine {
         Set(organizations.map { $0.lowercased() })
     }
 
-    private func nextDelay() -> TimeInterval {
+    func nextDelay() -> TimeInterval {
         let interval = configuration.interval
         switch problem {
         case .throttled(let until)?:

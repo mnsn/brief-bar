@@ -711,11 +711,15 @@ private struct AddPipelineSheet: View {
                     .font(style: .body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let directoryProblem {
-                    Button("Sign In…") { store.signIn(for: directoryProblem) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                HStack(spacing: 8) {
+                    if let directoryProblem {
+                        Button("Sign In…") { store.signIn(for: directoryProblem) }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    // Once signed in there, or back online, the same search again.
+                    Button("Try Again") { search(after: 0) }
                 }
+                .controlSize(.small)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {

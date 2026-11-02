@@ -629,7 +629,7 @@ final class PRStore: ObservableObject {
         }
         if newProblem != problem {
             problem = newProblem
-            if let newProblem { Log.app.error("\(newProblem.message, privacy: .public)") }
+            if let newProblem { Log.app.error("\(newProblem.logMessage, privacy: .public)") }
         }
 
         reader = state.userName

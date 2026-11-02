@@ -128,7 +128,7 @@ final class PipelinesStore: ObservableObject {
         if self.pullRequests != pullRequests { self.pullRequests = pullRequests }
         if problem != snapshot.problem {
             problem = snapshot.problem
-            if let problem = snapshot.problem { Log.app.error("Pipelines: \(problem.message, privacy: .public)") }
+            if let problem = snapshot.problem { Log.app.error("Pipelines: \(problem.logMessage, privacy: .public)") }
         }
         if isRefreshing != snapshot.isRefreshing { isRefreshing = snapshot.isRefreshing }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }

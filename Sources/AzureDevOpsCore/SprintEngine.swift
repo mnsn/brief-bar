@@ -240,6 +240,11 @@ public actor SprintEngine {
             refreshedAt = now()
         } catch is CancellationError {
             // Hidden while it read: the rest waits until something shows the sprint again.
+        } catch let unread as TeamsUnread {
+            problem = unread.problem
+            failures += 1
+            hasLoaded = true
+            refreshedAt = now()
         } catch let error as ADOError {
             problem = PulseProblem.from(error)
             failures += 1
@@ -321,6 +326,7 @@ public actor SprintEngine {
     private func loadTeams(_ organizations: [String], at date: Date, choosing: Bool) async throws {
         var lastError: ADOError?
         var elsewhere: [(organization: String, error: ADOError)] = []
+        var failed: [(organization: String, error: ADOError)] = []
         for organization in organizations where teams[organization].map({ date.timeIntervalSince($0.readAt) > Self.teamsLifetime }) ?? true {
             do {
                 let list = try await get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
@@ -331,13 +337,23 @@ public actor SprintEngine {
                 switch error {
                 case .forbidden, .notFound: teams[organization] = ([], date)
                 case .otherDirectory: elsewhere.append((organization: organization, error: error))
-                default: lastError = error
+                default:
+                    lastError = error
+                    failed.append((organization: organization, error: error))
                 }
             }
         }
         teamsElsewhere = elsewhere
-        // With no teams at all, signing in to a directory is what to do first.
-        if choosing, allTeams.isEmpty, let error = elsewhere.first?.error ?? lastError { throw error }
+        guard choosing, allTeams.isEmpty else { return }
+        // With no teams at all, signing in to a directory is what to do first: each organization it's needed for is
+        // named, then why the others couldn't be read.
+        if !elsewhere.isEmpty, let problem = PulseProblem.organizations(elsewhere + failed) { throw TeamsUnread(problem: problem) }
+        if let lastError { throw lastError }
+    }
+
+    /// No teams to choose from, for want of a sign-in to some organizations' directory: what's wrong.
+    private struct TeamsUnread: Error {
+        var problem: PulseProblem
     }
 
     private var allTeams: [TeamRef] {

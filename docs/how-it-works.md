@@ -1057,13 +1057,15 @@ same, and is read at the next refresh once you've signed in, rather than an hour
 organizations don't take the ten reads a refresh gives those pull requests, each being tried once a
 refresh. When every organization you watch is in such a directory, the pull requests sent to you from
 others are still read. The Sprint and Pipelines sections, the Add Pipelines sheet and a work item's
-details say the same. A team you chose shows its sprint even while the teams of the organizations you
-watch wait on such a sign-in; a team BriefBar finds for you then is shown, but kept only once it's been
-compared with theirs. The command line and agents, which have no button, say what to run; an agent's
-work item, asked for by its number alone, is looked for in your other organizations too, and such an
-organization is named only when none of them has it. A directory's ID is never shown otherwise. While
-nothing could be read but such organizations, BriefBar looks again every minute, as it does while the
-CLI is signed out.
+details say the same, and the sheet offers **Try Again** to search again once you've signed in. A team
+you chose shows its sprint even while the teams of the organizations you watch wait on such a sign-in;
+a team BriefBar finds for you then is shown, but kept only once it's been compared with theirs. The
+command line and agents, which have no button, say what to run; an agent's work item, asked for by its
+number alone, is looked for in your other organizations too, and such an organization is named only
+when none of them has it. A directory's ID is never shown otherwise. The log names none of these
+organizations, nor the others that couldn't be read with them, and says only how many are in such a
+directory: a pull request sent to you comes from a chat. While nothing could be read but such
+organizations, BriefBar looks again every minute, as it does while the CLI is signed out.
 
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another

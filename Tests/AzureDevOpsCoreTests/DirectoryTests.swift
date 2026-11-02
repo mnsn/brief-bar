@@ -521,6 +521,51 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
     }
 
+    @Test func pullRequestsSentToYouThatCantBeReadAgainAreLookedAtWithinAMinute() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/git/pullrequests/9", json: Fixture.pullRequest(9, title: "Theirs", author: People.sam))
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        server.put("fabrikam", in: Tenants.other)
+        let engine = PulseEngine(
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [], interval: 300)
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey("fabrikam", 9)])
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.map(\.id) == [PRKey("fabrikam", 9)])
+        #expect(await engine.nextDelay() == 300)
+
+        // The Azure CLI signs out of fabrikam's directory: the pull request stays as it was last read, but nothing was.
+        await tokens.signOut(of: Tenants.other)
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey("fabrikam", 9)])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        #expect(await engine.nextDelay() == 60)
+    }
+
+    @Test func theLogDoesntNameOrganizationsInAnotherDirectory() throws {
+        // One sent to you comes from a link in a chat: in the second directory here, it's among the others.
+        let failures: [(organization: String, error: ADOError)] = [
+            (organization: "fabrikam", error: ADOError.otherDirectory(organization: "fabrikam", tenant: Tenants.other)),
+            (organization: "northwind", error: ADOError.otherDirectory(organization: "northwind", tenant: Tenants.other)),
+            (organization: "tailspin", error: ADOError.otherDirectory(organization: "tailspin", tenant: Tenants.third)),
+            (organization: "contoso", error: ADOError.notFound),
+        ]
+        let problem = try #require(PulseProblem.organizations(failures))
+        #expect(problem.message.contains("tailspin"))
+        #expect(problem.logMessage == "2 organizations are in a directory your Azure CLI isn't signed in to. Others couldn't be read.")
+        for name in ["fabrikam", "northwind", "tailspin", "contoso", Tenants.other, Tenants.third] {
+            #expect(!problem.logMessage.contains(name))
+        }
+        let one = PulseProblem.from(.otherDirectory(organization: "fabrikam", tenant: Tenants.other))
+        #expect(one.logMessage == "An organization is in a directory your Azure CLI isn't signed in to.")
+        #expect(PulseProblem.offline.logMessage == PulseProblem.offline.message)
+    }
+
     @Test func pinnedPipelinesInAnotherDirectorySayWhichOrganization() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
@@ -586,6 +631,26 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         let snapshot = await engine.currentSnapshot()
         #expect(snapshot.board?.sprint.name == "Sprint 7")
         #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func theSprintNamesEveryOrganizationToSignInToWhenNoTeamsCanBeRead() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.put("fabrikam", in: Tenants.other)
+        server.put("northwind", in: Tenants.other)
+        server.on("/tailspin/_apis/teams") { _ in .status(500) }
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: ["fabrikam", "northwind", "tailspin"], interval: 300),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(
+            organizations: ["fabrikam", "northwind"], tenant: Tenants.other,
+            others: "Couldn't read tailspin (Azure DevOps answered with HTTP 500.)."
+        ))
+        // Nothing could be read: a sign-in there is picked up within a minute.
+        #expect(await engine.nextDelay() == 60)
     }
 
     @Test func aTeamFoundWhileSomeTeamsWaitOnASignInIsKeptOnlyOnceItsComparedWithThem() async throws {
