@@ -241,6 +241,9 @@ package protocol BriefBarSource: AnyObject {
     func statusView() -> AnyView?
     /// A click on one of its notifications.
     func openNotification(_ userInfo: [String: String])
+    /// A click on one of its notifications on the window's Notifications page, where what it's about may show in BriefBar's
+    /// window itself. By default, as a click in Notification Center.
+    func openNotificationInWindow(_ userInfo: [String: String])
 
     /// Loads its data once, without watching for changes, for `--render`.
     func loadForRendering() async
@@ -252,6 +255,9 @@ extension BriefBarSource {
     package func didTurnOn() {}
     package func statusView() -> AnyView? { nil }
     package func openNotification(_ userInfo: [String: String]) {}
+    package func openNotificationInWindow(_ userInfo: [String: String]) {
+        openNotification(userInfo)
+    }
     package func loadForRendering() async {}
     package func extraRenderings() -> [(name: String, view: AnyView)] { [] }
 

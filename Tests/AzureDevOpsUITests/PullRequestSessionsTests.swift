@@ -155,10 +155,30 @@ import Testing
         try await until { sessions.session(for: key)?.session?.id == onBranch }
         #expect(sessions.session(for: key)?.session?.id == onBranch)
 
-        // Closed: no longer followed.
+        // Closed: no longer followed, nor read, but kept a while, for its details to show it at once when they show again.
         following.cancel()
         await following.value
-        #expect(sessions.session(for: key) == nil)
+        #expect(sessions.session(for: key)?.session?.id == onBranch)
+    }
+
+    /// Of the pull requests no longer followed, the last eight whose details showed keep their sessions; the others go.
+    @Test func keepsTheSessionsOfTheLastFewWhoseDetailsShowed() async throws {
+        let store = copilot(home: nil, mode: .demo)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        let read = await AzureDevOpsReader(demo: true, organizations: [], defaults: MemoryDefaults()).pullRequests(now: now)
+        let open = read.items.filter { item in read.records.first { $0.id == item.key }?.pullRequest.status == .active }
+        #expect(open.count > PullRequestSessions.keptLimit)
+        sessions.record = { key in read.records.first { $0.id == key } }
+        for item in open {
+            let following = Task { await sessions.follow(item, record: sessions.record(item.key)) }
+            try await until { sessions.session(for: item.key) != nil }
+            following.cancel()
+            await following.value
+        }
+        let kept = open.filter { sessions.session(for: $0.key) != nil }.map(\.key)
+        #expect(kept == open.suffix(PullRequestSessions.keptLimit).map(\.key))
+        sessions.stopAll()
+        #expect(open.allSatisfy { sessions.session(for: $0.key) == nil })
     }
 
     /// How work would reach its session, kept up to date while its details show: with the CLI while it's free; in the

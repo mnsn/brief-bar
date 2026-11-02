@@ -45,6 +45,11 @@ final class PullRequestSessions: ObservableObject {
     }
 
     private var followed: [PRKey: Followed] = [:]
+    /// The pull requests no longer followed whose sessions are kept, the latest last, to show at once as their details show
+    /// again, such as when you come back from a page over them, until they're read again.
+    private var kept: [PRKey] = []
+    /// The most of those kept.
+    static let keptLimit = 8
     /// Which of the Copilot app's sessions mention each pull request, and when that was read (`mentionsFreshFor`).
     private var mentionsRead: [PRKey: (at: Date, ids: Set<String>)] = [:]
     /// What's read or checked for each pull request outside the task that follows it, as things change, to stop it with
@@ -69,7 +74,8 @@ final class PullRequestSessions: ObservableObject {
             .store(in: &subscriptions)
     }
 
-    /// A pull request's session, while it's followed: the one whose details show.
+    /// A pull request's session, while it's followed, as its details show: as found last, or, for a while after, as it was
+    /// when they last showed (`keptLimit`).
     func session(for key: PRKey) -> PullRequestSession? {
         sessions[key]
     }
@@ -106,6 +112,7 @@ final class PullRequestSessions: ObservableObject {
     }
 
     private func start(following key: PRKey, record: PRRecord?, createdAt: Date?) {
+        kept.removeAll { $0 == key }
         var state = followed[key] ?? Followed()
         state.followers += 1
         state.record = record ?? state.record
@@ -121,8 +128,12 @@ final class PullRequestSessions: ObservableObject {
             followed[key] = state
         } else {
             followed[key] = nil
-            sessions[key] = nil
             spawned.removeValue(forKey: key)?.values.forEach { $0.cancel() }
+            // Its session stays a while, for its details to show it at once when they show again.
+            kept.append(key)
+            while kept.count > Self.keptLimit {
+                sessions[kept.removeFirst()] = nil
+            }
         }
     }
 
@@ -133,6 +144,7 @@ final class PullRequestSessions: ObservableObject {
         spawned.values.flatMap(\.values).forEach { $0.cancel() }
         spawned = [:]
         followed = [:]
+        kept = []
         sessions = [:]
         mentionsRead = [:]
     }

@@ -70,8 +70,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var workLinks: WorkLinksStore?
     /// The work item whose details show beside the sprint.
     private var details: WorkItemDetailsStore?
-    /// The pull request whose details show beside the window's list.
-    private var pullRequestDetails: PullRequestDetailsStore?
+    /// The pull request whose details show beside the window's list, and where a pull request opens from anywhere else.
+    private(set) var pullRequestDetails: PullRequestDetailsStore?
     /// The Copilot session of the pull request whose details show.
     private var pullRequestSessions: PullRequestSessions?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
@@ -442,20 +442,26 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     /// The same pull requests and pipelines, each in a sentence, as Azure DevOps' own brief says them. Apple
-    /// Intelligence condenses a comment only while Summaries is on.
+    /// Intelligence condenses a comment only while Summaries is on. A pull request's opens as a click on its row does: its
+    /// details, at what it's about, in BriefBar's window from its Overview, and from the menu bar and widgets once you chose
+    /// to Open Pull Requests in BriefBar; or else in Azure DevOps.
     package func briefLines(for section: SectionID) -> [BriefLine] {
         switch section {
         case .azureDevOpsPullRequests:
             guard let store, store.problem?.needsSignIn != true else { return [] }
             let showToReview = settings.showToReview
             let summarizes = settings.summaries
+            let details = pullRequestDetails
             return store.items.compactMap { snapshot in
                 guard let state = snapshot.group.state(showToReview: showToReview) else { return nil }
                 let item = Brief.item(snapshot, reader: store.reader)
                 return BriefLine(
                     id: "azureDevOps/" + item.id, source: id, state: state, date: snapshot.since, sentence: item.sentence,
                     request: summarizes ? item.prompt.map { BriefRequest(prompt: $0, instructions: Brief.instructions) } : nil,
-                    open: { [weak store] in store?.open(snapshot) }
+                    open: { [weak store, weak details] in
+                        if let details { details.open(snapshot) } else { store?.open(snapshot) }
+                    },
+                    show: { [weak details] in details.map { $0.reveal(snapshot, at: $0.about(snapshot)) } ?? false }
                 )
             }
         case .azureDevOpsPipelines:
@@ -551,6 +557,17 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     package func openNotification(_ userInfo: [String: String]) {
+        openNotification(userInfo, inWindow: false)
+    }
+
+    package func openNotificationInWindow(_ userInfo: [String: String]) {
+        openNotification(userInfo, inWindow: true)
+    }
+
+    /// A click on one of its notifications: a task's, with your Copilot sessions; a pull request's, in BriefBar's window, at
+    /// the comment or the run it's about, from the window's Notifications page, and from Notification Center once you chose
+    /// to Open Pull Requests in BriefBar, while its list has it; or else in Azure DevOps.
+    private func openNotification(_ userInfo: [String: String], inWindow: Bool) {
         // A task that just started: with your Copilot sessions, in the menu bar or a window, when they show.
         if userInfo[CopilotTasksStore.taskKey] != nil {
             if services.showPanel(.copilotSessions) { return }
@@ -560,7 +577,13 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
         }
         if let link = userInfo["url"].flatMap(URL.init(string:)) {
+            if inWindow || settings.opensPullRequestsInBriefBar,
+               pullRequestDetails?.reveal(notification: userInfo["pullRequest"], link: link) == true {
+                return
+            }
             store?.openFromNotification(key: userInfo["pullRequest"], url: link)
+        } else if inWindow, services.hasPage(.azureDevOpsPullRequests) {
+            services.openWindow(.azureDevOpsPullRequests)
         } else if !services.showPanel(.azureDevOpsPullRequests) {
             // Hidden from the menu bar: the pull requests in Azure DevOps instead.
             store?.openPullRequestsPage()
@@ -641,9 +664,9 @@ package final class AzureDevOpsSource: BriefBarSource {
             }
             // The page as wide as in a big window, in BriefBar's window as it opens, and in a narrow one; with Where It
             // Stands folded to who it waits on; and a pull request's page taller, for the README's trail to scroll
-            // down.
+            // down, and in a narrow window, where its details cover the board.
             let variants: [String: Set<String>] = [
-                "sprint-details": ["-medium", "-narrow", "-folded"], "sprint-pull-request-page": ["-medium", "-tall"],
+                "sprint-details": ["-medium", "-narrow", "-folded"], "sprint-pull-request-page": ["-medium", "-narrow", "-tall"],
             ]
             for (suffix, size) in [
                 ("", CGSize(width: 1_000, height: 720)), ("-medium", CGSize(width: 740, height: 700)), ("-narrow", CGSize(width: 560, height: 720)),

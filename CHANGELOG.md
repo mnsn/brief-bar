@@ -13,6 +13,14 @@
 - **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
   the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
   said it was done, as that earlier task had.
+- **A pull request opens in its details from anywhere in BriefBar's window.** On the Overview, in its brief and on
+  the Notifications page, clicking a pull request shows its details on the Pull Requests page, at the comment or
+  the run it's about; on the Pipelines page, a pull request's card shows the run you click, or the first that
+  failed. On the Sprint page, one of your pull requests linked to a work item shows the same details, with its
+  comment threads, builds and checks, and reviewers, and the way there in their header, such as
+  **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
+  same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
+  request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
 - **Each pull request has one Copilot session, under its heading in its details.** With Send Work to
   Copilot on, a line names the session its work goes to, why it's its, such as **on its branch**, and how
   it stands, in its state's color: its last task's, the work item's task that opened it, or the Copilot
