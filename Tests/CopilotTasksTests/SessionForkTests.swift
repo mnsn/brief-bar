@@ -97,8 +97,8 @@ import Testing
 
 /// The Copilot CLI's server, through a stand-in that speaks as it does.
 @Suite struct CopilotServerTests {
-    private func start(_ fixture: FakeCopilot.Fixture) throws -> CopilotServer {
-        try CopilotServer.start(fixture.copilot, environment: fixture.environment)
+    private func start(_ fixture: FakeCopilot.Fixture, grace: TimeInterval = 5) throws -> CopilotServer {
+        try CopilotServer.start(fixture.copilot, environment: fixture.environment, grace: grace)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -221,7 +221,8 @@ import Testing
     func givesUpOnTheServerWhenAForkTakesTooLong() async throws {
         let late = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
         defer { late.remove() }
-        var server = try start(late)
+        // Given up on, it has as long as it takes to answer, however busy the Mac, before it's made to stop.
+        var server = try start(late, grace: 30)
         #expect(try await server.fork(FakeCopilot.session, name: nil, timeout: 0.3) == FakeCopilot.fork)
         await #expect(throws: CopilotServer.Failure.timedOut) { try await server.delete(FakeCopilot.fork, timeout: 20) }
         #expect(await server.close() == 0)
