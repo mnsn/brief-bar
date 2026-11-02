@@ -161,7 +161,7 @@ package struct WhereItStandsSection: View {
     }
 
     /// A sentence, its opening phrase in its state's color for words, the rest gray.
-    static func sentenceText(_ sentence: String, state: ItemState?) -> Text {
+    package static func sentenceText(_ sentence: String, state: ItemState?) -> Text {
         let (lead, rest) = phrase(sentence)
         let opening = Text(lead).foregroundStyle(state.map { AnyShapeStyle($0.textColor) } ?? AnyShapeStyle(.secondary))
         return rest.isEmpty ? opening : opening + Text(" " + rest).foregroundStyle(.secondary)
@@ -1062,12 +1062,18 @@ struct StoryNotesSection: View {
 }
 
 /// A part's heading on a page, as the work item's details have them: "Pipelines 2", "Copilot's Notes   3h ago".
-struct PageSectionHeader: View {
+package struct PageSectionHeader: View {
     let title: String
     var count: Int?
     var trailing: String?
 
-    var body: some View {
+    package init(title: String, count: Int? = nil, trailing: String? = nil) {
+        self.title = title
+        self.count = count
+        self.trailing = trailing
+    }
+
+    package var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
                 .font(size: 13, weight: .semibold)
