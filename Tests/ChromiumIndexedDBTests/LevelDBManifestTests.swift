@@ -101,18 +101,24 @@ import Testing
         #expect(version.logNumber == 7)
     }
 
-    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, though it reads on after them.
-    @Test func refusesAManifestWhoseEditBreaksOffAtZeros() {
+    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, whether more follows them or not.
+    @Test func refusesAManifestWhoseEditBreaksOffAtZeros() throws {
         var log = LogWriter()
         log.add(ManifestWriter.edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]))
         // An edit too long for the rest of the block, which LevelDB splits across blocks.
         log.add(ManifestWriter.edit(comparator: String(repeating: "c", count: 40_000)))
-        var manifest = Array(log.bytes.prefix(LevelDBLog.blockSize))
+        let firstBlock = Array(log.bytes.prefix(LevelDBLog.blockSize))
+        var manifest = firstBlock
         manifest += [UInt8](repeating: 0, count: LevelDBLog.blockSize)
         manifest += ManifestWriter.manifest([
             ManifestWriter.edit(logNumber: 7, nextFile: 10, lastSequence: 4, deleted: [5], added: [9]),
         ])
         #expect(throws: FormatError.corrupt("manifest")) { try LevelDBManifest.parse(manifest) }
+        // So it does when the zeros run to the end; without them, the edit may still be being written, and the version
+        // before it counts.
+        let atTheEnd = firstBlock + [UInt8](repeating: 0, count: 100)
+        #expect(throws: FormatError.corrupt("manifest")) { try LevelDBManifest.parse(atTheEnd) }
+        #expect(try LevelDBManifest.parse(firstBlock).tables == [5])
     }
 
     /// Microsoft Edge's, in the fixture: as LevelDB creates a database, with no tables, and its log number 0, which
