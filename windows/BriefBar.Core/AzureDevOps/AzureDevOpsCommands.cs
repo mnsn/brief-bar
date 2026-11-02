@@ -32,4 +32,19 @@ public static class AzureDevOpsCommands
 
     /// Settings: looks for your organizations again, and watches those where you have pull requests.
     public const string FindOrganizations = "findOrganizations";
+
+    /// What every command that sorts the list starts with, before its order's name.
+    const string SortPrefix = "sort.";
+
+    /// The section's list: lists them in `order`, and keeps it, as `SortedBy` reads it back.
+    public static string Sort(PROrder order) => SortPrefix + order.RawValue();
+
+    /// The order `command` sorts the list in, as `Sort` names it; null for any other command.
+    public static PROrder? SortedBy(string command)
+    {
+        ArgumentNullException.ThrowIfNull(argument: command);
+        return command.StartsWith(value: SortPrefix, comparisonType: StringComparison.Ordinal)
+            ? PROrders.FromRawValue(rawValue: command[SortPrefix.Length..])
+            : null;
+    }
 }

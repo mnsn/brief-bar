@@ -4,6 +4,7 @@ namespace BriefBar.Core;
 public enum IconKey
 {
     ArrowReply,
+    ArrowSort,
     ArrowSync,
     BranchCompare,
     BranchFork,

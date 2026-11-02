@@ -9,8 +9,8 @@
         <CollectionViewSource x:Name="GroupedRows" IsSourceGrouped="True" />
     </UserControl.Resources>
 
-    <!-- The panel under an item: its header, a banner when its section can't show everything, then its brief and
-         its groups of rows, and a footer. -->
+    <!-- The panel under an item: its header, with a menu that sorts its list where it can be sorted, a banner when its
+         section can't show everything, then its brief and its groups of rows, and a footer. -->
     <Grid x:Name="Root" KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -30,6 +30,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="32" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Border
                 Width="32"
@@ -66,6 +67,18 @@
                         TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </StackPanel>
+            <!-- How the list can be sorted, as the Mac's ↑↓ at the top of its list: its menu offers each order. -->
+            <Button
+                x:Name="SortButton"
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="{x:Bind ViewModel.SortName, Mode=OneWay}"
+                Click="OnSortClick"
+                Style="{StaticResource IconButtonStyle}"
+                ToolTipService.ToolTip="{x:Bind ViewModel.SortHelp, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasSort, Mode=OneWay}">
+                <views:FluentIcon Fill="{ThemeResource TextFillColorPrimaryBrush}" Icon="ArrowSort" Size="16" />
+            </Button>
         </Grid>
 
         <StackPanel Grid.Row="1">
@@ -416,6 +429,50 @@
                                 TextTrimming="CharacterEllipsis"
                                 TextWrapping="Wrap"
                                 Visibility="{x:Bind HasDetail, Mode=OneWay}" />
+                            <!--
+                                What's left before it's done, the most pressing first, then what's done, on as many lines as
+                                it takes; each cut short if it must be, as its tooltip says all of it.
+                            -->
+                            <ItemsControl
+                                Margin="0,2,0,0"
+                                IsTabStop="False"
+                                ItemsSource="{x:Bind Checklist, Mode=OneWay}"
+                                Visibility="{x:Bind HasChecklist, Mode=OneWay}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <views:FlowPanel LineSpacing="2" Spacing="10" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:RowChecklistItemViewModel">
+                                        <Grid ColumnSpacing="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <views:FluentIcon
+                                                VerticalAlignment="Center"
+                                                Fill="{x:Bind IconBrush}"
+                                                Icon="{x:Bind Icon}"
+                                                Size="12" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                FontSize="13"
+                                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                Text="{x:Bind Label}"
+                                                TextTrimming="CharacterEllipsis"
+                                                Visibility="{x:Bind IsNotQuiet}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                FontSize="13"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                Text="{x:Bind Label}"
+                                                TextTrimming="CharacterEllipsis"
+                                                Visibility="{x:Bind IsQuiet}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                         <StackPanel
                             Grid.Column="3"

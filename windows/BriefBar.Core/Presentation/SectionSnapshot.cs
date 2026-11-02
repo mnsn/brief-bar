@@ -28,6 +28,9 @@ public sealed record SectionSnapshot(
     /// Who it reads as, at its panel's foot, such as the GitHub CLI's login.
     public SectionAccount? Account { get; init; }
 
+    /// How its list can be sorted, from a menu at the top of its panel; none for a list in one order.
+    public SectionSort? Sort { get; init; }
+
     /// Its rows' states, counted: the bar's counts are always its rows'.
     public StateCounts Counts
     {

@@ -12,6 +12,7 @@ public sealed class AzureDevOpsSettings
     public const string KeepDoneHoursKey = "ado.keepDoneHours";
     public const string IdleDaysKey = "ado.idleDays";
     public const string ShowToReviewKey = "ado.showToReviewInMenuBar";
+    public const string PullRequestOrderKey = "ado.pullRequestOrder";
     public const string FollowMergesKey = "ado.followMerges";
     public const string WatchedPullRequestsKey = "ado.watchedPullRequests";
     public const string OrganizationsKey = "ado.organizations";
@@ -29,6 +30,7 @@ public sealed class AzureDevOpsSettings
     int keepDoneHours;
     int idleDays;
     bool showToReview;
+    PROrder pullRequestOrder;
     bool followMerges;
     List<PullRequestLink> watched;
     List<string> organizations;
@@ -47,6 +49,9 @@ public sealed class AzureDevOpsSettings
         keepDoneHours = Choice(value: settings.Number(key: KeepDoneHoursKey), choices: KeepDoneChoices, fallback: 24);
         idleDays = Choice(value: settings.Read(key: IdleDaysKey) is JsonValue idle && idle.TryGetValue(value: out int days) ? days : -1, choices: IdleChoices, fallback: 14);
         showToReview = settings.Bool(key: ShowToReviewKey);
+        pullRequestOrder = settings.Read(key: PullRequestOrderKey) is JsonValue order && order.TryGetValue(value: out string? rawOrder)
+            ? PROrders.FromRawValue(rawValue: rawOrder) ?? PROrder.Status
+            : PROrder.Status;
         followMerges = settings.Read(key: FollowMergesKey) is not JsonValue follow || !follow.TryGetValue(value: out bool on) || on;
         watched = ReadLinks(node: settings.Read(key: WatchedPullRequestsKey));
         organizations = ReadNames(node: settings.Read(key: OrganizationsKey));
@@ -102,6 +107,22 @@ public sealed class AzureDevOpsSettings
     {
         get => Read(value: () => showToReview);
         set => Write(change: () => Swap(field: ref showToReview, value: value), save: () => settings.SetBool(key: ShowToReviewKey, value: showToReview));
+    }
+
+    /// How the pull requests are listed: in their groups, or by when each was created. By status until you choose.
+    public PROrder PullRequestOrder
+    {
+        get => Read(value: () => pullRequestOrder);
+        set
+        {
+            if (!Enum.IsDefined(value: value))
+            {
+                throw new ArgumentOutOfRangeException(paramName: nameof(value), actualValue: value, message: "Not an order.");
+            }
+            Write(
+                change: () => Swap(field: ref pullRequestOrder, value: value),
+                save: () => settings.Write(key: PullRequestOrderKey, value: JsonValue.Create(value: pullRequestOrder.RawValue())));
+        }
     }
 
     /// Follows the pipelines that run after you merge a pull request, while Done keeps it.

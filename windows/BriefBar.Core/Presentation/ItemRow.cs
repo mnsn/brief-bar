@@ -29,6 +29,10 @@ public sealed record ItemRow
     /// When it got to its state, or last changed.
     public DateTimeOffset? Date { get; init; }
 
+    /// When it was created, set while its section's list is sorted by that: its time there says how long ago it was
+    /// created, rather than since `Date`, which the Overview still orders and dates it by.
+    public DateTimeOffset? Created { get; init; }
+
     /// Unread messages, for a chat.
     public int Unread { get; init; }
 
@@ -55,4 +59,8 @@ public sealed record ItemRow
 
     /// How full it is, such as a Copilot session's context window.
     public RowMeter? Meter { get; init; }
+
+    /// What's left before it's done, and what's done, on a line under it, such as what's left before you can complete one
+    /// of your pull requests.
+    public RowChecklist? Checklist { get; init; }
 }
