@@ -193,7 +193,7 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
 
     /// Tells a missing or expired sign-in, which `az login` fixes, from other failures, by what the CLI printed: its first
     /// `ERROR:` line, or its first line, without the prefix, without IDs, email addresses or the names of directories it
-    /// quotes (`Redacted`), at most 300 characters.
+    /// quotes or names (`Redacted`), at most 300 characters.
     public static AuthError ErrorFromOutput(string output)
     {
         ArgumentNullException.ThrowIfNull(argument: output);
@@ -216,14 +216,16 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
     }
 
     /// What the Azure CLI says, without IDs (a directory's, a request's), email addresses, or the name of a tenant or
-    /// directory it quotes: before it's cut short, so that no part of one is left. The panel shows it, and it could reach the
-    /// log, which never holds IDs, as on the Mac.
+    /// directory it quotes or names: before it's cut short, so that no part of one is left. A quoted name goes up to the
+    /// last quote on its line that can end one, as a name can hold quotes itself, as in Fabrikam's Lab or Students' Lab;
+    /// one it names, to the line's end. The panel shows it, and it could reach the log, which never holds IDs, as on the Mac.
     internal static string Redacted(string message)
     {
         ArgumentNullException.ThrowIfNull(argument: message);
         var withoutIds = IdPattern().Replace(input: message, replacement: "<id>");
         var withoutAccounts = AccountPattern().Replace(input: withoutIds, replacement: "<account>");
-        return QuotedDirectoryPattern().Replace(input: withoutAccounts, replacement: "$1 '<name>'");
+        var withoutQuotedNames = QuotedDirectoryPattern().Replace(input: withoutAccounts, replacement: "$1 '<name>'");
+        return NamedDirectoryPattern().Replace(input: withoutQuotedNames, replacement: "$1 named <name>");
     }
 
     /// A directory as tokens are kept by: its ID (`TenantId`); null for none, which is your sign-in's. Anything else isn't
@@ -246,8 +248,15 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
     [GeneratedRegex(pattern: @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
     private static partial Regex AccountPattern();
 
-    [GeneratedRegex(pattern: @"\b(tenant|directory) '[^']*'", options: RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    /// A tenant's or directory's name in quotes, up to the last quote on its line that can end one, not one inside a word as
+    /// in Fabrikam's or isn't; or to the line's end without one.
+    [GeneratedRegex(pattern: @"\b(tenant|directory) '(?:[^\r\n]*'(?!\w)|[^\r\n]*)", options: RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex QuotedDirectoryPattern();
+
+    /// A tenant's or directory's name without quotes, as in "the tenant named Fabrikam. This can happen…": to the line's
+    /// end, as nothing tells where the name ends.
+    [GeneratedRegex(pattern: @"\b(tenant|directory) named [^\r\n]*", options: RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex NamedDirectoryPattern();
 
     /// A token for `directory`, kept, with the account it was kept for. One that comes back after someone else signed in
     /// may be the last account's, whichever directory it's for, and one from another directory for an account from

@@ -316,7 +316,7 @@ public sealed class DirectoryTests
     }
 
     /// What the Azure CLI says goes to the panel, and could reach the log: without IDs, email addresses or the names of
-    /// directories it quotes, and none of it left by cutting it short.
+    /// directories it quotes or names, even names that hold quotes themselves, and none of it left by cutting it short.
     [Fact]
     public void WhatTheAzureCLISaysKeepsNoIDsOrNames()
     {
@@ -326,9 +326,10 @@ public sealed class DirectoryTests
             + "Correlation ID: 0e0e0e0e-5555-4555-8555-555555555555\r\n"
             + "Interactive authentication is needed. Please run:\r\n"
             + "az login --tenant \"" + Tenants.Other + "\"\r\n";
+        // A quoted name goes up to the line's last quote: what's between goes with it.
         Assert.Equal(
             expected: AuthError.SignedOut(message:
-                "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>' and cannot access the application '<id>'. "
+                "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. "
                 + "Trace ID: <id> Correlation ID: <id>"),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: output));
         // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one.
@@ -338,10 +339,28 @@ public sealed class DirectoryTests
         var cut = AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Please run 'az login'. " + new string(c: 'x', count: 266) + " " + Tenants.Other);
         Assert.DoesNotContain(expectedSubstring: Tenants.Other[..8], actualString: cut.Description, comparisonType: StringComparison.Ordinal);
         Assert.EndsWith(expectedEndString: " <id>", actualString: cut.Description, comparisonType: StringComparison.Ordinal);
-        // A directory's name, however it's written.
+        // A directory's name, however it's written, and whatever it holds: quotes of its own, or no closing quote.
         Assert.Equal(
             expected: AuthError.Failed(message: "Directory '<name>' isn't available."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory 'Fabrikam Example' isn't available."));
+        Assert.Equal(
+            expected: AuthError.Failed(message: "Directory '<name>' isn't available."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory 'Fabrikam's Research Directory' isn't available."));
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS50020: User account '<account>' does not exist in tenant '<name>'."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output:
+                "ERROR: AADSTS50020: User account 'robin@contoso.example' does not exist in tenant 'Fabrikam Students' Lab' "
+                + "and cannot access the application '" + AzureCLITokenProvider.AzureDevOpsResource + "'."));
+        Assert.Equal(
+            expected: AuthError.Failed(message: "Directory '<name>'"),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory 'Fabrikam Example"));
+        // A name it gives without quotes goes, to the line's end.
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS500011: The resource principal named <id> was not found in the tenant named <name>"),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output:
+                "ERROR: AADSTS500011: The resource principal named " + AzureCLITokenProvider.AzureDevOpsResource
+                + " was not found in the tenant named Fabrikam Example. This can happen if the application has not been installed by the "
+                + "administrator of the tenant or consented to by any user in the tenant."));
     }
 
     // Requests

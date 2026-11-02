@@ -165,10 +165,10 @@ section names and the like, so nothing you see can reach it: a line with a strin
   requests stay listed and counted, and what it listed from there stays as it was read, without asking for more. Signing
   in there changes neither whom BriefBar reads as nor which directory it reads your own pull requests in: it keeps
   asking for your sign-in's directory, with `--tenant`. When that directory wants you to sign in again, Sign in signs in
-  there, and that isn't taken for someone else signing in, even after a restart, as BriefBar keeps where your account is
-  from (`ado.accountOrigin`, forgotten as Azure DevOps is turned off). When someone else does sign in, every token kept,
-  and any on its way, goes. What the Azure CLI says when it can't give a token is shown without IDs, email addresses or
-  the names of directories it quotes. Its settings are the Mac's:
+  there, and that isn't taken for someone else signing in, even after a restart, as BriefBar keeps where the account it
+  reads as is from (`ado.accountOrigin`, forgotten as Azure DevOps is turned off). When someone else does sign in, every
+  token kept, and any on its way, goes. What the Azure CLI says when it can't give a token is shown without IDs, email
+  addresses or the names of directories it gives, quoted or not. Its settings are the Mac's:
   Refresh, Keep done for, Idle after no activity for, Show To review in the bar, Follow pipelines after you merge,
   your organizations (with Add an organization, which checks that your sign-in can read one first, and Find my
   organizations again), and the pull requests you watch (with Watch a pull request, by its link).
