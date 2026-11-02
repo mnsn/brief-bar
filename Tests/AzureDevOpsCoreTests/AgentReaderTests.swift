@@ -115,8 +115,10 @@ import Testing
         var handle: OpaquePointer?
         try #require(sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK)
         defer { sqlite3_close(handle) }
-        // What the Copilot app's session list reads: a session in a clone of shop-web, on the pull request's branch.
+        // What the Copilot app's session list reads: a session in a clone of shop-web, on the pull request's branch. In one
+        // transaction, written at once.
         try #require(sqlite3_exec(handle, """
+            BEGIN;
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
                 is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0, interruption_reason TEXT,
@@ -129,6 +131,7 @@ import Testing
             INSERT INTO projects (id, name) VALUES ('shop', 'shop-web');
             INSERT INTO sessions (id, title, session_type, created_at, updated_at) VALUES ('\(id)', 'Fix the total', 'project', '\(updated)', '\(updated)');
             INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at) VALUES ('w', 'shop', '\(id)', 'fix-total', 'Fix the total', '\(updated)');
+            COMMIT;
             """, nil, nil, nil) == SQLITE_OK)
         func agent(sending: Bool) -> AzureDevOpsAgent {
             let defaults = defaults()

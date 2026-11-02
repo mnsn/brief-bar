@@ -10,7 +10,9 @@ import Testing
 
 /// The session `pull_request` names for agents: the one BriefBar's Send to Copilot window sends a pull request's work to
 /// unless you choose another, only while Send Work to Copilot is on, and nothing when there's none. On the demo's made-up
-/// !4088, with made-up sessions in a folder of their own.
+/// !4088, with made-up sessions in a folder of their own. On the main actor, as the window's store is, so that writing them
+/// doesn't hold up the cooperative pool's one thread under `make test`.
+@MainActor
 @Suite struct PullRequestSessionTests {
     private let now = Date(timeIntervalSince1970: 1_792_317_600)
     private let onBranch = "44444444-4444-4444-8444-444444444444"
@@ -51,7 +53,9 @@ import Testing
         var handle: OpaquePointer?
         guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw DatabaseError(message: "no database") }
         defer { sqlite3_close(handle) }
+        // In one transaction: written at once, rather than a statement at a time.
         var statements = """
+            BEGIN;
             CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
             CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
                 is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0, interruption_reason TEXT,
@@ -79,6 +83,7 @@ import Testing
                     """
             }
         }
+        statements += "COMMIT;\n"
         guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw DatabaseError(message: String(cString: sqlite3_errmsg(handle))) }
     }
 
