@@ -77,7 +77,7 @@ enum FakeCopilot {
 
     /// The session forked, and its fork, as the stand-in names it.
     static let session = "0b5b1c55-1111-4222-8333-944455556666"
-    static let fork = "86f6ed72-ab91-4cf2-8595-0737592d3d37"
+    static let fork = "2f7c4e1a-5b3d-4c8e-9a6f-1d2e3f4a5b6c"
 
     /// The stand-in, in a temporary folder of its own, with a Copilot folder that has `session`'s log.
     struct Fixture {
