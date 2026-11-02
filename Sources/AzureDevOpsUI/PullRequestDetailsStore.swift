@@ -52,7 +52,8 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
     @Published private(set) var selected: PRSnapshot?
-    /// What the list read of it, its threads, policies and reviewers, as it is now, or was last once it's not listed.
+    /// What the list read of it, its threads, policies and reviewers, as it is now, or was last once it's not listed. The
+    /// list doesn't read a closed one's threads and policies: one that closes while it shows keeps those it read last.
     @Published private(set) var record: PRRecord?
     /// Whether the list still has it.
     @Published private(set) var isListed = false
@@ -108,7 +109,7 @@ final class PullRequestDetailsStore: ObservableObject {
         if item.key != selected?.key { before = cutoffs(item.key) }
         pages = []
         selected = item
-        record = readRecord(item.key)
+        record = keeping(readRecord(item.key))
         isListed = listed.contains { $0.key == item.key }
         self.place = place
         markSeen(item)
@@ -217,8 +218,16 @@ final class PullRequestDetailsStore: ObservableObject {
     /// row, such as an optional build: what's kept of it follows, while the list has it, for once it doesn't anymore.
     /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen.
     func recordsChanged() {
-        guard isListed, let selected, let read = readRecord(selected.key), read != record else { return }
+        guard isListed, let selected, let read = keeping(readRecord(selected.key)), read != record else { return }
         record = read
+    }
+
+    /// What the list read of a pull request, with the threads and policies it read of it last, when it shows already and
+    /// they're not there anymore: once it's closed, the list doesn't read them.
+    private func keeping(_ read: PRRecord?) -> PRRecord? {
+        guard var read else { return nil }
+        if read.details == nil, let record, record.id == read.id { read.details = record.details }
+        return read
     }
 
     /// Someone signed in to the Azure CLI, as the list tells. When it's someone else than before, what shows was read as

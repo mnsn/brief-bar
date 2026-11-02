@@ -338,6 +338,51 @@ import Testing
         #expect(details.record == read)
     }
 
+    /// Your own pull request that completes while its details show stays listed, under Done, but the list doesn't read a
+    /// closed one's threads and policies: its details keep those they read last. One that closed before they showed it has
+    /// none, and doesn't get another's.
+    @Test func oneThatClosesWhileItShowsKeepsWhatWasReadOfIt() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        let yours = try #require(store.items.first { $0.key.number == 4102 })
+        let other = try #require(store.items.first { $0.role == .author && $0.key != yours.key })
+        details.show(yours)
+        let read = try #require(details.record?.details)
+        #expect(!read.threads.isEmpty)
+        // You complete both in Azure DevOps: the next refresh reads them closed, without threads and policies.
+        var snapshot = DemoData.snapshot(now: now)
+        for key in [yours.key, other.key] {
+            let index = try #require(snapshot.records.firstIndex { $0.id == key })
+            snapshot.records[index].pullRequest.status = .completed
+            snapshot.records[index].pullRequest.closedAt = Date().addingTimeInterval(1)
+            snapshot.records[index].details = nil
+        }
+        store.receive(snapshot)
+        let done = try #require(store.items.first { $0.key == yours.key })
+        #expect(done.group == .done)
+        #expect(details.isListed && details.selected == done)
+        #expect(details.record?.pullRequest.status == .completed)
+        #expect(details.record?.details == read)
+        let panel = PullRequestPanel(done, record: details.record)
+        #expect(panel.hasDetails && panel.isClosed && !panel.threads.isEmpty)
+        // Shown again from its row, too.
+        details.show(done)
+        #expect(details.record?.details == read)
+
+        let otherDone = try #require(store.items.first { $0.key == other.key })
+        details.show(otherDone)
+        #expect(details.record?.id == other.key && details.record?.details == nil)
+        details.close()
+        details.show(done)
+        #expect(details.record?.details == nil)
+        let bare = PullRequestPanel(done, record: details.record)
+        #expect(!bare.hasDetails && bare.isClosed)
+    }
+
     /// Removed from Needs You from its row, which, seen, no longer has the new comment in a resolved thread that its details
     /// still show, and so is taken off only up to an older one, a reply in an open thread: then what you've seen is seen
     /// in its details too.

@@ -1210,8 +1210,11 @@ first of that name), or a part, such as its comments, which What's Left does. Th
 and point a thread, a build or a check out for a moment.
 `reveal(_:at:)` shows them on the window's page and opens it there, unless no window has that page. A pull
 request the list doesn't have anymore, such as a review that merged, stays as it was last, with what the list
-had read of it, until you close it: it says so, and its menu loses the row's actions. Someone else signing in
-to the Azure CLI closes it.
+had read of it, until you close it: it says so, and its menu loses the row's actions. The list reads a pull
+request's threads and policies only while it's open, so one of yours that completes while its details show,
+which stays under Done, keeps the threads, builds and checks they read last; for one that had closed before,
+they say BriefBar reads those only while a pull request is open. Someone else signing in to the Azure CLI
+closes it.
 
 ### What counts as new
 

@@ -24,7 +24,8 @@ struct PullRequestCommentsSection: View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "Comments", count: threads.unresolvedCount > 0 ? threads.unresolvedCount : nil)
             if !panel.hasDetails {
-                Text("BriefBar hasn't read its comments.")
+                Text(panel.isClosed ? "BriefBar reads a pull request's comments only while it's open."
+                    : "BriefBar hasn't read its comments.")
                     .font(size: 12.5)
                     .foregroundStyle(.tertiary)
             } else if threads.isEmpty {

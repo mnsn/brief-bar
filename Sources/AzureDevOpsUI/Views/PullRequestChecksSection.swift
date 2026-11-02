@@ -24,7 +24,9 @@ struct PullRequestChecksSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if panel.checks.isEmpty {
-                Text(panel.hasDetails ? "No builds or checks" : "BriefBar hasn't read its builds and checks.")
+                Text(panel.hasDetails ? "No builds or checks"
+                    : panel.isClosed ? "BriefBar reads a pull request's builds and checks only while it's open."
+                    : "BriefBar hasn't read its builds and checks.")
                     .font(size: 12.5)
                     .foregroundStyle(.tertiary)
             } else {

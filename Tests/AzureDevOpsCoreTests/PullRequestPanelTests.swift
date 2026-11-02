@@ -188,7 +188,7 @@ import BriefBarCore
         #expect(line.run.state == .failing)
         #expect(line.buildId == 77)
         // Its threads and policies weren't read, and nothing's left of a closed one.
-        #expect(!panel.hasDetails)
+        #expect(!panel.hasDetails && panel.isClosed)
         #expect(panel.threads.isEmpty)
         #expect(panel.readiness == nil)
     }
@@ -228,11 +228,11 @@ import BriefBarCore
         #expect(panel.since == row.since)
         #expect(panel.merge == "Completes by itself once it can")
         #expect(panel.readiness == row.readiness)
-        #expect(panel.hasDetails)
+        #expect(panel.hasDetails && !panel.isClosed)
 
         // Without its record, what its row says.
         let bare = PullRequestPanel(row, record: nil)
-        #expect(bare.branch == nil && bare.merge == nil && !bare.hasDetails && bare.reviewers.isEmpty)
+        #expect(bare.branch == nil && bare.merge == nil && !bare.hasDetails && !bare.isClosed && bare.reviewers.isEmpty)
         #expect(bare.sentence == panel.sentence)
     }
 

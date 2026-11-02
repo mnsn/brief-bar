@@ -28,6 +28,8 @@ public struct PullRequestPanel: Sendable, Equatable {
     public var readiness: PRReadiness?
     /// Whether its threads and policies were read: an open pull request's are, after the list first reads it.
     public var hasDetails: Bool
+    /// It's completed or abandoned: the list reads a pull request's threads and policies only while it's open.
+    public var isClosed: Bool
     public var threads: Threads
     /// Its builds and status checks, and the pipelines that ran after it merged, what failed first.
     public var checks: [CheckLine]
@@ -49,6 +51,8 @@ public struct PullRequestPanel: Sendable, Equatable {
         merge = pullRequest.flatMap(PullRequestStory.merge)
         readiness = snapshot.readiness
         hasDetails = details != nil
+        isClosed = pullRequest.map { $0.status == .completed || $0.status == .abandoned }
+            ?? (snapshot.group == .done || snapshot.merge != nil)
         threads = Threads(details?.threads ?? [], events: events ?? snapshot.pendingEvents)
         var checks = (details?.checks ?? []).compactMap { check in
             PullRequestStory.run(check, organization: snapshot.key.organization, project: snapshot.project).map {

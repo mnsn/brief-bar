@@ -77,7 +77,7 @@ struct PullRequestDetailsPanel: View {
     /// To where the details were asked to go, once they show it, pointing out a thread, a build or a check for a moment.
     private func go(_ proxy: ScrollViewProxy) {
         guard let place = details.place, details.pages.isEmpty, let item = details.selected else { return }
-        let anchor = place.anchor(in: panel(for: item, record: record(for: item)).checks)
+        let anchor = place.anchor(in: panel(for: item).checks)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
@@ -350,20 +350,16 @@ struct PullRequestDetailsPanel: View {
         return entry.action
     }
 
-    /// What the list read of it, as it is now, which a refresh can change without changing its row; once the list doesn't
-    /// have it anymore, as it was then, with the rest of it.
-    private func record(for item: PRSnapshot) -> PRRecord? {
-        details.isListed ? store.record(for: item.key) ?? details.record : details.record
-    }
-
-    /// What they show of it, with what waits on you in its threads as when they showed it.
-    private func panel(for item: PRSnapshot, record: PRRecord?) -> PullRequestPanel {
-        PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
+    /// What they show of it, from what the list read of it as they keep it (`PullRequestDetailsStore.record`), with what
+    /// waits on you in its threads as when they showed it.
+    private func panel(for item: PRSnapshot) -> PullRequestPanel {
+        let record = details.record
+        return PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
     }
 
     private func content(_ item: PRSnapshot) -> some View {
-        let record = record(for: item)
-        let panel = panel(for: item, record: record)
+        let record = details.record
+        let panel = panel(for: item)
         let ref = item.key.linkRef
         return VStack(alignment: .leading, spacing: 20) {
             PullRequestPanelHeading(item: item, panel: panel, isListed: details.isListed)
