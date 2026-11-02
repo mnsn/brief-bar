@@ -40,12 +40,13 @@ pull request that changes `windows/`, and `main` requires it to pass.
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
 Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps' panel (its groups, Idle
-folded, Mark as seen, Answered seen once the panel closes) and its page in Settings, GitHub's panel (its groups, its
-foot with the account it reads as, a row that opens) and its page in Settings, Alt+F4, each bar keeping its display as
-displays change, a second start while BriefBar starts opening its Overview, and the space given back within a second
-of quitting or of another program asking BriefBar to close. Run it before you open a pull request, and leave the mouse
-and keyboard alone while it runs, since a click elsewhere closes the panel it's checking; it sends keys only while the
-panel is in front, and it works over a disconnected remote session too, without the keys.
+folded, Mark as seen, Answered seen once the panel closes, sorting by date and back) and its page in Settings,
+GitHub's panel (its groups, its foot with the account it reads as, a row that opens) and its page in Settings, Alt+F4,
+each bar keeping its display as displays change, a second start while BriefBar starts opening its Overview, and the
+space given back within a second of quitting or of another program asking BriefBar to close. Run it before you open a
+pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere closes the panel it's
+checking; it sends keys only while the panel is in front, and it works over a disconnected remote session too, without
+the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -72,12 +73,13 @@ section names and the like, so nothing you see can reach it: a line with a strin
   BriefBar again opens its Overview, with the keyboard on its first row; in any panel, Ctrl+1 shows the Overview,
   Ctrl+2 to Ctrl+9 the bar's items in order, as the Mac window's ⌘1 to ⌘9 show its pages, and Ctrl+Tab and
   Ctrl+Shift+Tab the next item and the one before. Each item's tooltip says its key, and Narrator says it too.
-- **The panel** opens under its item as you press it: a header with the section's tile, title and status; a
-  banner when a section can't show everything; notes about what it shows, such as that there's more on GitHub than
-  it reads; the brief; then its groups (the Overview's: Needs you, Something's wrong, Running, Done or ready), with
-  headers that stay in view as you scroll. Each row has a badge in its state's color (or a chat's initials), its
-  title, where it stands, what it's about in two lines at most (three when it needs you), how long ago, unread
-  messages and links. The keyboard starts on its first row. Pressing a row, or Enter, opens what it's about and
+- **The panel** opens under its item as you press it: a header with the section's tile, title and status, and **Sort**
+  for a list that can be sorted; a banner when a section can't show everything; notes about what it shows, such as
+  that there's more on GitHub than it reads; the brief; then its groups (the Overview's: Needs you, Something's wrong,
+  Running, Done or ready), with headers that stay in view as you scroll. Each row has a badge in its state's color (or
+  a chat's initials), its title, where it stands, what it's about in two lines at most (three when it needs you),
+  what's left before it's done where its source says, how long ago, unread messages and links. The keyboard starts on
+  its first row. Pressing a row, or Enter, opens what it's about and
   closes the panel; right-click, the menu key or Shift+F10 shows everything it can do; its tooltip shows all of it.
   A group can have a button, as Copilot's Done has Clear, or start folded, as Copilot's Idle does. Its foot has the
   section's own buttons, such as **Open GitHub Copilot**, who it reads as, such as the GitHub CLI's login, and
@@ -113,11 +115,21 @@ section names and the like, so nothing you see can reach it: a line with a strin
   Waiting, Done (with **Clear**) and Idle, folded; the bar counts Needs you, Failing and Ready to complete, and To
   review too if you turn that on. As on the Mac, a merge Azure DevOps couldn't make (it failed, or a policy rejected
   it) is under Failing, and a person it requires as a reviewer keeps it out of Ready to complete until they approve,
-  as Azure DevOps does. A row says why it's there, with
-  the comment, the failed step or who approved; it opens the pull request in your browser, at the comment that needs
-  you, and sees it; its menu removes it from Needs you, or stops watching it. After you merge one, Done says how the
-  pipelines that run on its merge go: running, waiting for an approval, and then passed or canceled, until you've
-  seen it; one that fails moves it to Failing. Its foot has **Open Azure DevOps**, and an icon beside Settings
+  as Azure DevOps does. A row says why it's there, with the comment, the failed step or who approved; it opens the
+  pull request in your browser, at the comment that needs you, and sees it; its menu removes it from Needs you, or
+  stops watching it. Under each of your open pull requests, Idle's too, a line says what's left before you can
+  complete it, as on the Mac ([What's left](../docs/how-it-works.md#whats-left-before-you-can-complete-it)): what
+  you have to do first, such as **Resolve 2 comments**, then what failed, such as **Build failed**, what's running,
+  and what waits on others, such as **1 of 2 approvals** or **Waiting on Sam**, each with its state's icon and color,
+  then what's done, such as **Build passed**, quieter; open comments that no policy requires resolving are said too,
+  without holding it up. The row's tooltip and Narrator say all of it, with who approved and where a build failed,
+  and the tooltip says when it was created. **Sort** (↑↓) at the top of the panel lists the pull requests **By
+  status**, in the groups above, or by when each was created, **Newest first** or **Oldest first**: in one list where
+  each still says where it stands, and its time says how long ago it was created, with Done's, the latest first, and
+  Idle's, in the same order, after it. The bar's counts, the brief and the Overview stay by status, and BriefBar keeps
+  your choice (`ado.pullRequestOrder`). After you merge one, Done says how the pipelines that run on its merge go:
+  running, waiting for an approval, and then passed or canceled, until you've seen it; one that fails moves it to
+  Failing. Its foot has **Open Azure DevOps**, and an icon beside Settings
   refreshes now, as the Mac's does. Signed out, it offers to sign in, which runs `az login` in a console window;
   without the Azure CLI, or with one it can't start, it links to its installation. Its settings are the Mac's:
   Refresh, Keep done for, Idle after no activity for, Show To review in the bar, Follow pipelines after you merge,
@@ -186,7 +198,7 @@ Where Windows differs, these were decided:
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/GitHub/` | GitHub pull requests, ported from `Sources/GitHubCore` with the Swift names (`PullRequestQuery`, `GitHubClient`, `GitHubCLITokenProvider`, `GitHubClassifier`, `GitHubReader`…), the store and settings from `GitHubUI` (`GitHubStore`, `GitHubSettings`), and the source (`GitHubSource`, `GitHubRows`) |
-| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, notes beside a list and who a section reads as, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
+| `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, a row's checklist of what's left, how a list can be sorted, notes beside a list and who a section reads as, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
 | `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's, Azure DevOps' and GitHub's through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
@@ -352,11 +364,11 @@ this order:
 1. ~~**Copilot sessions**~~, done, with Settings and each source's consent; with the Azure DevOps layer, rows on a
    PC with only the Copilot CLI open in a terminal. Not ported yet, for later layers: Show Links, a work item's
    details and summaries, tasks sent to the Copilot CLI, and `--mcp`.
-2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request.
-   Not ported yet, for later layers: the line under each of your pull requests that says what's left before it can
-   complete, sorting the list by date, the Sprint and Pipelines sections, a pull request's page with its story, the
-   brief's summaries, notifications, pull requests sent in chats (with Teams, as it reads notifications), Show
-   Links, sending work to Copilot, and `--mcp`.
+2. ~~**Azure DevOps pull requests**~~, done: the pull requests' section, its settings, and opening each pull request,
+   with what's left before each of yours can complete and sorting the list by date. Not ported yet, for later layers:
+   the Sprint and Pipelines sections, a pull request's page with its story, the brief's summaries, notifications,
+   pull requests sent in chats (with Teams, as it reads notifications), Show Links, sending work to Copilot, and
+   `--mcp`.
 3. ~~**GitHub pull requests**~~, done: the pull requests' section, its setting, and opening each pull request, with
    the GitHub CLI's sign-in and its one GraphQL query. Not ported yet, for later layers: a pull request's page with its
    story (`PullRequestStory`), the brief's summaries, Show Links, and the sign-in's state in Settings.

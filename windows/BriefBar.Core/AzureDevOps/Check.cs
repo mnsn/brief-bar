@@ -15,6 +15,18 @@ public sealed record Check(
     /// The run of a build that failed, whose timeline says where: null for anything else.
     public int? FailedBuildId => Kind == CheckKind.Build && State == CheckState.Failed ? BuildId : null;
 
+    /// Lowercased identity IDs of the people and teams a required-reviewers policy requires, as reviewers' are; empty
+    /// when it doesn't say.
+    public ValueList<string> ReviewerIds
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(argument: value);
+            field = new ValueList<string>(items: value.Select(selector: id => id.ToLowerInvariant()));
+        }
+    } = [];
+
     /// The check `evaluation` says, or null for a disabled policy.
     public static Check? From(ADOPolicyEvaluation evaluation)
     {
@@ -87,7 +99,10 @@ public sealed record Check(
             IsBlocking: configuration.IsBlocking ?? true,
             MinimumApprovers: settings?.MinimumApproverCount,
             CompletedAt: evaluation.CompletedDate,
-            BuildId: kind == CheckKind.Build ? context?.BuildId : null);
+            BuildId: kind == CheckKind.Build ? context?.BuildId : null)
+        {
+            ReviewerIds = kind == CheckKind.Reviewers ? settings?.RequiredReviewerIds ?? [] : [],
+        };
     }
 
     static string? NonEmpty(string? text) => text?.Trim() is { Length: > 0 } trimmed ? trimmed : null;

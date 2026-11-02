@@ -97,4 +97,32 @@ public sealed class RowWordsTests
             expected: "Made-up ask, Made-up status, Made-up detail, Context: 50% full (100K of 200K tokens), Started by “Made-up lead”, 2 minutes ago",
             actual: RowWords.SpokenName(row: row, sourceName: null, now: now));
     }
+
+    /// As the Mac's VoiceOver value: what's left before it's done after what it's about; and, in a list sorted by when each
+    /// was created, how long ago that was, rather than since its state.
+    [Fact]
+    public void SaysWhatsLeftAndWhenItWasCreated()
+    {
+        var row = Snapshots.Row(id: "pr", section: SectionId.AzureDevOpsPullRequests, group: "waiting", state: null, minutesAgo: 5) with
+        {
+            Detail = "Made-up detail",
+            Checklist = new RowChecklist(
+                Items: [new RowChecklistItem(Icon: IconKey.Clock, State: null, Label: "Made-up wait", IsDone: false)],
+                Summary: ["Left to complete it: Made-up wait (Made-up reviewer)", "Done: Made-up build"]),
+            Created = now.AddDays(days: -3),
+        };
+
+        Assert.Equal(
+            expected: "Made-up pr, Made-up status, Made-up detail, Left to complete it: Made-up wait (Made-up reviewer), Done: Made-up build, 5 minutes ago",
+            actual: RowWords.SpokenName(row: row, sourceName: null, now: now));
+        Assert.EndsWith(
+            expectedEndString: "Done: Made-up build, created 3 days ago",
+            actualString: RowWords.SpokenName(row: row, sourceName: null, now: now, showsCreated: true),
+            comparisonType: StringComparison.Ordinal);
+        // Without when it was created, since its state.
+        Assert.EndsWith(
+            expectedEndString: ", 5 minutes ago",
+            actualString: RowWords.SpokenName(row: row with { Created = null }, sourceName: null, now: now, showsCreated: true),
+            comparisonType: StringComparison.Ordinal);
+    }
 }

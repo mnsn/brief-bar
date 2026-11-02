@@ -3,12 +3,12 @@
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
 # Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
 # with Copilot's page and its settings, closing the panel as it comes to the front; Azure DevOps' panel, from its
-# made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, and its page in
-# Settings, whose Show To review in the bar changes what the bar counts; GitHub's panel, from its made-up pull
-# requests, with the Mac's groups, its foot and the account it reads as, rows that open, and its page in Settings;
-# Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still opening
-# panels; a second start while it starts opening its Overview; and every display's work area given back within a
-# second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
+# made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, sorting by date and
+# back, and its page in Settings, whose Show To review in the bar changes what the bar counts; GitHub's panel, from its
+# made-up pull requests, with the Mac's groups, its foot and the account it reads as, rows that open, and its page in
+# Settings; Alt+F4 leaving a bar alone; each bar keeping its display, its window open, as displays change, and still
+# opening panels; a second start while it starts opening its Overview; and every display's work area given back within
+# a second of quitting, whether from scripts\quit.ps1 or because another program asked a bar to close. Build first: it
 # quits a BriefBar that's running, and starts its own with --demo.
 # It works over a disconnected remote session too, which has one display and can't take keys. Leave the mouse and
 # keyboard alone while it runs: a click anywhere but BriefBar closes the panel it's checking, as it should, and the
@@ -174,6 +174,34 @@ function Get-AllGroupNames($list) {
     @($names)
 }
 
+# The item named `$name` in a menu BriefBar shows, wherever its popup is: under one of the process's windows.
+function Get-MenuItem($process, [string] $name) {
+    $condition = [System.Windows.Automation.AndCondition]::new((Condition $A::ControlTypeProperty $Type::MenuItem), (Condition $A::NameProperty $name))
+    foreach ($window in @($A::RootElement.FindAll($Scope::Children, (Condition $A::ProcessIdProperty $process.Id)))) {
+        $found = $window.FindFirst($Scope::Descendants, $condition)
+        if ($found) { return $found }
+    }
+}
+
+# Chooses a menu's item, as a click does: a plain one is invoked, one that's checked, such as an order, toggled on.
+function Select-MenuItem($item) {
+    $pattern = $null
+    if ($item.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); return }
+    if ($item.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) { $pattern.Toggle(); return }
+    $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+}
+
+# Sorts Azure DevOps' list in `$order`, from the menu at the top of its panel under `$bar`, sorted in `$from` now.
+function Select-Order($process, $bar, [string] $from, [string] $order) {
+    $sort = Get-Button $bar "Sort pull requests: $from"
+    if (-not $sort) { return $false }
+    Invoke-Item $sort
+    $item = Wait-Until { Get-MenuItem $process $order } 3
+    if (-not $item) { return $false }
+    Select-MenuItem $item
+    return $true
+}
+
 # Opens Copilot's panel under `$bar`, and returns its list.
 function Open-Copilot($bar) {
     Invoke-Item (Get-Button $bar 'GitHub Copilot sessions: *')
@@ -252,9 +280,9 @@ function Open-AzureDevOps($bar) {
 }
 
 # Azure DevOps' panel, from its made-up pull requests (`AzureDevOpsDemoData`) through the classifier: the Mac's groups in
-# its order, Idle folded, Mark as seen keeping what waits on you, a pull request that opens closing the panel, and what
-# Answered showed going back to its group once the panel closes; then its page in Settings, whose Show To review in the
-# bar counts To review with what needs you.
+# its order, Idle folded, Mark as seen keeping what waits on you, a pull request that opens closing the panel, what
+# Answered showed going back to its group once the panel closes, and sorting by date and back; then its page in
+# Settings, whose Show To review in the bar counts To review with what needs you.
 function Test-AzureDevOps($process, $bar) {
     Check ($null -ne (Get-Button $bar 'Azure DevOps pull requests: 3 need you, 2 went wrong, 2 done or ready.*')) "Azure DevOps' item counts its made-up pull requests"
     # Past the 600 ms in which a press counts as the one that closed the panel, should one have.
@@ -282,6 +310,18 @@ function Test-AzureDevOps($process, $bar) {
     $list = Open-AzureDevOps $bar
     $groups = if ($list) { Get-AllGroupNames $list } else { @() }
     Check (-not ($groups -like 'Answered: *') -and $groups -contains 'Idle: 3') "what Answered showed goes back to its group once the panel closes ($($groups -join ', '))"
+
+    # Sort, at the top of the panel: by date, every pull request but Done's and Idle's in one list, counted as by status;
+    # then by status again, in their groups.
+    if ($list) {
+        $sorted = Select-Order $process $bar 'By status' 'Newest first'
+        $byDate = if ($sorted) { Wait-Until { $names = Get-AllGroupNames $list; if ($names -contains 'Newest first: 10') { $names } } 5 }
+        Check ($null -ne $byDate -and ($byDate -join ' | ') -eq 'Newest first: 10 | Done: 1 | Idle: 3') "Newest first lists them in one, then Done's and Idle's ($($byDate -join ', '))"
+        Check ($null -ne (Get-Button $bar 'Azure DevOps pull requests: 2 need you, 2 went wrong, 2 done or ready.*')) 'and the bar counts them as by status'
+        $sorted = Select-Order $process $bar 'Newest first' 'By status'
+        $back = if ($sorted) { Wait-Until { $names = Get-AllGroupNames $list; if ($names -contains 'Needs you: 2') { $names } } 5 }
+        Check ($null -ne $back -and -not ($back -like 'Newest first: *')) "By status lists them in their groups again ($($back -join ', '))"
+    }
 
     # Settings, from the panel's foot, at Azure DevOps' page.
     if ($list) { Invoke-Item (Get-Button $bar 'Settings') }
