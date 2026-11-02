@@ -18,9 +18,9 @@ BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64\BriefBar.exe --demo
 
 Without `--demo`, the bar says **No source is on** until you turn one on: right-click the bar and choose
 **Settings**, or press **Open Settings** in the Overview. Settings, and what you turned on, are saved in
-`%LOCALAPPDATA%\BriefBar\Settings.json`; with `--demo`, nothing is saved. The first build downloads the Windows
-App SDK from NuGet, about 300 MB. It ships inside the app, so there's nothing else to install. Add
-`--runtime win-arm64` to build for Arm64.
+`%LOCALAPPDATA%\BriefBar\Settings.json`; with `--demo`, nothing is saved. The first build downloads the parts of the
+Windows App SDK that BriefBar uses from NuGet, about 120 MB. They ship inside the app, so there's nothing else to
+install. Add `--runtime win-arm64` to build for Arm64.
 
 To quit, right-click the bar and choose **Quit BriefBar**, use **More** (…) at the bottom of any panel, press
 **Quit** in Settings, or run `scripts\quit.ps1`. Quit before you build again, since the build replaces the running
@@ -29,13 +29,15 @@ app. One copy runs per sign-in: starting it again opens the running one's Overvi
 ```powershell
 dotnet test --project BriefBar.Core.Tests/BriefBar.Core.Tests.csproj
 dotnet format whitespace . --folder
+scripts\check-notices.ps1
 scripts\smoke.ps1
 ```
 
 Run the tests from `windows/`, whose `global.json` has `dotnet test` use Microsoft.Testing.Platform, as
 xUnit v3 needs. The projects build with the latest recommended analyzers, nullable references and warnings as
-errors; `.github/workflows/windows.yml` checks the formatting, runs the tests and builds for x64 and Arm64 for every
-pull request that changes `windows/`, and `main` requires it to pass.
+errors; `.github/workflows/windows.yml` checks the formatting, runs the tests, builds for x64 and Arm64 and checks the
+third-party notices ([Releases](#releases)) for every pull request that changes `windows/`, and `main` requires it to
+pass.
 `scripts\smoke.ps1` checks the built app end to end with made-up data, through UI Automation: a bar at the top of
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
@@ -208,7 +210,7 @@ Where Windows differs, these were decided:
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
 | `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' and GitHub's pages in your browser (`BrowserShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
-| `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data |
+| `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data; `check-notices.ps1` checks that `THIRD-PARTY-NOTICES.md` names every file the build ships from someone else ([Releases](#releases)) |
 
 Each type has its own file. Logic goes in `BriefBar.Core`, with tests; the app only shows it.
 
@@ -440,3 +442,21 @@ The repository is public, and chats, pull requests and sessions are private, oft
 The Mac app's updater reads the appcast from `releases/latest/download/appcast.xml`, and the README links to
 `releases/latest/download/BriefBar.zip`. A release that GitHub marks as latest must have both, so publish
 Windows builds as pre-releases until each release ships both apps.
+
+`THIRD-PARTY-NOTICES.md` ships beside `BriefBar.exe`, and it must be complete before any release: for each package
+whose files are in the app, a table of those files with the version built, and the package's license and notices, in
+full. `scripts\check-notices.ps1` keeps it complete. It compares each file in the build that BriefBar doesn't build
+itself with the files of the packages the build restored, and fails when the file isn't in the table of the package it
+comes from, saying which that is; when a table's version isn't the one built; when a table names a file that its
+package doesn't put in the build, or a package the build doesn't use; and when the build's copy of the notices isn't
+the current one. CI runs it on the Release builds for x64 and Arm64, so a pull request that adds, updates or removes a
+package can't pass until the notices say so. The Windows SDK's projection is the one version it doesn't check: the
+.NET SDK picks it, so it follows whichever SDK builds.
+
+## License
+
+BriefBar is licensed under the GNU General Public License, version 3 or later ([LICENSE](../LICENSE)). BriefBar for
+Windows ships Microsoft's Windows App SDK, the Windows SDK's projection for .NET and WinRT.Runtime inside its app, so
+its licensors add a permission, under the GPL's section 7, to combine it with them:
+[GPL-ADDITIONAL-PERMISSION.md](../GPL-ADDITIONAL-PERMISSION.md). `THIRD-PARTY-NOTICES.md` lists their files, with
+their license terms.
