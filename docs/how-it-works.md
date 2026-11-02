@@ -1645,16 +1645,18 @@ fork's session ID. BriefBar sends the fork the prompt only once the app's databa
 of the session (`forked_from_session_id`, read-only), and the fork's own extension, which listens by the
 time the fork is made, takes it. Then the session, or the fork, shows the way BriefBar opens one: in the
 app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
-it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot or
-Send Prompts to Copilot Sessions off: a request that no extension took yet is taken back, and nothing more
-is written, copied or opened. One that an extension took goes on, and BriefBar still waits for how it went,
+it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
+Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and
+nothing more is written, copied or opened. One that an extension took goes on, and BriefBar still waits for how it went,
 so that the session takes no other prompt from it meanwhile.
 
 When BriefBar can't send it, it does what **Open in Copilot** did: it copies the prompt, and shows the
 session, for you to paste and send. For a fork, it copies `/fork` and the prompt, and shows the session:
 pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. Once the
 session forked but the prompt didn't reach the fork, it copies the prompt and shows the fork. When the
-window didn't say beforehand that it would, it stays open to say why. What the prompt quotes is handed off
+window didn't say beforehand that it would, it stays open to say why; and when the extension took the
+request but didn't say how it went, or said it failed, which it also says once it stops waiting for the
+session, it says the session may have it already. What the prompt quotes is handed off
 once it's sent, or once the session shows with the prompt copied; without the Copilot app, nothing shows,
 nothing's copied, and the window says why.
 

@@ -123,6 +123,8 @@ final class CopilotTasksStore: ObservableObject {
     var deliveryTimingForTests: SessionSender.Timing?
     /// The sessions BriefBar sends a prompt to now, through its extension in them (`deliver`): one at a time, each.
     @Published var delivering: Set<String> = []
+    /// Azure DevOps was turned off, or BriefBar is quitting: a prompt on its way to a session goes no further.
+    private(set) var hasStopped = false
 
     /// Where the Copilot app keeps its sessions.
     var appHome: URL { appHomeForTests ?? AppSessions.home() }
@@ -312,6 +314,7 @@ final class CopilotTasksStore: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        hasStopped = true
     }
 
     // MARK: Sending

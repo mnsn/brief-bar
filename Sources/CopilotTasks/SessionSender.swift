@@ -50,6 +50,17 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+extension SendFailure {
+    /// It may have happened all the same: the extension took it but didn't say how it went; or it said the session didn't
+    /// take the prompt, or didn't fork, which it also says once it stops waiting for the session, which may still do it.
+    public var mayHaveGone: Bool {
+        switch self {
+        case .lost, .failed(.sendFailed, _), .failed(.forkFailed, _): return true
+        default: return false
+        }
+    }
+}
+
 /// What became of a prompt sent through BriefBar's extension (`SessionSender`).
 public enum SendOutcome: Sendable, Equatable {
     /// The session got it.

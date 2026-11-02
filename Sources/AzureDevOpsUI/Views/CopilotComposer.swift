@@ -618,7 +618,7 @@ struct CopilotComposerView: View {
                 .font(size: 11.5, weight: .medium)
                 // Only once you've changed it, in the same place, so nothing moves.
                 .opacity(prompt == filledIn ? 0 : 1)
-                .disabled(prompt == filledIn)
+                .disabled(prompt == filledIn || isDelivering || fallback != nil)
                 .accessibilityHidden(prompt == filledIn)
                 .help(workItem != nil && target == nil ? "Go back to the prompt in Settings" : "Go back to the prompt BriefBar wrote")
             }
@@ -627,6 +627,8 @@ struct CopilotComposerView: View {
                     .font(size: 13)
                     .scrollContentBackground(.hidden)
                     .focused($isEditingPrompt)
+                    // As it was sent: what changes while it's on its way, or once BriefBar copied it, wouldn't go.
+                    .disabled(isDelivering || fallback != nil)
                     .padding(.horizontal, 9)
                     .padding(.top, 9)
                     .padding(.bottom, 4)
@@ -763,7 +765,10 @@ struct CopilotComposerView: View {
         let copied = fallback.pastesFork ? "/fork and the prompt" : "the prompt"
         let opened = fallback.fork == nil ? "opened the session" : "opened the fork"
         var text = "\(reason) BriefBar copied \(copied) and \(opened) in the Copilot app: paste it there, and send it."
-        if fallback.mayHaveSent { text += " If the session has it already, don't." }
+        if fallback.mayHaveSent {
+            text += fallback.fork != nil ? " If the fork has it already, don't."
+                : fallback.pastesFork ? " If the session forked already, don't." : " If the session has it already, don't."
+        }
         return text
     }
 

@@ -527,6 +527,50 @@ private final class ExtensionStandIn: Sendable {
         #expect(opened == 0)
     }
 
+    /// Turning Azure DevOps off stops a prompt on its way to a session: what waits is taken back, nothing shows or is
+    /// copied, and nothing more is sent.
+    @Test func turningAzureDevOpsOffStopsAPromptOnItsWay() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var opened = 0
+        store.openForTests = { _, _ in opened += 1; return true }
+        store.showForTests = { _ in opened += 1; return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        try hold(session, home: home)
+
+        let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
+        for _ in 0..<400 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        store.stop()
+        #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(requests(home).isEmpty)
+        #expect(await store.show(session) == false)
+        #expect(await store.deliver("Fix them again", to: choice(session)) == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(opened == 0)
+    }
+
+    /// The extension says the session didn't take the prompt once it stops waiting for it too, so the session may get it
+    /// all the same: BriefBar says so as it copies it.
+    @Test func warnsThatAPromptThatFailedMayHaveGone() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.openForTests = { _, _ in true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start { _ in ["ok": false, "error": ["code": "send_failed", "message": "Timed out"]] }
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        guard case .fellBack(let fallback) = await store.deliver("Fix the comments", to: choice(session)) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(fallback.mayHaveSent)
+        #expect(CopilotComposerView.fallbackNote(fallback) == "The session didn't take the prompt: Timed out. BriefBar copied the prompt and opened the session in the Copilot app: paste it there, and send it. If the session has it already, don't.")
+    }
+
     /// The demo sends nothing, and reads nothing of yours.
     @Test func theDemoSendsNothing() async {
         let store = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)
