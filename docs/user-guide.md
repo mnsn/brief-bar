@@ -643,10 +643,11 @@ so add BriefBar to the Copilot CLI too. BriefBar changes only its own plugin mar
 bundle identifier of the app it's in, and leaves any other named `briefbar`, with its plugins.
 
 **Send Prompts to Copilot Sessions**, on the same page, is off until you turn it on. Then BriefBar
-installs its other plugin, an extension that runs in each of the app's sessions, so that Send to Copilot
-can send a prompt to a session itself, or fork the session and send the prompt to the fork, rather than
-copy it for you to paste. The extension does nothing else: it acts only on what BriefBar asks of its own
-session, never logs a prompt, and runs as a process of about 46 MB in each session the app has open.
+installs its other plugin, an extension that runs in each of the app's sessions, so that BriefBar's Send
+to Copilot window can send a prompt to a session itself, with **Send to Session**, or fork the session and
+send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. The extension
+does nothing else: it acts only on what BriefBar asks of its own session, never logs a prompt, and runs
+as a process of about 46 MB in each session the app has open.
 Sessions that are already open get it once they start again. Turning it off, or turning agents off,
 removes it, and BriefBar stops sending prompts to sessions at once, though the sessions that are open
 keep the extension until they start again.

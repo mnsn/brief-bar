@@ -2180,8 +2180,9 @@ and gives the same prompt wherever the work goes.
 ### Its extension for the app's sessions
 
 **Send Prompts to Copilot Sessions**, on the Agents page once agents are on, lets Send to Copilot send a
-prompt to one of the GitHub Copilot app's sessions itself, or fork the session and send the prompt to the
-fork, rather than copy it for you to paste ([Send work to Copilot](#send-work-to-copilot)). The app's
+prompt to one of the GitHub Copilot app's sessions itself, with **Send to Session**, or fork the session
+and send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste
+([Send work to Copilot](#send-work-to-copilot)). The app's
 links only open a session, and an MCP server only answers a tool call, but an extension can: the
 Copilot SDK's extensions are processes that the app's runtime starts in each session it has open, which
 join that session (`joinSession()`) and can send it a message (`session.send`). So BriefBar's second
