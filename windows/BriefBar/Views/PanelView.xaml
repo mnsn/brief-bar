@@ -11,7 +11,10 @@
 
     <!-- The panel under an item: its header, with a menu that sorts its list where it can be sorted, a banner when its
          section can't show everything, then its brief and its groups of rows, and a footer. -->
-    <Grid x:Name="Root" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid
+        x:Name="Root"
+        Background="{ThemeResource BarAndPanelBackgroundBrush}"
+        KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />

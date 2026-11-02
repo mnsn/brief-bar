@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using BriefBar.Core;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
 using BriefBar.Interop;
@@ -23,6 +24,7 @@ internal sealed partial class BarWindow : Window
     readonly AppBarReservation reservation;
     readonly SubclassProc subclass;
     readonly BarView view;
+    readonly ActiveAcrylic backdrop = new(kind: DesktopAcrylicKind.Base);
     bool placed;
     bool hiddenForFullScreen;
     bool closingForGood;
@@ -58,13 +60,14 @@ internal sealed partial class BarWindow : Window
         ComCtl32.SetWindowSubclass(hWnd: Hwnd, callback: subclass, id: 1, data: 0);
         WindowMenu.Remove(hwnd: Hwnd);
         view = new BarView(viewModel: ViewModel);
+        UseLook(look: shell.Look, accent: shell.Accent);
         view.ItemPressed += (_, args) => shell.ItemPressed(bar: this, target: args.Target, anchor: AnchorOf(item: args.Item));
         view.EmptySpacePressed += (_, _) => shell.EmptySpacePressed();
         view.QuitRequested += (_, _) => shell.Quit();
         view.SettingsRequested += (_, _) => shell.OpenSettings(source: null);
         view.ActualThemeChanged += (_, _) => shell.ThemeChanged(theme: view.ActualTheme);
         Content = view;
-        SystemBackdrop = new ActiveAcrylic(kind: DesktopAcrylicKind.Base);
+        SystemBackdrop = backdrop;
         // A bar closes only as BriefBar quits or displays change. Another program asking it to close, as `taskkill`
         // without /F does, asks BriefBar to quit, which gives every bar's space back.
         AppWindow.Closing += (_, args) =>
@@ -86,8 +89,6 @@ internal sealed partial class BarWindow : Window
 
     /// Where the bar is, in physical pixels.
     public PixelRect Rect { get; private set; }
-
-    public ElementTheme Theme => view.ActualTheme;
 
     /// Stepped aside: hidden, holding no space, until it takes a display again.
     public bool IsSpare { get; private set; }
@@ -179,6 +180,21 @@ internal sealed partial class BarWindow : Window
     /// Where the Overview's item is, for a panel opened by something other than a press, such as a second start.
     public PixelRect OverviewAnchor() => AnchorOf(item: view.OverviewItem);
 
+    /// Shows Windows' mode, as the taskbar does, tinted with `accent` while the taskbar shows the accent color.
+    public void UseLook(ShellLook look, Windows.UI.Color accent)
+    {
+        ArgumentNullException.ThrowIfNull(argument: look);
+        view.RequestedTheme = look.IsDark ? ElementTheme.Dark : ElementTheme.Light;
+        backdrop.UseTint(color: look.UsesAccent ? accent : null);
+    }
+
+    /// Shows what the bar shows now, in `palette`'s colors.
+    public void Update(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now)
+    {
+        view.UsePalette(palette: palette);
+        ViewModel.Update(snapshots: snapshots, palette: palette, now: now);
+    }
+
     /// Where `target`'s item is, for its panel, shown from the keyboard: the Overview's, while the bar has no item for
     /// it on screen.
     public PixelRect AnchorOf(PanelTarget target) => AnchorOf(item: view.ItemFor(target: target) ?? view.OverviewItem);
@@ -261,6 +277,10 @@ internal sealed partial class BarWindow : Window
                 break;
             case WindowMessages.WM_SETTINGCHANGE when wParam == WindowMessages.SPI_SETWORKAREA:
                 DispatcherQueue.TryEnqueue(callback: () => shell.LayoutChanged(bar: this, force: false));
+                break;
+            case WindowMessages.WM_SETTINGCHANGE when lParam != 0 && Marshal.PtrToStringUni(ptr: lParam) == WindowMessages.ImmersiveColorSet:
+                // Windows' colors changed, its own mode included, which UISettings doesn't always say.
+                DispatcherQueue.TryEnqueue(callback: shell.ColorsChanged);
                 break;
             case WindowMessages.WM_DISPLAYCHANGE:
                 DispatcherQueue.TryEnqueue(callback: shell.DisplaysChanged);
