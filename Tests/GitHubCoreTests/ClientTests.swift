@@ -98,6 +98,17 @@ import Testing
         #expect(server.received.count == 1)
     }
 
+    /// `Retry-After` can give the date to wait until instead (RFC 9110).
+    @Test func waitsUntilTheDateGitHubGives() async {
+        let server = StubServer()
+        server.reply(.text(
+            "{\"message\":\"You have exceeded a secondary rate limit.\"}", status: 403,
+            headers: ["Retry-After": "Sun, 18 Oct 2026 10:02:00 GMT"]
+        ))
+
+        await #expect(throws: GitHubError.throttled(retryAfter: 120)) { try await server.client().pullRequests() }
+    }
+
     @Test func waitsForTheHourlyLimitToReset() async {
         let server = StubServer()
         let reset = Int(t(5 * minute).timeIntervalSince1970)
@@ -254,6 +265,8 @@ import Testing
         #expect(GitHubClient.rateLimitWait(response(403, ["Retry-After": "99999"]), body: Data(), now: now) == 3_600)
         #expect(GitHubClient.rateLimitWait(response(403, ["Retry-After": "0"]), body: Data(), now: now) == nil)
         #expect(GitHubClient.rateLimitWait(response(403, ["Retry-After": "soon"]), body: Data(), now: now) == nil)
+        #expect(GitHubClient.rateLimitWait(response(403, ["Retry-After": "Mon, 19 Oct 2026 10:00:00 GMT"]), body: Data(), now: now) == 3_600)
+        #expect(GitHubClient.rateLimitWait(response(403, ["Retry-After": "Sun, 18 Oct 2026 09:59:00 GMT"]), body: Data(), now: now) == nil)
         #expect(GitHubClient.rateLimitWait(response(403, ["x-ratelimit-remaining": "3", "x-ratelimit-reset": "\(epoch + 60)"]), body: Data(), now: now) == nil)
 
         #expect(GitHubClient.resetWait(response(200, ["x-ratelimit-reset": "\(epoch - 60)"]), now: now) == 1)
@@ -269,5 +282,50 @@ import Testing
         #expect(!configuration.httpShouldSetCookies)
         #expect(configuration.urlCache == nil)
         #expect(configuration.httpAdditionalHeaders?["User-Agent"] as? String == "BriefBar")
+    }
+
+    /// The token goes to api.github.com only: a redirect anywhere else isn't followed, and the error says so.
+    @Test(.timeLimit(.minutes(1)))
+    func refusesARedirectToAnotherHost() async {
+        let server = StubServer()
+        server.reply(.redirect(to: "https://elsewhere.example/graphql"))
+        server.always(.json(answer))
+
+        await #expect(throws: GitHubError.redirected) { try await server.client().pullRequests() }
+        #expect(server.received.map(\.request.url) == [GitHubClient.endpoint])
+        #expect(GitHubError.redirected.description == "GitHub redirected BriefBar to another host, which it doesn't connect to.")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func followsARedirectOnGitHubsOwnHost() async throws {
+        let server = StubServer()
+        server.reply(.redirect(to: "https://api.github.com/graphql?again"))
+        server.always(.json(answer))
+
+        #expect(try await server.client().pullRequests().data.viewer.login == Fixture.me)
+        #expect(server.received.map(\.request.url?.absoluteString) == [GitHubClient.endpoint.absoluteString, "https://api.github.com/graphql?again"])
+    }
+
+    @Test func followsARedirectOnlyOverHTTPSToTheSameHost() {
+        let endpoint = GitHubClient.endpoint
+        #expect(RedirectGuard.follows(from: endpoint, to: URL(string: "https://api.github.com/graphql?again")))
+        #expect(RedirectGuard.follows(from: endpoint, to: URL(string: "https://API.GitHub.com/graphql")))
+        for target in [
+            "https://elsewhere.example/graphql", "https://api.github.com.elsewhere.example/graphql", "http://api.github.com/graphql",
+            "https://api.github.com:8443/graphql",
+        ] {
+            #expect(!RedirectGuard.follows(from: endpoint, to: URL(string: target)), "\(target)")
+        }
+        #expect(!RedirectGuard.follows(from: endpoint, to: nil))
+    }
+
+    /// A read that gives up as its token comes, as when GitHub is turned off just then, sends nothing with it.
+    @Test func aReadThatGaveUpSendsNothing() async {
+        let server = StubServer()
+        server.always(.json(answer))
+        let reading = Task { try await server.client(tokens: GivingUpTokens(server: server.id)).pullRequests() }
+
+        await #expect(throws: CancellationError.self) { try await reading.value }
+        #expect(server.received.isEmpty)
     }
 }

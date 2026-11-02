@@ -1,4 +1,6 @@
+import BriefBarCore
 import Foundation
+import Synchronization
 
 public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
     case auth(GitHubAuthError)
@@ -14,6 +16,8 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
     case decoding(String)
     /// GitHub answered with errors and nothing it could read.
     case graphQL(String)
+    /// GitHub redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`).
+    case redirected
 
     public var description: String {
         switch self {
@@ -26,6 +30,7 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from GitHub (\(message))."
         case .graphQL(let message): return "GitHub couldn't answer: \(message)"
+        case .redirected: return "GitHub redirected BriefBar to another host, which it doesn't connect to."
         }
     }
 }
@@ -42,7 +47,8 @@ public struct PullRequestQueryResult: Sendable, Equatable {
 }
 
 /// Reads your pull requests from GitHub. It sends one request, always the same query (`PullRequestQuery`), so it can
-/// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation.
+/// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation. It connects to
+/// api.github.com only, and follows a redirect only there (`RedirectGuard`).
 public struct GitHubClient: Sendable {
     public static let endpoint = URL(string: "https://api.github.com/graphql")!
 
@@ -108,13 +114,19 @@ public struct GitHubClient: Sendable {
         }
         var token = try await accessToken()
         for attempt in 0..<2 {
+            // Given up as the token came, as when GitHub is turned off: it goes nowhere.
+            try Task.checkCancellation()
+            let redirects = RedirectGuard()
             let (data, response): (Data, URLResponse)
             do {
-                (data, response) = try await session.data(for: Self.request(body, token: token.value))
+                (data, response) = try await session.data(for: Self.request(body, token: token.value), delegate: redirects)
             } catch let error as URLError {
                 throw Self.map(error)
             } catch {
                 throw GitHubError.network(error.localizedDescription)
+            }
+            if redirects.refused {
+                throw GitHubError.redirected
             }
             guard let http = response as? HTTPURLResponse else {
                 throw GitHubError.network("No response from GitHub.")
@@ -165,12 +177,11 @@ public struct GitHubClient: Sendable {
     }
 
     /// How long to wait when GitHub refuses a request for its rate limits, or nil when it refused it for another
-    /// reason: `Retry-After` for its secondary limits, the hourly limit's reset when that's used up, or a minute
-    /// when it only says so in words. 429 is always a rate limit.
+    /// reason: `Retry-After` for its secondary limits, in seconds or until the date it gives, the hourly limit's reset
+    /// when that's used up, or a minute when it only says so in words. 429 is always a rate limit.
     static func rateLimitWait(_ response: HTTPURLResponse, body: Data, now: Date) -> TimeInterval? {
-        if let value = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces),
-           let seconds = TimeInterval(value), seconds > 0 {
-            return min(seconds, 3_600)
+        if let wait = RetryAfter.wait(response.value(forHTTPHeaderField: "Retry-After"), now: now) {
+            return min(wait, 3_600)
         }
         if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0", let wait = resetWait(response, now: now) {
             return wait
@@ -227,5 +238,33 @@ actor RateLimitGate {
     func remainingWait() -> TimeInterval? {
         let wait = notBefore.timeIntervalSince(now())
         return wait > 0 ? wait : nil
+    }
+}
+
+/// Follows a redirect only on the host the request went to, over HTTPS, so GitHub's token goes nowhere else. One for
+/// each request, which then says whether it refused one: the request's answer is then the redirect, not GitHub's.
+final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    private let refusal = Mutex(false)
+
+    /// Whether it refused a redirect.
+    var refused: Bool { refusal.withLock { $0 } }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        guard Self.follows(from: response.url, to: request.url) else {
+            refusal.withLock { $0 = true }
+            return nil
+        }
+        return request
+    }
+
+    /// Whether a redirect from `source` to `target` stays where the request went: HTTPS, on the same host and port.
+    static func follows(from source: URL?, to target: URL?) -> Bool {
+        guard let source, let target, target.scheme?.lowercased() == "https", let host = target.host?.lowercased() else {
+            return false
+        }
+        return host == source.host?.lowercased() && target.port == source.port
     }
 }

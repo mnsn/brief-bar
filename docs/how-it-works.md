@@ -1079,9 +1079,13 @@ so a pull request's details (policies and threads, two requests) are fetched on 
   others three minutes after, and drafts and idle ones fifteen. So while more builds run than a refresh
   reads, the other pull requests still get their turn, and their new comments come in.
 
-Requests honor `Retry-After`: when Azure DevOps asks to slow down, nothing is sent until the time it
-gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`). When nothing can be read (offline, for
-example), refreshes back off up to ten minutes, and waking the Mac or getting back online refreshes right away.
+Requests honor `Retry-After`, in seconds or as the date to wait until (`RetryAfter`): when Azure DevOps asks to
+slow down, nothing is sent until the time it gave, or for a minute when it doesn't say (`ADOClient.retryAfterUnsaid`).
+When nothing can be read (offline, for example), refreshes back off up to ten minutes, and waking the Mac or getting
+back online refreshes right away.
+
+Each request goes only to the host it's for, with the Azure CLI's token: a redirect is followed only on that host,
+over HTTPS, and one anywhere else isn't, as an error that says so (`RedirectGuard`, `ADOError.redirected`).
 
 Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
 server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a
@@ -1706,7 +1710,9 @@ BriefBar never changes either of them:
   ending in `.md`.
 - The database is opened with a read-only SQLite connection. Like any SQLite reader, it briefly
   takes shared locks and updates SQLite's shared-memory index (`data.db-shm`) while it reads;
-  neither changes any data. When the app has quit and SQLite has removed the write-ahead log, a
+  neither changes any data. Each read is one snapshot, a read transaction (`SQLiteConnection`): all
+  its queries see the database as the first one did, so a write the app commits between two of them
+  can't mix old and new rows into one list. When the app has quit and SQLite has removed the write-ahead log, a
   read-only connection can't open the database, so BriefBar reads it in SQLite's
   [immutable mode](https://www.sqlite.org/uri.html#uriimmutable) instead. That takes no locks, so
   what it reads holds only while the app leaves the file alone: BriefBar looks at the file's identity,
@@ -1862,7 +1868,9 @@ gh auth token --hostname github.com
 only, for half an hour, then asks again, in case you signed in as someone else, and asks again right
 away if GitHub rejects it. Concurrent requests share one run of `gh`, which is limited to 30 seconds,
 with prompts, update checks and colors turned off (`GH_PROMPT_DISABLED`, `GH_NO_UPDATE_NOTIFIER`,
-`NO_COLOR`). It tells a signed-out CLI from other failures by what `gh` prints. **Sign In…** opens
+`NO_COLOR`). Turning GitHub off cancels the read that waits for a token: a run of `gh` under way stops
+once no request waits for it, and a request that gave up gets no token, so it reaches nothing, not even
+memory. It tells a signed-out CLI from other failures by what `gh` prints. **Sign In…** opens
 Terminal to run `gh auth login --hostname github.com --web`.
 
 As with `az`, BriefBar looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual
@@ -1886,18 +1894,22 @@ With each pull request come its repository, author, branch (`headRefName`, for [
 draft, whether it can merge
 (`mergeable`), the review decision, the latest review from each reviewer, and the state of its latest
 commit's checks (`statusCheckRollup`). The client sends no cookies and keeps no cache
-(`GitHubClient.makeSession`).
+(`GitHubClient.makeSession`). It connects to api.github.com only: a redirect is followed only there, over HTTPS, and
+one anywhere else isn't, as an error that says so (`RedirectGuard`, `GitHubError.redirected`), so the token goes
+nowhere else.
 
 It refreshes every 2 minutes by default (**Refresh Every** in its settings), when a list opens if the
 last read is more than 10 seconds old, and every minute while you need to sign in or are offline, so a
 fix shows soon. When GitHub asks it to slow down, it sends nothing until the time GitHub gave:
-`Retry-After` for its secondary limits, the hourly limit's reset (`x-ratelimit-reset`), or a minute
-when GitHub only says so in words. At the default, that's 30 requests an hour, a small part of GitHub's
-hourly limit for the GraphQL API.
+`Retry-After` for its secondary limits, in seconds or as the date to wait until (`RetryAfter`), the hourly
+limit's reset (`x-ratelimit-reset`), or a minute when GitHub only says so in words. At the default, that's 30
+requests an hour, a small part of GitHub's hourly limit for the GraphQL API.
 
 When GitHub answers with errors alongside what it could read, such as an organization that uses SAML
 single sign-on the GitHub CLI isn't authorized for, the list shows what it read with a note saying
-why the rest is missing.
+why the rest is missing. An empty list says **All quiet** only when the last read worked and read every
+pull request there is (`GitHubStore.isAllQuiet`): not before a read has worked, nor while it says you're
+offline, GitHub can't be reached or some pull requests couldn't be read.
 
 ### How a pull request's group is decided
 
@@ -1906,8 +1918,9 @@ why the rest is missing.
 - **To Review**: someone asked you, by name, to review it.
 - For your own: **Waiting** if it's a draft; **Failing** if its checks fail or it has merge
   conflicts; **Changes Requested** if the review decision says so (or, without one, a reviewer's latest
-  review does); **Waiting** while its checks run; **Ready to Merge** if it's approved; and **Waiting**
-  for reviews otherwise.
+  review does, a deleted account's too); **Waiting** while its checks run; **Ready to Merge** if it's
+  approved (or, without a decision, a reviewer's latest review approves it, a deleted account's too); and
+  **Waiting** for reviews otherwise.
 
 A pull request that's both yours and asks for your review is listed once, as yours. To Review and
 Changes Requested count as needing you, Failing as something wrong and Ready to Merge as done or

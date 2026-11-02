@@ -319,6 +319,79 @@ extension Locked where Value == Int {
         #expect(server.requests.count == sent)
     }
 
+    /// `Retry-After` can give the date to wait until instead (RFC 9110).
+    @Test func honorsARetryAfterDate() async throws {
+        let server = StubServer()
+        let until = httpDate(Date().addingTimeInterval(600))
+        server.on("/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": until]) }
+        let client = server.client()
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+        do {
+            _ = try await client.get(url, as: ADOConnectionData.self)
+            Issue.record("Expected to be throttled")
+        } catch ADOError.throttled(let wait) {
+            #expect(wait > 590 && wait <= 600)
+        }
+    }
+
+    @Test func readsRetryAfterInSecondsOrAsADate() {
+        func wait(_ value: String) -> TimeInterval? {
+            let response = HTTPURLResponse(
+                url: ADOEndpoint.connectionData(organization: "contoso"), statusCode: 429, httpVersion: "HTTP/1.1",
+                headerFields: ["Retry-After": value]
+            )
+            return response.flatMap { ADOClient.retryAfter($0, now: referenceDate) }
+        }
+        #expect(wait("30") == 30)
+        #expect(wait("Sun, 18 Oct 2026 10:02:00 GMT") == 120)
+        #expect(wait("Sunday, 18-Oct-26 10:02:00 GMT") == 120)
+        #expect(wait("Sun Oct 18 10:02:00 2026") == 120)
+        #expect(wait("Mon, 19 Oct 2026 10:00:00 GMT") == 3_600)
+        #expect(wait("Sun, 18 Oct 2026 09:59:00 GMT") == nil)
+        #expect(wait("soon") == nil)
+    }
+
+    /// Each request's token goes only to the host it's for: a redirect anywhere else isn't followed, and the error says so.
+    @Test(.timeLimit(.minutes(1)))
+    func refusesARedirectToAnotherHost() async {
+        let server = StubServer()
+        server.on("/_apis/connectionData") { request in
+            request.url?.host == "dev.azure.com"
+                ? .redirect(to: "https://elsewhere.example/contoso/_apis/connectionData") : .json(["authenticatedUser": ["id": "ME"]])
+        }
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+
+        await #expect(throws: ADOError.redirected) { try await server.client().get(url, as: ADOConnectionData.self) }
+        #expect(server.requests.map(\.url) == [url])
+        #expect(ADOError.redirected.description == "Azure DevOps redirected BriefBar to another host, which it doesn't connect to.")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func followsARedirectOnTheSameHost() async throws {
+        let server = StubServer()
+        server.on("/_apis/connectionData") { request in
+            request.url?.query?.contains("again") == true
+                ? .json(["authenticatedUser": ["id": "ME"]]) : .redirect(to: "https://dev.azure.com/contoso/_apis/connectionData?again")
+        }
+
+        let me = try await server.client().get(ADOEndpoint.connectionData(organization: "contoso"), as: ADOConnectionData.self)
+        #expect(me.authenticatedUser.id == "ME")
+        #expect(server.requests.count == 2)
+    }
+
+    @Test func followsARedirectOnlyOverHTTPSToTheSameHost() {
+        let source = ADOEndpoint.connectionData(organization: "contoso")
+        #expect(RedirectGuard.follows(from: source, to: URL(string: "https://dev.azure.com/contoso/_apis/connectionData?again")))
+        #expect(RedirectGuard.follows(from: ADOEndpoint.profile, to: URL(string: "https://app.vssps.visualstudio.com/_apis/profile/profiles/me")))
+        for target in [
+            "https://contoso.visualstudio.com/_apis/connectionData", "https://elsewhere.example/contoso/_apis/connectionData",
+            "http://dev.azure.com/contoso/_apis/connectionData", "https://dev.azure.com:8443/contoso/_apis/connectionData",
+        ] {
+            #expect(!RedirectGuard.follows(from: source, to: URL(string: target)), "\(target)")
+        }
+        #expect(!RedirectGuard.follows(from: ADOEndpoint.profile, to: source))
+    }
+
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then, so
     /// a summary reading one pull request after another stops at the first.
     @Test func waitsAMinuteWhenToldToSlowDownWithoutHowLong() async throws {
@@ -436,4 +509,13 @@ extension Locked where Value == Int {
             // Discovery tries again a minute later.
         }
     }
+}
+
+/// `date` as an HTTP date, as `Retry-After` gives one: `Sun, 18 Oct 2026 10:02:00 GMT`.
+private func httpDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+    return formatter.string(from: date)
 }

@@ -1,4 +1,6 @@
+import BriefBarCore
 import Foundation
+import Synchronization
 
 public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     case auth(AuthError)
@@ -13,6 +15,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     case http(Int)
     case network(String)
     case decoding(String)
+    /// Azure DevOps redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`).
+    case redirected
 
     public var description: String {
         switch self {
@@ -25,11 +29,13 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
         case .http(let status): return "Azure DevOps answered with HTTP \(status)."
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from Azure DevOps (\(message))."
+        case .redirected: return "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."
         }
     }
 }
 
-/// Reads from Azure DevOps. It only ever sends GET requests: BriefBar never changes anything there.
+/// Reads from Azure DevOps. It only ever sends GET requests: BriefBar never changes anything there. Each goes to the
+/// host it's for, and follows a redirect only there (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
@@ -79,13 +85,17 @@ public struct ADOClient: Sendable {
         }
         var token = try await accessToken()
         for attempt in 0..<2 {
+            let redirects = RedirectGuard()
             let (data, response): (Data, URLResponse)
             do {
-                (data, response) = try await session.data(for: Self.request(url, token: token.value))
+                (data, response) = try await session.data(for: Self.request(url, token: token.value), delegate: redirects)
             } catch let error as URLError {
                 throw Self.map(error)
             } catch {
                 throw ADOError.network(error.localizedDescription)
+            }
+            if redirects.refused {
+                throw ADOError.redirected
             }
             guard let http = response as? HTTPURLResponse else {
                 throw ADOError.network("No response from Azure DevOps.")
@@ -143,11 +153,9 @@ public struct ADOClient: Sendable {
         (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
     }
 
-    static func retryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
-        guard let value = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces),
-              let seconds = TimeInterval(value), seconds > 0
-        else { return nil }
-        return min(seconds, 3_600)
+    /// How long `Retry-After` asks to wait from `now`, in seconds or until the date it gives, at most an hour.
+    static func retryAfter(_ response: HTTPURLResponse, now: Date = Date()) -> TimeInterval? {
+        RetryAfter.wait(response.value(forHTTPHeaderField: "Retry-After"), now: now).map { min($0, 3_600) }
     }
 
     /// How long to wait when Azure DevOps asks to slow down without saying for how long.
@@ -187,6 +195,35 @@ actor RateLimitGate {
     func remainingWait() -> TimeInterval? {
         let wait = notBefore.timeIntervalSinceNow
         return wait > 0 ? wait : nil
+    }
+}
+
+/// Follows a redirect only on the host the request went to, over HTTPS, so the Azure CLI's token goes nowhere else. One
+/// for each request, which then says whether it refused one: the request's answer is then the redirect, not what it
+/// asked for.
+final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    private let refusal = Mutex(false)
+
+    /// Whether it refused a redirect.
+    var refused: Bool { refusal.withLock { $0 } }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        guard Self.follows(from: response.url, to: request.url) else {
+            refusal.withLock { $0 = true }
+            return nil
+        }
+        return request
+    }
+
+    /// Whether a redirect from `source` to `target` stays where the request went: HTTPS, on the same host and port.
+    static func follows(from source: URL?, to target: URL?) -> Bool {
+        guard let source, let target, target.scheme?.lowercased() == "https", let host = target.host?.lowercased() else {
+            return false
+        }
+        return host == source.host?.lowercased() && target.port == source.port
     }
 }
 

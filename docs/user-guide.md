@@ -797,9 +797,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
 - **Teams and Copilot never use the network.** Only the Azure DevOps source connects, to Azure DevOps,
   with your Azure CLI sign-in, and every request it makes is a GET; and the GitHub source, to
   `api.github.com`, with your GitHub CLI sign-in, sending one fixed, read-only GraphQL query each
-  refresh. The GitHub CLI's token stays in memory, and BriefBar never asks for a personal access
-  token. No sign-in of BriefBar's own, and no telemetry. `scripts/check-boundaries.sh` checks that no
-  other part of BriefBar's code uses networking APIs.
+  refresh. Neither follows a redirect to another host, so their sign-ins go nowhere else. The GitHub
+  CLI's token stays in memory, and BriefBar never asks for a personal access token. No sign-in of
+  BriefBar's own, and no telemetry. `scripts/check-boundaries.sh` checks that no other part of
+  BriefBar's code uses networking APIs.
 - **Updates, only if you allow them.** BriefBar's own requests are for its updates, from this
   project's releases on GitHub: a small file that describes the latest release, once a day, and the
   new version when you install it. GitHub sees your IP address and the versions of BriefBar and of
