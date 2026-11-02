@@ -70,4 +70,27 @@ import Testing
     @Test func opensDatabasesOnlyThroughSQLiteConnection() throws {
         #expect(try sourcesMatching(/sqlite3_open/) == ["BriefBarCore/SQLite.swift"])
     }
+
+    /// Every query reads the database as it was at the first: a commit by the app's writer between two of them, which can
+    /// come at any moment, can't mix old and new rows into one read. The next connection reads it.
+    @Test func readsOneSnapshotAcrossItsQueries() throws {
+        try withTemporaryDirectory { directory in
+            let url = directory.appendingPathComponent("test.db")
+            var writer: OpaquePointer?
+            try #require(sqlite3_open(url.path, &writer) == SQLITE_OK)
+            defer { sqlite3_close(writer) }
+            let schema = "PRAGMA journal_mode=WAL; CREATE TABLE item (id INTEGER); INSERT INTO item VALUES (1);"
+            try #require(sqlite3_exec(writer, schema, nil, nil, nil) == SQLITE_OK)
+            func count(_ connection: SQLiteConnection) throws -> [Int] {
+                try connection.rows("SELECT count(*) FROM item") { $0.int(0) }
+            }
+
+            let connection = try SQLiteConnection(readOnly: url)
+            #expect(try count(connection) == [1])
+            try #require(sqlite3_exec(writer, "INSERT INTO item VALUES (2);", nil, nil, nil) == SQLITE_OK)
+            #expect(try count(connection) == [1])
+
+            #expect(try count(SQLiteConnection(readOnly: url)) == [2])
+        }
+    }
 }

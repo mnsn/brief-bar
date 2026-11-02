@@ -1,4 +1,6 @@
+import BriefBarCore
 import Foundation
+import Synchronization
 
 public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
     case auth(GitHubAuthError)
@@ -14,6 +16,9 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
     case decoding(String)
     /// GitHub answered with errors and nothing it could read.
     case graphQL(String)
+    /// GitHub redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`). Which host isn't said:
+    /// problem messages go to the log.
+    case redirected
 
     public var description: String {
         switch self {
@@ -26,6 +31,7 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from GitHub (\(message))."
         case .graphQL(let message): return "GitHub couldn't answer: \(message)"
+        case .redirected: return "GitHub redirected BriefBar to another host, which it doesn't connect to."
         }
     }
 }
@@ -42,7 +48,8 @@ public struct PullRequestQueryResult: Sendable, Equatable {
 }
 
 /// Reads your pull requests from GitHub. It sends one request, always the same query (`PullRequestQuery`), so it can
-/// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation.
+/// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation. It connects to
+/// api.github.com only, and follows no redirect (`RedirectGuard`).
 public struct GitHubClient: Sendable {
     public static let endpoint = URL(string: "https://api.github.com/graphql")!
 
@@ -108,13 +115,20 @@ public struct GitHubClient: Sendable {
         }
         var token = try await accessToken()
         for attempt in 0..<2 {
+            // Given up as the token came, as when GitHub is turned off: it goes nowhere.
+            try Task.checkCancellation()
+            let redirects = RedirectGuard()
             let (data, response): (Data, URLResponse)
             do {
-                (data, response) = try await session.data(for: Self.request(body, token: token.value))
-            } catch let error as URLError {
-                throw Self.map(error)
+                (data, response) = try await session.data(for: Self.request(body, token: token.value), delegate: redirects)
             } catch {
+                // A refused redirect ends the request, however URLSession ends it.
+                if let redirect = redirects.refused { throw Self.error(refusing: redirect) }
+                if let error = error as? URLError { throw Self.map(error) }
                 throw GitHubError.network(error.localizedDescription)
+            }
+            if let redirect = redirects.refused {
+                throw Self.error(refusing: redirect)
             }
             guard let http = response as? HTTPURLResponse else {
                 throw GitHubError.network("No response from GitHub.")
@@ -165,12 +179,11 @@ public struct GitHubClient: Sendable {
     }
 
     /// How long to wait when GitHub refuses a request for its rate limits, or nil when it refused it for another
-    /// reason: `Retry-After` for its secondary limits, the hourly limit's reset when that's used up, or a minute
-    /// when it only says so in words. 429 is always a rate limit.
+    /// reason: `Retry-After` for its secondary limits, in seconds or until the date it gives, the hourly limit's reset
+    /// when that's used up, or a minute when it only says so in words. 429 is always a rate limit.
     static func rateLimitWait(_ response: HTTPURLResponse, body: Data, now: Date) -> TimeInterval? {
-        if let value = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces),
-           let seconds = TimeInterval(value), seconds > 0 {
-            return min(seconds, 3_600)
+        if let wait = RetryAfter.wait(response.value(forHTTPHeaderField: "Retry-After"), now: now) {
+            return min(wait, 3_600)
         }
         if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0", let wait = resetWait(response, now: now) {
             return wait
@@ -196,6 +209,11 @@ public struct GitHubClient: Sendable {
         case .cannotFindHost, .dnsLookupFailed: return .network("Can't reach GitHub.")
         default: return .network(error.localizedDescription)
         }
+    }
+
+    /// A redirect to another host says so; one on the same host is an HTTP error like any other.
+    static func error(refusing redirect: RedirectGuard.Refusal) -> GitHubError {
+        redirect.toAnotherHost ? .redirected : .http(redirect.status)
     }
 
     private static func describe(_ error: Error) -> String {
@@ -227,5 +245,36 @@ actor RateLimitGate {
     func remainingWait() -> TimeInterval? {
         let wait = notBefore.timeIntervalSince(now())
         return wait > 0 ? wait : nil
+    }
+}
+
+/// Follows no redirect, so the query goes only where it's sent, with GitHub's token: GitHub answers it there. One for
+/// each request, which keeps the redirect it refused, for the client to say so.
+final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    /// A redirect it refused: its status, and whether it pointed to another host.
+    struct Refusal: Sendable, Equatable {
+        var status: Int
+        var toAnotherHost: Bool
+    }
+
+    private let refusal = Mutex<Refusal?>(nil)
+
+    /// The redirect it refused, if there was one.
+    var refused: Refusal? { refusal.withLock { $0 } }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        let refused = Refusal(status: response.statusCode, toAnotherHost: Self.isAnotherHost(request.url, than: response.url))
+        refusal.withLock { $0 = refused }
+        return nil
+    }
+
+    /// Whether `target` is on another host than `source`: not when it stays on `source`'s, whatever its scheme, port or
+    /// path, or has none.
+    static func isAnotherHost(_ target: URL?, than source: URL?) -> Bool {
+        guard let host = target?.host(percentEncoded: true)?.lowercased(), !host.isEmpty else { return false }
+        return host != source?.host(percentEncoded: true)?.lowercased()
     }
 }
