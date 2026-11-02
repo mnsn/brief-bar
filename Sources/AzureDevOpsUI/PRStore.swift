@@ -681,6 +681,21 @@ final class PRStore: ObservableObject {
         return settings.watchedKeys.contains(key) ? record.watched() : record
     }
 
+    /// When you last looked at a pull request, as far as BriefBar remembers.
+    func seenCutoff(for key: PRKey) -> Date {
+        settings.seenCutoff(for: key)
+    }
+
+    /// A pull request as the list would have it had you last looked at it at `seenCutoff`, the rest as it is now: what
+    /// was new then, and what waited on you, but not what you've answered, removed from Needs You or sent to Copilot
+    /// since.
+    func snapshot(of record: PRRecord, seenAt seenCutoff: Date) -> PRSnapshot? {
+        PRClassifier.snapshot(
+            for: record, seenCutoff: seenCutoff, dismissedCutoff: settings.dismissedCutoff(for: record.id),
+            now: now, options: settings.classifierOptions
+        )
+    }
+
     /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
     /// code has finished, in its session.
     func copilotActions(for item: PRSnapshot, continuable: CopilotRun?) -> [PullRequestAction] {

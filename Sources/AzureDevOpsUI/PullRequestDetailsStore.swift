@@ -57,6 +57,10 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
+    /// When you last looked at a pull request, and how the list would have one had you last looked at it then: the
+    /// source's (`PRStore.seenCutoff(for:)`, `PRStore.snapshot(of:seenAt:)`).
+    var seenCutoff: (PRKey) -> Date? = { _ in nil }
+    var classify: (PRRecord, Date) -> PRSnapshot? = { _, _ in nil }
     /// What the list read of a pull request it has: the source's.
     var readRecord: (PRKey) -> PRRecord? = { _ in nil }
     /// Whether a window shows the Pull Requests page, and opening it there: the source's.
@@ -67,10 +71,14 @@ final class PullRequestDetailsStore: ObservableObject {
     private var listed: [PRSnapshot] = []
     /// Who's signed in to the Azure CLI, as the list last told.
     private var account: String?
+    /// When you'd last looked at the pull request that shows, before its details showed it.
+    private var seenBefore: Date?
 
     /// Shows a pull request's details, from their top or at a place in them, without what was open over another's. It's
     /// seen, as opening it is.
     func show(_ item: PRSnapshot, at place: Place? = nil) {
+        // Shown again, it's still the same look at it.
+        if item.key != selected?.key { seenBefore = seenCutoff(item.key) }
         pages = []
         selected = item
         record = readRecord(item.key)
@@ -94,6 +102,16 @@ final class PullRequestDetailsStore: ObservableObject {
     func reveal(_ key: PRKey, at place: Place? = nil) -> Bool {
         guard let item = listed.first(where: { $0.key == key }) else { return false }
         return reveal(item, at: place)
+    }
+
+    /// What needs you on the pull request that shows, as when its details showed it, the rest as it is now: seeing it
+    /// there doesn't fold a resolved thread whose comment was new then, or make what was new old, while they show it.
+    /// Answering it, removing it from Needs You or sending it to Copilot does. Any other's, as its row has it.
+    func pendingEvents(of item: PRSnapshot, record: PRRecord?) -> [PREvent] {
+        guard item.key == selected?.key, let seenBefore, let record, let shown = classify(record, seenBefore) else {
+            return item.pendingEvents
+        }
+        return shown.pendingEvents
     }
 
     /// Takes the details to a place in them, from the pages over them too.
@@ -147,6 +165,7 @@ final class PullRequestDetailsStore: ObservableObject {
 
     func close() {
         selected = nil
+        seenBefore = nil
         record = nil
         isListed = false
         pages = []

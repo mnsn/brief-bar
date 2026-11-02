@@ -1180,7 +1180,12 @@ A click on a pull request on the window's page shows its details beside the list
 is narrower than 700 points (`PullRequestDetailsStore`, `PullRequestDetailsPanel`), as a work item's details
 show beside the sprint: the two pages share how they lay them out (`DetailsSplit`, `DetailsLayout`), and this
 one keeps its own width (`ado.pullRequestDetailsWidth`). The row shows as selected, and the click sees the pull
-request, as opening it does. In a menu-bar list or a widget, a click still opens it in Azure DevOps.
+request, as opening it does. While they show it, though, what waits on you in its threads is as it was before
+they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in
+a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
+stays new. Answering it, removing the pull request from Needs You or sending its comments to Copilot still
+counts, and showing another one, or closing them, ends that look. In a menu-bar list or a widget, a click still
+opens it in Azure DevOps.
 
 They show what the list read already, so nothing more is read for them, and they follow the list as it
 refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,
@@ -1188,7 +1193,7 @@ its row's sentence, its opening words in its state's color, and since when; its 
 **Summarize** and its summary, as a pull request's page has them; then **What's Left**, its `PRReadiness` items,
 what's left first, each saying **Your turn** when it waits on you or failed, and those about its comments, its
 builds and checks or its reviewers taking you there; its comment threads, those with a comment that waits on
-you first (as its row's events say), then the other open ones, the latest first, the resolved ones folded
+you first (as its row's events say, or said as the details showed it), then the other open ones, the latest first, the resolved ones folded
 behind **Show Resolved**, each with its file and line, its status unless it's active, and what each person
 said, in plain text; its builds and status checks, as its page's pipelines say them (`PullRequestStory.run`),
 what failed first, the required one first, with where a build failed, its first error and its run, or, once

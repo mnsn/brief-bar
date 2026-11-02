@@ -77,7 +77,7 @@ struct PullRequestDetailsPanel: View {
     /// To where the details were asked to go, once they show it, pointing out a thread, a build or a check for a moment.
     private func go(_ proxy: ScrollViewProxy) {
         guard let place = details.place, details.pages.isEmpty, let item = details.selected else { return }
-        let anchor = place.anchor(in: panel(for: item).checks)
+        let anchor = place.anchor(in: panel(for: item, record: record(for: item)).checks)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
@@ -356,13 +356,14 @@ struct PullRequestDetailsPanel: View {
         details.isListed ? store.record(for: item.key) ?? details.record : details.record
     }
 
-    private func panel(for item: PRSnapshot) -> PullRequestPanel {
-        PullRequestPanel(item, record: record(for: item))
+    /// What they show of it, with what waits on you in its threads as when they showed it.
+    private func panel(for item: PRSnapshot, record: PRRecord?) -> PullRequestPanel {
+        PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
     }
 
     private func content(_ item: PRSnapshot) -> some View {
         let record = record(for: item)
-        let panel = PullRequestPanel(item, record: record)
+        let panel = panel(for: item, record: record)
         let ref = item.key.linkRef
         return VStack(alignment: .leading, spacing: 20) {
             PullRequestPanelHeading(item: item, panel: panel, isListed: details.isListed)

@@ -54,6 +54,54 @@ import Testing
         #expect(store.selected == nil && store.place == nil)
     }
 
+    /// Seeing a pull request in its details doesn't fold a resolved thread whose comment was new, or make what was new old,
+    /// while they show it. Removing it from Needs You does, and so does another look at it.
+    @Test func whatNeedsYouStaysAsWhenItShowed() throws {
+        let now = Date()
+        var read = try #require(DemoData.records(now: now).first { $0.id.number == 4102 })
+        // Jordan answered in a resolved thread after you last looked: only a new comment in one waits on you.
+        read.details?.threads.append(ReviewThread(id: 90, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 60, comments: [
+            ReviewComment(id: 1, author: Person(id: read.me, name: "You"), text: "Fixed.", publishedAt: now.addingTimeInterval(-3 * 3_600)),
+            ReviewComment(id: 2, author: Person(id: "jordan", name: "Jordan Lee"), text: "Not quite.", publishedAt: now.addingTimeInterval(-600)),
+        ]))
+        let record = read
+        var seen = now.addingTimeInterval(-3_600)
+        var dismissed = Date.distantPast
+        func row() throws -> PRSnapshot {
+            try #require(PRClassifier.snapshot(for: record, seenCutoff: seen, dismissedCutoff: dismissed, now: now))
+        }
+        let store = PullRequestDetailsStore()
+        store.readRecord = { _ in record }
+        store.seenCutoff = { _ in seen }
+        store.classify = { record, seen in PRClassifier.snapshot(for: record, seenCutoff: seen, dismissedCutoff: dismissed, now: now) }
+        store.markSeen = { _ in seen = now }
+        store.itemsChanged([try row()])
+        store.show(try row())
+        // The list has seen it: the thread doesn't wait on you there anymore.
+        let seenRow = try row()
+        store.itemsChanged([seenRow])
+        #expect(PullRequestPanel(seenRow, record: record).threads.resolved.contains { $0.id == 90 })
+        func threads() -> PullRequestPanel.Threads {
+            PullRequestPanel(seenRow, record: record, events: store.pendingEvents(of: seenRow, record: record)).threads
+        }
+        // Its details still have it waiting on you, as new.
+        #expect(threads().waitingOnYou.first { $0.id == 90 }?.isNew == true)
+        // Shown again from its row, it's the same look at it.
+        store.show(seenRow)
+        #expect(threads().waitingOnYou.contains { $0.id == 90 })
+        // Removed from Needs You, it doesn't wait on you.
+        dismissed = now
+        #expect(threads().resolved.contains { $0.id == 90 })
+        dismissed = .distantPast
+        // Nor after another look at it.
+        store.close()
+        store.show(seenRow)
+        #expect(threads().resolved.contains { $0.id == 90 })
+        // Another pull request's, as its row has it.
+        let other = try item(4088)
+        #expect(store.pendingEvents(of: other, record: nil) == other.pendingEvents)
+    }
+
     @Test func pagesOpenOverTheDetailsAndGoBack() throws {
         let store = makeStore()
         // Nothing opens over nothing.

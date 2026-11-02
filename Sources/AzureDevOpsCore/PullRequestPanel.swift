@@ -36,7 +36,9 @@ public struct PullRequestPanel: Sendable, Equatable {
     /// Who reviews it, the ones it requires first.
     public var reviewers: [ReviewerLine]
 
-    public init(_ snapshot: PRSnapshot, record: PRRecord?) {
+    /// - Parameter events: what needs you on it, when the details tell it otherwise than its row does now: as it was when
+    /// they showed it (`PullRequestDetailsStore.pendingEvents`).
+    public init(_ snapshot: PRSnapshot, record: PRRecord?, events: [PREvent]? = nil) {
         let pullRequest = record?.pullRequest
         let details = record?.details
         branch = pullRequest.flatMap(PullRequestStory.branch)
@@ -47,7 +49,7 @@ public struct PullRequestPanel: Sendable, Equatable {
         merge = pullRequest.flatMap(PullRequestStory.merge)
         readiness = snapshot.readiness
         hasDetails = details != nil
-        threads = Threads(details?.threads ?? [], events: snapshot.pendingEvents)
+        threads = Threads(details?.threads ?? [], events: events ?? snapshot.pendingEvents)
         var checks = (details?.checks ?? []).compactMap { check in
             PullRequestStory.run(check, organization: snapshot.key.organization, project: snapshot.project).map {
                 CheckLine(run: $0, check: check)

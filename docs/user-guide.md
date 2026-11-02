@@ -317,7 +317,8 @@ Copilot sessions linked to it, which open in the details too, **‹**, **⌘[** 
 opens the pull request in Azure DevOps, at the comment that needs you, as a click in the menu bar's list
 does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
 Send Work to Copilot is on. The details show what BriefBar already read, so they read nothing more, and
-showing them sees the pull request, as opening it does. Drag their left edge to make them wider or
+showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
+new, and where it was, rather than folding away as you read it. Drag their left edge to make them wider or
 narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
 edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and widgets, a click
 still opens the pull request in Azure DevOps.

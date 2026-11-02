@@ -75,6 +75,23 @@ import BriefBarCore
         #expect(panel.threads.resolved.isEmpty)
     }
 
+    /// Seen since, a new comment in a resolved thread doesn't wait on you anymore, unless the details tell what needs you
+    /// as when they showed it.
+    @Test func whatNeedsYouCanBeAsTheDetailsShowedIt() throws {
+        let thread = ReviewThread(id: 9, status: "fixed", comments: [
+            comment(1, me, "Fixed.", at: t(-3 * hour)), comment(2, People.sam, "Not quite: the total is still off.", at: t(-2 * hour)),
+        ])
+        let record = record(makePR(), threads: [thread])
+        let seen = try snapshot(record, seen: t(-hour))
+        let now = PullRequestPanel(seen, record: record)
+        #expect(now.threads.resolved.map(\.id) == [9])
+        let shown = PullRequestPanel(seen, record: record, events: try snapshot(record).pendingEvents)
+        #expect(shown.threads.waitingOnYou.map(\.id) == [9])
+        #expect(shown.threads.waitingOnYou.first?.isNew == true)
+        // The rest is as its row has it.
+        #expect(shown.sentence == now.sentence && shown.readiness == now.readiness)
+    }
+
     @Test func aThreadSaysWhereItIsAndHowItStands() {
         func thread(_ path: String?, _ line: Int?, status: String? = "active") -> PullRequestPanel.Thread {
             PullRequestPanel.Thread(
