@@ -127,7 +127,7 @@ private actor GatedTokens: AccessTokenProvider {
         self.held = held
     }
 
-    func token() async throws -> AccessToken {
+    func token(tenant: String?) async throws -> AccessToken {
         calls += 1
         let call = calls
         if held.contains(call) {
@@ -136,7 +136,7 @@ private actor GatedTokens: AccessTokenProvider {
         return AccessToken(value: value, expiresOn: .distantFuture)
     }
 
-    func invalidate() {}
+    func invalidate(tenant: String?) {}
 
     func isHolding(_ call: Int) -> Bool {
         gates[call] != nil
@@ -567,7 +567,10 @@ private actor GatedTokens: AccessTokenProvider {
         // In the organization, whatever its name's letter case.
         var upper = pr
         upper.key = PRKey("CONTOSO", pr.key.number)
+        server.on("/CONTOSO/p1/_apis/build/builds/77", json: FailedRun.build())
         #expect(try await investigator.investigation(buildId: 77, of: upper) == first)
+        #expect(reads() == 1)
+        #expect(requests(server, to: "/CONTOSO/p1/_apis/build/builds/77").count == 1)
         // Pushed to since: it built an older commit, which the run it read says.
         var pushed = pr
         pushed.sourceCommit = "new"
@@ -775,6 +778,123 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(held && refreshHeld && bothWait)
         #expect(try await looking.value.readAt == t(10))
         #expect(try await refreshing.value.readAt == t(10))
+    }
+
+    @Test func aRunTheLookFindsRunAgainGoesThoughTheRefreshItWaitsForFails() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the look at the run it kept, and the refresh's first request.
+        let tokens = GatedTokens(server.id, holding: [9, 10])
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        // The look finds it run again; the refresh then can't read it. Only the run is asked for from here.
+        var again = FailedRun.build(result: "succeeded")
+        again["finishTime"] = iso(t(-minute))
+        let runAgain = StubServer.Reply.json(again)
+        let runReads = Locked(0)
+        server.on("/_apis/build/builds/77") { _ in runReads.increment() == 1 ? runAgain : .failure(.notConnectedToInternet) }
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
+        let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
+        let refreshHeld = (try? await waitUntil("the refresh") { await tokens.isHolding(10) }) != nil
+        await tokens.release(9)
+        // The failure kept goes as the look ends, though the refresh is waited for rather than what's kept shown.
+        let gone = (try? await waitUntil("what's kept to go") { await investigator.keptBuilds.isEmpty }) != nil
+        let bothWait = (try? await waitUntil("both to wait for the refresh") { await investigator.waiting == 2 }) != nil
+        await tokens.releaseAll()
+        #expect(held && refreshHeld && gone && bothWait)
+        await #expect(throws: ADOError.offline) { try await looking.value }
+        await #expect(throws: ADOError.offline) { try await refreshing.value }
+        // So, offline, it doesn't show.
+        await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+    }
+
+    @Test func whatAReadKeptWhileTheRunWasLookedAtIsLookedAtAgain() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the look at the run it kept.
+        let tokens = GatedTokens(server.id, holding: [9])
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
+        // Run again, and read again meanwhile; the look, answered after, says the run as it was, as a server behind might.
+        var again = FailedRun.build()
+        again["finishTime"] = iso(t(-minute))
+        let answers: [StubServer.Reply] = [.json(again), .json(FailedRun.build()), .json(again)]
+        let runReads = Locked(0)
+        server.on("/_apis/build/builds/77") { _ in answers[min(runReads.increment(), answers.count) - 1] }
+        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
+        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
+        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        let refreshed = Locked<BuildInvestigation?>(nil)
+        let refreshing = Task { refreshed.set(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)) }
+        let refreshDone = (try? await waitUntil("the refresh") { refreshed.value != nil }) != nil
+        await tokens.releaseAll()
+        _ = try? await refreshing.value
+        #expect(held && refreshDone)
+        #expect(refreshed.value?.run.finishedAt == t(-minute))
+        // What the refresh kept is looked at again, rather than compared with the earlier answer: it shows, not read again.
+        #expect(try await looking.value == refreshed.value)
+        #expect(await investigator.keptBuilds == [77])
+        #expect(requests(server, to: "/timeline").count == 2)
+        #expect(runReads.value == 3)
+    }
+
+    @Test func aLookStartedBeforeAReadIsntSharedWithWhoeverLooksAtIt() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the look at the run it kept.
+        let tokens = GatedTokens(server.id, holding: [9])
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let held = (try? await waitUntil("the look at the run") { await tokens.isHolding(9) }) != nil
+        // Run again, and read again meanwhile. The look under way, let go last, says the run as it was, as a server behind
+        // might.
+        var again = FailedRun.build()
+        again["finishTime"] = iso(t(-minute))
+        let (now, before) = (StubServer.Reply.json(again), StubServer.Reply.json(FailedRun.build()))
+        let runReads = Locked(0)
+        let stale = Locked(0)
+        server.on("/_apis/build/builds/77") { _ in runReads.increment() == stale.value ? before : now }
+        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
+        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
+        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        let refreshed = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)
+        // Asked for now, what the refresh kept gets a look of its own, rather than the look under way, which is older.
+        let asked = Locked<BuildInvestigation?>(nil)
+        let asking = Task { asked.set(try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)) }
+        let lookedAlone = (try? await waitUntil("its own look") { asked.value != nil }) != nil
+        stale.set(runReads.value + 1)
+        await tokens.releaseAll()
+        _ = try? await asking.value
+        #expect(held && lookedAlone)
+        #expect(asked.value == refreshed)
+        // The look under way is of the read it kept first: what it says doesn't let go of the newer one.
+        #expect(try await looking.value == refreshed)
+        #expect(await investigator.keptBuilds == [77])
+        #expect(requests(server, to: "/timeline").count == 2)
+    }
+
+    @Test func aKeptRunThatsGoneIsntShown() async throws {
+        for (status, error) in [(404, ADOError.notFound), (403, ADOError.forbidden)] {
+            let server = StubServer()
+            FailedRun.serve(server)
+            let investigator = BuildInvestigator(client: server.client())
+            _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+            // Deleted, or no longer yours to read: what's kept goes, and reading the run again says why.
+            server.on("/_apis/build/builds/77") { _ in .status(status) }
+            await #expect(throws: error) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+            #expect(await investigator.keptBuilds.isEmpty)
+            #expect(requests(server, to: "/_apis/build/builds/77").count == 3)
+        }
     }
 
     @Test func readsForEachTargetBranchAreSharedApart() async throws {
