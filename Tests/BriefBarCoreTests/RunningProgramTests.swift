@@ -16,10 +16,12 @@ import Testing
             (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
         }
 
-        func start(_ path: String, _ arguments: [String] = [], maxLineLength: Int = 16_384) throws -> RunningProgram {
+        func start(
+            _ path: String, _ arguments: [String] = [], maxLineLength: Int = 16_384, endsWhatItStartedWhenItQuits: Bool = false
+        ) throws -> RunningProgram {
             try RunningProgram.start(
                 URL(fileURLWithPath: path), arguments: arguments, maxLineLength: maxLineLength,
-                callbackQueue: DispatchQueue(label: "RunningProgramTests"),
+                endsWhatItStartedWhenItQuits: endsWhatItStartedWhenItQuits, callbackQueue: DispatchQueue(label: "RunningProgramTests"),
                 onLine: { [lineSink] in lineSink.yield(String(decoding: $0, as: UTF8.self)) },
                 onExit: { [lineSink, exitSink] status in
                     lineSink.finish()
@@ -144,6 +146,65 @@ import Testing
         #expect(!program.inputState.isOpen)
     }
 
+    /// A program that frames what it writes itself, such as the Copilot CLI's server, whose messages say how long they
+    /// are and end with no newline: it's heard as it writes, and written to as BriefBar writes, without a newline added.
+    @Test(.timeLimit(.minutes(1)))
+    func talksToAProgramThatFramesItsOwnMessages() async throws {
+        let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
+        let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
+        let program = try RunningProgram.start(
+            URL(fileURLWithPath: "/bin/cat"), callbackQueue: DispatchQueue(label: "RunningProgramTests"),
+            onOutput: { chunkSink.yield($0) },
+            onExit: { status in
+                chunkSink.finish()
+                exitSink.yield(status)
+                exitSink.finish()
+            }
+        )
+        let message = Data("Content-Length: 2\r\n\r\n{}".utf8)
+        program.write(message)
+        var heard = Data()
+        var iterator = chunks.makeAsyncIterator()
+        // No newline ends it, and it's heard all the same.
+        while heard.count < message.count, let chunk = await iterator.next() {
+            heard += chunk
+        }
+        #expect(heard == message)
+        program.write(Data("é".utf8))
+        program.send(Data("line".utf8))
+        program.closeInput()
+        while let chunk = await iterator.next() {
+            heard += chunk
+        }
+        #expect(String(decoding: heard, as: UTF8.self) == "Content-Length: 2\r\n\r\n{}éline\n")
+        var exitIterator = exits.makeAsyncIterator()
+        #expect(await exitIterator.next() == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deliversEverythingAProgramWritesBeforeItsExit() async throws {
+        let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
+        let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
+        _ = try RunningProgram.start(
+            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "printf 'one'; head -c 100000 /dev/zero | tr '\\0' a; printf 'end'; exit 4"],
+            callbackQueue: DispatchQueue(label: "RunningProgramTests"), onOutput: { chunkSink.yield($0) },
+            onExit: { status in
+                chunkSink.finish()
+                exitSink.yield(status)
+                exitSink.finish()
+            }
+        )
+        var heard = Data()
+        for await chunk in chunks {
+            heard += chunk
+        }
+        // Nothing is dropped, however long, nor split anywhere but where it came.
+        #expect(heard.count == 100_006)
+        #expect(heard.prefix(3) == Data("one".utf8) && heard.suffix(3) == Data("end".utf8))
+        var exitIterator = exits.makeAsyncIterator()
+        #expect(await exitIterator.next() == 4)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func writingToAProgramThatStoppedReadingFailsQuietly() async throws {
         let recorder = Recorder()
@@ -166,6 +227,92 @@ import Testing
         program.terminate()
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == SIGTERM)
+    }
+
+    /// What it started that ignores being asked to stop is made to, once the program itself has quit when its input
+    /// ended, or when it was asked to stop.
+    @Test(.timeLimit(.minutes(1)), arguments: [
+        // It quits when its input ends.
+        (quits: "read line; exit 0", status: Int32(0)),
+        // It doesn't, and is asked to stop.
+        (quits: "wait", status: SIGTERM),
+    ])
+    func endsWhatItStartedEvenOnceItHasQuit(_ program: (quits: String, status: Int32)) async throws {
+        let recorder = Recorder()
+        // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open, so the
+        // program's own exit is heard at once.
+        let started = try recorder.start(
+            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & \(program.quits)"]
+        )
+        var lines = recorder.lines.makeAsyncIterator()
+        let child = try #require(await lines.next().flatMap { pid_t($0) })
+        #expect(kill(child, 0) == 0)
+        started.end(grace: 0.3)
+        var exits = recorder.exits.makeAsyncIterator()
+        #expect(await exits.next() == program.status)
+        // What it started is made to stop too, though it ignores being asked to and its program has quit.
+        for _ in 0..<2000 where kill(child, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(kill(child, 0) == -1 && errno == ESRCH)
+    }
+
+    /// A program that quits by itself, without being ended, takes what it started along, even what ignores being asked to
+    /// stop, when it's started to, as the Copilot CLI's server is; otherwise what it started is left alone, as the
+    /// updater's is.
+    @Test(.timeLimit(.minutes(1)), arguments: [true, false])
+    func endsWhatItStartedWhenItQuitsByItselfOnlyIfStartedTo(_ endsWhatItStarted: Bool) async throws {
+        let recorder = Recorder()
+        // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open. The
+        // program quits once it reads a line, by itself, its input still open.
+        let program = try recorder.start(
+            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & read line; exit 3"],
+            endsWhatItStartedWhenItQuits: endsWhatItStarted
+        )
+        var lines = recorder.lines.makeAsyncIterator()
+        let child = try #require(await lines.next().flatMap { pid_t($0) })
+        program.send(Data("quit".utf8))
+        var exits = recorder.exits.makeAsyncIterator()
+        #expect(await exits.next() == 3)
+        if endsWhatItStarted {
+            for _ in 0..<2000 where kill(child, 0) == 0 {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(kill(child, 0) == -1 && errno == ESRCH)
+            // And it's reaped then, leaving no zombie.
+            for _ in 0..<2000 where kill(program.pid, 0) == 0 {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
+        } else {
+            // Longer than what it started would have been given to stop.
+            try await Task.sleep(for: .milliseconds(2500))
+            #expect(kill(child, 0) == 0)
+            kill(child, SIGKILL)
+        }
+    }
+
+    /// Ended again and again, as it ends and after, it's still reaped once it's gone, and leaves no zombie.
+    @Test(.timeLimit(.minutes(1)))
+    func endingItAgainAndAgainStillReapsIt() async throws {
+        let recorder = Recorder()
+        let program = try recorder.start("/bin/sh", ["-c", "trap '' TERM; echo ready; while :; do sleep 1; done"])
+        var lines = recorder.lines.makeAsyncIterator()
+        #expect(await lines.next() == "ready")
+        let ending = Task {
+            while !Task.isCancelled {
+                program.end(grace: 0.1)
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        var exits = recorder.exits.makeAsyncIterator()
+        #expect(await exits.next() == SIGKILL)
+        // A zombie still has its process ID: one that's reaped doesn't.
+        for _ in 0..<2000 where kill(program.pid, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        ending.cancel()
+        #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
     }
 
     @Test func reportsAProgramThatCantRun() {
