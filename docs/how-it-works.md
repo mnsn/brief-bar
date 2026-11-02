@@ -846,7 +846,8 @@ far as it needs:
   are still missing too, so after three tries, BriefBar counts them against the MANIFEST, or against
   `CURRENT`. Like LevelDB, it skips the rest of a block that reads as zeros, as space never written,
   and reads on, in the MANIFEST and in a log; only zeros that run to the end may be space not written
-  yet, which it reads again later.
+  yet, which it reads again later, unless they break off an edit of the MANIFEST, which LevelDB never
+  leaves as it writes, and refuses.
 - **IndexedDB's keys** each start with a database, object store and index (`KeyPrefix`), and Chromium
   sorts keys by that first. So BriefBar reads the databases' and object stores' names first, then
   only the `conversations` stores' records, and skips every table block whose index entries say it

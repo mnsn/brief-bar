@@ -54,11 +54,11 @@ public enum LevelDBLog {
 
     /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
     /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits.
-    /// Stops before a record that isn't all there yet, and before zeros that run to the end, which LevelDB may not have
-    /// written yet; and before a record at the end whose checksum doesn't match, unless `damagedEndIsCorrupt`, as
-    /// LevelDB has it for a MANIFEST, when it skips it like any other. Returns the file offset after the last whole
-    /// record, and how many records or blocks were skipped because they broke the format or their checksum didn't
-    /// match.
+    /// Stops before a record that isn't all there yet, before zeros that run to the end, which LevelDB may not have
+    /// written yet, and before a record at the end whose checksum doesn't match. With `damagedEndIsCorrupt`, as LevelDB
+    /// has it for a MANIFEST, that record counts as damaged, and so does one those zeros break off. Returns the file
+    /// offset after the last whole record, and how many records or blocks were skipped because they broke the format or
+    /// their checksum didn't match.
     static func records(
         _ bytes: [UInt8], fileOffset: Int = 0, damagedEndIsCorrupt: Bool, _ record: (ArraySlice<UInt8>) throws -> Void
     ) rethrows -> (end: Int, corrupt: Int) {
@@ -93,8 +93,12 @@ public enum LevelDBLog {
             let size = Int(length)
             if type == 0, size == 0 {
                 // Zeros that run to the end may be space LevelDB hasn't written yet: reading on from `end` reads what
-                // it writes there.
-                if bytes[position...].allSatisfy({ $0 == 0 }) { break }
+                // it writes there. LevelDB never leaves a record broken off there as it writes, since a record's first
+                // fragment fills its block: as it opens the database, it counts one as damaged.
+                if bytes[position...].allSatisfy({ $0 == 0 }) {
+                    if damagedEndIsCorrupt, pending != nil { corrupt += 1 }
+                    break
+                }
                 // With more after them, the rest of the block was never written: LevelDB skips it, and counts a record
                 // it breaks off as damaged.
                 skipBlock(left: left, damaged: pending != nil)
