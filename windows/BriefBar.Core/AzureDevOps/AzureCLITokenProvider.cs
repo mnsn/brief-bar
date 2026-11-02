@@ -246,7 +246,8 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
     [GeneratedRegex(pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", options: RegexOptions.CultureInvariant)]
     private static partial Regex IdPattern();
 
-    [GeneratedRegex(pattern: @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
+    /// An email address, or a guest's sign-in name in another directory, as in robin_contoso.example#EXT#@fabrikam.onmicrosoft.com.
+    [GeneratedRegex(pattern: @"[A-Za-z0-9._%+#-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
     private static partial Regex AccountPattern();
 
     /// A tenant's or directory's name in single or double quotes, up to the last of the same quote on its line that can end

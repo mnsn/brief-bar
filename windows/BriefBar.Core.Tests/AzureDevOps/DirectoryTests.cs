@@ -332,6 +332,10 @@ public sealed class DirectoryTests
                 "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. "
                 + "Trace ID: <id> Correlation ID: <id>"),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: output));
+        // A guest's sign-in name from another directory, as an email address.
+        Assert.Equal(
+            expected: AuthError.Failed(message: "The user <account> couldn't be signed in."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: The user robin_contoso.example#EXT#@fabrikam.onmicrosoft.com couldn't be signed in."));
         // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one. A
         // quoted ID stays an ID.
         Assert.Equal(
