@@ -9,7 +9,6 @@
   "plugins": [
     {
       "name": "briefbar",
-      "version": "0.10.2",
       "description": "/briefbar shows what needs you, from BriefBar, tells how a work item and its pull requests stand, and hands pull requests to sessions you can follow.",
       "source": "./briefbar"
     }
