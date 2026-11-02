@@ -20,12 +20,19 @@ internal sealed class MergeFollower
     readonly Lock gate = new();
     readonly Dictionary<PRKey, MergeFollow> merges = [];
 
-    /// Looks for the runs after `done`'s merges, and reads their timelines. Returns the error when Azure DevOps asked
-    /// BriefBar to slow down.
+    /// Looks for the runs after `done`'s merges, and reads their timelines, but for those in the organizations
+    /// `waitingOnSignIn`, which are asked nothing more until you've signed in to their directory: what's known of them
+    /// stays. Returns the error when Azure DevOps asked BriefBar to slow down.
     public async Task<ADOError?> FollowAsync(
-        IReadOnlyList<PullRequest> done, PulseEngineConfiguration configuration, ADOClient client, DateTimeOffset date, CancellationToken cancellationToken)
+        IReadOnlyList<PullRequest> done,
+        IReadOnlySet<string> waitingOnSignIn,
+        PulseEngineConfiguration configuration,
+        ADOClient client,
+        DateTimeOffset date,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(argument: done);
+        ArgumentNullException.ThrowIfNull(argument: waitingOnSignIn);
         ArgumentNullException.ThrowIfNull(argument: configuration);
         if (!configuration.FollowMerges)
         {
@@ -44,6 +51,10 @@ internal sealed class MergeFollower
             due = merged
                 .Where(predicate: pr =>
                 {
+                    if (waitingOnSignIn.Contains(item: pr.Key.Organization))
+                    {
+                        return false;
+                    }
                     var follow = merges.GetValueOrDefault(key: pr.Key) ?? new MergeFollow();
                     if (!MergeChain.IsFollowing(mergedAt: pr.ClosedAt!.Value, runs: follow.LatestRuns, date: date))
                     {
@@ -63,7 +74,7 @@ internal sealed class MergeFollower
                 return throttled;
             }
         }
-        return await ReadTimelinesAsync(client: client, date: date, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return await ReadTimelinesAsync(waitingOnSignIn: waitingOnSignIn, client: client, date: date, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
 
     /// The pipelines after `pr`'s merge, as known at `now`; null before any run was found.
@@ -170,14 +181,14 @@ internal sealed class MergeFollower
 
     /// Reads the timelines of the latest runs after your merges: a run's every refresh while it runs, for its stages and
     /// whether one waits for an approval, and once more when it finishes, for where it failed. The ones never read first,
-    /// then the ones read longest ago.
-    async Task<ADOError?> ReadTimelinesAsync(ADOClient client, DateTimeOffset date, CancellationToken cancellationToken)
+    /// then the ones read longest ago; none of the organizations `waitingOnSignIn`.
+    async Task<ADOError?> ReadTimelinesAsync(IReadOnlySet<string> waitingOnSignIn, ADOClient client, DateTimeOffset date, CancellationToken cancellationToken)
     {
         List<(PRKey Key, MergeFollowRun Found, DateTimeOffset? LastRead)> picked;
         lock (gate)
         {
             var due = new List<(PRKey Key, MergeFollowRun Found, DateTimeOffset? LastRead)>();
-            foreach (var (key, follow) in merges)
+            foreach (var (key, follow) in merges.Where(predicate: pair => !waitingOnSignIn.Contains(item: pair.Key.Organization)))
             {
                 foreach (var (pipeline, runs) in follow.ByPipeline)
                 {

@@ -36,6 +36,9 @@ public static class AzureDevOpsCommands
     /// What every command that sorts the list starts with, before its order's name.
     const string SortPrefix = "sort.";
 
+    /// What every command that signs in to a directory starts with, before the directory's ID.
+    const string SignInPrefix = SignIn + ".";
+
     /// The section's list: lists them in `order`, and keeps it, as `SortedBy` reads it back.
     public static string Sort(PROrder order) => SortPrefix + order.RawValue();
 
@@ -46,5 +49,21 @@ public static class AzureDevOpsCommands
         return command.StartsWith(value: SortPrefix, comparisonType: StringComparison.Ordinal)
             ? PROrders.FromRawValue(rawValue: command[SortPrefix.Length..])
             : null;
+    }
+
+    /// The section, or Settings: signs in to the Azure CLI in the directory `tenant`, an organization's or your sign-in's own,
+    /// with `az login --tenant`, as `SignInTenant` reads it back.
+    public static string SignInTo(string tenant)
+    {
+        ArgumentNullException.ThrowIfNull(argument: tenant);
+        return SignInPrefix + tenant;
+    }
+
+    /// The directory `command` signs in to, as `SignInTo` names it: only a directory's ID, a GUID; null for any other
+    /// command.
+    public static string? SignInTenant(string command)
+    {
+        ArgumentNullException.ThrowIfNull(argument: command);
+        return command.StartsWith(value: SignInPrefix, comparisonType: StringComparison.Ordinal) ? TenantId.From(text: command[SignInPrefix.Length..]) : null;
     }
 }
