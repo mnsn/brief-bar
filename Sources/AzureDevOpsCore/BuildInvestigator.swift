@@ -257,6 +257,8 @@ public enum BuildInvestigationReader {
         let organization = pr.key.organization
         let projectId = pr.projectId
         let build = try await client.get(ADOEndpoint.build(organization: organization, project: projectId, id: buildId), as: ADOBuild.self)
+        // Stopped meanwhile: nothing more is read.
+        try Task.checkCancellation()
         let definition = build.definition.id
         let branch = build.sourceBranch ?? "refs/pull/\(pr.key.number)/merge"
         async let timeline = attempt {
@@ -288,6 +290,7 @@ public enum BuildInvestigationReader {
         }
         let failed = read.flatMap(PipelineFailure.failedRecord(in:))
         let (logsRead, testRunsRead) = await (logs, testRuns)
+        try Task.checkCancellation()
         async let log = readLog(client: client, organization: organization, projectId: projectId, buildId: buildId, step: failed, logs: logsRead)
         async let tests = readTests(client: client, organization: organization, projectId: projectId, runs: testRunsRead)
 
@@ -390,6 +393,7 @@ public enum BuildInvestigationReader {
         var read = TestRuns(runs: [])
         var seen: Set<Int> = []
         for skip in stride(from: 0, to: testRunsCounted, by: testRunsPerRequest) {
+            try Task.checkCancellation()
             let page: ADOList<ADOTestRun>
             do {
                 page = try await client.get(ADOEndpoint.testRuns(
@@ -515,7 +519,7 @@ public enum BuildInvestigationReader {
 /// that started last, of those that found it or that it's gone, says what's kept: what doesn't agree with it goes, and
 /// isn't kept. What's kept is revised for the pull request as it is when it's asked for again: whether the run built its
 /// latest commit. Asking for a build that's being read, to compare it with the same target branch, waits for that read.
-/// It reads only when asked: it never polls.
+/// It reads only when asked: it never polls; and, once stopped, nothing at all.
 public actor BuildInvestigator {
     /// How long a finished run's investigation is kept: its steps, log and tests don't change unless it's run again, which
     /// Azure DevOps does under the same ID, but the runs it's compared with may.
@@ -598,6 +602,8 @@ public actor BuildInvestigator {
     private var generation = 0
     /// How many callers wait for reads, or looks at kept runs, under way, for tests.
     private(set) var waiting = 0
+    /// It was stopped: it reads nothing any more.
+    private var isStopped = false
 
     public init(client: ADOClient, now: @escaping @Sendable () -> Date = { Date() }) {
         self.client = client
@@ -606,19 +612,37 @@ public actor BuildInvestigator {
 
     /// One of a pull request's builds, investigated: what was kept of it, while it's fresh, or read now.
     /// - Parameter refresh: read it again even when it's kept, as when you ask to.
+    /// - Throws: `CancellationError` once it's stopped, or when it's stopped meanwhile.
     public func investigation(buildId: Int, of pullRequest: PullRequest, refresh: Bool = false) async throws -> BuildInvestigation {
+        try checkStopped()
         let key = Key(pullRequest.key.organization, buildId)
         let readKey = ReadKey(run: key, targetBranch: pullRequest.targetBranch)
         // A read under way is newer than what's kept: wait for it rather than look at the run.
         if !refresh, reading[readKey] == nil, let read = await stillKept(key, readKey: readKey, pullRequest: pullRequest) {
             return read.revised(for: pullRequest)
         }
+        // Stopped while it looked at what's kept: it isn't read instead.
+        try checkStopped()
         let current = reading[readKey] ?? start(readKey, pullRequest: pullRequest)
         waiting += 1
         let result = await current.task.result
         waiting -= 1
         finish(readKey, current, result)
+        try checkStopped()
         return try result.get().revised(for: pullRequest)
+    }
+
+    /// Stops for good, as when Azure DevOps is turned off: the reads and looks under way are canceled, what's kept goes, and
+    /// nothing is read any more. Whoever waits for a build, or asks for one, gets `CancellationError`.
+    public func stop() {
+        isStopped = true
+        for current in reading.values { current.task.cancel() }
+        for check in checking.values { check.task.cancel() }
+        forget()
+    }
+
+    private func checkStopped() throws {
+        if isStopped { throw CancellationError() }
     }
 
     /// Forgets what it read, as when someone else signs in: a read under way still answers whoever waits for it, but

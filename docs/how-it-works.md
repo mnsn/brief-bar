@@ -1329,20 +1329,26 @@ its logs, its test runs, the pipeline's runs on the pull request and its latest 
 branch, then the end of the failed step's log and the failed tests of its first test runs with failures: ten
 requests, and one more for each hundred test runs past the first hundred, up to five hundred. What was read is
 kept in memory, by run, for the last twenty runs opened, until someone else signs in to the Azure CLI or Azure
-DevOps is turned off. It's used for ten minutes, or half a minute while the run is still going: opening it again
-within that time reads only the run, to tell whether it ran again since, which reads it all again, or nothing
-while it's going. Something that couldn't be read isn't kept, and says so; **Read Again**, beside when it was
-read, reads it anew. So does a change of its check, as the list reads it, such as a run that finished or runs
-again under the same ID: at once while it's open, or as it opens again (`BuildInvestigationStore.Stamp`). Showing
-another pull request, or closing the details, folds the builds and lets go of what shows of them. It shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the
+DevOps is turned off, which stops the reads under way too (`BuildInvestigator.stop`). It's used for ten minutes,
+or half a minute while the run is still going: opening it again, which always asks the investigator, within that
+time reads only the run, to tell whether it ran again since, which reads it all again, or nothing while it's going;
+what was read before shows meanwhile. Something that couldn't be read isn't kept, and says so; **Read Again**,
+beside when it was read, reads it anew. So does a change of its check, as the list reads it, such as a run that
+finished or runs again under the same ID; and a push or a retarget of its pull request asks the investigator again,
+which says again whether the run built the latest commit, or reads it for the new target branch: at once while
+it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator shares a read under way with
+whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits for it, and starts after.
+Showing another pull request, or closing the details, folds the builds and lets go of what shows of them. It
+shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the
 Pipelines page draws them (`StageFlow`); where it failed, from its stage to its task, without a name said twice
 in a row (`failurePlace`), or what it does while it's going (`progress`); whether it's the change's doing, the
 comparison's hints (`BuildHint`), each a sentence in its state's color, orange for an older commit or a pass on
 the same commit before, red when the target branch fails too, green when it passes, each but the first opening
 the run it names, and "may be flaky" only for a pass on the very same commit; **Fix the Build with Copilot…**,
 for a required build that failed, while Send Work to Copilot is on and the pull request's menu offers it, or
-that Copilot's on it; **Open Run**; its errors, each with where it is, its code and its step when its message
-doesn't say them; how its tests went (`BuildTests.summary`), and the first that failed, each with its class, how
+that Copilot's on it; **Open Run**; its errors, each with where it is, unless its message starts with that very
+place, as a compiler writes it, its code, unless its message names it, and its step, unless it's the one that
+failed; how its tests went (`BuildTests.summary`), and the first that failed, each with its class, how
 long it ran, its message and, when you ask, its stack trace, with **Open Tests**; and the last 20 lines of the
 failed step's log, numbered, errors red, warnings orange and commands blue, in one text you can select across
 and scroll sideways, all 200 that were read with **Show All**, and **Open Log** for the rest.

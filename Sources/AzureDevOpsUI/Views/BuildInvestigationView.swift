@@ -33,7 +33,7 @@ struct BuildInvestigationView: View {
                 if let unread = investigation.unreadSentence {
                     note(unread, symbol: "exclamationmark.triangle")
                 }
-                if let failure = look?.failure {
+                if let failure = look?.failure, look?.isReading != true {
                     if PulseProblem.from(failure).offersSignIn {
                         // Signing in is what reads it again: a way to, above what was read before.
                         BuildReadFailure(error: failure, readAgain: readAgain)
@@ -52,7 +52,7 @@ struct BuildInvestigationView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } else if let failure = look?.failure {
+        } else if let failure = look?.failure, look?.isReading != true {
             BuildReadFailure(error: failure, readAgain: readAgain)
         } else {
             HStack(spacing: 8) {

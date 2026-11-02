@@ -336,8 +336,8 @@ scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**, *
 open the rest in Azure DevOps, and, while Send Work to Copilot is on, **Fix the Build with Copilot…** sends it
 to Copilot, as the pull request's menu does, or says Copilot's on it. A build that's still going opens the same
 way, to show its stages as they are and what it runs now. **↻**, beside when it was read, reads it again, as
-BriefBar does once it finished or runs again; it keeps what it read in memory, so opening it again soon after
-reads little.
+BriefBar does once it finished or runs again, or once someone pushes to the pull request or retargets it; it keeps
+what it read in memory, so opening it again soon after reads little.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but

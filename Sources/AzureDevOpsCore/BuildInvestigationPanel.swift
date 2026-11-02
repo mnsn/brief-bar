@@ -161,13 +161,37 @@ extension BuildIssue {
     /// What its message doesn't say of it: where it is, its code, and the step that logged it, unless that's the step that
     /// failed, whose error it is: "src/Cart.cs:41:5 · CS1002 · Build". Nil when there's nothing more to say.
     public func context(besides failedStepId: String?) -> String? {
-        let fileName = file.flatMap { $0.split(separator: "/").last.map(String.init) }
         let said = [
-            fileName.map { message.contains($0) } == true ? nil : place,
-            code.flatMap { message.contains($0) ? nil : $0 },
+            saysItsPlace ? nil : place,
+            code.flatMap { Self.names(message, $0) ? nil : $0 },
             stepId == failedStepId ? nil : step,
         ].compactMap { $0 }
         return said.isEmpty ? nil : said.joined(separator: " · ")
+    }
+
+    /// Its message starts with where it is, as a compiler writes it: the same file and line, and column when it has one.
+    /// Naming the file elsewhere doesn't say where in it.
+    private var saysItsPlace: Bool {
+        guard let file, let said = Self.place(in: message), said.file == file else { return false }
+        guard let line else { return true }
+        return said.line == line && (column == nil || said.column == column)
+    }
+
+    /// Whether a text names a code, such as `CS1002`, as a word of its own, rather than as part of another, such as
+    /// `CS10021`.
+    private static func names(_ text: String, _ code: String) -> Bool {
+        guard !code.isEmpty else { return false }
+        func isWordCharacter(_ character: Character?) -> Bool {
+            character.map { $0.isLetter || $0.isNumber } ?? false
+        }
+        var rest = text.startIndex..<text.endIndex
+        while let found = text.range(of: code, range: rest) {
+            let before = found.lowerBound > text.startIndex ? text[text.index(before: found.lowerBound)] : nil
+            let after = found.upperBound < text.endIndex ? text[found.upperBound] : nil
+            if !isWordCharacter(before), !isWordCharacter(after) { return true }
+            rest = found.upperBound..<text.endIndex
+        }
+        return false
     }
 }
 

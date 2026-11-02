@@ -1071,6 +1071,45 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(await investigator.keptBuilds.isEmpty)
     }
 
+    @Test func stoppingStopsAReadUnderWayAndReadsNothingMore() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first request, for the run, held.
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let read = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        // Azure DevOps is turned off: the read stops, rather than go on to the run's timeline, logs and tests.
+        await investigator.stop()
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await read.value }
+        #expect(requests(server, to: "/timeline").isEmpty)
+        #expect(requests(server, to: "/logs").isEmpty)
+        #expect(await investigator.keptBuilds.isEmpty)
+        // And nothing is read any more.
+        await #expect(throws: CancellationError.self) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        #expect(requests(server, to: "/timeline").isEmpty)
+    }
+
+    @Test func stoppingWhileItLooksAtAKeptRunReadsNothingInstead() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests, then the look at the run it kept.
+        let tokens = HeldTokens(server.id, holdAt: 9)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        let looking = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        await investigator.stop()
+        await tokens.release()
+        await #expect(throws: CancellationError.self) { try await looking.value }
+        // Unlike forgetting, after which it's read again, as whoever signed in.
+        #expect(requests(server, to: "/timeline").count == 1)
+        #expect(await investigator.keptBuilds.isEmpty)
+    }
+
     @Test func keepsTheLatestReadsUpToItsCapacity() async throws {
         let server = StubServer()
         let count = BuildInvestigator.capacity + 1

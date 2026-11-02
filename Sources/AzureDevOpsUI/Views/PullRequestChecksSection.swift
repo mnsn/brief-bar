@@ -159,11 +159,11 @@ private struct CheckRow: View {
                 .padding(.horizontal, 3)
         )
         .contextMenu { menuItems }
-        // Its check changed since what shows was read, as when the run finished or runs again, while it was open or off
-        // screen, such as under a page: it's read again.
-        .onChange(of: line.check.map(BuildInvestigationStore.Stamp.init), initial: true) {
+        // Its check, or its pull request, changed since what shows was read, as when the run finished or runs again, or
+        // someone pushed or retargeted it, while it was open or off screen, such as under a page: it's asked for again.
+        .onChange(of: investigable.map { BuildInvestigationStore.Stamp(check: line.check, pullRequest: $0.pullRequest) }, initial: true) {
             guard let investigable else { return }
-            investigations.checkChanged(investigable.buildId, of: investigable.pullRequest, check: line.check)
+            investigations.changed(investigable.buildId, of: investigable.pullRequest, check: line.check)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(run.name): \(status)" + (line.isRequired || line.check == nil ? "" : ", optional")
