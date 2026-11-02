@@ -401,6 +401,8 @@ final class PRStore: ObservableObject {
             Task { await engine.stop() }
         }
         engine = nil
+        // Turned off, Azure DevOps forgets where the account is from: nothing saves it again.
+        originKeptFor = nil
     }
 
     // MARK: Actions
@@ -574,8 +576,10 @@ final class PRStore: ObservableObject {
         // again then isn't taken for someone else's.
         if mode == .live, let account = snapshot.account, account != originKeptFor {
             originKeptFor = account
-            Task { [tokens, settings] in
-                if let origin = await tokens.accountTenant, settings.accountOrigin != origin { settings.accountOrigin = origin }
+            Task { [weak self, tokens] in
+                // Only while it's still this account's, and Azure DevOps hasn't been turned off meanwhile.
+                guard let origin = await tokens.accountTenant(of: account), let self, self.originKeptFor == account else { return }
+                if self.settings.accountOrigin != origin { self.settings.accountOrigin = origin }
             }
         }
         state = snapshot

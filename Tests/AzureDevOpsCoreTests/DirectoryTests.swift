@@ -197,14 +197,18 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         let provider = AzureCLITokenProvider(
             homeTenant: Tenants.other, homeAccountTenant: Tenants.home.uppercased(), locator: Self.locator, runner: cli
         )
-        #expect(await provider.accountTenant == Tenants.home)
         // It's still you: fabrikam's directory wants you to sign in again, there, rather than BriefBar reading as you there.
         await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.other)) {
             try await provider.token()
         }
-        // Signed in there again, yours comes from there, as before the restart.
+        // Signed in there again, yours comes from there, as before the restart, and your account is still from your directory.
         cli.signIn(to: Tenants.other)
-        #expect(try await provider.token().tenant == Tenants.other)
+        let token = try await provider.token()
+        #expect(token.tenant == Tenants.other)
+        let account = try #require(token.account)
+        #expect(await provider.accountTenant(of: account) == Tenants.home)
+        // Nothing is said of anyone else's.
+        #expect(await provider.accountTenant(of: "someone-else") == nil)
         #expect(cli.asked == [Tenants.other, nil, Tenants.other])
     }
 

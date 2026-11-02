@@ -197,11 +197,12 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, with every account, and the pull requests people sent you, when Azure DevOps
-    /// is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
+    /// Forgets what you've seen, with every account, where that account is from, and the pull requests people sent you,
+    /// when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
         defaults.removeObject(forKey: Key.otherSeen)
+        defaults.removeObject(forKey: Key.accountOrigin)
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]

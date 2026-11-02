@@ -1079,7 +1079,8 @@ then that same directory, asked for with `--tenant`, even once `az login --tenan
 directory the CLI's default. So signing in to an organization's directory changes neither whose
 sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
 the account it last read your pull requests with, and where that account is from, which it keeps with
-it (`ado.accountOrigin`); the command line and agents do too. When the CLI can't give a token in your
+it (`ado.accountOrigin`); the command line and agents do too. Turning Azure DevOps off forgets both,
+with what you've seen. When the CLI can't give a token in your
 directory, BriefBar looks at its default directory's token: a guest's names where its account is from
 (`idp`), its own directory or, for a personal Microsoft account, `live.com`. When that's your account's,
 your directory only wants you to sign in again, and BriefBar says so, with **Sign In…** signing in
