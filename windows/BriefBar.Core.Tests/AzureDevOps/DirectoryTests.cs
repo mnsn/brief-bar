@@ -389,6 +389,14 @@ public sealed class DirectoryTests
         Assert.Equal(
             expected: AuthError.SignedOut(message: "User '<account>' does not exist in MSAL token cache."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: User 'robin'@contoso.example' does not exist in MSAL token cache."));
+        // A user name of apostrophes only: the quote before it goes with it, as nothing tells them apart.
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "User <account>' does not exist in MSAL token cache."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: User ''@contoso.example' does not exist in MSAL token cache."));
+        // One whose user name is an ID goes whole, not as <id> before its directory's domain.
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS50020: User account '<account>' does not exist."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: AADSTS50020: User account '0d0d0d0d-4444-4444-8444-444444444444@contoso.onmicrosoft.com' does not exist."));
         Assert.Equal(expected: "<account>", actual: AzureCLITokenProvider.Redacted(message: "o''brien@contoso.example"));
         Assert.Equal(expected: "<account>", actual: AzureCLITokenProvider.Redacted(message: "robin~dev^ops!@contoso.example"));
     }
