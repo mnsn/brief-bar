@@ -82,6 +82,14 @@ jobs:
         run: make test
         timeout-minutes: 10
 
+      # BriefBar's extension for the Copilot app's sessions, with the runner's Node and a stand-in for the Copilot SDK.
+      - name: Test the session extension
+        if: needs.changes.outputs.mac != 'false'
+        run: |
+          node --version
+          make plugin-test
+        timeout-minutes: 5
+
       # Only AzureDevOpsCore and GitHubCore use the network, and only BriefBarCore starts programs.
       - name: Check the boundaries
         if: needs.changes.outputs.mac != 'false'

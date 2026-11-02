@@ -235,8 +235,6 @@ public enum BuildInvestigationReader {
 
     /// What was read, with the run as Azure DevOps said it, to tell again whether it built the latest commit.
     struct Read: Sendable {
-        /// This read, and not another of the same run: callers that share a read share it.
-        let id = UUID()
         var investigation: BuildInvestigation
         var build: ADOBuild
 
@@ -513,9 +511,11 @@ public enum BuildInvestigationReader {
 /// Investigates pull requests' builds when you open them, and keeps what it read for a while, so opening one again reads
 /// little: a run that finished, for `keptFor`, as long as the run itself, read again, says it hasn't been run again
 /// since, and isn't gone (when it can't be read, what's kept shows); one still running, for `keptWhileRunningFor`,
-/// without reading anything; one that couldn't all be read, not at all. What's kept is revised for the pull request as it
-/// is when it's asked for again: whether the run built its latest commit. Asking for a build that's being read, to compare
-/// it with the same target branch, waits for that read. It reads only when asked: it never polls.
+/// without reading anything; one that couldn't all be read, not at all. Of the reads of a run and the looks at it, the one
+/// that started last, of those that found it or that it's gone, says what's kept: what doesn't agree with it goes, and
+/// isn't kept. What's kept is revised for the pull request as it is when it's asked for again: whether the run built its
+/// latest commit. Asking for a build that's being read, to compare it with the same target branch, waits for that read.
+/// It reads only when asked: it never polls.
 public actor BuildInvestigator {
     /// How long a finished run's investigation is kept: its steps, log and tests don't change unless it's run again, which
     /// Azure DevOps does under the same ID, but the runs it's compared with may.
@@ -544,6 +544,8 @@ public actor BuildInvestigator {
 
     private struct Reading {
         var id = UUID()
+        /// When it started, among reads and looks: what it finds is newer than what those that started before it found.
+        var order: Int
         /// What it's read for: `forget()` makes what's read before it, and comes after, not kept.
         var generation: Int
         var task: Task<BuildInvestigationReader.Read, Error>
@@ -552,9 +554,8 @@ public actor BuildInvestigator {
     /// A look at a kept run, to tell whether it's been run again since.
     private struct Checking {
         var id = UUID()
-        /// The read it looks at. What it finds says nothing of what another read of the run kept: one read after the look
-        /// started may be newer than what it finds.
-        var readId: UUID
+        /// When it started, among reads and looks: it tells nothing of what a read that started after it found.
+        var order: Int
         var task: Task<Look, Never>
     }
 
@@ -566,22 +567,34 @@ public actor BuildInvestigator {
         case gone
         /// It couldn't be read: reading it again may work.
         case unread
+    }
 
-        /// Whether `build`, as a read found it, isn't the run any more: it was run again since, or it's gone.
-        func hasChanged(_ build: ADOBuild) -> Bool {
-            switch self {
-            case .run(let run): !BuildInvestigationReader.isSameRun(run, build)
-            case .gone: true
-            case .unread: false
-            }
+    /// What's kept of a run: what a read found, and when the read started.
+    private struct Kept {
+        var read: BuildInvestigationReader.Read
+        var order: Int
+    }
+
+    /// What the read or look that started last, of those that found the run or that it's gone, found: the run, or nil
+    /// when it's gone.
+    private struct Seen {
+        var order: Int
+        var build: ADOBuild?
+
+        /// Whether a read that found `build` agrees: it found the same run, which hasn't been run again since, or gone.
+        func agrees(with build: ADOBuild) -> Bool {
+            self.build.map { BuildInvestigationReader.isSameRun($0, build) } ?? false
         }
     }
 
     private let client: ADOClient
     private let now: @Sendable () -> Date
-    private var kept: [Key: BuildInvestigationReader.Read] = [:]
+    private var kept: [Key: Kept] = [:]
+    private var seen: [Key: Seen] = [:]
     private var reading: [ReadKey: Reading] = [:]
     private var checking: [Key: Checking] = [:]
+    /// How many reads and looks have started: the order they started in.
+    private var started = 0
     private var generation = 0
     /// How many callers wait for reads, or looks at kept runs, under way, for tests.
     private(set) var waiting = 0
@@ -602,21 +615,17 @@ public actor BuildInvestigator {
         }
         let current = reading[readKey] ?? start(readKey, pullRequest: pullRequest)
         waiting += 1
-        defer { waiting -= 1 }
-        do {
-            let read = try await current.task.value
-            finish(readKey, current, read: read)
-            return read.revised(for: pullRequest)
-        } catch {
-            finish(readKey, current, read: nil)
-            throw error
-        }
+        let result = await current.task.result
+        waiting -= 1
+        finish(readKey, current, result)
+        return try result.get().revised(for: pullRequest)
     }
 
     /// Forgets what it read, as when someone else signs in: a read under way still answers whoever waits for it, but
     /// isn't kept.
     public func forget() {
         kept = [:]
+        seen = [:]
         reading = [:]
         checking = [:]
         generation += 1
@@ -627,31 +636,33 @@ public actor BuildInvestigator {
         Set(kept.keys.map(\.buildId))
     }
 
-    /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once the run,
-    /// read again, says it hasn't been run again since, or when it can't be read. Nil when it has to be read again: when
-    /// the run was run again since, or is gone, what's kept goes, even if a read under way is waited for instead. Callers
-    /// looking at the same read share one look at the run; what another read kept meanwhile gets a look of its own,
-    /// rather than being compared with what a look that started before it found.
+    /// What's kept of the run, while it's fresh: as it was, for a run still going; for one that had finished, once a look
+    /// at the run that started after it was read says it hasn't been run again since, or the run can't be read. Nil when
+    /// it has to be read again: when the look finds the run run again, or gone, what's kept goes, even if a read under way
+    /// is waited for instead. Callers at the same time share a look, but what a read that started after it kept gets a
+    /// look of its own.
     private func stillKept(_ key: Key, readKey: ReadKey, pullRequest: PullRequest) async -> BuildInvestigationReader.Read? {
-        guard let read = kept[key], isFresh(read.investigation, for: pullRequest) else { return nil }
-        guard read.investigation.run.status.isFinished else { return read }
+        guard let held = kept[key], isFresh(held.read.investigation, for: pullRequest) else { return nil }
+        guard held.read.investigation.run.status.isFinished else { return held.read }
         let generation = generation
-        let check = checking[key].flatMap { $0.readId == read.id ? $0 : nil }
-            ?? startCheck(key, readId: read.id, pullRequest: pullRequest)
+        let check = checking[key].flatMap { $0.order > held.order ? $0 : nil } ?? startCheck(key, pullRequest: pullRequest)
         waiting += 1
         let look = await check.task.value
         waiting -= 1
         if checking[key]?.id == check.id { checking[key] = nil }
         guard generation == self.generation else { return nil }
-        let isLookedAt = kept[key]?.id == read.id
-        if isLookedAt, look.hasChanged(read.build) {
-            kept[key] = nil
-            return nil
+        switch look {
+        case .run(let run): see(key, order: check.order, build: run)
+        case .gone: see(key, order: check.order, build: nil)
+        case .unread: break
         }
         // A read started meanwhile is newer: it's waited for.
-        guard reading[readKey] == nil, let current = kept[key] else { return nil }
-        guard isLookedAt else { return await stillKept(key, readKey: readKey, pullRequest: pullRequest) }
-        return isFresh(current.investigation, for: pullRequest) ? current : nil
+        guard reading[readKey] == nil, let current = kept[key] else {
+            tidy(key)
+            return nil
+        }
+        guard current.order < check.order else { return await stillKept(key, readKey: readKey, pullRequest: pullRequest) }
+        return isFresh(current.read.investigation, for: pullRequest) ? current.read : nil
     }
 
     private func isFresh(_ investigation: BuildInvestigation, for pullRequest: PullRequest) -> Bool {
@@ -660,10 +671,11 @@ public actor BuildInvestigator {
         return now().timeIntervalSince(investigation.readAt) < keptFor
     }
 
-    private func startCheck(_ key: Key, readId: UUID, pullRequest: PullRequest) -> Checking {
+    private func startCheck(_ key: Key, pullRequest: PullRequest) -> Checking {
         let client = client
         let address = ADOEndpoint.build(organization: pullRequest.key.organization, project: pullRequest.projectId, id: key.buildId)
-        let check = Checking(readId: readId, task: Task { () async -> Look in
+        started += 1
+        let check = Checking(order: started, task: Task { () async -> Look in
             do {
                 return .run(try await client.get(address, as: ADOBuild.self))
             } catch ADOError.notFound, ADOError.forbidden {
@@ -680,29 +692,53 @@ public actor BuildInvestigator {
         let client = client
         let readAt = now()
         let buildId = readKey.run.buildId
-        let reading = Reading(generation: generation, task: Task {
+        started += 1
+        let reading = Reading(order: started, generation: generation, task: Task {
             try await BuildInvestigationReader.readRun(client: client, buildId: buildId, of: pullRequest, now: readAt)
         })
         self.reading[readKey] = reading
         return reading
     }
 
-    /// Keeps what a read found, unless something couldn't be read, it was read before `forget()`, or something newer is
-    /// kept already; then lets go of the oldest beyond `capacity`. A read that isn't kept still lets go of what's kept of
-    /// the run when the run was run again since, so that it doesn't show when the run can't be looked at.
-    private func finish(_ readKey: ReadKey, _ current: Reading, read: BuildInvestigationReader.Read?) {
-        if reading[readKey]?.id == current.id { reading[readKey] = nil }
-        guard let read, current.generation == generation else { return }
+    /// Learns what a read or look that started `order`th found: the run, or that it's gone (nil). Unless one that started
+    /// later found something already, that's what's known of the run now, and what's kept goes unless it agrees.
+    private func see(_ key: Key, order: Int, build: ADOBuild?) {
+        guard order > seen[key]?.order ?? 0 else { return }
+        let latest = Seen(order: order, build: build)
+        seen[key] = latest
+        if let held = kept[key], !latest.agrees(with: held.read.build) { kept[key] = nil }
+    }
+
+    /// Learns what a read found, once, as the first of its callers comes back: the run, or that it's gone. Keeps it when
+    /// it could all be read, agrees with what's known of the run, and nothing read since is kept; then lets go of the
+    /// oldest beyond `capacity`. What was read before `forget()` is neither learned nor kept.
+    private func finish(_ readKey: ReadKey, _ current: Reading, _ result: Result<BuildInvestigationReader.Read, Error>) {
+        guard reading[readKey]?.id == current.id else { return }
+        reading[readKey] = nil
         let key = readKey.run
-        if let known = kept[key], known.investigation.readAt > read.investigation.readAt { return }
-        guard read.investigation.unread.isEmpty else {
-            if let known = kept[key], !BuildInvestigationReader.isSameRun(known.build, read.build) { kept[key] = nil }
-            return
+        defer { tidy(key) }
+        guard current.generation == generation else { return }
+        switch result {
+        case .success(let read):
+            see(key, order: current.order, build: read.build)
+            guard read.investigation.unread.isEmpty, seen[key]?.agrees(with: read.build) == true else { return }
+            if let held = kept[key], held.order > current.order { return }
+            kept[key] = Kept(read: read, order: current.order)
+            while kept.count > Self.capacity, let oldest = kept.min(by: { $0.value.order < $1.value.order })?.key {
+                kept[oldest] = nil
+                tidy(oldest)
+            }
+        case .failure(let error as ADOError) where error == .notFound || error == .forbidden:
+            // Gone, or no longer yours to read: what's kept of it goes.
+            see(key, order: current.order, build: nil)
+        case .failure:
+            break
         }
-        kept[key] = read
-        while kept.count > Self.capacity,
-              let oldest = kept.min(by: { $0.value.investigation.readAt < $1.value.investigation.readAt })?.key {
-            kept[oldest] = nil
-        }
+    }
+
+    /// Lets go of what's known of a run once nothing of it is kept, read or looked at.
+    private func tidy(_ key: Key) {
+        guard kept[key] == nil, checking[key] == nil, !reading.keys.contains(where: { $0.run == key }) else { return }
+        seen[key] = nil
     }
 }

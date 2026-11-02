@@ -897,6 +897,96 @@ private actor GatedTokens: AccessTokenProvider {
         }
     }
 
+    @Test func anOlderReadIsntKeptOverWhatANewerOneFound() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the refresh's run, and the five things it reads at the same time.
+        let tokens = GatedTokens(server.id, holding: Set(10...14))
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        // The refresh finds the run as it was. Then it's run again and passes, as a read for release finds, which can't
+        // read release's runs. After that, the run can't be read.
+        var passed = FailedRun.build(result: "succeeded")
+        passed["finishTime"] = iso(t(-minute))
+        let answers: [StubServer.Reply] = [.json(FailedRun.build()), .json(passed)]
+        let runReads = Locked(0)
+        server.on("/_apis/build/builds/77") { _ in
+            let read = runReads.increment()
+            return read <= answers.count ? answers[read - 1] : .failure(.notConnectedToInternet)
+        }
+        server.on("/_apis/build/builds/77/timeline", json: FailedRun.timeline)
+        server.on("/_apis/build/builds/77/logs", json: Fixture.list([["id": 9, "lineCount": FailedRun.logLines.count]]))
+        server.on("/_apis/build/builds/77/logs/9", json: FailedRun.lines(FailedRun.logLines))
+        server.on("/_apis/build/builds", query: ["branchName": "refs/heads/release"]) { _ in .status(500) }
+        let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
+        let refreshHeld = (try? await waitUntil("the refresh's requests") {
+            for call in 10...14 where !(await tokens.isHolding(call)) { return false }
+            return true
+        }) != nil
+        var retargeted = FailedRun.pullRequest
+        retargeted.targetBranch = "release"
+        let newer = Locked<BuildInvestigation?>(nil)
+        let reading = Task { newer.set(try await investigator.investigation(buildId: 77, of: retargeted)) }
+        let newerDone = (try? await waitUntil("the read for release") { newer.value != nil }) != nil
+        await tokens.releaseAll()
+        _ = try? await reading.value
+        #expect(refreshHeld && newerDone)
+        #expect(newer.value?.run.status == .succeeded)
+        #expect(newer.value?.unread[.targetBranch] == .http(500))
+        // The refresh, though it could all be read and came back last, found the earlier attempt: it isn't kept.
+        #expect(try await refreshing.value.run.status == .failed)
+        #expect(await investigator.keptBuilds.isEmpty)
+        // So when the run can't be read, the failure doesn't show.
+        await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+    }
+
+    @Test func aRefreshThatFindsTheRunGoneLetsGoOfWhatsKept() async throws {
+        for (status, error) in [(404, ADOError.notFound), (403, ADOError.forbidden)] {
+            for build in [FailedRun.build(), FailedRun.build(status: "inProgress", result: nil)] {
+                let server = StubServer()
+                FailedRun.serve(server, build: build)
+                let investigator = BuildInvestigator(client: server.client())
+                _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+                #expect(await investigator.keptBuilds == [77])
+                server.on("/_apis/build/builds/77") { _ in .status(status) }
+                await #expect(throws: error) {
+                    try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true)
+                }
+                #expect(await investigator.keptBuilds.isEmpty)
+                // Neither a run still going, kept a while without a look, nor one that finished, when it can't be looked at,
+                // shows.
+                server.on("/_apis/build/builds/77") { _ in .failure(.notConnectedToInternet) }
+                await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+            }
+        }
+    }
+
+    @Test func anOlderReadThatFindsTheRunGoneLeavesWhatANewerOneKept() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests; then the refresh's first, for the run.
+        let tokens = GatedTokens(server.id, holding: [9])
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        let refreshing = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
+        let held = (try? await waitUntil("the refresh") { await tokens.isHolding(9) }) != nil
+        // A read for release, started after it, keeps what it finds.
+        var retargeted = FailedRun.pullRequest
+        retargeted.targetBranch = "release"
+        let newer = Locked<BuildInvestigation?>(nil)
+        let reading = Task { newer.set(try await investigator.investigation(buildId: 77, of: retargeted)) }
+        let newerDone = (try? await waitUntil("the read for release") { newer.value != nil }) != nil
+        // Then the refresh, which started before it, finds the run gone: that's older than what the read for release kept.
+        server.on("/_apis/build/builds/77") { _ in .status(404) }
+        await tokens.releaseAll()
+        _ = try? await reading.value
+        #expect(held && newerDone)
+        await #expect(throws: ADOError.notFound) { try await refreshing.value }
+        #expect(await investigator.keptBuilds == [77])
+    }
+
     @Test func readsForEachTargetBranchAreSharedApart() async throws {
         let server = StubServer()
         FailedRun.serve(server)
@@ -931,14 +1021,20 @@ private actor GatedTokens: AccessTokenProvider {
         // Retargeted while that's read: compared with its new target, in a read of its own, which doesn't wait for the other.
         var retargeted = FailedRun.pullRequest
         retargeted.targetBranch = "release"
-        let reading = Task { try await investigator.investigation(buildId: 77, of: retargeted) }
+        let toReleaseBranch = retargeted
+        let reading = Task { try await investigator.investigation(buildId: 77, of: toReleaseBranch) }
         let readAlone = (try? await waitUntil("its own read") { requests(server, to: "/timeline").count == 1 }) != nil
+        // It comes back first; then the read for main, which started before it.
+        if readAlone { _ = try? await reading.value }
         await tokens.release()
         #expect(readAlone)
         let toRelease = try await reading.value
         #expect(toRelease.comparison.targetBranch == "release")
         #expect(toRelease.comparison.targetRun == nil)
         #expect(try await toMain.value.comparison.targetRun?.id == 89)
+        #expect(requests(server, to: "/timeline").count == 2)
+        // What the read for release found is kept, rather than what the read for main, which started before it, found.
+        #expect(try await investigator.investigation(buildId: 77, of: toReleaseBranch) == toRelease)
         #expect(requests(server, to: "/timeline").count == 2)
     }
 

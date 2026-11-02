@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
 - **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
   failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
   to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before

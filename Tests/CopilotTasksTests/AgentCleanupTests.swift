@@ -24,6 +24,25 @@ import Testing
         #expect(AgentCleanup(server: .addedElsewhere("/tmp/BriefBar"), plugin: .installed(enabled: false)) == stillThere)
     }
 
+    /// Turning agents off removes BriefBar's extension for the app's sessions too: what's left of it says why, once
+    /// BriefBar is done trying.
+    @Test func reportsWhatsLeftOfTheSessionsExtension() {
+        let left = AgentCleanup(server: .absent, plugin: .absent, sessionPrompts: .failed("It timed out."))
+        #expect(!left.isDone)
+        #expect(left.sessionPrompts == "It timed out.")
+        #expect(AgentCleanup(server: .absent, plugin: .absent, sessionPrompts: .installed(enabled: true)).sessionPrompts
+            == "The Copilot CLI still has it.")
+        #expect(AgentCleanup(server: .absent, plugin: .absent, sessionPrompts: .absent).isDone)
+
+        let done = CopilotCLIProgress<CopilotPluginRegistration.Status>(status: .absent)
+        var removing = CopilotCLIProgress<CopilotPluginRegistration.Status>()
+        let asked = removing.ask()
+        #expect(AgentCleanup.left(server: CopilotCLIProgress(status: .absent), plugin: done, sessionPrompts: removing) == nil)
+        removing.answer(asked, with: .failed("It timed out."))
+        #expect(AgentCleanup.left(server: CopilotCLIProgress(status: .absent), plugin: done, sessionPrompts: removing)?.sessionPrompts
+            == "It timed out.")
+    }
+
     /// The CLI can't remove the plugin's marketplace when agents are turned off, so the page says why; Try Again removes
     /// what's left, and then nothing is.
     @Test func tryingAgainRemovesWhatsLeft() async {
