@@ -163,7 +163,7 @@ public enum AppSessions {
     /// read-only.
     public static func forkRecord(of id: String, home: URL) -> ForkRecord {
         guard let snapshot = try? AppDatabase.load(at: CopilotPaths(root: home).database), let forks = snapshot.forks else {
-            return .unknown
+            return .unreadable
         }
         if let original = forks[id] { return .forked(from: original) }
         return snapshot.sessions.contains { $0.id == id } ? .notAFork : .notListed
@@ -178,6 +178,6 @@ public enum ForkRecord: Sendable, Equatable {
     case notAFork
     /// The app doesn't list it, or not yet.
     case notListed
-    /// The app's database can't be read, or records no forks, as older versions don't: BriefBar can't tell.
-    case unknown
+    /// The app's database can't be read now, or records no forks, as older versions don't.
+    case unreadable
 }

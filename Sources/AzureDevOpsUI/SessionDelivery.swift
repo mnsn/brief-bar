@@ -93,6 +93,7 @@ extension SendFailure {
         case .unconfirmedFork: return "the app doesn't record the fork"
         case .outbox: return "the outbox can't be used"
         case .cancelled: return "cancelled"
+        case .turnedOff: return "turned off"
         }
     }
 }
@@ -179,7 +180,10 @@ extension CopilotTasksStore {
                 }
             },
             isHeld: { id in homes.contains { AppSessions.isOpen(id, home: $0) } },
-            forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) }
+            forkRecord: { id in AppSessions.forkRecord(of: id, home: appHome) },
+            mayGoOn: { [weak self] in
+                await MainActor.run { self.map { $0.canSend && $0.isOn && $0.sessionPromptsAreOn } ?? false }
+            }
         )
         let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
         let work = Task.detached(priority: .userInitiated) {
@@ -209,6 +213,8 @@ extension CopilotTasksStore {
             return .sent
         case .notSent(.cancelled), .forkedNotSent(_, .cancelled):
             return .notSent(SendFailure.cancelled.description)
+        case .notSent(.turnedOff), .forkedNotSent(_, .turnedOff):
+            return .notSent(Self.cantSendNow)
         case .notSent(let why):
             Log.app.error("Couldn't send a prompt to a session in the Copilot app: \(why.kind, privacy: .public)")
             guard goesOn else { return .notSent(Self.cantSendNow) }
@@ -223,13 +229,17 @@ extension CopilotTasksStore {
     }
 
     /// Copies what to paste, and shows the session to paste it in: the prompt, or, to fork a session that hasn't forked,
-    /// `/fork <prompt>`. Hands it off once the session shows.
+    /// `/fork <prompt>`. Hands it off once the session shows. Nothing's copied or shown once it's stopped, as when its
+    /// window closed, or once Send Work to Copilot is off, as looked at right before.
     private func fallBack(
         _ prompt: String, in session: String, forking: Bool, fork: String? = nil, reason: String, foreseen: Bool = false,
         mayHaveSent: Bool = false, handOff: CommentHandOff?
     ) async -> SessionDelivery {
         let pastesFork = forking && fork == nil
-        guard await copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session) else {
+        let way: Showing? = openForTests != nil ? .app : await showing(session)
+        guard !Task.isCancelled else { return .notSent(SendFailure.cancelled.description) }
+        guard canSend, isOn else { return .notSent(Self.cantSendNow) }
+        guard let way, copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)
         }
@@ -240,11 +250,9 @@ extension CopilotTasksStore {
         ))
     }
 
-    /// Puts the text on the clipboard, and shows the session (`show`), but only once it knows it can: false, with nothing
-    /// copied, when it can't.
-    private func copyAndShow(_ text: String, in id: String) async -> Bool {
+    /// Puts the text on the clipboard, and shows the session the way it found it shows (`showing`): false when it didn't.
+    private func copyAndShow(_ text: String, in id: String, _ way: Showing) -> Bool {
         if let openForTests { return openForTests(id, text) }
-        guard let way = await showing(id) else { return false }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         return Self.reveal(id, way)

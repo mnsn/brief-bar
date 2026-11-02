@@ -19,8 +19,10 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
     case unconfirmedFork
     /// BriefBar's outbox can't be used: why.
     case outbox(String)
-    /// BriefBar stopped waiting.
+    /// BriefBar stopped it, as when its window closed.
     case cancelled
+    /// BriefBar may send nothing anymore: Send Work to Copilot, or Send Prompts to Copilot Sessions, was turned off.
+    case turnedOff
 
     public var description: String {
         switch self {
@@ -43,6 +45,7 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
         case .unconfirmedFork: return "The Copilot app doesn't record the fork that BriefBar's extension made."
         case .outbox(let why): return why
         case .cancelled: return "BriefBar stopped sending it."
+        case .turnedOff: return "BriefBar can't send anything now."
         }
     }
 }
@@ -81,18 +84,22 @@ public struct SessionSender: Sendable {
         public var forkRecord: @Sendable (String) -> ForkRecord
         /// Whether an extension that says it listens still runs (`CopilotOutbox.isLive`).
         public var isLive: @Sendable (OutboxListener) -> Bool
+        /// Whether BriefBar may still send, as you turned it on: asked before each request, and while one waits for an
+        /// extension to take it.
+        public var mayGoOn: @Sendable () async -> Bool
         public var now: @Sendable () -> Date
 
         public init(
             open: @escaping @Sendable (String) async -> Bool, isHeld: @escaping @Sendable (String) -> Bool,
             forkRecord: @escaping @Sendable (String) -> ForkRecord,
             isLive: @escaping @Sendable (OutboxListener) -> Bool = { CopilotOutbox.isLive($0) },
-            now: @escaping @Sendable () -> Date = { Date() }
+            mayGoOn: @escaping @Sendable () async -> Bool = { true }, now: @escaping @Sendable () -> Date = { Date() }
         ) {
             self.open = open
             self.isHeld = isHeld
             self.forkRecord = forkRecord
             self.isLive = isLive
+            self.mayGoOn = mayGoOn
             self.now = now
         }
     }
@@ -163,6 +170,7 @@ public struct SessionSender: Sendable {
     /// - Parameter opens: opens the session once the request is written, even when a program holds it already.
     func request(_ request: OutboxRequest, opens: Bool = false) async -> Result<OutboxResult, SendFailure> {
         guard !Task.isCancelled else { return .failure(.cancelled) }
+        guard await effects.mayGoOn() else { return .failure(.turnedOff) }
         let session = request.sessionId
         outbox.removeOld(now: effects.now())
         var listening: Date?
@@ -193,6 +201,8 @@ public struct SessionSender: Sendable {
             var gaveUp: SendFailure?
             if Task.isCancelled {
                 gaveUp = .cancelled
+            } else if await !effects.mayGoOn() {
+                gaveUp = .turnedOff
             } else if listening == nil, let listener = liveListener(of: session) {
                 if listener.kinds.contains(request.kind) { listening = now } else { gaveUp = .unsupported }
             }
@@ -214,27 +224,22 @@ public struct SessionSender: Sendable {
             }
             await pause()
         }
+        // Claimed: it goes on, whatever BriefBar does, so BriefBar waits for how it went, even once it's stopped.
         let claimed = effects.now()
         let wait = request.kind == .fork ? timing.forked : timing.sent
         while true {
             if let result = outbox.takeResult(of: request) { return Self.outcome(result) }
-            if Task.isCancelled { return .failure(.cancelled) }
             if effects.now().timeIntervalSince(claimed) > wait { return .failure(.lost) }
-            await pause()
+            await pauseEvenIfStopped()
         }
     }
 
-    /// Whether the app's database records the session as a fork of `original`, waiting for it to as it makes the fork; yes
-    /// when it can't tell, as when an older app records no forks.
+    /// Whether the app's database records the session as a fork of `original`, waiting for it to as it makes the fork, or
+    /// while it can't be read: no, unless it says so in time.
     func isConfirmed(_ fork: String, asForkOf original: String) async -> Bool {
         let start = effects.now()
         while true {
-            switch effects.forkRecord(fork) {
-            case .forked(let from): return from == original
-            case .unknown: return true
-            // Listed before its fork is recorded, or not listed yet.
-            case .notAFork, .notListed: break
-            }
+            if case .forked(let from) = effects.forkRecord(fork) { return from == original }
             if Task.isCancelled || effects.now().timeIntervalSince(start) > timing.confirm { return false }
             await pause()
         }
@@ -251,5 +256,11 @@ public struct SessionSender: Sendable {
 
     private func pause() async {
         try? await Task.sleep(for: timing.poll)
+    }
+
+    /// A pause that being stopped doesn't cut short, for a request that goes on anyway.
+    private func pauseEvenIfStopped() async {
+        let poll = timing.poll
+        await Task.detached { try? await Task.sleep(for: poll) }.value
     }
 }

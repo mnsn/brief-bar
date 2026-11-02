@@ -490,6 +490,28 @@ private final class ExtensionStandIn: Sendable {
         #expect(store.delivering.isEmpty)
     }
 
+    /// Turned off while a prompt waits for the extension to take it, Send Prompts to Copilot Sessions takes it back, and
+    /// BriefBar copies and opens nothing.
+    @Test func turningSendingOffTakesBackWhatWaits() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var opened = 0
+        store.openForTests = { _, _ in opened += 1; return true }
+        store.showForTests = { _ in opened += 1; return true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        try hold(session, home: home)
+
+        let sending = Task { await store.deliver("Fix the comments", to: choice(session)) }
+        for _ in 0..<400 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        CopilotSessionPrompts.set(false, in: store.settings.defaults)
+        #expect(await sending.value == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(requests(home).isEmpty)
+        #expect(opened == 0)
+    }
+
     /// The demo sends nothing, and reads nothing of yours.
     @Test func theDemoSendsNothing() async {
         let store = CopilotTasksStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo, notifier: nil)

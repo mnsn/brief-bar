@@ -1041,6 +1041,8 @@ struct CopilotComposerView: View {
         deliveryProblem = nil
         let text = prompt
         let forking = delivery.forks
+        // What the window said it would do as you sent it.
+        let saidItWouldCopy = reach?.sends(forking: forking) == false
         sending(Task {
             let result = await store.deliver(text, to: target, forking: forking, handOff: handOff)
             // The window closed, or shows another task: it was stopped.
@@ -1050,7 +1052,7 @@ struct CopilotComposerView: View {
             case .sent, .forkedAndSent:
                 close()
             case .fellBack(let fallback):
-                if fallback.wasForeseen { close() } else { self.fallback = fallback }
+                if fallback.wasForeseen, saidItWouldCopy { close() } else { self.fallback = fallback }
             case .notSent(let why):
                 if why == CopilotTasksStore.cantOpenInApp {
                     appProblem = why
