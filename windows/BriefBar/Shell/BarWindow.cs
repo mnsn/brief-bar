@@ -188,11 +188,11 @@ internal sealed partial class BarWindow : Window
         backdrop.UseTint(color: look.UsesAccent ? accent : null);
     }
 
-    /// Shows what the bar shows now, in `palette`'s colors.
-    public void Update(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now)
+    /// Shows what the bar shows now, in `palette`'s colors, with icons `iconSize` square (`BarMetrics.IconSize`).
+    public void Update(IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now, double iconSize)
     {
         view.UsePalette(palette: palette);
-        ViewModel.Update(snapshots: snapshots, palette: palette, now: now);
+        ViewModel.Update(snapshots: snapshots, palette: palette, now: now, iconSize: iconSize);
     }
 
     /// Where `target`'s item is, for its panel, shown from the keyboard: the Overview's, while the bar has no item for

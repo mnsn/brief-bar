@@ -1,10 +1,10 @@
 namespace BriefBar.Core.Presentation;
 
 /// The states' colors, as ARGB, for Windows 11's light and dark: fills for icons, dots and badges; text for words;
-/// what's drawn on a fill; Needs You's pill; and a caution color for problems. Windows' semantic colors where it has
-/// them (red, blue, green, caution), and the Mac's orange for what needs you. `StatePaletteTests` checks their contrast
-/// against `Backgrounds`, the colors the bar and the panel can have: 4.5 to 1 for words, 3 to 1 for the rest. In High
-/// Contrast, the app uses the system's colors instead.
+/// what's drawn on a fill; words in Windows' colors, which the bar's glyphs are in too; and a caution color for
+/// problems. Windows' semantic colors where it has them (red, blue, green, caution), and the Mac's orange for what
+/// needs you. `StatePaletteTests` checks their contrast against `Backgrounds`, the colors the bar and the panel can
+/// have: 4.5 to 1 for words, 3 to 1 for the rest. In High Contrast, the app uses the system's colors instead.
 public static class StatePalette
 {
     const uint White = 0xFFFFFFFFu;
@@ -46,9 +46,6 @@ public static class StatePalette
     /// A glyph drawn on a state's fill, such as a row's badge.
     public static uint OnFill(bool dark) => dark ? 0xFF1A1A1Au : 0xFFFFFFFFu;
 
-    public static uint PillFill(bool dark) => dark ? 0xFFFF8C3Au : 0xFFC24E0Cu;
-
-    public static uint PillText(bool dark) => dark ? 0xFF1A1A1Au : 0xFFFFFFFFu;
 
     /// A problem, such as a sign-in a source needs.
     public static uint Caution(bool dark) => dark ? 0xFFFCE100u : 0xFF9D5D00u;

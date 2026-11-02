@@ -118,7 +118,7 @@ public static class AzureDevOpsRows
         PRReason.FailedAfterMerge or PRReason.Completed => IconKey.Merge,
         PRReason.ReadyToComplete => IconKey.CheckmarkCircle,
         PRReason.AutoComplete => IconKey.CheckmarkStarburst,
-        PRReason.WaitingForReviewers => IconKey.People,
+        PRReason.WaitingForReviewers => IconKey.PeopleFilled,
         PRReason.ChecksRunning => IconKey.HourglassHalf,
         PRReason.RequirementsPending => IconKey.ClipboardTaskList,
         PRReason.WaitingForAuthor => IconKey.Clock,
