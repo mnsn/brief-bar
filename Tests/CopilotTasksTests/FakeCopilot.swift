@@ -7,9 +7,9 @@ import Foundation
 /// question, it says something unasked and asks something of its own, as the server does. Each message it gets goes to
 /// `$FAKE_SERVER_LOG`, one a line. A fork's folder is made in `$COPILOT_HOME/session-state`, with a copy of the session's
 /// log, as the CLI copies it, and a deleted session's removed, unless the file `$FAKE_DELETE_FAILS` names is there. What it
-/// answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, `late`, a second late, or `garbled`, with
-/// what isn't a header right after its answer), `FAKE_FORK_ID` and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the
-/// answer). As `copilot -p`, it writes its arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task
+/// answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, `late`, a second late, `gated`, once the
+/// file `$FAKE_FORK_GATE` names is there, or `garbled`, with what isn't a header right after its answer), `FAKE_FORK_ID`
+/// and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the answer). As `copilot -p`, it writes its arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task
 /// done, as `CopilotLauncherTests`' does; or, with `FAKE_RUN=fails`, refuses its options, as the CLI does, before it
 /// writes anything to the log.
 enum FakeCopilot {
@@ -71,6 +71,9 @@ enum FakeCopilot {
                 fails) refuse "$id" -32603 "Request sessions.fork failed with message: Cannot fork session: no persisted or in-memory events found" ;;
                 hang) ;;
                 late) sleep 1; makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                gated)
+                  while [ ! -e "$FAKE_FORK_GATE" ]; do sleep 0.05; done
+                  makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
                 garbled)
                   makefork "$body"
                   reply="{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}}"
@@ -134,7 +137,13 @@ enum FakeCopilot {
             environment["FAKE_SERVER_LOG"] = log.path
             environment["FAKE_COPILOT_ARGUMENTS"] = arguments.path
             environment["FAKE_FORK_ID"] = FakeCopilot.fork
+            environment["FAKE_FORK_GATE"] = self.folder.appendingPathComponent("fork-gate").path
             environment.merge(settings) { $1 }
+        }
+
+        /// Lets the stand-in answer a fork it was asked for with `FAKE_FORK=gated`, which it waits for until then.
+        func openForkGate() throws {
+            try Data().write(to: folder.appendingPathComponent("fork-gate"))
         }
 
         /// The fork's folder, as the stand-in makes it.

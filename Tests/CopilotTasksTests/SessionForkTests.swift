@@ -97,7 +97,9 @@ import Testing
 
 /// The Copilot CLI's server, through a stand-in that speaks as it does.
 @Suite struct CopilotServerTests {
-    private func start(_ fixture: FakeCopilot.Fixture, grace: TimeInterval = 5) throws -> CopilotServer {
+    /// The stand-in, as the CLI's server, with time to quit, or to answer once it's given up on, however busy the Mac. It
+    /// quits as soon as its input ends, so it's waited for only as long as that takes.
+    private func start(_ fixture: FakeCopilot.Fixture, grace: TimeInterval = 30) throws -> CopilotServer {
         try CopilotServer.start(fixture.copilot, environment: fixture.environment, grace: grace)
     }
 
@@ -203,14 +205,16 @@ import Testing
     /// cancelled, so that the fork can be deleted.
     @Test(.timeLimit(.minutes(1)))
     func waitsForAForkEvenOnceItsTaskIsCancelled() async throws {
-        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
+        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "gated"])
         defer { fixture.remove() }
         let server = try start(fixture)
         let forking = Task { try await server.fork(FakeCopilot.session, name: nil, timeout: 20) }
         for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
             try await Task.sleep(for: .milliseconds(10))
         }
+        // Cancelled while the server makes the fork, which it then says it made.
         forking.cancel()
+        try fixture.openForkGate()
         #expect(try await forking.value == FakeCopilot.fork)
         await server.close()
     }
@@ -221,8 +225,7 @@ import Testing
     func givesUpOnTheServerWhenAForkTakesTooLong() async throws {
         let late = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
         defer { late.remove() }
-        // Given up on, it has as long as it takes to answer, however busy the Mac, before it's made to stop.
-        var server = try start(late, grace: 30)
+        var server = try start(late)
         #expect(try await server.fork(FakeCopilot.session, name: nil, timeout: 0.3) == FakeCopilot.fork)
         await #expect(throws: CopilotServer.Failure.timedOut) { try await server.delete(FakeCopilot.fork, timeout: 20) }
         #expect(await server.close() == 0)
@@ -580,7 +583,7 @@ import Testing
     func cancelledWhileTheSessionIsForkedItDeletesTheFork() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
-        let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment, ["FAKE_FORK": "late"])
+        let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment, ["FAKE_FORK": "gated"])
         let request = CopilotLauncher.Request(
             subject: .workItem(sampleItem), prompt: "Fix it", options: CopilotModel.quick, repository: repository.checkout,
             worktreesFolder: nil, forking: session(in: repository.checkout, repository: repository.checkout)
@@ -591,6 +594,7 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         launching.cancel()
+        try fixture.openForkGate()
         await #expect(throws: LaunchError.cantFork("Forking the session was cancelled.")) { try await launching.value }
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
         #expect(!FileManager.default.fileExists(atPath: repository.folder.appendingPathComponent("copilot-worktrees").path))
@@ -870,7 +874,7 @@ import Testing
     /// Cancelled while the fork is made, it waits for it, to delete it unasked.
     @Test(.timeLimit(.minutes(1)))
     func cancelledWhileTheForkIsMadeItDeletesTheFork() async throws {
-        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
+        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "gated"])
         defer { fixture.remove() }
         let questions = questions(fixture)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
@@ -878,6 +882,7 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         asking.cancel()
+        try fixture.openForkGate()
         #expect(await asking.value == .failure(.cancelled))
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
@@ -888,7 +893,8 @@ import Testing
     func aForkMadeAfterItsTimeoutIsDeletedThroughAnotherServer() async throws {
         let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "late"])
         defer { fixture.remove() }
-        let answer = await questions(fixture, timeouts: .init(fork: 0.3)).ask("Why?", session: FakeCopilot.session)
+        // Given up on, the server has as long as it takes to say which fork it made, however busy the Mac.
+        let answer = await questions(fixture, timeouts: .init(fork: 0.3, quit: 30)).ask("Why?", session: FakeCopilot.session)
         #expect(answer == .failure(.timedOut))
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])

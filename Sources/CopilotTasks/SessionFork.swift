@@ -367,12 +367,19 @@ public actor SessionQuestions {
         public var answer: TimeInterval
         /// To delete the fork once it's done.
         public var cleanUp: TimeInterval
+        /// For the CLI's server to quit once it's done, or once it's given up on, before it's made to: the time a fork it
+        /// was still making has to be heard of, to be deleted (`CopilotServer.start(_:environment:grace:)`).
+        public var quit: TimeInterval
 
-        public init(start: TimeInterval = 30, fork: TimeInterval = 60, answer: TimeInterval = 180, cleanUp: TimeInterval = 30) {
+        public init(
+            start: TimeInterval = 30, fork: TimeInterval = 60, answer: TimeInterval = 180, cleanUp: TimeInterval = 30,
+            quit: TimeInterval = 5
+        ) {
             self.start = start
             self.fork = fork
             self.answer = answer
             self.cleanUp = cleanUp
+            self.quit = quit
         }
     }
 
@@ -415,7 +422,7 @@ public actor SessionQuestions {
         guard !Task.isCancelled else { return .failure(.cancelled) }
         let server: CopilotServer
         do {
-            server = try CopilotServer.start(copilot, environment: environment)
+            server = try CopilotServer.start(copilot, environment: environment, grace: timeouts.quit)
         } catch {
             return .failure(Self.failure(error))
         }
