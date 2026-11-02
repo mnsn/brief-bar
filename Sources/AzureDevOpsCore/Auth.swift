@@ -127,7 +127,10 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     private var homeAccount: (account: String?, tenant: String?)?
     /// By directory: nil for your sign-in's.
     private var cached: [String?: AccessToken] = [:]
-    private var pending: [String?: Task<AccessToken, Error>] = [:]
+    /// How many times the account your tokens are for has changed: a token fetched across a change is the last account's.
+    private var accounts = 0
+    /// The `az` run under way for each directory, which everyone asking for it then shares: with the account it was kept for.
+    private var pending: [String?: Task<(token: AccessToken, account: Int), Error>] = [:]
 
     /// `homeTenant` is your sign-in's directory, when it's known from before: the one BriefBar last read your pull
     /// requests with; and `homeAccountTenant` is where that account is from (`AccessToken.accountTenant`), so that after a
@@ -150,13 +153,18 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         let directory = Self.directory(tenant)
         if let cached = cached[directory], cached.isValid(at: now()) { return cached }
         // Callers asking for the same directory at the same time share one `az` run.
-        if let pending = pending[directory] { return try await pending.value }
-        let task = Task { try await self.fetch(directory) }
-        pending[directory] = task
-        defer { pending[directory] = nil }
-        let token = try await task.value
-        keep(token, for: directory)
-        return token
+        let fetched: (token: AccessToken, account: Int)
+        if let pending = pending[directory] {
+            fetched = try await pending.value
+        } else {
+            let task = Task { try await self.fetchAndKeep(directory) }
+            pending[directory] = task
+            defer { pending[directory] = nil }
+            fetched = try await task.value
+        }
+        // Someone else signed in to the Azure CLI since it was kept: it's the last account's, and nobody waiting gets it.
+        guard fetched.account == accounts else { throw AuthError.failed("Someone else signed in to the Azure CLI.") }
+        return fetched.token
     }
 
     public func invalidate(tenant: String?) {
@@ -174,13 +182,26 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     }
 
     /// Keeps a token until it nears its expiry. One for your directory that's another account's means someone else
-    /// signed in to the Azure CLI: the other directories' tokens, the last account's, go.
+    /// signed in to the Azure CLI: the other directories' tokens, the last account's, go, and so do those on their way.
     private func keep(_ token: AccessToken, for directory: String?) {
         if directory == nil {
-            if let homeAccount, homeAccount.account != token.account { cached = [:] }
+            if let homeAccount, homeAccount.account != token.account {
+                cached = [:]
+                if homeAccount.account != nil { accounts += 1 }
+            }
             homeAccount = (account: token.account, tenant: token.accountTenant)
         }
         cached[directory] = token
+    }
+
+    /// A token for `directory`, kept, with the account it was kept for. One from another directory that comes back after
+    /// someone else signed in is the last account's, whichever directory they're from: nobody gets it, and it isn't kept.
+    private func fetchAndKeep(_ directory: String?) async throws -> (token: AccessToken, account: Int) {
+        let account = accounts
+        let token = try await fetch(directory)
+        if directory != nil, accounts != account { throw AuthError.failed("Someone else signed in to the Azure CLI.") }
+        keep(token, for: directory)
+        return (token: token, account: accounts)
     }
 
     /// A token for `directory`, or for yours: in the directory BriefBar knows as yours. When the Azure CLI can't give one
@@ -293,13 +314,14 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         return nil
     }
 
-    /// Tells a missing or expired sign-in, which `az login` fixes, from other failures.
+    /// Tells a missing or expired sign-in, which `az login` fixes, from other failures. What the Azure CLI says goes to
+    /// the log, so it's kept without IDs, such as a directory's in `az login --tenant`, or names (`redacted(_:)`).
     static func error(fromOutput output: String) -> AuthError {
         let lines = output.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        let message = (lines.first { $0.hasPrefix("ERROR:") } ?? lines.first ?? "The Azure CLI failed.")
-            .replacingOccurrences(of: "ERROR: ", with: "")
+        let message = redacted((lines.first { $0.hasPrefix("ERROR:") } ?? lines.first ?? "The Azure CLI failed.")
+            .replacingOccurrences(of: "ERROR: ", with: ""))
         let lower = output.lowercased()
         let signedOutHints = [
             "az login", "please run", "aadsts", "interaction_required", "invalid_grant",
@@ -309,6 +331,18 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
             return .signedOut(String(message.prefix(300)))
         }
         return .failed(String(message.prefix(300)))
+    }
+
+    /// What the Azure CLI says, without IDs (a directory's, a request's), email addresses, or the name of a tenant or
+    /// directory it quotes: before it's cut short, so no part of one is left.
+    static func redacted(_ message: String) -> String {
+        message
+            .replacingOccurrences(
+                of: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", with: "<id>",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", with: "<account>", options: .regularExpression)
+            .replacingOccurrences(of: "(?i)\\b(tenant|directory) '[^']*'", with: "$1 '<name>'", options: .regularExpression)
     }
 }
 

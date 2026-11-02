@@ -1068,7 +1068,9 @@ each of their directories is signed in to, or as its own needs a sign-in, and st
 teams are read. A team whose sprint can't be read for want of such a sign-in counts among them, and
 doesn't take the turn of another. The command line and agents, which have no button, say what to run;
 an agent's work item, asked for by its number alone, is looked for in your other organizations too, and
-such an organization is named only when none of them has it. A directory's ID is never shown otherwise.
+such an organization is named only when none of them has it. A directory's ID is never shown otherwise,
+and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses or
+the names of directories it quotes.
 The log names none of these organizations, nor the others that couldn't be read with them, and says
 only how many are in such a directory: a pull request sent to you comes from a chat. While nothing could
 be read but such organizations, BriefBar looks again every minute, as it does while the CLI is signed
@@ -1089,7 +1091,8 @@ directory without what yours asks for, such as multi-factor authentication. Othe
 signed in to the CLI, and their directory becomes the one BriefBar reads with. Tokens kept for other
 directories are for the same account as yours: when someone else signs in, those go too, and one from
 another directory for an account from elsewhere isn't used by anything that asked for it, nor kept, and
-makes BriefBar ask for yours again, which tells who's signed in.
+makes BriefBar ask for yours again, which tells who's signed in. Nor is one that was on its way when
+someone else signed in, wherever they're from.
 
 **Add Organization…** checks that your sign-in can read the organization, with `_apis/connectionData`,
 before watching it, and says why when it can't. One it reads is watched. One in a directory the CLI

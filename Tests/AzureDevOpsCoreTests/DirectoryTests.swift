@@ -15,6 +15,32 @@ private func madeUpToken(tenant: String, object: String = "robin", guestFrom hom
     return [encoded(#"{"alg":"none"}"#), encoded(#"{"tid":"\#(tenant)","oid":"\#(object)"\#(idp)}"#), "c2ln"].joined(separator: ".")
 }
 
+/// Holds the Azure CLI's first run for a directory until let go, with the token it had when asked: someone else may sign in
+/// meanwhile.
+actor HeldDirectory {
+    private let tenant: String
+    private var held: CheckedContinuation<Void, Never>?
+    private var hasHeld = false
+    private(set) var isHolding = false
+
+    init(_ tenant: String) {
+        self.tenant = tenant
+    }
+
+    func hold(_ asked: String) async {
+        guard asked == tenant, !hasHeld else { return }
+        hasHeld = true
+        isHolding = true
+        await withCheckedContinuation { held = $0 }
+    }
+
+    func release() {
+        held?.resume()
+        held = nil
+        isHolding = false
+    }
+}
+
 /// A made-up Azure CLI, signed in as an account from one directory, to some directories, one of them its default, as
 /// `az login --tenant` leaves it.
 final class FakeAzureCLI: ProcessRunning, Sendable {
@@ -23,13 +49,17 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         var signedIn: Set<String>
         /// The directory the signed-in account is from: elsewhere, it's a guest.
         var accountTenant: String
+        /// Who's signed in, as the tokens' object IDs name them.
+        var object = "robin"
         var runs: [[String]] = []
     }
 
     private let state: Mutex<State>
+    private let held: HeldDirectory?
 
-    init(defaultTenant: String, signedIn: Set<String>, accountFrom accountTenant: String? = nil) {
+    init(defaultTenant: String, signedIn: Set<String>, accountFrom accountTenant: String? = nil, held: HeldDirectory? = nil) {
         state = Mutex(State(defaultTenant: defaultTenant, signedIn: signedIn, accountTenant: accountTenant ?? defaultTenant))
+        self.held = held
     }
 
     /// The directory each run asked for with `--tenant`: nil for none, the default.
@@ -52,26 +82,28 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         _ = state.withLock { state in state.signedIn.remove(tenant) }
     }
 
-    /// Someone else signs in, with an account from `tenant`, to these directories.
-    func switchAccount(to tenant: String, signedIn: Set<String>) {
+    /// Someone else signs in, with an account from `tenant`, to these directories: `object` tells two from one directory apart.
+    func switchAccount(to tenant: String, signedIn: Set<String>, as object: String = "robin") {
         state.withLock { state in
             state.accountTenant = tenant
             state.signedIn = signedIn
             state.defaultTenant = tenant
+            state.object = object
         }
     }
 
     func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
-        let (tenant, isSignedIn, accountTenant) = state.withLock { state -> (String, Bool, String) in
+        let (tenant, isSignedIn, accountTenant, object) = state.withLock { state -> (String, Bool, String, String) in
             state.runs.append(arguments)
             let tenant = arguments.firstIndex(of: "--tenant").map { arguments[$0 + 1] } ?? state.defaultTenant
-            return (tenant, state.signedIn.contains(tenant), state.accountTenant)
+            return (tenant, state.signedIn.contains(tenant), state.accountTenant, state.object)
         }
+        await held?.hold(tenant)
         guard isSignedIn else {
             return ProcessResult(status: 1, stderr: Data("ERROR: AADSTS50076: Sign in with multi-factor authentication.\n".utf8))
         }
         let token = tenant == accountTenant
-            ? madeUpToken(tenant: tenant) : madeUpToken(tenant: tenant, object: "robin-guest", guestFrom: accountTenant)
+            ? madeUpToken(tenant: tenant, object: object) : madeUpToken(tenant: tenant, object: "\(object)-guest", guestFrom: accountTenant)
         return ProcessResult(status: 0, stdout: Data(#"{"accessToken": "\#(token)", "expires_on": 4102444800}"#.utf8))
     }
 }
@@ -257,6 +289,43 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         }
         #expect(try await provider.token().tenant == Tenants.third)
         #expect(cli.asked.suffix(2) == [Tenants.home, nil])
+    }
+
+    @Test func anotherDirectorysTokenOnItsWayWhenSomeoneElseSignsInIsntKept() async throws {
+        let held = HeldDirectory(Tenants.other)
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other], held: held)
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        let yours = try await provider.token()
+        // A token from fabrikam's directory is on its way, for you, when someone else from your own directory signs in, as
+        // the next token for yours tells: theirs from fabrikam's directory name the same directory as yours.
+        let fabrikams = Task { try await provider.token(tenant: Tenants.other) }
+        try await waitUntil("the Azure CLI to be asked for fabrikam's directory") { await held.isHolding }
+        cli.switchAccount(to: Tenants.home, signedIn: [Tenants.home, Tenants.other], as: "sam")
+        await provider.invalidate()
+        #expect(try await provider.token().account != yours.account)
+        await held.release()
+        // It was yours: nobody waiting for it gets it, and it isn't kept for them.
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) { try await fabrikams.value }
+        #expect(try await provider.token(tenant: Tenants.other).account == "\(Tenants.other)/sam-guest")
+        #expect(cli.asked == [nil, Tenants.other, Tenants.home, Tenants.other])
+    }
+
+    @Test func whatTheAzureCLISaysKeepsNoIDsOrNames() {
+        let output = """
+            WARNING: something
+            ERROR: AADSTS50020: User account 'robin@contoso.example' from identity provider 'live.com' does not exist in tenant 'Fabrikam Example' and cannot access the application '\(AzureCLITokenProvider.azureDevOpsResource)'. Trace ID: 0d0d0d0d-4444-4444-8444-444444444444 Correlation ID: 0e0e0e0e-5555-4555-8555-555555555555
+            Interactive authentication is needed. Please run:
+            az login --tenant "\(Tenants.other)"
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: output) == .signedOut(
+            "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>' and cannot access the application '<id>'. Trace ID: <id> Correlation ID: <id>"
+        ))
+        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one.
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login --tenant \"\(Tenants.other)\"' to setup account.")
+            == .signedOut("Please run 'az login --tenant \"<id>\"' to setup account."))
+        let long = AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login'. " + String(repeating: "x", count: 266) + " " + Tenants.other)
+        #expect(!long.description.contains(String(Tenants.other.prefix(8))))
+        #expect(long.description.hasSuffix(" <id>"))
     }
 
     // MARK: Requests
