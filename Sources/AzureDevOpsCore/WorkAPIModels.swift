@@ -7,6 +7,8 @@ import Foundation
 /// A JSON array that skips the elements it can't decode, like `ADOList` does inside its envelope.
 public struct LenientArray<Element: Decodable & Sendable>: Decodable, Sendable {
     public var elements: [Element]
+    /// Elements that couldn't be decoded and were left out.
+    public var skipped = 0
 
     public init(_ elements: [Element] = []) {
         self.elements = elements
@@ -24,9 +26,55 @@ public struct LenientArray<Element: Decodable & Sendable>: Decodable, Sendable {
                 elements.append(element)
             } else {
                 _ = try container.decode(Skip.self)
+                skipped += 1
             }
         }
         self.elements = elements
+    }
+}
+
+/// A JSON object's values, each as a string whatever its JSON type, such as a timeline issue's `data`. A value that's
+/// an object, an array or null is left out.
+public struct LenientStrings: Decodable, Sendable {
+    public var values: [String: String]
+
+    public init(_ values: [String: String] = [:]) {
+        self.values = values
+    }
+
+    private struct Key: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            nil
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Key.self)
+        var values: [String: String] = [:]
+        for key in container.allKeys {
+            if let string = container.lenient(String.self, forKey: key) {
+                values[key.stringValue] = string
+            } else if let int = container.lenient(Int.self, forKey: key) {
+                values[key.stringValue] = String(int)
+            } else if let double = container.lenient(Double.self, forKey: key) {
+                values[key.stringValue] = String(double)
+            } else if let bool = container.lenient(Bool.self, forKey: key) {
+                values[key.stringValue] = String(bool)
+            }
+        }
+        self.values = values
+    }
+
+    /// The value of a key, whatever its letter case.
+    public subscript(key: String) -> String? {
+        values[key] ?? values.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
     }
 }
 
@@ -258,16 +306,40 @@ public struct ADOTimeline: Decodable, Sendable {
         public var result: String?
         public var startTime: Date?
         public var finishTime: Date?
+        /// Which try it is: 2 once it's been run again.
+        public var attempt: Int?
+        /// How many errors and warnings it logged, which can be more than `issues` lists.
+        public var errorCount: Int?
+        public var warningCount: Int?
+        /// Its log, when it has one.
+        public var log: LogReference?
         public var issues: LenientArray<Issue>?
+
+        public struct LogReference: Decodable, Sendable {
+            public var id: Int
+        }
 
         public struct Issue: Decodable, Sendable {
             /// `error` or `warning`.
             public var type: String?
             public var message: String?
+            /// What else it says, each as a string: `sourcepath`, `linenumber` and `columnnumber` (0 when it doesn't
+            /// know), `code`, and `logFileLineNumber`, the line of the step's log it was logged on.
+            public var data: LenientStrings
+
+            private enum CodingKeys: String, CodingKey { case type, message, data }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                type = container.lenient(String.self, forKey: .type)
+                message = container.lenient(String.self, forKey: .message)
+                data = container.lenient(LenientStrings.self, forKey: .data) ?? LenientStrings()
+            }
         }
 
         private enum CodingKeys: String, CodingKey {
-            case id, parentId, type, name, identifier, order, state, result, startTime, finishTime, issues
+            case id, parentId, type, name, identifier, order, state, result, startTime, finishTime, attempt, errorCount, warningCount
+            case log, issues
         }
 
         public init(from decoder: Decoder) throws {
@@ -282,6 +354,10 @@ public struct ADOTimeline: Decodable, Sendable {
             result = container.lenient(String.self, forKey: .result)
             startTime = container.lenient(Date.self, forKey: .startTime)
             finishTime = container.lenient(Date.self, forKey: .finishTime)
+            attempt = container.lenient(Int.self, forKey: .attempt)
+            errorCount = container.lenient(Int.self, forKey: .errorCount)
+            warningCount = container.lenient(Int.self, forKey: .warningCount)
+            log = container.lenient(LogReference.self, forKey: .log)
             issues = container.lenient(LenientArray<Issue>.self, forKey: .issues)
         }
     }
