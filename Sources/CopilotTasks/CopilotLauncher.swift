@@ -217,13 +217,15 @@ public struct CopilotLauncher: Sendable {
             sessionId: id, name: isNew ? CopilotCommand.sessionName(for: request.subject) : nil, directory: worktree,
             denied: request.subject.deniedTools
         )
+        // Going on with a fork, it's still that session's fork.
+        let forkedFrom = request.forking?.id ?? request.continuing?.forkedFrom
         var run: CopilotRun
         switch request.subject {
         case .workItem(let item):
             run = CopilotRun(
                 id: id, workItem: item.reference, options: request.options, repository: repository.root, worktree: worktree,
                 startedAt: now, process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: request.continuing?.pullRequest,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: request.forking?.id
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
             )
         case .pullRequest(let pullRequest, let action):
             // Going on with the session of the work item's task that opened it, the run stays that work item's too; a fork
@@ -232,7 +234,7 @@ public struct CopilotLauncher: Sendable {
                 id: id, workItem: request.continuing?.workItem, onPullRequest: pullRequest.reference, action: action,
                 options: request.options, repository: repository.root, worktree: worktree, startedAt: now,
                 process: DetachedProgram.Handle(pid: 0, startedAt: nil), pullRequest: pullRequest.url,
-                isAppSession: request.continuing?.isAppSession, forkedFrom: request.forking?.id
+                isAppSession: request.continuing?.isAppSession, forkedFrom: forkedFrom
             )
         }
         do {

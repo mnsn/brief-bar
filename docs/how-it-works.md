@@ -1610,7 +1610,8 @@ terminal: with `-p`, tried with 1.0.105, they're words sent to the model, and jo
 asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts `copilot --headless --stdio` with your
 shell's environment, responsible for itself (`RunningProgram`), and sends it JSON-RPC requests, each after a
 `Content-Length` header. It refuses whatever the server asks of it, ignores what it says unasked, and ends its input
-once it's done, which ends it, or ends it five seconds later.
+once it's done, which ends it; one that hasn't quit five seconds later is asked to stop, and two seconds after that made
+to.
 
 - **A fork** (`sessions.fork`) is a new session with the session's whole history, as the CLI saved it: it takes a
   moment, and no request to the model. The session itself stays as it was, even while it works or the Copilot app has
@@ -1628,8 +1629,8 @@ once it's done, which ends it, or ends it five seconds later.
   question`, opened with no tools, without your skills, MCP servers or plugins, and with the model you choose or else
   the session's own, and deletes the fork once it's answered, failed or been cancelled: a fork that's been asked for is
   waited for, even once the question's cancelled, so that it can be deleted, and one the server can't delete, having
-  ended, another one does. The session's log and `workspace.yaml` stay as they were, byte for byte, and it can be asked
-  while it works, or while the Copilot app has it open.
+  ended, another one does, or else BriefBar again before the next question. The session's log and `workspace.yaml` stay
+  as they were, byte for byte, and it can be asked while it works, or while the Copilot app has it open.
 
 Forking with an older CLI can change the session it forks: tried on a session that 1.0.105 wrote, 1.0.78 added a line
 to its log, and 1.0.87 replaced the whole log with that line. 1.0.95, 1.0.99, 1.0.102, 1.0.103 and 1.0.105 left it as it

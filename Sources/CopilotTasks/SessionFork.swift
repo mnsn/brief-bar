@@ -128,16 +128,22 @@ struct SessionForker: Sendable {
         return fork
     }
 
-    /// Deletes a fork it made, whatever happens to the task that asked, even once it's cancelled. Whether it's gone.
+    /// Deletes a fork it made, whatever happens to the task that asked, even once it's cancelled. Whether it's gone, as
+    /// its folder says.
     @discardableResult
     func discard(_ fork: String) async -> Bool {
         let copilot = copilot, environment = environment, timeout = timeout
-        return await Task {
-            guard let server = try? CopilotServer.start(copilot, environment: environment) else { return false }
-            let deleted = (try? await server.delete(fork, timeout: timeout)) != nil
+        await Task {
+            guard let server = try? CopilotServer.start(copilot, environment: environment) else { return }
+            _ = try? await server.delete(fork, timeout: timeout)
             await server.close()
-            return deleted
         }.value
+        return isGone(fork)
+    }
+
+    /// Whether a session's folder is gone from the CLI's folder.
+    func isGone(_ session: String) -> Bool {
+        !FileManager.default.fileExists(atPath: CopilotPaths(root: CopilotCLI.home(environment: environment)).sessionDirectory(session).path)
     }
 
     /// Why it couldn't fork the session, for you, in a sentence.
@@ -241,6 +247,8 @@ public actor SessionQuestions {
     private let locate: @Sendable ([String: String]) -> URL?
     private let timeouts: Timeouts
     private var environment: [String: String]?
+    /// Forks that neither the server that made them nor another could delete: each is deleted before the next question.
+    private(set) var undeleted: Set<String> = []
 
     /// - Parameters:
     ///   - loadEnvironment: your login shell's environment, asked for once (`LoginEnvironment.load`).
@@ -272,10 +280,15 @@ public actor SessionQuestions {
         } catch {
             return .failure(Self.failure(error))
         }
+        let forker = SessionForker(copilot: copilot, environment: environment, timeout: timeouts.cleanUp)
         var fork: String?
         let result: Result<String, Failure>
         do {
             try await server.connectForForking(timeout: timeouts.start)
+            for leftover in undeleted {
+                _ = try? await server.delete(leftover, timeout: timeouts.cleanUp)
+                if forker.isGone(leftover) { undeleted.remove(leftover) }
+            }
             let made = try await server.fork(id, name: Self.forkName, timeout: timeouts.fork)
             fork = made
             // Cancelled while the fork was made, it's deleted unasked.
@@ -288,15 +301,18 @@ public actor SessionQuestions {
             result = .failure(Self.failure(error))
         }
         // Whatever happened, even once it's cancelled, the fork goes, then the server: through another server, when this
-        // one has ended, or can't.
+        // one has ended, or can't; and if that can't either, before the next question.
         let made = fork, cleanUp = timeouts.cleanUp
-        let forker = SessionForker(copilot: copilot, environment: environment, timeout: cleanUp)
-        await Task {
-            var deleted = true
-            if let made { deleted = (try? await server.delete(made, timeout: cleanUp)) != nil }
+        let gone = await Task {
+            guard let made else {
+                await server.close()
+                return true
+            }
+            _ = try? await server.delete(made, timeout: cleanUp)
             await server.close()
-            if let made, !deleted { await forker.discard(made) }
+            return forker.isGone(made) ? true : await forker.discard(made)
         }.value
+        if let made, !gone { undeleted.insert(made) }
         return result
     }
 

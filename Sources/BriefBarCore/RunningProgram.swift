@@ -217,11 +217,12 @@ public final class RunningProgram: @unchecked Sendable {
         writeQueue.sync { input >= 0 ? (true, fcntl(input, F_GETNOSIGPIPE) == 1) : (false, false) }
     }
 
-    /// Asks it, and whatever it started in its process group, to stop.
-    public func terminate() {
+    /// Asks it, and whatever it started in its process group, to stop; or, with `force`, makes them, for a program that
+    /// ignores being asked.
+    public func terminate(force: Bool = false) {
         queue.async { [self] in
             guard status == nil else { return }
-            killpg(pid, SIGTERM)
+            killpg(pid, force ? SIGKILL : SIGTERM)
         }
     }
 

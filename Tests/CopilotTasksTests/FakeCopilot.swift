@@ -5,8 +5,9 @@ import Foundation
 /// it answers BriefBar's JSON-RPC requests, each after a `Content-Length` header, as the CLI's server does: connect,
 /// sessions.fork, session.resume, session.ui.ephemeralQuery and session.delete, and nothing else; while it answers a
 /// question, it says something unasked and asks something of its own, as the server does. Each message it gets goes to
-/// `$FAKE_SERVER_LOG`, one a line. What it answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, or
-/// `late`, a second late),
+/// `$FAKE_SERVER_LOG`, one a line. A fork's folder is made in `$COPILOT_HOME/session-state`, and a deleted session's
+/// removed, unless the file `$FAKE_DELETE_FAILS` names is there. What it answers follows `FAKE_VERSION`, `FAKE_FORK`
+/// (`unsupported`, `fails`, `hang`, or `late`, a second late),
 /// `FAKE_FORK_ID` and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the answer). As `copilot -p`, it writes its
 /// arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task done, as `CopilotLauncherTests`' does.
 enum FakeCopilot {
@@ -56,8 +57,8 @@ enum FakeCopilot {
                 unsupported) refuse "$id" -32601 "Unhandled method sessions.fork" ;;
                 fails) refuse "$id" -32603 "Request sessions.fork failed with message: Cannot fork session: no persisted or in-memory events found" ;;
                 hang) ;;
-                late) sleep 1; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
-                *) answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                late) sleep 1; mkdir -p "$COPILOT_HOME/session-state/$FAKE_FORK_ID"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                *) mkdir -p "$COPILOT_HOME/session-state/$FAKE_FORK_ID"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
               esac ;;
             session.resume) answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"isRemote\":false}" ;;
             session.ui.ephemeralQuery)
@@ -69,7 +70,16 @@ enum FakeCopilot {
                 signed-out) refuse "$id" -32603 "Request session.ui.ephemeralQuery failed with message: Error: No authentication information found." ;;
                 *) answer "$id" "{\"answer\":\"${FAKE_ANSWER:-Sam wants the retries capped.}\"}" ;;
               esac ;;
-            session.delete) answer "$id" '{"success":true}' ;;
+            session.delete)
+              session=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([0-9a-f-]\{36\}\)".*/\1/p')
+              if [ -n "$FAKE_DELETE_FAILS" ] && [ -e "$FAKE_DELETE_FAILS" ]; then
+                answer "$id" '{"success":false,"error":"The session is busy."}'
+              elif [ -n "$session" ]; then
+                rm -rf "$COPILOT_HOME/session-state/$session"
+                answer "$id" '{"success":true}'
+              else
+                answer "$id" '{"success":false,"error":"Session file not found."}'
+              fi ;;
             *) refuse "$id" -32601 "Unhandled method $method" ;;
           esac
         done
@@ -108,6 +118,11 @@ enum FakeCopilot {
             environment["FAKE_COPILOT_ARGUMENTS"] = arguments.path
             environment["FAKE_FORK_ID"] = FakeCopilot.fork
             environment.merge(settings) { $1 }
+        }
+
+        /// The fork's folder, as the stand-in makes it.
+        var forkFolder: URL {
+            home.appendingPathComponent("session-state/\(FakeCopilot.fork)")
         }
 
         /// The session's log.

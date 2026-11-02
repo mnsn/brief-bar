@@ -138,12 +138,18 @@ final class CopilotServer: Sendable {
     private let queue = DispatchQueue(label: "BriefBar.CopilotServer")
     private let state = Mutex(State())
     private let program = Mutex<RunningProgram?>(nil)
+    /// How long it has to quit once its input ends, before it's asked to stop, and then two seconds more before it's made
+    /// to.
+    private let grace: TimeInterval
 
-    private init() {}
+    private init(grace: TimeInterval) {
+        self.grace = grace
+    }
 
     /// Starts `copilot` as its SDK's server.
-    static func start(_ copilot: URL, environment: [String: String]) throws -> CopilotServer {
-        let server = CopilotServer()
+    /// - Parameter grace: how long it has to quit once its input ends (`close()`, `giveUp()`).
+    static func start(_ copilot: URL, environment: [String: String], grace: TimeInterval = 5) throws -> CopilotServer {
+        let server = CopilotServer(grace: grace)
         // It's heard only once it's all set up.
         server.queue.suspend()
         defer { server.queue.resume() }
@@ -212,14 +218,16 @@ final class CopilotServer: Sendable {
         }
     }
 
-    /// Ends its input, which tells it to quit, and waits up to `grace` seconds for it to; then ends it, with whatever it
-    /// started. Its exit status, once it exited.
+    /// Ends its input, which tells it to quit, and waits up to `grace` seconds for it to; then asks it, with whatever it
+    /// started, to stop, and two seconds later makes them. Its exit status, once it exited.
     @discardableResult
-    func close(grace: TimeInterval = 5) async -> Int32? {
+    func close() async -> Int32? {
         let program = program.withLock { $0 }
         program?.closeInput()
         if let status = await exitStatus(within: grace) { return status }
         program?.terminate()
+        if let status = await exitStatus(within: 2) { return status }
+        program?.terminate(force: true)
         return await exitStatus(within: 2)
     }
 
@@ -285,16 +293,22 @@ final class CopilotServer: Sendable {
         }
     }
 
-    /// Ends its input, so that it finishes what it's at, which may answer a patient call, and quits; and ends it, with
-    /// whatever it started, five seconds later if it hasn't. From now on, what's asked of it fails, and so does what it
-    /// hasn't answered by the time it's gone: `timedOut`.
+    /// Ends its input, so that it finishes what it's at, which may answer a patient call, and quits. If it hasn't after
+    /// `grace` seconds, it's asked to stop, with whatever it started, and two seconds later made to, and nothing waits for
+    /// it any longer. From now on, what's asked of it fails, and so does what it hasn't answered by then: `timedOut`.
     private func giveUp() {
         state.withLock { state in
             if state.ended == nil { state.ended = .timedOut }
         }
         let program = program.withLock { $0 }
         program?.closeInput()
-        queue.asyncAfter(deadline: .now() + 5) { program?.terminate() }
+        queue.asyncAfter(deadline: .now() + grace) { [weak self] in
+            program?.terminate()
+            self?.queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+                program?.terminate(force: true)
+                self?.end(with: .timedOut)
+            }
+        }
     }
 
     private func fail(_ id: Int, with failure: Failure) {

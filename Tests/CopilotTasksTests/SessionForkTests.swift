@@ -240,8 +240,28 @@ import Testing
         let stubborn = folder.appendingPathComponent("copilot")
         try "#!/bin/sh\nexec sleep 30\n".write(to: stubborn, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stubborn.path)
-        let server = try CopilotServer.start(stubborn, environment: ["PATH": "/usr/bin:/bin"])
-        #expect(await server.close(grace: 0.3) == SIGTERM)
+        let server = try CopilotServer.start(stubborn, environment: ["PATH": "/usr/bin:/bin"], grace: 0.3)
+        #expect(await server.close() == SIGTERM)
+    }
+
+    /// One that ignores both its input ending and being asked to stop, while BriefBar waits for a fork it may have made,
+    /// is made to stop, and nothing waits for it any longer.
+    @Test(.timeLimit(.minutes(1)))
+    func aForkIsWaitedForOnlySoLong() async throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let deaf = folder.appendingPathComponent("copilot")
+        let ready = folder.appendingPathComponent("ready")
+        try "#!/bin/sh\ntrap '' TERM\n: > \"$READY\"\nwhile :; do sleep 1; done\n".write(to: deaf, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: deaf.path)
+        let server = try CopilotServer.start(deaf, environment: ["PATH": "/usr/bin:/bin", "READY": ready.path], grace: 0.3)
+        for _ in 0..<400 where !FileManager.default.fileExists(atPath: ready.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let started = Date()
+        await #expect(throws: CopilotServer.Failure.timedOut) { try await server.fork(FakeCopilot.session, name: nil, timeout: 0.3) }
+        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(await server.close() == SIGKILL)
     }
 
     @Test func saysWhenItCantStart() {
@@ -343,6 +363,28 @@ import Testing
         #expect(!arguments.contains(FakeCopilot.session))
         #expect(arguments.suffix(3) == ["-C", worktree.path, "--silent"])
         #expect(!arguments.contains("--name"))
+    }
+
+    /// Going on with a fork, the run is still that session's fork.
+    @Test(.timeLimit(.minutes(1)))
+    func goesOnWithAForkAsTheForkItIs() async throws {
+        let repository = try await RepositoryFixture()
+        defer { repository.remove() }
+        let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment)
+        let launcher = launcher(fixture)
+        let (fork, _) = try await launch(launcher, CopilotLauncher.Request(
+            subject: .workItem(sampleItem), prompt: "Try it with a cap", options: CopilotModel.quick, repository: repository.checkout,
+            worktreesFolder: nil, forking: session(in: repository.checkout, repository: repository.checkout)
+        ))
+        let (next, forked) = try await launch(launcher, CopilotLauncher.Request(
+            subject: .workItem(sampleItem), prompt: "Now the tests", options: CopilotModel.quick, repository: repository.checkout,
+            worktreesFolder: nil, continuing: fork
+        ))
+        #expect(next.id == fork.id)
+        #expect(next.worktree == fork.worktree)
+        #expect(next.forkedFrom == FakeCopilot.session)
+        #expect(forked == nil)
+        #expect(fixture.methods == ["connect", "sessions.fork"])
     }
 
     /// One of the Copilot app's sessions that works in a folder of repositories, or another clone: the fork starts where a
@@ -516,6 +558,7 @@ import Testing
             "sessionId": FakeCopilot.fork, "question": "Why did Sam ask for a cap on the retries?",
         ])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
+        #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
         // The session itself isn't asked anything.
         #expect(try Data(contentsOf: fixture.sessionLog) == log)
         #expect(!fixture.messages.contains { ($0["params"] as? [String: Any])?["sessionId"] as? String == FakeCopilot.session && $0["method"] as? String != "sessions.fork" })
@@ -606,6 +649,31 @@ import Testing
         #expect(answer == .failure(.timedOut))
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
+    }
+
+    /// A fork that no server can delete for now is deleted before the next question.
+    @Test(.timeLimit(.minutes(1)))
+    func aForkThatCouldntBeDeletedIsDeletedBeforeTheNextQuestion() async throws {
+        var fixture = try FakeCopilot.Fixture()
+        defer { fixture.remove() }
+        let busy = fixture.folder.appendingPathComponent("busy")
+        try Data().write(to: busy)
+        fixture.environment["FAKE_DELETE_FAILS"] = busy.path
+        let questions = questions(fixture)
+        #expect(await questions.ask("Why?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
+        // Through its own server, then another.
+        #expect(fixture.methods.suffix(2) == ["session.delete", "session.delete"])
+        #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
+        #expect(await questions.undeleted == [FakeCopilot.fork])
+
+        try FileManager.default.removeItem(at: busy)
+        let before = fixture.methods.count
+        #expect(await questions.ask("And then?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
+        #expect(Array(fixture.methods.dropFirst(before)) == [
+            "connect", "session.delete", "sessions.fork", "session.resume", "session.ui.ephemeralQuery", "session.delete",
+        ])
+        #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
+        #expect(await questions.undeleted.isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))
