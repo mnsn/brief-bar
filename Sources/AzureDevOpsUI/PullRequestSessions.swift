@@ -21,9 +21,12 @@ final class PullRequestSessions: ObservableObject {
     let links: Links
     /// What the list read of a pull request it has: the source's.
     var record: (PRKey) -> PRRecord? = { _ in nil }
+    /// How often the Copilot app's sessions are read again while a pull request's details show: shorter in tests.
+    var refreshEvery: Duration = .seconds(10)
 
-    /// How often the Copilot app's sessions are read again while a pull request's details show.
-    static let refreshEvery: Duration = .seconds(10)
+    /// How long what the search for mentions found is kept: it reads up to 40 sessions' logs, so opening the same details
+    /// again doesn't read them again.
+    static let mentionsFreshFor: TimeInterval = 15 * 60
 
     /// A pull request that's followed, and what was read for it.
     private struct Followed {
@@ -40,6 +43,8 @@ final class PullRequestSessions: ObservableObject {
     }
 
     private var followed: [PRKey: Followed] = [:]
+    /// Which of the Copilot app's sessions mention each pull request, and when that was read (`mentionsFreshFor`).
+    private var mentionsRead: [PRKey: (at: Date, ids: Set<String>)] = [:]
     /// The pull requests read for now, and the sessions whose way there is checked now: one at a time, each.
     private var reading: Set<PRKey> = []
     private var checking: Set<String> = []
@@ -72,7 +77,7 @@ final class PullRequestSessions: ObservableObject {
         defer { stop(following: key) }
         while !Task.isCancelled {
             await read(key)
-            try? await Task.sleep(for: Self.refreshEvery)
+            try? await Task.sleep(for: refreshEvery)
         }
     }
 
@@ -109,6 +114,7 @@ final class PullRequestSessions: ObservableObject {
         subscriptions = []
         followed = [:]
         sessions = [:]
+        mentionsRead = [:]
     }
 
     // MARK: Choosing
@@ -183,9 +189,14 @@ final class PullRequestSessions: ObservableObject {
         followed[key]?.found = found
         update(key)
         if case .newSession(chosenByYou: false)? = sessions[key]?.pick, followed[key]?.mentioned == nil {
-            let mentioned = await copilot.sessionsMentioning(subject, among: found, since: state.createdAt)
-            guard followed[key] != nil, copilot.isOn else { return }
-            followed[key]?.mentioned = mentioned
+            if let known = mentionsRead[key], Date().timeIntervalSince(known.at) < Self.mentionsFreshFor {
+                followed[key]?.mentioned = known.ids
+            } else {
+                let mentioned = await copilot.sessionsMentioning(subject, among: found, since: state.createdAt)
+                guard followed[key] != nil, copilot.isOn else { return }
+                mentionsRead[key] = (Date(), mentioned)
+                followed[key]?.mentioned = mentioned
+            }
             update(key)
         }
         await checkDelivery(key)
@@ -238,6 +249,7 @@ final class PullRequestSessions: ObservableObject {
             state.mentioned = nil
             state.delivery = nil
             followed[key] = state
+            mentionsRead = [:]
         }
         let session = make(state, key)
         if sessions[key] != session { sessions[key] = session }

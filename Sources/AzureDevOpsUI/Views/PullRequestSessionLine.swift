@@ -134,15 +134,14 @@ private struct SessionLineRow: View {
     private var name: String {
         if let choice { return "‘\(PullRequestSession.name(of: choice))’" }
         if case .ask(let choices) = session.pick { return "\(choices.count) sessions" }
-        if case .newSession(chosenByYou: true) = session.pick { return "A new session" }
-        return "No session yet"
+        return "New session"
     }
 
     private var why: String? {
         if let choice { return PullRequestSessionLine.why(choice, in: session) }
         if case .ask = session.pick { return "linked to it" }
         if case .newSession(chosenByYou: true) = session.pick { return PullRequestSession.Basis.chosenByYou.phrase }
-        return nil
+        return "none goes with it yet"
     }
 
     private var symbolColor: Color {
@@ -174,6 +173,18 @@ private struct SessionLineRow: View {
         .padding(.trailing, 4)
         .padding(.vertical, 5)
         .background(GlassCard(cornerRadius: 10, isHovered: isHovered && primaryAction != nil, raised: true))
+        // Waiting for your answer, in the Copilot app: orange, as what needs you is.
+        .overlay {
+            if waitsForYou {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(ItemState.needsYou.color.opacity(isHovered ? 0.14 : 0.09))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(ItemState.needsYou.color.opacity(0.45), lineWidth: 1)
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .contain)
     }
@@ -340,7 +351,7 @@ private struct QuestionRow: View {
     }
 
     private var name: String {
-        choice.map { "‘\(PullRequestSession.name(of: $0))’" } ?? "A new session"
+        choice.map { "‘\(PullRequestSession.name(of: $0))’" } ?? "New session"
     }
 
     private var detail: String {
@@ -369,7 +380,7 @@ private struct QuestionRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text(choice == nil ? "Start New" : "Use")
+                Text("Use")
                     .font(size: 11, weight: .semibold)
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 8)
