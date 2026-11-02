@@ -838,8 +838,13 @@ far as it needs:
   leaves a file it no longer needs until it can remove it, and one may hold a write that compaction
   has since dropped, a deletion included, so BriefBar reads only those, as LevelDB does as it opens the
   database: otherwise a conversation that was deleted would come back. A table it lists that's
-  missing starts the read over, as when compaction replaces tables meanwhile. A MANIFEST that can't be
-  read, or that LevelDB would refuse, makes BriefBar read every file, as a file that can't be read.
+  missing starts the read over, as when compaction replaces tables meanwhile, and so does a MANIFEST
+  that `CURRENT` names but that's gone, as when LevelDB replaces it. A MANIFEST that can't be read, or
+  that LevelDB would refuse, makes BriefBar read every file, and counts as a file that can't be read.
+  LevelDB refuses one with a damaged record, even the last, though a log's last may be one still being
+  written: going by the version before it would read tables that edit removed. It refuses files that
+  are still missing too, so after three tries, BriefBar counts them against the MANIFEST, or against
+  `CURRENT`.
 - **IndexedDB's keys** each start with a database, object store and index (`KeyPrefix`), and Chromium
   sorts keys by that first. So BriefBar reads the databases' and object stores' names first, then
   only the `conversations` stores' records, and skips every table block whose index entries say it

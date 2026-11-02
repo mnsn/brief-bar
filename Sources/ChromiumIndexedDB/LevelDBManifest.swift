@@ -53,14 +53,18 @@ public enum LevelDBManifest {
 
     /// The version that `bytes`, a MANIFEST, leaves the database at. An edit at the end that isn't all there yet, as
     /// one LevelDB is still writing, is left out. Throws `FormatError` where LevelDB would refuse to open the database:
-    /// for a damaged record, an edit it doesn't understand, or no log, next file or last sequence number.
+    /// for a damaged record, the last one included, an edit it doesn't understand, or no log, next file or last
+    /// sequence number.
     public static func parse(_ bytes: [UInt8]) throws -> Version {
         var files: Set<File> = []
         var logNumber: UInt64?
         var prevLogNumber: UInt64 = 0
         var hasNextFile = false
         var hasLastSequence = false
-        let (_, corrupt) = try LevelDBLog.records(bytes) { record in
+        // As LevelDB does, a damaged last record counts as one, rather than one that may still be being written: going
+        // by the version before it would read tables that edit removed, perhaps only some of them. One LevelDB is still
+        // writing changes as it finishes it, so a later read gets past it.
+        let (_, corrupt) = try LevelDBLog.records(bytes, damagedEndIsCorrupt: true) { record in
             var edit = ByteReader(Array(record))
             var deleted: [File] = []
             var added: [File] = []

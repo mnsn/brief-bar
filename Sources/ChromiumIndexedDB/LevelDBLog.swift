@@ -34,13 +34,14 @@ public enum LevelDBLog {
     }
 
     /// Parses `bytes`, which start at `fileOffset` in the log: 0, or a previous `end`. Stops before a record or a
-    /// batch that isn't all there yet. Only writes to keys that `keep` accepts are kept.
+    /// batch that isn't all there yet, and before a record at the end whose checksum doesn't match, which may still be
+    /// being written: reading on from `end` tries it again. Only writes to keys that `keep` accepts are kept.
     public static func parse(
         _ bytes: [UInt8], fileOffset: Int = 0, keep: (ArraySlice<UInt8>) -> Bool = { _ in true }
     ) -> Parsed {
         var entries: [LevelDBEntry] = []
         var corruptBatches = 0
-        let (end, corrupt) = records(bytes, fileOffset: fileOffset) { batch in
+        let (end, corrupt) = records(bytes, fileOffset: fileOffset, damagedEndIsCorrupt: false) { batch in
             do {
                 entries += try writes(in: Array(batch), keep: keep)
             } catch {
@@ -52,10 +53,12 @@ public enum LevelDBLog {
 
     /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
     /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits.
-    /// Stops before a record that isn't all there yet. Returns the file offset after the last whole record, and how
-    /// many records or blocks were skipped because they broke the format or their checksum didn't match.
+    /// Stops before a record that isn't all there yet; and before a record at the end whose checksum doesn't match,
+    /// unless `damagedEndIsCorrupt`, as LevelDB has it for a MANIFEST, when it skips it like any other. Returns the
+    /// file offset after the last whole record, and how many records or blocks were skipped because they broke the
+    /// format or their checksum didn't match.
     static func records(
-        _ bytes: [UInt8], fileOffset: Int = 0, _ record: (ArraySlice<UInt8>) throws -> Void
+        _ bytes: [UInt8], fileOffset: Int = 0, damagedEndIsCorrupt: Bool, _ record: (ArraySlice<UInt8>) throws -> Void
     ) rethrows -> (end: Int, corrupt: Int) {
         var end = fileOffset
         var corrupt = 0
@@ -94,8 +97,8 @@ public enum LevelDBLog {
             guard bytes.count - position - headerSize >= size else { break }
             let data = bytes[(position + headerSize)..<(position + headerSize + size)]
             guard CRC32C.unmask(checksum) == CRC32C.checksum(data, extending: CRC32C.checksum(CollectionOfOne(type))) else {
-                // At the end of the file, it may still be being written: try again later.
-                if position + headerSize + size >= bytes.count { break }
+                // At the end of a log, it may still be being written: try again later.
+                if !damagedEndIsCorrupt, position + headerSize + size >= bytes.count { break }
                 skipBlock(left: left)
                 continue
             }

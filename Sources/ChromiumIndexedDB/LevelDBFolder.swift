@@ -6,6 +6,9 @@ import Foundation
 /// it was when the read ended. Only the tables and logs its MANIFEST lists are read (`LevelDBManifest`). Nothing is
 /// written, and nothing copied.
 public struct LevelDBFolder: Sendable {
+    /// How many times a read starts over when files vanish as it reads them.
+    private static let attempts = 3
+
     public let url: URL
 
     public init(url: URL) {
@@ -48,27 +51,29 @@ public struct LevelDBFolder: Sendable {
 
     /// Reads the folder's tables and logs, keeping the writes to keys that `keep` accepts, from the table blocks that
     /// `mayHold` doesn't rule out (see `LevelDBTable.read`). A table that compaction removes while it's read, or adds,
-    /// makes it start over, since its keys are in another table then. Where there's no CURRENT, as in made-up data, it
-    /// reads every table and log; so it does when the MANIFEST can't be read, which it says.
+    /// makes it start over, since its keys are in another table then, up to three times. Where there's no CURRENT, as
+    /// in made-up data, it reads every table and log; so it does when the MANIFEST can't be read, or LevelDB would
+    /// refuse it, which it says: as when, at the last attempt, CURRENT still names a MANIFEST that isn't there, or the
+    /// MANIFEST a table that isn't.
     public func read(
         mayHold: ([UInt8]?, [UInt8]) -> Bool = { _, _ in true },
         keep: (ArraySlice<UInt8>) -> Bool = { _ in true }
     ) throws -> Read {
         var read = Read()
-        for _ in 0..<3 {
+        for attemptNumber in 1...Self.attempts {
             var vanished = false
-            (read, vanished) = try attempt(mayHold: mayHold, keep: keep)
+            (read, vanished) = try attempt(mayHold: mayHold, keep: keep, isLastAttempt: attemptNumber == Self.attempts)
             if !vanished { break }
         }
         return read
     }
 
     private func attempt(
-        mayHold: ([UInt8]?, [UInt8]) -> Bool, keep: (ArraySlice<UInt8>) -> Bool
+        mayHold: ([UInt8]?, [UInt8]) -> Bool, keep: (ArraySlice<UInt8>) -> Bool, isLastAttempt: Bool
     ) throws -> (Read, vanished: Bool) {
         let names = try FileManager.default.contentsOfDirectory(atPath: url.path)
         var read = Read()
-        let manifest = manifestVersion(names, read: &read)
+        let manifest = manifestVersion(names, read: &read, isLastAttempt: isLastAttempt)
         var vanished = manifest.vanished
         var tables: [String: LevelDBTable.Read] = [:]
         func readTable(_ name: String, skipping: Bool) {
@@ -90,10 +95,6 @@ public struct LevelDBFolder: Sendable {
             return (number, name)
         }.sorted { $0.number < $1.number }
         if let version = manifest.version {
-            // A table the MANIFEST lists that the folder didn't have as it was listed was written since: start over.
-            if !version.tables.isSubset(of: tableNames.compactMap(Self.number)) {
-                vanished = true
-            }
             let liveTables = tableNames.filter { name in Self.number(name).map { version.tables.contains($0) } == true }
             let liveLogs = logs.filter { version.isLiveLog($0.number) }
             read.unlisted = tableNames.count - liveTables.count + logs.count - liveLogs.count
@@ -134,10 +135,13 @@ public struct LevelDBFolder: Sendable {
         return (read, vanished)
     }
 
-    /// What the folder's MANIFEST says the database is, and whether it vanished as it was read. Nil, to read every
-    /// table and log, when the folder has no CURRENT, or when the MANIFEST vanished or can't be read, which `read` says.
+    /// What the folder's MANIFEST says the database is, and whether files vanished as it was read: the MANIFEST that
+    /// CURRENT names, as when LevelDB replaced it, or a table it lists that the folder didn't have as it was listed, as
+    /// when LevelDB wrote one since. Nil, to read every table and log, when the folder has no CURRENT, or when the
+    /// MANIFEST can't be read or LevelDB would refuse it, which `read` says: as when, at the last attempt, either is
+    /// still missing, since LevelDB refuses a database with files missing.
     private func manifestVersion(
-        _ names: [String], read: inout Read
+        _ names: [String], read: inout Read, isLastAttempt: Bool
     ) -> (version: LevelDBManifest.Version?, vanished: Bool) {
         guard names.contains(LevelDBManifest.currentFile) else { return (nil, false) }
         var file = LevelDBManifest.currentFile
@@ -146,11 +150,15 @@ public struct LevelDBFolder: Sendable {
             file = try LevelDBManifest.name(current: current)
             let (manifest, _) = try Self.contents(of: url.appendingPathComponent(file))
             let version = try LevelDBManifest.parse(manifest)
-            return (version, false)
+            let tables = names.filter { $0.hasSuffix(".ldb") || $0.hasSuffix(".sst") }.compactMap(Self.number)
+            if version.tables.isSubset(of: tables) { return (version, false) }
+            if !isLastAttempt { return (version, true) }
+            read.unreadable[file] = .corrupt("manifest")
         } catch let error as FormatError {
             read.unreadable[file] = error
         } catch where Self.isGone(error) {
-            return (nil, true)
+            if !isLastAttempt { return (nil, true) }
+            read.unreadable[LevelDBManifest.currentFile] = .corrupt(LevelDBManifest.currentFile)
         } catch {
             read.unreadable[file] = .unsupported("file")
         }
