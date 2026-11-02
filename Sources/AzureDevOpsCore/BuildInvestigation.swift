@@ -60,6 +60,11 @@ public struct BuildInvestigation: Sendable, Equatable {
         self.readAt = readAt
     }
 
+    /// What the comparison says of the run, the most telling first.
+    public var hints: [BuildHint] {
+        comparison.hints(for: run)
+    }
+
     /// The step that failed first.
     public var failedStep: BuildStep? {
         failedStepId.flatMap(step)
@@ -338,8 +343,9 @@ public struct BuildIssue: Sendable, Equatable {
     /// number (`3>`) when there is one.
     nonisolated(unsafe) private static let msbuildPlace =
         /\s*(?:\d+>)?([^\s(][^(]*?)\((\d+)(?:,(\d+))?(?:,\d+,\d+)?\)\s*:\s*(?:[A-Za-z ]+\s)?(?:error|warning)\b/
-    /// `Sources/Cart.swift:41:5: error: …`, as Clang, GCC and Swift write it.
-    nonisolated(unsafe) private static let compilerPlace = /([^\s:][^:]*):(\d+):(?:(\d+):)?\s*(?:fatal\s+)?(?:error|warning)\b/
+    /// `Sources/Cart.swift:41:5: error: …`, as Clang, GCC and Swift write it, with a drive first on Windows: `C:\a\1\s\…`.
+    nonisolated(unsafe) private static let compilerPlace =
+        /((?:[A-Za-z]:[\\\/])?[^\s:][^:]*):(\d+):(?:(\d+):)?\s*(?:fatal\s+)?(?:error|warning)\b/
 }
 
 // MARK: - The log
@@ -437,10 +443,27 @@ public struct BuildLogLine: Sendable, Equatable, Identifiable {
 }
 
 extension PlainText {
-    /// What a terminal shows of a line a program wrote: what the last carriage return wrote, without escape sequences
-    /// (colors, cursor moves, character sets, titles, links) or other control characters but tabs.
+    /// What a terminal shows of a line a program wrote: what the last carriage return that writes something wrote, without
+    /// escape sequences (colors, cursor moves, character sets, titles, links) or other control characters but tabs.
+    /// Carriage returns are found scalar by scalar: Swift takes a carriage return and a line feed for one character.
     static func terminal(_ text: Substring) -> String {
-        let shown = text.split(separator: "\r", omittingEmptySubsequences: false).last { !$0.isEmpty } ?? ""
+        var shown = ""
+        for part in text.unicodeScalars.split(separator: "\r", omittingEmptySubsequences: false) {
+            let written = withoutControls(part)
+            if written.contains(where: { !$0.isWhitespace }) { shown = written }
+        }
+        return shown
+    }
+
+    /// What a program wrote, such as a build's error, on one line, as a terminal shows each of its lines. Lines end at
+    /// each line feed, scalar by scalar, so a carriage return before one, or two (`\r\r\n`), ends a line too.
+    static func terminalLine(_ text: String) -> String {
+        singleLine(text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { terminal(Substring($0)) }.joined(separator: " "))
+    }
+
+    /// The scalars without escape sequences, or control characters but tabs.
+    private static func withoutControls(_ scalars: Substring.UnicodeScalarView) -> String {
         enum State {
             case text
             /// After ESC.
@@ -494,16 +517,10 @@ extension PlainText {
                 if value != 0x5C { handle(scalar) }
             }
         }
-        for scalar in shown.unicodeScalars {
+        for scalar in scalars {
             handle(scalar)
         }
         return String(result)
-    }
-
-    /// What a program wrote, such as a build's error, on one line, as a terminal shows each of its lines.
-    static func terminalLine(_ text: String) -> String {
-        singleLine(text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
-            .map { terminal($0) }.joined(separator: " "))
     }
 }
 
@@ -660,22 +677,43 @@ public struct BuildComparison: Sendable, Equatable {
     public var targetBranch: String
     /// The pipeline's latest run there that passed or failed; nil when it has none, or it couldn't be read.
     public var targetRun: PipelineRun?
-    /// The latest of the pipeline's earlier runs on the pull request that passed on the same commit, which makes it look
-    /// flaky; nil when none did, or they couldn't be read.
-    public var earlierPass: PipelineRun?
+    /// The latest of the pipeline's earlier runs on the pull request that passed on the same commit, one that built the
+    /// very same code first; nil when none did, or they couldn't be read.
+    public var earlierPass: EarlierPass?
 
-    public init(revision: PullRequestPipelines.Revision, targetBranch: String, targetRun: PipelineRun? = nil, earlierPass: PipelineRun? = nil) {
+    /// An earlier run of the pipeline on the pull request that passed on the same commit.
+    public struct EarlierPass: Sendable, Equatable {
+        public var run: PipelineRun
+        /// It built the very same commit, such as the same merge of the pull request into its target branch, which makes
+        /// a failure now look flaky. Otherwise it built the merge of the pull request's same commit before the target branch
+        /// changed: the target's changes since may be why it fails now.
+        public var builtTheSame: Bool
+
+        public init(run: PipelineRun, builtTheSame: Bool) {
+            self.run = run
+            self.builtTheSame = builtTheSame
+        }
+    }
+
+    public init(
+        revision: PullRequestPipelines.Revision, targetBranch: String, targetRun: PipelineRun? = nil, earlierPass: EarlierPass? = nil
+    ) {
         self.revision = revision
         self.targetBranch = targetBranch
         self.targetRun = targetRun
         self.earlierPass = earlierPass
     }
 
-    /// What they say, the most telling first.
-    public var hints: [BuildHint] {
+    /// What they say of `run`, the most telling first. Only a run that failed is asked whether the failure is the change's
+    /// doing: of one running again, or that passed since, they say only whether it built the latest commit.
+    public func hints(for run: PipelineRun) -> [BuildHint] {
         var hints: [BuildHint] = []
         if revision == .outdated { hints.append(.olderCommit) }
-        if let earlierPass { hints.append(.passedBefore(earlierPass)) }
+        guard run.status == .failed else { return hints }
+        if let earlierPass {
+            hints.append(earlierPass.builtTheSame
+                ? .passedBefore(earlierPass.run) : .passedBeforeTargetChanged(branch: targetBranch, run: earlierPass.run))
+        }
         if let targetRun {
             switch targetRun.status {
             case .failed: hints.append(.targetFails(branch: targetBranch, run: targetRun))
@@ -691,21 +729,26 @@ public struct BuildComparison: Sendable, Equatable {
         build.status == "completed" && ["succeeded", "partiallySucceeded", "failed"].contains(build.result ?? "")
     }
 
-    /// The latest of `runs`, the pipeline's on the pull request, that passed before `build` on the same commit: the same
-    /// source commit of the pull request, or the same commit built, such as the same merge.
-    static func earlierPass(of build: ADOBuild, among runs: [ADOBuild]) -> ADOBuild? {
+    /// The latest of `runs`, the pipeline's on the pull request, that passed before `build` on the same commit, and whether
+    /// it built the very same one: the latest that built the same commit as `build`, such as the same merge, or else the
+    /// latest that built a merge of the pull request's same source commit.
+    static func earlierPass(of build: ADOBuild, among runs: [ADOBuild]) -> (build: ADOBuild, builtTheSame: Bool)? {
         func same(_ one: String?, _ other: String?) -> Bool {
             guard let one, let other, !one.isEmpty else { return false }
             return one.caseInsensitiveCompare(other) == .orderedSame
         }
-        return runs
-            .filter { run in
-                run.id != build.id && run.definition.id == build.definition.id && run.result == "succeeded"
-                    && (build.sourceBranch == nil || run.sourceBranch == build.sourceBranch)
-                    && isEarlier(run, than: build)
-                    && (same(run.triggerInfo?["pr.sourceSha"], build.triggerInfo?["pr.sourceSha"]) || same(run.sourceVersion, build.sourceVersion))
-            }
-            .max { ($0.queueTime ?? .distantPast, $0.id) < ($1.queueTime ?? .distantPast, $1.id) }
+        func latest(_ runs: [ADOBuild]) -> ADOBuild? {
+            runs.max { ($0.queueTime ?? .distantPast, $0.id) < ($1.queueTime ?? .distantPast, $1.id) }
+        }
+        let passed = runs.filter { run in
+            run.id != build.id && run.definition.id == build.definition.id && run.result == "succeeded"
+                && (build.sourceBranch == nil || run.sourceBranch == build.sourceBranch) && isEarlier(run, than: build)
+        }
+        if let run = latest(passed.filter({ same($0.sourceVersion, build.sourceVersion) })) { return (run, true) }
+        if let run = latest(passed.filter({ same($0.triggerInfo?["pr.sourceSha"], build.triggerInfo?["pr.sourceSha"]) })) {
+            return (run, false)
+        }
+        return nil
     }
 
     /// Queued before: by when they were queued, or by ID, which grows, when either doesn't say.
@@ -719,8 +762,10 @@ public struct BuildComparison: Sendable, Equatable {
 public enum BuildHint: Sendable, Equatable {
     /// It built an older commit than the pull request's latest.
     case olderCommit
-    /// It passed on the same commit before: it may be flaky.
+    /// It passed on the very same commit before: it may be flaky.
     case passedBefore(PipelineRun)
+    /// It passed on the pull request's same commit before the target branch changed: the target's changes may be why.
+    case passedBeforeTargetChanged(branch: String, run: PipelineRun)
     /// The pipeline's latest run on the target branch failed too: it may not be the change.
     case targetFails(branch: String, run: PipelineRun)
     /// The pipeline passes on the target branch.
@@ -731,6 +776,7 @@ public enum BuildHint: Sendable, Equatable {
         switch self {
         case .olderCommit: "It built an older commit than the pull request's latest."
         case .passedBefore(let run): "It passed on the same commit in \(run.number): it may be flaky."
+        case .passedBeforeTargetChanged(let branch, let run): "It passed on this commit in \(run.number), before \(branch) changed."
         case .targetFails(let branch, _): "\(branch)'s latest run failed too: it may not be this change."
         case .targetPasses(let branch, _): "\(branch)'s latest run passed."
         }

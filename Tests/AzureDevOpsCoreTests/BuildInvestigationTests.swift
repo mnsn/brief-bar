@@ -194,6 +194,8 @@ enum InvestigationFixture {
         #expect(try place("/Users/runner/work/1/s/Sources/Cart.swift:41:5: error: cannot find 'total' in scope")
             == ["Sources/Cart.swift", "41", "5"])
         #expect(try place("src/main.c:7: fatal error: cart.h: No such file or directory") == ["src/main.c", "7", "-"])
+        #expect(try place("C:\\a\\1\\s\\src\\Cart.cpp:41:5: error: use of undeclared identifier 'total'") == ["src/Cart.cpp", "41", "5"])
+        #expect(try place("D:/a/1/s/src/Cart.cpp:41: warning: unused variable 'e'") == ["src/Cart.cpp", "41", "-"])
         #expect(try place("/usr/share/dotnet/sdk/8.0.100/Microsoft.Common.targets(2,3): warning MSB3277: Conflicts")
             == ["/usr/share/dotnet/sdk/8.0.100/Microsoft.Common.targets", "2", "3"])
         for nowhere in [
@@ -211,6 +213,20 @@ enum InvestigationFixture {
         // What's neither an error nor a warning, or says nothing, isn't an issue.
         #expect(try issue("Just so you know", type: "info") == nil)
         #expect(try issue("  ") == nil)
+    }
+
+    @Test func outputReadsAsATerminalShowsIt() {
+        // Lines end at each line feed, whatever carriage returns come before it.
+        #expect(PlainText.terminalLine("Build failed:\r\r\nsee log") == "Build failed: see log")
+        #expect(PlainText.terminalLine("Build failed:\r\nsee log\n") == "Build failed: see log")
+        #expect(PlainText.terminalLine("first\n\nsecond") == "first second")
+        // A carriage return alone writes over the line, and the last that writes something shows.
+        #expect(PlainText.terminalLine("Downloading 50%\rDownloading 100%\nDone") == "Downloading 100% Done")
+        #expect(PlainText.terminalLine("Uploading\r   \r\u{1B}[K") == "Uploading")
+        #expect(PlainText.terminal("text\r\n") == "text")
+        #expect(PlainText.terminal("\r") == "")
+        #expect(BuildLogLine(raw: "2026-10-18T10:00:00.1Z Restored\r\r", number: 1)?.text == "Restored")
+        #expect(PipelineFailure.clean("##[error]Build failed:\r\r\nsee log") == "Build failed: see log")
     }
 
     @Test func whereARunFailedReadsAsATerminalShowsIt() throws {
@@ -358,24 +374,39 @@ enum InvestigationFixture {
     }
 
     @Test func hintsSayWhetherItsTheChange() {
+        let failed = F.run(77, status: .failed)
         let passed = F.run(1, status: .succeeded, number: "20261018.1")
         let failedOnMain = F.run(2, status: .failed, number: "20261018.2", branch: "main")
         let passedOnMain = F.run(3, status: .succeeded, branch: "main")
         let withIssues = F.run(4, status: .partiallySucceeded, branch: "main")
         let canceled = F.run(5, status: .canceled, branch: "main")
-        #expect(BuildComparison(revision: .current, targetBranch: "main").hints.isEmpty)
-        #expect(BuildComparison(revision: .unknown, targetBranch: "main", targetRun: canceled).hints.isEmpty)
-        let all = BuildComparison(revision: .outdated, targetBranch: "main", targetRun: failedOnMain, earlierPass: passed)
-        #expect(all.hints == [.olderCommit, .passedBefore(passed), .targetFails(branch: "main", run: failedOnMain)])
-        #expect(all.hints.map(\.sentence) == [
+        #expect(BuildComparison(revision: .current, targetBranch: "main").hints(for: failed).isEmpty)
+        #expect(BuildComparison(revision: .unknown, targetBranch: "main", targetRun: canceled).hints(for: failed).isEmpty)
+        let sameCode = BuildComparison.EarlierPass(run: passed, builtTheSame: true)
+        let all = BuildComparison(revision: .outdated, targetBranch: "main", targetRun: failedOnMain, earlierPass: sameCode)
+        #expect(all.hints(for: failed) == [.olderCommit, .passedBefore(passed), .targetFails(branch: "main", run: failedOnMain)])
+        #expect(all.hints(for: failed).map(\.sentence) == [
             "It built an older commit than the pull request's latest.",
             "It passed on the same commit in 20261018.1: it may be flaky.",
             "main's latest run failed too: it may not be this change.",
         ])
-        #expect(BuildComparison(revision: .current, targetBranch: "main", targetRun: passedOnMain).hints.map(\.sentence)
-            == ["main's latest run passed."])
-        #expect(BuildComparison(revision: .current, targetBranch: "main", targetRun: withIssues).hints
+        // A pass on the pull request's same commit, merged into main before main changed, built other code: not flaky.
+        let beforeMainChanged = BuildComparison(
+            revision: .current, targetBranch: "main", targetRun: passedOnMain,
+            earlierPass: BuildComparison.EarlierPass(run: passed, builtTheSame: false)
+        )
+        #expect(beforeMainChanged.hints(for: failed).map(\.sentence) == [
+            "It passed on this commit in 20261018.1, before main changed.", "main's latest run passed.",
+        ])
+        #expect(BuildComparison(revision: .current, targetBranch: "main", targetRun: withIssues).hints(for: failed)
             == [.targetPasses(branch: "main", run: withIssues)])
+        // A run that's running again, or passed since, has no failure to explain: only that it built an older commit.
+        for now in [F.run(77, status: .running), F.run(77, status: .succeeded), F.run(77, status: .queued)] {
+            #expect(all.hints(for: now) == [.olderCommit])
+            #expect(beforeMainChanged.hints(for: now).isEmpty)
+        }
+        let investigation = BuildInvestigation(pipeline: F.pipeline, run: failed, comparison: all, readAt: t(0))
+        #expect(investigation.hints == all.hints(for: failed))
     }
 
     @Test func anEarlierPassIsOnTheSameCommit() throws {
@@ -389,14 +420,17 @@ enum InvestigationFixture {
             return try Fixture.decode(ADOBuild.self, json)
         }
         let failed = try build(10, result: "failed", queued: t(-hour))
-        func pass(among runs: [ADOBuild]) -> Int? {
-            BuildComparison.earlierPass(of: failed, among: runs)?.id
+        func pass(among runs: [ADOBuild]) -> String? {
+            BuildComparison.earlierPass(of: failed, among: runs).map { "\($0.build.id)\($0.builtTheSame ? " the same" : " before")" }
         }
-        // The latest that passed.
-        #expect(try pass(among: [build(5, queued: t(-3 * hour)), build(6, queued: t(-2 * hour)), build(4, queued: t(-4 * hour))]) == 6)
-        // The same source commit, after the target branch moved, or the same merge.
-        #expect(try pass(among: [build(6, queued: t(-2 * hour), source: "ABC", merge: "other")]) == 6)
-        #expect(try pass(among: [build(6, queued: t(-2 * hour), source: nil, merge: "M1")]) == 6)
+        // The latest that built the very same commit, the same merge.
+        #expect(try pass(among: [build(5, queued: t(-3 * hour)), build(6, queued: t(-2 * hour)), build(4, queued: t(-4 * hour))])
+            == "6 the same")
+        #expect(try pass(among: [build(6, queued: t(-2 * hour), source: nil, merge: "M1")]) == "6 the same")
+        // Without one, the latest that built the pull request's same commit, merged before the target branch changed.
+        #expect(try pass(among: [build(6, queued: t(-2 * hour), source: "ABC", merge: "other")]) == "6 before")
+        #expect(try pass(among: [build(7, queued: t(-90 * minute), source: "abc", merge: "other"), build(6, queued: t(-2 * hour))])
+            == "6 the same")
         // Not another commit, a later run, one that didn't pass, another pipeline's, another branch's, or itself.
         #expect(try pass(among: [build(6, queued: t(-2 * hour), source: "def", merge: "m2")]) == nil)
         #expect(try pass(among: [build(11, queued: t(-minute))]) == nil)
@@ -406,7 +440,7 @@ enum InvestigationFixture {
         #expect(try pass(among: [build(6, queued: t(-2 * hour), branch: "refs/pull/8/merge")]) == nil)
         #expect(pass(among: [failed]) == nil)
         // Queued at the same time, the one with the lower ID came first.
-        #expect(try pass(among: [build(9, queued: t(-hour)), build(12, queued: t(-hour))]) == 9)
+        #expect(try pass(among: [build(9, queued: t(-hour)), build(12, queued: t(-hour))]) == "9 the same")
         // Without its commits, nothing's the same.
         let unknown = try build(12, result: "failed", queued: t(-hour), source: nil, merge: nil)
         #expect(try BuildComparison.earlierPass(of: unknown, among: [build(6, queued: t(-2 * hour), source: nil, merge: nil)]) == nil)

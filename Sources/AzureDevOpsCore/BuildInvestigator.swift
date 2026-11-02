@@ -285,7 +285,8 @@ public enum BuildInvestigationReader {
             tests: testsRead.tests,
             comparison: BuildComparison(
                 revision: PullRequestPipelines.revision(of: build, for: pr), targetBranch: pr.targetBranch,
-                targetRun: target.map(run), earlierPass: earlierPass.map(run)
+                targetRun: target.map(run),
+                earlierPass: earlierPass.map { BuildComparison.EarlierPass(run: run($0.build), builtTheSame: $0.builtTheSame) }
             ),
             unread: unread,
             readAt: now
@@ -393,7 +394,8 @@ public enum BuildInvestigationReader {
 /// little: a run that finished, for `keptFor`, as long as the run itself, read again, says it hasn't been run again
 /// since; one still running, for `keptWhileRunningFor`, without reading anything; one that couldn't all be read, not at
 /// all. What's kept is revised for the pull request as it is when it's asked for again: whether the run built its latest
-/// commit. Asking for a build that's being read waits for that read. It reads only when asked: it never polls.
+/// commit. Asking for a build that's being read, to compare it with the same target branch, waits for that read. It reads
+/// only when asked: it never polls.
 public actor BuildInvestigator {
     /// How long a finished run's investigation is kept: its steps, log and tests don't change unless it's run again, which
     /// Azure DevOps does under the same ID, but the runs it's compared with may.
@@ -418,6 +420,8 @@ public actor BuildInvestigator {
         var id = UUID()
         /// What it's read for: `forget()` makes what's read before it, and comes after, not kept.
         var generation: Int
+        /// The branch it compares the run with: the pull request's target.
+        var targetBranch: String
         var task: Task<BuildInvestigationReader.Read, Error>
     }
 
@@ -441,7 +445,8 @@ public actor BuildInvestigator {
         if !refresh, let read = await stillKept(key, buildId: buildId, pullRequest: pullRequest) {
             return read.revised(for: pullRequest)
         }
-        let current = reading[key] ?? start(key, buildId: buildId, pullRequest: pullRequest)
+        let current = reading[key].flatMap { $0.targetBranch == pullRequest.targetBranch ? $0 : nil }
+            ?? start(key, buildId: buildId, pullRequest: pullRequest)
         waiting += 1
         defer { waiting -= 1 }
         do {
@@ -491,7 +496,7 @@ public actor BuildInvestigator {
     private func start(_ key: Key, buildId: Int, pullRequest: PullRequest) -> Reading {
         let client = client
         let readAt = now()
-        let reading = Reading(generation: generation, task: Task {
+        let reading = Reading(generation: generation, targetBranch: pullRequest.targetBranch, task: Task {
             try await BuildInvestigationReader.readRun(client: client, buildId: buildId, of: pullRequest, now: readAt)
         })
         self.reading[key] = reading

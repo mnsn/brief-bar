@@ -179,10 +179,11 @@ private final class TestClock: Sendable {
         // Whether it's the change: it built the latest commit, passed on it before, and main fails too; a canceled run on
         // main says neither.
         #expect(investigation.comparison.revision == .current)
-        #expect(investigation.comparison.earlierPass?.id == 70)
+        #expect(investigation.comparison.earlierPass?.run.id == 70)
+        #expect(investigation.comparison.earlierPass?.builtTheSame == true)
         #expect(investigation.comparison.targetRun?.id == 89)
         #expect(investigation.comparison.targetRun?.branch == "main")
-        #expect(investigation.comparison.hints.map(\.sentence) == [
+        #expect(investigation.hints.map(\.sentence) == [
             "It passed on the same commit in 20261018.70: it may be flaky.", "main's latest run failed too: it may not be this change.",
         ])
 
@@ -419,13 +420,55 @@ private final class TestClock: Sendable {
         let one = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
         try await waitUntilHeld(tokens)
         let two = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
-        try await waitUntil("both to wait for the read") { await investigator.waiting == 2 }
+        let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
         await tokens.release()
+        #expect(bothWait)
         let (first, second) = try await (one.value, two.value)
         #expect(first == second)
         #expect(requests(server, to: "/_apis/build/builds/77").count == 1)
         #expect(requests(server, to: "/timeline").count == 1)
         #expect(await investigator.waiting == 0)
+    }
+
+    @Test func aReadForAnotherTargetBranchIsntShared() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let tokens = HeldTokens(server.id, holdAt: 1)
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens))
+        let toMain = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        // Retargeted while that's read: compared with its new target, in a read of its own, which doesn't wait for the other.
+        var retargeted = FailedRun.pullRequest
+        retargeted.targetBranch = "release"
+        let reading = Task { try await investigator.investigation(buildId: 77, of: retargeted) }
+        let readAlone = (try? await waitUntil("its own read") { requests(server, to: "/timeline").count == 1 }) != nil
+        await tokens.release()
+        #expect(readAlone)
+        let toRelease = try await reading.value
+        #expect(toRelease.comparison.targetBranch == "release")
+        #expect(toRelease.comparison.targetRun == nil)
+        #expect(try await toMain.value.comparison.targetRun?.id == 89)
+        #expect(requests(server, to: "/timeline").count == 2)
+    }
+
+    @Test func forgettingWhileItChecksAKeptRunReadsItAgain() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests, then the check of the run it kept.
+        let tokens = HeldTokens(server.id, holdAt: 9)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        #expect(server.requests.count == 8)
+        clock.advance(10)
+        let again = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        try await waitUntilHeld(tokens)
+        // Someone else signed in: what was read before isn't shown, and what's read now, as them, is.
+        await investigator.forget()
+        await tokens.release()
+        #expect(try await again.value.readAt == t(10))
+        #expect(requests(server, to: "/timeline").count == 2)
+        #expect(await investigator.keptBuilds == [77])
     }
 
     @Test func aReadUnderWayWhenItForgetsIsntKept() async throws {
@@ -478,7 +521,7 @@ private final class TestClock: Sendable {
         #expect(investigation.run.id == buildId)
         #expect(investigation.run.finishedAt == check.completedAt)
         #expect(investigation.comparison.targetRun == shopWeb.latest)
-        #expect(investigation.comparison.hints.map(\.sentence) == ["main's latest run failed too: it may not be this change."])
+        #expect(investigation.hints.map(\.sentence) == ["main's latest run failed too: it may not be this change."])
         // Its log ends with its errors, and its tests are the ones that failed.
         let log = try #require(investigation.log)
         #expect(log.stepId == investigation.failedStepId)
@@ -502,7 +545,7 @@ private final class TestClock: Sendable {
                 let investigation = try #require(DemoData.buildInvestigation(buildId: run.id, of: card.pullRequest, now: now))
                 #expect(investigation.run == run)
                 #expect(investigation.comparison.revision == card.revision(of: status))
-                #expect(investigation.comparison.hints.contains(.olderCommit) == (card.revision(of: status) == .outdated))
+                #expect(investigation.hints.contains(.olderCommit) == (card.revision(of: status) == .outdated))
                 revisions.append(investigation.comparison.revision)
             }
         }
