@@ -1318,15 +1318,19 @@ Someone else signing in to the Azure CLI closes it.
 
 Its threads go by file (`PullRequestPanel.Threads.openByFile`, `resolvedByFile`): those on the pull request itself
 first, then each file's, as Azure DevOps' Files page lists them, folder by folder, each folder's folders before
-its files, by name (`PullRequestPanel.listsFirst`). In each, those with a comment that waits on you come first (as
-its row's events say, or said as the details showed it), then the other open ones, from the top of the file down;
-the resolved ones are folded behind **Show Resolved**, by file the same way. A thread says the lines it's on, its
-status as Azure DevOps names it, **Waits on you** when it does, and otherwise who it waits on
-(`PullRequestPanel.Thread.waitingOn`): the person, or team, its latest comment mentions, else the pull request's
-author when someone else spoke last, else whoever else spoke last; nobody once it's resolved, or when only you
-spoke. Each comment shows in full, its Markdown drawn by BriefBar (`ReviewComment.markdown`, `RichText`,
-`RichTextView`), mentions as names; a thread of more than three shows its first and latest until you ask for the
-rest.
+its files, by name (`PullRequestPanel.listsFirst`). Files are told apart as Git tells them, by their paths' bytes
+(`GitPath`): two whose names look the same, as "é" written in one character and in two, are two files, and two
+names alike but for case, or for how their letters are written, go by their bytes. In each, those with a comment
+that waits on you come first (as its row's events say, or said as the details showed it), then the other open
+ones, from the top of the file down; the resolved ones are folded behind **Show Resolved**, by file the same way.
+A thread says the lines it's on, its status as Azure DevOps names it, **Waits on you** when it does, and otherwise
+who it waits on (`PullRequestPanel.Thread.waitingOn`): whom its latest comment asks, the first person, or team, it
+mentions that BriefBar can name, else the pull request's author when someone else spoke last, else whoever else
+spoke last; nobody once it's resolved, when only you spoke, when the latest comment asks only people BriefBar
+can't name, and when it asks you, though it doesn't wait on you anymore, as when you removed it from Needs You:
+then it's your turn, not someone else's. Each comment shows in full, its Markdown drawn by BriefBar
+(`ReviewComment.markdown`, `RichText`, `RichTextView`), mentions as names; a thread of more than three shows its
+first and latest until you ask for the rest.
 
 #### The code comments are on
 
@@ -1342,9 +1346,10 @@ read off when the thread leaves the screen first. What's read is kept in memory 
 pull request, and forgotten when they show another one, or none. A thread is read again only on screen, after a
 push or a move to another target branch, or when Azure DevOps followed it to other lines; until that's read, it
 shows the code it showed. A read that failed in a way reading again may fix, offline, throttled or signed out, is
-tried again when the thread comes on screen half a minute later, or at once with **↻**; one that can't be read,
-such as a file that isn't text, longer than 1 MB, or that Azure DevOps doesn't have, says why in a few words
-(`ThreadCode.sentence`), with ↗ to the thread.
+tried again when the thread comes on screen half a minute later, or at once with **↻**, and so is code read
+without whether it changed since, which couldn't be read: it shows meanwhile, and since what was read of it is
+kept, reading it again is one request at most; one that can't be read, such as a file that isn't text, longer than
+1 MB, or that Azure DevOps doesn't have, says why in a few words (`ThreadCode.sentence`), with ↗ to the thread.
 
 `CodeView` draws code, for the threads and, later, whole files: AppKit's text system, so each row is as tall as
 the others, its text selectable across rows and copied without the numbers, and only the rows on screen drawn. Its
@@ -1354,8 +1359,9 @@ color with a bar, and lines left out in a run of removed or added ones are a row
 (`ThreadCode.rows`). It drops the indentation every line shares (`ThreadCode.outdented`), follows the text size on
 windows' pages, and scrolls sideways a gesture that starts sideways, leaving up and down to the details. While the
 details are beside the list, **⟷** makes them wide enough for a thread's longest line (`DetailsWidening`). When
-the file changed after the comment, it says so, with ↗ to the pull request's Files page at that file, from the
-update the comment was made on to the latest (`PRSnapshot.filePageURL`).
+the file changed after the comment, it says so, or that it may have, when that couldn't be read though the pull
+request changed since, with ↗ to the pull request's Files page at that file, from the update the comment was made
+on to the latest (`PRSnapshot.filePageURL`).
 
 ### What counts as new
 

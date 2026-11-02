@@ -182,11 +182,13 @@ import BriefBarCore
         #expect(!PullRequestPanel.listsFirst("/src/a.cs", "/src/a.cs"))
         #expect(PullRequestPanel.listsFirst("/src/A.cs", "/src/a.cs") != PullRequestPanel.listsFirst("/src/a.cs", "/src/A.cs"))
 
-        // Every pair the same way both ways round, and in a chain, as sorting needs: names with "ß", case and numbers too.
+        // Every pair the same way both ways round, and in a chain, as sorting needs: names with "ß", case and numbers too,
+        // and two that look the same, "é" in one character and in two, which Git tells apart.
         let names = ["/src/Maß.cs", "/src/Mast.cs", "/src/Masse.cs", "/src/Massnahme.cs", "/src/MASS.cs", "/src/mass2.cs",
-                     "/src/mass10.cs", "/src/mass02.cs", "/src/Straße/a.cs", "/src/strasse.cs", "/src/Ärger.cs", "/src/Arger.cs"]
+                     "/src/mass10.cs", "/src/mass02.cs", "/src/Straße/a.cs", "/src/strasse.cs", "/src/Ärger.cs", "/src/Arger.cs",
+                     "/src/caf\u{E9}.cs", "/src/cafe\u{301}.cs", "/src/Caf\u{E9}.cs", "src/mass2.cs"]
         for a in names {
-            for b in names where a != b {
+            for b in names where !a.utf8.elementsEqual(b.utf8) {
                 #expect(!(PullRequestPanel.listsFirst(a, b) && PullRequestPanel.listsFirst(b, a)), "\(a) and \(b)")
                 #expect(PullRequestPanel.listsFirst(a, b) || PullRequestPanel.listsFirst(b, a), "\(a) and \(b)")
                 for c in names where PullRequestPanel.listsFirst(a, b) && PullRequestPanel.listsFirst(b, c) {
@@ -194,6 +196,27 @@ import BriefBarCore
                 }
             }
         }
+    }
+
+    /// Two paths that look the same to Swift, but not to Git, such as "é" in one character and in two, are two files, each
+    /// with its threads, always in the same order.
+    @Test func filesThatLookTheSameButArentStayApart() throws {
+        let composed = "/src/caf\u{E9}.cs"
+        let decomposed = "/src/cafe\u{301}.cs"
+        #expect(composed == decomposed)
+        let threads = [
+            ReviewThread(id: 1, filePath: composed, line: 3, comments: [comment(1, People.sam, at: t(-2 * hour))]),
+            ReviewThread(id: 2, filePath: decomposed, line: 3, comments: [comment(1, People.sam, at: t(-hour))]),
+            ReviewThread(id: 3, filePath: composed, line: 9, comments: [comment(1, People.sam, at: t(-hour))]),
+        ]
+        let byFile = try panel(threads, author: People.alex).threads.openByFile
+        #expect(byFile.count == 2)
+        // By their bytes: "e" and the accent after it before "é" in one character.
+        #expect(byFile.map { $0.threads.map(\.id) } == [[2], [1, 3]])
+        #expect(byFile.first?.path.map { $0.utf8.elementsEqual(decomposed.utf8) } == true)
+        #expect(Set(byFile.map(\.id)).count == 2)
+        // However the threads come.
+        #expect(try panel(threads.reversed(), author: People.alex).threads.openByFile.map { $0.threads.map(\.id) } == [[2], [1, 3]])
     }
 
     // MARK: Who it waits on
@@ -222,6 +245,19 @@ import BriefBarCore
         #expect(teamMentioned.waitingOn(in: mine, me: me.id) == "Checkout Team")
         // A bot's comment on Sam's: Sam answers.
         #expect(thread([comment(1, People.bot, at: t(-hour))]).waitingOn(in: samsPR, me: me.id) == "Sam")
+        // On Sam's, Priya asks you, and you removed it from Needs You: it's your turn, not Sam's, though it doesn't wait
+        // on you here anymore; and so it is when she asks you and Alex.
+        let asksYou = thread([comment(1, People.priya, "@Robin could you check?", at: t(-hour), mentions: [me])])
+        #expect(asksYou.waitingOn(in: samsPR, me: me.id) == nil)
+        let asksYouAndAlex = thread([comment(1, People.priya, at: t(-hour), mentions: [People.alex, me])])
+        #expect(asksYouAndAlex.waitingOn(in: samsPR, me: me.id.uppercased()) == nil)
+        // She asks someone BriefBar can't name: not Sam either. With Sam too, Sam.
+        let jordan = Person(id: "77777777-7777-7777-7777-777777777777", name: "Jordan Lee")
+        #expect(thread([comment(1, People.priya, at: t(-hour), mentions: [jordan])]).waitingOn(in: samsPR, me: me.id) == nil)
+        let asksJordanAndSam = thread([comment(1, People.priya, at: t(-hour), mentions: [jordan, People.sam])])
+        #expect(asksJordanAndSam.waitingOn(in: samsPR, me: me.id) == "Sam")
+        // A mention of herself asks no one: Sam answers, as when she mentions nobody.
+        #expect(thread([comment(1, People.priya, at: t(-hour), mentions: [People.priya])]).waitingOn(in: samsPR, me: me.id) == "Sam")
 
         // Your turn, though it doesn't wait on you anymore, such as one you removed from Needs You: nobody else's.
         #expect(thread([comment(1, People.priya, at: t(-hour))]).waitingOn(in: mine, me: me.id) == nil)

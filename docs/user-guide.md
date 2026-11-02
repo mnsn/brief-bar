@@ -331,15 +331,16 @@ on, with a few around them, as they were in the update it was made on: their num
 change when lines were removed, what was added in green and removed in red, and the lines it's about marked in
 your accent color. Select the code to copy it, without the numbers. A long line scrolls sideways rather than
 wrapping, and while the details are beside the list, **⟷** makes them wide enough for it. When the file
-changed after the comment, the thread says **The code changed since this comment**, with **↗** to see what
-changed in Azure DevOps. Each comment shows in full, formatted as it was written, with who wrote it and when;
-in a thread of more than three, the first and the latest show, and **Show 2 more comments** shows the rest.
-Each thread says how it stands, **Active**, **Resolved**, **Won't fix** and so on, and who it waits on:
-**Waits on you**, or someone else, such as **Waiting on Sam**, for whoever the latest comment mentions, or
-else whoever has to answer. BriefBar reads a thread's code only as it comes on screen, and stops if you scroll
-past it first; it keeps it in memory only, while the details show that pull request. When it can't show a
-thread's code, such as a file that isn't text, it says why in a few words, with **↗** to see it in Azure
-DevOps, and, when reading it again may help, as when you were offline, **↻** to try again.
+changed after the comment, the thread says **The code changed since this comment**, or that it may have when
+BriefBar can't tell, with **↗** to see what changed in Azure DevOps. Each comment shows in full, formatted as
+it was written, with who wrote it and when; in a thread of more than three, the first and the latest show, and
+**Show 2 more comments** shows the rest. Each thread says how it stands, **Active**, **Resolved**, **Won't
+fix** and so on, and who it waits on: **Waits on you**, or someone else, such as **Waiting on Sam**, for
+whoever the latest comment mentions, or else whoever has to answer; when the latest comment mentions you, it's
+your turn. BriefBar reads a thread's code only as it comes on screen, and stops if you scroll past it first;
+it keeps it in memory only, while the details show that pull request. When it can't show a thread's code, such
+as a file that isn't text, it says why in a few words, with **↗** to see it in Azure DevOps, and, when reading
+it again may help, as when you were offline, **↻** to try again.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but

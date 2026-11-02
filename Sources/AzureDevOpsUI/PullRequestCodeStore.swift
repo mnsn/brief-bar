@@ -59,8 +59,10 @@ final class PullRequestCodeStore: ObservableObject {
     private var reads: [Int: Task<Void, Never>] = [:]
     /// When a read that may pass if read again failed.
     private var failedAt: [Int: Date] = [:]
-    /// The threads whose code shows as it was read before a push, since reading it again failed in a way that may pass.
-    private var stale: Set<Int> = []
+    /// The threads whose code shows, but not all there is to know of it: as it was read before a push, since reading it
+    /// again failed in a way that may pass; or without whether it changed since, which couldn't be read. They're read
+    /// again as a read that failed in a way that may pass is.
+    private var unsettled: Set<Int> = []
     private var subscription: AnyCancellable?
     private let now: () -> Date
 
@@ -87,7 +89,7 @@ final class PullRequestCodeStore: ObservableObject {
         reads = [:]
         asked = [:]
         failedAt = [:]
-        stale = []
+        unsettled = []
         reader = nil
         states = [:]
         self.key = key
@@ -118,13 +120,13 @@ final class PullRequestCodeStore: ObservableObject {
     }
 
     /// Whether the code of a thread, asked for as it is now, is read again: not while it's read or being read, or once it
-    /// failed for a reason that lasts; when it failed in a way that may pass, or shows as it was before a push since it
-    /// did, half a minute later, or at once when you ask.
+    /// failed for a reason that lasts; when it failed in a way that may pass, or shows without all there is to know of it,
+    /// half a minute later, or at once when you ask.
     private func needsReading(_ id: Int, again: Bool) -> Bool {
         if reads[id] != nil { return false }
         switch states[id] {
         case nil, .reading?: return true
-        case .read?: guard stale.contains(id) else { return false }
+        case .read?: guard unsettled.contains(id) else { return false }
         case .failed(let problem)?: guard ThreadCode.mayPass(problem) else { return false }
         }
         guard !again, let failed = failedAt[id] else { return true }
@@ -156,17 +158,25 @@ final class PullRequestCodeStore: ObservableObject {
         reads[id] = nil
         switch result {
         case .success(let excerpt):
-            failedAt[id] = nil
-            stale.remove(id)
             states[id] = .read(excerpt)
+            // Whether it changed since couldn't be read, as when Azure DevOps couldn't be reached for it: the code shows,
+            // and it's read again for that half a minute later. What was read of it is kept, so that's one request at
+            // most, and none when what couldn't be read won't be.
+            if excerpt.changedSince == nil {
+                failedAt[id] = now()
+                unsettled.insert(id)
+            } else {
+                failedAt[id] = nil
+                unsettled.remove(id)
+            }
         case .failure(let problem):
             failedAt[id] = now()
             // What showed stays, rather than a failure to read it again after a push, until it's read.
             if case .read? = states[id], ThreadCode.mayPass(problem) {
-                stale.insert(id)
+                unsettled.insert(id)
                 return
             }
-            stale.remove(id)
+            unsettled.remove(id)
             states[id] = .failed(problem)
         }
     }

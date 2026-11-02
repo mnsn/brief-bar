@@ -218,6 +218,38 @@ import Testing
         #expect(await reader.asked.filter { $0 == 15 }.count == 3)
     }
 
+    /// Whether the code changed since the comment couldn't be read, as when Azure DevOps couldn't be reached for it: the
+    /// code shows, and it's read again half a minute later, until that's known.
+    @Test func codeThatMayHaveChangedSinceIsReadAgainForThat() async throws {
+        let reader = Reader()
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        let store = makeStore(reader) { now }
+        var unknown = Self.excerpt(onLine.id, head: "c1")
+        unknown.latestIteration = 2
+        unknown.changedSince = nil
+        await reader.answer(onLine.id, .success(unknown))
+        store.show(onLine, of: pullRequest)
+        try await settle { store.state(of: onLine.id) == .read(unknown) }
+        #expect(store.state(of: onLine.id) == .read(unknown))
+        // Back on screen a moment later: not yet.
+        store.show(onLine, of: pullRequest)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await reader.asked.count == 1)
+        // Half a minute later, it's read again, and now it's known.
+        var known = unknown
+        known.changedSince = true
+        await reader.answer(onLine.id, .success(known))
+        now += PullRequestCodeStore.retryInterval
+        store.show(onLine, of: pullRequest)
+        try await settle { store.state(of: onLine.id) == .read(known) }
+        #expect(store.state(of: onLine.id) == .read(known))
+        // Known, it isn't read again.
+        now += PullRequestCodeStore.retryInterval
+        store.show(onLine, of: pullRequest)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await reader.asked.count == 2)
+    }
+
     @Test func anotherPullRequestForgetsWhatWasRead() async throws {
         let reader = Reader()
         let store = makeStore(reader)

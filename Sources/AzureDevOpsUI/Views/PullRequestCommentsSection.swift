@@ -412,7 +412,7 @@ private struct ThreadCodeArea: View {
                     label: codeLabel(excerpt)
                 ) { overflow = $0 }
                 .background(Color(nsColor: .textBackgroundColor).opacity(0.55))
-                if excerpt.changedSince == true {
+                if excerpt.changedSince != false {
                     changedSince(excerpt)
                 }
             }
@@ -437,14 +437,15 @@ private struct ThreadCodeArea: View {
         return label
     }
 
-    /// The file changed after the comment was made on it: what changed since opens in Azure DevOps.
+    /// The file changed after the comment was made on it, or may have, when that couldn't be read though the pull request
+    /// changed since: what changed opens in Azure DevOps.
     private func changedSince(_ excerpt: ThreadExcerpt) -> some View {
         let url = item.filePageURL(path: excerpt.path, since: excerpt)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "clock.arrow.circlepath")
                 .font(size: 10.5, weight: .medium)
                 .accessibilityHidden(true)
-            Text("The code changed since this comment.")
+            Text(excerpt.changedSince == true ? "The code changed since this comment." : "The code may have changed since this comment.")
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button {
