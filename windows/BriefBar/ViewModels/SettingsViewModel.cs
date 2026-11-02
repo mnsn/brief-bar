@@ -2,6 +2,7 @@ using BriefBar.Core;
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.GitHub;
+using BriefBar.Core.Teams;
 
 namespace BriefBar.ViewModels;
 
@@ -13,6 +14,7 @@ public sealed class SettingsViewModel
     /// `findOrganizations` asks Azure DevOps to look for your organizations again.
     public SettingsViewModel(
         SourceSwitch sources,
+        TeamsSettings teams,
         AzureDevOpsSettings azureDevOps,
         CopilotSettings copilot,
         GitHubSettings gitHub,
@@ -25,6 +27,7 @@ public sealed class SettingsViewModel
         this.sources = sources;
         Appearance = appearance;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
+        Teams = new TeamsSettingsViewModel(settings: teams);
         AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
         Copilot = new CopilotSettingsViewModel(settings: copilot);
         GitHub = new GitHubSettingsViewModel(settings: gitHub);
@@ -32,6 +35,8 @@ public sealed class SettingsViewModel
     }
 
     public IReadOnlyList<SourceSettingsViewModel> Sources { get; }
+
+    public TeamsSettingsViewModel Teams { get; }
 
     public AzureDevOpsSettingsViewModel AzureDevOps { get; }
 

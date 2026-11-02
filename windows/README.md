@@ -2,10 +2,10 @@
 
 In development. BriefBar for Windows gives Windows what BriefBar's menu bar gives the Mac: a bar docked to the top of each
 display, with each source's counts, and a panel under each of its items that lists what needs you. It's a WinUI 3 app on
-.NET 10. Its first three sources, **GitHub Copilot sessions**, **Azure DevOps pull requests** and **GitHub pull
-requests**, are ported; Teams comes next ([What's next](#whats-next)). Every source is off until you turn it on in
-Settings, and reads nothing until then. Started with `--demo`, it shows **made-up data** for every source, and reads
-nothing of yours.
+.NET 10. The Mac's four sources are ported: **Microsoft Teams chats**, **GitHub Copilot sessions**, **Azure DevOps pull
+requests** and **GitHub pull requests**, each without some of the Mac's later layers ([What's next](#whats-next)). Every
+source is off until you turn it on in Settings, and reads nothing until then. Started with `--demo`, it shows
+**made-up data** for every source, and reads nothing of yours.
 
 ## Build and run
 
@@ -42,13 +42,14 @@ pass.
 each display, its items named in words with their keys, the Overview's panel, the panel's keys, the same item on
 another display right after a press on this one, Copilot's panel (its groups, Idle folded, Clear, a row that opens),
 Settings (a Copilot setting, and closing the panel as it comes to the front), Azure DevOps' panel (its groups, Idle
-folded, Mark as seen, Answered seen once the panel closes, sorting by date and back) and its page in Settings,
-GitHub's panel (its groups, its foot with the account it reads as, a row that opens) and its page in Settings, Alt+F4,
-each bar keeping its display as displays change, a second start while BriefBar starts opening its Overview, and the
-space given back within a second of quitting or of another program asking BriefBar to close. Run it before you open a
-pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere closes the panel it's
-checking; it sends keys only while the panel is in front, and it works over a disconnected remote session too, without
-the keys.
+folded, Mark as seen, Answered seen once the panel closes, sorting by date and back) and its page in Settings, GitHub's
+panel (its groups, its foot with the account it reads as, a row that opens) and its page in Settings, Teams' two panels
+(their groups, Recent folded, Mark all read, a chat that opens and is read) and its page in Settings (Show message
+previews), Alt+F4, each bar keeping its display as displays change, a second start while BriefBar starts opening its
+Overview, and the space given back within a second of quitting or of another program asking BriefBar to close. Run it
+before you open a pull request, and leave the mouse and keyboard alone while it runs, since a click elsewhere closes the
+panel it's checking; it sends keys only while the panel is in front, and it works over a disconnected remote session
+too, without the keys.
 
 BriefBar writes what it does to `%LOCALAPPDATA%\BriefBar\Logs\BriefBar.log`, kept under 1 MB with two older
 files beside it: bars placed, panels opened and closed, errors' types. Its log lines take only numbers, states,
@@ -88,10 +89,11 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another app or Settings
   to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
-  button, or the empty Overview. **General** lists each source and whether it's on, and what comes next ("Microsoft
-  Teams comes to BriefBar for Windows next."), until Windows has every source; its **Appearance** sets what the bar
-  shows behind its words, **Automatic**, **Like the taskbar** or a **Custom color** of your own, from Windows' color
-  picker, as see-through as you like ([below](#choices-for-windows)). A source's page says, before you
+  button, or the empty Overview. **General** lists each source and whether it's on; while Windows lacks a source the
+  Mac has, it says which comes next ("Microsoft Teams comes to BriefBar for Windows next."), and with Teams, it lacks
+  none. Its **Appearance** sets what the bar shows behind its words, **Automatic**, **Like the taskbar** or a **Custom
+  color** of your own, from Windows' color picker, as see-through as you like ([below](#choices-for-windows)). A source's
+  page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
@@ -99,6 +101,24 @@ section names and the like, so nothing you see can reach it: a line with a strin
   to stop, so quitting meanwhile can't leave it behind; its settings stay. If a choice can't be saved, as on a full
   disk, Settings says so: it lasts until BriefBar quits, and BriefBar tries to save it again whenever a setting
   changes, and as it quits.
+- **Microsoft Teams chats**, from the new Teams app's own data on this PC ([How it works](../docs/how-it-works.md#microsoft-teams)
+  says how the Mac reads them): two sections, **Chats** (1:1 chats) and **Group chats** (group and meeting chats).
+  BriefBar reads Teams' web storage (Chromium's IndexedDB, in its WebView2 profile under
+  `%LOCALAPPDATA%\Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams\EBWebView`), read-only and in place, as
+  Teams writes it: each chat's name and kind, its newest message and who sent it, how far you've read it in Teams
+  (`consumptionhorizon`), and whether you've marked it unread there (`consumptionHorizonBookmark`), from
+  `conversation-manager`'s `conversations`; and, for chats that may be unread, their messages, from Teams' message
+  cache (`replychain-manager`'s `replychains-2`), reading only those chats' keys. A chat is unread as Teams' own list
+  has it: someone else wrote after how far you've read it, and after your own newest message, and hasn't deleted it; or
+  you marked it unread in Teams, until you open it there or mark it read in BriefBar, whatever Keep unread for says, as
+  Teams keeps it bold.
+  Its groups are the Mac's: Unread, the newest first, with **Mark all read**, and Recent (read chats with something
+  new in the last day, ten at most), folded. A row shows a person's initials, or a group's icon, the newest unread
+  message (with its sender in a group chat), how many are unread, and when, or **Marked as unread** for a chat marked
+  unread without a message from someone else since; it opens the chat in Teams at its oldest unread message
+  (`msteams:/l/message/…`), and reads it in BriefBar until Teams' own marker gets there, as Mark as read does. Its foot
+  has **Open Teams**. Its settings are the Mac's: Keep unread for (4 hours, 1 day, 3 days, or until you read it) and
+  Show message previews.
 - **GitHub Copilot sessions**, as on the Mac ([How it works](../docs/how-it-works.md#github-copilot)): what each
   session in the GitHub Copilot app is doing, from the app's own files in `%USERPROFILE%\.copilot`, read-only,
   as they change. Its groups are the Mac's: Needs you (a question, a plan to review, a permission), Running, Done
@@ -214,9 +234,30 @@ Where Windows differs, these were decided:
   Copilot CLI, a row opens its session in a terminal, as the Mac opens it in Terminal: the terminal of a CLI that
   has it open comes to the front, or else `copilot --resume <id>` runs in Windows' default terminal, in the session's
   folder. What goes wrong, such as a CLI BriefBar can't find, is said in Windows' own dialog.
+- **Teams chats come from Teams' own data, not from its notifications.** The Mac reads the notifications Teams posts
+  to Notification Center, and only Teams' read markers from its web storage. New Teams on Windows shows its own
+  notifications by default, and posts none that Windows keeps: its row in Windows' notification database
+  (`%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db`) holds only its taskbar badge. So BriefBar reads the
+  chats themselves from Teams' web storage, where the Mac reads only the read markers: each chat's newest message,
+  sender and title, and, for chats that may be unread, their messages. It needs no permission, as Windows doesn't keep
+  one program's data from another running as you; on the Mac, it needs Full Disk Access. What differs from the Mac:
+  - It knows every chat as Teams has it, whether Teams notified you or not, and what you read in Teams, so the Mac's
+    Mark Chats Read When You Read Them in Teams and Mark All Read When Teams' Badge Clears aren't settings here.
+  - A chat you mark unread in Teams is unread here too, as in Teams' list, though Teams' taskbar badge doesn't count
+    it. The Mac never sees it, since Mark as unread posts no notification.
+  - A chat you mark read in BriefBar is kept by its ID, the message it was read to and when, sealed with Windows' DPAPI
+    for your account (`%LOCALAPPDATA%\BriefBar\Teams\read`), until Teams' own marker passes it and Teams has it marked
+    unread no more from before then. Any program running as you can open what DPAPI sealed, as one can't open the
+    Mac's keychain without asking. The Mac keeps your unread chats, with their messages, sealed with a key in your
+    keychain; Windows keeps no messages at all.
+  - Muted chats aren't unread here, as Teams doesn't notify you of them, and nor is a meeting's chat whose newest item
+    is a recording, a transcript or a change to who's in it, though Teams' list marks those. Old meeting chats that
+    nobody opened stay unread in Teams for good: Keep unread for's day leaves them out, as it does on the Mac.
+  - Pull requests sent to you in chats, for Azure DevOps, and summaries aren't ported yet.
 - **Azure DevOps signs in with `az login` in a console window**, which stays open so you can read what it said, where
-  the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac that reads every app's
-  notifications, which comes with Teams.
+  the Mac opens Terminal. It doesn't list pull requests sent to you in chats yet: on the Mac, that reads the
+  notifications Teams posts, which new Teams doesn't leave in Windows' notification database, so on Windows it would
+  read Teams' own data, as Teams chats do.
 - **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
   `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
   where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
@@ -227,17 +268,19 @@ Where Windows differs, these were decided:
 | Folder | What it holds |
 |---|---|
 | `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`), waiting as long as they ask (`RetryAfter`, `RateLimitGate`) and refusing to be sent elsewhere (`Redirects`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/ChromiumIndexedDB/` | Chromium's IndexedDB, read-only and without its lock, ported from `Sources/ChromiumIndexedDB` with the Swift names: LevelDB's logs and tables (`LevelDBLog`, `LevelDBTable`, `LevelDBFolder`), IndexedDB's keys and catalog (`IndexedDBKey`, `IDBKey`, `IndexedDBCatalog`, `IndexedDBFolder`) and V8's serialized values (`SerializedValue`, `V8Deserializer`). It holds no file open between reads, and reads a range of keys from only the table blocks that may hold them, as Teams' message cache needs |
+| `BriefBar.Core/Teams/` | Microsoft Teams chats, from Teams' own data: where it is and reading it as Teams writes it (`TeamsCacheLocation`, `TeamsCacheFolder`, `TeamsRecords`, `TeamsEngine`), which messages are unread (`ChatReading`), the lists and their rows (`TeamsStore`, `TeamsRows`, `ChatBrief`), the chats you mark read (`TeamsReadMarks`), its settings (`TeamsSettings`) and the source (`TeamsSource`), with the Mac's names where they mean the same (`ReadMarker`, `DeepLink`, `ConversationSummary`, `TeamsDataReport`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/GitHub/` | GitHub pull requests, ported from `Sources/GitHubCore` with the Swift names (`PullRequestQuery`, `GitHubClient`, `GitHubCLITokenProvider`, `GitHubClassifier`, `GitHubReader`…), the store and settings from `GitHubUI` (`GitHubStore`, `GitHubSettings`), and the source (`GitHubSource`, `GitHubRows`) |
 | `BriefBar.Core/Presentation/` | What the bar, the panel and Narrator show: words and counts, groups, rows and what they can do, a row's checklist of what's left, how a list can be sorted, notes beside a list and who a section reads as, where a panel opens, the panel's keys, the bar's size, the state colors with their contrast, and the icons |
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
-| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's, Azure DevOps' and GitHub's through their real stores |
+| `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Teams', Copilot's, Azure DevOps' and GitHub's through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
 | `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), what shows behind it (`ActiveAcrylic`, or `SeeThroughBackdrop` and `SeeThroughWindow`, where the desktop shows through), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
-| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' and GitHub's pages in your browser (`BrowserShell`), and the log file |
-| `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
+| `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), Teams and the Copilot app as Windows knows them (`TeamsShell`, `CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' and GitHub's pages in your browser (`BrowserShell`), sealing what BriefBar keeps for your Windows account (`WindowsDataProtector`), and the log file |
+| `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover, and DPAPI's (`Crypt32`) |
 | `scripts/` | `quit.ps1` quits the running BriefBar; `smoke.ps1` checks it end to end with made-up data; `check-notices.ps1` checks that `THIRD-PARTY-NOTICES.md` names every file the build ships from someone else ([Releases](#releases)) |
 
 Each type has its own file. Logic goes in `BriefBar.Core`, with tests; the app only shows it.
@@ -440,6 +483,46 @@ SDK ships inside the app.
   answers from api.github.com, dev.azure.com and app.vssps.visualstudio.com, to the requests a refresh sends, was one.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
+- **New Teams posts no notifications that Windows keeps**: it shows its own, by default, so Windows' notification
+  database has only its taskbar badge for it, and BriefBar reads Teams' own data instead ([above](#choices-for-windows)).
+- **Teams holds its LevelDB's lock while it runs**, but opens its files sharing reading and deleting: BriefBar reads
+  them without the lock, as the Mac does, and holds none open between reads, so Teams can compact and delete them. A
+  table Teams is still writing reads as broken until it's done, so one counts as unreadable only once it has stayed
+  unchanged for 5 seconds. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
+  doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`). A conversation of a type
+  BriefBar doesn't know counts as one it couldn't read, not as one that isn't a chat, as it may be a chat after an
+  update to Teams, and so does a chat whose read marker field it can't read, rather than one never read, whose every
+  message would be unread; so does a folder it can't list, and with no folder it could read, the sections say it
+  couldn't read Teams' data rather than that Teams' data changed. A log record whose checksum says it's damaged makes
+  the sections say some of Teams' data couldn't be read. A chat whose messages Teams' message cache can't all give,
+  including a record or a message BriefBar doesn't understand, is read again at each change, and the sections say some
+  chats may stay unread until it is: a table it can't read counts only once it has stayed so, as above, and a message
+  whose blob entry Chromium hasn't written yet, which it writes after the message, only if it's still missing when the
+  chat is read again.
+- **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
+  `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
+  the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
+  this PC, in counts). Teams' taskbar badge doesn't count chats marked unread.
+- **A chat never opened in Teams has no read marker, but has its field**: `consumptionhorizon` is `0;…` for it
+  (checked on this PC, in counts). So BriefBar takes Teams' data as changed, as after an update that renames the
+  field, only when no conversation has the field in that form, not when no chat has a read marker, as the Mac does:
+  that would say a new account's data had changed.
+- **`FileSystemWatcher` reports Teams' writes to its LevelDB log** as they happen (checked on this PC), so BriefBar
+  reads what was added half a second after a write, from where it stopped, rather than on a timer; and everything
+  again every 10 minutes, which also finds Teams' data once you sign in.
+- **Teams' message cache is most of its data**: BriefBar reads it only for the chats that may be unread, and only the
+  table blocks whose keys may hold them, since its keys are `[chat, message]` (checked: about 600 blocks of 17,000, in
+  under a second for everything).
+- **Meeting chats outnumber the others, and many stay unread in Teams for good**, since nobody opens a meeting's chat
+  after it's over; and Teams' message cache may have none of their messages. Keep unread for's day leaves them out;
+  with Until I read it, each counts its newest message.
+- **`Uri.ToString()` unescapes**: a chat's link, `msteams:/l/message/19%3A…%40thread.v2/…`, would lose its escapes
+  that way. BriefBar hands Windows the `Uri` itself, whose `AbsoluteUri` and `OriginalString` keep them, which a test
+  checks; and it opens the link only in the new Teams app's package (`LauncherOptions.TargetApplicationPackageFamilyName`),
+  never in another program that claims `msteams:`, such as classic Teams.
+- **Windows looks in a program's own folder first for a DLL that a Windows DLL loads**: a throwaway check named
+  `Dpapi.exe` made `CryptProtectData`, which loads `dpapi.dll`, fail with error 127. Don't name anything in BriefBar's
+  folder after a Windows DLL.
 
 ## What's next
 
@@ -457,12 +540,10 @@ this order:
 3. ~~**GitHub pull requests**~~, done: the pull requests' section, its setting, and opening each pull request, with
    the GitHub CLI's sign-in and its one GraphQL query. Not ported yet, for later layers: a pull request's page with its
    story (`PullRequestStory`), the brief's summaries, Show Links, and the sign-in's state in Settings.
-4. **Teams chats**, the hardest. On the Mac, BriefBar reads Teams' notifications from Notification Center's
-   database and Teams' read markers from its web view's IndexedDB (`TeamsCore`, `NotificationCenterDB`,
-   `ChromiumIndexedDB`). On Windows, notifications are in
-   `%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db`, an undocumented SQLite database, and the new
-   Teams keeps its data under `%LOCALAPPDATA%\Packages\MSTeams_8wekyb3d8bbwe\`, with WebView2's data in
-   Chromium's IndexedDB format. Confirm both on a machine signed in to Teams before porting.
+4. ~~**Teams chats**~~, done, from Teams' own data rather than its notifications ([above](#choices-for-windows)): the
+   Chats and Group chats sections, their settings, Mark as read, and opening each chat in Teams. Not ported yet, for
+   later layers: summaries, pull requests sent in chats (for Azure DevOps, from Teams' data), the widget, and
+   `--dump`, `--watch` and Copy Diagnostics.
 
 Then, each checked the same way: the bar's choices in Settings ([above](#choices-for-windows)); the brief from
 real data; opening a row's item; notifications (`AppNotificationManager` works without a package); Launch at
@@ -488,13 +569,17 @@ The repository is public, and chats, pull requests and sessions are private, oft
 - Check each source against its own app or site: Azure DevOps, GitHub, the Copilot app and Teams. Compare
   every count, state and row, and what opens from it. The log says each source's counts by state as it changes
   (`copilot: Ready, 36 sessions…`, `azureDevOps: Ready, problem none, organizations 1: 4 need you…`, `github: Ready,
-  problem none, notice False, more than shown False: 2 to review…`), without names.
+  problem none, notice False, more than shown False: 2 to review…`, `teams: Ready, problem none, complete True; 40 chats of 90
+  conversations…`), without names.
   The screen tool can't read the Copilot app's window, so ask whoever's at the PC to compare it; what a row opened
   is in the app's own `lastRoutePath`, in `data.db`. For Azure DevOps, a throwaway program that reads the same
   organizations through `BriefBar.Core` and, separately, with its own GET requests (the Azure CLI's token) can compare
   every row's group with Azure DevOps' own facts, and every row's link with its repository's web URL, printing counts
   only; keep it out of the repository. For GitHub, the same: `BriefBar.Core`'s read beside `gh`'s own searches
-  (`gh api graphql`, `gh search prs`), with the same sign-in.
+  (`gh api graphql`, `gh search prs`), with the same sign-in. For Teams, a throwaway program that reads Teams' data
+  through `BriefBar.Core` can set each chat's state beside Teams' own (`threadProperties.isRead`), by kind of chat, and
+  Teams' taskbar badge, printing counts only. Opening a chat, from BriefBar or in Teams, reads it in Teams: ask
+  whoever's at the PC before you open one.
 - Run BriefBar, and `gh` or `az`, as you would: an agent's shell often has its own `GH_TOKEN`, `GH_HOST` and `gh`, and
   `gh auth token` gives `GH_TOKEN` when it's set, so a BriefBar started from there reads GitHub as the agent. Start it
   without `GH_TOKEN`, `GITHUB_TOKEN` and `GH_HOST`, with your own `gh` first in `PATH`.
