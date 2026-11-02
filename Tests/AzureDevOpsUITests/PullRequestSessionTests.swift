@@ -88,13 +88,21 @@ import Testing
     }
 
     /// The reader `--mcp` makes, outside the demo, with the app's settings in memory and its Copilot files in `home`.
-    /// - Parameter links: the links you made in Show Links, which is on with them.
-    private func reader(home: URL, sending: Bool = true, links: LinkEdits? = nil) -> AzureDevOpsReader {
+    /// - Parameters:
+    ///   - links: the links you made in Show Links, which is on with them.
+    ///   - chosen: the session you chose for !4088's work, or a new session for nil, and when.
+    private func reader(
+        home: URL, sending: Bool = true, links: LinkEdits? = nil, chosen: (session: String?, at: Date)? = nil
+    ) -> AzureDevOpsReader {
         let defaults = MemoryDefaults()
         defaults.set(sending, forKey: SettingsKey.copilotEnabled)
         if let links {
             links.save(to: defaults)
             defaults.set(true, forKey: Links.enabledKey)
+        }
+        if let chosen {
+            // As the app keeps it: Use for This Pull Request, in the line's menu.
+            AppSettings(defaults: defaults).choose(session: chosen.session, for: PRKey("contoso", 4088), at: chosen.at)
         }
         return AzureDevOpsReader(demo: false, organizations: ["contoso"], defaults: defaults, appHome: home)
     }
@@ -132,24 +140,28 @@ import Testing
         ])
         let record = try await pullRequest()
 
-        let session = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        let found = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        let session = try #require(found.suggested)
         #expect(session.choice.id == onBranch)
         #expect(session.choice.reasons == [.onItsBranch])
+        #expect(session.basis == .onItsBranch)
         #expect(session.isInApp)
-        #expect(AgentText.session(session, now: now) == """
+        #expect(AgentText.session(found, now: now) == """
             Its session, where BriefBar sends its work unless you choose another: “Delivery estimates”, in the Copilot app, \
             on its branch.
               shop-web · delivery-estimates · working now · active 5m ago · session \(onBranch)
             """)
         // In the pull request's details, under Copilot, before the tasks sent for it.
-        let details = AgentText.details(record, item: nil, actions: [.fixBuild], tasks: [], session: session, now: now)
+        let details = AgentText.details(record, item: nil, actions: [.fixBuild], tasks: [], session: found, now: now)
         let copilot = try #require(details.components(separatedBy: "\n## Copilot\n").last)
         #expect(copilot.hasPrefix("pull_request_prompt has the prompt to: fix_build."))
         #expect(copilot.contains("\nIts session, where BriefBar sends its work unless you choose another: “Delivery estimates”"))
         #expect(!AgentText.details(record, item: nil, actions: [.fixBuild], tasks: [], now: now).contains("Its session"))
     }
 
-    @Test func goesOnWithItsLastTaskUnlessItsStillWorking() async throws {
+    /// Its last task's session is its, though Copilot still works in it, as its details show it: nothing more goes there
+    /// until it's done, which it says.
+    @Test func goesOnWithItsLastTaskAndSaysWhileItsStillWorking() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         try database(at: home, [Session(id: onBranch, title: "Delivery estimates", project: "shop", branch: "delivery-estimates")])
@@ -158,20 +170,27 @@ import Testing
 
         // Its log says it finished, though the app hasn't heard yet.
         let finished = try sent(.finished, worktree: worktree)
-        let session = try #require(await reader(home: home).session(for: record, tasks: [finished], now: now))
+        let found = try #require(await reader(home: home).session(for: record, tasks: [finished], now: now))
+        let session = try #require(found.suggested)
         #expect(session.choice.id == task)
         #expect(session.choice.reasons == [.earlierTask])
+        #expect(session.basis == .lastTask)
         #expect(!session.isInApp)
-        #expect(AgentText.session(session, now: now) == """
+        #expect(AgentText.session(found, now: now) == """
             Its session, where BriefBar sends its work unless you choose another: “Fix the Build: !4088 Show delivery \
             estimates on the product page”, the session of its last task, which BriefBar runs with the Copilot CLI and the \
             Copilot app doesn't have.
               worktree \(worktree.path) · session \(task)
             """)
 
-        // Copilot still works in it: the app's session on its branch, then.
+        // Copilot still works in it: still its session, busy.
         let working = try sent(.working, worktree: worktree)
-        #expect(await reader(home: home).session(for: record, tasks: [working], now: now)?.choice.id == onBranch)
+        let busy = try #require(await reader(home: home).session(for: record, tasks: [working], now: now))
+        #expect(busy.suggested?.choice.id == task)
+        #expect(busy.suggested?.choice.isBusy == true)
+        #expect(AgentText.session(busy, now: now).contains(
+            "Copilot app doesn't have. Copilot is still working in it, for a task BriefBar sent: nothing more goes to it until that's done.\n"
+        ))
     }
 
     /// A task's session that you opened in the Copilot app is in its database: an agent there can send it a message,
@@ -183,10 +202,11 @@ import Testing
         let record = try await pullRequest()
         let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088", isDirectory: true)
 
-        let session = try #require(await reader(home: home).session(for: record, tasks: [try sent(.finished, worktree: worktree)], now: now))
+        let found = try #require(await reader(home: home).session(for: record, tasks: [try sent(.finished, worktree: worktree)], now: now))
+        let session = try #require(found.suggested)
         #expect(session.choice.id == task && session.choice.run != nil)
         #expect(session.isInApp)
-        #expect(AgentText.session(session, now: now).contains("estimates on the product page”, the session of its last task, in the Copilot app.\n"))
+        #expect(AgentText.session(found, now: now).contains("estimates on the product page”, the session of its last task, in the Copilot app.\n"))
     }
 
     /// A work item's task that opened the pull request while BriefBar was quit has no link to it yet: it's found as the app
@@ -213,10 +233,12 @@ import Testing
             status: RunStatus(phase: .finished, since: now.addingTimeInterval(-2 * 86_400)), run: run
         )
 
-        let session = try #require(await reader(home: home).session(for: record, tasks: [entry], now: now))
+        let found = try #require(await reader(home: home).session(for: record, tasks: [entry], now: now))
+        let session = try #require(found.suggested)
         #expect(session.choice.id == opener)
         #expect(session.choice.reasons == [.openedIt])
-        #expect(AgentText.session(session, now: now).hasPrefix("""
+        #expect(session.basis == .openedIt)
+        #expect(AgentText.session(found, now: now).hasPrefix("""
             Its session, where BriefBar sends its work unless you choose another: “Work Item 5112”, the session of the work \
             item's task that opened it, which BriefBar runs with the Copilot CLI and the Copilot app doesn't have.
             """))
@@ -232,13 +254,16 @@ import Testing
 
         // Not while Show Links is off.
         #expect(await reader(home: home).session(for: record, tasks: [], now: now) == nil)
-        let session = try #require(await reader(home: home, links: edits).session(for: record, tasks: [], now: now))
+        let found = try #require(await reader(home: home, links: edits).session(for: record, tasks: [], now: now))
+        let session = try #require(found.suggested)
         #expect(session.choice.id == linked)
         #expect(session.choice.reasons == [.linkedByYou])
-        #expect(AgentText.session(session, now: now).hasSuffix("“Plan the estimates”, in the Copilot app, linked by you.\n  a chat · active 5m ago · session \(linked)"))
+        #expect(AgentText.session(found, now: now).hasSuffix("“Plan the estimates”, in the Copilot app, linked by you.\n  a chat · active 5m ago · session \(linked)"))
     }
 
-    @Test func lastNamesTheOneThatMentionsItAndWasThereBefore() async throws {
+    /// A session whose log only has a link to it, and that was there before it was created, is a guess: its details offer
+    /// it, and agents hear of it as one, but its work goes to a new session unless you choose it.
+    @Test func saysTheOneThatMentionsItAndWasThereBeforeMayHaveOpenedIt() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
         // Created before the pull request was, three days ago, and active since.
@@ -249,12 +274,78 @@ import Testing
         try Data(link.utf8).write(to: state.appendingPathComponent("events.jsonl"))
         let record = try await pullRequest()
 
-        let session = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
-        #expect(session.choice.id == opener)
-        #expect(session.choice.reasons == [.mentionsIt])
-        #expect(AgentText.session(session, now: now).contains(
-            "“Estimate delivery dates”, in the Copilot app, which has a link to it and was there before it was created: it likely opened it."
-        ))
+        let found = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        guard case .guess(let guess) = found else {
+            Issue.record("Expected a guess, got \(found)")
+            return
+        }
+        #expect(guess.id == opener)
+        #expect(guess.reasons == [.mentionsIt])
+        #expect(AgentText.session(found, now: now) == """
+            It has no Copilot session of its own: BriefBar sends its work to a new session unless the user chooses one. \
+            “Estimate delivery dates”, in the Copilot app, has a link to it and was there before it was created, so it may \
+            have opened it.
+              a chat · active 5m ago · session \(opener)
+            """)
+    }
+
+    /// The session you chose for its work in its details is where it goes, for agents too: one of the app's other sessions,
+    /// a new session, or, once a task started on it since, its last task's.
+    @Test func namesTheSessionYouChoseForItsWork() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, [
+            Session(id: onBranch, title: "Delivery estimates", project: "shop", branch: "delivery-estimates"),
+            Session(id: elsewhere, title: "Shipping rules", project: "shop", branch: "shipping", updated: -7_200),
+        ])
+        let record = try await pullRequest()
+
+        let found = try #require(await reader(home: home, chosen: (elsewhere, now.addingTimeInterval(-600))).session(for: record, tasks: [], now: now))
+        let session = try #require(found.suggested)
+        #expect(session.choice.id == elsewhere)
+        #expect(session.basis == .chosenByYou)
+        #expect(AgentText.session(found, now: now) == """
+            Its session, where BriefBar sends its work unless you choose another: “Shipping rules”, in the Copilot app, which \
+            the user chose for it.
+              shop-web · shipping · active 2h ago · session \(elsewhere)
+            """)
+
+        let fresh = try #require(await reader(home: home, chosen: (nil, now.addingTimeInterval(-600))).session(for: record, tasks: [], now: now))
+        #expect(fresh == .newSession)
+        #expect(AgentText.session(fresh, now: now).hasPrefix("Its session: a new one. The user chose in BriefBar"))
+
+        // A task BriefBar started on it since you chose: its session is its, as in its details.
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088", isDirectory: true)
+        let later = try #require(await reader(home: home, chosen: (elsewhere, now.addingTimeInterval(-7_200)))
+            .session(for: record, tasks: [try sent(.finished, worktree: worktree)], now: now))
+        #expect(later.suggested?.choice.id == task)
+        #expect(later.suggested?.basis == .lastTask)
+    }
+
+    /// Two of the app's sessions on its branch go with it as well as each other: BriefBar asks which, and so should agents.
+    @Test func saysWhenTwoSessionsGoWithItAsWellAsEachOther() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, [
+            Session(id: onBranch, title: "Delivery estimates", project: "shop", branch: "delivery-estimates", updated: -60),
+            Session(id: linked, title: "Estimates tests", project: "shop", branch: "delivery-estimates", updated: -3_600),
+        ])
+        let record = try await pullRequest()
+
+        let found = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        guard case .undecided(let choices) = found else {
+            Issue.record("Expected a question, got \(found)")
+            return
+        }
+        #expect(choices.map(\.id) == [onBranch, linked])
+        #expect(AgentText.session(found, now: now) == """
+            Its session isn't settled: “Delivery estimates” (on its branch, session \(onBranch)) and “Estimates tests” (on its \
+            branch, session \(linked)) go with it as well as each other, so BriefBar asks the user which before it sends its \
+            work to one. Ask them which, too.
+            """)
+        // Once you chose, that one.
+        let chosen = try #require(await reader(home: home, chosen: (linked, now)).session(for: record, tasks: [], now: now))
+        #expect(chosen.suggested?.choice.id == linked)
     }
 
     @Test func namesNoneWhileSendingIsOffInTheDemoOrWhenTheresNone() async throws {
@@ -265,7 +356,7 @@ import Testing
             Session(id: elsewhere, title: "Docs", project: "docs", branch: "main"),
         ])
         let record = try await pullRequest()
-        #expect(await reader(home: home).session(for: record, tasks: [], now: now)?.choice.id == onBranch)
+        #expect(await reader(home: home).session(for: record, tasks: [], now: now)?.suggested?.choice.id == onBranch)
 
         // The window reads no sessions while Send Work to Copilot is off, nor in the demo.
         #expect(await reader(home: home, sending: false).session(for: record, tasks: [], now: now) == nil)
@@ -283,6 +374,14 @@ import Testing
         defer { try? FileManager.default.removeItem(at: none) }
         try database(at: none, [Session(id: elsewhere, title: "Docs", project: "docs", branch: "main")])
         #expect(await reader(home: none).session(for: record, tasks: [], now: now) == nil)
+    }
+}
+
+extension AgentSession {
+    /// The session its work goes to, when it names one.
+    fileprivate var suggested: SuggestedSession? {
+        if case .session(let session) = self { return session }
+        return nil
     }
 }
 

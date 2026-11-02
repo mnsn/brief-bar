@@ -71,6 +71,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var details: WorkItemDetailsStore?
     /// The pull request whose details show beside the window's list.
     private var pullRequestDetails: PullRequestDetailsStore?
+    /// The Copilot session of the pull request whose details show.
+    private var pullRequestSessions: PullRequestSessions?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     private let changes = PassthroughSubject<Void, Never>()
@@ -92,13 +94,16 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     private func environment<V: View>(_ view: V) -> AnyView {
-        guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails else { return AnyView(EmptyView()) }
+        guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails, let pullRequestSessions else {
+            return AnyView(EmptyView())
+        }
         return AnyView(view
             .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(sprint)
             .environmentObject(details)
             .environmentObject(pullRequestDetails)
+            .environmentObject(pullRequestSessions)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -152,6 +157,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         self.details = details
         self.pullRequestDetails = pullRequestDetails
         workLinks?.details = details
+        let sessions = PullRequestSessions(copilot: copilot, links: services.links)
+        sessions.record = { [weak store] key in store?.record(for: key) }
+        pullRequestSessions = sessions
         return store
     }
 
@@ -281,6 +289,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         workLinks?.stop()
         details?.stop()
         pullRequestDetails?.stop()
+        pullRequestSessions?.stopAll()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -290,6 +299,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         workLinks = nil
         details = nil
         pullRequestDetails = nil
+        pullRequestSessions = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -571,6 +581,9 @@ package final class AzureDevOpsSource: BriefBarSource {
         await workLinks?.loadOnce()
         // Before Copilot's list loads, which shows them with the sessions.
         publishSentTasks()
+        // Each pull request's Copilot session, for the pictures of their details: Show Links' sessions are told later, and
+        // they follow.
+        await pullRequestSessions?.prepare(store.items)
         listDemoNotifications(from: store)
         // Let the on-device model word the brief before drawing.
         await store.summarizer.complete(store.brief.compactMap(store.briefRequest), timeout: 45)

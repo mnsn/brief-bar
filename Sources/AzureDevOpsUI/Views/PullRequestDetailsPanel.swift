@@ -13,6 +13,7 @@ struct PullRequestDetailsPanel: View {
     @EnvironmentObject private var details: PullRequestDetailsStore
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
+    @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
 
     /// What you went back from, to show its row again where you return.
@@ -55,6 +56,8 @@ struct PullRequestDetailsPanel: View {
             .onReceive(services.links.$isOn) { isOn in
                 if !isOn { details.closePages() }
             }
+            // Its Copilot session, kept up to date while its details show, its pages too.
+            .task(id: item.key) { await sessions.follow(item, record: details.record) }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(accessibilityName(item))
         }
@@ -357,6 +360,12 @@ struct PullRequestDetailsPanel: View {
         return PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
     }
 
+    /// The session its work goes to, which its line shows (`PullRequestSessionLine`), rather than Also Linked.
+    private func ownSession(_ item: PRSnapshot) -> Set<ItemRef> {
+        guard let id = sessions.session(for: item.key)?.session?.id, let ref = ItemRef.session(id) else { return [] }
+        return [ref]
+    }
+
     private func content(_ item: PRSnapshot) -> some View {
         let record = details.record
         let panel = panel(for: item)
@@ -377,7 +386,8 @@ struct PullRequestDetailsPanel: View {
                 .id(PullRequestDetailsStore.Anchor.section(.checks))
             PullRequestReviewersSection(panel: panel)
                 .id(PullRequestDetailsStore.Anchor.section(.reviewers))
-            WhereItStandsSection(subject: ref, title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
+            // Its own session is on its line, under its heading.
+            WhereItStandsSection(subject: ref, excluding: ownSession(item), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .tellsStory(of: ref)

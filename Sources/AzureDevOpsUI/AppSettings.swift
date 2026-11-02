@@ -131,6 +131,11 @@ final class AppSettings: ObservableObject {
     @Published var copilotWorktreesFolder: String? {
         didSet { defaults.set(copilotWorktreesFolder, forKey: Key.copilotWorktreesFolder) }
     }
+    /// The Copilot session you chose for each pull request's work, or a new session, and when: references only, never names
+    /// (`PullRequestSessionChoice`).
+    @Published var copilotPullRequestSessions: [PullRequestSessionChoice] {
+        didSet { Self.store(copilotPullRequestSessions.isEmpty ? nil : copilotPullRequestSessions, in: defaults, forKey: Key.copilotPullRequestSessions) }
+    }
     /// The tasks sent to Copilot: which work item, where and with which model, not titles or what Copilot wrote.
     @Published var copilotRuns: [CopilotRun] {
         didSet { Self.store(copilotRuns, in: defaults, forKey: Key.copilotRuns) }
@@ -169,6 +174,7 @@ final class AppSettings: ObservableObject {
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
         copilotQuickOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotQuickOptions) ?? CopilotModel.quick
         copilotPrompt = defaults.string(forKey: Key.copilotPrompt)
+        copilotPullRequestSessions = PullRequestSessionChoice.load(from: defaults, now: now)
         copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
         copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
         // Any program running as you can write the preferences: a run whose ID isn't a session's is left out.
@@ -218,6 +224,8 @@ final class AppSettings: ObservableObject {
     func forgetCopilotRuns() {
         copilotRuns = []
         copilotRepositories = [:]
+        // And the sessions you chose for pull requests' work.
+        copilotPullRequestSessions = []
     }
 
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
@@ -489,6 +497,7 @@ enum SettingsKey {
     static let copilotOptions = "ado.copilot.options"
     static let copilotQuickOptions = "ado.copilot.quickOptions"
     static let copilotPrompt = "ado.copilot.prompt"
+    static let copilotPullRequestSessions = "ado.copilot.pullRequestSessions"
     static let copilotRepositories = "ado.copilot.repositories"
     static let copilotWorktreesFolder = "ado.copilot.worktreesFolder"
     static let copilotRuns = "ado.copilot.runs"

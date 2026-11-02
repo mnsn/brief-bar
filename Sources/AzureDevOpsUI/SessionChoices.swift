@@ -191,7 +191,7 @@ extension CopilotTasksStore {
     }
 
     /// Why Show Links links each session to it, by the session's ID: nothing while it's off.
-    private func linkedReasons(for subject: TaskSubject) -> [String: [SessionChoice.Reason]] {
+    func linkedReasons(for subject: TaskSubject) -> [String: [SessionChoice.Reason]] {
         let ref: ItemRef
         switch subject {
         case .workItem(let item): ref = .workItem(organization: item.organization, id: item.id)
@@ -299,16 +299,22 @@ extension CopilotTasksStore {
         return availability(of: marked.filter { $0.run != nil } + Self.sorted(marked.filter { $0.appSession != nil }, createdAt: createdAt))
     }
 
-    /// The session a task goes to unless you choose another. A pull request's goes on with its last task's, as before;
-    /// else with the session of the work item's task that opened it; else with the app's session that the app records
-    /// with it, that you linked to it, or that works on its branch, the most recently active; else with the one that
-    /// mentions it and was there before it was created, which likely opened it. A work item's starts a new session unless
-    /// you choose one.
+    /// The session a task goes to unless you choose another. A pull request's goes to the session you chose for its work
+    /// (`PullRequestSessionChoice`), or a new one if you chose that, unless a task started on it since; else on with its
+    /// last task's, as before; else with the session of the work item's task that opened it; else with the app's session
+    /// that the app records with it, that you linked to it, or that works on its branch, the most recently active; else
+    /// with the one that mentions it and was there before it was created, which likely opened it. A work item's starts a
+    /// new session unless you choose one.
     static func suggestedChoice(
-        _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, createdAt: Date?
+        _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, createdAt: Date?,
+        chosen: PullRequestSessionChoice? = nil
     ) -> SessionChoice? {
         guard case .pullRequest = subject else { return nil }
         let usable = choices.filter { !$0.isUnavailable }
+        if let chosen, (continuable?.startedAt ?? .distantPast) <= chosen.date {
+            guard let id = chosen.session?.id else { return nil }
+            if let session = usable.first(where: { $0.id == id }) { return session }
+        }
         if let continuable, let last = usable.first(where: { $0.id == continuable.id }) { return last }
         if let opener = usable.first(where: { $0.run != nil && $0.reasons.contains(.openedIt) }) { return opener }
         let strong: Set<SessionChoice.Reason> = [.recordedByCopilot, .linkedByYou, .onItsBranch]
@@ -324,24 +330,10 @@ extension CopilotTasksStore {
         }.min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
     }
 
-    /// The session a pull request's work goes to unless you choose another, as the composer suggests it
-    /// (`suggestedChoice`), for whatever names one session for a pull request, such as `pull_request` for agents: the
-    /// sessions it could go to (`sessionChoices`), and only when none of those is suggested, which of the app's sessions
-    /// mention it (`sessionsMentioning`), which takes longer and matters only then. Nil while Send Work to Copilot is
-    /// off, and when there's none: then it goes to a new session.
-    func suggestedSession(for pullRequest: TaskPullRequest, createdAt: Date?) async -> SessionChoice? {
-        // Where it goes doesn't depend on what it's for.
-        let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
-        let continuable = continuable(forPullRequest: PRKey(pullRequest.organization, pullRequest.id))
-        let found = await sessionChoices(for: subject)
-        if let suggested = Self.suggestedChoice(found, for: subject, continuable: continuable, createdAt: createdAt) {
-            return suggested
-        }
-        let mentioned = await sessionsMentioning(subject, among: found, since: createdAt)
-        guard !mentioned.isEmpty else { return nil }
-        return Self.suggestedChoice(
-            marking(mentioned, in: found, createdAt: createdAt), for: subject, continuable: continuable, createdAt: createdAt
-        )
+    /// The session you chose for a pull request's work, for a task on it: nil for a work item's.
+    func chosenSession(for subject: TaskSubject) -> PullRequestSessionChoice? {
+        guard case .pullRequest(let pullRequest, _) = subject else { return nil }
+        return settings.chosenSession(for: PRKey(pullRequest.organization, pullRequest.id))
     }
 
     /// Whether Copilot can go on with a session from here, with the CLI: why not, or nil. The app mustn't have it open; for
