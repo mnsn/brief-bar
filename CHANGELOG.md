@@ -15,6 +15,20 @@
   itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
   off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
   that are already open get it once they start again. Turning it off, or turning agents off, removes it.
+- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
+  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
+  errors, which showed as `[31m`.
+- **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
+  the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
+  said it was done, as that earlier task had.
+- **A pull request opens in its details from anywhere in BriefBar's window.** On the Overview, in its brief and on
+  the Notifications page, clicking a pull request shows its details on the Pull Requests page, at the comment or
+  the run it's about; on the Pipelines page, a pull request's card shows the run you click, or the first that
+  failed. On the Sprint page, one of your pull requests linked to a work item shows the same details, with its
+  comment threads, builds and checks, and reviewers, and the way there in their header, such as
+  **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
+  same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
+  request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
 
 ## 0.11.0 - 2026-11-02
 
