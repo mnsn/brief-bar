@@ -270,7 +270,7 @@ private final class TestClock: Sendable {
         let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
         #expect(tests.runs == 250)
         #expect(tests.total == 500)
-        #expect(tests.countsAllRuns)
+        #expect(tests.isComplete)
         #expect(requests(server, to: "/_apis/test/runs").map { query($0)["$skip"] } == ["0", "100", "200"])
 
         let many = StubServer()
@@ -278,8 +278,27 @@ private final class TestClock: Sendable {
         serveTestRuns(many, count: 750)
         let partial = try #require(try await BuildInvestigationReader.read(client: many.client(), buildId: 77, of: FailedRun.pullRequest).tests)
         #expect(partial.runs == BuildInvestigationReader.testRunsCounted)
-        #expect(!partial.countsAllRuns)
+        #expect(!partial.isComplete)
         #expect(requests(many, to: "/_apis/test/runs").count == 5)
+    }
+
+    @Test func readsTheFailuresOfATestRunThatDoesntCountThem() async throws {
+        let server = StubServer()
+        // Its failures were looked into, so none is unanalyzed, and it has no counts by outcome; the other run's are known.
+        FailedRun.serve(server, replies: ["testRuns": .json(Fixture.list([
+            ["id": 601, "name": "Analyzed", "totalTests": 10, "passedTests": 8, "unanalyzedTests": 0],
+            ["id": 602, "name": "Known", "totalTests": 4, "passedTests": 3,
+             "runStatistics": [["outcome": "Passed", "count": 3], ["outcome": "Failed", "count": 1]]],
+        ]))])
+        server.on("/\(Fixture.org)/p1/_apis/test/Runs/601/results", json: Fixture.list([
+            ["id": 1, "outcome": "Failed", "testCaseTitle": "AddsTax"], ["id": 2, "outcome": "Failed", "testCaseTitle": "RoundsTotal"],
+        ]))
+        server.on("/\(Fixture.org)/p1/_apis/test/Runs/602/results", json: Fixture.list([["id": 3, "outcome": "Failed", "testCaseTitle": "Ships"]]))
+        let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        #expect(tests.failed == 3)
+        #expect(tests.isComplete)
+        // The test run whose failures are known comes first.
+        #expect(tests.failures.map(\.name) == ["Ships", "AddsTax", "RoundsTotal"])
     }
 
     @Test func aRunWithoutALogOrTestsHasNone() async throws {

@@ -368,11 +368,15 @@ public enum BuildInvestigationReader {
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
         guard !runs.isEmpty else { return (nil, nil) }
-        let failing = Array(runs.filter { BuildTests.failed(in: $0) > 0 }.sorted { $0.id < $1.id }.prefix(testRunsRead))
-        let results = await withTaskGroup(of: (Int, Result<[ADOTestResult], ADOError>).self) { group in
-            for (index, run) in failing.enumerated() {
+        // The test runs with failures, and then those that don't say how many failed.
+        let failing = Array(runs
+            .filter { (BuildTests.failed(in: $0) ?? 1) > 0 }
+            .sorted { (BuildTests.failed(in: $0) == nil ? 1 : 0, $0.id) < (BuildTests.failed(in: $1) == nil ? 1 : 0, $1.id) }
+            .prefix(testRunsRead))
+        let answers = await withTaskGroup(of: (Int, Result<[ADOTestResult], ADOError>).self) { group in
+            for run in failing {
                 group.addTask {
-                    (index, await attempt {
+                    (run.id, await attempt {
                         try await client.get(ADOEndpoint.testResults(
                             organization: organization, projectId: projectId, runId: run.id, outcomes: BuildTests.failedOutcomes,
                             top: failedTestsListed
@@ -380,20 +384,27 @@ public enum BuildInvestigationReader {
                     })
                 }
             }
-            var results: [Int: Result<[ADOTestResult], ADOError>] = [:]
-            for await (index, result) in group { results[index] = result }
-            return results
+            var answers: [Int: Result<[ADOTestResult], ADOError>] = [:]
+            for await (id, result) in group { answers[id] = result }
+            return answers
         }
+        var results: [Int: [ADOTestResult]] = [:]
         var failures: [FailedTest] = []
         var problem: ADOError?
-        for (index, run) in failing.enumerated() {
-            switch results[index] {
-            case .success(let list)?: failures += list.map { FailedTest($0, run: run) }
+        for run in failing {
+            switch answers[run.id] {
+            case .success(let list)?:
+                results[run.id] = list
+                failures += list.map { FailedTest($0, run: run) }
             case .failure(let error)? where !isMissing(error): problem = problem ?? error
             default: break
             }
         }
-        return (BuildTests(runs: runs, failures: Array(failures.prefix(failedTestsListed)), countsAllRuns: all), problem)
+        let tests = BuildTests(
+            runs: runs, results: results, listed: failedTestsListed, failures: Array(failures.prefix(failedTestsListed)),
+            countsAllRuns: all
+        )
+        return (tests, problem)
     }
 
     /// The value read, or nil: when it isn't there, or may not be read, it's missing; when it couldn't be read

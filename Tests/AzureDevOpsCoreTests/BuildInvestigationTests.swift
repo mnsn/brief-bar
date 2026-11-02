@@ -322,18 +322,34 @@ enum InvestigationFixture {
                 ["state": "Completed", "outcome": "Timeout", "count": 1], ["state": "Completed", "outcome": "NotExecuted", "count": 2],
                 ["state": "Completed", "outcome": "failed"], "not a statistic",
             ]],
-            // Without statistics, the failures nobody looked into are its failures.
-            ["id": 2, "name": "Integration", "totalTests": 30, "passedTests": 28, "unanalyzedTests": 2],
-            ["id": 3, "totalTests": "many"],
+            // Without counts by outcome, the failures nobody looked into are only some of them: one of two here.
+            ["id": 2, "name": "Integration", "totalTests": 30, "passedTests": 28, "unanalyzedTests": 1],
+            // Every test passed: none failed.
+            ["id": 3, "name": "Lint", "totalTests": 5, "passedTests": 5],
+            ["id": 4, "totalTests": "many"],
         ])
-        #expect(runs.map { BuildTests.failed(in: $0) } == [8, 2, 0])
-        let tests = BuildTests(runs: runs, failures: [])
-        #expect(tests.total == 150)
-        #expect(tests.passed == 138)
-        #expect(tests.failed == 10)
-        #expect(tests.other == 2)
-        #expect(tests.runs == 3)
-        #expect(tests.unlisted == 10)
+        #expect(runs.map { BuildTests.failed(in: $0) } == [8, nil, 0, nil])
+        func result(_ id: Int) throws -> ADOTestResult {
+            try Fixture.decode(ADOTestResult.self, ["id": id, "outcome": "Failed"])
+        }
+        let read = BuildTests(runs: runs, results: [:], listed: 20, failures: [], countsAllRuns: true)
+        #expect(read.total == 155)
+        #expect(read.passed == 143)
+        #expect(read.failed == 9)
+        #expect(read.other == 3)
+        #expect(read.runs == 4)
+        #expect(read.unlisted == 9)
+        #expect(!read.isComplete)
+        // Their failed results, read whole, say how many failed.
+        let whole = BuildTests(runs: runs, results: [2: [try result(1), try result(2)], 4: []], listed: 20, failures: [], countsAllRuns: true)
+        #expect(whole.failed == 10)
+        #expect(whole.isComplete)
+        // Read as far as a read lists, they're some of them.
+        let cut = BuildTests(runs: runs, results: [2: try (1...3).map(result), 4: []], listed: 3, failures: [], countsAllRuns: true)
+        #expect(cut.failed == 11)
+        #expect(!cut.isComplete)
+        #expect(!BuildTests(runs: [runs[0]], results: [:], listed: 20, failures: [], countsAllRuns: false).isComplete)
+        #expect(BuildTests(runs: [runs[0], runs[2]], results: [:], listed: 20, failures: [], countsAllRuns: true).isComplete)
     }
 
     @Test func aFailedTestSaysWhatFailed() throws {

@@ -538,17 +538,18 @@ public struct BuildTests: Sendable, Equatable {
     /// The first tests that failed, from the first test runs with failures: at most
     /// `BuildInvestigationReader.failedTestsListed`.
     public var failures: [FailedTest]
-    /// Whether the totals count all its test runs: not when it has more than `BuildInvestigationReader.testRunsCounted`,
-    /// whose totals count that many.
-    public var countsAllRuns: Bool
+    /// Whether the totals count everything. Not when it published more test runs than BriefBar adds up,
+    /// `BuildInvestigationReader.testRunsCounted`, whose totals count that many; nor when a test run that doesn't say how
+    /// many of its tests failed wasn't read whole, whose failures nobody looked into are what `failed` counts of it.
+    public var isComplete: Bool
 
-    public init(total: Int, passed: Int, failed: Int, runs: Int, failures: [FailedTest], countsAllRuns: Bool = true) {
+    public init(total: Int, passed: Int, failed: Int, runs: Int, failures: [FailedTest], isComplete: Bool = true) {
         self.total = total
         self.passed = passed
         self.failed = failed
         self.runs = runs
         self.failures = failures
-        self.countsAllRuns = countsAllRuns
+        self.isComplete = isComplete
     }
 
     /// Neither passed nor failed: skipped, not run, inconclusive…
@@ -564,17 +565,37 @@ public struct BuildTests: Sendable, Equatable {
     /// Outcomes that count as failed.
     static let failedOutcomes = ["Failed", "Error", "Timeout", "Aborted"]
 
-    init(runs: [ADOTestRun], failures: [FailedTest], countsAllRuns: Bool = true) {
+    /// The tests of `runs`, added up, with the failed results read of some of them, by test run ID, each read listing at
+    /// most `listed`. A test run that doesn't say how many of its tests failed counts the failed results read of it, when
+    /// they were read whole; otherwise its failures nobody looked into, and the totals aren't complete.
+    /// - Parameter countsAllRuns: `runs` are all its test runs.
+    init(runs: [ADOTestRun], results: [Int: [ADOTestResult]], listed: Int, failures: [FailedTest], countsAllRuns: Bool) {
+        var failed = 0
+        var isComplete = countsAllRuns
+        for run in runs {
+            if let known = Self.failed(in: run) {
+                failed += known
+            } else if let read = results[run.id], read.count < listed {
+                failed += read.count
+            } else {
+                failed += max(max(0, run.unanalyzedTests ?? 0), results[run.id]?.count ?? 0)
+                isComplete = false
+            }
+        }
         self.init(
             total: runs.reduce(0) { $0 + max(0, $1.totalTests ?? 0) }, passed: runs.reduce(0) { $0 + max(0, $1.passedTests ?? 0) },
-            failed: runs.reduce(0) { $0 + Self.failed(in: $1) }, runs: runs.count, failures: failures, countsAllRuns: countsAllRuns
+            failed: failed, runs: runs.count, failures: failures, isComplete: isComplete
         )
     }
 
-    /// The tests that failed in a test run: its count by outcome when it has one, or the failures nobody looked into.
-    static func failed(in run: ADOTestRun) -> Int {
+    /// The tests that failed in a test run, when it says: its count by outcome, or none when every test passed. Nil when it
+    /// doesn't: its failures nobody looked into, `unanalyzedTests`, are only some of them.
+    static func failed(in run: ADOTestRun) -> Int? {
         let statistics = run.runStatistics?.elements ?? []
-        guard !statistics.isEmpty else { return max(0, run.unanalyzedTests ?? 0) }
+        guard !statistics.isEmpty else {
+            if let total = run.totalTests, let passed = run.passedTests, total <= passed { return 0 }
+            return nil
+        }
         return statistics
             .filter { statistic in failedOutcomes.contains { $0.caseInsensitiveCompare(statistic.outcome ?? "") == .orderedSame } }
             .reduce(0) { $0 + max(0, $1.count ?? 0) }
