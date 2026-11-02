@@ -2,6 +2,7 @@ using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.GitHub;
 using BriefBar.Core.Presentation;
+using BriefBar.Core.Teams;
 
 namespace BriefBar.Core.Tests;
 
@@ -10,17 +11,23 @@ public sealed class SourceCatalogTests
     [Fact]
     public void ListsWhatWindowsHasWithWhatItSaysItReads()
     {
-        Assert.Equal(expected: [SourceId.AzureDevOps, SourceId.Copilot, SourceId.GitHub], actual: SourceCatalog.OnWindows.Select(selector: entry => entry.Id));
-        var azureDevOps = SourceCatalog.OnWindows[0];
+        Assert.Equal(expected: Enum.GetValues<SourceId>(), actual: SourceCatalog.OnWindows.Select(selector: entry => entry.Id));
+        var teams = SourceCatalog.OnWindows[0];
+        Assert.Equal(expected: SourceId.Teams, actual: teams.Id);
+        Assert.Equal(expected: "Microsoft Teams", actual: teams.Name);
+        Assert.Same(expected: TeamsSource.Description, actual: teams.Description);
+        Assert.Equal(expected: [Sections.TeamsChats, Sections.TeamsGroupChats], actual: teams.Sections);
+        Assert.Equal(expected: Sections.TeamsChats.Tint, actual: teams.Tint);
+        var azureDevOps = SourceCatalog.OnWindows[1];
         Assert.Equal(expected: "Azure DevOps", actual: azureDevOps.Name);
         Assert.Same(expected: AzureDevOpsSource.Description, actual: azureDevOps.Description);
         Assert.Equal(expected: [Sections.AzureDevOpsPullRequests], actual: azureDevOps.Sections);
-        var copilot = SourceCatalog.OnWindows[1];
+        var copilot = SourceCatalog.OnWindows[2];
         Assert.Equal(expected: SourceId.Copilot, actual: copilot.Id);
         Assert.Equal(expected: "GitHub Copilot", actual: copilot.Name);
         Assert.Same(expected: CopilotSource.Description, actual: copilot.Description);
         Assert.Equal(expected: [Sections.CopilotSessions], actual: copilot.Sections);
-        var gitHub = SourceCatalog.OnWindows[2];
+        var gitHub = SourceCatalog.OnWindows[3];
         Assert.Equal(expected: SourceId.GitHub, actual: gitHub.Id);
         Assert.Equal(expected: "GitHub", actual: gitHub.Name);
         Assert.Same(expected: GitHubSource.Description, actual: gitHub.Description);
@@ -29,16 +36,18 @@ public sealed class SourceCatalogTests
         Assert.Equal(expected: Sections.GitHubPullRequests.Tint, actual: gitHub.Tint);
     }
 
+    /// Windows has every source the Mac has: none is still to come, and Settings says nothing about it.
     [Fact]
-    public void NamesTheSourcesStillToCome()
+    public void HasNoSourceStillToCome()
     {
-        Assert.Equal(expected: "Microsoft Teams", actual: SourceCatalog.StillToCome);
+        Assert.Equal(expected: string.Empty, actual: SourceCatalog.StillToCome);
+        Assert.Null(@object: SourceCatalog.StillToComeNote);
     }
 
     [Fact]
     public void SaysWhatsStillToComeInWords()
     {
-        Assert.Equal(expected: "Microsoft Teams comes to BriefBar for Windows next.", actual: SourceCatalog.StillToComeNote);
+        Assert.Equal(expected: "Microsoft Teams comes to BriefBar for Windows next.", actual: SourceCatalog.NoteOnStillToCome(names: ["Microsoft Teams"]));
         Assert.Equal(
             expected: "Azure DevOps and Microsoft Teams come to BriefBar for Windows one at a time.",
             actual: SourceCatalog.NoteOnStillToCome(names: ["Azure DevOps", "Microsoft Teams"]));

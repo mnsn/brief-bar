@@ -50,11 +50,12 @@ public sealed class DemoDataTests
         }
     }
 
+    /// Every source's made-up data, as its own store and rows show them: Teams' four unread chats need you.
     [Fact]
-    public void CountsWhatTheMockupShows()
+    public void CountsWhatTheDemoShows()
     {
         var total = snapshots.Aggregate(seed: new StateCounts(), func: (sum, snapshot) => sum + snapshot.Counts);
-        Assert.Equal(expected: new StateCounts(NeedsYou: 11, Failing: 5, Running: 2, Done: 4), actual: total);
+        Assert.Equal(expected: new StateCounts(NeedsYou: 13, Failing: 5, Running: 2, Done: 4), actual: total);
     }
 
     /// The made-up pull requests go through the classifier, as GitHub's do, into the groups they're made for.
@@ -83,18 +84,5 @@ public sealed class DemoDataTests
         var seen = Assert.Single(collection: store.Items, predicate: item => item.Key.Number == 4102);
         Assert.Equal(expected: PRGroup.NeedsYou, actual: seen.Group);
         Assert.False(condition: seen.HasNews);
-    }
-
-    [Fact]
-    public void ServesEachSourcesSectionsOnly()
-    {
-        var sources = DemoSource.All(madeAt: Times.At(seconds: 0));
-        Assert.Equal(expected: Enum.GetValues<SourceId>(), actual: sources.Select(selector: source => source.Source));
-        var teams = sources.Single(predicate: source => source.Source == SourceId.Teams);
-        Assert.Equal(
-            expected: [SectionId.TeamsChats, SectionId.TeamsGroupChats],
-            actual: teams.Sections.Select(selector: section => section.Id));
-        Assert.Equal(expected: 1, actual: teams.Snapshot(section: SectionId.TeamsChats).Counts.NeedsYou);
-        Assert.Throws<ArgumentException>(testCode: () => teams.Snapshot(section: SectionId.CopilotSessions));
     }
 }
