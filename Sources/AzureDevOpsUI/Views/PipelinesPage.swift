@@ -376,6 +376,8 @@ private struct MergeRunRow: View {
                 Button("Open in Azure DevOps", action: openRun)
             }
         }
+        // Right-clicking it, rather than its card, which names only the run that failed first.
+        .modifier(RunMenu(showDetails: opensDetails, openTitle: openTitle, openRun: openRun))
         .rowActions(for: status.pipeline.name, openTitle: opensDetails == nil ? "Open in Azure DevOps" : "Show Details",
                     open: opensDetails ?? openRun) {
             if opensDetails != nil {
@@ -384,8 +386,32 @@ private struct MergeRunRow: View {
         }
     }
 
+    /// "Open Run 20261025.2 in Azure DevOps".
+    private var openTitle: String {
+        status.latest.map { "Open Run \($0.number) in Azure DevOps" } ?? "Open in Azure DevOps"
+    }
+
     private func openRun() {
         if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
+    }
+}
+
+/// A pull request's run's own menu, where a click shows it in the pull request's details: that, and opening the run in
+/// Azure DevOps. A run after a merge, which a click opens, keeps its card's menu.
+private struct RunMenu: ViewModifier {
+    let showDetails: (() -> Void)?
+    let openTitle: String
+    let openRun: () -> Void
+
+    func body(content: Content) -> some View {
+        if let showDetails {
+            content.contextMenu {
+                Button("Show Details", action: showDetails)
+                Button(openTitle, action: openRun)
+            }
+        } else {
+            content
+        }
     }
 }
 
