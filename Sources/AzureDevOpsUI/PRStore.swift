@@ -686,6 +686,12 @@ final class PRStore: ObservableObject {
         settings.seenCutoff(for: key)
     }
 
+    /// Up to when what waited on you in a pull request doesn't anymore: when you last removed it from Needs You, or sent
+    /// its comments to Copilot.
+    func dismissedCutoff(for key: PRKey) -> Date {
+        settings.dismissedCutoff(for: key)
+    }
+
     /// A pull request as the list would have it had you last looked at it at `seenCutoff`, the rest as it is now: what
     /// was new then, and what waited on you, but not what you've answered, removed from Needs You or sent to Copilot
     /// since.

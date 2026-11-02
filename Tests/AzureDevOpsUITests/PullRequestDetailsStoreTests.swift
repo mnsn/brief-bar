@@ -79,7 +79,7 @@ import Testing
         }
         let store = PullRequestDetailsStore()
         store.readRecord = { _ in record }
-        store.seenCutoff = { _ in seen }
+        store.cutoffs = { _ in .init(seen: seen, dismissed: dismissed) }
         store.classify = { record, seen in PRClassifier.snapshot(for: record, seenCutoff: seen, dismissedCutoff: dismissed, now: now) }
         store.markSeen = { _ in seen = now }
         store.itemsChanged([try row()])
@@ -118,7 +118,7 @@ import Testing
         var dismissed = Date.distantPast
         let store = PullRequestDetailsStore()
         store.readRecord = { _ in record }
-        store.seenCutoff = { _ in before }
+        store.cutoffs = { _ in .init(seen: before, dismissed: dismissed) }
         store.classify = { record, seen in PRClassifier.snapshot(for: record, seenCutoff: seen, dismissedCutoff: dismissed, now: now) }
         let row = try #require(PRClassifier.snapshot(for: record, seenCutoff: before, dismissedCutoff: dismissed, now: now))
         store.itemsChanged([row])
@@ -299,7 +299,7 @@ import Testing
         let now = store.now
         await store.loadOnce()
         let details = PullRequestDetailsStore()
-        details.markSeen = { [weak store] in store?.markSeen($0) }
+        details.use(store)
         let mention = try #require(store.items.first { $0.key.number == 4097 })
         #expect(mention.hasNews)
         details.show(mention)
@@ -308,6 +308,52 @@ import Testing
         let seen = try #require(store.items.first { $0.key.number == 4097 })
         #expect(seen.group == .needsYou)
         #expect(!seen.hasNews)
+    }
+
+    /// Removed from Needs You from its row, which, seen, no longer has the new comment in a resolved thread that its details
+    /// still show, and so is taken off only up to an older one, a reply in an open thread: then what you've seen is seen
+    /// in its details too.
+    @Test func removingItFromNeedsYouSeesWhatOnlyItsDetailsShowed() async throws {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = PRStore(settings: settings, mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        // A minute ago, Jordan commented in a resolved thread, after Sam's reply in an open one, which you've seen.
+        var snapshot = DemoData.snapshot(now: now)
+        let index = try #require(snapshot.records.firstIndex { $0.id.number == 4102 })
+        var read = try #require(snapshot.records[index].details)
+        let resolved = try #require(read.threads.firstIndex { $0.id == 13 && $0.isResolved })
+        let comment = ReviewComment(id: 3, author: Person(id: "jordan", name: "Jordan Lee"), text: "One more thing.",
+                                    publishedAt: now.addingTimeInterval(-60))
+        read.threads[resolved].comments.append(comment)
+        read.lastActivity = comment.publishedAt
+        snapshot.records[index].details = read
+        store.receive(snapshot)
+        let row = try #require(store.items.first { $0.key.number == 4102 })
+        #expect(row.pendingEvents.contains { $0.threadId == 13 && $0.isNew })
+        #expect(row.pendingEvents.contains { $0.threadId != 13 && !$0.isNew })
+
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        details.itemsChanged(store.items)
+        details.show(row)
+        store.receive(snapshot)
+        details.itemsChanged(store.items)
+        func waiting() throws -> [Int] {
+            let item = try #require(details.selected)
+            let record = store.record(for: item.key)
+            return PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record)).threads.waitingOnYou.map(\.id)
+        }
+        let seen = try #require(store.items.first { $0.key.number == 4102 })
+        #expect(!seen.pendingEvents.contains { $0.threadId == 13 })
+        #expect(try waiting().contains(13))
+
+        store.dismiss(seen)
+        store.receive(snapshot)
+        details.itemsChanged(store.items)
+        #expect(try !waiting().contains(13))
+        #expect(try waiting().isEmpty)
     }
 
     @Test func keepsHowWideYouMadeTheDetails() {

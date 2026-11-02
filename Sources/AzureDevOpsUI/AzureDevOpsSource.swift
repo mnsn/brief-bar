@@ -159,10 +159,7 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// it shows as opening it does.
     private func makePullRequestDetails(store: PRStore) -> PullRequestDetailsStore {
         let details = PullRequestDetailsStore()
-        details.markSeen = { [weak store] item in store?.markSeen(item) }
-        details.seenCutoff = { [weak store] key in store?.seenCutoff(for: key) }
-        details.classify = { [weak store] record, seen in store?.snapshot(of: record, seenAt: seen) }
-        details.readRecord = { [weak store] key in store?.record(for: key) }
+        details.use(store)
         details.hasPage = { [services] in services.hasPage(.azureDevOpsPullRequests) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsPullRequests) }
         store.$items

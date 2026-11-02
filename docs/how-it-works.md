@@ -1183,9 +1183,9 @@ one keeps its own width (`ado.pullRequestDetailsWidth`). The row shows as select
 request, as opening it does. While they show it, though, what waits on you in its threads is as it was before
 they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(of:seenAt:)`): a new comment in
 a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
-stays new. Answering it, removing the pull request from Needs You or sending its comments to Copilot still
-counts, and showing another one, or closing them, ends that look. In a menu-bar list or a widget, a click still
-opens it in Azure DevOps.
+stays new. Answering it still counts, and removing the pull request from Needs You or sending its comments to
+Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there too.
+In a menu-bar list or a widget, a click still opens it in Azure DevOps.
 
 They show what the list read already, so nothing more is read for them, and they follow the list as it
 refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,

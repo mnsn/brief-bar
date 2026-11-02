@@ -318,10 +318,10 @@ opens the pull request in Azure DevOps, at the comment that needs you, as a clic
 does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
 Send Work to Copilot is on. The details show what BriefBar already read, so they read nothing more, and
 showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
-new, and where it was, rather than folding away as you read it. Drag their left edge to make them wider or
-narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
-edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and widgets, a click
-still opens the pull request in Azure DevOps.
+new, and where it was, rather than folding away as you read it, until you remove it from Needs You. Drag their
+left edge to make them wider or narrower: BriefBar keeps the width, separately from the Sprint page's details,
+and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
+widgets, a click still opens the pull request in Azure DevOps.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but

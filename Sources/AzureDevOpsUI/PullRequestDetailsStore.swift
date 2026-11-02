@@ -35,6 +35,13 @@ final class PullRequestDetailsStore: ObservableObject {
         }
     }
 
+    /// When you last looked at a pull request, and up to when what waited on you there doesn't anymore, since you removed
+    /// it from Needs You or sent it to Copilot.
+    struct Cutoffs: Equatable {
+        var seen: Date
+        var dismissed: Date
+    }
+
     /// Something in the details to scroll to, and to point out: one of their parts, a thread, or a build's or a check's
     /// row, by its ID (`PullRequestPanel.CheckLine.id`), which no other row has.
     enum Anchor: Hashable {
@@ -57,9 +64,8 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
-    /// When you last looked at a pull request, and how the list would have one had you last looked at it then: the
-    /// source's (`PRStore.seenCutoff(for:)`, `PRStore.snapshot(of:seenAt:)`).
-    var seenCutoff: (PRKey) -> Date? = { _ in nil }
+    /// A pull request's cutoffs, and how the list would have one had you last looked at it at a time: the source's.
+    var cutoffs: (PRKey) -> Cutoffs? = { _ in nil }
     var classify: (PRRecord, Date) -> PRSnapshot? = { _, _ in nil }
     /// What the list read of a pull request it has: the source's.
     var readRecord: (PRKey) -> PRRecord? = { _ in nil }
@@ -71,14 +77,24 @@ final class PullRequestDetailsStore: ObservableObject {
     private var listed: [PRSnapshot] = []
     /// Who's signed in to the Azure CLI, as the list last told.
     private var account: String?
-    /// When you'd last looked at the pull request that shows, before its details showed it.
-    private var seenBefore: Date?
+    /// The cutoffs of the pull request that shows, from before its details showed it.
+    private var before: Cutoffs?
+
+    /// Shows what the list read, and sees what it shows there, as opening it from the list does.
+    func use(_ list: PRStore) {
+        markSeen = { [weak list] item in list?.markSeen(item) }
+        readRecord = { [weak list] key in list?.record(for: key) }
+        cutoffs = { [weak list] key in
+            list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key)) }
+        }
+        classify = { [weak list] record, seen in list?.snapshot(of: record, seenAt: seen) }
+    }
 
     /// Shows a pull request's details, from their top or at a place in them, without what was open over another's. It's
     /// seen, as opening it is.
     func show(_ item: PRSnapshot, at place: Place? = nil) {
         // Shown again, it's still the same look at it.
-        if item.key != selected?.key { seenBefore = seenCutoff(item.key) }
+        if item.key != selected?.key { before = cutoffs(item.key) }
         pages = []
         selected = item
         record = readRecord(item.key)
@@ -106,12 +122,14 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// What needs you on the pull request that shows, as when its details showed it, the rest as it is now: seeing it
     /// there doesn't fold a resolved thread whose comment was new then, or make what was new old, while they show it.
-    /// Answering it, removing it from Needs You or sending it to Copilot does. Any other's, as its row has it.
+    /// Answering it does, and once you've removed it from Needs You or sent it to Copilot, what you've seen is seen, as in
+    /// the list. Any other's, as its row has it.
     func pendingEvents(of item: PRSnapshot, record: PRRecord?) -> [PREvent] {
-        guard item.key == selected?.key, let seenBefore, let record else { return item.pendingEvents }
-        // One the list wouldn't have even then has nothing that needs you, such as one sent in a chat once you've removed
-        // it from Needs You: its row, kept as it was last, still says what did.
-        return classify(record, seenBefore)?.pendingEvents ?? []
+        guard item.key == selected?.key, let before, let record, let current = cutoffs(item.key) else { return item.pendingEvents }
+        let seen = current.dismissed == before.dismissed ? before.seen : current.seen
+        // One the list wouldn't have even so has nothing that needs you, such as one sent in a chat once you've removed it
+        // from Needs You: its row, kept as it was last, still says what did.
+        return classify(record, seen)?.pendingEvents ?? []
     }
 
     /// Takes the details to a place in them, from the pages over them too.
@@ -165,7 +183,7 @@ final class PullRequestDetailsStore: ObservableObject {
 
     func close() {
         selected = nil
-        seenBefore = nil
+        before = nil
         record = nil
         isListed = false
         pages = []
