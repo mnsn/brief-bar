@@ -109,6 +109,177 @@ public sealed class AzureDevOpsRowsTests
         Assert.All(collection: Enum.GetValues<PRReason>(), action: reason => AzureDevOpsRows.Icon(reason: reason));
     }
 
+    /// Under each of your open pull requests, what's left before you can complete it, the most pressing first, then what's
+    /// done, as the Mac's line says it; its tooltip and Narrator say all of it, and when it was created.
+    [Fact]
+    public void SaysWhatsLeftUnderEachOfYourPullRequests()
+    {
+        var (store, settings) = LoadDemo();
+        var snapshot = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        var replied = Row(snapshot: snapshot, number: 4102);
+        var checklist = replied.Checklist;
+        Assert.NotNull(@object: checklist);
+        Assert.Equal(
+            expected:
+            [
+                new RowChecklistItem(Icon: IconKey.HandRaise, State: ItemState.NeedsYou, Label: "Resolve 1 comment", IsDone: false),
+                new RowChecklistItem(Icon: IconKey.Clock, State: null, Label: "1 of 2 approvals", IsDone: false),
+                new RowChecklistItem(Icon: IconKey.Clock, State: null, Label: "Waiting on Sam", IsDone: false),
+                new RowChecklistItem(Icon: IconKey.CheckmarkCircle, State: ItemState.Done, Label: "Build passed", IsDone: true),
+            ],
+            actual: checklist.Items);
+        Assert.False(condition: checklist.IsQuiet);
+        string[] lines =
+        [
+            "Left to complete it: Resolve 1 comment (A policy requires resolving every comment); 1 of 2 approvals (Approved by Priya Shah); Waiting on Sam (Required: Sam Rivera)",
+            "Done: Build passed (payments-api CI)",
+        ];
+        Assert.Equal(expected: lines, actual: checklist.Summary);
+        // Its tooltip says it in place of who approved, and when it was created.
+        var tip = replied.ToolTip!.Split(separator: '\n');
+        Assert.Equal(expected: [.. lines, "Created 1d ago"], actual: tip[4..7]);
+        Assert.DoesNotContain(collection: tip, filter: line => line.StartsWith(value: "Approved by", comparisonType: StringComparison.Ordinal));
+        Assert.Contains(
+            expectedSubstring: "Sam Rivera replied, payments-api, Could we cap the backoff",
+            actualString: RowWords.SpokenName(row: replied, sourceName: null, now: now),
+            comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: lines[0], actualString: RowWords.SpokenName(row: replied, sourceName: null, now: now), comparisonType: StringComparison.Ordinal);
+
+        // Open comments that don't hold it up, quietly; an idle one's words all quiet.
+        var idle = Row(snapshot: snapshot, number: 3990).Checklist;
+        Assert.NotNull(@object: idle);
+        Assert.True(condition: idle.IsQuiet);
+        Assert.Equal(
+            expected: [(IconKey.DismissCircle, (ItemState?)ItemState.Failing, "Build expired"), (IconKey.Clock, null, "Not approved yet"), (IconKey.Comment, null, "1 open comment")],
+            actual: idle.Items.Select(selector: item => (item.Icon, item.State, item.Label)));
+        Assert.Equal(expected: "Not required: 1 open comment", actual: idle.Summary[1]);
+
+        // Reviews, and what's closed, don't say it; nor does a review's tooltip say who approved in its place.
+        Assert.Null(@object: Row(snapshot: snapshot, number: 4097).Checklist);
+        Assert.Null(@object: Row(snapshot: snapshot, number: 4085).Checklist);
+        Assert.Contains(expectedSubstring: "\nApproved by Maria Garcia\n", actualString: Row(snapshot: snapshot, number: 4097).ToolTip, comparisonType: StringComparison.Ordinal);
+    }
+
+    /// What's left, a line each: what holds it up, what doesn't, what's done; and, once it changed since its policies were
+    /// read, that it says what was read last.
+    [Fact]
+    public void SaysWhatsLeftInWords()
+    {
+        PRReadinessItem[] items =
+        [
+            new(Kind: PRReadinessItemKind.Builds, State: ItemState.Failing, Label: "Build failed", Detail: "web-ci · Run unit tests: 2 tests failed"),
+            new(Kind: PRReadinessItemKind.Comments, State: null, Label: "2 open comments", IsRequired: false),
+            new(Kind: PRReadinessItemKind.Approvals, State: ItemState.Done, Label: "Approved", Detail: "Approved by Priya Shah"),
+        ];
+        Assert.Equal(
+            expected:
+            [
+                "Left to complete it: Build failed (web-ci · Run unit tests: 2 tests failed)",
+                "Not required: 2 open comments",
+                "Done: Approved (Approved by Priya Shah)",
+            ],
+            actual: AzureDevOpsRows.ReadinessLines(readiness: new PRReadiness(Items: [.. items])));
+        Assert.Equal(
+            expected: ["Nothing left to complete it, as last read", "Done: Approved (Approved by Priya Shah)", "It changed since its policies were read: they're read again at the next refresh"],
+            actual: AzureDevOpsRows.ReadinessLines(readiness: new PRReadiness(Items: [items[2]], IsCurrent: false)));
+        Assert.Equal(expected: ["Nothing left to complete it"], actual: AzureDevOpsRows.ReadinessLines(readiness: new PRReadiness(Items: [])));
+        Assert.Equal(expected: IconKey.ArrowSync, actual: AzureDevOpsRows.Icon(item: new PRReadinessItem(Kind: PRReadinessItemKind.Checks, State: ItemState.Running, Label: "Check running")));
+    }
+
+    /// By date, every pull request but Done's and Idle's is in one list, by when each was created, each still in its state;
+    /// Done's and Idle's keep their sections after it, Idle's in the same order. What the bar counts and the brief stay
+    /// by status.
+    [Fact]
+    public void ListsThemByDate()
+    {
+        var (store, settings) = LoadDemo();
+        var byStatus = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        settings.PullRequestOrder = PROrder.NewestFirst;
+        var snapshot = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        Assert.Equal(expected: [AzureDevOpsRows.DateListKey, "done", "idle"], actual: snapshot.Groups.Select(selector: group => group.Key));
+        Assert.Equal(expected: ["Newest first", "Done", "Idle"], actual: snapshot.Groups.Select(selector: group => group.Title));
+        var byDate = Group(snapshot: snapshot, key: AzureDevOpsRows.DateListKey);
+        Assert.Null(@object: byDate.State);
+        Assert.Equal(expected: AzureDevOpsCommands.MarkAsSeen, actual: byDate.Commands.Single().Key);
+        Assert.True(condition: Group(snapshot: snapshot, key: "idle").IsFolded);
+        Assert.Equal(
+            expected: [4110, 4099, 4108, 4102, 4091, 4097, 4093, 4088, 4079, 4071, 4060, 4085, 4105, 3990],
+            actual: snapshot.Rows.Select(selector: row => int.Parse(s: row.Id.Split(separator: '/')[1], provider: System.Globalization.CultureInfo.InvariantCulture)));
+        Assert.All(collection: snapshot.Rows.Take(count: 11), action: row => Assert.Equal(expected: AzureDevOpsRows.DateListKey, actual: row.Group));
+        // Each row's time is how long ago it was created, but Done's.
+        var replied = Row(snapshot: snapshot, number: 4102);
+        Assert.Equal(expected: now.AddHours(hours: -26), actual: replied.Created);
+        Assert.Equal(expected: Row(snapshot: byStatus, number: 4102).Date, actual: replied.Date);
+        Assert.Equal(expected: now.AddDays(days: -40), actual: Row(snapshot: snapshot, number: 3990).Created);
+        Assert.Null(@object: Row(snapshot: snapshot, number: 4085).Created);
+        Assert.EndsWith(expectedEndString: "created 1 day ago", actualString: RowWords.SpokenName(row: replied, sourceName: null, now: now, showsCreated: true), comparisonType: StringComparison.Ordinal);
+        Assert.All(collection: byStatus.Rows, action: row => Assert.Null(@object: row.Created));
+        // Each in the state it's in, counted and briefed as by status.
+        Assert.Equal(
+            expected: byStatus.Rows.ToDictionary(keySelector: row => row.Id, elementSelector: row => row.State),
+            actual: snapshot.Rows.ToDictionary(keySelector: row => row.Id, elementSelector: row => row.State));
+        Assert.Equal(expected: byStatus.Counts, actual: snapshot.Counts);
+        Assert.Equal(expected: byStatus.BriefLines, actual: snapshot.BriefLines);
+
+        // Oldest first, the other way round, Idle's too.
+        settings.PullRequestOrder = PROrder.OldestFirst;
+        var oldest = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        Assert.Equal(expected: "Oldest first", actual: oldest.Groups[0].Title);
+        Assert.Equal(
+            expected: [4060, 4071, 4079, 4088, 4093, 4097, 4091, 4102, 4108, 4099, 4110, 4085, 3990, 4105],
+            actual: oldest.Rows.Select(selector: row => int.Parse(s: row.Id.Split(separator: '/')[1], provider: System.Globalization.CultureInfo.InvariantCulture)));
+
+        // Seen, the list has nothing new to mark.
+        store.Clear(group: PRGroup.NeedsYou, now: now);
+        store.Recompute(now: now);
+        Assert.Empty(collection: Group(snapshot: AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now), key: AzureDevOpsRows.DateListKey).Commands);
+    }
+
+    /// Its tooltip's "Created 5m ago" moves on as the Mac's does: the section is built again whenever those words would
+    /// change, which is at most once a minute while one was created within the day ("3h 12m"), and once a day after.
+    [Fact]
+    public void SaysHowLongAgoEachWasCreatedAsTimeMovesOn()
+    {
+        var (store, settings) = LoadDemo();
+        static string Created(ItemRow row) => row.ToolTip!.Split(separator: '\n').Single(predicate: line => line.StartsWith(value: "Created ", comparisonType: StringComparison.Ordinal));
+        var young = Row(snapshot: AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now), number: 4110);
+        Assert.Equal(expected: "Created 40m ago", actual: Created(row: young));
+        Assert.Equal(expected: "Created 41m ago", actual: Created(row: Row(snapshot: AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now.AddMinutes(minutes: 1)), number: 4110)));
+
+        // Within the same minute, nothing it says changes; past it, the young one's does.
+        Assert.False(condition: AzureDevOpsRows.CreatedWordsChanged(items: store.Items, then: now, now: now.AddSeconds(seconds: 45)));
+        Assert.True(condition: AzureDevOpsRows.CreatedWordsChanged(items: store.Items, then: now, now: now.AddSeconds(seconds: 61)));
+        // Without it, nothing changes within the hour: the others were created more than a day ago, and say it in days.
+        var older = store.Items.Where(predicate: item => now - item.CreatedAt > TimeSpan.FromDays(value: 1)).ToList();
+        Assert.NotEmpty(collection: older);
+        Assert.False(condition: AzureDevOpsRows.CreatedWordsChanged(items: older, then: now, now: now.AddHours(hours: 1)));
+        Assert.True(condition: AzureDevOpsRows.CreatedWordsChanged(items: older, then: now, now: now.AddDays(days: 1)));
+        Assert.Equal(expected: "Created just now", actual: Created(row: AzureDevOpsRows.Row(item: store.Items[0] with { CreatedAt = now.AddSeconds(seconds: -20) }, showToReview: false, now: now)));
+    }
+
+    /// Its sort menu, at the top of the panel: each order, and the one in use.
+    [Fact]
+    public void OffersToSortTheList()
+    {
+        var (store, settings) = LoadDemo();
+        var sort = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now).Sort;
+        Assert.NotNull(@object: sort);
+        Assert.Equal(
+            expected: [("sort.status", "By status"), ("sort.newestFirst", "Newest first"), ("sort.oldestFirst", "Oldest first")],
+            actual: sort.Choices.Select(selector: choice => (choice.Key, choice.Title)));
+        Assert.Equal(expected: "sort.status", actual: sort.Chosen);
+        Assert.Equal(expected: "By status", actual: sort.ChosenChoice?.Title);
+        Assert.Equal(expected: "Sort pull requests", actual: sort.Name);
+        Assert.StartsWith(expectedStartString: "Sort: By status. By status groups them", actualString: sort.Help, comparisonType: StringComparison.Ordinal);
+        Assert.All(collection: PROrders.All, action: order => Assert.Equal(expected: order, actual: AzureDevOpsCommands.SortedBy(command: AzureDevOpsCommands.Sort(order: order))));
+        Assert.Null(@object: AzureDevOpsCommands.SortedBy(command: AzureDevOpsCommands.Refresh));
+        Assert.Null(@object: AzureDevOpsCommands.SortedBy(command: "sort.sideways"));
+
+        settings.PullRequestOrder = PROrder.OldestFirst;
+        var byDate = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now).Sort;
+        Assert.Equal(expected: "Oldest first", actual: byDate?.ChosenChoice?.Title);
+    }
+
     /// A pull request you watch can be unwatched from its menu.
     [Fact]
     public void OffersToStopWatching()

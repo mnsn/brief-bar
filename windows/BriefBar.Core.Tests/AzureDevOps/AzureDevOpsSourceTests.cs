@@ -70,6 +70,44 @@ public sealed class AzureDevOpsSourceTests
         Assert.Contains(collection: made.Engine().Calls, filter: call => call == "refresh");
     }
 
+    /// Its sort menu lists the pull requests by when each was created, and back by status, at once, and keeps your choice;
+    /// by date, Mark as seen sees what's new in Needs you, which it lists with the rest.
+    [Fact]
+    public async Task SortsAsItsPanelAsks()
+    {
+        var storage = new MemorySettings();
+        var made = Make(settings: AzureDevOpsDemoData.Settings(storage: storage, now: now));
+        using var source = made.Source;
+        await Loaded(made: made);
+        var byStatus = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
+        Assert.Equal(expected: AzureDevOpsCommands.Sort(order: PROrder.Status), actual: byStatus.Sort?.Chosen);
+
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.Sort(order: PROrder.OldestFirst)));
+        var byDate = source.Snapshot(section: SectionId.AzureDevOpsPullRequests);
+        Assert.Equal(expected: [AzureDevOpsRows.DateListKey, "done", "idle"], actual: byDate.Groups.Select(selector: group => group.Key));
+        Assert.Equal(expected: AzureDevOpsCommands.Sort(order: PROrder.OldestFirst), actual: byDate.Sort?.Chosen);
+        Assert.Equal(expected: PROrder.OldestFirst, actual: made.Settings.PullRequestOrder);
+        Assert.Equal(expected: "oldestFirst", actual: storage.Read(key: AzureDevOpsSettings.PullRequestOrderKey)?.GetValue<string>());
+        // What the bar counts stays as it was.
+        Assert.Equal(expected: byStatus.Counts, actual: byDate.Counts);
+
+        Assert.Equal(expected: ItemState.NeedsYou, actual: Row(source: source, id: "contoso/4110").State);
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.MarkAsSeen, GroupKey: AzureDevOpsRows.DateListKey));
+        // The review request, seen, waits under To review, which the bar doesn't count; it's still in the list by date.
+        var seen = Row(source: source, id: "contoso/4110");
+        Assert.Equal(expected: (AzureDevOpsRows.DateListKey, (ItemState?)null), actual: (seen.Group, seen.State));
+        Assert.Empty(collection: Assert.Single(collection: source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Groups, predicate: group => group.Key == AzureDevOpsRows.DateListKey).Commands);
+
+        // A command for an order it doesn't have, or for a row, sorts nothing.
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: "sort.sideways"));
+        source.Perform(request: Request(command: AzureDevOpsCommands.Sort(order: PROrder.Status), rowId: "contoso/4102"));
+        Assert.Equal(expected: PROrder.OldestFirst, actual: made.Settings.PullRequestOrder);
+
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.Sort(order: PROrder.Status)));
+        Assert.Equal(expected: byStatus.Groups.Select(selector: group => group.Key), actual: source.Snapshot(section: SectionId.AzureDevOpsPullRequests).Groups.Select(selector: group => group.Key));
+        Assert.Equal(expected: PROrder.Status, actual: made.Settings.PullRequestOrder);
+    }
+
     /// Sign in runs `az login` with fixed arguments in a console window that stays open; without the Azure CLI, it opens
     /// the page that says how to install it.
     [Fact]

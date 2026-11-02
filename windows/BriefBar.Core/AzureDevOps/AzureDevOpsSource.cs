@@ -67,6 +67,8 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     /// Turned off: what it saved is deleted, and it saves nothing more, even before it has stopped.
     bool turnedOff;
     SectionSnapshot snapshot = SectionSnapshot.Starting(info: BriefBar.Core.Sections.AzureDevOpsPullRequests);
+    /// When `snapshot` was built: its rows' tooltips say how long ago each pull request was created, as of then.
+    DateTimeOffset builtAt;
     (SectionCondition Condition, GroupCounts Counts, PulseProblemKind? Problem)? logged;
 
     /// - `reading`: how it reads Azure DevOps, or the demo's made-up pull requests.
@@ -205,7 +207,11 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             }
             var now = time.GetUtcNow();
             var item = request.RowId is { } id ? store.Items.FirstOrDefault(predicate: listed => listed.Id == id) : null;
-            var group = request.GroupKey is { } key ? AzureDevOpsRows.Group(groupKey: key) : null;
+            // The list by date's Mark as seen sees what's new in Needs you, which it lists among the rest.
+            var group = request.GroupKey == AzureDevOpsRows.DateListKey ? PRGroup.NeedsYou
+                : request.GroupKey is { } key ? AzureDevOpsRows.Group(groupKey: key)
+                : null;
+            var sortedBy = request.RowId is null && request.GroupKey is null ? AzureDevOpsCommands.SortedBy(command: request.Command) : null;
             switch (request.Command)
             {
                 case AzureDevOpsCommands.Open when item is not null:
@@ -221,6 +227,9 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
                 case AzureDevOpsCommands.MarkAsSeen when group == PRGroup.NeedsYou:
                 case AzureDevOpsCommands.Clear when group == PRGroup.Done:
                     store.Clear(group: group.Value, now: now);
+                    break;
+                case var _ when sortedBy is { } order:
+                    settings.PullRequestOrder = order;
                     break;
                 default:
                     // A row that's gone, or a command it doesn't offer.
@@ -465,8 +474,8 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
     }
 
-    /// Times move on: what's new, done or idle may have changed. And it looks for your organizations again, a minute
-    /// after it couldn't find them.
+    /// Times move on: what's new, done or idle may have changed, and how long ago each pull request was created, which
+    /// its tooltip says. And it looks for your organizations again, a minute after it couldn't find them.
     void Tick()
     {
         bool changed;
@@ -478,8 +487,10 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             }
             var items = store.Items;
             var problem = store.Problem;
-            store.Recompute(now: time.GetUtcNow());
-            changed = !store.Items.SequenceEqual(second: items) || !Equals(objA: store.Problem, objB: problem);
+            var now = time.GetUtcNow();
+            store.Recompute(now: now);
+            changed = !store.Items.SequenceEqual(second: items) || !Equals(objA: store.Problem, objB: problem)
+                || (!failed && AzureDevOpsRows.CreatedWordsChanged(items: store.Items, then: builtAt, now: now));
             if (changed)
             {
                 Rebuild();
@@ -536,8 +547,10 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         {
             return;
         }
-        var built = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: time.GetUtcNow());
+        var now = time.GetUtcNow();
+        var built = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
         Volatile.Write(location: ref snapshot, value: built);
+        builtAt = now;
         (SectionCondition Condition, GroupCounts Counts, PulseProblemKind? Problem) state = (built.Status.Condition, store.Counts, store.Problem?.Kind);
         if (logged is { } last && last.Condition == state.Condition && last.Counts.Equals(other: state.Counts) && last.Problem == state.Problem)
         {

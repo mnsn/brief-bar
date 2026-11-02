@@ -55,6 +55,13 @@ public sealed record PRSnapshot
     /// You watch it, by its link.
     public bool IsWatched { get; init; }
 
+    /// When the pull request was created.
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    /// What's left before you can complete it, and what's done: for your own open pull requests, once their details are
+    /// read.
+    public PRReadiness? Readiness { get; init; }
+
     /// `organization/number`, unique among pull requests.
     public string Id => Key.ToString();
 

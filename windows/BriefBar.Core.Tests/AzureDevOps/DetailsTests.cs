@@ -73,6 +73,30 @@ public sealed class DetailsTests
         Assert.Null(@object: CheckFrom(evaluation: Fixture.Evaluation(type: "Build", status: "rejected", enabled: false)));
     }
 
+    /// Whom a required-reviewers policy requires, by identity ID, lowercased as reviewers' are; nothing when it doesn't say,
+    /// says it some other way, or isn't about reviewers.
+    [Fact]
+    public void RequiredReviewerPoliciesSayWhomTheyRequire()
+    {
+        const string Id = "6B3C1F2A-0000-4000-8000-000000000001";
+        static Check Read(string type, string status, JsonObject? settings = null)
+        {
+            var check = CheckFrom(evaluation: Fixture.Evaluation(type: type, status: status, settings: settings));
+            Assert.NotNull(@object: check);
+            return check;
+        }
+        var required = Read(type: "Required reviewers", status: "rejected", settings: new JsonObject { ["requiredReviewerIds"] = new JsonArray(items: [Id]), ["minimumApproverCount"] = 1 });
+        Assert.Equal(expected: [Id.ToLowerInvariant()], actual: required.ReviewerIds.AsEnumerable());
+        Assert.Equal(expected: 1, actual: required.MinimumApprovers);
+        Assert.Empty(collection: Read(type: "Required reviewers", status: "rejected").ReviewerIds);
+        Assert.Empty(collection: Read(type: "Required reviewers", status: "rejected", settings: new JsonObject { ["requiredReviewerIds"] = "odd" }).ReviewerIds);
+        Assert.Empty(collection: Read(type: "Build", status: "approved", settings: new JsonObject { ["requiredReviewerIds"] = new JsonArray(items: [Id]) }).ReviewerIds);
+        // An ID it can't read is left out, as a list's elements are.
+        Assert.Equal(
+            expected: [Id.ToLowerInvariant()],
+            actual: Read(type: "Required reviewers", status: "rejected", settings: new JsonObject { ["requiredReviewerIds"] = new JsonArray(items: [7, Id]) }).ReviewerIds.AsEnumerable());
+    }
+
     [Fact]
     public void SeparatesConversationsFromActivity()
     {
