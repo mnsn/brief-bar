@@ -250,12 +250,16 @@ final class CopilotServer: Sendable {
 
     // MARK: What it writes
 
+    /// What it writes, as it comes: the messages it completes are handled in order, those before what can't be read too,
+    /// such as the answer that says which fork it made; and once it writes what can't be read, it's ended.
     private func heard(_ data: Data) {
-        let messages = state.withLock { state in Result { try state.reader.read(data) } }
-        switch messages {
-        case .success(let messages):
-            messages.forEach(handle)
-        case .failure:
+        let (messages, becameUnreadable) = state.withLock { state -> ([Data], Bool) in
+            let wasReadable = !state.reader.isMalformed
+            let messages = state.reader.read(data)
+            return (messages, wasReadable && state.reader.isMalformed)
+        }
+        messages.forEach(handle)
+        if becameUnreadable {
             end(with: .unreadable)
             program.withLock { $0 }?.end(grace: 0)
         }
@@ -375,13 +379,13 @@ struct IgnoredAnswer: Decodable, Sendable {
 /// one of them `Content-Length: <bytes>`, then an empty line, then that many bytes of JSON, as the Language Server
 /// Protocol frames them, and the Copilot SDK.
 struct MessageReader: Sendable {
-    struct Malformed: Error, Equatable {}
-
     /// Longer messages are skipped, as they come, without being kept: what the server says unasked, such as a
     /// session's events, can carry a whole conversation, and its answers to BriefBar are short.
     var maxLength = 16 << 20
     /// How long a header may be.
     static let maxHeader = 8 << 10
+    /// It came to a header that isn't one: nothing written from there on can be read, and nothing more is.
+    private(set) var isMalformed = false
 
     private var buffer: [UInt8] = []
     /// The length of the message whose header was read, while its body is still to come.
@@ -398,13 +402,20 @@ struct MessageReader: Sendable {
         Data("Content-Length: \(body.count)\r\n\r\n".utf8) + body
     }
 
-    /// The messages that `data` completes, in order. Throws when a header isn't one, after which nothing it writes can be
-    /// read.
-    mutating func read(_ data: Data) throws -> [Data] {
+    /// The messages that `data` completes, in order: those before a header that isn't one too, after which it's malformed
+    /// (`isMalformed`), and reads nothing more.
+    mutating func read(_ data: Data) -> [Data] {
+        guard !isMalformed else { return [] }
         buffer.append(contentsOf: data)
         var messages: [Data] = []
         var offset = 0
-        defer { buffer.removeFirst(offset) }
+        defer {
+            if isMalformed {
+                buffer = []
+            } else {
+                buffer.removeFirst(offset)
+            }
+        }
         while true {
             if skipping > 0 {
                 let skipped = min(skipping, buffer.count - offset)
@@ -420,10 +431,13 @@ struct MessageReader: Sendable {
                 continue
             }
             guard let end = headerEnd(from: offset) else {
-                if buffer.count - offset > Self.maxHeader { throw Malformed() }
+                if buffer.count - offset > Self.maxHeader { isMalformed = true }
                 return messages
             }
-            let length = try Self.contentLength(buffer[offset..<end])
+            guard let length = Self.contentLength(buffer[offset..<end]) else {
+                isMalformed = true
+                return messages
+            }
             offset = end + 4
             if length > maxLength {
                 skipping = length
@@ -445,19 +459,18 @@ struct MessageReader: Sendable {
     }
 
     /// `Content-Length`'s value, whatever its case, among a header's lines, each a name and a value after a colon; other
-    /// fields, such as `Content-Type`, don't matter.
-    private static func contentLength(_ header: ArraySlice<UInt8>) throws -> Int {
+    /// fields, such as `Content-Type`, don't matter. Nil when it isn't a header with one.
+    private static func contentLength(_ header: ArraySlice<UInt8>) -> Int? {
         var length: Int?
         for line in String(decoding: header, as: UTF8.self).components(separatedBy: "\r\n") {
-            guard let colon = line.firstIndex(of: ":") else { throw Malformed() }
+            guard let colon = line.firstIndex(of: ":") else { return nil }
             guard line[..<colon].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" else { continue }
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             guard length == nil, !value.isEmpty, value.count <= 12, value.allSatisfy({ $0.isASCII && $0.isNumber }) else {
-                throw Malformed()
+                return nil
             }
             length = Int(value)
         }
-        guard let length else { throw Malformed() }
         return length
     }
 }

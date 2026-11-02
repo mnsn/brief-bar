@@ -20,22 +20,23 @@ import Testing
         var reader = MessageReader()
         var messages: [Data] = []
         for byte in stream {
-            messages += try reader.read(Data([byte]))
+            messages += reader.read(Data([byte]))
         }
         #expect(messages == [first, second])
         // All at once, with the start of another.
         var whole = MessageReader()
-        #expect(try whole.read(stream + Data("Content-Len".utf8)) == [first, second])
-        #expect(try whole.read(Data("gth: 2\r\n\r\n{}".utf8)) == [Data("{}".utf8)])
+        #expect(whole.read(stream + Data("Content-Len".utf8)) == [first, second])
+        #expect(whole.read(Data("gth: 2\r\n\r\n{}".utf8)) == [Data("{}".utf8)])
+        #expect(!whole.isMalformed)
     }
 
     /// What the server says unasked can carry a whole conversation: it's skipped as it comes, without being kept.
     @Test func skipsMessagesTooLongToKeep() throws {
         var reader = MessageReader(maxLength: 100)
         let long = Data(repeating: UInt8(ascii: "a"), count: 1_000)
-        var messages = try reader.read(MessageReader.frame(long).prefix(500))
-        messages += try reader.read(MessageReader.frame(long).dropFirst(500) + MessageReader.frame(first).prefix(10))
-        messages += try reader.read(MessageReader.frame(first).dropFirst(10))
+        var messages = reader.read(MessageReader.frame(long).prefix(500))
+        messages += reader.read(MessageReader.frame(long).dropFirst(500) + MessageReader.frame(first).prefix(10))
+        messages += reader.read(MessageReader.frame(first).dropFirst(10))
         #expect(messages == [first])
     }
 
@@ -46,13 +47,22 @@ import Testing
             "Content-Length: 2\r\nContent-Length: 3\r\n\r\n{}",
         ] {
             var reader = MessageReader()
-            #expect(throws: MessageReader.Malformed.self, "\(stream)") { try reader.read(Data(stream.utf8)) }
+            #expect(reader.read(Data(stream.utf8)).isEmpty, "\(stream)")
+            #expect(reader.isMalformed, "\(stream)")
         }
         // A header that never ends.
         var reader = MessageReader()
-        #expect(throws: MessageReader.Malformed.self) {
-            try reader.read(Data(("Content-Length: 2\r\nX-Padding: " + String(repeating: "a", count: 9_000)).utf8))
-        }
+        #expect(reader.read(Data(("Content-Length: 2\r\nX-Padding: " + String(repeating: "a", count: 9_000)).utf8)).isEmpty)
+        #expect(reader.isMalformed)
+    }
+
+    /// What came whole before a header that isn't one, such as the answer that says which fork the server made, is read
+    /// all the same; nothing after it is.
+    @Test func keepsWhatCameBeforeAHeaderThatIsntOne() {
+        var reader = MessageReader()
+        #expect(reader.read(MessageReader.frame(first) + Data("Not a header\r\n\r\n".utf8) + MessageReader.frame(second)) == [first])
+        #expect(reader.isMalformed)
+        #expect(reader.read(MessageReader.frame(second)).isEmpty)
     }
 }
 
@@ -230,6 +240,17 @@ import Testing
         let server = try start(fixture)
         await #expect(throws: CopilotServer.Failure.exited(3)) { try await server.askAside("Why?", in: FakeCopilot.fork, timeout: 20) }
         #expect(await server.close() == 3)
+    }
+
+    /// The fork it made is handed over, though what it writes right after can't be read; nothing more is asked of it.
+    @Test(.timeLimit(.minutes(1)))
+    func handsOverTheForkItMadeBeforeWhatCantBeRead() async throws {
+        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "garbled"])
+        defer { fixture.remove() }
+        let server = try start(fixture)
+        #expect(try await server.fork(FakeCopilot.session, name: nil, timeout: 20) == FakeCopilot.fork)
+        await #expect(throws: CopilotServer.Failure.unreadable) { try await server.connectForForking(timeout: 20) }
+        await server.close()
     }
 
     /// One that doesn't quit when its input ends is ended, with whatever it started.
@@ -794,6 +815,20 @@ import Testing
             == .failure(.failed("The Copilot CLI ended, with status 3, before it answered.")))
         #expect(ended.methods.last == "session.delete")
         #expect(ended.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
+    }
+
+    /// A fork the server said it made right before writing what can't be read is deleted all the same, and not kept.
+    @Test(.timeLimit(.minutes(1)))
+    func deletesAForkTheServerMadeBeforeWhatCantBeRead() async throws {
+        let fixture = try FakeCopilot.Fixture(["FAKE_FORK": "garbled"])
+        defer { fixture.remove() }
+        let kept = RecordingLeftoverForks()
+        #expect(await questions(fixture, leftovers: kept).ask("Why?", session: FakeCopilot.session)
+            == .failure(.failed("The Copilot CLI answered in a way BriefBar can't read.")))
+        #expect(await kept.calls == ["keep \(FakeCopilot.fork)", "drop \(FakeCopilot.fork)"])
+        #expect(fixture.methods.last == "session.delete")
+        #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
+        #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
     }
 
     @Test(.timeLimit(.minutes(1)))

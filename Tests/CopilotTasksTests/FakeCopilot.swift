@@ -7,10 +7,11 @@ import Foundation
 /// question, it says something unasked and asks something of its own, as the server does. Each message it gets goes to
 /// `$FAKE_SERVER_LOG`, one a line. A fork's folder is made in `$COPILOT_HOME/session-state`, with a copy of the session's
 /// log, as the CLI copies it, and a deleted session's removed, unless the file `$FAKE_DELETE_FAILS` names is there. What it
-/// answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, or `late`, a second late),
-/// `FAKE_FORK_ID` and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the answer). As `copilot -p`, it writes its
-/// arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task done, as `CopilotLauncherTests`' does; or,
-/// with `FAKE_RUN=fails`, refuses its options, as the CLI does, before it writes anything to the log.
+/// answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, `late`, a second late, or `garbled`, with
+/// what isn't a header right after its answer), `FAKE_FORK_ID` and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the
+/// answer). As `copilot -p`, it writes its arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task
+/// done, as `CopilotLauncherTests`' does; or, with `FAKE_RUN=fails`, refuses its options, as the CLI does, before it
+/// writes anything to the log.
 enum FakeCopilot {
     static let script = #"""
         #!/bin/sh
@@ -70,6 +71,10 @@ enum FakeCopilot {
                 fails) refuse "$id" -32603 "Request sessions.fork failed with message: Cannot fork session: no persisted or in-memory events found" ;;
                 hang) ;;
                 late) sleep 1; makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                garbled)
+                  makefork "$body"
+                  reply="{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}}"
+                  printf 'Content-Length: %d\r\n\r\n%sNot a header\r\n\r\n' "${#reply}" "$reply" ;;
                 *) makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
               esac ;;
             session.resume) answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"isRemote\":false}" ;;
