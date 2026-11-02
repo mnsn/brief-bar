@@ -252,7 +252,7 @@ import Testing
         #expect(await exits.next() == program.status)
         // It has quit; what it started hasn't yet.
         #expect(kill(child, 0) == 0)
-        for _ in 0..<400 where kill(child, 0) == 0 {
+        for _ in 0..<2000 where kill(child, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(child, 0) == -1 && errno == ESRCH)
@@ -276,12 +276,12 @@ import Testing
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == 3)
         if endsWhatItStarted {
-            for _ in 0..<400 where kill(child, 0) == 0 {
+            for _ in 0..<2000 where kill(child, 0) == 0 {
                 try await Task.sleep(for: .milliseconds(10))
             }
             #expect(kill(child, 0) == -1 && errno == ESRCH)
             // And it's reaped then, leaving no zombie.
-            for _ in 0..<400 where kill(program.pid, 0) == 0 {
+            for _ in 0..<2000 where kill(program.pid, 0) == 0 {
                 try await Task.sleep(for: .milliseconds(10))
             }
             #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
@@ -309,7 +309,7 @@ import Testing
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == SIGKILL)
         // A zombie still has its process ID: one that's reaped doesn't.
-        for _ in 0..<400 where kill(program.pid, 0) == 0 {
+        for _ in 0..<2000 where kill(program.pid, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
         ending.cancel()

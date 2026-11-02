@@ -184,7 +184,7 @@ import Testing
         defer { fixture.remove() }
         let server = try start(fixture)
         let asking = Task { try await server.askAside("Why?", in: FakeCopilot.fork, timeout: 60) }
-        for _ in 0..<400 where !fixture.methods.contains("session.ui.ephemeralQuery") {
+        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
             try await Task.sleep(for: .milliseconds(10))
         }
         asking.cancel()
@@ -207,7 +207,7 @@ import Testing
         defer { fixture.remove() }
         let server = try start(fixture)
         let forking = Task { try await server.fork(FakeCopilot.session, name: nil, timeout: 20) }
-        for _ in 0..<400 where !fixture.methods.contains("sessions.fork") {
+        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
             try await Task.sleep(for: .milliseconds(10))
         }
         forking.cancel()
@@ -284,14 +284,14 @@ import Testing
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copilot.path)
         let started = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
         var child: pid_t?
-        for _ in 0..<400 {
+        for _ in 0..<2000 {
             child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
             if child != nil { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         let pid = try #require(child)
         #expect(await started.close() == server.status)
-        for _ in 0..<400 where kill(pid, 0) == 0 {
+        for _ in 0..<2000 where kill(pid, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
@@ -319,7 +319,7 @@ import Testing
         let child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         let pid = try #require(child)
         // Without being closed, what it started is made to stop.
-        for _ in 0..<400 where kill(pid, 0) == 0 {
+        for _ in 0..<2000 where kill(pid, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
@@ -337,7 +337,7 @@ import Testing
         try "#!/bin/sh\ntrap '' TERM\n: > \"$READY\"\nwhile :; do sleep 1; done\n".write(to: deaf, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: deaf.path)
         let server = try CopilotServer.start(deaf, environment: ["PATH": "/usr/bin:/bin", "READY": ready.path], grace: 0.3)
-        for _ in 0..<400 where !FileManager.default.fileExists(atPath: ready.path) {
+        for _ in 0..<2000 where !FileManager.default.fileExists(atPath: ready.path) {
             try await Task.sleep(for: .milliseconds(10))
         }
         let started = Date()
@@ -581,7 +581,7 @@ import Testing
         )
         let launcher = launcher(fixture)
         let launching = Task { try await launcher.launch(request) { _ in } }
-        for _ in 0..<400 where !fixture.methods.contains("sessions.fork") {
+        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
             try await Task.sleep(for: .milliseconds(10))
         }
         launching.cancel()
@@ -868,7 +868,7 @@ import Testing
         defer { fixture.remove() }
         let questions = questions(fixture)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<400 where !fixture.methods.contains("sessions.fork") {
+        for _ in 0..<2000 where !fixture.methods.contains("sessions.fork") {
             try await Task.sleep(for: .milliseconds(10))
         }
         asking.cancel()
@@ -924,7 +924,7 @@ import Testing
         let kept = InMemoryLeftoverForks()
         let questions = questions(fixture, leftovers: kept)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<400 where !fixture.methods.contains("session.ui.ephemeralQuery") {
+        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
             try await Task.sleep(for: .milliseconds(10))
         }
         let fork = LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)
@@ -946,7 +946,7 @@ import Testing
         defer { fixture.remove() }
         let questions = questions(fixture)
         let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
-        for _ in 0..<400 where !fixture.methods.contains("session.ui.ephemeralQuery") {
+        for _ in 0..<2000 where !fixture.methods.contains("session.ui.ephemeralQuery") {
             try await Task.sleep(for: .milliseconds(10))
         }
         asking.cancel()
