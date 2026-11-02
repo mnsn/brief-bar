@@ -1600,7 +1600,9 @@ the pull request's latest commit and check it out where it works, and to ask fir
 of its repository or has changes of its own; Push & Reply's checks that what it would push was made for
 the pull request. A work item's is the one in Settings for a new worktree, and BriefBar's own for a
 session that's there (`PromptTemplate.existingSession`), which checks the same way before it branches
-from the latest default branch, and commits only what it changed for the work item. A prompt you
+from the latest default branch, and commits only what it changed for the work item. **Copy**, above the
+prompt, puts it on the clipboard as it stands, with your changes, whatever the session and the way it
+goes. It sends nothing and hands nothing off (`CommentHandOff`), so it works in the demo. A prompt you
 changed stays as you wrote it when you choose another session, and **Reset** goes back to the one for
 the session you chose (`CopilotComposerView.rewritten`). There are two ways to send to a session that's
 there:
