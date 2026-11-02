@@ -332,20 +332,28 @@ public sealed class DirectoryTests
                 "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. "
                 + "Trace ID: <id> Correlation ID: <id>"),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: output));
-        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one.
+        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one. A
+        // quoted ID stays an ID.
         Assert.Equal(
             expected: AuthError.SignedOut(message: "Please run 'az login --tenant \"<id>\"' to setup account."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Please run 'az login --tenant \"" + Tenants.Other + "\"' to setup account."));
+        Assert.Equal(
+            expected: AuthError.SignedOut(message: "AADSTS90002: Tenant '<id>' not found."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: AADSTS90002: Tenant '" + Tenants.Other + "' not found."));
         var cut = AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Please run 'az login'. " + new string(c: 'x', count: 266) + " " + Tenants.Other);
         Assert.DoesNotContain(expectedSubstring: Tenants.Other[..8], actualString: cut.Description, comparisonType: StringComparison.Ordinal);
         Assert.EndsWith(expectedEndString: " <id>", actualString: cut.Description, comparisonType: StringComparison.Ordinal);
-        // A directory's name, however it's written, and whatever it holds: quotes of its own, or no closing quote.
+        // A directory's name, however it's written, in single quotes or double, and whatever it holds: quotes of its own, or
+        // no closing quote.
         Assert.Equal(
             expected: AuthError.Failed(message: "Directory '<name>' isn't available."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory 'Fabrikam Example' isn't available."));
         Assert.Equal(
             expected: AuthError.Failed(message: "Directory '<name>' isn't available."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory 'Fabrikam's Research Directory' isn't available."));
+        Assert.Equal(
+            expected: AuthError.Failed(message: "Directory \"<name>\" isn't available."),
+            actual: AzureCLITokenProvider.ErrorFromOutput(output: "ERROR: Directory \"Fabrikam's Example\" isn't available."));
         Assert.Equal(
             expected: AuthError.SignedOut(message: "AADSTS50020: User account '<account>' does not exist in tenant '<name>'."),
             actual: AzureCLITokenProvider.ErrorFromOutput(output:
