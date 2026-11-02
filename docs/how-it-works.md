@@ -2032,17 +2032,18 @@ linked to it in Show Links, or that's on its branch, the most recently active; e
 mentions it and that was there before it was created. The logs are read for mentions only when none of
 the others is found, since only then do they matter. `--mcp` finds it with a store of its own
 (`AzureDevOpsReader.session`): over a copy of the tasks sent to Copilot, in memory, each as its log
-says it stands, so nothing it does is saved; with the environment `--mcp` started with, rather than
-your login shell's, which it would have to start; and with the links you made, from the app's
-settings, only while Show Links is on. Like the composer, it reads the Copilot app's database
-read-only, the folder each of its sessions works in and, for mentions, their logs, and nothing at all
-while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its store has a copy
-of the app's setting, so it reads the app's again every tenth of a second while it looks: turned off
-meanwhile, it reads nothing more, as the composer's search stops, and names none. It says whether the
-session is one the Copilot app has, which an agent there can send a message to: one of its own, one a
-task went on with, or a task's that you opened there, which its database lists, open or not. Otherwise
-it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When there's none, it says
-nothing.
+says it stands, with the pull request one opened while BriefBar was quit, as the app finds it when it
+next looks (`RunTranscript.openedPullRequest`), so nothing it does is saved; with the environment
+`--mcp` started with, rather than your login shell's, which it would have to start; and with the links
+you made, from the app's settings, only while Show Links is on. Like the composer, it reads the Copilot
+app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
+nothing at all while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its
+store has a copy of the app's setting, so it reads the app's again every tenth of a second while it
+looks: turned off meanwhile, it reads nothing more, as the composer's search stops, and names none. It
+says whether the session is one the Copilot app has, which an agent there can send a message to: one
+of its own, one a task went on with, or a task's that you opened there, which its database lists, open
+or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When
+there's none, it says nothing.
 
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
 it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few

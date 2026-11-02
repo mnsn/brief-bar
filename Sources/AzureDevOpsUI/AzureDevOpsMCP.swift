@@ -305,11 +305,22 @@ actor AzureDevOpsReader {
     /// - Parameter tasks: the tasks sent to Copilot, as `copilotTasks` found them.
     func session(for record: PRRecord, tasks: [CopilotTaskEntry], now: Date = Date()) async -> SuggestedSession? {
         guard !demo, record.pullRequest.status == .active, sendsToCopilot else { return nil }
-        // Each as it stands: one whose log says it ended has, though the app may not have heard yet.
-        let runs = tasks.compactMap { task -> CopilotRun? in
-            guard var run = task.run else { return nil }
+        let home = appHome ?? CopilotCLI.home(environment: Attribution.environment)
+        var runs: [CopilotRun] = []
+        for task in tasks {
+            guard var run = task.run else { continue }
+            // As it stands: one whose log says it ended has, though the app may not have heard yet; and the pull request
+            // it opened meanwhile, as while BriefBar was quit, is found as the app finds it when it next looks
+            // (`CopilotTasksStore.refresh`): from what Copilot said last, else from what it printed.
             if run.ended == nil, !task.status.phase.isActive { run.ended = task.status.phase }
-            return run
+            if run.ended != nil, run.pullRequest == nil {
+                let (events, output) = (run.events(in: home), run.output(in: CopilotTasksStore.outputFolder))
+                run.pullRequest = await Task.detached {
+                    RunTranscript.openedPullRequest(events: events, printed: nil) ?? LocalFile.tail(of: output, maxBytes: 8_192)
+                        .flatMap { RunTranscript.pullRequest(in: String(decoding: $0, as: UTF8.self)) }
+                }.value
+            }
+            runs.append(run)
         }
         let pullRequest = PullRequestTasks.task(for: record)
         let store = await Self.store(for: pullRequest, runs: runs, links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome)

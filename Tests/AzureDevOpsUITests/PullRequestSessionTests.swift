@@ -106,14 +106,15 @@ import Testing
         let reference = PullRequestReference(
             organization: "contoso", project: "Storefront", repository: "shop-web", id: 4088, sourceBranch: "delivery-estimates"
         )
+        let link = URL(string: "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4088")
         let run = CopilotRun(
             id: task, workItem: nil, onPullRequest: reference, action: .fixBuild, options: CopilotModel.standard,
             repository: worktree.deletingLastPathComponent(), worktree: worktree, startedAt: now.addingTimeInterval(-3_600),
-            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: ended
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: ended, pullRequest: link
         )
         return CopilotTaskEntry(
             id: task, workItem: nil, onPullRequest: reference, action: .fixBuild, options: CopilotModel.standard,
-            startedAt: run.startedAt, status: RunStatus(phase: phase, since: now.addingTimeInterval(-600)), run: run
+            startedAt: run.startedAt, status: RunStatus(phase: phase, since: now.addingTimeInterval(-600)), pullRequest: link, run: run
         )
     }
 
@@ -181,6 +182,39 @@ import Testing
         #expect(session.choice.id == task && session.choice.run != nil)
         #expect(session.isInApp)
         #expect(AgentText.session(session, now: now).contains("estimates on the product page”, the session of its last task, in the Copilot app.\n"))
+    }
+
+    /// A work item's task that opened the pull request while BriefBar was quit has no link to it yet: it's found as the app
+    /// finds it, from what Copilot said last, and its session is where the pull request's work goes.
+    @Test func goesOnWithTheTaskThatOpenedItThoughTheAppHasntHeard() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, [])
+        let record = try await pullRequest()
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/wi-5112", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let state = home.appendingPathComponent("session-state/\(opener)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let summary = "Delivery estimates show on the product page. Opened https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4088"
+        let done = #"{"type":"session.task_complete","data":{"success":true,"summary":"\#(summary)"},"id":"e1","timestamp":"2026-10-18T10:00:00.000Z","parentId":null}"#
+        try Data((done + "\n").utf8).write(to: state.appendingPathComponent("events.jsonl"))
+        let workItem = WorkItemReference(organization: "contoso", project: "Storefront", id: 5112)
+        let run = CopilotRun(
+            id: opener, workItem: workItem, options: CopilotModel.standard, repository: worktree.deletingLastPathComponent(),
+            worktree: worktree, startedAt: now.addingTimeInterval(-3 * 86_400), process: DetachedProgram.Handle(pid: 0, startedAt: nil)
+        )
+        let entry = CopilotTaskEntry(
+            id: opener, workItem: workItem, options: CopilotModel.standard, startedAt: run.startedAt,
+            status: RunStatus(phase: .finished, since: now.addingTimeInterval(-2 * 86_400)), run: run
+        )
+
+        let session = try #require(await reader(home: home).session(for: record, tasks: [entry], now: now))
+        #expect(session.choice.id == opener)
+        #expect(session.choice.reasons == [.openedIt])
+        #expect(AgentText.session(session, now: now).hasPrefix("""
+            Its session, where BriefBar sends its work unless you choose another: “Work Item 5112”, the session of the work \
+            item's task that opened it, which BriefBar runs with the Copilot CLI and the Copilot app doesn't have.
+            """))
     }
 
     @Test func namesTheSessionYouLinkedWhileShowLinksIsOn() async throws {
