@@ -70,10 +70,22 @@ struct SessionFallback: Equatable {
     /// The session, or the fork, may have the prompt already, or the session may have forked: its extension took it but
     /// didn't say how it went, or said it failed, which it also says once it stops waiting (`SendFailure.mayHaveGone`).
     var mayHaveSent = false
+    /// Where the session showed, for you to paste it in.
+    var place: Place = .app
     /// The session it opened: the session itself, or the fork, once there's one.
     var session: String
     /// The fork, when the session forked but the prompt didn't reach it.
     var fork: String?
+}
+
+extension SessionFallback {
+    /// Where a session showed for you to paste a prompt in.
+    enum Place: Equatable {
+        /// In the Copilot app.
+        case app
+        /// In the terminal that the Copilot CLI that has it open runs in, which came to the front.
+        case terminal
+    }
 }
 
 /// The sessions that a delivery opened, so that it shows each once.
@@ -112,6 +124,9 @@ extension SessionChoice {
 extension CopilotTasksStore {
     static let cantSendNow = "BriefBar can't send anything now."
 
+    /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for it.
+    static let cantBringUp = "BriefBar copied the prompt, but the Copilot CLI has the session open where BriefBar can't bring it up, such as in tmux or over SSH. Paste it there, and send it: opening the session in a second terminal, or in the app, would fork its history."
+
     /// Where BriefBar's requests to its extension go (`CopilotOutbox`).
     var outbox: CopilotOutbox { outboxForTests ?? .standard }
 
@@ -145,6 +160,9 @@ extension CopilotTasksStore {
             let listener = outbox.listener(of: id).flatMap { CopilotOutbox.isLive($0) ? $0 : nil }
             return (listener, homes.lazy.compactMap { AppSessions.holder(of: id, home: $0) }.first)
         }.value
+        // Again, after that read.
+        guard canSend, isOn, !hasStopped else { return nil }
+        guard sessionPromptsAreOn else { return .off }
         if let listener = found.listener, listener.kinds.contains(.send) {
             return .listening(canFork: listener.kinds.contains(.fork))
         }
@@ -250,19 +268,35 @@ extension CopilotTasksStore {
         mayHaveSent: Bool = false, handOff: CommentHandOff?
     ) async -> SessionDelivery {
         let pastesFork = forking && fork == nil
-        let way: Showing? = openForTests != nil ? .app : await showing(session)
+        let way: Showing?
+        if openForTests != nil {
+            way = await cliHolder(of: session).map(Showing.terminal) ?? .app
+        } else {
+            way = await showing(session)
+        }
         guard !Task.isCancelled else { return .notSent(SendFailure.cancelled.description) }
         // A fallback that the window said it would do goes on whether or not Send Prompts to Copilot Sessions is on; one
         // from a send that BriefBar tried, only while it is.
         guard canSend, isOn, !hasStopped, foreseen || sessionPromptsAreOn else { return .notSent(Self.cantSendNow) }
-        guard let way, copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
+        guard let way else {
+            Log.app.error("Couldn't open a session in the Copilot app")
+            return .notSent(Self.cantOpenInApp)
+        }
+        guard copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
+            if case .terminal = way {
+                Log.app.error("Couldn't bring up the terminal of the Copilot CLI that has a session open")
+                return .notSent(Self.cantBringUp)
+            }
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
         if let handOff { handedOff(handOff, prompt) }
+        let place: SessionFallback.Place
+        if case .terminal = way { place = .terminal } else { place = .app }
         return .fellBack(SessionFallback(
-            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, mayHaveSent: mayHaveSent, session: session, fork: fork
+            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, mayHaveSent: mayHaveSent, place: place, session: session,
+            fork: fork
         ))
     }
 
@@ -294,12 +328,18 @@ extension CopilotTasksStore {
 
     /// How the session would show now: nil when nothing would show it, as without the Copilot app.
     private func showing(_ id: String) async -> Showing? {
+        if let holder = await cliHolder(of: id) { return .terminal(holder) }
+        return canOpenInApp ? .app : nil
+    }
+
+    /// The process of the Copilot CLI that has the session open now, as its lock says: nil when none does, or the app does.
+    private func cliHolder(of id: String) async -> pid_t? {
         let homes = await sessionHomes()
         let holder = await Task.detached(priority: .userInitiated) {
             homes.lazy.compactMap { AppSessions.holder(of: id, home: $0) }.first
         }.value
-        if let holder, !holdsInApp(holder) { return .terminal(holder) }
-        return canOpenInApp ? .app : nil
+        guard let holder, !holdsInApp(holder) else { return nil }
+        return holder
     }
 
     private static func reveal(_ id: String, _ way: Showing) -> Bool {
@@ -328,10 +368,21 @@ extension CopilotTasksStore {
     func holdsInApp(_ pid: pid_t) -> Bool {
         if let appHoldsForTests { return appHoldsForTests(pid) }
         guard let app = URL(string: "ghapp://sessions").flatMap({ NSWorkspace.shared.urlForApplication(toOpen: $0) }),
-              let responsible = Responsibility.responsible(for: pid),
-              let bundle = NSRunningApplication(processIdentifier: responsible.pid)?.bundleURL
+              let responsible = Responsibility.responsible(for: pid)
         else { return false }
-        return AppSessions.folderKey(bundle) == AppSessions.folderKey(app)
+        return Self.isApp(
+            app, responsiblePath: responsible.path,
+            responsibleBundle: NSRunningApplication(processIdentifier: responsible.pid)?.bundleURL
+        )
+    }
+
+    /// Whether the process macOS holds responsible for another is the app: its executable is in the app, as for the
+    /// Copilot app's agents, which can be responsible for themselves while macOS attributes them to it; or it runs as
+    /// the app.
+    nonisolated static func isApp(_ app: URL, responsiblePath: String?, responsibleBundle: URL?) -> Bool {
+        let folder = AppSessions.folderKey(app)
+        if let responsiblePath, AppSessions.folderKey(URL(fileURLWithPath: responsiblePath)).hasPrefix(folder + "/") { return true }
+        return responsibleBundle.map { AppSessions.folderKey($0) == folder } ?? false
     }
 
     /// Brings the app that a CLI runs in to the front, such as Terminal: the one macOS holds responsible for it. False when

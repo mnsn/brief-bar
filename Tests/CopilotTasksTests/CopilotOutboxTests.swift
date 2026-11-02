@@ -260,6 +260,8 @@ import Testing
         let opened = Mutex<[String]>([])
         let held = Mutex<Set<String>>([])
         let record = Mutex<ForkRecord>(.unreadable)
+        /// How many times what the app records of a fork was read.
+        let recordReads = Mutex(0)
         let onOpen = Mutex<(@Sendable (String) -> Bool)?>(nil)
         /// How far the sender's clock is ahead of the Mac's.
         let ahead = Mutex<TimeInterval>(0)
@@ -279,7 +281,10 @@ import Testing
                     return onOpen.withLock { $0 }?(id) ?? true
                 },
                 isHeld: { [self] id in held.withLock { $0.contains(id) } },
-                forkRecord: { [self] _ in record.withLock { $0 } },
+                forkRecord: { [self] _ in
+                    recordReads.withLock { $0 += 1 }
+                    return record.withLock { $0 }
+                },
                 forks: { [self] _, since in
                     forksSince.withLock { $0.append(since) }
                     return madeForks.withLock { $0 }
@@ -616,10 +621,11 @@ import Testing
         effects.madeForks.withLock { $0 = [fork] }
         #expect(await sender.forkAndSend("Try it another way", from: session) == .forkedAndSent(fork: fork))
         #expect(forked.received.map(\.prompt) == ["Try it another way"])
-        // Made since the request: no earlier than when it was written, to the second.
+        // Made since the request started, to the instant, not to the second its file says: a fork made earlier that
+        // second is none of its own.
         let since = try #require(effects.forksSince.withLock { $0.last })
-        #expect(since <= before.addingTimeInterval(1))
-        #expect(since > before.addingTimeInterval(-2))
+        #expect(since >= before)
+        #expect(since <= Date())
 
         let failed = SendOutcome.notSent(.failed(.forkFailed, "The fork gave no session ID"))
         effects.madeForks.withLock { $0 = [fork, other] }
@@ -640,6 +646,51 @@ import Testing
         let asked = effects.forksSince.withLock { $0.count }
         #expect(await sender.forkAndSend("Try it", from: session) == .notSent(.failed(.forkUnavailable, "Not offered")))
         #expect(effects.forksSince.withLock { $0.count } == asked)
+    }
+
+    /// Turned off once the session's extension took the fork, BriefBar still waits for how it went, but reads nothing more
+    /// of the app's database to confirm it, or to find it, and sends the fork nothing.
+    @Test func readsNothingMoreOnceAForkIsTurnedOff() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session, fork] }
+        effects.record.withLock { $0 = .forked(from: session) }
+        effects.madeForks.withLock { $0 = [fork] }
+        let sender = sender(outbox, effects)
+        let original = FakeExtension(outbox: outbox.url, sessionId: session)
+        let forked = FakeExtension(outbox: outbox.url, sessionId: fork)
+        try original.listen()
+        try forked.listen()
+        forked.start()
+        let claimed = Mutex(false)
+        let answer = Mutex<FakeExtension.Answer>(.done(fork: fork))
+        original.start { _ in
+            claimed.withLock { $0 = true }
+            return .after(.milliseconds(300), answer.withLock { $0 })
+        }
+        defer {
+            original.stop()
+            forked.stop()
+        }
+
+        for (answered, expected) in [
+            (FakeExtension.Answer.done(fork: fork), SendOutcome.forkedNotSent(fork: fork, .turnedOff)),
+            (.failed("fork_failed", "The fork gave no session ID"), .notSent(.turnedOff)),
+        ] {
+            answer.withLock { $0 = answered }
+            claimed.withLock { $0 = false }
+            effects.allowed.withLock { $0 = true }
+            let forking = Task { await sender.forkAndSend("Try it", from: session) }
+            for _ in 0..<400 where !claimed.withLock({ $0 }) {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            effects.allowed.withLock { $0 = false }
+            #expect(await forking.value == expected)
+        }
+        #expect(effects.recordReads.withLock { $0 } == 0)
+        #expect(effects.forksSince.withLock { $0 }.isEmpty)
+        #expect(forked.received.isEmpty)
     }
 
     /// One that the session's extension doesn't do, or that can't be forked, isn't.

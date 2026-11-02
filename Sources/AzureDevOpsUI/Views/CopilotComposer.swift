@@ -763,8 +763,12 @@ struct CopilotComposerView: View {
         var reason = fallback.reason
         if let last = reason.last, !".!?".contains(last) { reason += "." }
         let copied = fallback.pastesFork ? "/fork and the prompt" : "the prompt"
-        let opened = fallback.fork == nil ? "opened the session" : "opened the fork"
-        var text = "\(reason) BriefBar copied \(copied) and \(opened) in the Copilot app: paste it there, and send it."
+        let shown: String
+        switch fallback.place {
+        case .app: shown = fallback.fork == nil ? "opened the session in the Copilot app" : "opened the fork in the Copilot app"
+        case .terminal: shown = "brought up the terminal of the Copilot CLI that has the session open"
+        }
+        var text = "\(reason) BriefBar copied \(copied) and \(shown): paste it there, and send it."
         if fallback.mayHaveSent {
             text += fallback.fork != nil ? " If the fork has it already, don't."
                 : fallback.pastesFork ? " If the session forked already, don't." : " If the session has it already, don't."
@@ -846,8 +850,10 @@ struct CopilotComposerView: View {
     }
 
     /// Keeps the chosen session as it was found, and goes to the suggested one until you choose one or change the prompt.
-    /// Push & Reply stays with its last task's session.
+    /// Push & Reply stays with its last task's session. Not while BriefBar sends it, or once it copied it: the window shows
+    /// what went, and where.
     private func update() {
+        guard !isDelivering, fallback == nil else { return }
         if let current = target, let found = choices.first(where: { $0.id == current.id }), found != current {
             target = found
             // While it couldn't be used, neither could the way to send it be chosen: it's back to the usual one.

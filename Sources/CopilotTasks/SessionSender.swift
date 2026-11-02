@@ -165,20 +165,25 @@ public struct SessionSender: Sendable {
     /// in it. A fork its extension couldn't name, or didn't say it made, is the one fork of the session that the app's
     /// database records since the request, if there's just one: otherwise there's no telling which, if any.
     public func forkAndSend(_ prompt: String, from session: String) async -> SendOutcome {
-        let forking = OutboxRequest.fork(session, now: effects.now())
+        // When it starts, to the instant: the request's own times are whole seconds, and a fork made earlier in the same
+        // second is none of its own.
+        let started = effects.now()
         let fork: String
-        switch await request(forking) {
+        switch await request(.fork(session, now: started)) {
         case .success(let result):
             guard let id = result.forkSessionId else { return .notSent(.failed(.forkFailed, nil)) }
-            guard await isConfirmed(id, asForkOf: session) else {
-                return Task.isCancelled ? .forkedNotSent(fork: id, .cancelled) : .notSent(.unconfirmedFork)
+            switch await confirm(id, asForkOf: session) {
+            case nil: fork = id
+            case .unconfirmedFork?: return .notSent(.unconfirmedFork)
+            case let stopped?: return .forkedNotSent(fork: id, stopped)
             }
-            fork = id
         case .failure(let why):
-            guard Self.mayHaveForked(why), let found = await theFork(of: session, madeSince: forking.createdAt) else {
-                return .notSent(why)
+            guard Self.mayHaveForked(why) else { return .notSent(why) }
+            switch await theFork(of: session, madeSince: started) {
+            case .success(let found?): fork = found
+            case .success(nil): return .notSent(why)
+            case .failure(let stopped): return .notSent(stopped)
             }
-            fork = found
         }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
         switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
@@ -259,15 +264,25 @@ public struct SessionSender: Sendable {
         }
     }
 
-    /// Whether the app's database records the session as a fork of `original`, waiting for it to as it makes the fork, or
-    /// while it can't be read: no, unless it says so in time.
-    func isConfirmed(_ fork: String, asForkOf original: String) async -> Bool {
+    /// Why the app's database doesn't confirm the session as a fork of `original`, or nil once it does: it's waited for as
+    /// the app makes the fork, and while it can't be read, until it says so in time (`unconfirmedFork`). Nothing's read once
+    /// it's stopped, or turned off.
+    func confirm(_ fork: String, asForkOf original: String) async -> SendFailure? {
         let start = effects.now()
         while true {
-            if case .forked(let from) = effects.forkRecord(fork) { return from == original }
-            if Task.isCancelled || effects.now().timeIntervalSince(start) > timing.confirm { return false }
+            if let stopped = await stopped() { return stopped }
+            if case .forked(let from) = effects.forkRecord(fork) { return from == original ? nil : .unconfirmedFork }
+            if effects.now().timeIntervalSince(start) > timing.confirm { return .unconfirmedFork }
             await pause()
         }
+    }
+
+    /// Why BriefBar may go no further, or nil: it was stopped, or turned off.
+    private func stopped() async -> SendFailure? {
+        if Task.isCancelled { return .cancelled }
+        let mayGoOn = await effects.mayGoOn()
+        if Task.isCancelled { return .cancelled }
+        return mayGoOn ? nil : .turnedOff
     }
 
     /// The app may have forked the session all the same: the extension couldn't read the fork's ID from what the app's
@@ -280,15 +295,16 @@ public struct SessionSender: Sendable {
     }
 
     /// The one fork of the session that the app's database records, made since `since`, read again while it can't be read,
-    /// for a fork its extension didn't name: nil when there's none, or more than one, or the database can't be read in time.
-    func theFork(of original: String, madeSince since: Date) async -> String? {
+    /// for a fork its extension didn't name: nil when there's none, or more than one, or the database can't be read in time;
+    /// why not, once it's stopped or turned off, when nothing more is read.
+    func theFork(of original: String, madeSince since: Date) async -> Result<String?, SendFailure> {
         let start = effects.now()
-        while !Task.isCancelled {
-            if let forks = effects.forks(original, since) { return forks.count == 1 ? forks.first : nil }
-            if effects.now().timeIntervalSince(start) > timing.confirm { return nil }
+        while true {
+            if let stopped = await stopped() { return .failure(stopped) }
+            if let forks = effects.forks(original, since) { return .success(forks.count == 1 ? forks.first : nil) }
+            if effects.now().timeIntervalSince(start) > timing.confirm { return .success(nil) }
             await pause()
         }
-        return nil
     }
 
     private func liveListener(of session: String) -> OutboxListener? {

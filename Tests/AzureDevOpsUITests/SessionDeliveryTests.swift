@@ -414,6 +414,42 @@ private final class ExtensionStandIn: Sendable {
         #expect(requests(home).isEmpty)
     }
 
+    /// A session that a Copilot CLI has open, without BriefBar's extension, shows in the terminal that CLI runs in, which
+    /// comes to the front, not in the app, which would fork its history: the window says to paste it there. Where BriefBar
+    /// can't bring that terminal up, as in tmux or over SSH, it says so.
+    @Test func copiesThePromptForASessionACLIHasOpen() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var copied: [String] = []
+        var comesUp = true
+        store.openForTests = { _, text in copied.append(text); return comesUp }
+        store.appHoldsForTests = { _ in false }
+        try hold(session, home: home)
+        #expect(await store.reach(of: choice(session)) == .noListener(inApp: false))
+
+        guard case .fellBack(let fallback) = await store.deliver("Fix the comments", to: choice(session)) else {
+            Issue.record("BriefBar didn't copy the prompt")
+            return
+        }
+        #expect(fallback.place == .terminal)
+        #expect(copied == ["Fix the comments"])
+        #expect(CopilotComposerView.fallbackNote(fallback).hasSuffix("BriefBar copied the prompt and brought up the terminal of the Copilot CLI that has the session open: paste it there, and send it."))
+
+        comesUp = false
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(CopilotTasksStore.cantBringUp))
+    }
+
+    /// The app holds a session through its runtime, which macOS attributes to the app: by the runtime's executable, in the
+    /// app, even when it's responsible for itself; or by the app it runs as. A terminal isn't the app.
+    @Test func tellsTheAppsRuntimeFromACLI() {
+        let app = URL(fileURLWithPath: "/Applications/GitHub Copilot.app", isDirectory: true)
+        #expect(CopilotTasksStore.isApp(app, responsiblePath: "/Applications/GitHub Copilot.app/Contents/MacOS/github", responsibleBundle: nil))
+        #expect(CopilotTasksStore.isApp(app, responsiblePath: nil, responsibleBundle: app))
+        #expect(!CopilotTasksStore.isApp(app, responsiblePath: "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal", responsibleBundle: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")))
+        #expect(!CopilotTasksStore.isApp(app, responsiblePath: "/Applications/GitHub Copilot.app.old/Contents/MacOS/github", responsibleBundle: nil))
+        #expect(!CopilotTasksStore.isApp(app, responsiblePath: nil, responsibleBundle: nil))
+    }
+
     /// Turned off, Send Prompts to Copilot Sessions sends nothing, even to a session whose extension still listens, as it
     /// does until the session restarts.
     @Test func sendsNothingWhileSendingToSessionsIsOff() async throws {
