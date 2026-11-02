@@ -147,8 +147,7 @@ struct MenuPanelView: View {
                 DisclosureGroup(isExpanded: $showIdle) {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
-                            PRRowView(item: item, now: store.now, compact: true, showsCreated: shownOrder.isByDate, openSource: source(item),
-                                      stopWatching: watching(item)) { store.open(item) }
+                            PullRequestRow(item: item, compact: true, showsCreated: shownOrder.isByDate)
                         }
                     }
                 } label: {
@@ -221,15 +220,6 @@ struct MenuPanelView: View {
         }
     }
 
-    /// Opens the message a pull request was sent in, when it was.
-    private func source(_ item: PRSnapshot) -> (() -> Void)? {
-        item.chatSource == nil ? nil : { store.openSource(item) }
-    }
-
-    private func watching(_ item: PRSnapshot) -> (() -> Void)? {
-        item.isWatched ? { store.stopWatching(item) } : nil
-    }
-
     private var footer: some View {
         HStack(spacing: 10) {
             Button {
@@ -257,21 +247,35 @@ struct MenuPanelView: View {
     }
 }
 
-/// A pull request in a list by state that mixes every source's: the row Azure DevOps' own list shows, which opens it,
-/// and from its menu, the message it was sent in, or takes it off Needs You.
+/// A pull request in a list outside its window's page: the menu bar's list, a list by state that mixes every source's, the
+/// window's Overview, or a widget. A click shows its details in BriefBar's window, at the comment or the run it's about,
+/// from a page of the window, and from anywhere else once you chose to Open Pull Requests in BriefBar; or else opens it in
+/// Azure DevOps. Its menu has both, and the message it was sent in, taking it off Needs You, and no longer watching it.
 struct PullRequestRow: View {
     let item: PRSnapshot
+    var compact = false
     /// Its time is how long ago it was created, as in a list by date.
     var showsCreated = false
+    /// What's left before you can complete it, under it: not in a widget, whose rows keep one height.
+    var showsReadiness = true
+    /// Stop Watching in its menu, for one you watch: not in a widget's.
+    var stopsWatching = true
 
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var details: PullRequestDetailsStore
+    @EnvironmentObject private var settings: AppSettings
+    @Environment(\.panelStyle) private var panelStyle
 
     var body: some View {
+        // On a page of BriefBar's window, such as the Overview, rather than in the menu bar or a widget.
+        let inWindow = panelStyle == .page
         PRRowView(
-            item: item, now: store.now, showsCreated: showsCreated,
+            item: item, now: store.now, compact: compact, showsCreated: showsCreated, showsReadiness: showsReadiness,
             openSource: item.chatSource == nil ? nil : { store.openSource(item) },
-            stopWatching: item.isWatched ? { store.stopWatching(item) } : nil,
-            dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil
+            stopWatching: stopsWatching && item.isWatched ? { store.stopWatching(item) } : nil,
+            dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
+            showDetails: details.hasPage() ? { details.showDetails(item) } : nil,
+            opensDetails: inWindow || settings.opensPullRequestsInBriefBar, showsInWindow: !inWindow
         ) {
             store.open(item)
         }
@@ -353,15 +357,20 @@ struct RefreshStatus: View {
     }
 }
 
-/// A few lines at the top, worded on this Mac by Apple Intelligence: what needs you, what failed, what's ready.
+/// A few lines at the top, worded on this Mac by Apple Intelligence: what needs you, what failed, what's ready. Each shows
+/// its pull request's details at what it's about: beside the list, on the window's page; from the menu bar's list, in
+/// BriefBar's window once you chose to Open Pull Requests in BriefBar, or else in Azure DevOps.
 struct BriefView: View {
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var details: PullRequestDetailsStore
+    @EnvironmentObject private var settings: AppSettings
+    @Environment(\.panelStyle) private var panelStyle
 
     var body: some View {
         BriefContainer(count: store.brief.count, isWritten: true) { collapsed in
             ForEach(collapsed ? Array(store.brief.prefix(2)) : store.brief) { item in
                 Button {
-                    if let snapshot = store.items.first(where: { $0.key == item.key }) { store.open(snapshot) }
+                    if let snapshot = store.items.first(where: { $0.key == item.key }) { open(snapshot) }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Circle()
@@ -379,10 +388,26 @@ struct BriefView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(collapsed ? store.briefText(item) : "Click to open in Azure DevOps")
+                .help(collapsed ? store.briefText(item) : clickHelp)
             }
         }
         .help("Summarized on this Mac by Apple Intelligence")
+    }
+
+    private var isOnPage: Bool { panelStyle == .page }
+
+    private var clickHelp: String {
+        if isOnPage { return "Click to see its details" }
+        return settings.opensPullRequestsInBriefBar && details.hasPage() ? "Click to see its details in BriefBar's window"
+            : "Click to open in Azure DevOps"
+    }
+
+    private func open(_ item: PRSnapshot) {
+        guard isOnPage else {
+            details.open(item)
+            return
+        }
+        withAnimation(.easeOut(duration: 0.2)) { details.show(item, at: details.about(item)) }
     }
 }
 
