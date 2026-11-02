@@ -102,6 +102,37 @@ internal static class TeamsData
         sequence: sequence,
         (IndexedDBKeys.Record(database: ReplyChainsDatabase, objectStore: Store, key: replyChain.Key), V8Writer.Record(body: replyChain.Write)));
 
+    /// A batch that writes `replyChain`'s record as Chromium writes one too large for the database: in the blob file
+    /// `blobNumber`, which `WriteBlobFile` writes; with its blob entry, which names that file, unless `withBlobEntry` is
+    /// false, as when Chromium writes it in a later batch (`BlobEntryBatch`).
+    public static byte[] BatchInBlobFile(ulong sequence, MadeUpReplyChain replyChain, long blobNumber, bool withBlobEntry = true)
+    {
+        ArgumentNullException.ThrowIfNull(argument: replyChain);
+        List<(byte[] Key, byte[]? Value)> writes =
+        [
+            (IndexedDBKeys.Record(database: ReplyChainsDatabase, objectStore: Store, key: replyChain.Key),
+                [.. Encodings.Varint(value: 1), 0xFF, 0x11, 0x01, .. Encodings.Varint(value: BlobSize(replyChain: replyChain)), 0]),
+        ];
+        if (withBlobEntry)
+        {
+            writes.Add(item: BlobEntry(replyChain: replyChain, blobNumber: blobNumber));
+        }
+        return LogWriter.Batch(sequence: sequence, writes: [.. writes]);
+    }
+
+    /// A batch that writes `replyChain`'s blob entry, which names the blob file `blobNumber`, after its record.
+    public static byte[] BlobEntryBatch(ulong sequence, MadeUpReplyChain replyChain, long blobNumber) =>
+        LogWriter.Batch(sequence: sequence, writes: [BlobEntry(replyChain: replyChain, blobNumber: blobNumber)]);
+
+    /// Writes `replyChain`'s blob file, `blobNumber`, where Chromium keeps it for the database whose log is at `log`.
+    public static void WriteBlobFile(string log, MadeUpReplyChain replyChain, long blobNumber)
+    {
+        ArgumentNullException.ThrowIfNull(argument: replyChain);
+        var file = new IndexedDBFolder(path: Path.GetDirectoryName(path: log)!).BlobFile(database: ReplyChainsDatabase, number: blobNumber);
+        Directory.CreateDirectory(path: Path.GetDirectoryName(path: file)!);
+        File.WriteAllBytes(path: file, bytes: V8Writer.Serialized(body: replyChain.Write));
+    }
+
     /// A message's ID: `seconds` after `Fixture.Base`, in milliseconds.
     public static long Id(double seconds) => Fixture.Base + (long)(seconds * 1000);
 
@@ -113,6 +144,13 @@ internal static class TeamsData
     public static string Bookmark(long after, double markedAtSeconds) => Digits(value: after) + ";" + Digits(value: Id(seconds: markedAtSeconds)) + ";0";
 
     static TeamsCacheLocation Location(string folder) => new(Root: Path.Combine(path1: folder, path2: "EBWebView"), IsTeamsOwn: false);
+
+    /// `replyChain`'s blob entry: one blob, with no type, in the file `blobNumber`.
+    static (byte[] Key, byte[]? Value) BlobEntry(MadeUpReplyChain replyChain, long blobNumber) =>
+        (IndexedDBKeys.BlobEntry(database: ReplyChainsDatabase, objectStore: Store, key: replyChain.Key),
+            [(byte)ExternalObjectKind.Blob, .. Encodings.Varint(value: (ulong)blobNumber), .. IndexedDBKeys.StringWithLength(text: string.Empty), .. Encodings.Varint(value: BlobSize(replyChain: replyChain))]);
+
+    static ulong BlobSize(MadeUpReplyChain replyChain) => (ulong)V8Writer.Serialized(body: replyChain.Write).Length;
 
     static string IndexedDBFolder(string folder) => Path.Combine(paths: [folder, "EBWebView", "WV2Profile_tfw", "IndexedDB"]);
 

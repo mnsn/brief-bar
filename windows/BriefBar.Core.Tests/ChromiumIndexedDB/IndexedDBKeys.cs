@@ -41,6 +41,9 @@ internal static class IndexedDBKeys
     public static byte[] BlobEntry(long database, long objectStore, string key) =>
         [.. Prefix(database: database, objectStore: objectStore, index: 3), 1, .. StringWithLength(text: key)];
 
+    public static byte[] BlobEntry(long database, long objectStore, IDBKey key) =>
+        [.. Prefix(database: database, objectStore: objectStore, index: 3), .. Encode(key: key)];
+
     /// A database ID as its name's value holds it.
     public static byte[] DatabaseId(long id) => Encodings.LittleEndian(value: (ulong)id, count: 1);
 

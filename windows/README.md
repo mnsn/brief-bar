@@ -105,8 +105,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   (`consumptionhorizon`), and whether you've marked it unread there (`consumptionHorizonBookmark`), from
   `conversation-manager`'s `conversations`; and, for chats that may be unread, their messages, from Teams' message
   cache (`replychain-manager`'s `replychains-2`), reading only those chats' keys. A chat is unread as Teams' own list
-  has it: someone else wrote after how far you've read it, and after your own newest message; or you marked it unread
-  in Teams, until you open it there or mark it read in BriefBar, whatever Keep unread for says, as Teams keeps it bold.
+  has it: someone else wrote after how far you've read it, and after your own newest message, and hasn't deleted it; or
+  you marked it unread in Teams, until you open it there or mark it read in BriefBar, whatever Keep unread for says, as
+  Teams keeps it bold.
   Its groups are the Mac's: Unread, the newest first, with **Mark all read**, and Recent (read chats with something
   new in the last day, ten at most), folded. A row shows a person's initials, or a group's icon, the newest unread
   message (with its sender in a group chat), how many are unread, and when, or **Marked as unread** for a chat marked
@@ -414,7 +415,13 @@ SDK ships inside the app.
   them without the lock, as the Mac does, and holds none open between reads, so Teams can compact and delete them. A
   table Teams is still writing reads as broken until it's done, so one counts as unreadable only once it has stayed
   unchanged for 5 seconds. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
-  doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`).
+  doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`). A conversation of a type
+  BriefBar doesn't know counts as one it couldn't read, not as one that isn't a chat, as it may be a chat after an
+  update to Teams; so does a folder it can't list, and with no folder it could read, the sections say it couldn't read
+  Teams' data rather than that Teams' data changed. A chat whose messages Teams' message cache can't all give is read
+  again at each change, and the sections say some chats may stay unread until it is: a table it can't read counts only
+  once it has stayed so, as above, and a message whose blob entry Chromium hasn't written yet, which it writes after
+  the message, only if it's still missing when the chat is read again.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on

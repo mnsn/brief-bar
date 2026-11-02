@@ -9,14 +9,25 @@ namespace BriefBar.Core.Teams;
 internal static class TeamsRecords
 {
     /// The chat a conversation record holds, or null for one that isn't a chat, such as a channel. `recordKey` is the
-    /// record's key, which is its ID; `userId` tells your messages apart.
+    /// record's key, which is its ID; `userId` tells your messages apart. Throws `FormatErrorException` for a conversation
+    /// BriefBar doesn't know, as after an update to Teams, so that it counts as one that couldn't be read rather than one
+    /// that isn't a chat.
     public static TeamsChat? Chat(JSValue value, string? recordKey, string userId)
     {
         ArgumentNullException.ThrowIfNull(argument: value);
         var id = value["id"]?.AsString ?? recordKey;
-        if (id is null || !ConversationIds.IsValid(id: id) || ConversationIds.Kind(type: value["type"]?.AsString, id: id) is not { } kind)
+        var type = value["type"]?.AsString;
+        if (id is null)
+        {
+            throw FormatErrorException.Unsupported(what: "conversation without an ID");
+        }
+        if (ConversationIds.IsNotChat(type: type, id: id))
         {
             return null;
+        }
+        if (!ConversationIds.IsValid(id: id) || ConversationIds.Kind(type: type, id: id) is not { } kind)
+        {
+            throw FormatErrorException.Unsupported(what: "conversation type");
         }
         var properties = value["properties"];
         var thread = value["threadProperties"];
@@ -44,7 +55,9 @@ internal static class TeamsRecords
             MarkedUnread: ReadMarker.Parse(consumptionHorizon: properties?["consumptionHorizonBookmark"]?.AsString));
     }
 
-    /// The messages a reply chain's record holds: in a chat, each message is a reply chain of its own.
+    /// The messages a reply chain's record holds: in a chat, each message is a reply chain of its own. A deleted message
+    /// keeps its place, without its text, so that the conversation's newest message, which may not say it's deleted yet,
+    /// isn't counted for it.
     public static IEnumerable<TeamsMessage> Messages(JSValue value, string userId)
     {
         ArgumentNullException.ThrowIfNull(argument: value);
@@ -60,14 +73,15 @@ internal static class TeamsRecords
                 continue;
             }
             var chat = message["conversationId"]?.AsString ?? conversationId;
-            // A deleted message keeps its place, without its content.
-            if (chat is null || message["deletionInfo"] is { Kind: not (JSValueKind.Undefined or JSValueKind.Null) })
+            if (chat is null)
             {
                 continue;
             }
             if (Message(value: message, conversationId: chat, userId: userId, isFromMe: Flag(value: message["isSentByCurrentUser"])) is { } read)
             {
-                yield return read;
+                yield return message["deletionInfo"] is { Kind: not (JSValueKind.Undefined or JSValueKind.Null) }
+                    ? read with { Text = string.Empty, IsDeleted = true }
+                    : read;
             }
         }
     }

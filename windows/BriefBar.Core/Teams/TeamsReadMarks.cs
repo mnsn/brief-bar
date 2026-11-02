@@ -67,7 +67,7 @@ public sealed class TeamsReadMarks
             var saved = JsonSerializer.Deserialize<Dictionary<string, TeamsReadMark>>(utf8Json: protector.Unprotect(sealedData: sealedData));
             foreach (var (chat, mark) in saved ?? [])
             {
-                if (ConversationIds.IsValid(id: chat) && mark is { UpTo: > 0 })
+                if (ConversationIds.IsValid(id: chat) && mark is { UpTo: >= 0 })
                 {
                     marks[chat] = mark;
                 }

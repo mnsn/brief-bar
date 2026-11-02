@@ -99,22 +99,30 @@ public sealed class TeamsStore
         Recompute(now: now);
     }
 
-    /// Reads `conversation` up to its newest message, and a Mark as unread that Teams has for it now.
+    /// Reads `conversation` up to its newest message, and a Mark as unread that Teams has for it now, even without one.
     void Mark(ConversationSummary conversation, DateTimeOffset now)
     {
         var upTo = Math.Max(val1: conversation.Unread.Count > 0 ? conversation.Unread[^1].Id : 0, val2: conversation.Latest?.Id ?? 0);
-        if (upTo > 0)
+        if (upTo > 0 || conversation.IsMarkedUnread)
         {
             marks.Mark(chat: conversation.Id, messageId: upTo, at: now);
         }
+    }
+
+    /// `chat`'s newest message that wasn't deleted: the cache may have one the chat's record doesn't name yet, or the
+    /// other way round, and only the cache says a message was deleted.
+    static TeamsMessage? Latest(TeamsChat chat, IReadOnlyList<TeamsMessage> messages)
+    {
+        var cached = messages.LastOrDefault(predicate: message => !message.IsDeleted);
+        var named = chat.Newest is { } newest && !messages.Any(predicate: message => message.IsDeleted && message.Id == newest.Id) ? newest : null;
+        return cached is not null && cached.Id > (named?.Id ?? 0) ? cached : named ?? cached;
     }
 
     ConversationSummary Summary(TeamsChat chat, DateTimeOffset now, TimeSpan? keep)
     {
         var messages = Snapshot?.Messages.GetValueOrDefault(key: chat.Id) ?? [];
         var unread = ChatReading.Unread(chat: chat, messages: messages, mark: marks.Marks.GetValueOrDefault(key: chat.Id), keepUnreadFor: keep, now: now);
-        // The cache may have a message the chat's record doesn't name yet, or the other way round.
-        var latest = messages.Count > 0 && messages[^1].Id > (chat.Newest?.Id ?? 0) ? messages[^1] : chat.Newest;
+        var latest = Latest(chat: chat, messages: messages);
         return new ConversationSummary(
             Id: chat.Id,
             Kind: chat.Kind,

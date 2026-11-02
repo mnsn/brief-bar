@@ -160,6 +160,47 @@ public sealed class TeamsStoreTests
         Assert.True(condition: Assert.Single(collection: store.Unread(group: ChatGroup.Chats)).IsMarkedUnread);
     }
 
+    /// Marked unread in Teams, a chat may have no message to go by: marked read in BriefBar, it stays read while Teams has
+    /// it marked unread from before then.
+    [Fact]
+    public void ReadsAChatMarkedUnreadWithoutAMessage()
+    {
+        var marked = new TeamsChat(
+            Id: Fixture.Avery, Kind: ConversationKind.OneOnOne, Title: "Avery Quinn", FullTitle: null, Marker: null, Newest: null, IsMuted: false)
+        {
+            MarkedUnread = new ReadMarker(MessageId: TeamsData.Id(seconds: 10), ReadAt: TeamsData.At(seconds: 500)),
+        };
+        var marks = TeamsReadMarks.InMemory();
+        var store = Store(marks: marks, (marked, []));
+
+        var unread = Assert.Single(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.True(condition: unread.IsOnlyMarkedUnread);
+        Assert.Null(@object: unread.Latest);
+
+        store.MarkRead(conversation: unread, now: now);
+
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: 0, At: now) }, actual: marks.Marks);
+        store.Receive(snapshot: Snapshot((marked, [])), now: now);
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Single(collection: marks.Marks);
+    }
+
+    /// Only Teams' message cache says a message was deleted: a chat whose newest message, as its record names it, was
+    /// deleted shows the one before it, and doesn't count it.
+    [Fact]
+    public void ShowsTheNewestMessageThatWasntDeleted()
+    {
+        var lunch = Messages(chat: Fixture.Avery, (10, "Lunch?"))[0];
+        var oops = Messages(chat: Fixture.Avery, (20, "Oops, wrong chat"))[0];
+        var store = Store((Chat(id: Fixture.Avery, kind: ConversationKind.OneOnOne, title: "Avery Quinn", newest: oops), [lunch, oops with { Text = string.Empty, IsDeleted = true }]));
+
+        var unread = Assert.Single(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Equal(expected: ["Lunch?"], actual: unread.Unread.Select(selector: message => message.Text));
+        Assert.Equal(expected: lunch, actual: unread.Latest);
+        Assert.Equal(expected: TeamsData.At(seconds: 10), actual: unread.LastActivity);
+    }
+
     /// Teams doesn't notify you of a muted chat: it's neither unread nor recent.
     [Fact]
     public void ListsNoMutedChat()

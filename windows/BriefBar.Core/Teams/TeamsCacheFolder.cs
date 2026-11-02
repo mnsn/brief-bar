@@ -20,6 +20,8 @@ internal sealed class TeamsCacheFolder(string path)
     /// they're read again when it arrives.
     Dictionary<IndexedDBRecordKey, byte[]> inBlobFiles = [];
     Dictionary<string, FileStamp?> unreadableTables = new(comparer: StringComparer.Ordinal);
+    /// Conversation records whose keys couldn't be read: their chats may be missing.
+    int unreadableKeys;
     int corruptLogRecords;
     int blocksRead;
     int blocksSkipped;
@@ -32,9 +34,6 @@ internal sealed class TeamsCacheFolder(string path)
     /// The tables that couldn't be read, by path, as they were then. LevelDB writes a table where it'll stay, so one being
     /// written reads as broken until it's done.
     public IReadOnlyDictionary<string, FileStamp?> UnreadableTables => unreadableTables;
-
-    /// Message records that couldn't be read, since the folder was last read from scratch.
-    public int UnreadableMessages { get; private set; }
 
     /// Files vanished as the folder was last read from scratch, on every attempt: what they held may be missing.
     public bool Vanished { get; private set; }
@@ -57,7 +56,9 @@ internal sealed class TeamsCacheFolder(string path)
                 Chats = read.Count(predicate: conversation => conversation.Chat is not null),
                 WithMarker = read.Count(predicate: conversation => conversation.Chat?.Marker is not null),
                 Formats = Tally(values: read.Select(selector: conversation => conversation.Format)),
-                Unreadable = Tally(values: conversations.Values.Select(selector: conversation => conversation.Unreadable)),
+                Unreadable = Tally(values: conversations.Values
+                    .Select(selector: conversation => conversation.Unreadable)
+                    .Concat(second: Enumerable.Repeat(element: "unreadable key", count: unreadableKeys))),
                 UnreadableFiles = unreadableTables.Count,
                 CorruptLogRecords = corruptLogRecords,
                 BlocksRead = blocksRead,
@@ -83,10 +84,10 @@ internal sealed class TeamsCacheFolder(string path)
             .Select(selector: name => System.IO.Path.Combine(path1: folder.Path, path2: name))
             .ToDictionary(keySelector: table => table, elementSelector: table => FileStamp.Of(path: table), comparer: StringComparer.Ordinal);
         corruptLogRecords = records.Read.CorruptLogRecords;
+        unreadableKeys = records.UnreadableKeys;
         Vanished = catalogRead.Vanished || records.Read.Vanished;
         blocksRead = catalogRead.BlocksRead + records.Read.BlocksRead;
         blocksSkipped = catalogRead.BlocksSkipped + records.Read.BlocksSkipped;
-        UnreadableMessages = 0;
     }
 
     /// Reads what LevelDB appended to the log since the last read: chats that changed, and messages that arrived in the
@@ -141,6 +142,11 @@ internal sealed class TeamsCacheFolder(string path)
         {
             if (IndexedDBFolder.TryParse(key: entry.Key) is not { } key)
             {
+                if (KeyPrefix.Of(key: entry.Key) is { } prefix
+                    && conversationStores.ContainsKey(key: new IndexedDBStoreId(Database: prefix.Database, ObjectStore: prefix.ObjectStore)))
+                {
+                    unreadableKeys += 1;
+                }
                 continue;
             }
             var store = new IndexedDBStoreId(Database: key.Database, ObjectStore: key.ObjectStore);
@@ -194,12 +200,17 @@ internal sealed class TeamsCacheFolder(string path)
         return changed ? TeamsLogRead.Changed : TeamsLogRead.Unchanged;
     }
 
-    /// The messages Teams' message cache has of the chats `chats`, by chat, oldest first; a chat it has none of isn't in
-    /// it. Reads only the blocks that may hold them.
-    public Dictionary<string, List<TeamsMessage>> Messages(IReadOnlyCollection<string> chats)
+    /// The messages Teams' message cache has of the chats `chats`, by chat, oldest first, which chats it has none of
+    /// leaves out; the chats whose messages it couldn't all read, as when a record or a key can't be read; those to read
+    /// again at the next change, as when a table or a file kept it from reading them, and may not later; and those with
+    /// a message whose blob entry hasn't been written yet. Reads only the blocks that may hold them.
+    public TeamsMessagesRead Messages(IReadOnlyCollection<string> chats)
     {
         ArgumentNullException.ThrowIfNull(argument: chats);
         var found = new Dictionary<string, List<TeamsMessage>>(comparer: StringComparer.Ordinal);
+        var incomplete = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var retry = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var awaitingBlobEntry = new HashSet<string>(comparer: StringComparer.Ordinal);
         var accounts = conversations.Values
             .Where(predicate: conversation => conversation.Chat is not null && chats.Contains(value: conversation.Chat.Id))
             .GroupBy(keySelector: conversation => conversation.Account!, comparer: StringComparer.Ordinal);
@@ -216,6 +227,23 @@ internal sealed class TeamsCacheFolder(string path)
                 mayHoldKeys: (from, to) => wanted.Any(predicate: chat =>
                     (ChatOf(key: from) is not { } low || string.CompareOrdinal(strA: low, strB: chat) <= 0)
                     && (ChatOf(key: to) is not { } high || string.CompareOrdinal(strA: chat, strB: high) <= 0)));
+            // A table that can't be read may only be being written: like one the folder's own read finds, it counts once
+            // it has stayed so, and the engine reads everything again then. A file that vanished, as compaction removes
+            // them, may have held any of their messages. Either way, they're read again at the next change.
+            foreach (var name in records.Read.Unreadable.Keys)
+            {
+                var table = System.IO.Path.Combine(path1: folder.Path, path2: name);
+                unreadableTables.TryAdd(key: table, value: FileStamp.Of(path: table));
+            }
+            if (records.Read.Unreadable.Count > 0 || records.Read.Vanished)
+            {
+                retry.UnionWith(other: wanted);
+            }
+            // A blob entry that can't be read may be any of theirs.
+            if (records.UnreadableKeys > 0)
+            {
+                incomplete.UnionWith(other: wanted);
+            }
             foreach (var (key, raw) in records.Values)
             {
                 try
@@ -236,7 +264,20 @@ internal sealed class TeamsCacheFolder(string path)
                 }
                 catch (FormatErrorException)
                 {
-                    UnreadableMessages += 1;
+                    if (ChatOf(key: key.Key) is not { } chat)
+                    {
+                        continue;
+                    }
+                    // Chromium writes a record's blob entry, which says which blob file it's in, after the record, often
+                    // in a later batch.
+                    if (IndexedDBFolder.IsInBlobFile(raw: raw) && !records.ExternalObjects.ContainsKey(key: key))
+                    {
+                        awaitingBlobEntry.Add(item: chat);
+                    }
+                    else
+                    {
+                        incomplete.Add(item: chat);
+                    }
                 }
             }
         }
@@ -244,7 +285,7 @@ internal sealed class TeamsCacheFolder(string path)
         {
             list.Sort(comparison: (a, b) => a.Id.CompareTo(value: b.Id));
         }
-        return found;
+        return new TeamsMessagesRead(Messages: found, Incomplete: incomplete, Retry: retry, AwaitingBlobEntry: awaitingBlobEntry);
     }
 
     /// The chat a message cache key names: its first part.

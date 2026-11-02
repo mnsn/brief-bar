@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.Versioning;
 using BriefBar.Core.Teams;
 using BriefBar.Core.Tests.ChromiumIndexedDB;
 using BriefBar.Core.Tests.Copilot;
@@ -55,6 +56,25 @@ public sealed class TeamsFormatTests
         Assert.Equal(expected: ChatGroup.Chats, actual: ConversationIds.Group(kind: ConversationKind.OneOnOne));
         Assert.Equal(expected: ChatGroup.Groups, actual: ConversationIds.Group(kind: ConversationKind.Group));
         Assert.Equal(expected: ChatGroup.Groups, actual: ConversationIds.Group(kind: ConversationKind.Meeting));
+    }
+
+    /// Channels, communities and Teams' own threads and streams aren't chats. A conversation of a type BriefBar doesn't
+    /// know may be one, as after an update to Teams, so it isn't taken for one that isn't.
+    [Fact]
+    public void TellsWhatIsntAChat()
+    {
+        Assert.True(condition: ConversationIds.IsNotChat(type: "Topic", id: Fixture.Channel));
+        Assert.True(condition: ConversationIds.IsNotChat(type: "Space", id: "19:abcdefabcdefabcdefabcdefabcdef12@thread.skype"));
+        Assert.True(condition: ConversationIds.IsNotChat(type: "EngageCommunity", id: "19:abcdefabcdefabcdefabcdefabcdef12@thread.v2"));
+        Assert.True(condition: ConversationIds.IsNotChat(type: "StreamOfMentions", id: "48:mentions"));
+        Assert.True(condition: ConversationIds.IsNotChat(type: "SomethingNew", id: "48:notes"));
+        Assert.True(condition: ConversationIds.IsNotChat(type: null, id: Fixture.Channel));
+        Assert.True(condition: ConversationIds.IsNotChat(type: string.Empty, id: "19:abcdefabcdefabcdefabcdefabcdef12@thread.skype"));
+
+        Assert.False(condition: ConversationIds.IsNotChat(type: "Chat", id: Fixture.Avery));
+        Assert.False(condition: ConversationIds.IsNotChat(type: "Meeting", id: Fixture.Sync));
+        Assert.False(condition: ConversationIds.IsNotChat(type: null, id: Fixture.Crew));
+        Assert.False(condition: ConversationIds.IsNotChat(type: "SomethingNew", id: Fixture.Crew));
     }
 
     [Fact]
@@ -180,6 +200,36 @@ public sealed class TeamsFormatTests
             ],
             actual: location.Folders().Select(selector: path => Path.GetRelativePath(relativeTo: root, path: path)));
         Assert.Empty(collection: new TeamsCacheLocation(Root: folder.Combine("nowhere"), IsTeamsOwn: false).Folders());
+    }
+
+    /// A folder that can't be listed may hold Teams' data: it's counted, with the folders that could be listed.
+    [Fact]
+    [SupportedOSPlatform(platformName: "windows")]
+    public void CountsTheFoldersItCantList()
+    {
+        Assert.SkipUnless(condition: OperatingSystem.IsWindows(), reason: "Only Windows' access control keeps a folder from being listed here.");
+        using var folder = new TemporaryFolder();
+        var root = folder.Combine("EBWebView");
+        var teams = Path.Combine(paths: [root, "WV2Profile_tfw", "IndexedDB", "https_teams.microsoft.com_0.indexeddb.leveldb"]);
+        Directory.CreateDirectory(path: teams);
+        var location = new TeamsCacheLocation(Root: root, IsTeamsOwn: false);
+
+        using (new UnlistableFolder(path: Path.Combine(paths: [root, "WV2Profile_tfl", "IndexedDB"])))
+        {
+            var partly = location.FindFolders();
+            Assert.Equal(expected: [teams], actual: partly.Folders);
+            Assert.Equal(expected: 1, actual: partly.Unlistable);
+        }
+        using (new UnlistableFolder(path: root))
+        {
+            var none = location.FindFolders();
+            Assert.Empty(collection: none.Folders);
+            Assert.Equal(expected: 1, actual: none.Unlistable);
+        }
+
+        var all = location.FindFolders();
+        Assert.Equal(expected: [teams], actual: all.Folders);
+        Assert.Equal(expected: 0, actual: all.Unlistable);
     }
 
     [Fact]

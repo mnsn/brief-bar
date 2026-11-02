@@ -103,13 +103,22 @@ public sealed class TeamsReadMarksTests
         using var folder = new TemporaryFolder();
         var path = folder.Combine("read");
         var protector = new FakeProtector();
-        var saved = new Dictionary<string, TeamsReadMark> { ["not a chat"] = new(UpTo: 5, At: at), [Fixture.Avery] = new(UpTo: -1, At: at), [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) };
+        var saved = new Dictionary<string, TeamsReadMark>
+        {
+            ["not a chat"] = new(UpTo: 5, At: at),
+            [Fixture.Avery] = new(UpTo: -1, At: at),
+            [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at),
+            // Marked read while Teams had it marked unread, without a message to go by.
+            [Fixture.Crew] = new(UpTo: 0, At: at),
+        };
         File.WriteAllBytes(path: path, bytes: protector.Protect(data: JsonSerializer.SerializeToUtf8Bytes(value: saved)));
 
         var marks = new TeamsReadMarks(path: path, protector: protector);
         marks.Load();
 
-        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) }, actual: marks.Marks);
+        Assert.Equal(
+            expected: new Dictionary<string, TeamsReadMark> { [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at), [Fixture.Crew] = new(UpTo: 0, At: at) },
+            actual: marks.Marks);
     }
 
     /// Turning Teams off deletes the file, and its folder once it's empty; nothing is saved from then on.

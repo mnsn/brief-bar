@@ -5,15 +5,14 @@ namespace BriefBar.Core.Teams;
 /// reads Teams' own state instead.
 public static class ChatReading
 {
-    /// Whether Teams' own data says `chat` may be unread: its newest message isn't yours, and is newer than how far you've
-    /// read it in Teams; or you marked it unread in Teams. BriefBar reads its messages then, to tell which and how many. A
-    /// muted chat never needs you, as Teams doesn't notify you of it.
+    /// Whether Teams' own data says `chat` may be unread: its newest item is newer than how far you've read it in Teams,
+    /// and isn't a message you wrote, which reads the chat (a call you started doesn't); or you marked it unread in Teams.
+    /// BriefBar reads its messages then, to tell which and how many. A muted chat never needs you, as Teams doesn't notify
+    /// you of it.
     public static bool MayBeUnread(TeamsChat chat)
     {
         ArgumentNullException.ThrowIfNull(argument: chat);
-        return !chat.IsMuted
-            && (chat.MarkedUnread is not null
-                || (chat.Newest is { IsFromMe: false } newest && newest.Id > (chat.Marker?.MessageId ?? 0)));
+        return !chat.IsMuted && (chat.MarkedUnread is not null || HasNewerItem(chat: chat));
     }
 
     /// What of `chat` is unread. Marked unread in Teams after you last marked it read in BriefBar (`mark`), it's unread,
@@ -31,6 +30,7 @@ public static class ChatReading
         {
             return ChatUnread.None;
         }
+        // The cache's copy of a message comes first: it alone says whether the message was deleted.
         var all = chat.Newest is { } newest
             ? messages.Append(element: newest).DistinctBy(keySelector: message => message.Id).ToList()
             : messages.DistinctBy(keySelector: message => message.Id).ToList();
@@ -40,22 +40,28 @@ public static class ChatReading
                 Messages: Written(messages: all, after: markedUnread.MessageId, keepUnreadFor: null, now: now),
                 IsMarkedUnread: true);
         }
-        if (chat.Newest is not { IsFromMe: false } || chat.Newest.Id <= (chat.Marker?.MessageId ?? 0))
+        if (!HasNewerItem(chat: chat))
         {
             return ChatUnread.None;
         }
         var readUpTo = Math.Max(val1: chat.Marker?.MessageId ?? 0, val2: mark?.UpTo ?? 0);
-        // Writing in a chat reads it, as Teams moves its marker to what you sent.
-        var mine = all.Where(predicate: message => message.IsFromMe).Select(selector: message => message.Id).DefaultIfEmpty(defaultValue: 0).Max();
+        // Writing in a chat reads it, as Teams moves its marker to what you sent; a call you started doesn't.
+        var mine = all.Where(predicate: message => message.IsFromMe && message.IsContent).Select(selector: message => message.Id).DefaultIfEmpty(defaultValue: 0).Max();
         readUpTo = Math.Max(val1: readUpTo, val2: mine);
         return new ChatUnread(Messages: Written(messages: all, after: readUpTo, keepUnreadFor: keepUnreadFor, now: now), IsMarkedUnread: false);
     }
 
-    /// What someone else wrote after the message `after`, within `keepUnreadFor` if it's given, oldest first.
+    /// Whether `chat` has an item newer than how far you've read it in Teams that isn't a message you wrote.
+    static bool HasNewerItem(TeamsChat chat) =>
+        chat.Newest is { } newest && newest.Id > (chat.Marker?.MessageId ?? 0) && !(newest.IsFromMe && newest.IsContent);
+
+    /// What someone else wrote after the message `after`, and didn't delete, within `keepUnreadFor` if it's given, oldest
+    /// first.
     static List<TeamsMessage> Written(List<TeamsMessage> messages, long after, TimeSpan? keepUnreadFor, DateTimeOffset now) => messages
         .Where(predicate: message => message.Id > after
             && !message.IsFromMe
             && message.IsContent
+            && !message.IsDeleted
             && (keepUnreadFor is not { } keep || now - message.ArrivedAt <= keep))
         .OrderBy(keySelector: message => message.Id)
         .ToList();

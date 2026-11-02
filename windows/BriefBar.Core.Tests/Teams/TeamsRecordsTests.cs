@@ -83,6 +83,18 @@ public sealed class TeamsRecordsTests
         Assert.Null(@object: Chat(chat: Crew(bookmark: null))?.MarkedUnread);
     }
 
+    /// A conversation BriefBar doesn't know, as after an update to Teams, can't be read, rather than not being a chat: so a
+    /// read that has one doesn't say the chats it can't see are gone.
+    [Fact]
+    public void RefusesConversationsItDoesntKnow()
+    {
+        Assert.Throws<FormatErrorException>(testCode: () => Chat(chat: new MadeUpChat(Id: Fixture.Avery, Type: "OneOnOneChat", ReadUpTo: 0, Newest: null)));
+        Assert.Throws<FormatErrorException>(testCode: () => Chat(chat: new MadeUpChat(Id: "19:x@example.invalid", Type: string.Empty, ReadUpTo: 0, Newest: null)));
+        Assert.Throws<FormatErrorException>(testCode: () => Chat(chat: new MadeUpChat(Id: "not a thread", Type: "Chat", ReadUpTo: 0, Newest: null)));
+        var unnamed = Decoded(body: writer => writer.Members(properties: [("type", value => value.Text(text: "Chat"))]));
+        Assert.Throws<FormatErrorException>(testCode: () => TeamsRecords.Chat(value: unnamed, recordKey: null, userId: Fixture.Me));
+    }
+
     [Fact]
     public void ReadsWhetherAChatIsMuted()
     {
@@ -120,13 +132,18 @@ public sealed class TeamsRecordsTests
     public void SkipsWhatIsntAChat()
     {
         Assert.Null(@object: Chat(chat: new MadeUpChat(Id: Fixture.Channel, Type: "Topic", ReadUpTo: 0, Newest: null)));
-        var notes = Decoded(body: writer => writer.Members(properties: [("id", value => value.Text(text: "48:notes")), ("type", value => value.Text(text: "StreamOfNotes"))]));
-        Assert.Null(@object: TeamsRecords.Chat(value: notes, recordKey: "48:notes", userId: Fixture.Me));
+        Assert.Null(@object: Chat(chat: new MadeUpChat(Id: "19:abcdefabcdefabcdefabcdefabcdef12@thread.skype", Type: "Space", ReadUpTo: 0, Newest: null)));
+        Assert.Null(@object: Chat(chat: new MadeUpChat(Id: "19:abcdefabcdefabcdefabcdefabcdef12@EngageCommunity", Type: "EngageCommunity", ReadUpTo: 0, Newest: null)));
+        Assert.Null(@object: Chat(chat: new MadeUpChat(Id: Fixture.Channel, Type: string.Empty, ReadUpTo: 0, Newest: null)));
+        foreach (var (id, type) in new[] { ("48:notes", "StreamOfNotes"), ("48:mentions", "StreamOfMentions"), ("48:calllogs", "Conversation"), ("48:threads", "Thread") })
+        {
+            var own = Decoded(body: writer => writer.Members(properties: [("id", value => value.Text(text: id)), ("type", value => value.Text(text: type))]));
+            Assert.Null(@object: TeamsRecords.Chat(value: own, recordKey: id, userId: Fixture.Me));
+        }
 
         // A record without its ID takes its key's.
         var unnamed = Decoded(body: writer => writer.Members(properties: [("type", value => value.Text(text: "Chat"))]));
         Assert.Equal(expected: Fixture.Avery, actual: TeamsRecords.Chat(value: unnamed, recordKey: Fixture.Avery, userId: Fixture.Me)?.Id);
-        Assert.Null(@object: TeamsRecords.Chat(value: unnamed, recordKey: null, userId: Fixture.Me));
         // A newest message without an ID that's a time isn't one.
         var undated = Decoded(body: writer => writer.Members(properties:
         [
@@ -137,8 +154,8 @@ public sealed class TeamsRecordsTests
         Assert.Null(@object: TeamsRecords.Chat(value: undated, recordKey: null, userId: Fixture.Me)?.Newest);
     }
 
-    /// A reply chain's messages, except those deleted: who sent each and whether it was you, its type and text, and when
-    /// it arrived.
+    /// A reply chain's messages: who sent each and whether it was you, its type and text, when it arrived, and whether it
+    /// was deleted.
     [Fact]
     public void ReadsAReplyChainsMessages()
     {
@@ -152,7 +169,13 @@ public sealed class TeamsRecordsTests
 
         var messages = TeamsRecords.Messages(value: Decoded(body: chain.Write), userId: Fixture.Me).OrderBy(keySelector: message => message.Id).ToList();
 
-        Assert.Equal(expected: [TeamsData.Id(seconds: 10), TeamsData.Id(seconds: 20), TeamsData.Id(seconds: 40)], actual: messages.Select(selector: message => message.Id));
+        Assert.Equal(
+            expected: [TeamsData.Id(seconds: 10), TeamsData.Id(seconds: 20), TeamsData.Id(seconds: 30), TeamsData.Id(seconds: 40)],
+            actual: messages.Select(selector: message => message.Id));
+        // The deleted one keeps its place, without its text.
+        Assert.Equal(expected: (true, string.Empty), actual: (messages[2].IsDeleted, messages[2].Text));
+        Assert.All(collection: messages.Where(predicate: message => message.Id != TeamsData.Id(seconds: 30)), action: message => Assert.False(condition: message.IsDeleted));
+        messages.RemoveAt(index: 2);
         Assert.Equal(
             expected: new TeamsMessage(
                 ConversationId: Fixture.Crew,

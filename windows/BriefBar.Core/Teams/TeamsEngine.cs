@@ -29,8 +29,14 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
     readonly Dictionary<string, FileSystemWatcher> watchers = new(comparer: StringComparer.OrdinalIgnoreCase);
     /// The messages read of each chat that may be unread, and the ID of its newest message then.
     readonly Dictionary<string, (long Newest, IReadOnlyList<TeamsMessage> Messages)> messages = new(comparer: StringComparer.Ordinal);
-    /// Chats that may be unread that got a message since their messages were read.
+    /// Chats that may be unread that got a message since their messages were read, or whose messages couldn't all be read:
+    /// read again at the next change, or as a panel opens.
     readonly HashSet<string> touched = new(comparer: StringComparer.Ordinal);
+    /// Chats that may be unread whose messages couldn't all be read, when they were last read.
+    readonly HashSet<string> partlyRead = new(comparer: StringComparer.Ordinal);
+    /// Chats that may be unread with a message whose blob entry hadn't been written when they were last read: still
+    /// waiting the next time they're read, they count as partly read.
+    readonly HashSet<string> awaitingBlobEntry = new(comparer: StringComparer.Ordinal);
     /// Tables that couldn't be read, by path: as they were then, and since when.
     readonly Dictionary<string, (FileStamp? File, DateTimeOffset Since)> suspectTables = new(comparer: StringComparer.Ordinal);
     int unreadableFolders;
@@ -115,13 +121,16 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
             folders.Clear();
             messages.Clear();
             touched.Clear();
+            partlyRead.Clear();
+            awaitingBlobEntry.Clear();
             suspectTables.Clear();
             lastPublished = null;
         }
     }
 
     /// Reads what Teams wrote since the last read, as a panel opens, rather than waiting for the watcher; everything
-    /// again when Teams' data wasn't found before, as when you've just signed in, or when it's needed.
+    /// again when no folder of Teams' data was read before, as when you've just signed in or one couldn't be read, or
+    /// when it's needed.
     public void Refresh()
     {
         lock (gate)
@@ -130,7 +139,7 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
             {
                 return;
             }
-            if (found)
+            if (found && folders.Count > 0)
             {
                 ReadLogs();
             }
@@ -148,11 +157,13 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
     void Rescan(bool confirmAtOnce)
     {
         var started = time.GetUtcNow();
-        found = false;
         failed = false;
-        unreadableFolders = 0;
         folders.Clear();
-        foreach (var path in Location.Folders())
+        var listed = Location.FindFolders();
+        // A folder that can't be listed may hold Teams' data.
+        unreadableFolders = listed.Unlistable;
+        found = listed.Unlistable > 0;
+        foreach (var path in listed.Folders)
         {
             found = true;
             var folder = new TeamsCacheFolder(path: path);
@@ -170,7 +181,6 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
                 unreadableFolders += 1;
             }
         }
-        ConfirmUnreadableTables(confirmAtOnce: confirmAtOnce);
         if (isActive)
         {
             Watch();
@@ -178,7 +188,10 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
         // A chat's messages may have changed without its newest message changing, as when one is deleted.
         messages.Clear();
         touched.Clear();
+        partlyRead.Clear();
         UpdateMessages();
+        // Reading messages may have found tables that can't be read too.
+        ConfirmUnreadableTables(confirmAtOnce: confirmAtOnce);
         readAt = started;
     }
 
@@ -202,6 +215,8 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
             }
         }
         UpdateMessages();
+        // Reading messages may have found a table that can't be read, as one Teams is still writing.
+        ConfirmUnreadableTables(confirmAtOnce: false);
         readAt = started;
     }
 
@@ -214,8 +229,11 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
         {
             messages.Remove(key: gone);
         }
+        partlyRead.IntersectWith(other: maybeUnread.Keys);
+        awaitingBlobEntry.IntersectWith(other: maybeUnread.Keys);
+        // A chat marked unread in Teams may have no newest message to go by.
         var stale = maybeUnread.Values
-            .Where(predicate: chat => touched.Contains(item: chat.Id) || !messages.TryGetValue(key: chat.Id, value: out var known) || known.Newest != chat.Newest!.Id)
+            .Where(predicate: chat => touched.Contains(item: chat.Id) || !messages.TryGetValue(key: chat.Id, value: out var known) || known.Newest != (chat.Newest?.Id ?? 0))
             .Select(selector: chat => chat.Id)
             .ToHashSet(comparer: StringComparer.Ordinal);
         touched.Clear();
@@ -224,11 +242,18 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
             return;
         }
         var read = new Dictionary<string, List<TeamsMessage>>(comparer: StringComparer.Ordinal);
+        var incomplete = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var retry = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var awaiting = new HashSet<string>(comparer: StringComparer.Ordinal);
         foreach (var folder in folders.Values)
         {
             try
             {
-                foreach (var (chat, list) in folder.Messages(chats: stale))
+                var messagesRead = folder.Messages(chats: stale);
+                incomplete.UnionWith(other: messagesRead.Incomplete);
+                retry.UnionWith(other: messagesRead.Retry);
+                awaiting.UnionWith(other: messagesRead.AwaitingBlobEntry);
+                foreach (var (chat, list) in messagesRead.Messages)
                 {
                     if (!read.TryGetValue(key: chat, value: out var all))
                     {
@@ -241,15 +266,26 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
             {
                 // Its chats are read again at the next change: until then, their newest message stands in.
                 touched.UnionWith(other: stale);
+                partlyRead.UnionWith(other: stale);
                 return;
             }
         }
         foreach (var id in stale)
         {
             messages[id] = (
-                maybeUnread[id].Newest!.Id,
+                maybeUnread[id].Newest?.Id ?? 0,
                 read.TryGetValue(key: id, value: out var list) ? list.DistinctBy(keySelector: message => message.Id).OrderBy(keySelector: message => message.Id).ToList() : []);
         }
+        partlyRead.ExceptWith(other: stale);
+        partlyRead.UnionWith(other: incomplete);
+        // A message's blob entry comes after it: its chat is read again at the next change, which the entry's arrival is,
+        // and counts as partly read if the entry is still missing then.
+        partlyRead.UnionWith(other: awaiting.Where(predicate: awaitingBlobEntry.Contains));
+        awaitingBlobEntry.ExceptWith(other: stale);
+        awaitingBlobEntry.UnionWith(other: awaiting);
+        touched.UnionWith(other: incomplete);
+        touched.UnionWith(other: retry);
+        touched.UnionWith(other: awaiting);
     }
 
     /// Each chat once: one that more than one folder has, as with two profiles of the same account, as its newest copy,
@@ -428,15 +464,19 @@ public sealed class TeamsEngine : ITeamsEngine, IDisposable
         {
             Folders = read.Folders + unreadableFolders,
             UnreadableFiles = unreadableTables + unreadableFolders,
+            ChatsPartlyRead = partlyRead.Count,
         };
+        // Folders that couldn't be read or listed, and none that could, say nothing of Teams' data: reading it failed,
+        // rather than Teams' data changing.
+        var readFailed = failed || (folders.Count == 0 && unreadableFolders > 0);
         return new TeamsSnapshot
         {
             Found = found,
-            Failed = failed,
+            Failed = readFailed,
             // Read in full, and understood: tables that may only be being written count, though they're not unreadable
             // yet; and data that changed says nothing of which chats are gone.
             IsComplete = found
-                && !failed
+                && !readFailed
                 && report.Problem is null
                 && suspectTables.Count == 0
                 && report.UnreadableCount == 0

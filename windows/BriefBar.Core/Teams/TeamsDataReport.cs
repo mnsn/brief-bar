@@ -27,6 +27,10 @@ public sealed record TeamsDataReport
 
     public int UnreadableFiles { get; init; }
 
+    /// Chats that may be unread whose messages couldn't all be read from Teams' message cache: they may have more unread
+    /// messages than they show.
+    public int ChatsPartlyRead { get; init; }
+
     public int CorruptLogRecords { get; init; }
 
     public int BlocksRead { get; init; }
@@ -50,7 +54,7 @@ public sealed record TeamsDataReport
             {
                 return TeamsProblem.DataChanged;
             }
-            if (UnreadableCount * 4 > total || UnreadableFiles > 0)
+            if (UnreadableCount * 4 > total || UnreadableFiles > 0 || ChatsPartlyRead > 0)
             {
                 return TeamsProblem.PartlyUnreadable;
             }
@@ -72,6 +76,7 @@ public sealed record TeamsDataReport
             Formats = Merged(first: Formats, second: other.Formats),
             Unreadable = Merged(first: Unreadable, second: other.Unreadable),
             UnreadableFiles = UnreadableFiles + other.UnreadableFiles,
+            ChatsPartlyRead = ChatsPartlyRead + other.ChatsPartlyRead,
             CorruptLogRecords = CorruptLogRecords + other.CorruptLogRecords,
             BlocksRead = BlocksRead + other.BlocksRead,
             BlocksSkipped = BlocksSkipped + other.BlocksSkipped,
@@ -88,6 +93,7 @@ public sealed record TeamsDataReport
         && SameCounts(first: Formats, second: other.Formats)
         && SameCounts(first: Unreadable, second: other.Unreadable)
         && UnreadableFiles == other.UnreadableFiles
+        && ChatsPartlyRead == other.ChatsPartlyRead
         && CorruptLogRecords == other.CorruptLogRecords;
 
     public override int GetHashCode() => HashCode.Combine(value1: Folders, value2: Stores, value3: Conversations, value4: Chats, value5: WithMarker);

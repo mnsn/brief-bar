@@ -160,6 +160,30 @@ public sealed class ChatReadingTests
     static ChatUnread Read(TeamsChat chat, IReadOnlyList<TeamsMessage> messages, TeamsReadMark? mark) =>
         ChatReading.Unread(chat: chat, messages: messages, mark: mark, keepUnreadFor: null, now: now);
 
+    /// A call you started, or another event of yours, doesn't read the chat as a message you write does: what others
+    /// wrote before it still counts.
+    [Fact]
+    public void ReadsNothingForAnEventOfYours()
+    {
+        TeamsMessage[] messages = [Message(seconds: 20, text: "Can you call me?"), Message(seconds: 30, text: string.Empty, fromMe: true, type: "Event/Call")];
+        var chat = Chat(newest: messages[^1], readUpTo: TeamsData.Id(seconds: 10));
+
+        Assert.True(condition: ChatReading.MayBeUnread(chat: chat));
+        Assert.Equal(expected: ["Can you call me?"], actual: Texts(chat: chat, messages: messages));
+    }
+
+    /// Only Teams' message cache says a message was deleted: the chat's newest message, as the chat's record names it,
+    /// doesn't count once the cache has it deleted.
+    [Fact]
+    public void CountsNoDeletedMessage()
+    {
+        var newest = Message(seconds: 30, text: "Oops, wrong chat");
+        var chat = Chat(newest: newest, readUpTo: TeamsData.Id(seconds: 10));
+
+        Assert.Equal(expected: ["Oops, wrong chat"], actual: Texts(chat: chat, messages: []));
+        Assert.Empty(collection: Texts(chat: chat, messages: [newest with { Text = string.Empty, IsDeleted = true }]));
+    }
+
     static List<string> Texts(TeamsChat chat, IReadOnlyList<TeamsMessage> messages, long? markedUpTo = null, TimeSpan? keepUnreadFor = null) =>
         ChatReading.Unread(
                 chat: chat,

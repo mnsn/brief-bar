@@ -31,20 +31,27 @@ public sealed partial record TeamsCacheLocation(string Root, bool IsTeamsOwn)
     }
 
     /// The Teams site's IndexedDB folders: `<profile>\IndexedDB\https_teams.<domain>_0.indexeddb.leveldb`, in order.
-    public IReadOnlyList<string> Folders()
+    public IReadOnlyList<string> Folders() => FindFolders().Folders;
+
+    /// The Teams site's IndexedDB folders, in order, and how many folders couldn't be listed, which may hold more.
+    public TeamsFolderList FindFolders()
     {
         var folders = new List<string>();
-        foreach (var profile in Subfolders(path: Root))
+        var unlistable = 0;
+        foreach (var profile in Subfolders(path: Root, unlistable: ref unlistable))
         {
             var indexedDB = Path.Combine(path1: profile, path2: "IndexedDB");
-            folders.AddRange(collection: Subfolders(path: indexedDB).Where(predicate: folder => IsTeamsFolder(name: Path.GetFileName(path: folder))));
+            folders.AddRange(collection: Subfolders(path: indexedDB, unlistable: ref unlistable)
+                .Where(predicate: folder => IsTeamsFolder(name: Path.GetFileName(path: folder))));
         }
-        return folders;
+        return new TeamsFolderList(Folders: folders, Unlistable: unlistable);
     }
 
     public static bool IsTeamsFolder(string name) => TeamsFolder().IsMatch(input: name);
 
-    static List<string> Subfolders(string path)
+    /// The folders in `path`, in order: none when it isn't there, and none, counted in `unlistable`, when it can't be
+    /// listed.
+    static List<string> Subfolders(string path, ref int unlistable)
     {
         try
         {
@@ -52,12 +59,14 @@ public sealed partial record TeamsCacheLocation(string Root, bool IsTeamsOwn)
                 ? Directory.EnumerateDirectories(path: path).Order(comparer: StringComparer.Ordinal).ToList()
                 : [];
         }
-        catch (IOException)
+        catch (DirectoryNotFoundException)
         {
+            // Gone since it was there, as a profile Teams removes: it holds nothing.
             return [];
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
+            unlistable += 1;
             return [];
         }
     }

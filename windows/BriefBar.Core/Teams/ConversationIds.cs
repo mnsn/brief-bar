@@ -30,6 +30,26 @@ public static partial class ConversationIds
     /// The section that lists a kind of chat.
     public static ChatGroup Group(ConversationKind kind) => kind == ConversationKind.OneOnOne ? ChatGroup.Chats : ChatGroup.Groups;
 
+    /// Whether a conversation is one Teams has that isn't a chat: a channel ("Topic", or "Space" for its team), a Viva
+    /// Engage community, or one of Teams' own threads and streams, whose IDs start with `48:`, such as your notes. A record
+    /// without a type is told by its ID. Anything else is a conversation BriefBar doesn't know, as after an update to
+    /// Teams.
+    public static bool IsNotChat(string? type, string id)
+    {
+        ArgumentNullException.ThrowIfNull(argument: id);
+        if (id.StartsWith(value: "48:", comparisonType: StringComparison.Ordinal))
+        {
+            return true;
+        }
+        return type switch
+        {
+            "Topic" or "Space" or "EngageCommunity" or "Conversation" or "Thread" => true,
+            null or "" => id.EndsWith(value: "@thread.tacv2", comparisonType: StringComparison.OrdinalIgnoreCase)
+                || id.EndsWith(value: "@thread.skype", comparisonType: StringComparison.OrdinalIgnoreCase),
+            _ => type.StartsWith(value: "StreamOf", comparisonType: StringComparison.Ordinal),
+        };
+    }
+
     [GeneratedRegex(pattern: @"^19:[^\s""'<>{}\[\]()|\\,;&?#/]+@[A-Za-z0-9.\-]+$", options: RegexOptions.CultureInvariant)]
     private static partial Regex ThreadId();
 }
