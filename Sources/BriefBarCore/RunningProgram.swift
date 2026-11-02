@@ -238,7 +238,8 @@ public final class RunningProgram: @unchecked Sendable {
     /// number stays its own; its exit is heard as it happens all the same.
     public func end(grace: TimeInterval) {
         queue.async { [self] in
-            guard !reaped, !ending else { return }
+            // Once its group has been asked to stop, it's been made to as well, or will be: asked again, nothing changes.
+            guard !reaped, !ending, !askedGroup else { return }
             ending = true
             closeInput()
             if status != nil {

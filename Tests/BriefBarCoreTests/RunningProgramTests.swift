@@ -256,6 +256,29 @@ import Testing
         #expect(kill(child, 0) == -1 && errno == ESRCH)
     }
 
+    /// Ended again and again, as it ends and after, it's still reaped once it's gone, and leaves no zombie.
+    @Test(.timeLimit(.minutes(1)))
+    func endingItAgainAndAgainStillReapsIt() async throws {
+        let recorder = Recorder()
+        let program = try recorder.start("/bin/sh", ["-c", "trap '' TERM; echo ready; while :; do sleep 1; done"])
+        var lines = recorder.lines.makeAsyncIterator()
+        #expect(await lines.next() == "ready")
+        let ending = Task {
+            while !Task.isCancelled {
+                program.end(grace: 0.1)
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        var exits = recorder.exits.makeAsyncIterator()
+        #expect(await exits.next() == SIGKILL)
+        // A zombie still has its process ID: one that's reaped doesn't.
+        for _ in 0..<400 where kill(program.pid, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        ending.cancel()
+        #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
+    }
+
     @Test func reportsAProgramThatCantRun() {
         #expect(throws: (any Error).self) {
             try Recorder().start("/nonexistent/BriefBarUpdater")
