@@ -30,6 +30,8 @@ public sealed partial class AzureDevOpsSettingsView : UserControl
 
     void OnFindOrganizationsClick(object sender, RoutedEventArgs e) => ViewModel.FindOrganizations();
 
+    void OnNoteSignInClick(object sender, RoutedEventArgs e) => ViewModel.SignInFromNote();
+
     void OnWatchClick(object sender, RoutedEventArgs e) => ViewModel.Watch();
 
     void OnLinkKeyDown(object sender, KeyRoutedEventArgs e)
