@@ -77,13 +77,97 @@ public enum OrganizationDiscovery {
             return .success(false)
         } catch let error as ADOError {
             switch error {
-            // Another tenant, or no access: nothing of yours to show there.
-            case .unauthorized, .forbidden, .notFound: return .success(false)
+            // Another directory you aren't signed in to, or no access: nothing of yours to show there.
+            case .unauthorized, .forbidden, .notFound, .otherDirectory: return .success(false)
             default: return .failure(error)
             }
         } catch {
             return .failure(.network(error.localizedDescription))
         }
+    }
+
+    /// What checking an organization as you add it found: whether your sign-in can read it, and when it can't, why.
+    public enum Access: Sendable, Equatable {
+        /// Your sign-in reads it.
+        case readable
+        /// It's in a directory (a Microsoft Entra tenant) that the Azure CLI isn't signed in to: signing in to `tenant`
+        /// reads it.
+        case otherDirectory(tenant: String)
+        /// Your sign-in can't read it, and it isn't one of your organizations: perhaps it's a project's name.
+        case notYours
+        /// One of your organizations, which your sign-in can't read, and why.
+        case unreadable(ADOError)
+        /// It couldn't be checked for now, such as while you're offline or signed out, and why: once it's watched, its
+        /// list says what's wrong.
+        case unchecked(ADOError)
+
+        /// Whether to watch it: unless it can't be read for a reason that neither signing in nor waiting fixes.
+        public var watches: Bool {
+            switch self {
+            case .readable, .otherDirectory, .unchecked: return true
+            case .notYours, .unreadable: return false
+            }
+        }
+
+        /// The directory to sign in to, for an organization in another directory.
+        public var signInTenant: String? {
+            if case .otherDirectory(let tenant) = self { return tenant }
+            return nil
+        }
+
+        /// What to tell you as you add `organization`, when your sign-in can't read it: what's wrong, and what to do.
+        /// Nil when there's nothing to tell.
+        public func explanation(for organization: String) -> (title: String, detail: String)? {
+            switch self {
+            case .readable, .unchecked:
+                return nil
+            case .otherDirectory:
+                return ("\(organization) is in a directory your Azure CLI isn't signed in to",
+                        "Sign in to it, and BriefBar reads \(organization) with your other organizations. "
+                            + OrganizationDiscovery.projectHint(organization))
+            case .notYours:
+                return ("\(organization) isn't one of your organizations",
+                        "BriefBar didn't add it. " + OrganizationDiscovery.projectHint(organization))
+            case .unreadable(let error):
+                return ("Your sign-in can't read \(organization)", "BriefBar didn't add it. \(error.description)")
+            }
+        }
+    }
+
+    /// Checks that your sign-in can read an organization, as you add it, with `_apis/connectionData`. When it can't,
+    /// whether it's one of your organizations: a project's name, entered as an organization's, can be another
+    /// organization's, even one in another directory.
+    public static func access(to organization: String, client: ADOClient) async -> Access {
+        do {
+            _ = try await client.get(ADOEndpoint.connectionData(organization: organization), as: ADOConnectionData.self)
+            return .readable
+        } catch let error as ADOError {
+            switch error {
+            case .otherDirectory(_, let tenant):
+                return .otherDirectory(tenant: tenant)
+            case .notFound:
+                return .notYours
+            case .unauthorized, .forbidden:
+                let yours: [String]
+                do {
+                    yours = try await memberships(client: client)
+                } catch {
+                    // Whether it's yours can't be told now: it's watched, and its list says why it can't be read.
+                    return .unchecked((error as? ADOError) ?? .network(error.localizedDescription))
+                }
+                let isYours = yours.contains { $0.caseInsensitiveCompare(organization) == .orderedSame }
+                return isYours ? .unreadable(error) : .notYours
+            default:
+                return .unchecked(error)
+            }
+        } catch {
+            return .unchecked(.network(error.localizedDescription))
+        }
+    }
+
+    /// Where a project's organization is, for a project's name entered as an organization's.
+    static func projectHint(_ name: String) -> String {
+        "If \(name) is a project, its organization is the first part of its link: dev.azure.com/organization/\(name)."
     }
 
     /// The union of two lists of organization names, which Azure DevOps compares ignoring case, keeping the

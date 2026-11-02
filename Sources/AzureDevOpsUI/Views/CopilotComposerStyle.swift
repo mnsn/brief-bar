@@ -1,10 +1,11 @@
+import AppKit
 import BriefBarCore
 import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
 // The pieces of the window that sends work to Copilot, in BriefBar's look: a tile of color for each thing, as the window's
-// sidebar has for its pages, rows that open a menu, choices side by side, and capsules on the prompt.
+// sidebar has for its pages, rows that open a menu, choices side by side, capsules on the prompt, and Copy above it.
 
 extension PullRequestAction {
     /// Its symbol, on the window's tile.
@@ -275,6 +276,56 @@ struct ComposerCapsuleMenu<Items: View>: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { isHovered = $0 }
+    }
+}
+
+/// Copies the prompt as it stands, your changes included, and says so for a moment. It only copies, so it's there
+/// whichever session and way you choose, in the demo too: it sends nothing, and takes none of the comments the prompt
+/// quotes off Needs You.
+struct ComposerCopyButton: View {
+    let text: String
+
+    /// What it copied, while it says so. Any change to the prompt forgets it, so Undo or Reset back to the same text
+    /// doesn't bring Copied back without another copy.
+    @LocalState private var copied: String?
+    /// How many times it copied, so that each time says so for as long.
+    @LocalState private var copies = 0
+
+    var body: some View {
+        let isCopied = copied == text
+        Button(action: copy) {
+            // As wide either way, so Reset beside it never moves.
+            ZStack(alignment: .trailing) {
+                Label("Copied", systemImage: "checkmark")
+                    .opacity(isCopied ? 1 : 0)
+                Label("Copy", systemImage: "doc.on.doc")
+                    .opacity(isCopied ? 0 : 1)
+            }
+            .labelStyle(.titleAndIcon)
+            .animation(.easeOut(duration: 0.15), value: isCopied)
+        }
+        .buttonStyle(.borderless)
+        .font(size: 11.5, weight: .medium)
+        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .help("Copy the prompt as it stands, to paste it where you like")
+        .accessibilityLabel("Copy Prompt")
+        .onChange(of: text) { copied = nil }
+        .task(id: copies) {
+            guard copies > 0 else { return }
+            do {
+                try await Task.sleep(for: .seconds(2))
+                copied = nil
+            } catch {}
+        }
+    }
+
+    private func copy() {
+        // In place of everything there, whatever its type, so nothing you copied before is pasted instead.
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = text
+        copies += 1
+        AccessibilityNotification.Announcement("Copied the prompt").post()
     }
 }
 

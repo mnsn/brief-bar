@@ -97,7 +97,7 @@ struct SprintPage: View {
             PageScroll {
                 VStack(alignment: .leading, spacing: 22) {
                     if let problem = sprint.problem {
-                        ProblemView(problem: problem) { store.signIn() }
+                        ProblemView(problem: problem) { store.signIn(for: problem) }
                     }
                     SprintHero(board: shown, mine: board, sprint: board.sprint, now: store.now)
                     if shown.rows.isEmpty {
@@ -112,7 +112,7 @@ struct SprintPage: View {
             }
         } else if let problem = sprint.problem {
             PageScroll {
-                ProblemView(problem: problem) { store.signIn() }
+                ProblemView(problem: problem) { store.signIn(for: problem) }
             }
         } else if sprint.isRefreshing || !sprint.hasLoaded {
             VStack(spacing: 8) {
