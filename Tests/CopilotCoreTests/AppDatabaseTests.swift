@@ -246,6 +246,8 @@ import BriefBarCore
                 "plan": nil, "lead": nil, "linked": "lead", "coordinated": "plan", "uncoordinated": "plan", "fork": nil,
                 "elsewhere": nil, "detached": nil, "moved": nil, "asked": "lead", "handed-over": "plan",
             ])
+            // What each fork was forked from, for Send to a Fork to confirm the fork it made.
+            #expect(try AppDatabase.load(at: url).forks == ["fork": "lead"])
 
             // Older app versions record no links: only the chats that started sessions are known.
             try db.exec("""
@@ -255,6 +257,7 @@ import BriefBarCore
             let older = Dictionary(uniqueKeysWithValues: try AppDatabase.load(at: url).sessions.map { ($0.id, $0) })
             #expect(older.count == 11)
             #expect(older.compactMapValues(\.parentSessionId) == ["coordinated": "plan", "uncoordinated": "plan"])
+            #expect(try AppDatabase.load(at: url).forks == nil)
         }
     }
 

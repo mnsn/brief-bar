@@ -88,6 +88,13 @@ public enum AppSessions {
         return SessionLock.isHeld(sessionFolder: folder)
     }
 
+    /// The process that has the session open now, as `isOpen` tells it: the Copilot app's runtime, or a CLI; nil when none
+    /// does.
+    public static func holder(of id: String, home: URL) -> pid_t? {
+        guard let folder = sessionFolder(id, home: home) else { return nil }
+        return SessionLock.holder(sessionFolder: folder)
+    }
+
     /// The folder a session works in, as its `workspace.yaml` says, read without following a symbolic link below the app's
     /// folder (`LocalFile.openFile(below:_:)`); nil when it doesn't say, or that folder isn't there.
     public static func folder(of id: String, home: URL) -> URL? {
@@ -151,4 +158,26 @@ public enum AppSessions {
     static func isSessionID(_ id: String) -> Bool {
         UUID(uuidString: id)?.uuidString.lowercased() == id
     }
+
+    /// What the app's database says now of a session that BriefBar's extension says it forked (`forked_from_session_id`),
+    /// read-only.
+    public static func forkRecord(of id: String, home: URL) -> ForkRecord {
+        guard let snapshot = try? AppDatabase.load(at: CopilotPaths(root: home).database), let forks = snapshot.forks else {
+            return .unknown
+        }
+        if let original = forks[id] { return .forked(from: original) }
+        return snapshot.sessions.contains { $0.id == id } ? .notAFork : .notListed
+    }
+}
+
+/// What the Copilot app records of a session that's said to be a fork (`AppSessions.forkRecord`).
+public enum ForkRecord: Sendable, Equatable {
+    /// A fork of that session.
+    case forked(from: String)
+    /// The app lists it, as no fork.
+    case notAFork
+    /// The app doesn't list it, or not yet.
+    case notListed
+    /// The app's database can't be read, or records no forks, as older versions don't: BriefBar can't tell.
+    case unknown
 }

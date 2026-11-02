@@ -196,6 +196,9 @@ public struct AppViewState: Sendable, Equatable {
 public struct DatabaseSnapshot: Sendable, Equatable {
     public var sessions: [SessionMeta]
     public var view: AppViewState
+    /// The session each fork was forked from, by the fork's ID, archived or not (`forked_from_session_id`); nil when the
+    /// app doesn't record forks, as older versions don't.
+    public var forks: [String: String]? = nil
 }
 
 /// Read-only access to the Copilot app's SQLite database.
@@ -406,6 +409,8 @@ public enum AppDatabase {
 
         readCoordinators(connection, into: &sessions)
         readParents(connection, into: &sessions)
+        let forks = try? connection.rows(forksQuery) { row in (row.string(0) ?? "", row.string(1) ?? "") }
+            .filter { !$0.0.isEmpty && !$0.1.isEmpty }
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -423,7 +428,9 @@ public enum AppDatabase {
                 }
             }
         }
-        return DatabaseSnapshot(sessions: sessions, view: view)
+        return DatabaseSnapshot(
+            sessions: sessions, view: view, forks: forks.map { Dictionary($0, uniquingKeysWith: { first, _ in first }) }
+        )
     }
 
     private static func loadSessions(_ connection: SQLiteConnection) throws -> [SessionMeta] {
