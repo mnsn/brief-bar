@@ -9,9 +9,11 @@ import { randomUUID } from "node:crypto";
 import { after, beforeEach, describe, test } from "node:test";
 import {
     CLOCK_SLACK_MS,
+    FORK_TIMEOUT_MS,
     LONGEST_WAIT_MS,
     MOST_BYTES,
     OutboxError,
+    SEND_TIMEOUT_MS,
     checkRequest,
     defaultFolder,
     forked,
@@ -562,6 +564,34 @@ describe("cleaning up and recovering", () => {
         await outbox.scan();
         assert.equal(readResult(value.requestId).ok, true);
         assert.equal(calls.sent.length, 1);
+    });
+});
+
+describe("its own limits", () => {
+    test("gives up on a send or a fork before BriefBar stops waiting, so that BriefBar hears either way", () => {
+        // What BriefBar waits once a request is claimed (SessionSender.Timing: sent, forked), less a moment for it to
+        // write the result and for BriefBar to look.
+        assert.ok(SEND_TIMEOUT_MS <= 60_000 - 10_000, String(SEND_TIMEOUT_MS));
+        assert.ok(FORK_TIMEOUT_MS <= 120_000 - 10_000, String(FORK_TIMEOUT_MS));
+        // A fork took about 22 s.
+        assert.ok(FORK_TIMEOUT_MS >= 60_000);
+    });
+
+    test("stops using the outbox when a folder it's in becomes a link, even one to where it was", async () => {
+        const { session, calls } = fakeSession();
+        const home = path.dirname(folder);
+        const outbox = path.join(home, "Library", "BriefBar", "Outbox");
+        const listening = listenTo(session, { folder: outbox, root: home });
+        const moved = path.join(home, "Moved");
+        fs.renameSync(path.join(home, "Library", "BriefBar"), moved);
+        fs.symlinkSync(moved, path.join(home, "Library", "BriefBar"));
+        const value = request(session.sessionId);
+        const file = path.join(moved, "Outbox", "requests", `${session.sessionId}.${value.requestId}.json`);
+        fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
+        await listening.scan();
+        assert.deepEqual(calls, { sent: [], executed: [] });
+        assert.ok(fs.existsSync(file));
+        assert.deepEqual(fs.readdirSync(path.join(moved, "Outbox", "results")), []);
     });
 });
 

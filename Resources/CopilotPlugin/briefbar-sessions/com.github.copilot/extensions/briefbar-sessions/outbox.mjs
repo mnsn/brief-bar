@@ -19,9 +19,10 @@ export const MOST_BYTES = 256 * 1024;
 export const LONGEST_WAIT_MS = 120 * 1000;
 /** How far ahead of this clock a request may say it was made, for clocks a moment apart. */
 export const CLOCK_SLACK_MS = 5 * 1000;
-/** How long a send, or a fork, may take before it counts as failed. A fork takes about 20 s. */
-export const SEND_TIMEOUT_MS = 60 * 1000;
-export const FORK_TIMEOUT_MS = 180 * 1000;
+/** How long a send, or a fork, may take before it counts as failed: less than BriefBar waits for each once it's
+ * claimed (60 s and 120 s), so that it hears either way. A fork takes about 20 s. */
+export const SEND_TIMEOUT_MS = 45 * 1000;
+export const FORK_TIMEOUT_MS = 100 * 1000;
 /** The longest error message a result carries. */
 export const LONGEST_MESSAGE = 200;
 
@@ -218,8 +219,7 @@ export function listen(session, options = {}) {
     }
 
     async function scanOnce() {
-        const stat = await fsp.lstat(folders.requests).catch(() => null);
-        if (!stat || !watched || stat.dev !== watched.dev || stat.ino !== watched.ino) {
+        if (!isIntact()) {
             recover();
             return;
         }
@@ -241,7 +241,24 @@ export function listen(session, options = {}) {
         waiting.sort((a, b) => a.made - b.made || (a.name < b.name ? -1 : 1));
         for (const request of waiting) {
             if (stopped) return;
+            if (!isIntact()) {
+                recover();
+                return;
+            }
             await handle(request);
+        }
+    }
+
+    /** The outbox is still as it was set up: its folders, and those it's in below `root`, are real ones, none of them a
+     * link, its own are private to you, and its requests folder is the one watched. Node can't anchor what it opens to a
+     * folder it checked, so it's checked again before each use, as one could be swapped for a link to it meanwhile. */
+    function isIntact() {
+        try {
+            checkPath(folders, uid);
+            const stat = fs.lstatSync(folders.requests);
+            return watched !== null && stat.dev === watched.dev && stat.ino === watched.ino;
+        } catch {
+            return false;
         }
     }
 
@@ -264,7 +281,7 @@ export function listen(session, options = {}) {
                 : failed("invalid", "The request couldn't be read.");
         }
         try {
-            checkFolder(folders.results, uid);
+            checkPath(folders, uid);
             writeFile(folders.results, `${requestId}.json`, result(outcome, requestId), pid);
         } catch {
             // BriefBar stops waiting for it, and falls back to copying the prompt.
@@ -345,27 +362,47 @@ export function listen(session, options = {}) {
     };
 }
 
-/** Makes the outbox's folders that are missing, private to you, and checks that each is a real folder of yours that
- * only you can use (0700), and that none of the folders it's in, below `root`, is a link: what BriefBar checks. */
+/** Makes the outbox's folders that are missing, private to you, each checked before the next is made in it: the folders
+ * it's in below `root` must be real ones, not links, and the outbox and its own folders real ones of yours that only
+ * you can use (0700), as BriefBar checks them. */
 function prepare(folders, uid) {
-    const relative = path.relative(folders.root, path.dirname(folders.outbox));
-    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new OutboxError("It isn't in its folder.");
-    let parent = folders.root;
-    for (const name of relative.split(path.sep).filter(Boolean)) {
-        parent = path.join(parent, name);
+    for (const parent of parents(folders)) {
         makeFolder(parent, uid);
-        let stat;
-        try {
-            stat = fs.lstatSync(parent);
-        } catch (error) {
-            throw new OutboxError(`${name} can't be read (${error.code ?? error.name}).`);
-        }
-        if (!stat.isDirectory()) throw new OutboxError(`${name} isn't a folder.`);
+        checkParent(parent);
     }
     for (const folder of [folders.outbox, folders.requests, folders.results, folders.listening]) {
         makeFolder(folder, uid);
         checkFolder(folder, uid);
     }
+}
+
+/** What `prepare` checks, without making anything. */
+function checkPath(folders, uid) {
+    for (const parent of parents(folders)) checkParent(parent);
+    for (const folder of [folders.outbox, folders.requests, folders.results, folders.listening]) checkFolder(folder, uid);
+}
+
+/** The folders the outbox is in, below `root`, from the outermost. */
+function parents(folders) {
+    const relative = path.relative(folders.root, path.dirname(folders.outbox));
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new OutboxError("It isn't in its folder.");
+    const found = [];
+    let parent = folders.root;
+    for (const name of relative.split(path.sep).filter(Boolean)) {
+        parent = path.join(parent, name);
+        found.push(parent);
+    }
+    return found;
+}
+
+function checkParent(folder) {
+    let stat;
+    try {
+        stat = fs.lstatSync(folder);
+    } catch (error) {
+        throw new OutboxError(`${path.basename(folder)} can't be read (${error.code ?? error.name}).`);
+    }
+    if (!stat.isDirectory()) throw new OutboxError(`${path.basename(folder)} isn't a folder.`);
 }
 
 /** Makes a folder that's missing, private to you, whatever the umask. One that's there stays as it is. */
