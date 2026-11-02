@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
+  the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
+  said it was done, as that earlier task had.
+
+## 0.11.0 - 2026-11-02
+
+- **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
+  click a pull request to see it beside the list, or over it in a narrow window: where it stands,
+  **What's Left** before you can complete it, each item saying when it's your turn and taking you to
+  what it's about, its comment threads with the ones that wait on you first, its builds and checks with
+  where one failed and its first error, who reviews it and how each voted, and the work items and
+  Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
+  has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
+  menu-bar list and widgets still open pull requests in Azure DevOps.
 - **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
   clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
   you like. It sends nothing, so the comments it quotes stay on **Needs You**.
@@ -27,9 +41,6 @@
   offers to send the work there, rather than always starting a new session, and asks which you want
   unless you've said; asked in that very session, it can also fork it, so the work goes another way while
   the session stays as it is. Since agents get more, they wait until you've seen what they get now.
-- **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
-  the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
-  said it was done, as that earlier task had.
 - **Organizations in another directory.** When an Azure DevOps organization is in a directory (tenant)
   your Azure CLI isn't signed in to, BriefBar says so and names it, rather than asking you to sign in
   again, and its **Sign In…** signs in to that directory (`az login --tenant`). Your other
