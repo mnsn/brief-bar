@@ -98,6 +98,10 @@ final class AppSettings: ObservableObject {
     @Published var sprintDetailsWidth: Double? {
         didSet { defaults.set(sprintDetailsWidth, forKey: Key.sprintDetailsWidth) }
     }
+    /// How wide you made a pull request's details beside the window's list, in points; nil for their usual width.
+    @Published var pullRequestDetailsWidth: Double? {
+        didSet { defaults.set(pullRequestDetailsWidth, forKey: Key.pullRequestDetailsWidth) }
+    }
     /// The pipelines in the Pipelines section, in the order you pinned them.
     @Published var pinnedPipelines: [PipelineRef] {
         didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
@@ -133,6 +137,12 @@ final class AppSettings: ObservableObject {
     }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
+    /// Where that account is from (`AccessToken.accountTenant`), so that after a restart, your own directory wanting you to
+    /// sign in again isn't taken for someone else's sign-in.
+    var accountOrigin: String? {
+        get { defaults.string(forKey: Key.accountOrigin) }
+        set { defaults.set(newValue, forKey: Key.accountOrigin) }
+    }
     /// When you last looked at each pull request that's listed only because someone sent it to you (`SeenState.name(of:)`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
     @Published private(set) var seenSentInChats: [String: Date] = [:]
@@ -158,7 +168,8 @@ final class AppSettings: ObservableObject {
         chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
-        sprintDetailsWidth = (defaults.object(forKey: Key.sprintDetailsWidth) as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        sprintDetailsWidth = Self.width(defaults.object(forKey: Key.sprintDetailsWidth))
+        pullRequestDetailsWidth = Self.width(defaults.object(forKey: Key.pullRequestDetailsWidth))
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
@@ -191,11 +202,12 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, with every account, and the pull requests people sent you, when Azure DevOps
-    /// is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
+    /// Forgets what you've seen, with every account, where that account is from, and the pull requests people sent you,
+    /// when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
         defaults.removeObject(forKey: Key.otherSeen)
+        defaults.removeObject(forKey: Key.accountOrigin)
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]
@@ -229,6 +241,12 @@ final class AppSettings: ObservableObject {
 
     private static func choice(_ value: Int, in choices: [Int], default fallback: Int) -> Int {
         choices.contains(value) ? value : fallback
+    }
+
+    /// A width kept in the preferences, in points; nil for anything that isn't one, which any program running as you
+    /// could put there.
+    private static func width(_ value: Any?) -> Double? {
+        (value as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     }
 
     var engineConfiguration: PulseEngine.Configuration {
@@ -466,12 +484,16 @@ enum SettingsKey {
     static let hasDiscovered = "ado.hasDiscoveredOrganizations"
     static let seen = "ado.seenState"
     static let otherSeen = "ado.otherAccountsSeenState"
+    /// Where the account BriefBar last read your pull requests with is from (`AccessToken.accountTenant`): a directory's
+    /// ID, or an identity provider such as live.com.
+    static let accountOrigin = "ado.accountOrigin"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
     /// Where earlier builds kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"
     static let sprintDetailsWidth = "ado.sprintDetailsWidth"
+    static let pullRequestDetailsWidth = "ado.pullRequestDetailsWidth"
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
     static let copilotOptions = "ado.copilot.options"

@@ -67,8 +67,8 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
-        func token() async throws -> AccessToken { throw Unused() }
-        func invalidate() async {}
+        func token(tenant: String?) async throws -> AccessToken { throw Unused() }
+        func invalidate(tenant: String?) async {}
     }
 
     /// A clock the tests move.
@@ -543,33 +543,33 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
     }
 
     @Test func theDetailsCoverTheBoardOnlyInANarrowWindow() {
-        let wide = SprintPage.DetailsLayout(width: 1_000, showsDetails: true)
-        #expect(wide.isBeside && !wide.coversBoard && wide.panelWidth == 400)
+        let wide = DetailsLayout(width: 1_000, showsDetails: true)
+        #expect(wide.isBeside && !wide.coversContent && wide.panelWidth == 400)
         // Where the board is out of sight, it's out of reach of VoiceOver and the keyboard.
-        let narrow = SprintPage.DetailsLayout(width: 560, showsDetails: true)
-        #expect(!narrow.isBeside && narrow.coversBoard)
-        #expect(!SprintPage.DetailsLayout(width: 560, showsDetails: false).coversBoard)
-        #expect(SprintPage.DetailsLayout(width: SprintPage.DetailsLayout.besideWidth, showsDetails: true).isBeside)
-        #expect(SprintPage.DetailsLayout(width: 2_000, showsDetails: true).panelWidth == 480)
-        #expect(SprintPage.DetailsLayout(width: 700, showsDetails: true).panelWidth == 330)
+        let narrow = DetailsLayout(width: 560, showsDetails: true)
+        #expect(!narrow.isBeside && narrow.coversContent)
+        #expect(!DetailsLayout(width: 560, showsDetails: false).coversContent)
+        #expect(DetailsLayout(width: DetailsLayout.besideWidth, showsDetails: true).isBeside)
+        #expect(DetailsLayout(width: 2_000, showsDetails: true).panelWidth == 480)
+        #expect(DetailsLayout(width: 700, showsDetails: true).panelWidth == 330)
     }
 
     @Test func theDetailsAreAsWideAsYouMakeThemWhereThereIsRoom() {
-        #expect(SprintPage.DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 640).panelWidth == 640)
+        #expect(DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 640).panelWidth == 640)
         // Never narrower than 330 points, and the board keeps the room it has on the narrowest page that shows the details
         // beside it.
-        #expect(SprintPage.DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 100).panelWidth == 330)
-        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: 2_000).panelWidth == 630)
-        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true).panelWidths == 330...630)
+        #expect(DetailsLayout(width: 1_200, showsDetails: true, preferredWidth: 100).panelWidth == 330)
+        #expect(DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: 2_000).panelWidth == 630)
+        #expect(DetailsLayout(width: 1_000, showsDetails: true).panelWidths == 330...630)
         // Where nothing fits but the narrowest details, they can't be resized.
-        #expect(SprintPage.DetailsLayout(width: 700, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
-        #expect(SprintPage.DetailsLayout(width: 560, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
+        #expect(DetailsLayout(width: 700, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
+        #expect(DetailsLayout(width: 560, showsDetails: true, preferredWidth: 600).panelWidths == 330...330)
         // A width that isn't one is the usual width.
-        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .nan).panelWidth == 400)
-        #expect(SprintPage.DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .infinity).panelWidth == 400)
+        #expect(DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .nan).panelWidth == 400)
+        #expect(DetailsLayout(width: 1_000, showsDetails: true, preferredWidth: .infinity).panelWidth == 400)
 
         // Dragging the edge to the left widens them, to the right narrows them, as far as they go.
-        let layout = SprintPage.DetailsLayout(width: 1_000, showsDetails: true)
+        let layout = DetailsLayout(width: 1_000, showsDetails: true)
         #expect(layout.panelWidth(draggedBy: -100) == 500)
         #expect(layout.panelWidth(draggedBy: 50) == 350)
         #expect(layout.panelWidth(draggedBy: -1_000) == 630)

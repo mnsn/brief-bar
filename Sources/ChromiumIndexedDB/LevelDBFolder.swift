@@ -3,8 +3,12 @@ import Foundation
 
 /// A LevelDB database's folder, read as it is, without taking its lock: LevelDB never changes a table once written and
 /// only appends to its log, so taking, for each key, the write with the highest sequence number gives the database as
-/// it was when the read ended. Nothing is written, and nothing copied.
+/// it was when the read ended. Only the tables and logs its MANIFEST lists are read (`LevelDBManifest`). Nothing is
+/// written, and nothing copied.
 public struct LevelDBFolder: Sendable {
+    /// How many times a read starts over when files vanish as it reads them.
+    private static let attempts = 3
+
     public let url: URL
 
     public init(url: URL) {
@@ -26,6 +30,9 @@ public struct LevelDBFolder: Sendable {
         public var blocksRead = 0
         public var blocksSkipped = 0
         public var corruptLogRecords = 0
+        /// Tables and logs left unread because the MANIFEST doesn't list them: ones LevelDB no longer needs and hasn't
+        /// removed yet, or a table it's still writing.
+        public var unlisted = 0
         /// Files that couldn't be read, by name, and why.
         public var unreadable: [String: FormatError] = [:]
         public var log: LogPosition?
@@ -43,27 +50,31 @@ public struct LevelDBFolder: Sendable {
     }
 
     /// Reads the folder's tables and logs, keeping the writes to keys that `keep` accepts, from the table blocks that
-    /// `mayHold` doesn't rule out (see `LevelDBTable.read`). A table that compaction removes while it's read makes it
-    /// start over, since its keys are in a new table then.
+    /// `mayHold` doesn't rule out (see `LevelDBTable.read`). A table that compaction removes while it's read, or adds,
+    /// makes it start over, since its keys are in another table then, up to three times. Where there's no CURRENT, as
+    /// in made-up data, it reads every table and log; so it does when the MANIFEST can't be read, or LevelDB would
+    /// refuse it, which it says: as when, at the last attempt, CURRENT still names a MANIFEST that isn't there, or the
+    /// MANIFEST a table that isn't.
     public func read(
         mayHold: ([UInt8]?, [UInt8]) -> Bool = { _, _ in true },
         keep: (ArraySlice<UInt8>) -> Bool = { _ in true }
     ) throws -> Read {
         var read = Read()
-        for _ in 0..<3 {
+        for attemptNumber in 1...Self.attempts {
             var vanished = false
-            (read, vanished) = try attempt(mayHold: mayHold, keep: keep)
+            (read, vanished) = try attempt(mayHold: mayHold, keep: keep, isLastAttempt: attemptNumber == Self.attempts)
             if !vanished { break }
         }
         return read
     }
 
     private func attempt(
-        mayHold: ([UInt8]?, [UInt8]) -> Bool, keep: (ArraySlice<UInt8>) -> Bool
+        mayHold: ([UInt8]?, [UInt8]) -> Bool, keep: (ArraySlice<UInt8>) -> Bool, isLastAttempt: Bool
     ) throws -> (Read, vanished: Bool) {
         let names = try FileManager.default.contentsOfDirectory(atPath: url.path)
         var read = Read()
-        var vanished = false
+        let manifest = manifestVersion(names, read: &read, isLastAttempt: isLastAttempt)
+        var vanished = manifest.vanished
         var tables: [String: LevelDBTable.Read] = [:]
         func readTable(_ name: String, skipping: Bool) {
             do {
@@ -78,7 +89,18 @@ public struct LevelDBFolder: Sendable {
                 read.unreadable[name] = .unsupported("file")
             }
         }
-        for name in names.sorted() where name.hasSuffix(".ldb") || name.hasSuffix(".sst") {
+        var tableNames = names.sorted().filter(Self.isTable)
+        var logs = names.compactMap { name -> (number: UInt64, name: String)? in
+            guard name.hasSuffix(".log"), let number = Self.number(name) else { return nil }
+            return (number, name)
+        }.sorted { $0.number < $1.number }
+        if let version = manifest.version {
+            let liveTables = tableNames.filter { name in Self.number(name).map { version.tables.contains($0) } == true }
+            let liveLogs = logs.filter { version.isLiveLog($0.number) }
+            read.unlisted = tableNames.count - liveTables.count + logs.count - liveLogs.count
+            (tableNames, logs) = (liveTables, liveLogs)
+        }
+        for name in tableNames {
             readTable(name, skipping: true)
         }
         // Skipping blocks relies on index keys being the blocks' last keys. Where one isn't, read every block.
@@ -93,10 +115,6 @@ public struct LevelDBFolder: Sendable {
             read.blocksSkipped += table.blocksSkipped
             read.take(table.entries)
         }
-        let logs = names.compactMap { name -> (number: UInt64, name: String)? in
-            guard name.hasSuffix(".log"), let number = UInt64(name.dropLast(4)) else { return nil }
-            return (number, name)
-        }.sorted { $0.number < $1.number }
         for (position, log) in logs.enumerated() {
             let fileURL = url.appendingPathComponent(log.name)
             do {
@@ -115,6 +133,49 @@ public struct LevelDBFolder: Sendable {
             }
         }
         return (read, vanished)
+    }
+
+    /// What the folder's MANIFEST says the database is, and whether files vanished as it was read: the MANIFEST that
+    /// CURRENT names, as when LevelDB replaced it, or a table it lists that the folder didn't have as it was listed, as
+    /// when LevelDB wrote one since. Nil, to read every table and log, when the folder has no CURRENT, or when the
+    /// MANIFEST can't be read or LevelDB would refuse it, which `read` says: as when, at the last attempt, either is
+    /// still missing, since LevelDB refuses a database with files missing.
+    private func manifestVersion(
+        _ names: [String], read: inout Read, isLastAttempt: Bool
+    ) -> (version: LevelDBManifest.Version?, vanished: Bool) {
+        guard names.contains(LevelDBManifest.currentFile) else { return (nil, false) }
+        var file = LevelDBManifest.currentFile
+        do {
+            let (current, _) = try Self.contents(of: url.appendingPathComponent(file))
+            file = try LevelDBManifest.name(current: current)
+            let (manifest, _) = try Self.contents(of: url.appendingPathComponent(file))
+            let version = try LevelDBManifest.parse(manifest)
+            let tables = names.filter(Self.isTable).compactMap(Self.number)
+            if version.tables.isSubset(of: tables) { return (version, false) }
+            if !isLastAttempt { return (version, true) }
+            read.unreadable[file] = .corrupt("manifest")
+        } catch let error as FormatError {
+            read.unreadable[file] = error
+        } catch where Self.isGone(error) {
+            if !isLastAttempt { return (nil, true) }
+            read.unreadable[LevelDBManifest.currentFile] = .corrupt(LevelDBManifest.currentFile)
+        } catch {
+            read.unreadable[file] = .unsupported("file")
+        }
+        return (nil, false)
+    }
+
+    /// Whether the file named `name`, or at that path, is one of LevelDB's tables.
+    public static func isTable(_ name: String) -> Bool {
+        name.hasSuffix(".ldb") || name.hasSuffix(".sst")
+    }
+
+    /// The number LevelDB named a table or a log with, as `000005.ldb`; nil for a name without one.
+    static func number(_ name: String) -> UInt64? {
+        guard let dot = name.lastIndex(of: ".") else { return nil }
+        let stem = name[..<dot]
+        guard !stem.isEmpty, stem.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
+        return UInt64(stem)
     }
 
     /// A file's bytes from `offset` to its end, and which file they came from, from one descriptor, so a file put in

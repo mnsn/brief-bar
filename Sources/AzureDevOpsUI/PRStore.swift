@@ -30,6 +30,9 @@ final class PRStore: ObservableObject {
     @Published private(set) var hasLoaded = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
+    /// Each refresh, once its pull requests are listed: what was read of one can change without its row, such as an
+    /// optional build that passed. `refreshedAt` changes before they're listed.
+    let refreshed = PassthroughSubject<Void, Never>()
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
     /// The pipelines after your merges, the newest merge first.
@@ -55,7 +58,14 @@ final class PRStore: ObservableObject {
     /// How pull requests sent in chats are read: only the app's own store is given Notification Center.
     let chats: ChatReading
     private let notifier: Notifier?
-    private let tokens = AzureCLITokenProvider()
+    /// Asks for tokens in the directory BriefBar last read your pull requests with, so signing in to another directory
+    /// for an organization there, which makes it the Azure CLI's default, doesn't read you as someone else.
+    private let tokens: AzureCLITokenProvider
+    /// The account whose origin was last kept for after a restart (`AppSettings.accountOrigin`).
+    private var originKeptFor: String?
+    /// Stopped, as when Azure DevOps is turned off: a read the engine queued before then is dropped, so nothing it
+    /// carries, such as who's signed in, is saved again once the source has deleted it.
+    private var isStopped = false
     /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
     let client: ADOClient
     private var engine: PulseEngine?
@@ -66,6 +76,8 @@ final class PRStore: ObservableObject {
     private var delivered: Set<String> = []
     private var lastDiscovery: Date?
     private var discoveryProblem: PulseProblem?
+    /// Checking the organizations you're adding, while it runs: by name, in lowercase.
+    private var accessChecks: [String: Task<Void, Never>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -88,6 +100,10 @@ final class PRStore: ObservableObject {
         self.notifier = notifier
         self.mode = mode
         self.chats = chats
+        let tokens = AzureCLITokenProvider(
+            homeTenant: settings.seen.account.flatMap(AccessToken.tenant(ofAccount:)), homeAccountTenant: settings.accountOrigin
+        )
+        self.tokens = tokens
         client = ADOClient(tokens: tokens)
         summarizer.isEnabled = settings.summaries
         notifier?.$isBlocked
@@ -131,6 +147,7 @@ final class PRStore: ObservableObject {
 
     func start() {
         guard ticker == nil else { return }
+        isStopped = false
         observeSettings()
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -382,6 +399,8 @@ final class PRStore: ObservableObject {
         ticker = nil
         monitor?.cancel()
         monitor = nil
+        accessChecks.values.forEach { $0.cancel() }
+        accessChecks = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -389,6 +408,9 @@ final class PRStore: ObservableObject {
             Task { await engine.stop() }
         }
         engine = nil
+        // Turned off, Azure DevOps forgets where the account is from: nothing saves it again.
+        originKeptFor = nil
+        isStopped = true
     }
 
     // MARK: Actions
@@ -444,7 +466,8 @@ final class PRStore: ObservableObject {
         AzureDevOps.open(url)
     }
 
-    private func markSeen(_ item: PRSnapshot) {
+    /// Sees a pull request, as opening it does: what needs you there now is no longer new.
+    func markSeen(_ item: PRSnapshot) {
         settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 
@@ -486,14 +509,39 @@ final class PRStore: ObservableObject {
         AzureDevOps.openPullRequests(organizations: organizations)
     }
 
-    func signIn() {
+    /// Signs in to the Azure CLI, or installs it first: for `problem`, or the pull requests' when there's none, and in
+    /// its organizations' directory when that's what's wrong.
+    func signIn(for problem: PulseProblem? = nil) {
+        let problem = problem ?? self.problem
         if problem == .cliNotFound {
             AzureDevOps.open(AzureDevOps.installCLIPage)
             return
         }
+        signIn(toTenant: problem?.signInTenant)
+    }
+
+    /// Opens Terminal to sign in to the Azure CLI; with `tenant`, in that directory.
+    func signIn(toTenant tenant: String?) {
         Task {
             let path = await tokens.executablePath
-            AzureDevOps.signIn(azPath: path)
+            AzureDevOps.signIn(azPath: path, tenant: tenant)
+        }
+    }
+
+    /// Whether your sign-in can read an organization you're adding, and if not, why: it's watched unless it can't be
+    /// read for a reason that neither signing in nor waiting fixes, then `found` hears what the check found. Stopping
+    /// Azure DevOps cancels it, and then nothing is watched or told.
+    func add(organization name: String, found: @escaping (OrganizationDiscovery.Access) -> Void) {
+        // Adding it again checks again; adding another checks that one too.
+        let key = name.lowercased()
+        accessChecks[key]?.cancel()
+        accessChecks[key] = Task { [weak self] in
+            guard let self else { return }
+            let access = await OrganizationDiscovery.access(to: name, client: client)
+            guard !Task.isCancelled else { return }
+            accessChecks[key] = nil
+            if access.watches, !settings.isWatching(name) { settings.toggleOrganization(name) }
+            found(access)
         }
     }
 
@@ -526,12 +574,23 @@ final class PRStore: ObservableObject {
     // MARK: Updates
 
     func receive(_ snapshot: PulseSnapshot) {
+        guard !isStopped else { return }
         // Someone else signed in to the Azure CLI: what they've seen is their own, and the list to compare the next
         // one with, to announce what's new, was the other account's, as was what the panel showed in Answered.
         if mode == .live, let account = snapshot.account, settings.useAccount(account) {
             announced = nil
             answeredInPanel = [:]
             Log.app.info("Signed in to the Azure CLI as another account")
+        }
+        // Where the account is from, kept for after a restart, as its directory is: a sign-in that your own directory wants
+        // again then isn't taken for someone else's.
+        if mode == .live, let account = snapshot.account, account != originKeptFor {
+            originKeptFor = account
+            Task { [weak self, tokens] in
+                // Only while it's still this account's, and Azure DevOps hasn't been turned off meanwhile.
+                guard let origin = await tokens.accountTenant(of: account), let self, self.originKeptFor == account else { return }
+                if self.settings.accountOrigin != origin { self.settings.accountOrigin = origin }
+            }
         }
         state = snapshot
         let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
@@ -556,6 +615,7 @@ final class PRStore: ObservableObject {
         // Watched pull requests that closed, or that you can't read anymore, aren't watched anymore.
         if mode == .live { settings.unwatch(snapshot.closedLinks) }
         recompute(announce: true)
+        refreshed.send()
     }
 
     private func recompute(announce: Bool = false) {
@@ -596,7 +656,7 @@ final class PRStore: ObservableObject {
         }
         if newProblem != problem {
             problem = newProblem
-            if let newProblem { Log.app.error("\(newProblem.message, privacy: .public)") }
+            if let newProblem { Log.app.error("\(newProblem.logMessage, privacy: .public)") }
         }
 
         reader = state.userName
@@ -678,6 +738,27 @@ final class PRStore: ObservableObject {
     func record(for key: PRKey) -> PRRecord? {
         guard let record = state.records.first(where: { $0.id == key }) else { return nil }
         return settings.watchedKeys.contains(key) ? record.watched() : record
+    }
+
+    /// When you last looked at a pull request, as far as BriefBar remembers.
+    func seenCutoff(for key: PRKey) -> Date {
+        settings.seenCutoff(for: key)
+    }
+
+    /// Up to when what waited on you in a pull request doesn't anymore: when you last removed it from Needs You, or sent
+    /// its comments to Copilot.
+    func dismissedCutoff(for key: PRKey) -> Date {
+        settings.dismissedCutoff(for: key)
+    }
+
+    /// A pull request as the list would have it had you last looked at it at `seenCutoff`, the rest as it is now: what
+    /// was new then, and what waited on you, but not what you've answered, removed from Needs You or sent to Copilot
+    /// since.
+    func snapshot(of record: PRRecord, seenAt seenCutoff: Date) -> PRSnapshot? {
+        PRClassifier.snapshot(
+            for: record, seenCutoff: seenCutoff, dismissedCutoff: settings.dismissedCutoff(for: record.id),
+            now: now, options: settings.classifierOptions
+        )
     }
 
     /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed

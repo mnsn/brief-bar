@@ -189,6 +189,65 @@ enum TableWriter {
     }
 }
 
+/// Writes a LevelDB MANIFEST as LevelDB does, its version edits as the records of a log, and CURRENT, which names it.
+enum ManifestWriter {
+    /// A version edit: the comparator's name, as LevelDB's first edit has; the log LevelDB replays from; the next file
+    /// number and the last sequence number, which every edit LevelDB writes has; and the tables it removes and adds, at
+    /// `level`.
+    static func edit(
+        comparator: String? = nil, logNumber: UInt64? = nil, nextFile: UInt64? = nil, lastSequence: UInt64? = nil,
+        deleted: [UInt64] = [], added: [UInt64] = [], level: UInt64 = 0
+    ) -> [UInt8] {
+        var edit: [UInt8] = []
+        if let comparator {
+            edit += varint(1) + varint(UInt64(comparator.utf8.count)) + Array(comparator.utf8)
+        }
+        if let logNumber {
+            edit += varint(2) + varint(logNumber)
+        }
+        if let nextFile {
+            edit += varint(3) + varint(nextFile)
+        }
+        if let lastSequence {
+            edit += varint(4) + varint(lastSequence)
+        }
+        for number in deleted {
+            edit += varint(6) + varint(level) + varint(number)
+        }
+        for number in added {
+            // Its size, and its smallest and largest keys, which reading the folder doesn't need.
+            let smallest = TableWriter.internalKey([0], 1, deleted: false)
+            let largest = TableWriter.internalKey([0xFF], 1, deleted: false)
+            edit += varint(7) + varint(level) + varint(number) + varint(1_000)
+            edit += varint(UInt64(smallest.count)) + smallest + varint(UInt64(largest.count)) + largest
+        }
+        return edit
+    }
+
+    /// The MANIFEST holding `edits`, as LevelDB writes it.
+    static func manifest(_ edits: [[UInt8]]) -> [UInt8] {
+        var log = LogWriter()
+        for edit in edits {
+            log.add(edit)
+        }
+        return log.bytes
+    }
+
+    /// Writes `edits` as MANIFEST-`number` in `directory`, then CURRENT, which names it, as LevelDB does as it opens a
+    /// database: through a file it renames, so that CURRENT is never seen half written. Returns the MANIFEST's name.
+    @discardableResult
+    static func save(_ edits: [[UInt8]], number: UInt64, in directory: URL) throws -> String {
+        let name = String(format: "MANIFEST-%06llu", number)
+        try write(manifest(edits), to: directory.appendingPathComponent(name))
+        let temporary = directory.appendingPathComponent(String(format: "%06llu.dbtmp", number))
+        try write(Array((name + "\n").utf8), to: temporary)
+        guard rename(temporary.path, directory.appendingPathComponent("CURRENT").path) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return name
+    }
+}
+
 /// Chromium's IndexedDB key encodings.
 enum Keys {
     static func prefix(_ database: Int64, _ objectStore: Int64, _ index: Int64) -> [UInt8] {
