@@ -134,8 +134,9 @@ public sealed class GitHubClient : IDisposable
                         throw new GitHubException(error: GitHubError.Throttled(retryAfter: limited));
                     }
                     throw new GitHubException(error: GitHubError.Forbidden);
-                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: Endpoint) is { } host:
-                    throw new GitHubException(error: GitHubError.Network(message: "GitHub redirected BriefBar to another host, " + host + ", which it doesn't connect to."));
+                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: Endpoint) is not null:
+                    // Without the host, as the Mac's says it.
+                    throw new GitHubException(error: GitHubError.Network(message: "GitHub redirected BriefBar to another host, which it doesn't connect to."));
                 default:
                     // A redirect that stays on api.github.com too: GitHub answers the query where it's sent.
                     throw new GitHubException(error: GitHubError.Http(status: status));

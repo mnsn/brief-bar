@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
+- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
+  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
+  errors, which showed as `[31m`.
 - **A pull request opens in its details from anywhere in BriefBar's window.** On the Overview, in its brief and on
   the Notifications page, clicking a pull request shows its details on the Pull Requests page, at the comment or
   the run it's about; on the Pipelines page, a pull request's card shows the run you click, or the first that

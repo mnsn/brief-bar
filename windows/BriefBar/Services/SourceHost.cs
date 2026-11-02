@@ -97,6 +97,11 @@ internal sealed class SourceHost : ISourceRunner, IDisposable
         SourceOf(section: request.Section)?.Perform(request: request);
     }
 
+    /// The running source of type `T`, such as Azure DevOps' for Settings to add an organization with; null when it isn't
+    /// running, as while it's off or paused.
+    public T? Running<T>()
+        where T : class, ISectionSource => sources.OfType<T>().FirstOrDefault();
+
     /// The panel shows `current` now, or nothing, in place of `previous`: a source hears that its section's own panel
     /// closed or opened, and, before a panel shows its sections, on their own or in the Overview, that it will.
     public void PanelChanged(PanelTarget? previous, PanelTarget? current)

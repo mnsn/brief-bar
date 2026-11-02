@@ -39,6 +39,7 @@ public static class AzureDevOpsRows
         {
             Commands = Commands(status: status, placeholder: placeholder),
             ProblemCommand = ProblemCommand(problem: problem),
+            ProblemHint = ProblemHint(problem: problem),
             EmptyText = placeholder switch
             {
                 PRPlaceholder.Finding => "Finding your Azure DevOps organizations… Once, the first time: BriefBar looks for the ones where you have pull requests.",
@@ -397,6 +398,8 @@ public static class AzureDevOpsRows
         {
             PulseProblemKind.CliNotFound => "Needs az",
             PulseProblemKind.SignedOut => "Sign in",
+            // Nothing else is listed: signing in to their directory is what reads them.
+            PulseProblemKind.OtherDirectory => "Sign in",
             PulseProblemKind.AuthFailed => "Can't sign in",
             PulseProblemKind.Offline => "Offline",
             PulseProblemKind.Throttled => "Slowed down",
@@ -408,14 +411,28 @@ public static class AzureDevOpsRows
             Condition: stale ? SectionCondition.Stale : SectionCondition.Problem, UpdatedAt: refreshedAt, Problem: problem.Message, ShortProblem: shortProblem);
     }
 
-    /// What the banner offers for `problem`: signing in, installing the Azure CLI, or trying again.
-    static PanelCommand? ProblemCommand(PulseProblem? problem) => problem?.Kind switch
+    /// What the banner offers for `problem`: signing in, in the directory to sign in to when there's one, installing the
+    /// Azure CLI, or trying again.
+    static PanelCommand? ProblemCommand(PulseProblem? problem) => problem switch
     {
         null => null,
-        PulseProblemKind.CliNotFound => new PanelCommand(Key: AzureDevOpsCommands.InstallCli, Title: "Install the Azure CLI…", Help: "How to install it, at Microsoft Learn", Opens: true),
-        PulseProblemKind.SignedOut => new PanelCommand(
+        { Kind: PulseProblemKind.CliNotFound } => new PanelCommand(Key: AzureDevOpsCommands.InstallCli, Title: "Install the Azure CLI…", Help: "How to install it, at Microsoft Learn", Opens: true),
+        { SignInTenant: { } tenant } => new PanelCommand(
+            Key: AzureDevOpsCommands.SignInTo(tenant: tenant),
+            Title: "Sign in…",
+            Help: "Runs az login in a console window, in the directory it needs: it opens your browser, or Windows' sign-in",
+            Opens: true),
+        { Kind: PulseProblemKind.SignedOut } => new PanelCommand(
             Key: AzureDevOpsCommands.SignIn, Title: "Sign in…", Help: "Runs az login in a console window: it opens your browser, or Windows' sign-in", Opens: true),
-        PulseProblemKind.Throttled => null,
+        { Kind: PulseProblemKind.Throttled } => null,
         _ => new PanelCommand(Key: AzureDevOpsCommands.Refresh, Title: "Try again"),
     };
+
+    /// What the banner adds after `problem`, in the panel only: for organizations in a directory the Azure CLI isn't signed
+    /// in to, what Sign in does, and what to do if one is a project's name rather than an organization's, as the Mac's
+    /// `ProblemView` says it.
+    static string? ProblemHint(PulseProblem? problem) => problem is { Kind: PulseProblemKind.OtherDirectory, Organizations: { } organizations }
+        ? "Sign in runs az login there, in a console window. If " + (organizations.Count == 1 ? "it's" : "one is")
+            + " a project rather than an organization, remove it in Settings: a project's organization is the first part of its link."
+        : null;
 }
