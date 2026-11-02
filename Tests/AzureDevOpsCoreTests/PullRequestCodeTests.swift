@@ -738,12 +738,14 @@ private final class Running: Sendable {
     }
 }
 
-/// Holds whatever passes it until it's released.
+/// Holds whatever passes it until it's released, counting them.
 private actor Gate {
     private var isOpen = false
     private var held: [CheckedContinuation<Void, Never>] = []
+    private(set) var passes = 0
 
     func pass() async {
+        passes += 1
         guard !isOpen else { return }
         await withCheckedContinuation { held.append($0) }
     }
@@ -895,6 +897,32 @@ private actor LaterCode: CodeSource {
         #expect(try await again.value.get().lines.first { $0.isCommented }?.text == "a 2")
         _ = await (first.value, others.value)
         #expect(await code.comparisonsMade == 6)
+    }
+
+    @Test func callsOffAComparisonNoThreadWaitsOnAnymore() async throws {
+        let gate = Gate()
+        let code = PullRequestCode(pr, source: FakeCode(), comparison: { old, new in
+            await gate.pass()
+            return LineDiff.compare(old, new)
+        })
+        // Two comparisons under way, as many as run at once, and a third waiting its turn.
+        let a = Task { await code.excerpt(of: thread(1, "a"), in: pr) }
+        let b = Task { await code.excerpt(of: thread(2, "b"), in: pr) }
+        try await waitUntil("two comparisons under way") { await gate.passes == 2 }
+        let c = Task { await code.excerpt(of: thread(3, "c"), in: pr) }
+        try await waitUntil("a third waiting its turn") { await code.waitingOnComparisons == 3 }
+        c.cancel()
+        try await waitUntil("the third called off") { await code.waitingOnComparisons == 2 }
+        await gate.release()
+        _ = await (a.value, b.value)
+        guard case .failure(.unreadable) = await c.value else {
+            Issue.record("A thread that stopped waiting still showed its code")
+            return
+        }
+        #expect(await gate.passes == 2)
+        // Asked again, it's made.
+        _ = try await code.excerpt(of: thread(4, "c"), in: pr).get()
+        #expect(await gate.passes == 3)
     }
 
     @Test func forgetsTheFilesReadFirstPastTheMemoryItMayUse() async throws {

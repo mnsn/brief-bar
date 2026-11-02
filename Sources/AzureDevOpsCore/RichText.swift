@@ -1160,6 +1160,12 @@ private enum MarkdownReader {
             return later[length]?.last
         }
         var result = ""
+        /// Adds a piece, keeping a mark between two that would join their backticks once HTML between them is gone, as
+        /// in `` `a`<!-- -->`b` ``: the inline reader takes it out after reading.
+        func append(_ piece: some StringProtocol) {
+            if result.last == "`", piece.first == "`" { result.append(Self.seam) }
+            result += piece
+        }
         var plain = text.startIndex
         var next = 0
         index = text.startIndex
@@ -1171,8 +1177,8 @@ private enum MarkdownReader {
                 let opening = run.escaped ? text.index(after: index) : index
                 let length = run.escaped ? run.length - 1 : run.length
                 if length > 0, let end = closing(after: next, length: length) {
-                    result += transform(text[plain..<opening])
-                    result += text[opening..<runs[end].range.upperBound]
+                    append(transform(text[plain..<opening]))
+                    append(text[opening..<runs[end].range.upperBound])
                     index = runs[end].range.upperBound
                     plain = index
                 } else {
@@ -1181,8 +1187,8 @@ private enum MarkdownReader {
             } else if text[index] == "\\" {
                 let escaped = text.index(after: index)
                 if escaped < text.endIndex, text[escaped] == "<" {
-                    result += transform(text[plain..<index])
-                    result += text[index...escaped]
+                    append(transform(text[plain..<index]))
+                    append(text[index...escaped])
                     plain = text.index(after: escaped)
                     index = plain
                 } else if escaped < text.endIndex, text[escaped] != "`" {
@@ -1200,8 +1206,12 @@ private enum MarkdownReader {
                 index = text.index(after: index)
             }
         }
-        return result + transform(text[plain...])
+        append(transform(text[plain...]))
+        return result
     }
+
+    /// What keeps two pieces of inline Markdown apart where HTML between them was taken out.
+    static let seam: Character = "\u{FFFC}"
 
     /// The HTML tags that format text, which keep their text: those ending a line or a block break the line there.
     nonisolated(unsafe) private static let htmlTag = #/
@@ -1262,7 +1272,12 @@ private enum MarkdownReader {
         for match in tag.matches(of: /[\s\/]([A-Za-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/) {
             attributes[match.output.1.lowercased()] = String(match.output.2 ?? match.output.3 ?? match.output.4 ?? "")
         }
-        let alt = (attributes["alt"] ?? "").filter { !"[]".contains($0) }
+        // Its description is text, with HTML's character references, which the inline reader is to show as it is: each
+        // mark it would read is escaped.
+        let alt = HTMLEntities.decode(attributes["alt"] ?? "").reduce(into: "") { escaped, character in
+            if character.isASCII, character.isPunctuation || character.isSymbol { escaped.append("\\") }
+            escaped.append(character)
+        }
         guard let url = RichText.webLink(attributes["src"]) else { return alt }
         return "![\(alt)](<\(url.absoluteString)>)"
     }
@@ -1278,7 +1293,7 @@ private enum MarkdownReader {
         }
         var runs: [RichText.Run] = []
         for run in attributed.runs {
-            var piece = String(attributed[run.range].characters)
+            var piece = String(attributed[run.range].characters.filter { $0 != seam })
             var style = RichText.Style()
             if let intent = run.inlinePresentationIntent {
                 if intent.contains(.stronglyEmphasized) { style.insert(.bold) }

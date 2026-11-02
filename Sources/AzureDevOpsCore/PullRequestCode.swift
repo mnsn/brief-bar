@@ -294,13 +294,10 @@ public actor PullRequestCode {
     /// The files it keeps, first read first, and how big they are.
     private var files: [(key: ReadKey, size: Int)] = []
     private var excerpts: [ExcerptKey: ThreadExcerpt] = [:]
-    /// The comparisons being made, or made last, by the versions they compare: threads on one file share one.
-    private var diffs: [DiffKey: Task<[DiffLine], Error>] = [:]
-    /// The comparisons made, first made first.
-    private var diffOrder: [DiffKey] = []
-    /// How many comparisons it made, and how many asks wait on one, for tests.
+    /// The comparisons made, first made first, of those it keeps: each under way is kept too, as any read is.
+    private var diffOrder: [ReadKey] = []
+    /// How many comparisons it began, for tests.
     private(set) var comparisonsMade = 0
-    private(set) var waitingOnComparisons = 0
     /// Lets two comparisons run at a time.
     private let comparisons = RequestLimiter(limit: 2)
     /// How it compares two versions: `LineDiff`'s way, but in tests.
@@ -333,7 +330,6 @@ public actor PullRequestCode {
 
     deinit {
         for task in reads.values { task.cancel() }
-        for task in diffs.values { task.cancel() }
     }
 
     /// The code a thread on lines of a file is on, as its reviewer saw it: in the diff it was made on, before Azure DevOps
@@ -411,7 +407,7 @@ public actor PullRequestCode {
         }
         let newText = try await text(newFile)
         let oldText = try await text(oldFile)
-        let diff = try await compare(DiffKey(old: oldFile, new: newFile), oldText, newText)
+        let diff = try await compare(oldFile, oldText, newFile, newText)
         guard let window = ThreadExcerpt.window(of: diff, side: anchor.side, lines: anchor.lines, context: context) else {
             throw ThreadExcerpt.Problem.linesNotFound
         }
@@ -448,34 +444,15 @@ public actor PullRequestCode {
         }
     }
 
-    /// Two versions compared off the actor, so that other threads' reads go on meanwhile: once for all the threads on
-    /// them, two comparisons at a time. Every one under way is kept, and the last few made.
-    private func compare(_ key: DiffKey, _ old: String, _ new: String) async throws -> [DiffLine] {
-        let task: Task<[DiffLine], Error>
-        if let kept = diffs[key] {
-            task = kept
-        } else {
-            let (comparisons, comparison) = (comparisons, comparison)
-            task = Task { try await comparisons.run { await comparison(old, new) } }
-            diffs[key] = task
-            comparisonsMade += 1
+    /// Two versions, by what each is read as, compared off the actor, so that other threads' reads go on meanwhile: once
+    /// for all the threads on them, two comparisons at a time, and called off like a read when they all give up on it.
+    private func compare(_ old: ReadKey?, _ oldText: String, _ new: ReadKey?, _ newText: String) async throws -> [DiffLine] {
+        let (comparisons, comparison) = (comparisons, comparison)
+        let read = try await read(.diff(old, new)) {
+            Task { try await comparisons.run { .diff(await comparison(oldText, newText)) } }
         }
-        waitingOnComparisons += 1
-        defer { waitingOnComparisons -= 1 }
-        do {
-            let diff = try await task.value
-            if diffs[key] == task, !diffOrder.contains(key) {
-                diffOrder.append(key)
-                while diffOrder.count > Self.keptComparisons { diffs[diffOrder.removeFirst()] = nil }
-            }
-            return diff
-        } catch {
-            if diffs[key] == task {
-                diffs[key] = nil
-                diffOrder.removeAll { $0 == key }
-            }
-            throw error
-        }
+        guard case .diff(let diff) = read else { return [] }
+        return diff
     }
 
     /// The pull request's iterations, oldest first: read again for a push it hadn't seen or a move to another target, or
@@ -511,16 +488,11 @@ public actor PullRequestCode {
         return try Self.text(text)
     }
 
-    /// What's read under a key: read once, and kept, unless it failed in a way that asking again might not. Nothing is
-    /// read for an ask that stopped waiting, which a read that others still wait on doesn't stop: it goes no further.
+    /// What Azure DevOps, or the demo, has under a key, read a few requests at a time.
     private func read(_ key: ReadKey) async throws -> Read {
-        try Task.checkCancellation()
-        let task: Task<Read, Error>
-        if let kept = reads[key] {
-            task = kept
-        } else {
-            let (source, requests, pullRequest, limit) = (source, requests, pullRequest, fileLimit)
-            task = Task {
+        let (source, requests, pullRequest, limit) = (source, requests, pullRequest, fileLimit)
+        return try await read(key) {
+            Task {
                 try await requests.run {
                     switch key {
                     case .iterations: return .iterations(try await source.iterations(of: pullRequest))
@@ -529,10 +501,26 @@ public actor PullRequestCode {
                     case .object(let objectId): return .file(try await source.file(of: pullRequest, objectId: objectId, limit: limit))
                     case .file(let path, let commit):
                         return .file(try await source.file(of: pullRequest, path: path, commit: commit, limit: limit))
+                    // Comparisons aren't read: `compare` begins them itself.
+                    case .diff: throw CancellationError()
                     }
                 }
             }
+        }
+    }
+
+    /// What's under a key, which `start` begins when nothing is: made once, and kept, unless it failed in a way that
+    /// asking again might not. Nothing is begun for an ask that stopped waiting, and one that stops waiting on what others
+    /// still wait on goes no further; what no one waits on anymore is called off.
+    private func read(_ key: ReadKey, start: () -> Task<Read, Error>) async throws -> Read {
+        try Task.checkCancellation()
+        let task: Task<Read, Error>
+        if let kept = reads[key] {
+            task = kept
+        } else {
+            task = start()
             reads[key] = task
+            if case .diff = key { comparisonsMade += 1 }
         }
         lastAsk += 1
         let ask = lastAsk
@@ -554,9 +542,15 @@ public actor PullRequestCode {
         return read
     }
 
-    /// How many asks wait on a read, for tests.
+    /// How many asks wait on a read, and on comparisons, for tests.
     func waiting(_ key: ReadKey) -> Int {
         asks[key]?.count ?? 0
+    }
+
+    var waitingOnComparisons: Int {
+        asks.reduce(0) { total, ask in
+            if case .diff = ask.key { total + ask.value.count } else { total }
+        }
     }
 
     /// Notes that an ask doesn't wait on a read anymore: it's done, or it stopped waiting. False when that was noted
@@ -575,21 +569,33 @@ public actor PullRequestCode {
         forget(key)
     }
 
-    /// Notes a file's size, and forgets the files read first past the memory it may use.
+    /// Notes what's read: a file's size, forgetting the files read first past the memory it may use; or a comparison,
+    /// forgetting those made first past the few it keeps.
     private func keep(_ read: Read, under key: ReadKey, _ task: Task<Read, Error>) {
-        guard case .file(let text) = read, reads[key] == task, !files.contains(where: { $0.key == key }) else { return }
-        files.append((key, text.size))
-        var total = files.reduce(0) { $0 + $1.size }
-        while total > memoryLimit, files.count > 1 {
-            let oldest = files.removeFirst()
-            total -= oldest.size
-            reads[oldest.key] = nil
+        guard reads[key] == task else { return }
+        switch read {
+        case .file(let text):
+            guard !files.contains(where: { $0.key == key }) else { return }
+            files.append((key, text.size))
+            var total = files.reduce(0) { $0 + $1.size }
+            while total > memoryLimit, files.count > 1 {
+                let oldest = files.removeFirst()
+                total -= oldest.size
+                reads[oldest.key] = nil
+            }
+        case .diff:
+            guard !diffOrder.contains(key) else { return }
+            diffOrder.append(key)
+            while diffOrder.count > Self.keptComparisons { reads[diffOrder.removeFirst()] = nil }
+        case .iterations, .changes:
+            break
         }
     }
 
     private func forget(_ key: ReadKey) {
         reads[key] = nil
         files.removeAll { $0.key == key }
+        diffOrder.removeAll { $0 == key }
     }
 
     /// Takes the pull request as it was last read: after a push, or a move to another target branch, its iterations are
@@ -629,18 +635,15 @@ public actor PullRequestCode {
         case changes(iteration: Int, comparedTo: Int)
         case object(String)
         case file(String, commit: String)
+        /// Two versions of a file compared, by what each is read as: nil for a side without it.
+        indirect case diff(ReadKey?, ReadKey?)
     }
 
     enum Read: Sendable {
         case iterations([PRIteration])
         case changes(FileChanges)
         case file(FileText)
-    }
-
-    /// Two versions of a file compared: nil for a side without it.
-    struct DiffKey: Hashable {
-        var old: ReadKey?
-        var new: ReadKey?
+        case diff([DiffLine])
     }
 
     struct ExcerptKey: Hashable {

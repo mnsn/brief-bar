@@ -66,8 +66,13 @@ import Testing
         #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
             .paragraph([RichText.Run("Quality gate: passed", link: URL(string: "https://example.invalid/badge.png"))]),
         ])
+        // Its description as it's written, which isn't Markdown, but for its character references.
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Build [Linux] **failed** &amp; _x_\">").blocks == [
+            .paragraph([RichText.Run("Build [Linux] **failed** & _x_", link: URL(string: "https://example.invalid/b.png"))]),
+        ])
         // Only of a web page, and otherwise its description.
         #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
+        #expect(plain("<img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "Build [Linux] *1*")
         #expect(plain("<img src=data:image/png;base64,AAAA>") == "")
     }
 
@@ -91,6 +96,10 @@ import Testing
         // Indented with tabs, as with spaces.
         #expect(RichText(markdown: "\t<!--\n\tliteral code\n\t-->").blocks == [.code("<!--\nliteral code\n-->")])
         #expect(RichText(markdown: "    <!--\n    literal code\n    -->").blocks == [.code("<!--\nliteral code\n-->")])
+        // Code spans that HTML kept apart stay apart without it.
+        #expect(RichText(markdown: "`a`<!-- hidden -->`b` and `c`<b></b>`d`").blocks == [
+            .paragraph([RichText.Run("ab", style: .code), RichText.Run(" and "), RichText.Run("cd", style: .code)]),
+        ])
         // A backtick that nothing closes isn't code.
         #expect(plain("A lone ` and <b>bold</b>") == "A lone ` and bold")
     }
