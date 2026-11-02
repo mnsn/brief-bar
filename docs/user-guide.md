@@ -591,7 +591,7 @@ to the Copilot CLI, as turning agents on does, and is checked once it's there. F
 |---|---|
 | `needs_me` | What the menu bar counts, in each source: pull requests that need you, fail or are ready to complete, pinned pipelines that failed, Copilot sessions waiting for you |
 | `pull_requests` | Your pull requests by group, each with why it's there and its link |
-| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word |
+| `pull_request` | One pull request: votes, checks and where a build failed, conflicts, the pipelines after its merge, what's new, and its unresolved threads word for word; with **Send Work to Copilot** on, its session too: the Copilot session BriefBar sends its work to, and why |
 | `pull_request_prompt` | The prompt of **Fix Comments**, **Fix the Build**, **Resolve Conflicts**, **Pre-review** or **Push & Reply**, for the agent to follow where it works |
 | `pipelines` | Your pinned pipelines, and the ones after your merges |
 | `sprint` | Your team's sprint, or only your part of it |
@@ -622,11 +622,16 @@ agents off removes it; if Copilot can't, the page says so, with **Try Again**. I
 - **/briefbar** on its own, or "what needs me?", shows what the menu bar counts, in the app as an
   inbox you can search, sort and group, with each pull request's and pipeline's link, and a link to
   each Copilot session that waits for you. A source that's off in BriefBar is listed as off.
-- "Fix the comments on !4102", or its build, its conflicts or a review, starts a session of its own
-  in the app, in a worktree of your clone of that repository, which you can follow and steer. It asks
-  BriefBar for the prompt of the same Copilot action, and does what it allows: it changes files there,
-  resolving conflicts commits the merge, and only **Push & Reply**, sent to that same session, pushes
-  and replies as you. In the Copilot CLI, the work happens where you are.
+- "Fix the comments on !4102", or its build, its conflicts or a review, goes to a session in the app
+  that you can follow and steer. With **Send Work to Copilot** on, BriefBar names the pull request's
+  session, the one its Send to Copilot window would send the work to, such as the one on its branch or
+  that opened it, and you choose: that session, or a new one, in a worktree of your clone of that
+  repository. Asked in that very session, it can also fork it, so the work goes another way while the
+  session stays as it is; for another session, **Send to a Fork** is in BriefBar's Send to Copilot
+  window. It asks unless you've said which, and never does both. The session asks BriefBar for the
+  prompt of the same Copilot action, and does what it allows: it changes files there, resolving
+  conflicts commits the merge, and only **Push & Reply**, sent to that same session, pushes and replies
+  as you. In the Copilot CLI, the work happens where you are.
 - **/briefbar 5101**, or "how's 5101 going?", answers in four short lines, with their links: where the
   work item stands and what you can do now, what's done, by people and by Copilot, what's left and who
   has it, and who it waits on. Then it offers a next step, and starts nothing until you say so.

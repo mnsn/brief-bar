@@ -24,7 +24,8 @@ import Testing
     static let appVocabulary: Set<String> = [
         "briefbar", "render_widget", "discover_widgets", "inbox", "list_repositories", "add_repository", "create_session",
         "project_id", "workspace_type", "worktree", "name", "kickoff", "mode", "interactive", "autopilot", "plan", "prompt",
-        "coordinate_with_creator", "notify_on_idle", "once", "send_session_message", "list_sessions_and_chats", "navigate_to",
+        "coordinate_with_creator", "notify_on_idle", "once", "send_session_message", "fork_session", "list_sessions_and_chats",
+        "navigate_to",
     ]
 
     static func object(_ url: URL) throws -> [String: Any] {
@@ -97,6 +98,11 @@ import Testing
         #expect(fields["name"] == "briefbar")
         let description = try #require(fields["description"])
         #expect(!description.isEmpty && description.count <= 1024)
+        // Plain YAML scalars: a colon followed by a space, or a space followed by #, would end them, and the skill
+        // wouldn't load.
+        for (field, value) in fields {
+            #expect(!value.contains(": ") && !value.contains(" #"), "The skill's \(field) isn't a plain YAML scalar")
+        }
     }
 
     /// The skill's points, each a line starting with "- " and the indented lines right after it.
@@ -135,12 +141,35 @@ import Testing
         )
         #expect(check.contains("refuses") && check.contains("start nothing"))
         let checked = try #require(section.range(of: "call `pull_request` with it"))
-        for tool in ["`create_session`", "`send_session_message`", "`list_repositories`"] {
+        for tool in ["`create_session`", "`send_session_message`", "`fork_session`", "`list_repositories`"] {
             let first = try #require(section.range(of: tool), "\(tool) isn't in the section")
             #expect(
                 checked.lowerBound < first.lowerBound, "The skill reaches \(tool) before it checks the pull request"
             )
         }
+    }
+
+    /// The session `pull_request` names for a pull request is one place its work can go, beside a new session, and a fork
+    /// of it when the agent talks in it: the agent asks unless the user said which, and does only that one. Wherever the
+    /// work goes, its prompt is the same.
+    @Test func skillOffersThePullRequestsSession() throws {
+        let text = try String(contentsOf: Self.skill, encoding: .utf8)
+        let section = try #require(Self.section("Working on a pull request", in: text))
+        let choice = try #require(
+            section.components(separatedBy: "\n\n").first { $0.contains("When `pull_request` names one of the Copilot app's sessions") },
+            "The skill doesn't offer the session BriefBar names"
+        )
+        #expect(choice.contains("otherwise ask") && choice.contains("never both"))
+        let points = Self.points(in: section)
+        let its = try #require(points.first { $0.hasPrefix("**Its session.**") })
+        #expect(its.contains("`send_session_message`") && its.contains("session ID"))
+        // An agent's fork_session forks the session it talks in, and nothing else.
+        let fork = try #require(points.first { $0.hasPrefix("**A fork of it.**") })
+        #expect(fork.contains("`fork_session` forks only the session you're talking in"))
+        #expect(fork.contains("`send_session_message`") && fork.contains("**Send to a Fork**"))
+        let new = try #require(points.first { $0.hasPrefix("**A new session**") })
+        #expect(new.contains("`create_session`") && new.contains("the prompt above"))
+        #expect(section.components(separatedBy: "> Work on Azure DevOps pull request !NUMBER, LINK").count == 2)
     }
 
     /// When agents are off or paused, no tool of BriefBar's answers, so the agent stops. When only a source is off,

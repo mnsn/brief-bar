@@ -155,7 +155,7 @@ Enable agent access in **Settings › Agents**, then install the **Copilot plugi
 |---|---|
 | `/briefbar` | What needs you across Azure DevOps and Copilot; in the Copilot app, an inbox you can search, sort and group. |
 | `/briefbar 5101` | Where the work item stands, what's done, what's left and who it waits on. |
-| “Fix the comments on !4102” | In the Copilot app, a session of its own for the work, which you can follow and steer. |
+| “Fix the comments on !4102” | In the Copilot app, the pull request's own session, a fork of it or a new one, which you can follow and steer. |
 
 Turn on **Send Prompts to Copilot Sessions** there too, and Send to Copilot can send its prompt to one
 of the app's sessions itself, or to a fork of it, rather than copy it for you to paste. It's off by

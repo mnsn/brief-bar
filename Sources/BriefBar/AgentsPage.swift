@@ -596,9 +596,10 @@ struct AgentsDescriptionBox: View {
         DescriptionBox(entries: [
             .init(title: "What agents get", symbol: "text.bubble", text: """
                 What needs you, from the sources that are on: your pull requests, one at a time with its comment threads \
-                word for word, your pipelines and sprint, a work item with its description, latest comments, the pull \
-                requests linked to it and the Copilot sessions on those, with what Copilot recorded of their work, the work \
-                BriefBar sent to Copilot, and your Copilot sessions. Never your Teams chats or your pull requests on GitHub.
+                word for word and, with Send Work to Copilot on, the Copilot session BriefBar sends its work to, your \
+                pipelines and sprint, a work item with its description, latest comments, the pull requests linked to it and \
+                the Copilot sessions on those, with what Copilot recorded of their work, the work BriefBar sent to Copilot, \
+                and your Copilot sessions. Never your Teams chats or your pull requests on GitHub.
                 """),
             .init(title: "Where it goes", symbol: "network", text: """
                 To the agent that asks, and its model, which may run in the cloud. Titles, comments and Copilot's notes \
