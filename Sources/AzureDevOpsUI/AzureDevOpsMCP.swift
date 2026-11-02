@@ -301,7 +301,8 @@ actor AzureDevOpsReader {
             let log = await monitor.log(id: run.id, events: run.events(in: home))
             let isRunning = run.ended == nil && DetachedProgram.isRunning(run.process)
             var status = RunStatus.derive(
-                log: log, isRunning: isRunning, exitStatus: nil, stoppedByYou: run.stoppedByYou == true, output: nil
+                log: log, startedAt: run.launchedAt, isRunning: isRunning, exitStatus: nil,
+                stoppedByYou: run.stoppedByYou == true, output: nil
             )
             if let ended = run.ended { status.phase = ended }
             entries.append(CopilotTaskEntry(
@@ -338,8 +339,10 @@ actor AzureDevOpsReader {
                 // Turned off meanwhile, nothing more of Copilot's is read.
                 guard sendsToCopilot else { return nil }
                 let (events, output) = (run.events(in: home), run.output(in: CopilotTasksStore.outputFolder))
+                let launchedAt = run.launchedAt
                 run.pullRequest = await Task.detached {
-                    RunTranscript.openedPullRequest(events: events, printed: nil) ?? LocalFile.tail(of: output, maxBytes: 8_192)
+                    RunTranscript.openedPullRequest(events: events, printed: nil, since: launchedAt)
+                        ?? LocalFile.tail(of: output, maxBytes: 8_192)
                         .flatMap { RunTranscript.pullRequest(in: String(decoding: $0, as: UTF8.self)) }
                 }.value
             }

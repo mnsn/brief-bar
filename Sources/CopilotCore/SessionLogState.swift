@@ -44,6 +44,9 @@ public enum LogActivity: Sendable, Equatable {
 public struct SessionLogState: Sendable, Equatable {
     public private(set) var phase: LogPhase = .unknown
     public private(set) var phaseSince: Date?
+    /// When an event last put it in its phase, even the one it was in already, as an error after an error does: later than
+    /// `phaseSince` then.
+    public private(set) var phaseSetAt: Date?
     public private(set) var lastEventAt: Date?
     public private(set) var errorMessage: String?
     public private(set) var summary: String?
@@ -196,6 +199,7 @@ public struct SessionLogState: Sendable, Equatable {
         } else if phaseSince == nil {
             phaseSince = date
         }
+        phaseSetAt = date
     }
 
     private mutating func finish(at date: Date?) {
