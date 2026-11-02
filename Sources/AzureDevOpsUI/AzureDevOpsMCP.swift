@@ -40,17 +40,20 @@ actor AzureDevOpsReader {
     private var pipelinesLoad: (pinned: [PipelineRef], task: Task<PipelinesSnapshot, Never>)?
     private var sprintRead: (at: Date, configuration: SprintEngine.Configuration, snapshot: SprintSnapshot)?
     private var sprintLoad: (configuration: SprintEngine.Configuration, task: Task<SprintSnapshot, Never>)?
+    /// Where the Copilot app keeps its files, in tests; `AppSessions.home()` otherwise.
+    private let appHome: URL?
     /// Tells the app its settings changed.
     private let announce: @Sendable () -> Void
 
     init(
-        demo: Bool, organizations: [String], defaults: UserDefaults, client: ADOClient? = nil,
+        demo: Bool, organizations: [String], defaults: UserDefaults, client: ADOClient? = nil, appHome: URL? = nil,
         announce: @escaping @Sendable () -> Void = AgentChanges.post
     ) {
         self.demo = demo
         named = organizations
         self.defaults = defaults
         self.client = demo ? nil : client ?? ADOClient(tokens: AzureCLITokenProvider())
+        self.appHome = appHome
         self.announce = announce
     }
 
@@ -290,6 +293,60 @@ actor AzureDevOpsReader {
         return entries.sorted { $0.startedAt > $1.startedAt }
     }
 
+    // MARK: The session a pull request's work goes to
+
+    /// The Copilot session BriefBar sends an open pull request's work to unless you choose another, as Send to Copilot
+    /// suggests it (`CopilotTasksStore.suggestedSession`): only while Send Work to Copilot is on, which is when its window
+    /// reads sessions, and never in the demo, whose window reads none. Nil when there's none.
+    /// - Parameter tasks: the tasks sent to Copilot, as `copilotTasks` found them.
+    func session(for record: PRRecord, tasks: [CopilotTaskEntry], now: Date = Date()) async -> SessionChoice? {
+        guard !demo, record.pullRequest.status == .active, defaults.bool(forKey: SettingsKey.copilotEnabled) else { return nil }
+        // Each as it stands: one whose log says it ended has, though the app may not have heard yet.
+        let runs = tasks.compactMap { task -> CopilotRun? in
+            guard var run = task.run else { return nil }
+            if run.ended == nil, !task.status.phase.isActive { run.ended = task.status.phase }
+            return run
+        }
+        return await Self.suggestedSession(
+            for: PullRequestTasks.task(for: record), createdAt: record.pullRequest.createdAt, runs: runs,
+            links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome
+        )
+    }
+
+    /// The links you made in Show Links, while it's on, as it keeps them in the app's settings. The ones Copilot records and
+    /// those by branch, the app's database says (`CopilotTasksStore.reasons`).
+    private func yourLinks(now: Date) -> LinkGraph {
+        guard defaults.bool(forKey: Links.enabledKey) else { return LinkGraph() }
+        var edits = LinkEdits.load(from: defaults)
+        edits.forget(before: now.addingTimeInterval(-LinkEdits.lifetime))
+        return LinkGraph(edits: edits)
+    }
+
+    /// The session, as the window's store finds it, with a store of its own that reads as the app's does: over these tasks,
+    /// in memory, so nothing it does is saved; with the environment `--mcp` started with, rather than your login shell's,
+    /// which it would have to run; and with the links you made. It starts and follows nothing.
+    @MainActor
+    private static func suggestedSession(
+        for pullRequest: TaskPullRequest, createdAt: Date?, runs: [CopilotRun], links: LinkGraph, workItems: [Int: String],
+        appHome: URL?
+    ) async -> SessionChoice? {
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        settings.copilotRuns = runs
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        store.appHomeForTests = appHome
+        // The Copilot CLI's files are where the test put the app's.
+        store.useEnvironment(appHome.map { ["COPILOT_HOME": $0.path] } ?? Attribution.environment)
+        store.title = { workItems[$0.id] }
+        store.pullRequestTitle = { $0.matches(organization: pullRequest.organization, id: pullRequest.id) ? pullRequest.title : nil }
+        store.linkedSessions = { ref in
+            links.visibleConnections(of: ref).filter { $0.item.kind == .session }.map {
+                LinkedSession(id: $0.item.id, origins: $0.origins, isThrough: $0.via != nil)
+            }
+        }
+        return await store.suggestedSession(for: pullRequest, createdAt: createdAt)
+    }
+
     // MARK: A work item
 
     /// A work item, as the `work_item` tool tells it: its details, where it is in the sprint, and the pull requests it
@@ -409,7 +466,8 @@ struct AzureDevOpsAgent: Sendable {
                     One pull request in detail, by its number or link: where it stands in BriefBar, its branches, \
                     reviewers' votes, checks and where a failed build failed, merge conflicts, the pipelines after its \
                     merge, what's new for the user and what they've seen that still waits on them, its unresolved \
-                    comment threads word for word with their files and lines, and what Copilot can do with it.
+                    comment threads word for word with their files and lines, what Copilot can do with it, and, while \
+                    Send Work to Copilot is on, its session: the Copilot session BriefBar sends its work to.
                     """,
                 inputSchema: MCPSchema.object([
                     "pull_request": MCPSchema.string("Its number, such as 4088, or its link"),
@@ -572,8 +630,12 @@ struct AzureDevOpsAgent: Sendable {
         let read = await reader.pullRequests(now: now)
         let record = try Self.find(reference, in: read)
         let item = read.items.first { $0.key == record.id }
-        let tasks = await reader.sendsToCopilot ? await reader.copilotTasks(now: now).filter { $0.isOn(record.id) } : []
-        return AgentText.details(record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: tasks, now: now)
+        let sent = await reader.sendsToCopilot ? await reader.copilotTasks(now: now) : []
+        let session = await reader.session(for: record, tasks: sent, now: now)
+        return AgentText.details(
+            record, item: item, actions: PullRequestTasks.actions(for: record, canShip: false), tasks: sent.filter { $0.isOn(record.id) },
+            session: session, now: now
+        )
     }
 
     func prompt(_ reference: JSONValue?, action name: JSONValue?, now: Date = Date()) async throws -> String {
@@ -862,7 +924,11 @@ enum AgentText {
     }
 
     /// One pull request, for the `pull_request` tool.
-    static func details(_ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], now: Date) -> String {
+    /// - Parameter session: the session BriefBar sends its work to unless you choose another, if there's one.
+    static func details(
+        _ record: PRRecord, item: PRSnapshot?, actions: [PullRequestAction], tasks: [CopilotTaskEntry], session: SessionChoice? = nil,
+        now: Date
+    ) -> String {
         let pr = record.pullRequest
         var lines = ["# !\(pr.key.number) “\(pr.title)”", pr.webURL.absoluteString, ""]
         lines.append("- \(pr.repositoryName), in \(pr.projectName) (\(pr.key.organization)), from \(pr.sourceBranch) into \(pr.targetBranch)")
@@ -930,10 +996,39 @@ enum AgentText {
             copilot.append("Once you've changed it, push_and_reply's prompt pushes the changes and answers its threads.")
         }
         lines.append(copilot.isEmpty ? "Nothing for Copilot to do with it now." : copilot.joined(separator: " "))
+        if let session { lines.append(Self.session(session, now: now)) }
         for task in tasks {
             lines.append(Self.task(task, titles: [:], workItems: [:], now: now))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The session BriefBar sends a pull request's work to unless you choose another (`CopilotTasksStore.suggestedSession`),
+    /// for `pull_request`: its name, where it is and why; then where it works, and its ID. One of the Copilot app's
+    /// sessions, or a task BriefBar runs with the Copilot CLI, which the app doesn't have unless you opened it there.
+    static func session(_ choice: SessionChoice, now: Date) -> String {
+        var why: String
+        var facts: [String] = []
+        switch choice.kind {
+        case .task(let run):
+            why = choice.reasons.contains(.openedIt) ? "the session of the work item's task that opened it" : "the session of its last task"
+            facts.append("worktree \(run.worktree.path)")
+        case .app(let session):
+            if choice.reasons == [.mentionsIt] {
+                why = "which has a link to it and was there before it was created: it likely opened it"
+            } else {
+                why = names(choice.reasons.map(\.phrase))
+            }
+            if let place = choice.place { facts.append(place) }
+            if session.isRunning { facts.append("working now") }
+            let active = ago(choice.lastActive, now: now)
+            if !active.isEmpty { facts.append("active \(active)") }
+        }
+        let place = choice.opensInApp ? "in the Copilot app" : "which BriefBar runs with the Copilot CLI and the Copilot app doesn't have"
+        let parts = choice.appSession != nil ? [place, why] : [why, place]
+        facts.append("session \(choice.id)")
+        return "Its session, where BriefBar sends its work unless you choose another: “\(choice.name)”, "
+            + parts.filter { !$0.isEmpty }.joined(separator: ", ") + ".\n  " + facts.joined(separator: " · ")
     }
 
     static func vote(_ vote: Vote) -> String {

@@ -176,7 +176,7 @@ package struct LinkConnection: Identifiable {
 /// shows nothing then, while the sources read nothing more for it.
 @MainActor
 package final class Links: ObservableObject {
-    package static let enabledKey = "links.enabled"
+    package nonisolated static let enabledKey = "links.enabled"
 
     /// Show Links. Sources read what links need only while it's on.
     @Published package private(set) var isOn: Bool
