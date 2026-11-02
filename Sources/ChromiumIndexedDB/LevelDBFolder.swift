@@ -89,7 +89,7 @@ public struct LevelDBFolder: Sendable {
                 read.unreadable[name] = .unsupported("file")
             }
         }
-        var tableNames = names.sorted().filter { $0.hasSuffix(".ldb") || $0.hasSuffix(".sst") }
+        var tableNames = names.sorted().filter(Self.isTable)
         var logs = names.compactMap { name -> (number: UInt64, name: String)? in
             guard name.hasSuffix(".log"), let number = Self.number(name) else { return nil }
             return (number, name)
@@ -150,7 +150,7 @@ public struct LevelDBFolder: Sendable {
             file = try LevelDBManifest.name(current: current)
             let (manifest, _) = try Self.contents(of: url.appendingPathComponent(file))
             let version = try LevelDBManifest.parse(manifest)
-            let tables = names.filter { $0.hasSuffix(".ldb") || $0.hasSuffix(".sst") }.compactMap(Self.number)
+            let tables = names.filter(Self.isTable).compactMap(Self.number)
             if version.tables.isSubset(of: tables) { return (version, false) }
             if !isLastAttempt { return (version, true) }
             read.unreadable[file] = .corrupt("manifest")
@@ -163,6 +163,11 @@ public struct LevelDBFolder: Sendable {
             read.unreadable[file] = .unsupported("file")
         }
         return (nil, false)
+    }
+
+    /// Whether the file named `name`, or at that path, is one of LevelDB's tables.
+    public static func isTable(_ name: String) -> Bool {
+        name.hasSuffix(".ldb") || name.hasSuffix(".sst")
     }
 
     /// The number LevelDB named a table or a log with, as `000005.ldb`; nil for a name without one.

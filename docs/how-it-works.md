@@ -1011,7 +1011,9 @@ All three formats are undocumented, so every read is checked:
   damaged, with others after it, they say some couldn't be read. A table LevelDB is still writing isn't in
   its MANIFEST yet, so isn't read; one that can't be read counts only after it has stayed unchanged
   and unreadable for at least 5 s, since without the MANIFEST, LevelDB writes a table where it'll
-  stay, and one being written reads as broken until it's done. Each read rechecks those table paths,
+  stay, and one being written reads as broken until it's done. The MANIFEST, `CURRENT` or a log that
+  can't be read counts after 5 s too, though Teams appends to it meanwhile: that doesn't make it
+  readable. Each read rechecks those table paths,
   so finishing or removing one clears its warning even if the current log hasn't changed. Neither
   keeps the lists from showing: chats you read in Teams then stay
   unread until another rule reads them. Lengths, nesting, blocks' keys and sparse arrays are checked
