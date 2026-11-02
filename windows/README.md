@@ -515,6 +515,10 @@ SDK ships inside the app.
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
   this PC, in counts). Teams' taskbar badge doesn't count chats marked unread.
+- **Teams' chat records and its message cache each learn of a deleted message on their own**: a chat's record says its
+  newest message was deleted (`deletionInfo`, as a cached message does), and the cache says it of the messages it has,
+  and either can be first. BriefBar takes a deletion from either copy (`ChatReading.Known`), so it neither counts nor
+  shows a deleted message while the other copy catches up.
 - **A chat never opened in Teams has no read marker, but has its field**: `consumptionhorizon` is `0;…` for it
   (checked on this PC, in counts). So BriefBar takes Teams' data as changed, as after an update that renames the
   field, only when no conversation has the field in that form, not when no chat has a read marker, as the Mac does:
