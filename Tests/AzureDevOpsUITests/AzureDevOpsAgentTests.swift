@@ -73,6 +73,8 @@ import Testing
         #expect(text.contains("  - shop-web CI: failed, at Test › Run unit tests: 2 tests failed in DeliveryEstimateTests."))
         #expect(text.contains("pull_request_prompt has the prompt to: fix_build. Once you've changed it, push_and_reply's prompt"))
         #expect(text.contains("- Fix the Build on !4088 in shop-web: working"))
+        // The demo's window reads no sessions, so neither does the demo's pull_request.
+        #expect(!text.contains("Its session"))
 
         // By its link, and with its comment threads, word for word. You've opened it since Sam replied: his reply still
         // waits on you, but isn't new.
