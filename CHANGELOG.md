@@ -31,6 +31,9 @@
 - **A Teams account whose chats were never opened no longer says Teams' read markers have changed.** None
   of its chats had a read marker yet, which BriefBar took for a Teams update that changed them. It now goes
   by the field that holds one, which a chat never read has too.
+- **A damaged record in Teams' data says some read markers couldn't be read.** A record whose checksum
+  doesn't match may have held any chat's read marker, and the lists said nothing of it, so a chat you'd
+  read in Teams could stay unread here without a word.
 
 ## 0.10.2 - 2026-11-01
 

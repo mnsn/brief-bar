@@ -137,7 +137,7 @@ public struct ReadMarkerReport: Sendable, Equatable {
         if folders > 0, stores == 0 { return .readMarkersChanged }
         // Chats never opened, as on a new account, have no read marker, but have the field that holds one.
         if total > 0, withHorizon == 0 { return .readMarkersChanged }
-        if unreadableCount * 4 > total || unreadableFiles > 0 { return .readMarkersPartlyUnreadable }
+        if unreadableCount * 4 > total || unreadableFiles > 0 || corruptLogRecords > 0 { return .readMarkersPartlyUnreadable }
         return nil
     }
 
