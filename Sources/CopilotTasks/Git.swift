@@ -111,6 +111,28 @@ public struct Git: Sendable {
         _ = try await run(["-C", repository.root.path, "worktree", "add", "--detach", path.path, "origin/\(branch)"], timeout: 900)
     }
 
+    /// A new worktree at `path`, detached at a commit, such as the one a session's checkout has (`head(of:in:)`).
+    public func addWorktree(of repository: GitRepository, at path: URL, commit: String) async throws {
+        guard Self.isCommit(commit) else { throw GitError.failed("“\(commit)” isn't a commit's ID.") }
+        _ = try await run(["-C", repository.root.path, "worktree", "add", "--detach", path.path, commit], timeout: 900)
+    }
+
+    /// The commit a folder's checkout has checked out, when the repository has it too, as each of its worktrees' does:
+    /// where a fork of the session that works there starts. Nil when the folder isn't in a checkout, or its commit isn't in
+    /// the repository, as a local commit of another clone isn't.
+    public func head(of folder: URL, in repository: GitRepository) async -> String? {
+        guard let commit = try? await run(["-C", folder.path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], timeout: 30),
+              Self.isCommit(commit),
+              (try? await run(["-C", repository.root.path, "cat-file", "-e", "\(commit)^{commit}"], timeout: 30)) != nil
+        else { return nil }
+        return commit
+    }
+
+    /// A commit's full ID, as git writes it: 40 hexadecimal digits, or 64 in a SHA-256 repository.
+    static func isCommit(_ text: String) -> Bool {
+        (text.count == 40 || text.count == 64) && text.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+    }
+
     /// A branch's name as a pull request reports it: nothing git would read as an option or a range.
     static func isBranchName(_ name: String) -> Bool {
         !name.isEmpty && !name.hasPrefix("-") && !name.contains("..") && !name.contains(where: { $0.isWhitespace || $0 == ":" })

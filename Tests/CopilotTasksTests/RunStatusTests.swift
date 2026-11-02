@@ -67,6 +67,52 @@ import Testing
                 .detail == "Copilot ended before it started working.")
     }
 
+    /// Going on with a session, or forking one, the log has that session's history too: how it stood before this run
+    /// started isn't how this run went.
+    @Test func readsNothingTheLogSaidBeforeItStarted() {
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        let done = log([Line.userMessage(), Line.taskComplete("Capped the retries", at: 30)])
+        // Gone before it wrote anything, as when the CLI refuses its options.
+        let refused = RunStatus.derive(
+            log: done, startedAt: startedAt, isRunning: false, exitStatus: 1, stoppedByYou: false,
+            output: "error: unknown option '--autopilot'\n"
+        )
+        #expect(refused == RunStatus(phase: .failed, detail: "error: unknown option '--autopilot'"))
+        // While it runs, the session's step from before isn't its own.
+        #expect(RunStatus.derive(log: working, startedAt: startedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil)
+                == RunStatus(phase: .working))
+        // What it wrote itself counts.
+        let goneOn = log([
+            Line.userMessage(), Line.taskComplete("Capped the retries", at: 30), Line.event("session.resume", at: 61),
+            Line.userMessage("Try it with a cap", at: 62), Line.taskComplete("Tried it", at: 90),
+        ])
+        let finished = RunStatus.derive(log: goneOn, startedAt: startedAt, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil)
+        #expect(finished.phase == .finished && finished.detail == "Tried it")
+        // With no start to go by, the whole log counts.
+        #expect(RunStatus.derive(log: done, isRunning: false, exitStatus: 1, stoppedByYou: false, output: nil).phase == .finished)
+    }
+
+    /// Put back in the phase the session's history left, as with an error after the session's error, it says its own,
+    /// and since when.
+    @Test func saysItsOwnErrorAfterTheSessionsError() {
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        let failedAgain = log([
+            Line.userMessage(), Line.event("session.error", data: ["errorType": "quota", "message": "Out of credits"], at: 9),
+            Line.event("session.resume", at: 61),
+            Line.event("session.error", data: ["errorType": "authentication", "message": "Not signed in"], at: 62),
+        ])
+        #expect((failedAgain.phaseSince ?? .distantFuture) < startedAt)
+        let failed = RunStatus.derive(log: failedAgain, startedAt: startedAt, isRunning: false, exitStatus: 1, stoppedByYou: false, output: nil)
+        #expect(failed == RunStatus(phase: .failed, since: failedAgain.phaseSetAt, detail: "Not signed in"))
+        #expect((failed.since ?? .distantPast) > startedAt)
+        let abortedAgain = log([
+            Line.userMessage(), Line.event("abort", data: ["reason": "user"], at: 9),
+            Line.event("session.resume", at: 61), Line.event("abort", data: ["reason": "user"], at: 62),
+        ])
+        #expect(RunStatus.derive(log: abortedAgain, startedAt: startedAt, isRunning: false, exitStatus: nil, stoppedByYou: false, output: nil)
+                == RunStatus(phase: .stopped, since: abortedAgain.phaseSetAt))
+    }
+
     /// The CLI follows an option it refuses with its usage and a hint, which say nothing of why.
     @Test func saysTheCLIsErrorRatherThanItsHint() {
         let output = """
@@ -164,6 +210,28 @@ import Testing
         #expect(words.message == "Done: pull request 77 is ready for review.")
         let missing = RunTranscript.lastWords(events: folder.appendingPathComponent("missing.jsonl"))
         #expect(missing.summary == nil && missing.message == nil)
+    }
+
+    /// Going on with a session, or forking one, the log has that session's history too: a link it gave before the run
+    /// started isn't to the pull request the run opened; one the run gave, or printed, is.
+    @Test func findsOnlyThePullRequestTheRunsOwnWordsName() throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let events = folder.appendingPathComponent("events.jsonl")
+        let link = { (id: Int) in "https://dev.azure.com/contoso/Storefront/_git/web/pullrequest/\(id)" }
+        let history = [Line.userMessage(), Line.taskComplete("Opened \(link(77))", at: 20), Line.message("It's \(link(77))", at: 21)]
+        try (history.joined(separator: "\n") + "\n").write(to: events, atomically: true, encoding: .utf8)
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        // With no start to go by, the whole log counts.
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil)?.absoluteString == link(77))
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil, since: startedAt) == nil)
+        #expect(RunTranscript.openedPullRequest(events: events, printed: "Opened \(link(78))\n", since: startedAt)?.absoluteString == link(78))
+        let own = [Line.event("session.resume", at: 61), Line.userMessage("Try it with a cap", at: 62), Line.message("It's \(link(79))", at: 90)]
+        let handle = try FileHandle(forWritingTo: events)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((own.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil, since: startedAt)?.absoluteString == link(79))
     }
 
     @Test func followsARunsLogAsItGrows() async throws {
