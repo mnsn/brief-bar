@@ -277,8 +277,8 @@ private final class ExtensionStandIn: Sendable {
         }
         try hold(session, home: home)
         try hold(fork, home: home)
-        // Made as the request was, after the session itself, and after an older fork of it.
-        let made = Date().addingTimeInterval(2).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        // Made after the request, however long this Mac takes to write it, and after an older fork of the session.
+        let made = Date().addingTimeInterval(600).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
         let older = "c6666666-6666-4666-8666-66666666666d"
         try database(at: home, forks: [(fork, session, made), (older, session, "2026-10-27T10:01:00.000Z")])
 
