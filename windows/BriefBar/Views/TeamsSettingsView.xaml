@@ -1,0 +1,42 @@
+<UserControl
+    x:Class="BriefBar.Views.TeamsSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Teams' own settings, as the Mac's gear menu and Settings page offer them, each a card. -->
+    <StackPanel Spacing="4">
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Keep unread for" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="How long a message you haven't read in Teams, or marked read here, stays unread in BriefBar. Chats you read in Teams are read here too." />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="160"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Keep unread for"
+                ItemsSource="{x:Bind ViewModel.KeepUnreadTitles}"
+                SelectedIndex="{x:Bind ViewModel.KeepUnreadIndex, Mode=TwoWay}" />
+        </Grid>
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Show message previews" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Show each chat's newest message under its name, and in the brief. Off, a chat says only how many messages are unread." />
+            </StackPanel>
+            <ToggleSwitch
+                Grid.Column="1"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Show message previews"
+                IsOn="{x:Bind ViewModel.ShowMessagePreviews, Mode=TwoWay}" />
+        </Grid>
+    </StackPanel>
+</UserControl>
