@@ -6,6 +6,19 @@ extension PullRequestAction {
     /// It takes care of the comments that wait on you: sending it takes them off Needs You. Fix Comments addresses them,
     /// and Push & Reply answers them.
     var takesCareOfComments: Bool { self == .fixComments || self == .pushAndReply }
+
+    /// Whether, while it works, it's Copilot's turn at something that's left of a pull request rather than yours: Fix
+    /// Comments at its comments, Fix the Build at its builds, Resolve Conflicts at its conflicts, and Push & Reply, which
+    /// ships what one of those changed, at any of them.
+    func takesCare(of kind: PRReadiness.Item.Kind) -> Bool {
+        switch self {
+        case .fixComments: kind == .comments
+        case .fixBuild: kind == .builds
+        case .resolveConflicts: kind == .conflicts
+        case .pushAndReply: kind == .comments || kind == .builds || kind == .conflicts
+        case .review: false
+        }
+    }
 }
 
 /// What Copilot can do with a pull request, and the prompt that asks it to: for the pull requests' rows, and for agents

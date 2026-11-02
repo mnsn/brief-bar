@@ -30,6 +30,9 @@ final class PRStore: ObservableObject {
     @Published private(set) var hasLoaded = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
+    /// Each refresh, once its pull requests are listed: what was read of one can change without its row, such as an
+    /// optional build that passed. `refreshedAt` changes before they're listed.
+    let refreshed = PassthroughSubject<Void, Never>()
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
     /// The pipelines after your merges, the newest merge first.
@@ -463,7 +466,8 @@ final class PRStore: ObservableObject {
         AzureDevOps.open(url)
     }
 
-    private func markSeen(_ item: PRSnapshot) {
+    /// Sees a pull request, as opening it does: what needs you there now is no longer new.
+    func markSeen(_ item: PRSnapshot) {
         settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 
@@ -611,6 +615,7 @@ final class PRStore: ObservableObject {
         // Watched pull requests that closed, or that you can't read anymore, aren't watched anymore.
         if mode == .live { settings.unwatch(snapshot.closedLinks) }
         recompute(announce: true)
+        refreshed.send()
     }
 
     private func recompute(announce: Bool = false) {
@@ -733,6 +738,27 @@ final class PRStore: ObservableObject {
     func record(for key: PRKey) -> PRRecord? {
         guard let record = state.records.first(where: { $0.id == key }) else { return nil }
         return settings.watchedKeys.contains(key) ? record.watched() : record
+    }
+
+    /// When you last looked at a pull request, as far as BriefBar remembers.
+    func seenCutoff(for key: PRKey) -> Date {
+        settings.seenCutoff(for: key)
+    }
+
+    /// Up to when what waited on you in a pull request doesn't anymore: when you last removed it from Needs You, or sent
+    /// its comments to Copilot.
+    func dismissedCutoff(for key: PRKey) -> Date {
+        settings.dismissedCutoff(for: key)
+    }
+
+    /// A pull request as the list would have it had you last looked at it at `seenCutoff`, the rest as it is now: what
+    /// was new then, and what waited on you, but not what you've answered, removed from Needs You or sent to Copilot
+    /// since.
+    func snapshot(of record: PRRecord, seenAt seenCutoff: Date) -> PRSnapshot? {
+        PRClassifier.snapshot(
+            for: record, seenCutoff: seenCutoff, dismissedCutoff: settings.dismissedCutoff(for: record.id),
+            now: now, options: settings.classifierOptions
+        )
     }
 
     /// What Copilot can do with a pull request now (`PullRequestTasks.actions`): Push & Reply once a task that changed
