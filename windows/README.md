@@ -268,7 +268,7 @@ Where Windows differs, these were decided:
 | Folder | What it holds |
 |---|---|
 | `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`), waiting as long as they ask (`RetryAfter`, `RateLimitGate`) and refusing to be sent elsewhere (`Redirects`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
-| `BriefBar.Core/ChromiumIndexedDB/` | Chromium's IndexedDB, read-only and without its lock, ported from `Sources/ChromiumIndexedDB` with the Swift names: LevelDB's logs and tables (`LevelDBLog`, `LevelDBTable`, `LevelDBFolder`), IndexedDB's keys and catalog (`IndexedDBKey`, `IDBKey`, `IndexedDBCatalog`, `IndexedDBFolder`) and V8's serialized values (`SerializedValue`, `V8Deserializer`). It holds no file open between reads, and reads a range of keys from only the table blocks that may hold them, as Teams' message cache needs |
+| `BriefBar.Core/ChromiumIndexedDB/` | Chromium's IndexedDB, read-only and without its lock, ported from `Sources/ChromiumIndexedDB` with the Swift names: LevelDB's logs, tables and MANIFEST (`LevelDBLog`, `LevelDBTable`, `LevelDBManifest`, `LevelDBFolder`), IndexedDB's keys and catalog (`IndexedDBKey`, `IDBKey`, `IndexedDBCatalog`, `IndexedDBFolder`) and V8's serialized values (`SerializedValue`, `V8Deserializer`). It reads only the tables and logs the MANIFEST lists, holds no file open between reads, and reads a range of keys from only the table blocks that may hold them, as Teams' message cache needs |
 | `BriefBar.Core/Teams/` | Microsoft Teams chats, from Teams' own data: where it is and reading it as Teams writes it (`TeamsCacheLocation`, `TeamsCacheFolder`, `TeamsRecords`, `TeamsEngine`), which messages are unread (`ChatReading`), the lists and their rows (`TeamsStore`, `TeamsRows`, `ChatBrief`), the chats you mark read (`TeamsReadMarks`), its settings (`TeamsSettings`) and the source (`TeamsSource`), with the Mac's names where they mean the same (`ReadMarker`, `DeepLink`, `ConversationSummary`, `TeamsDataReport`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
@@ -487,8 +487,9 @@ SDK ships inside the app.
   database has only its taskbar badge for it, and BriefBar reads Teams' own data instead ([above](#choices-for-windows)).
 - **Teams holds its LevelDB's lock while it runs**, but opens its files sharing reading and deleting: BriefBar reads
   them without the lock, as the Mac does, and holds none open between reads, so Teams can compact and delete them. A
-  table Teams is still writing reads as broken until it's done, so one counts as unreadable only once it has stayed
-  unchanged for 5 seconds. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
+  table it can't read counts as unreadable only once it has stayed unchanged for 5 seconds: one Teams is still writing
+  isn't in the MANIFEST yet, so isn't read (see the next point), but without the MANIFEST, it reads as broken until
+  it's done. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
   doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`). A conversation of a type
   BriefBar doesn't know counts as one it couldn't read, not as one that isn't a chat, as it may be a chat after an
   update to Teams, and so does a chat whose read marker field it can't read, rather than one never read, whose every
@@ -499,6 +500,14 @@ SDK ships inside the app.
   chats may stay unread until it is: a table it can't read counts only once it has stayed so, as above, and a message
   whose blob entry Chromium hasn't written yet, which it writes after the message, only if it's still missing when the
   chat is read again.
+- **LevelDB leaves files it no longer needs until it can remove them**, as after a crash, and one may hold writes that
+  compaction has since dropped, deletions included: read, a chat or a message that was deleted would come back. So
+  BriefBar reads only the tables and logs that LevelDB's MANIFEST lists, as LevelDB does as it opens the database (its
+  version edits, applied in order: the tables that are left, and the logs from its log number on). A table it lists
+  that's missing makes BriefBar start over, as when compaction replaces tables meanwhile, and say files vanished if it
+  stays missing; a MANIFEST it can't read, or that LevelDB would refuse, makes it read every file and say some of
+  Teams' data couldn't be read. Checked on this PC: Teams' MANIFEST lists all 18 tables there, and its one log is live,
+  so the chats read are the same.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on

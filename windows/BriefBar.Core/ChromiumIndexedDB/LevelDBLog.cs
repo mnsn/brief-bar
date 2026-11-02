@@ -2,7 +2,7 @@ namespace BriefBar.Core.ChromiumIndexedDB;
 
 /// LevelDB's write-ahead log: every write goes there first, in 32 KiB blocks of checksummed records, each a write batch or
 /// a fragment of one. LevelDB only ever appends to it, so it can be read while it's written, and read on from where the
-/// last complete batch ended. The Mac's `LevelDBLog`.
+/// last complete batch ended. Its MANIFEST is in the same format (`LevelDBManifest`). The Mac's `LevelDBLog`.
 public static class LevelDBLog
 {
     public const int BlockSize = 32_768;
@@ -21,22 +21,31 @@ public static class LevelDBLog
         ArgumentNullException.ThrowIfNull(argument: bytes);
         keep ??= _ => true;
         var entries = new List<LevelDBEntry>();
+        var corruptBatches = 0;
+        var (end, corrupt) = Records(bytes: bytes, fileOffset: fileOffset, record: batch =>
+        {
+            try
+            {
+                entries.AddRange(collection: Writes(batch: batch.ToArray(), keep: keep));
+            }
+            catch (FormatErrorException)
+            {
+                corruptBatches += 1;
+            }
+        });
+        return new LevelDBLogParse(Entries: entries, End: end, Corrupt: corrupt + corruptBatches);
+    }
+
+    /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
+    /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits. Stops
+    /// before a record that isn't all there yet. Returns the file offset after the last whole record, and how many
+    /// records or blocks were skipped because they broke the format or their checksum didn't match.
+    internal static (long End, int Corrupt) Records(byte[] bytes, long fileOffset, Action<ReadOnlySpan<byte>> record)
+    {
         var end = fileOffset;
         var corrupt = 0;
         var position = 0;
         List<byte>? pending = null;
-
-        void Batch(ReadOnlySpan<byte> data)
-        {
-            try
-            {
-                entries.AddRange(collection: Writes(batch: data.ToArray(), keep: keep));
-            }
-            catch (FormatErrorException)
-            {
-                corrupt += 1;
-            }
-        }
 
         // Drops the rest of a block, as LevelDB does with a record it can't trust.
         void SkipBlock(int left)
@@ -101,7 +110,7 @@ public static class LevelDBLog
                         corrupt += 1;
                     }
                     pending = null;
-                    Batch(data: data);
+                    record(obj: data);
                     end = fileOffset + position;
                     break;
                 case FirstRecord:
@@ -125,7 +134,7 @@ public static class LevelDBLog
                     if (pending is not null)
                     {
                         pending.AddRange(collection: data.ToArray());
-                        Batch(data: pending.ToArray());
+                        record(obj: pending.ToArray());
                         end = fileOffset + position;
                     }
                     else
@@ -139,7 +148,7 @@ public static class LevelDBLog
                     break;
             }
         }
-        return new LevelDBLogParse(Entries: entries, End: end, Corrupt: corrupt);
+        return (end, corrupt);
     }
 
     /// A write batch: its first sequence number, how many writes it holds, then each write.

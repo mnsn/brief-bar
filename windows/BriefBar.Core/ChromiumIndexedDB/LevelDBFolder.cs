@@ -4,16 +4,18 @@ namespace BriefBar.Core.ChromiumIndexedDB;
 
 /// A LevelDB database's folder, read as it is, without taking its lock: LevelDB never changes a table once written and
 /// only appends to its log, so taking, for each key, the write with the highest sequence number gives the database as it
-/// was when the read ended. Nothing is written, nothing copied, and no file stays open once it's read. The Mac's
-/// `LevelDBFolder`.
+/// was when the read ended. Only the tables and logs its MANIFEST lists are read (`LevelDBManifest`). Nothing is
+/// written, nothing copied, and no file stays open once it's read. The Mac's `LevelDBFolder`.
 public sealed class LevelDBFolder(string path)
 {
     public string Path { get; } = path;
 
     /// Reads the folder's tables and logs, keeping the writes to keys that `keep` accepts, from the table blocks that
-    /// `mayHold` doesn't rule out (see `LevelDBTable.Read`). A table that compaction removes while it's read makes it start
-    /// over, since its keys are in a new table then, up to three times; after that, the read says files vanished
-    /// (`LevelDBFolderRead.Vanished`). Throws `IOException` when the folder can't be listed, as when it's gone.
+    /// `mayHold` doesn't rule out (see `LevelDBTable.Read`). A table that compaction removes while it's read, or adds,
+    /// makes it start over, since its keys are in another table then, up to three times; after that, the read says files
+    /// vanished (`LevelDBFolderRead.Vanished`). Where there's no CURRENT, as in made-up data, it reads every table and
+    /// log; so it does when the MANIFEST can't be read, which it says. Throws `IOException` when the folder can't be
+    /// listed, as when it's gone.
     public LevelDBFolderRead Read(Func<byte[]?, byte[], bool>? mayHold = null, Func<ArraySegment<byte>, bool>? keep = null)
     {
         mayHold ??= (_, _) => true;
@@ -64,7 +66,7 @@ public sealed class LevelDBFolder(string path)
     {
         var names = Names(folder: Path);
         var read = new LevelDBFolderRead();
-        var vanished = false;
+        var (version, vanished) = Version(names: names, read: read);
         var tables = new Dictionary<string, LevelDBTableRead>(comparer: StringComparer.Ordinal);
 
         void ReadTable(string name, bool skipping)
@@ -98,8 +100,18 @@ public sealed class LevelDBFolder(string path)
             }
         }
 
-        foreach (var name in names.Where(predicate: name => name.EndsWith(value: ".ldb", comparisonType: StringComparison.Ordinal)
-            || name.EndsWith(value: ".sst", comparisonType: StringComparison.Ordinal)))
+        var tableNames = names.Where(predicate: IsTable).ToList();
+        var logs = Logs(names: names);
+        if (version is not null)
+        {
+            // A table the MANIFEST lists that the folder didn't have as it was listed was written since: start over.
+            vanished |= !version.Tables.IsSubsetOf(other: tableNames.Select(selector: Number).OfType<ulong>());
+            var liveTables = tableNames.Where(predicate: name => Number(name: name) is { } number && version.Tables.Contains(item: number)).ToList();
+            var liveLogs = logs.Where(predicate: log => version.IsLiveLog(number: log.Number)).ToList();
+            read.Unlisted = tableNames.Count - liveTables.Count + logs.Count - liveLogs.Count;
+            (tableNames, logs) = (liveTables, liveLogs);
+        }
+        foreach (var name in tableNames)
         {
             ReadTable(name: name, skipping: true);
         }
@@ -118,7 +130,6 @@ public sealed class LevelDBFolder(string path)
             read.BlocksSkipped += table.BlocksSkipped;
             read.Take(entries: table.Entries);
         }
-        var logs = Logs(names: names);
         for (var index = 0; index < logs.Count; index++)
         {
             var logPath = System.IO.Path.Combine(path1: Path, path2: logs[index].Name);
@@ -154,11 +165,60 @@ public sealed class LevelDBFolder(string path)
         return (read, vanished);
     }
 
+    /// What the folder's MANIFEST says the database is, and whether it vanished as it was read. Null, to read every table
+    /// and log, when the folder has no CURRENT, or when the MANIFEST vanished or can't be read, which `read` says.
+    (LevelDBVersion? Version, bool Vanished) Version(List<string> names, LevelDBFolderRead read)
+    {
+        if (!names.Contains(item: LevelDBManifest.CurrentFile))
+        {
+            return (null, false);
+        }
+        var file = LevelDBManifest.CurrentFile;
+        try
+        {
+            var (current, _) = Contents(path: System.IO.Path.Combine(path1: Path, path2: file));
+            file = LevelDBManifest.Name(current: current);
+            var (manifest, _) = Contents(path: System.IO.Path.Combine(path1: Path, path2: file));
+            return (LevelDBManifest.Parse(bytes: manifest), false);
+        }
+        catch (FormatErrorException error)
+        {
+            read.Unreadable[file] = error.Error;
+        }
+        catch (FileNotFoundException)
+        {
+            return (null, true);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return (null, true);
+        }
+        catch (IOException)
+        {
+            read.Unreadable[file] = FormatError.Unsupported(what: "file");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            read.Unreadable[file] = FormatError.Unsupported(what: "file");
+        }
+        return (null, false);
+    }
+
     /// The names of the files in `folder`, in order.
     static List<string> Names(string folder) => Directory.EnumerateFiles(path: folder)
         .Select(selector: file => System.IO.Path.GetFileName(path: file))
         .Order(comparer: StringComparer.Ordinal)
         .ToList();
+
+    static bool IsTable(string name) => name.EndsWith(value: ".ldb", comparisonType: StringComparison.Ordinal)
+        || name.EndsWith(value: ".sst", comparisonType: StringComparison.Ordinal);
+
+    /// The number LevelDB named a table or a log with, as `000005.ldb`; null for a name without one.
+    static ulong? Number(string name) => ulong.TryParse(
+        s: System.IO.Path.GetFileNameWithoutExtension(path: name),
+        style: NumberStyles.None,
+        provider: CultureInfo.InvariantCulture,
+        result: out var number) ? number : null;
 
     /// The logs among `names`, by number, oldest first.
     static List<(ulong Number, string Name)> Logs(IReadOnlyList<string> names)
@@ -166,8 +226,7 @@ public sealed class LevelDBFolder(string path)
         var logs = new List<(ulong Number, string Name)>();
         foreach (var name in names)
         {
-            if (name.EndsWith(value: ".log", comparisonType: StringComparison.Ordinal)
-                && ulong.TryParse(s: name[..^4], style: NumberStyles.None, provider: CultureInfo.InvariantCulture, result: out var number))
+            if (name.EndsWith(value: ".log", comparisonType: StringComparison.Ordinal) && Number(name: name) is { } number)
             {
                 logs.Add(item: (number, name));
             }

@@ -654,8 +654,7 @@ public sealed class TeamsEngineTests
     {
         using var folder = new TemporaryFolder();
         var (location, log) = TeamsData.Copy(folder: folder.Path);
-        // As LevelDB writes a table: where it'll stay, footer last.
-        File.WriteAllBytes(path: Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000010.ldb"), bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        ListBrokenTable(log: log);
         var collector = new TeamsCollector();
         using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 300));
         engine.Start();
@@ -676,13 +675,14 @@ public sealed class TeamsEngineTests
     {
         using var folder = new TemporaryFolder();
         var (location, log) = TeamsData.Copy(folder: folder.Path);
-        var table = Path.Combine(path1: Path.GetDirectoryName(path: log)!, path2: "000010.ldb");
-        File.WriteAllBytes(path: table, bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        var table = ListBrokenTable(log: log);
         var collector = new TeamsCollector();
         using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly, confirmationDelay: TimeSpan.FromMilliseconds(value: 500));
         engine.Start();
         var unreadable = await collector.Until(what: "the confirmed warning", predicate: snapshot => snapshot.Report.UnreadableFiles == 1);
 
+        // As compaction does: the MANIFEST stops listing the table, then LevelDB removes it.
+        ManifestWriter.Save(folder: Path.GetDirectoryName(path: log)!, number: 12, ManifestWriter.Edit(logNumber: 0, nextFile: 13, lastSequence: 0));
         File.Delete(path: table);
 
         var readable = await collector.Until(what: "the removed table", predicate: snapshot => snapshot.Report.UnreadableFiles == 0);
@@ -766,6 +766,17 @@ public sealed class TeamsEngineTests
             keySelector: path => Path.GetRelativePath(relativeTo: root, path: path),
             elementSelector: path => Convert.ToHexString(inArray: SHA256.HashData(source: File.ReadAllBytes(path: path))) + " "
                 + File.GetLastWriteTimeUtc(path: path).Ticks.ToString(provider: System.Globalization.CultureInfo.InvariantCulture));
+
+    /// Beside the fixture's `log`, a table the MANIFEST lists with it that can't be read; returns its path. A table LevelDB
+    /// is still writing isn't listed yet, but one read without the MANIFEST may be, so one counts only once it stays so.
+    static string ListBrokenTable(string log)
+    {
+        var folder = Path.GetDirectoryName(path: log)!;
+        var table = Path.Combine(path1: folder, path2: "000010.ldb");
+        File.WriteAllBytes(path: table, bytes: Enumerable.Repeat(element: (byte)7, count: 100).ToArray());
+        ManifestWriter.Save(folder: folder, number: 11, ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 0, nextFile: 12, lastSequence: 0, added: [10]));
+        return table;
+    }
 
     /// Teams' data as these tests write it, with its message cache: Avery wrote since you read the chat, and Sam's chat is
     /// read; your message is the newest in Launch crew; nobody has read the meeting's chat; and the muted chat has a
