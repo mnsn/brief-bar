@@ -112,15 +112,10 @@ public sealed class TeamsStore
         return read;
     }
 
-    /// `chat`'s newest message that wasn't deleted: the cache may have one the chat's record doesn't name yet, or the
-    /// other way round. Both say a message was deleted: the cache, of the messages it has, and the chat's record, of its
-    /// newest, once BriefBar no longer reads the cache for it.
-    static TeamsMessage? Latest(TeamsChat chat, IReadOnlyList<TeamsMessage> messages)
-    {
-        var cached = messages.LastOrDefault(predicate: message => !message.IsDeleted);
-        var named = chat.Newest is { IsDeleted: false } newest && !messages.Any(predicate: message => message.IsDeleted && message.Id == newest.Id) ? newest : null;
-        return cached is not null && cached.Id > (named?.Id ?? 0) ? cached : named ?? cached;
-    }
+    /// `chat`'s newest message that wasn't deleted, of those BriefBar knows (`ChatReading.Known`): the cache may have one
+    /// the chat's record doesn't name yet, or the other way round, and either may be the first to know of a deletion.
+    static TeamsMessage? Latest(TeamsChat chat, IReadOnlyList<TeamsMessage> messages) =>
+        ChatReading.Known(chat: chat, messages: messages).LastOrDefault(predicate: message => !message.IsDeleted);
 
     ConversationSummary Summary(TeamsChat chat, DateTimeOffset now, TimeSpan? keep)
     {

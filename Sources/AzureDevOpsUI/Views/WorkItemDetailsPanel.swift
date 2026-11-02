@@ -304,10 +304,15 @@ struct WorkItemDetailsPanel: View {
             WhereItStandsSection(subject: item.linkRef, hidesWhenEmpty: item.type.caseInsensitiveCompare("Task") == .orderedSame)
             if let read = details.details {
                 if let failure = details.failure {
-                    Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
-                        .font(size: 11.5)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if PulseProblem.from(failure).offersSignIn {
+                        // Signing in is what reads it again: a way to, above what was read before.
+                        FailureView(error: failure)
+                    } else {
+                        Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
+                            .font(size: 11.5)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 properties(item, read)
                 texts(read)
@@ -712,13 +717,13 @@ private struct FailureView: View {
                      : WorkItemDetailsStore.message(for: error))
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: problem.needsSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+                Image(systemName: problem.offersSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             .font(size: 12)
             HStack(spacing: 8) {
-                if problem.needsSignIn {
-                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
+                if problem.offersSignIn {
+                    Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: problem) }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("Try Again") { details.reload() }

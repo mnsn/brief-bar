@@ -222,6 +222,9 @@ public actor PipelinesEngine {
             return max(until.timeIntervalSince(now()), interval)
         case .cliNotFound?, .signedOut?, .authFailed?:
             return min(interval, 60)
+        case .otherDirectory? where failures > 0:
+            // Nothing was read until you sign in to its organization's directory.
+            return min(interval, 60)
         default:
             guard failures > 0 else { return interval }
             return min(interval * pow(2, Double(min(failures, 4))), 600)
@@ -306,11 +309,15 @@ public actor PipelinesEngine {
             groups["\(pipeline.organization)/\(pipeline.projectId)/\(pipeline.branch ?? "")", default: []].append(pipeline)
         }
         // Errors reading the lists, which say whether the page is up to date; a run's stages are extra.
-        var errors: [ADOError] = []
+        var errors: [(organization: String, error: ADOError)] = []
         var attemptedLists = 0
         var throttled: ADOError?
+        // Organizations found to be in a directory to sign in to: asked nothing more this refresh, so they don't hold up
+        // the others with requests that can't work.
+        var waiting: Set<String> = []
         for key in groups.keys.sorted() {
             guard let pipelines = groups[key], let first = pipelines.first else { continue }
+            guard !waiting.contains(first.organization.lowercased()) else { continue }
             attemptedLists += 1
             do {
                 let url = ADOEndpoint.builds(
@@ -325,7 +332,8 @@ public actor PipelinesEngine {
                         .sorted { ($0.queuedAt ?? .distantPast, $0.id) > ($1.queuedAt ?? .distantPast, $1.id) }
                 }
             } catch let error as ADOError {
-                errors.append(error)
+                errors.append((organization: first.organization, error: error))
+                if case .otherDirectory = error { waiting.insert(first.organization.lowercased()) }
                 if case .throttled = error {
                     throttled = error
                     break
@@ -337,6 +345,7 @@ public actor PipelinesEngine {
             guard configuration.pullRequestAccount == account,
                   self.configuration.pullRequestAccount == account else { break }
             guard self.configuration.pullRequests.contains(where: { $0.key == pr.key }) else { continue }
+            guard !waiting.contains(pr.key.organization.lowercased()) else { continue }
             attemptedLists += 1
             do {
                 let builds = try await get(ADOEndpoint.pullRequestBuilds(pr), as: ADOList<ADOBuild>.self).value
@@ -346,7 +355,8 @@ public actor PipelinesEngine {
                     pullRequestBuilds[pr.key] = builds
                 }
             } catch let error as ADOError {
-                errors.append(error)
+                errors.append((organization: pr.key.organization, error: error))
+                if case .otherDirectory = error { waiting.insert(pr.key.organization.lowercased()) }
                 if case .throttled = error { throttled = error }
             }
         }
@@ -363,6 +373,8 @@ public actor PipelinesEngine {
         let interval = configuration.interval
         let due = latest
             .filter { item in
+                // An organization waiting on a sign-in is asked nothing more this refresh, and takes no other's turn.
+                guard !waiting.contains(item.key.organization.lowercased()) else { return false }
                 if let read = stages[item.key], read.isFinal, read.readFor == RunState(item.run) { return false }
                 // One that keeps failing: again on the next refresh, then less and less often.
                 guard let tried = attempts[item.key], tried.failures > 1 else { return true }
@@ -376,7 +388,7 @@ public actor PipelinesEngine {
                     < (lastTouched(rhs.key), rhs.run.status.isFinished ? 1 : 0, rhs.key.organization, rhs.run.id)
             }
             .prefix(Self.timelinesPerRefresh)
-        for item in due where throttled == nil {
+        for item in due where throttled == nil && !waiting.contains(item.key.organization.lowercased()) {
             let state = RunState(item.run)
             do {
                 let timeline = try await get(
@@ -399,8 +411,10 @@ public actor PipelinesEngine {
                 attempts[item.key] = nil
             } catch ADOError.throttled(let seconds) {
                 throttled = .throttled(retryAfter: seconds)
-            } catch is ADOError {
-                // Its stages stay as they were, and are tried again later.
+            } catch let error as ADOError {
+                // Its stages stay as they were, and are tried again later; its organization's, once you've signed in to
+                // its directory.
+                if case .otherDirectory = error { waiting.insert(item.key.organization.lowercased()) }
                 let failures = (attempts[item.key]?.failures ?? 0) + 1
                 attempts[item.key] = Attempts(last: startedAt, failures: failures)
             }
@@ -410,14 +424,18 @@ public actor PipelinesEngine {
         stages = stages.filter { latestKeys.contains($0.key) }
         attempts = attempts.filter { latestKeys.contains($0.key) }
 
+        // Signing in to a directory comes first, after waiting for Azure DevOps: it's the one thing you can do about it.
+        let elsewhere = errors.contains { if case .otherDirectory = $0.error { true } else { false } }
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
-        } else if let error = errors.first, errors.count == attemptedLists {
-            problem = PulseProblem.from(error)
+        } else if let first = errors.first, errors.count == attemptedLists {
+            problem = elsewhere ? PulseProblem.organizations(errors) : PulseProblem.from(first.error)
             failures += 1
-        } else if let error = errors.first {
-            problem = .unreachable("Couldn't read some pipelines: \(error.description)")
+        } else if let first = errors.first {
+            // The other pipelines show.
+            problem = elsewhere
+                ? PulseProblem.organizations(errors) : PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
             failures = 0
         } else {
             problem = nil

@@ -209,8 +209,8 @@ public sealed class TeamsStoreTests
         Assert.Single(collection: marks.Marks);
     }
 
-    /// Only Teams' message cache says a message was deleted: a chat whose newest message, as its record names it, was
-    /// deleted shows the one before it, and doesn't count it.
+    /// Teams' message cache says a message was deleted before the chat's record does: a chat whose newest message, as its
+    /// record names it, was deleted shows the one before it, and doesn't count it.
     [Fact]
     public void ShowsTheNewestMessageThatWasntDeleted()
     {
@@ -238,6 +238,23 @@ public sealed class TeamsStoreTests
         Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
         Assert.Empty(collection: store.Recent(group: ChatGroup.Chats));
         Assert.Null(@object: store.Find(id: Fixture.Avery));
+    }
+
+    /// The chat's record says its newest message was deleted before Teams' message cache does: the cache's copy, which
+    /// still has its text, is neither counted nor shown.
+    [Fact]
+    public void ShowsNothingOfANewestMessageDeletedInTheRecordFirst()
+    {
+        var cached = Messages(chat: Fixture.Avery, (980, "Lunch?"), (990, "Oops, wrong chat"));
+        var deleted = cached[1] with { Text = string.Empty, IsDeleted = true };
+        var chat = Chat(id: Fixture.Avery, kind: ConversationKind.OneOnOne, title: "Avery Quinn", newest: deleted);
+
+        var store = Store((chat, cached));
+
+        var unread = Assert.Single(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Equal(expected: ["Lunch?"], actual: unread.Unread.Select(selector: message => message.Text));
+        Assert.Equal(expected: cached[0], actual: unread.Latest);
+        Assert.Equal(expected: TeamsData.At(seconds: 980), actual: unread.LastActivity);
     }
 
     /// Teams doesn't notify you of a muted chat: it's neither unread nor recent.

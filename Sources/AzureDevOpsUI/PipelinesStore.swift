@@ -128,7 +128,7 @@ final class PipelinesStore: ObservableObject {
         if self.pullRequests != pullRequests { self.pullRequests = pullRequests }
         if problem != snapshot.problem {
             problem = snapshot.problem
-            if let problem = snapshot.problem { Log.app.error("Pipelines: \(problem.message, privacy: .public)") }
+            if let problem = snapshot.problem { Log.app.error("Pipelines: \(problem.logMessage, privacy: .public)") }
         }
         if isRefreshing != snapshot.isRefreshing { isRefreshing = snapshot.isRefreshing }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }
@@ -204,15 +204,24 @@ final class PipelinesStore: ObservableObject {
     }
 
     /// Every project in the organizations you watch.
-    func allProjects() async -> [ProjectRef] {
+    /// Every project in your organizations, to search in; and when some organizations' projects couldn't be read for want
+    /// of a sign-in to their directory, what's wrong, with a way to sign in. Other failures leave theirs out, as before.
+    func allProjects() async -> (projects: [ProjectRef], problem: PulseProblem?) {
         if mode == .demo {
-            return [ProjectRef(organization: DemoData.organization, id: DemoData.team.projectId, name: DemoData.team.projectName)]
+            return ([ProjectRef(organization: DemoData.organization, id: DemoData.team.projectId, name: DemoData.team.projectName)], nil)
         }
         var projects: [ProjectRef] = []
+        var elsewhere: [(organization: String, error: ADOError)] = []
         for organization in settings.organizations {
-            projects += (try? await PipelineSearch.projects(organization: organization, client: client)) ?? []
+            do {
+                projects += try await PipelineSearch.projects(organization: organization, client: client)
+            } catch let error as ADOError where PulseProblem.isOtherDirectory(error) {
+                elsewhere.append((organization: organization, error: error))
+            } catch {
+                continue
+            }
         }
-        return projects
+        return (projects, PulseProblem.organizations(elsewhere))
     }
 
     /// A project's pipelines whose names contain `text`, after the one with that number when `text` is a number.

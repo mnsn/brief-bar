@@ -417,7 +417,7 @@ struct ProblemView: View {
     var signIn: () -> Void
 
     var body: some View {
-        if problem.needsSignIn {
+        if problem.offersSignIn {
             VStack(alignment: .leading, spacing: 8) {
                 Label {
                     Text(problem.message)
@@ -450,6 +450,10 @@ struct ProblemView: View {
     private var explanation: String {
         if problem == .cliNotFound {
             return "Install it with Homebrew (brew install azure-cli), then sign in once. No personal access token needed."
+        }
+        if case .otherDirectory = problem {
+            return "Sign In opens Terminal to run az login there, in your browser. If it's a project rather than an "
+                + "organization, remove it: a project's organization is the first part of its link."
         }
         return "BriefBar uses the Azure CLI's sign-in, so there's no token to create. Sign In opens Terminal to run "
             + "az login in your browser; it stays signed in after that."
