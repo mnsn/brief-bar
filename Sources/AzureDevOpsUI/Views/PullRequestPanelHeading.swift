@@ -20,12 +20,17 @@ struct PullRequestPanelHeading: View {
             HStack(spacing: 6) {
                 Image(systemName: item.group == .done ? "arrow.triangle.merge" : "arrow.triangle.pull")
                     .foregroundStyle(item.rowColor)
+                // Each on one line, whatever the room: the repository gives way first.
                 Text("Pull Request")
+                    .fixedSize()
                 Text(verbatim: "!\(item.key.number)")
                     .monospacedDigit()
+                    .fixedSize()
                 Text("·")
+                    .fixedSize()
                 Text(item.repository)
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .font(size: 12, weight: .medium)
             .foregroundStyle(.secondary)
