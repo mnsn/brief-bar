@@ -5,10 +5,11 @@ import Foundation
 public enum SessionNesting {
     /// The snapshots, with each session whose parent is in its group right under it, one level deeper.
     ///
-    /// A family, a session and those nested under it, takes the place of its member that sorts first, so that Needs You
-    /// still starts with the longest wait. In it, a parent comes first, then its children, in the group's order. A
-    /// session whose parent is in another group stays where it was. Every session whose parent is listed, in any group,
-    /// knows it (`parent`), so a row that isn't nested under it can name it. Nothing is added or left out.
+    /// A recently finished parent with active descendants joins their group as waiting for its children. A family, a
+    /// session and those nested under it, takes the place of its member that sorts first, so that Needs You still starts
+    /// with the longest wait. In it, a parent comes first, then its children, in the group's order. A session whose
+    /// parent is in another group stays where it was. Every session whose parent is listed, in any group, knows it
+    /// (`parent`), so a row that isn't nested under it can name it. Nothing is added or left out.
     /// - Parameters:
     ///   - snapshots: sorted, as `SessionOrdering` sorts them.
     ///   - records: what the snapshots were resolved from, with the same IDs.
@@ -20,8 +21,27 @@ public enum SessionNesting {
             }
         }
         guard !parents.isEmpty else { return snapshots }
-        let byId = Dictionary(snapshots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        guard byId.count == snapshots.count else { return snapshots }
+        let originals = Dictionary(snapshots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard originals.count == snapshots.count else { return snapshots }
+        let children = Dictionary(grouping: parents, by: \.value).mapValues { $0.map(\.key) }
+
+        var snapshots = snapshots
+        for index in snapshots.indices where snapshots[index].phase == .done && snapshots[index].reason == .finished {
+            let active = activeDescendants(of: snapshots[index].id, children: children, snapshots: originals)
+            guard !active.isEmpty else { continue }
+            let needsYou = active.filter { $0.phase == .needsYou }.count
+            let running = active.filter { $0.phase == .running }.count
+            snapshots[index].phase = needsYou > 0 ? .needsYou : .running
+            snapshots[index].reason = .waitingForChildren
+            snapshots[index].headline = StatusReason.waitingForChildren.headline
+            snapshots[index].detail = [
+                needsYou > 0 ? "\(needsYou) needs you" : nil,
+                running > 0 ? "\(running) running" : nil,
+            ].compactMap { $0 }.joined(separator: " · ")
+            snapshots[index].since = active.compactMap(\.since).min()
+        }
+        snapshots = SessionOrdering.sorted(snapshots)
+        let byId = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
 
         var groups: [[SessionSnapshot]] = []
         for snapshot in snapshots {
@@ -41,6 +61,27 @@ public enum SessionNesting {
                 return snapshot
             }
         }
+    }
+
+    private static func activeDescendants(
+        of id: String, children: [String: [String]], snapshots: [String: SessionSnapshot]
+    ) -> [SessionSnapshot] {
+        var visited: Set<String> = [id]
+        var active: [SessionSnapshot] = []
+
+        func visit(_ parent: String) {
+            for child in children[parent, default: []] where visited.insert(child).inserted {
+                if let snapshot = snapshots[child] {
+                    if snapshot.phase == .needsYou || snapshot.phase == .running {
+                        active.append(snapshot)
+                    }
+                    visit(child)
+                }
+            }
+        }
+
+        visit(id)
+        return active
     }
 
     /// One group's sessions, each with how deep it's nested.

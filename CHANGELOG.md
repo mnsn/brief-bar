@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **With Nest Sessions Under Their Parents, a finished parent stays in Running or Needs You while its child sessions do.**
+  Its row says it's waiting for child sessions and how many need you or are running.
 - **GitHub's list says All quiet only once it has read all your pull requests.** It said so under a note
   that you were offline, that GitHub couldn't be reached or that some pull requests couldn't be read, and
   even before it had read any. Now it shows only the note.

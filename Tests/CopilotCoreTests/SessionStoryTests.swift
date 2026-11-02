@@ -29,6 +29,7 @@ import Testing
         #expect(sentence(.working, "Run the cart tests") == "Working: Run the cart tests")
         #expect(sentence(.working) == "Working")
         #expect(sentence(.starting) == "Working")
+        #expect(sentence(.waitingForChildren, "1 running") == "Waiting for child sessions: 1 running")
         #expect(sentence(.finished, "Replaced all four README screenshots.") == "Finished")
         #expect(sentence(.interrupted) == "Interrupted")
         #expect(sentence(.failed, "Lost the connection.\nTry again.") == "Stopped with an error: Lost the connection. Try again.")
@@ -56,6 +57,11 @@ import Testing
         var working = session(.working)
         working.phase = .running
         #expect(SessionStory.waits(of: working) == [ItemStory.Wait(.copilot, "Copilot, in session “Add dark mode to settings”", about: ref)])
+        var children = session(.waitingForChildren, detail: "1 running")
+        children.phase = .running
+        #expect(SessionStory.waits(of: children) == [ItemStory.Wait(.copilot, "Copilot, in child sessions", about: ref)])
+        children.phase = .needsYou
+        #expect(SessionStory.waits(of: children) == [ItemStory.Wait(.you, "you, in child sessions", about: ref)])
         // Once it's done, stopped or idle, nothing waits on it.
         #expect(SessionStory.waits(of: session(.finished)).isEmpty)
         // A question it relays waits on you in the session that asks it for it, which tells of the same question.

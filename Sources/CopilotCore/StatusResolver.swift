@@ -24,6 +24,7 @@ public enum StatusReason: String, Sendable, Codable {
     case working, starting
     /// Waits on a question or plan that the session coordinating it asks you for it (`RelayedQuestions`).
     case relayed
+    case waitingForChildren
     case finished, interrupted, failed, unresponsive
     case idle
 
@@ -35,6 +36,7 @@ public enum StatusReason: String, Sendable, Codable {
         case .working: return "Working"
         case .starting: return "Starting…"
         case .relayed: return "Answer in another session"
+        case .waitingForChildren: return "Waiting for child sessions"
         case .finished: return "Finished"
         case .interrupted: return "Interrupted"
         case .failed: return "Error"
@@ -229,7 +231,7 @@ public enum StatusResolver {
         let phase: DisplayPhase
         switch reason {
         case .question, .planApproval, .permission: phase = .needsYou
-        case .working, .starting, .relayed: phase = .running
+        case .working, .starting, .relayed, .waitingForChildren: phase = .running
         case .finished, .interrupted, .failed, .unresponsive: phase = endedPhase(reason, at: since, now: now, options: options, isSeen: isSeen)
         case .idle: phase = .idle
         }
@@ -360,6 +362,8 @@ extension SessionSnapshot {
         case .working, .starting: sentence = "\(name) is working"
         case .relayed:
             sentence = "\(name) waits for your answer in " + (answerIn.map { "“\($0.name)”" } ?? "another session")
+        case .waitingForChildren:
+            sentence = "\(name) is waiting for child sessions" + (detail.map { ": \($0)" } ?? "")
         case .finished: sentence = "\(name) finished"
         case .interrupted: sentence = "\(name) was interrupted"
         case .failed: sentence = "\(name) stopped with an error" + (detail.map { ": \($0)" } ?? "")
