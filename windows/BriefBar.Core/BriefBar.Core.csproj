@@ -8,4 +8,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="BriefBar.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Reads the Copilot app's database, read-only, with the SQLite it bundles. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
 </Project>

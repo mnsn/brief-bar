@@ -1,0 +1,106 @@
+<UserControl
+    x:Class="BriefBar.Views.SourceSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:BriefBar.Views">
+
+    <!-- A source's page: what it is, then, while it's off, what it reads and a way to turn it on; while it's paused, what
+         it reads now and a way to keep it on; and while it's on, its settings, what it reads, and a way to turn it off. -->
+    <StackPanel Spacing="4">
+        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border
+                Width="48"
+                Height="48"
+                VerticalAlignment="Center"
+                Background="{x:Bind ViewModel.TileBrush, Mode=OneWay}"
+                CornerRadius="8">
+                <views:FluentIcon
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Fill="{x:Bind ViewModel.OnTileBrush, Mode=OneWay}"
+                    Icon="{x:Bind ViewModel.Glyph}"
+                    Size="26" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock
+                    Text="{x:Bind ViewModel.Summary}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.StateText, Mode=OneWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Off: what it reads, and your consent. -->
+        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsOff, Mode=OneWay}">
+            <ContentPresenter x:Name="OffDescription" />
+            <Button
+                x:Name="TurnOnButton"
+                Click="OnTurnOnClick"
+                Content="{x:Bind ViewModel.TurnOnTitle}"
+                IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                Style="{StaticResource AccentButtonStyle}" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="You can turn it off at any time. Turning it off deletes what BriefBar saved for it."
+                TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Paused: what it reads now, and whether to keep it on. -->
+        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsPaused, Mode=OneWay}">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="{x:Bind ViewModel.PausedMessage}"
+                Severity="Warning"
+                Title="Paused" />
+            <ContentPresenter x:Name="PausedDescription" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button
+                    x:Name="KeepOnButton"
+                    Click="OnTurnOnClick"
+                    Content="Keep it on"
+                    IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                    Style="{StaticResource AccentButtonStyle}" />
+                <Button
+                    Click="OnTurnOffNowClick"
+                    Content="Turn it off"
+                    IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- On: its settings, what it reads, and turning it off. -->
+        <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.IsOn, Mode=OneWay}">
+            <ContentPresenter x:Name="SourceSettings" />
+            <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="About this source" />
+            <Expander
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                Header="What it reads">
+                <ContentPresenter x:Name="OnDescription" />
+            </Expander>
+            <Grid Style="{StaticResource SettingsCardStyle}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Turn it off" />
+                    <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="BriefBar stops reading it, removes it from the bar and deletes what it saved for it. Its settings stay." />
+                </StackPanel>
+                <Button
+                    x:Name="TurnOffButton"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Click="OnTurnOffClick"
+                    Content="{x:Bind ViewModel.TurnOffTitle}"
+                    IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+            </Grid>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

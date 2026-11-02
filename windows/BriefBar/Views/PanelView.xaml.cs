@@ -1,7 +1,9 @@
+using BriefBar.Core;
 using BriefBar.Core.Presentation;
 using BriefBar.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
@@ -10,8 +12,9 @@ using Windows.System;
 namespace BriefBar.Views;
 
 /// The panel under an item in the bar: a header, a banner when its section can't show everything, its brief, and its
-/// rows in groups, in a list the keyboard and Narrator move through. Ctrl+1 to Ctrl+9, Ctrl+Tab and Ctrl+Shift+Tab ask
-/// for another of the bar's items (`PanelKeys`).
+/// rows in groups, in a list the keyboard and Narrator move through. Pressing a row does what it offers first; its menu,
+/// from a right-click, the menu key or Shift+F10, offers everything it can do. Ctrl+1 to Ctrl+9, Ctrl+Tab and
+/// Ctrl+Shift+Tab ask for another of the bar's items (`PanelKeys`).
 public sealed partial class PanelView : UserControl
 {
     ScrollViewer? scroller;
@@ -39,6 +42,14 @@ public sealed partial class PanelView : UserControl
     /// Ctrl+Shift+Tab was pressed.
     public event EventHandler? PreviousKeyPressed;
 
+    /// Something in it asked its source to do something.
+    public event EventHandler<PanelCommandEventArgs>? CommandRequested;
+
+    public event EventHandler? SettingsRequested;
+
+    /// It shows more or less than it did, as a group folds, so it may need to be another height.
+    public event EventHandler? ContentResized;
+
     /// How tall it would be `width` device-independent pixels wide, as tall as `maxHeight` at most: its rows scroll
     /// past that. Measuring it without a limit would put every row on screen, in place of only those in view. Its
     /// bindings connect first, as they otherwise would only once it's on screen.
@@ -52,11 +63,25 @@ public sealed partial class PanelView : UserControl
         return DesiredSize.Height;
     }
 
-    /// Puts the keyboard on its first row, or on More when it has none, so arrows and Esc work at once. Only once it's
-    /// laid out: before that, the list has no rows to focus, and focusing it scrolls it.
+    /// Puts the keyboard on its first row, or on what comes first in its list when it has none, such as a group's
+    /// heading, or on More, so arrows and Esc work at once. Only once it's laid out: before that, the list has no rows to
+    /// focus, and focusing it scrolls it.
     public void FocusFirst()
     {
-        if (!ViewModel.IsEmpty && List.ContainerFromIndex(index: 0) is ListViewItem first && first.Focus(value: FocusState.Programmatic))
+        if (List.ContainerFromIndex(index: 0) is null && List.Items.Count > 0)
+        {
+            // Just scrolled back to the top: its first row may not be on screen yet.
+            List.UpdateLayout();
+        }
+        if (List.ContainerFromIndex(index: 0) is ListViewItem first && first.Focus(value: FocusState.Programmatic))
+        {
+            return;
+        }
+        if (FocusManager.FindFirstFocusableElement(searchScope: List) is Control control && control.Focus(value: FocusState.Programmatic))
+        {
+            return;
+        }
+        if (ViewModel.OffersSettings && EmptySettingsButton.Focus(value: FocusState.Programmatic))
         {
             return;
         }
@@ -115,6 +140,120 @@ public sealed partial class PanelView : UserControl
         };
         Root.KeyboardAccelerators.Add(item: accelerator);
     }
+
+    /// The list item `element` is in, or null for one outside every item, such as a group's heading.
+    static ListViewItem? ItemOf(DependencyObject? element)
+    {
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(reference: current))
+        {
+            if (current is ListViewItem item)
+            {
+                return item;
+            }
+            if (current is ListViewBase)
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    void Request(RowViewModel row, PanelCommand command) =>
+        CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(
+            request: new CommandRequest(Section: row.Section, Command: command.Key, RowId: row.Id), opens: command.Opens));
+
+    void OnRowClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is RowViewModel { Commands.Count: > 0 } row)
+        {
+            Request(row: row, command: row.Commands[0]);
+        }
+    }
+
+    /// A row's menu: everything it can do, the first being what pressing it does.
+    void OnListContextRequested(UIElement sender, ContextRequestedEventArgs args)
+    {
+        if (ItemOf(element: args.OriginalSource as DependencyObject) is not { Content: RowViewModel { Commands.Count: > 0 } row } item)
+        {
+            return;
+        }
+        args.Handled = true;
+        var menu = new MenuFlyout();
+        foreach (var command in row.Commands)
+        {
+            var entry = new MenuFlyoutItem { Text = command.Title };
+            if (command.Help is { } help)
+            {
+                ToolTipService.SetToolTip(element: entry, value: help);
+            }
+            entry.Click += (_, _) => Request(row: row, command: command);
+            menu.Items.Add(item: entry);
+        }
+        var options = new FlyoutShowOptions();
+        if (args.TryGetPosition(relativeTo: item, point: out var point))
+        {
+            options.Position = point;
+        }
+        menu.ShowAt(placementTarget: item, showOptions: options);
+    }
+
+    void OnTagClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: RowViewModel row } && row.TagPanelCommand is { } command)
+        {
+            Request(row: row, command: command);
+        }
+    }
+
+    void OnFoldClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: RowGroupViewModel group })
+        {
+            ViewModel.ToggleFold(group: group);
+            ContentResized?.Invoke(sender: this, e: EventArgs.Empty);
+        }
+    }
+
+    void OnGroupCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: RowGroupViewModel { Section: { } section, Command: { } command } group })
+        {
+            CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(
+                request: new CommandRequest(Section: section, Command: command.Key, GroupKey: group.Key), opens: command.Opens));
+        }
+    }
+
+    void OnSectionCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: PanelCommand command } && ViewModel.Target.Section is { } section)
+        {
+            RequestOf(section: section, command: command);
+        }
+    }
+
+    /// The banner's button, about its section: the Overview's banner is about one of the sections it mixes.
+    void OnProblemCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.ProblemCommand is { } command && ViewModel.ProblemSection is { } section)
+        {
+            RequestOf(section: section, command: command);
+        }
+    }
+
+    /// A notice's button, about the panel's section.
+    void OnNoticeCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NoticeViewModel { Command: { } command } } && ViewModel.Target.Section is { } section)
+        {
+            RequestOf(section: section, command: command);
+        }
+    }
+
+    void RequestOf(SectionId section, PanelCommand command) =>
+        CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(
+            request: new CommandRequest(Section: section, Command: command.Key), opens: command.Opens));
+
+    void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(sender: this, e: EventArgs.Empty);
 
     void OnEscape(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {

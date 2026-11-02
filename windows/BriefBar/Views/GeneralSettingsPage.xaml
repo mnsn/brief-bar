@@ -1,0 +1,92 @@
+<UserControl
+    x:Class="BriefBar.Views.GeneralSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:BriefBar.Views"
+    xmlns:vm="using:BriefBar.ViewModels">
+
+    <!-- BriefBar, its sources and whether each is on, and quitting. -->
+    <StackPanel Spacing="4">
+        <TextBlock
+            Margin="0,0,0,8"
+            Text="{x:Bind vm:SettingsViewModel.Intro}"
+            TextWrapping="Wrap" />
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="Sources" />
+        <ItemsControl IsTabStop="False" ItemsSource="{x:Bind ViewModel.Sources}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SourceSettingsViewModel">
+                    <Button
+                        AutomationProperties.Name="{x:Bind CardName, Mode=OneWay}"
+                        Click="OnSourceClick"
+                        Style="{StaticResource SettingsCardButtonStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="32" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="32"
+                                Height="32"
+                                VerticalAlignment="Center"
+                                Background="{x:Bind TileBrush, Mode=OneWay}"
+                                CornerRadius="6">
+                                <views:FluentIcon
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Fill="{x:Bind OnTileBrush, Mode=OneWay}"
+                                    Icon="{x:Bind Glyph}"
+                                    Size="18" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="{x:Bind Name}" />
+                                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="{x:Bind Summary}" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind StateText, Mode=OneWay}" />
+                            <FontIcon
+                                Grid.Column="3"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Glyph="&#xE76C;" />
+                        </Grid>
+                    </Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock
+            Margin="1,6,0,0"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Style="{StaticResource CaptionTextBlockStyle}"
+            Text="{x:Bind vm:SettingsViewModel.StillToCome}"
+            TextWrapping="Wrap" />
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="BriefBar" />
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Quit BriefBar" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Takes the bar off every display, and gives its space back." />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Click="OnQuitClick"
+                Content="Quit" />
+        </Grid>
+    </StackPanel>
+</UserControl>

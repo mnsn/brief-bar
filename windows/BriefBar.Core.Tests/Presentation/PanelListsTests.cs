@@ -23,6 +23,31 @@ public sealed class PanelListsTests
         Assert.Equal(expected: ["ask"], actual: groups[0].Rows.Select(selector: row => row.Id));
     }
 
+    /// Copilot's Done group can be cleared, and its idle sessions start folded.
+    [Fact]
+    public void KeepsWhatAGroupCanDoAndWhetherItStartsFolded()
+    {
+        var snapshot = Snapshots.Copilot(
+            status: SectionStatus.Live,
+            rows:
+            [
+                Snapshots.Row(id: "done", section: SectionId.CopilotSessions, group: "done", state: ItemState.Done),
+                Snapshots.Row(id: "idle", section: SectionId.CopilotSessions, group: "idle", state: null),
+            ]) with
+        {
+            Groups =
+            [
+                new RowGroup(Key: "done", Title: "Done", State: ItemState.Done) { Commands = [new PanelCommand(Key: "clear", Title: "Clear")] },
+                new RowGroup(Key: "idle", Title: "Idle", State: null) { IsFolded = true },
+            ],
+        };
+        var groups = PanelLists.ForSection(snapshot: snapshot);
+        Assert.Equal(expected: [new PanelCommand(Key: "clear", Title: "Clear")], actual: groups[0].Commands);
+        Assert.False(condition: groups[0].IsFolded);
+        Assert.Empty(collection: groups[1].Commands);
+        Assert.True(condition: groups[1].IsFolded);
+    }
+
     [Fact]
     public void KeepsTheSectionsOwnOrderWithinAGroup()
     {

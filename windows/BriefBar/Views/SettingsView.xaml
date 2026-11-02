@@ -1,0 +1,70 @@
+<UserControl
+    x:Class="BriefBar.Views.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:BriefBar.Views">
+
+    <!-- Settings, as Windows 11's own are laid out: a title bar, pages on the left, and the page on the right. -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid
+            x:Name="TitleBar"
+            Height="48"
+            Padding="16,0,0,0"
+            ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border
+                x:Name="TitleTile"
+                Width="18"
+                Height="18"
+                VerticalAlignment="Center"
+                CornerRadius="4">
+                <views:FluentIcon
+                    x:Name="TitleTileIcon"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Icon="Stack"
+                    Size="12" />
+            </Border>
+            <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="BriefBar Settings" />
+        </Grid>
+        <NavigationView
+            x:Name="Navigation"
+            Grid.Row="1"
+            AlwaysShowHeader="True"
+            ExpandedModeThresholdWidth="800"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            IsTitleBarAutoPaddingEnabled="False"
+            OpenPaneLength="280"
+            PaneDisplayMode="Auto"
+            DisplayModeChanged="OnDisplayModeChanged"
+            IsPaneToggleButtonVisible="False"
+            SelectionChanged="OnSelectionChanged">
+            <NavigationView.Header>
+                <TextBlock
+                    x:Name="PageTitle"
+                    AutomationProperties.HeadingLevel="Level1"
+                    Style="{StaticResource TitleTextBlockStyle}" />
+            </NavigationView.Header>
+            <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+                <ContentPresenter
+                    x:Name="Page"
+                    MaxWidth="1000"
+                    Margin="56,8,56,40"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch" />
+            </ScrollViewer>
+        </NavigationView>
+    </Grid>
+</UserControl>

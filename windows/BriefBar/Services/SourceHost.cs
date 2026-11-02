@@ -6,17 +6,18 @@ using Microsoft.UI.Dispatching;
 namespace BriefBar.Services;
 
 /// Runs the sources that are on, and hands what their sections show to the UI thread: a burst of changes from a source
-/// becomes one update there.
-internal sealed class SourceHost : IDisposable
+/// becomes one update there. Sources come and go as you turn them on and off in Settings. Used on the UI thread only.
+internal sealed class SourceHost : ISourceRunner, IDisposable
 {
-    readonly IReadOnlyList<ISectionSource> sources;
+    readonly List<ISectionSource> sources;
     readonly DispatcherQueue queue;
     readonly CancellationTokenSource stopping = new();
+    bool started;
     int updateQueued;
 
     public SourceHost(IReadOnlyList<ISectionSource> sources, DispatcherQueue queue)
     {
-        this.sources = sources;
+        this.sources = [.. sources];
         this.queue = queue;
         foreach (var source in sources)
         {
@@ -46,12 +47,79 @@ internal sealed class SourceHost : IDisposable
     {
         // Taken once: the token stays readable after the host is disposed, as quitting may do while a source starts.
         var cancellationToken = stopping.Token;
-        foreach (var source in sources)
+        started = true;
+        foreach (var source in sources.ToList())
         {
             cancellationToken.ThrowIfCancellationRequested();
             await source.StartAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: true);
         }
         Log.Write(line: $"sources: {sources.Count} started");
+    }
+
+    /// Adds a source you turned on, and starts it once the others have started, or at once after that. Its sections show
+    /// at once, starting.
+    public async Task AddAsync(ISectionSource source)
+    {
+        ArgumentNullException.ThrowIfNull(argument: source);
+        var cancellationToken = stopping.Token;
+        cancellationToken.ThrowIfCancellationRequested();
+        sources.Add(item: source);
+        source.Changed += OnSourceChanged;
+        OnSourceChanged(sender: source, e: EventArgs.Empty);
+        if (started)
+        {
+            await source.StartAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: true);
+        }
+        Log.Write(line: $"sources: {source.Source} added");
+    }
+
+    /// Takes `source`'s sections off the bar, as you turn it off, and returns it, still running, for the caller to stop;
+    /// or null when it isn't running.
+    public ISectionSource? Remove(SourceId source)
+    {
+        var running = sources.Find(match: candidate => candidate.Source == source);
+        if (running is null)
+        {
+            return null;
+        }
+        sources.Remove(item: running);
+        running.Changed -= OnSourceChanged;
+        OnSourceChanged(sender: running, e: EventArgs.Empty);
+        Log.Write(line: $"sources: {source} removed");
+        return running;
+    }
+
+    /// Asks the source whose section `request` names to do it; nothing when that source is gone, as it may be by the time
+    /// a click arrives.
+    public void Perform(CommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(argument: request);
+        SourceOf(section: request.Section)?.Perform(request: request);
+    }
+
+    /// The panel shows `current` now, or nothing, in place of `previous`: a source hears that its section's own panel
+    /// closed or opened, and, before a panel shows its sections, on their own or in the Overview, that it will.
+    public void PanelChanged(PanelTarget? previous, PanelTarget? current)
+    {
+        if (previous is { Section: { } closed } && previous != current)
+        {
+            SourceOf(section: closed)?.PanelVisibilityChanged(section: closed, isShowing: false);
+        }
+        if (current is not { } shown)
+        {
+            return;
+        }
+        IReadOnlyList<SectionId> showing = shown.Section is { } one
+            ? [one]
+            : sources.SelectMany(selector: source => source.Sections.Select(selector: section => section.Id)).ToList();
+        foreach (var section in showing)
+        {
+            SourceOf(section: section)?.PanelWillShow(section: section);
+        }
+        if (shown.Section is { } opened && previous != current)
+        {
+            SourceOf(section: opened)?.PanelVisibilityChanged(section: opened, isShowing: true);
+        }
     }
 
     /// Stops every source, waiting at most `timeout` for them, cancelling included, and lets go of their events.
@@ -61,13 +129,14 @@ internal sealed class SourceHost : IDisposable
         // Within the timeout too: the cancellation finishes only once every callback registered on the token has run,
         // and a callback, such as one stopping a program a source started, may block.
         var cancelled = stopping.CancelAsync();
-        foreach (var source in sources)
+        var stoppingSources = sources.ToList();
+        foreach (var source in stoppingSources)
         {
             source.Changed -= OnSourceChanged;
         }
         // Each source stops off the UI thread, so one that blocks before it returns its task is timed out like the rest,
         // and holds no other back.
-        var stopped = Task.WhenAll(tasks: [cancelled, .. sources.Select(selector: source => Task.Run(function: source.StopAsync))]);
+        var stopped = Task.WhenAll(tasks: [cancelled, .. stoppingSources.Select(selector: source => Task.Run(function: source.StopAsync))]);
         if (await Task.WhenAny(task1: stopped, task2: deadline).ConfigureAwait(continueOnCapturedContext: true) != stopped)
         {
             Log.Write(line: $"sources: still stopping after {timeout}; quitting anyway");
@@ -79,6 +148,9 @@ internal sealed class SourceHost : IDisposable
     }
 
     public void Dispose() => stopping.Dispose();
+
+    /// The running source `section` belongs to, or null.
+    ISectionSource? SourceOf(SectionId section) => sources.Find(match: candidate => candidate.Sections.Any(predicate: info => info.Id == section));
 
     void OnSourceChanged(object? sender, EventArgs e)
     {

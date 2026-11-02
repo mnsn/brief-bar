@@ -53,4 +53,8 @@ internal static class Foreground
         var thread = User32.GetWindowThreadProcessId(hWnd: hwnd, processId: out var owner);
         return thread != 0 && owner == (uint)Environment.ProcessId;
     }
+
+    /// The top-level window `hwnd` is in, through its parents and owners: for a menu or a list's drop-down, the window
+    /// it opened from. Zero for none.
+    public static nint RootOwner(nint hwnd) => hwnd == 0 ? 0 : User32.GetAncestor(hWnd: hwnd, flags: WindowStyles.GA_ROOTOWNER);
 }

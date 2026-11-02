@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BriefBar.Core;
+using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
 using BriefBar.Interop;
@@ -20,6 +21,7 @@ internal sealed class AppShell : IDisposable
     public static readonly uint TaskbarCreated = User32.RegisterWindowMessage(message: "TaskbarCreated");
 
     readonly DispatcherQueue queue;
+    readonly AppSources appSources;
     readonly SourceHost sources;
     readonly Action exit;
     /// A bar on each display, in the order of `Displays.All`.
@@ -32,14 +34,19 @@ internal sealed class AppShell : IDisposable
     readonly DispatcherQueueTimer ticker;
     readonly UISettings uiSettings = new();
     readonly AccessibilitySettings accessibility = new();
+    /// Sources being turned on or off: quitting waits a while for them to start or stop. One turned off has deleted what
+    /// it saved by then, as that doesn't wait for it to stop.
+    readonly List<Task> switching = [];
+    SettingsWindow? settings;
     bool quitting;
 
-    public AppShell(DispatcherQueue queue, IReadOnlyList<ISectionSource> sources, bool isDemo, Action exit)
+    public AppShell(DispatcherQueue queue, AppSources sources, bool isDemo, Action exit)
     {
         this.queue = queue;
         this.exit = exit;
         IsDemo = isDemo;
-        this.sources = new SourceHost(sources: sources, queue: queue);
+        appSources = sources;
+        this.sources = new SourceHost(sources: sources.Initial(), queue: queue);
         panel = new PanelController(shell: this);
         desktop = new DesktopWatcher(queue: queue);
         displaysSettle = queue.CreateTimer();
@@ -55,6 +62,9 @@ internal sealed class AppShell : IDisposable
     }
 
     public bool IsDemo { get; }
+
+    /// It's quitting: its windows are closing, and its sources stopping.
+    public bool IsQuitting => quitting;
 
     public ThemePalette Palette { get; private set; }
 
@@ -76,6 +86,67 @@ internal sealed class AppShell : IDisposable
     }
 
     public IReadOnlyList<SectionSnapshot> Snapshots() => sources.Snapshots();
+
+    /// Does what a panel asked: BriefBar's own commands, such as reviewing a paused source in Settings, here; the rest,
+    /// its source.
+    public void Perform(CommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(argument: request);
+        if (quitting)
+        {
+            return;
+        }
+        Log.Write(line: $"panel: {request.Section} asked for a command");
+        if (request.Command == AppCommands.ReviewSource)
+        {
+            OpenSettings(source: request.Section.Source);
+            return;
+        }
+        sources.Perform(request: request);
+    }
+
+    /// Opens Settings at `source`'s page, or at General, or brings it to the front there, in place of the panel.
+    public void OpenSettings(SourceId? source)
+    {
+        if (quitting)
+        {
+            return;
+        }
+        panel.Dismiss(reason: PanelCloseReason.Opened);
+        if (settings is null)
+        {
+            var viewModel = new SettingsViewModel(
+                sources: appSources.Switch,
+                azureDevOps: appSources.AzureDevOps,
+                copilot: appSources.Copilot,
+                gitHub: appSources.GitHub,
+                palette: Palette,
+                findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)));
+            settings = new SettingsWindow(shell: this, viewModel: viewModel);
+            var opened = settings;
+            opened.Closed += (_, _) =>
+            {
+                viewModel.Detach();
+                if (settings == opened)
+                {
+                    settings = null;
+                }
+            };
+            Log.Write(line: $"settings: opened");
+        }
+        settings.Show(source: source);
+    }
+
+    /// Whether `hwnd` is Settings, or one of its windows, such as a list's drop-down.
+    public bool IsSettings(nint hwnd) => settings is { } window && hwnd != 0 && Foreground.RootOwner(hwnd: hwnd) == window.Hwnd;
+
+    /// Turns `entry` on, or keeps it on after an update, with your consent to what it reads now: its sections show on
+    /// the bar as it starts. Returns whether your choice is saved, to last after BriefBar quits (`SourceSwitch`).
+    public Task<bool> TurnOnAsync(SourceEntry entry) => SwitchAsync(operation: appSources.Switch.TurnOnAsync(entry: entry, runner: sources));
+
+    /// Turns `entry` off: it stops, its sections leave the bar, and what it saved is deleted. Returns whether your choice
+    /// is saved, to last after BriefBar quits (`SourceSwitch`).
+    public Task<bool> TurnOffAsync(SourceEntry entry) => SwitchAsync(operation: appSources.Switch.TurnOffAsync(entry: entry, runner: sources));
 
     /// Opens the Overview on the main display, as a second start of BriefBar asks.
     public void ShowOverview()
@@ -101,6 +172,8 @@ internal sealed class AppShell : IDisposable
         // The space first, so nothing that follows can keep it reserved.
         GiveSpaceBack();
         panel.Shutdown();
+        settings?.Close();
+        settings = null;
         desktop.Dispose();
         ticker.Stop();
         displaysSettle.Stop();
@@ -206,6 +279,7 @@ internal sealed class AppShell : IDisposable
         }
         Palette = palette;
         Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}");
+        settings?.UsePalette(palette: palette);
         Refresh();
     }
 
@@ -217,6 +291,10 @@ internal sealed class AppShell : IDisposable
             bar.ViewModel.ShowOpen(target: bar == owner ? target : null);
         }
     }
+
+    /// The panel shows `current` now, or nothing, in place of `previous`: the sources whose sections it showed or shows
+    /// hear of it.
+    public void PanelChanged(PanelTarget? previous, PanelTarget? current) => sources.PanelChanged(previous: previous, current: current);
 
     /// A bar on each display, from the windows BriefBar has where it can (`BarArrangement`): a bar keeps its display or
     /// takes another, a spare shows again, and only a display left over gets a new window. A bar that takes no display
@@ -322,18 +400,50 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// Waits for the sources to stop, at most 2 seconds, then ends.
+    /// Waits for sources being turned on or off to finish, then for the sources to stop, at most 2 seconds each; saves
+    /// what couldn't be saved, if it can now; and ends.
     async void FinishQuitting(long started)
     {
         try
         {
+            await WaitForSwitchingAsync(timeout: TimeSpan.FromSeconds(value: 2)).ConfigureAwait(continueOnCapturedContext: true);
             await sources.StopAsync(timeout: TimeSpan.FromSeconds(value: 2)).ConfigureAwait(continueOnCapturedContext: true);
         }
         finally
         {
+            appSources.Settings.Flush();
             Dispose();
             Log.Write(line: $"quit after {Stopwatch.GetElapsedTime(startingTimestamp: started)}");
             exit();
+        }
+    }
+
+    /// Notes `operation`, a source being turned on or off, until it's done, for quitting to wait for.
+    async Task<bool> SwitchAsync(Task<bool> operation)
+    {
+        switching.Add(item: operation);
+        try
+        {
+            return await operation.ConfigureAwait(continueOnCapturedContext: true);
+        }
+        finally
+        {
+            switching.Remove(item: operation);
+        }
+    }
+
+    /// Waits at most `timeout` for every source being turned on or off. How each went is for whoever asked for it,
+    /// Settings, which awaits it, to say: here, only that it's done.
+    async Task WaitForSwitchingAsync(TimeSpan timeout)
+    {
+        if (switching.Count == 0)
+        {
+            return;
+        }
+        var all = Task.WhenAll(tasks: switching.ToList());
+        if (await Task.WhenAny(task1: all, task2: Task.Delay(delay: timeout)).ConfigureAwait(continueOnCapturedContext: true) != all)
+        {
+            Log.Write(line: $"sources: still turning on or off after {timeout}; quitting anyway");
         }
     }
 }
