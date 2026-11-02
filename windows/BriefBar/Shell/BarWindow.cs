@@ -24,7 +24,10 @@ internal sealed partial class BarWindow : Window
     readonly AppBarReservation reservation;
     readonly SubclassProc subclass;
     readonly BarView view;
-    readonly ActiveAcrylic backdrop = new(kind: DesktopAcrylicKind.Base);
+    readonly ActiveAcrylic acrylic = new(kind: DesktopAcrylicKind.Base);
+    readonly SeeThroughBackdrop seeThrough = new();
+    /// The desktop shows through the window (`SeeThroughWindow`).
+    bool showsThrough;
     bool placed;
     bool hiddenForFullScreen;
     bool closingForGood;
@@ -60,14 +63,13 @@ internal sealed partial class BarWindow : Window
         ComCtl32.SetWindowSubclass(hWnd: Hwnd, callback: subclass, id: 1, data: 0);
         WindowMenu.Remove(hwnd: Hwnd);
         view = new BarView(viewModel: ViewModel);
-        UseLook(look: shell.Look, accent: shell.Accent);
         view.ItemPressed += (_, args) => shell.ItemPressed(bar: this, target: args.Target, anchor: AnchorOf(item: args.Item));
         view.EmptySpacePressed += (_, _) => shell.EmptySpacePressed();
         view.QuitRequested += (_, _) => shell.Quit();
         view.SettingsRequested += (_, _) => shell.OpenSettings(source: null);
-        view.ActualThemeChanged += (_, _) => shell.ThemeChanged(theme: view.ActualTheme);
+        view.ActualThemeChanged += (_, _) => shell.ThemeChanged();
         Content = view;
-        SystemBackdrop = backdrop;
+        UseSurface(surface: shell.Surface);
         // A bar closes only as BriefBar quits or displays change. Another program asking it to close, as `taskkill`
         // without /F does, asks BriefBar to quit, which gives every bar's space back.
         AppWindow.Closing += (_, args) =>
@@ -180,12 +182,39 @@ internal sealed partial class BarWindow : Window
     /// Where the Overview's item is, for a panel opened by something other than a press, such as a second start.
     public PixelRect OverviewAnchor() => AnchorOf(item: view.OverviewItem);
 
-    /// Shows Windows' mode, as the taskbar does, tinted with `accent` while the taskbar shows the accent color.
-    public void UseLook(ShellLook look, Windows.UI.Color accent)
+    /// Shows `surface` behind the bar's words, with words that read on it: acrylic, tinted with the taskbar's accent
+    /// color while it shows one, or a color the desktop shows through.
+    public void UseSurface(BarSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(argument: look);
-        view.RequestedTheme = look.IsDark ? ElementTheme.Dark : ElementTheme.Light;
-        backdrop.UseTint(color: look.UsesAccent ? accent : null);
+        ArgumentNullException.ThrowIfNull(argument: surface);
+        view.RequestedTheme = surface.IsDark ? ElementTheme.Dark : ElementTheme.Light;
+        if (surface.Material == BarMaterial.SeeThrough)
+        {
+            seeThrough.UseColor(argb: surface.Color ?? 0);
+            if (!showsThrough)
+            {
+                showsThrough = true;
+                if (!SeeThroughWindow.Enable(hwnd: Hwnd))
+                {
+                    Log.Write(line: $"bar {Display.Handle}: Windows kept the desktop from showing through");
+                }
+                SystemBackdrop = seeThrough;
+            }
+            return;
+        }
+        acrylic.UseTint(color: surface.Color is { } tint ? ThemePalette.ColorOf(argb: tint) : null);
+        if (showsThrough || SystemBackdrop is null)
+        {
+            SystemBackdrop = acrylic;
+            if (showsThrough)
+            {
+                showsThrough = false;
+                if (!SeeThroughWindow.Disable(hwnd: Hwnd))
+                {
+                    Log.Write(line: $"bar {Display.Handle}: Windows kept the desktop showing through");
+                }
+            }
+        }
     }
 
     /// Shows what the bar shows now, in `palette`'s colors, with icons `iconSize` square (`BarMetrics.IconSize`).
@@ -255,6 +284,13 @@ internal sealed partial class BarWindow : Window
                 break;
             case WindowMessages.WM_GETMINMAXINFO:
                 return AllowAnySize(hWnd: hWnd, message: message, wParam: wParam, lParam: lParam);
+            case WindowMessages.WM_ERASEBKGND when showsThrough:
+                // Black is see-through while the desktop shows through the bar.
+                if (SeeThroughWindow.EraseBlack(hwnd: hWnd, hdc: wParam))
+                {
+                    return 1;
+                }
+                break;
             case WindowMessages.WM_NCCALCSIZE when wParam != 0:
                 // No frame: the window is all content, so the items reach the screen's edge, and a flick of the pointer
                 // to the top lands on one. Without this, WinUI's presenter keeps a 3-pixel dialog frame.

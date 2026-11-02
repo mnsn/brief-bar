@@ -5,7 +5,7 @@
     xmlns:views="using:BriefBar.Views"
     xmlns:vm="using:BriefBar.ViewModels">
 
-    <!-- BriefBar, its sources and whether each is on, and quitting. -->
+    <!-- BriefBar, its sources and whether each is on, what the bar shows behind its words, and quitting. -->
     <StackPanel Spacing="4">
         <TextBlock
             Margin="0,0,0,8"
@@ -72,6 +72,60 @@
             Text="{x:Bind vm:SettingsViewModel.StillToCome}"
             TextWrapping="Wrap"
             Visibility="{x:Bind vm:SettingsViewModel.HasStillToCome}" />
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="Appearance" />
+        <Grid Style="{StaticResource SettingsCardStyle}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Bar background" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="{x:Bind ViewModel.Appearance.Description, Mode=OneWay}" />
+            </StackPanel>
+            <ComboBox
+                Grid.Column="1"
+                MinWidth="180"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Bar background"
+                ItemsSource="{x:Bind vm:AppearanceSettingsViewModel.Choices}"
+                SelectedIndex="{x:Bind ViewModel.Appearance.SelectedIndex, Mode=TwoWay}" />
+        </Grid>
+        <!-- A color of your own: as chosen, with how see-through it is, and what the bar shows instead, if anything. -->
+        <Grid
+            ColumnSpacing="16"
+            Style="{StaticResource SettingsCardStyle}"
+            Visibility="{x:Bind ViewModel.Appearance.IsCustomColor, Mode=OneWay}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="32" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border
+                Width="32"
+                Height="32"
+                VerticalAlignment="Center"
+                Background="{x:Bind ViewModel.Appearance.Swatch, Mode=OneWay}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="6" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Color" />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="{x:Bind ViewModel.Appearance.ChosenText, Mode=OneWay}" />
+            </StackPanel>
+            <Button
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                Click="OnChooseColorClick"
+                Content="Choose color" />
+        </Grid>
+        <TextBlock
+            Margin="1,6,0,0"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Style="{StaticResource CaptionTextBlockStyle}"
+            Text="{x:Bind ViewModel.Appearance.Note, Mode=OneWay}"
+            TextWrapping="Wrap"
+            Visibility="{x:Bind ViewModel.Appearance.HasNote, Mode=OneWay}" />
 
         <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}" Text="BriefBar" />
         <Grid Style="{StaticResource SettingsCardStyle}">
