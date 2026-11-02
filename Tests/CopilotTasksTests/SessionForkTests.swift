@@ -717,6 +717,21 @@ import Testing
         #expect(await kept.leftoverForks().isEmpty)
     }
 
+    /// A fork its task takes on after a cleanup has read which forks are left over is, by the time it'd be deleted, no
+    /// longer kept, nor in flight: it's checked again then, and isn't deleted.
+    @Test(.timeLimit(.minutes(1)))
+    func leavesAForkATaskTookOnAfterTheListWasRead() async throws {
+        let fixture = try FakeCopilot.Fixture()
+        defer { fixture.remove() }
+        try FileManager.default.createDirectory(at: fixture.forkFolder, withIntermediateDirectories: true)
+        let fork = LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)
+        let kept = TakenOnLeftoverForks([fork])
+        await SessionForker(copilot: fixture.copilot, environment: fixture.environment, timeout: 20, leftovers: kept).deleteLeftovers()
+        #expect(!fixture.methods.contains("session.delete"))
+        #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
+        #expect(!ForksInFlight.contains(fork))
+    }
+
     @Test func forksOnlyASessionTheCLIHas() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }

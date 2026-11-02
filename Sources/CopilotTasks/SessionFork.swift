@@ -213,7 +213,8 @@ struct SessionForker: Sendable {
         await leftovers?.keepLeftoverFork(kept)
     }
 
-    /// The fork is gone, or a task has taken it on: it's no longer kept to delete, nor in flight.
+    /// The fork is gone, or a task has taken it on: it's no longer kept to delete, nor in flight, in that order, so that a
+    /// cleanup that finds it out of flight finds it no longer kept (`deleteLeftovers(through:)`).
     func forget(_ fork: String) async {
         let kept = LeftoverFork(home: home, id: fork)
         await leftovers?.dropLeftoverFork(kept)
@@ -266,6 +267,10 @@ struct SessionForker: Sendable {
         let own = server == nil ? try? CopilotServer.start(copilot, environment: environment) : nil
         guard let deleter = server ?? own else { return }
         for fork in due {
+            // Checked again right before it's deleted, as the list it came from may be stale: a task may have taken it on
+            // since, which no longer keeps it (`forget(_:)`, which drops it before it's out of flight, so it's checked in
+            // that order). Kept and out of flight, nothing takes it on anymore.
+            guard !ForksInFlight.contains(fork), await leftovers.leftoverForks().contains(fork) else { continue }
             _ = try? await deleter.delete(fork.id, timeout: timeout)
             if isGone(fork.id) { await leftovers.dropLeftoverFork(fork) }
         }

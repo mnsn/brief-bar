@@ -199,3 +199,30 @@ actor RecordingLeftoverForks: LeftoverForks {
         forks.removeAll { $0 == fork }
     }
 }
+
+/// Leftover forks whose task takes them on, and so no longer keeps them, right after they're first read: the list a
+/// cleanup read then is stale.
+actor TakenOnLeftoverForks: LeftoverForks {
+    private var forks: [LeftoverFork]
+    private var reads = 0
+
+    init(_ forks: [LeftoverFork]) {
+        self.forks = forks
+    }
+
+    func leftoverForks() -> [LeftoverFork] {
+        defer {
+            reads += 1
+            if reads == 1 { forks = [] }
+        }
+        return forks
+    }
+
+    func keepLeftoverFork(_ fork: LeftoverFork) {
+        if !forks.contains(fork) { forks.append(fork) }
+    }
+
+    func dropLeftoverFork(_ fork: LeftoverFork) {
+        forks.removeAll { $0 == fork }
+    }
+}
