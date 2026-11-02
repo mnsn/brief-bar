@@ -57,8 +57,9 @@ internal sealed class AppShell : IDisposable
         ticker = queue.CreateTimer();
         ticker.Interval = TimeSpan.FromSeconds(value: 15);
         ticker.Tick += (_, _) => Refresh();
-        var theme = Application.Current.RequestedTheme == ApplicationTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
-        Palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
+        Look = ShellColors.Read(appsAreDark: AppsAreDark());
+        Palette = ThemePalette.For(theme: ShellTheme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
+        BarPalette = BarPaletteFor(palette: Palette);
     }
 
     public bool IsDemo { get; }
@@ -66,7 +67,23 @@ internal sealed class AppShell : IDisposable
     /// It's quitting: its windows are closing, and its sources stopping.
     public bool IsQuitting => quitting;
 
+    /// The colors of the panel, and of the bar but on the accent; Settings takes only those that don't depend on the
+    /// theme.
     public ThemePalette Palette { get; private set; }
+
+    /// The colors of the bar: the panel's, or on the accent color, as dark, light enough to stand out on it.
+    public ThemePalette BarPalette { get; private set; }
+
+    /// The accent color's shade Windows paints the taskbar with while it shows the accent color: `AccentDark2`, checked
+    /// against the taskbar over Remote Desktop.
+    public Windows.UI.Color Accent => uiSettings.GetColorValue(desiredColor: UIColorType.AccentDark2);
+
+    /// How the bar and the panel look in Windows' colors, as the taskbar does.
+    public ShellLook Look { get; private set; }
+
+    /// The theme of the bar and the panel: Windows' mode, as the taskbar's, which can differ from the apps' mode that
+    /// Settings follows.
+    public ElementTheme ShellTheme => Look.IsDark ? ElementTheme.Dark : ElementTheme.Light;
 
     /// Windows' text size: 1 at 100%.
     public double TextScale => uiSettings.TextScaleFactor;
@@ -78,7 +95,7 @@ internal sealed class AppShell : IDisposable
         desktop.FullScreenChanged += (_, _) => ApplyFullScreen();
         uiSettings.TextScaleFactorChanged += (_, _) => queue.TryEnqueue(callback: () => PlaceBars(force: true));
         // Light, dark, accent and High Contrast changes; AccessibilitySettings' own event needs a UWP window.
-        uiSettings.ColorValuesChanged += (_, _) => queue.TryEnqueue(callback: () => ThemeChanged(theme: CurrentTheme()));
+        uiSettings.ColorValuesChanged += (_, _) => queue.TryEnqueue(callback: ColorsChanged);
         ArrangeBars();
         desktop.Start();
         ticker.Start();
@@ -268,17 +285,42 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// Windows changed between light and dark, turned High Contrast on or off, or changed its contrast theme:
-    /// everything's colors follow.
+    /// Windows' colors changed: its mode or the apps', the accent, or High Contrast. The bars and the panel take on
+    /// Windows' mode and the taskbar's accent, and everything's colors follow. Windows says so twice, through
+    /// `UISettings` and to the bars' windows, and a change that's already shown is left alone.
+    public void ColorsChanged()
+    {
+        if (quitting)
+        {
+            return;
+        }
+        var look = ShellColors.Read(appsAreDark: AppsAreDark());
+        if (look != Look)
+        {
+            Look = look;
+            Log.Write(line: $"shell: dark {look.IsDark}, accent {look.UsesAccent}");
+            panel.UseTheme(theme: ShellTheme);
+        }
+        // The accent color may have changed too.
+        foreach (var bar in bars.Concat(second: spares))
+        {
+            bar.UseLook(look: Look, accent: Accent);
+        }
+        ThemeChanged(theme: ShellTheme);
+    }
+
+    /// The bar's or the panel's theme changed, or Windows' High Contrast or accent color: everything's colors follow.
     public void ThemeChanged(ElementTheme theme)
     {
         var palette = ThemePalette.For(theme: theme, isHighContrast: accessibility.HighContrast, settings: uiSettings);
-        if (palette.Matches(other: Palette))
+        var barPalette = BarPaletteFor(palette: palette);
+        if (palette.Matches(other: Palette) && barPalette.Matches(other: BarPalette))
         {
             return;
         }
         Palette = palette;
-        Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}");
+        BarPalette = barPalette;
+        Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}, accent {barPalette.Background is not null}");
         settings?.UsePalette(palette: palette);
         Refresh();
     }
@@ -319,7 +361,7 @@ internal sealed class AppShell : IDisposable
             var display = displays[index];
             var bar = plan.ForDisplays[index] is { } taken ? windows[taken] : new BarWindow(shell: this, display: display);
             bar.TakeOver(display: display);
-            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now);
+            bar.ViewModel.Update(snapshots: snapshots, palette: BarPalette, now: now);
             arranged.Add(item: bar);
         }
         bars.Clear();
@@ -366,7 +408,7 @@ internal sealed class AppShell : IDisposable
         var snapshots = sources.Snapshots();
         foreach (var bar in bars)
         {
-            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now);
+            bar.ViewModel.Update(snapshots: snapshots, palette: BarPalette, now: now);
         }
         panel.Refresh(now: now);
     }
@@ -384,7 +426,18 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    ElementTheme CurrentTheme() => bars.FirstOrDefault()?.Theme ?? ElementTheme.Default;
+    /// The bar's colors with `palette`: on the accent color while the taskbar shows it, which High Contrast doesn't.
+    ThemePalette BarPaletteFor(ThemePalette palette) =>
+        Look.UsesAccent && !palette.IsHighContrast
+            ? ThemePalette.For(
+                theme: palette.IsDark ? ElementTheme.Dark : ElementTheme.Light,
+                isHighContrast: false,
+                settings: uiSettings,
+                background: ThemePalette.ArgbOf(color: Accent))
+            : palette;
+
+    /// Whether the apps' mode is dark, as `UISettings` says it now.
+    bool AppsAreDark() => uiSettings.GetColorValue(desiredColor: UIColorType.Background).R < 128;
 
     /// A source that fails to start ends BriefBar, logged, through the UI thread's unhandled-exception handler. Quitting
     /// while sources start stops their starting, which isn't a failure.

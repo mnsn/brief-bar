@@ -28,24 +28,33 @@ public sealed class ThemePalette
     /// In High Contrast, Windows' colors as they were when it was made; otherwise none.
     readonly Dictionary<UIElementType, Color> systemColors;
 
-    ThemePalette(bool isDark, bool isHighContrast, Dictionary<UIElementType, Color> systemColors)
+    ThemePalette(bool isDark, bool isHighContrast, Dictionary<UIElementType, Color> systemColors, uint? background)
     {
         IsDark = isDark;
         IsHighContrast = isHighContrast;
         this.systemColors = systemColors;
+        Background = background;
     }
 
     public bool IsDark { get; }
 
     public bool IsHighContrast { get; }
 
+    /// The color it's shown on when that isn't the bar's and the panel's own, such as the taskbar's accent color behind
+    /// the bar: its states', caution's and quiet colors stand out on it as on their own (`StatePalette.Readable`).
+    public uint? Background { get; }
+
     /// Icons, dots and badges in a state.
     public Brush Fill(ItemState state) =>
-        IsHighContrast ? System(element: UIElementType.Highlight) : Brush(argb: StatePalette.Fill(state: state, dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.Highlight)
+            : Brush(argb: OnBackground(argb: StatePalette.Fill(state: state, dark: IsDark), least: Wcag.GraphicsContrast));
 
     /// Words in a state.
     public Brush Text(ItemState state) =>
-        IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: StatePalette.Text(state: state, dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.WindowText)
+            : Brush(argb: OnBackground(argb: StatePalette.Text(state: state, dark: IsDark), least: Wcag.TextContrast));
 
     /// A glyph on a state's fill.
     public Brush OnFill =>
@@ -58,14 +67,20 @@ public sealed class ThemePalette
         IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.PillText(dark: IsDark));
 
     public Brush Caution =>
-        IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: StatePalette.Caution(dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.WindowText)
+            : Brush(argb: OnBackground(argb: StatePalette.Caution(dark: IsDark), least: Wcag.TextContrast));
 
     public Brush Quiet =>
-        IsHighContrast ? System(element: UIElementType.GrayText) : Brush(argb: StatePalette.Quiet(dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.GrayText)
+            : Brush(argb: OnBackground(argb: StatePalette.Quiet(dark: IsDark), least: Wcag.TextContrast));
 
     /// A source's glyph on the bar or a row.
     public Brush Glyph(uint tint) =>
-        IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: StatePalette.Glyph(tint: tint, dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.WindowText)
+            : Brush(argb: OnBackground(argb: StatePalette.Glyph(tint: tint, dark: IsDark), least: Wcag.GraphicsContrast));
 
     /// A source's tile, or a chat's avatar, with `OnTint` drawn on it.
     public Brush Tint(uint tint) => IsHighContrast ? System(element: UIElementType.Highlight) : Brush(argb: tint);
@@ -79,15 +94,19 @@ public sealed class ThemePalette
     public Brush ChipText(RowChipKind kind) =>
         IsHighContrast ? System(element: UIElementType.ButtonText) : Brush(argb: StatePalette.ChipText(kind: kind, dark: IsDark));
 
-    /// The palette for what Windows shows now: in High Contrast, with Windows' colors from `settings`.
-    public static ThemePalette For(ElementTheme theme, bool isHighContrast, UISettings settings)
+    /// The palette for what Windows shows now: in High Contrast, with Windows' colors from `settings`; on `background`
+    /// when it isn't the bar's and the panel's own.
+    public static ThemePalette For(ElementTheme theme, bool isHighContrast, UISettings settings, uint? background = null)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         Dictionary<UIElementType, Color> colors = isHighContrast
             ? systemElements.ToDictionary(keySelector: element => element, elementSelector: element => settings.UIElementColor(desiredElement: element))
             : [];
-        return new ThemePalette(isDark: theme == ElementTheme.Dark, isHighContrast: isHighContrast, systemColors: colors);
+        return new ThemePalette(isDark: theme == ElementTheme.Dark, isHighContrast: isHighContrast, systemColors: colors, background: background);
     }
+
+    /// `color` as ARGB.
+    public static uint ArgbOf(Color color) => ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
     /// Whether it shows what `other` does: the same theme and, in High Contrast, the same colors of Windows'.
     public bool Matches(ThemePalette other)
@@ -95,6 +114,7 @@ public sealed class ThemePalette
         ArgumentNullException.ThrowIfNull(argument: other);
         return IsDark == other.IsDark
             && IsHighContrast == other.IsHighContrast
+            && Background == other.Background
             && systemColors.Count == other.systemColors.Count
             && systemColors.All(predicate: pair => other.systemColors.TryGetValue(key: pair.Key, value: out var color) && color == pair.Value);
     }
@@ -111,8 +131,11 @@ public sealed class ThemePalette
 
     SolidColorBrush System(UIElementType element) => Brush(argb: ArgbOf(color: systemColors[element]));
 
+    /// `argb`, made to stand `least` to 1 apart from `Background` if there's one.
+    uint OnBackground(uint argb, double least) =>
+        Background is { } background ? StatePalette.Readable(color: argb, background: background, dark: IsDark, least: least) : argb;
+
     static Color ColorOf(uint argb) => Color.FromArgb(
         a: (byte)(argb >> 24), r: (byte)(argb >> 16), g: (byte)(argb >> 8), b: (byte)argb);
 
-    static uint ArgbOf(Color color) => ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 }

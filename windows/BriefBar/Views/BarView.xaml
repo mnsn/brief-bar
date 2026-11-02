@@ -12,7 +12,7 @@
         Padding="2,0,2,0"
         AutomationProperties.LandmarkType="Navigation"
         AutomationProperties.Name="BriefBar"
-        Background="Transparent"
+        Background="{ThemeResource BarAndPanelBackgroundBrush}"
         PointerPressed="OnRootPressed">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />

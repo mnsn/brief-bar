@@ -2,17 +2,31 @@ using BriefBar.Core.Presentation;
 
 namespace BriefBar.Core.Tests.Presentation;
 
-/// The states' and sources' colors meet WCAG 2.2 AA in light and dark: 4.5 to 1 for words, 3 to 1 for icons, dots and
-/// badges.
+/// The states' and sources' colors meet WCAG 2.2 AA in light and dark, on the bar's and the panel's acrylic and on the
+/// flat color Windows shows in its place: 4.5 to 1 for words, 3 to 1 for icons, dots and badges.
 public sealed class StatePaletteTests
 {
-    public static TheoryData<bool> Themes => [false, true];
+    /// Light and dark, each with the backgrounds it can have.
+    public static TheoryData<bool, uint> Backgrounds
+    {
+        get
+        {
+            var data = new TheoryData<bool, uint>();
+            foreach (var dark in new[] { false, true })
+            {
+                foreach (var background in StatePalette.Backgrounds(dark: dark))
+                {
+                    data.Add(p1: dark, p2: background);
+                }
+            }
+            return data;
+        }
+    }
 
     [Theory]
-    [MemberData(memberName: nameof(Themes))]
-    public void WordsInAStatesColorAreReadable(bool dark)
+    [MemberData(memberName: nameof(Backgrounds))]
+    public void WordsInAStatesColorAreReadable(bool dark, uint background)
     {
-        var background = StatePalette.Background(dark: dark);
         foreach (var state in StateCounts.AllStates)
         {
             AssertContrast(foreground: StatePalette.Text(state: state, dark: dark), background: background, least: Wcag.TextContrast);
@@ -24,12 +38,12 @@ public sealed class StatePaletteTests
     }
 
     [Theory]
-    [MemberData(memberName: nameof(Themes))]
-    public void ChipsWordsAreReadableOnTheChipAsItShows(bool dark)
+    [MemberData(memberName: nameof(Backgrounds))]
+    public void ChipsWordsAreReadableOnTheChipAsItShows(bool dark, uint background)
     {
         foreach (var kind in Enum.GetValues<RowChipKind>())
         {
-            var chip = StatePalette.Over(argb: StatePalette.ChipBackground(kind: kind, dark: dark), background: StatePalette.Background(dark: dark));
+            var chip = StatePalette.Over(argb: StatePalette.ChipBackground(kind: kind, dark: dark), background: background);
             AssertContrast(foreground: StatePalette.ChipText(kind: kind, dark: dark), background: chip, least: Wcag.TextContrast);
         }
     }
@@ -37,10 +51,12 @@ public sealed class StatePaletteTests
     [Fact]
     public void KeepsAChipsColorWhereItsReadableAlready()
     {
-        // A work item's blue reads well enough on its chip as it is; a pull request's green is darkened.
+        // A work item's blue reads well enough on its chip in dark as it is. In light, on Windows' flat color, it's
+        // darkened, as a pull request's green is, but only a little: 5%.
         Assert.Equal(
-            expected: StatePalette.Text(state: ItemState.Running, dark: false),
-            actual: StatePalette.ChipText(kind: RowChipKind.WorkItem, dark: false));
+            expected: StatePalette.Text(state: ItemState.Running, dark: true),
+            actual: StatePalette.ChipText(kind: RowChipKind.WorkItem, dark: true));
+        Assert.Equal(expected: 0xFF005AAFu, actual: StatePalette.ChipText(kind: RowChipKind.WorkItem, dark: false));
         Assert.NotEqual(
             expected: StatePalette.Text(state: ItemState.Done, dark: false),
             actual: StatePalette.ChipText(kind: RowChipKind.PullRequest, dark: false));
@@ -58,10 +74,9 @@ public sealed class StatePaletteTests
     }
 
     [Theory]
-    [MemberData(memberName: nameof(Themes))]
-    public void IconsAndBadgesStandOut(bool dark)
+    [MemberData(memberName: nameof(Backgrounds))]
+    public void IconsAndBadgesStandOut(bool dark, uint background)
     {
-        var background = StatePalette.Background(dark: dark);
         foreach (var state in StateCounts.AllStates)
         {
             AssertContrast(foreground: StatePalette.Fill(state: state, dark: dark), background: background, least: Wcag.GraphicsContrast);
@@ -73,18 +88,55 @@ public sealed class StatePaletteTests
     }
 
     [Theory]
-    [MemberData(memberName: nameof(Themes))]
-    public void EverySourcesGlyphStandsOut(bool dark)
+    [MemberData(memberName: nameof(Backgrounds))]
+    public void EverySourcesGlyphStandsOut(bool dark, uint background)
     {
         foreach (var section in Sections.InBarOrder)
         {
-            AssertContrast(
-                foreground: StatePalette.Glyph(tint: section.Tint, dark: dark),
-                background: StatePalette.Background(dark: dark),
-                least: Wcag.GraphicsContrast);
+            AssertContrast(foreground: StatePalette.Glyph(tint: section.Tint, dark: dark), background: background, least: Wcag.GraphicsContrast);
         }
     }
 
+    /// Colors worked out to stand out, a source's glyph and a chip's words, are worked out against the background they
+    /// stand out least on: in light, Windows' flat color, darker than acrylic; in dark, acrylic, lighter than the flat
+    /// color.
+    [Fact]
+    public void WorksColorsOutAgainstTheBackgroundTheyStandOutLeastOn()
+    {
+        Assert.Equal(expected: 0xFFEEEEEEu, actual: StatePalette.Background(dark: false));
+        Assert.Equal(expected: StatePalette.Backgrounds(dark: false).MinBy(keySelector: Wcag.Luminance), actual: StatePalette.Background(dark: false));
+        Assert.Equal(expected: 0xFF2C2C2Cu, actual: StatePalette.Background(dark: true));
+        Assert.Equal(expected: StatePalette.Backgrounds(dark: true).MaxBy(keySelector: Wcag.Luminance), actual: StatePalette.Background(dark: true));
+    }
+
+    /// The shade of the accent color the taskbar shows in dark, which the bar then shows too: Windows' default blue's,
+    /// `AccentDark2`, as measured on the taskbar, and made-up shades of other hues.
+    public static TheoryData<uint> AccentShades => [0xFF003E92u, 0xFF8E1B1Bu, 0xFF0B5A2Au, 0xFF4B1F7Au, 0xFF7A3B00u, 0xFF6B5300u, 0xFF7A0F44u, 0xFF3D3D3Du];
+
+    [Theory]
+    [MemberData(memberName: nameof(AccentShades))]
+    public void StatesStandOutOnTheTaskbarsAccent(uint accent)
+    {
+        foreach (var state in StateCounts.AllStates)
+        {
+            var fill = StatePalette.Readable(color: StatePalette.Fill(state: state, dark: true), background: accent, dark: true, least: Wcag.GraphicsContrast);
+            AssertContrast(foreground: fill, background: accent, least: Wcag.GraphicsContrast);
+            var text = StatePalette.Readable(color: StatePalette.Text(state: state, dark: true), background: accent, dark: true, least: Wcag.TextContrast);
+            AssertContrast(foreground: text, background: accent, least: Wcag.TextContrast);
+        }
+        var quiet = StatePalette.Readable(color: StatePalette.Quiet(dark: true), background: accent, dark: true, least: Wcag.TextContrast);
+        AssertContrast(foreground: quiet, background: accent, least: Wcag.TextContrast);
+    }
+
+    [Fact]
+    public void KeepsAColorThatStandsOutOnTheAccentAlready()
+    {
+        // Done's green reads on Windows' default accent as it is; Quiet's gray is lightened.
+        var green = StatePalette.Text(state: ItemState.Done, dark: true);
+        Assert.Equal(expected: green, actual: StatePalette.Readable(color: green, background: 0xFF003E92u, dark: true, least: Wcag.TextContrast));
+        var gray = StatePalette.Quiet(dark: true);
+        Assert.NotEqual(expected: gray, actual: StatePalette.Readable(color: gray, background: 0xFF003E92u, dark: true, least: Wcag.TextContrast));
+    }
     [Fact]
     public void KeepsASourcesOwnColorWhenItStandsOutAlready()
     {
