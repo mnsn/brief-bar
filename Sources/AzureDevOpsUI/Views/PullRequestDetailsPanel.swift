@@ -27,9 +27,9 @@ struct PullRequestDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                LinkedItemPage(ref: page)
+                                LinkedItemPage(ref: page, scroll: proxy)
                             } else {
-                                PullRequestDetailsContent(details: details, item: item)
+                                PullRequestDetailsContent(details: details, item: item, scroll: proxy)
                             }
                         }
                         .padding(.horizontal, 16)

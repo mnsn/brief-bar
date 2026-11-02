@@ -28,7 +28,7 @@ struct WorkItemDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                LinkedItemPage(ref: page)
+                                LinkedItemPage(ref: page, scroll: proxy)
                             } else {
                                 content(item)
                             }

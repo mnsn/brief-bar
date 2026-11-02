@@ -73,9 +73,9 @@ struct OpenInBriefBarSetting: View {
 
     static let title = "Open Pull Requests in BriefBar"
     static let explanation = """
-        Clicking a pull request in the menu bar's list or a widget, or one of its notifications, shows its details in \
-        BriefBar's window, at the comment or the run it's about, rather than opening it in Azure DevOps. Either way, its \
-        menu has both, and in BriefBar's window a click shows its details.
+        Clicking a pull request in the menu bar's list or a widget, or one of its notifications, shows its details on the \
+        Pull Requests page of BriefBar's window, at the comment or the run it's about, rather than opening it in Azure \
+        DevOps. Either way, its menu has both, and in BriefBar's window a click shows its details.
         """
 
     var body: some View {

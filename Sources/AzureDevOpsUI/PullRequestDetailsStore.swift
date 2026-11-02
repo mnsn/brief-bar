@@ -174,10 +174,17 @@ final class PullRequestDetailsStore: ObservableObject {
         Place.about(item, record: readRecord(item.key))
     }
 
+    /// The pull request as the list has it now, for what was kept of it a while, such as a line of a brief: as it was then
+    /// once the list doesn't have it.
+    private func current(_ item: PRSnapshot) -> PRSnapshot {
+        listed.first { $0.key == item.key } ?? item
+    }
+
     /// From the menu bar, a widget or the brief: a pull request's details in BriefBar's window, at what its row is about,
     /// once you chose to Open Pull Requests in BriefBar, while a window has the Pull Requests page; or else Azure DevOps,
     /// at the comment its row says. Either sees it.
     func open(_ item: PRSnapshot) {
+        let item = current(item)
         if opensInBriefBar(), reveal(item, at: about(item)) { return }
         openInAzureDevOps(item)
     }
@@ -185,6 +192,7 @@ final class PullRequestDetailsStore: ObservableObject {
     /// From another page of BriefBar's window, such as the Overview: its details on the Pull Requests page, at what its row
     /// is about; or Azure DevOps, when no window has that page.
     func showDetails(_ item: PRSnapshot) {
+        let item = current(item)
         if reveal(item, at: about(item)) { return }
         openInAzureDevOps(item)
     }

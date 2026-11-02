@@ -14,6 +14,8 @@ struct PullRequestDetailsContent: View {
     @ObservedObject var details: PullRequestDetailsStore
     /// The pull request, as the list has it now, or as it was last once it doesn't.
     let item: PRSnapshot
+    /// Scrolls the details or the page it's in, which holds it, to where they're asked to go.
+    let scroll: ScrollViewProxy
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var copilot: CopilotTasksStore
@@ -41,28 +43,26 @@ struct PullRequestDetailsContent: View {
         let record = record
         let panel = PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
         let ref = item.key.linkRef
-        ScrollViewReader { proxy in
-            VStack(alignment: .leading, spacing: 20) {
-                PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
-                PullRequestSessionLine(item: item)
-                // Its summary, of it and what's linked to it, under what it is.
-                PageSummary(ref: ref)
-                if let readiness = panel.readiness, !readiness.items.isEmpty {
-                    PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { section in
-                        details.go(to: .section(section))
-                    }
+        VStack(alignment: .leading, spacing: 20) {
+            PullRequestPanelHeading(item: item, panel: panel, isListed: !isShown || details.isListed, linked: linkFact)
+            PullRequestSessionLine(item: item)
+            // Its summary, of it and what's linked to it, under what it is.
+            PageSummary(ref: ref)
+            if let readiness = panel.readiness, !readiness.items.isEmpty {
+                PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { section in
+                    details.go(to: .section(section))
                 }
-                PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
-                    .id(PullRequestDetailsStore.Anchor.section(.comments))
-                PullRequestChecksSection(panel: panel, highlighted: highlighted)
-                    .id(PullRequestDetailsStore.Anchor.section(.checks))
-                PullRequestReviewersSection(panel: panel)
-                    .id(PullRequestDetailsStore.Anchor.section(.reviewers))
-                WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: details.place, initial: true) { go(proxy, in: panel) }
+            PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
+                .id(PullRequestDetailsStore.Anchor.section(.comments))
+            PullRequestChecksSection(panel: panel, highlighted: highlighted)
+                .id(PullRequestDetailsStore.Anchor.section(.checks))
+            PullRequestReviewersSection(panel: panel)
+                .id(PullRequestDetailsStore.Anchor.section(.reviewers))
+            WhereItStandsSection(subject: ref, excluding: Set(trail), title: "Also Linked", hidesWhenEmpty: true, showsSummary: false)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: details.place, initial: true) { go(in: panel) }
         .tellsStory(of: ref)
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
         .writesSummary(of: ref)
@@ -84,14 +84,14 @@ struct PullRequestDetailsContent: View {
 
     /// To where they were asked to go, once it shows, pointing out a thread, a build or a check for a moment: to their
     /// comments, or their builds and checks, for one they don't have.
-    private func go(_ proxy: ScrollViewProxy, in panel: PullRequestPanel) {
+    private func go(in panel: PullRequestPanel) {
         guard let place = details.place, details.pages.isEmpty, isShown else { return }
         let anchor = place.anchor(in: panel)
         Task { @MainActor in
             // Once what's there shows, such as a resolved thread unfolded for it.
             try? await Task.sleep(for: .milliseconds(60))
             details.reached(place)
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
+            withAnimation(.easeOut(duration: 0.25)) { scroll.scrollTo(anchor, anchor: .top) }
             if case .section = anchor { return }
             withAnimation(.easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
@@ -107,12 +107,14 @@ struct PullRequestDetailsContent: View {
 /// anything else, what Show Links knows of it (`ItemPageView`).
 struct LinkedItemPage: View {
     let ref: ItemRef
+    /// Scrolls the details it's over, which hold it.
+    let scroll: ScrollViewProxy
 
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
         if let item = Self.pullRequest(ref, in: store.items) {
-            PullRequestPage(item: item)
+            PullRequestPage(item: item, scroll: scroll)
         } else {
             ItemPageView(ref: ref)
         }
@@ -129,12 +131,13 @@ struct LinkedItemPage: View {
 /// shows, keeping what was new in its threads new while it does.
 private struct PullRequestPage: View {
     let item: PRSnapshot
+    let scroll: ScrollViewProxy
 
     @EnvironmentObject private var store: PRStore
     @LocalState private var details = PullRequestDetailsStore()
 
     var body: some View {
-        PullRequestDetailsContent(details: details, item: item)
+        PullRequestDetailsContent(details: details, item: item, scroll: scroll)
             .onAppear {
                 details.use(store)
                 details.show(item)

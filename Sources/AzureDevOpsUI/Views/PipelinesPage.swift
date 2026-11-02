@@ -131,7 +131,7 @@ private struct PullRequestPipelinesCard: View {
                         case .current:
                             EmptyView()
                         }
-                        MergeRunRow(status: status, now: now, opensDetails: status.latest.map { run in { show(at: .run(run.id)) } })
+                        MergeRunRow(status: status, now: now, opensDetails: canShow ? status.latest.map { run in { show(at: .run(run.id)) } } : nil)
                         if !status.stages.isEmpty {
                             StageFlow(stages: status.stages, now: now)
                         }
@@ -253,6 +253,10 @@ private struct MergeCard: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: show)
             .help(canShow ? "Click to see the pull request's details" : "Click to open the pull request in Azure DevOps")
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(canShow ? "Shows the pull request's details" : "Opens the pull request in Azure DevOps")
+            .accessibilityAction { show() }
             VStack(spacing: 6) {
                 ForEach(merge.pipelines) { status in
                     MergeRunRow(status: status, now: now)
@@ -364,6 +368,9 @@ private struct MergeRunRow: View {
         .onTapGesture(perform: opensDetails ?? openRun)
         .help(opensDetails == nil ? "Click to open the run in Azure DevOps" : "Click to see the run in the pull request's details")
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(opensDetails == nil ? "Opens the run in Azure DevOps" : "Shows the run in the pull request's details")
+        .accessibilityAction { (opensDetails ?? openRun)() }
         .accessibilityActions {
             if opensDetails != nil {
                 Button("Open in Azure DevOps", action: openRun)
