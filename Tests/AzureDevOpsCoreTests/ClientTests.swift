@@ -351,7 +351,8 @@ extension Locked where Value == Int {
         #expect(wait("soon") == nil)
     }
 
-    /// Each request's token goes only to the host it's for: a redirect anywhere else isn't followed, and the error says so.
+    /// Each request's token goes only where it's sent: no redirect is followed, and one to another host fails with an
+    /// error that names it.
     @Test(.timeLimit(.minutes(1)))
     func refusesARedirectToAnotherHost() async {
         let server = StubServer()
@@ -361,38 +362,40 @@ extension Locked where Value == Int {
         }
         let url = ADOEndpoint.connectionData(organization: "contoso")
 
-        await #expect(throws: ADOError.redirected) { try await server.client().get(url, as: ADOConnectionData.self) }
+        await #expect(throws: ADOError.redirected("elsewhere.example")) { try await server.client().get(url, as: ADOConnectionData.self) }
         #expect(server.requests.map(\.url) == [url])
-        #expect(ADOError.redirected.description == "Azure DevOps redirected BriefBar to another host, which it doesn't connect to.")
+        #expect(ADOError.redirected("elsewhere.example").description
+            == "Azure DevOps redirected BriefBar to another host, elsewhere.example, which it doesn't connect to.")
     }
 
+    /// Azure DevOps answers each request where it's sent, so a redirect on the same host isn't followed either.
     @Test(.timeLimit(.minutes(1)))
-    func followsARedirectOnTheSameHost() async throws {
+    func aRedirectOnTheSameHostIsAnHTTPError() async {
         let server = StubServer()
         server.on("/_apis/connectionData") { request in
             request.url?.query?.contains("again") == true
                 ? .json(["authenticatedUser": ["id": "ME"]]) : .redirect(to: "https://dev.azure.com/contoso/_apis/connectionData?again")
         }
+        let url = ADOEndpoint.connectionData(organization: "contoso")
 
-        let me = try await server.client().get(ADOEndpoint.connectionData(organization: "contoso"), as: ADOConnectionData.self)
-        #expect(me.authenticatedUser.id == "ME")
-        #expect(server.requests.count == 2)
+        await #expect(throws: ADOError.http(307)) { try await server.client().get(url, as: ADOConnectionData.self) }
+        #expect(server.requests.map(\.url) == [url])
     }
 
-    @Test func followsARedirectOnlyOverHTTPSToTheSameHost() {
+    @Test func namesTheOtherHostARedirectPointsTo() {
         let source = ADOEndpoint.connectionData(organization: "contoso")
-        #expect(RedirectGuard.follows(from: source, to: URL(string: "https://dev.azure.com/contoso/_apis/connectionData?again")))
-        #expect(RedirectGuard.follows(from: ADOEndpoint.profile, to: URL(string: "https://app.vssps.visualstudio.com/_apis/profile/profiles/me")))
-        // HTTPS's own port, named or not, is the same port.
-        #expect(RedirectGuard.follows(from: source, to: URL(string: "https://dev.azure.com:443/contoso/_apis/connectionData")))
-        #expect(RedirectGuard.follows(from: URL(string: "https://dev.azure.com:443/contoso/_apis/connectionData"), to: source))
+        #expect(RedirectGuard.otherHost(URL(string: "https://elsewhere.example/contoso/_apis/connectionData"), from: source)
+            == "elsewhere.example")
+        #expect(RedirectGuard.otherHost(URL(string: "https://contoso.visualstudio.com/_apis/connectionData"), from: source)
+            == "contoso.visualstudio.com")
+        #expect(RedirectGuard.otherHost(source, from: ADOEndpoint.profile) == "dev.azure.com")
         for target in [
-            "https://contoso.visualstudio.com/_apis/connectionData", "https://elsewhere.example/contoso/_apis/connectionData",
-            "http://dev.azure.com/contoso/_apis/connectionData", "https://dev.azure.com:8443/contoso/_apis/connectionData",
+            "https://dev.azure.com/contoso/_apis/connectionData?again", "http://dev.azure.com/contoso/_apis/connectionData",
+            "https://DEV.azure.com:8443/contoso/_apis/connectionData",
         ] {
-            #expect(!RedirectGuard.follows(from: source, to: URL(string: target)), "\(target)")
+            #expect(RedirectGuard.otherHost(URL(string: target), from: source) == nil, "\(target)")
         }
-        #expect(!RedirectGuard.follows(from: ADOEndpoint.profile, to: source))
+        #expect(RedirectGuard.otherHost(nil, from: source) == nil)
     }
 
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then, so

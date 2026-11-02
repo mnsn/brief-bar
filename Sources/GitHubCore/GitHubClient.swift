@@ -16,8 +16,8 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
     case decoding(String)
     /// GitHub answered with errors and nothing it could read.
     case graphQL(String)
-    /// GitHub redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`).
-    case redirected
+    /// GitHub redirected the request to another host, this one, where BriefBar doesn't go (`RedirectGuard`).
+    case redirected(String)
 
     public var description: String {
         switch self {
@@ -30,7 +30,7 @@ public enum GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from GitHub (\(message))."
         case .graphQL(let message): return "GitHub couldn't answer: \(message)"
-        case .redirected: return "GitHub redirected BriefBar to another host, which it doesn't connect to."
+        case .redirected(let host): return "GitHub redirected BriefBar to another host, \(host), which it doesn't connect to."
         }
     }
 }
@@ -48,7 +48,7 @@ public struct PullRequestQueryResult: Sendable, Equatable {
 
 /// Reads your pull requests from GitHub. It sends one request, always the same query (`PullRequestQuery`), so it can
 /// only read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation. It connects to
-/// api.github.com only, and follows a redirect only there (`RedirectGuard`).
+/// api.github.com only, and follows no redirect (`RedirectGuard`).
 public struct GitHubClient: Sendable {
     public static let endpoint = URL(string: "https://api.github.com/graphql")!
 
@@ -122,12 +122,12 @@ public struct GitHubClient: Sendable {
                 (data, response) = try await session.data(for: Self.request(body, token: token.value), delegate: redirects)
             } catch {
                 // A refused redirect ends the request, however URLSession ends it.
-                if redirects.refused { throw GitHubError.redirected }
+                if let redirect = redirects.refused { throw Self.error(refusing: redirect) }
                 if let error = error as? URLError { throw Self.map(error) }
                 throw GitHubError.network(error.localizedDescription)
             }
-            if redirects.refused {
-                throw GitHubError.redirected
+            if let redirect = redirects.refused {
+                throw Self.error(refusing: redirect)
             }
             guard let http = response as? HTTPURLResponse else {
                 throw GitHubError.network("No response from GitHub.")
@@ -210,6 +210,11 @@ public struct GitHubClient: Sendable {
         }
     }
 
+    /// A redirect to another host says where it pointed; one on the same host is an HTTP error like any other.
+    static func error(refusing redirect: RedirectGuard.Refusal) -> GitHubError {
+        redirect.otherHost.map(GitHubError.redirected) ?? .http(redirect.status)
+    }
+
     private static func describe(_ error: Error) -> String {
         guard let decodingError = error as? DecodingError else { return String(describing: error) }
         switch decodingError {
@@ -242,40 +247,33 @@ actor RateLimitGate {
     }
 }
 
-/// Follows a redirect only on the host the request went to, over HTTPS, so GitHub's token goes nowhere else. One for
-/// each request, which then says whether it refused one: the request's answer is then the redirect, not GitHub's.
+/// Follows no redirect, so the query goes only where it's sent, with GitHub's token: GitHub answers it there. One for
+/// each request, which keeps the redirect it refused, for the client to say where it pointed.
 final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
-    private let refusal = Mutex(false)
+    /// A redirect it refused: its status, and the host it pointed to when that's another.
+    struct Refusal: Sendable, Equatable {
+        var status: Int
+        var otherHost: String?
+    }
 
-    /// Whether it refused a redirect.
-    var refused: Bool { refusal.withLock { $0 } }
+    private let refusal = Mutex<Refusal?>(nil)
+
+    /// The redirect it refused, if there was one.
+    var refused: Refusal? { refusal.withLock { $0 } }
 
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest
     ) async -> URLRequest? {
-        guard Self.follows(from: response.url, to: request.url) else {
-            refusal.withLock { $0 = true }
-            return nil
-        }
-        return request
+        let refused = Refusal(status: response.statusCode, otherHost: Self.otherHost(request.url, from: response.url))
+        refusal.withLock { $0 = refused }
+        return nil
     }
 
-    /// Whether a redirect from `source` to `target` stays where the request went: HTTPS, on the same host and port.
-    static func follows(from source: URL?, to target: URL?) -> Bool {
-        guard let source, let target, target.scheme?.lowercased() == "https", let host = target.host?.lowercased() else {
-            return false
-        }
-        return host == source.host?.lowercased() && port(target) == port(source)
-    }
-
-    /// The port `url` connects to: the one it names, or else its scheme's.
-    private static func port(_ url: URL) -> Int? {
-        if let port = url.port { return port }
-        switch url.scheme?.lowercased() {
-        case "https": return 443
-        case "http": return 80
-        default: return nil
-        }
+    /// The host `target` is on, percent-encoded, so it's in ASCII, when it's another than `source`'s: nil when it stays
+    /// on `source`'s, whatever its scheme, port or path, or has none.
+    static func otherHost(_ target: URL?, from source: URL?) -> String? {
+        guard let host = target?.host(percentEncoded: true), !host.isEmpty else { return nil }
+        return host.lowercased() == source?.host(percentEncoded: true)?.lowercased() ? nil : host
     }
 }

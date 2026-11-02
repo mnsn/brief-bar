@@ -8,8 +8,8 @@
 - **A review by a deleted GitHub account counts.** On a pull request without a review decision, changes
   it requested put the pull request under Changes Requested, and its approval under Ready to Merge,
   rather than Waiting.
-- **Azure DevOps and GitHub never follow a redirect to another host**, so your sign-in's token goes only
-  where it should. When one redirects BriefBar elsewhere, the list says so.
+- **Azure DevOps and GitHub never follow a redirect**, so your sign-in's token goes only where it should. When
+  one redirects BriefBar to another host, the list says which.
 - **Turning GitHub off stops a run of the GitHub CLI that's under way**, so the token it would get goes
   nowhere.
 - **When Azure DevOps or GitHub asks BriefBar to wait until a given time, it waits until then.** Either can

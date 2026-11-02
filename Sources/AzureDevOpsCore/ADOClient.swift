@@ -15,8 +15,8 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     case http(Int)
     case network(String)
     case decoding(String)
-    /// Azure DevOps redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`).
-    case redirected
+    /// Azure DevOps redirected the request to another host, this one, where BriefBar doesn't go (`RedirectGuard`).
+    case redirected(String)
 
     public var description: String {
         switch self {
@@ -29,13 +29,13 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
         case .http(let status): return "Azure DevOps answered with HTTP \(status)."
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from Azure DevOps (\(message))."
-        case .redirected: return "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."
+        case .redirected(let host): return "Azure DevOps redirected BriefBar to another host, \(host), which it doesn't connect to."
         }
     }
 }
 
-/// Reads from Azure DevOps. It only ever sends GET requests: BriefBar never changes anything there. Each goes to the
-/// host it's for, and follows a redirect only there (`RedirectGuard`).
+/// Reads from Azure DevOps. It only ever sends GET requests: BriefBar never changes anything there. Each goes only where
+/// it's sent: it follows no redirect (`RedirectGuard`).
 public struct ADOClient: Sendable {
     public let tokens: any AccessTokenProvider
     let session: URLSession
@@ -91,12 +91,12 @@ public struct ADOClient: Sendable {
                 (data, response) = try await session.data(for: Self.request(url, token: token.value), delegate: redirects)
             } catch {
                 // A refused redirect ends the request, however URLSession ends it.
-                if redirects.refused { throw ADOError.redirected }
+                if let redirect = redirects.refused { throw Self.error(refusing: redirect) }
                 if let error = error as? URLError { throw Self.map(error) }
                 throw ADOError.network(error.localizedDescription)
             }
-            if redirects.refused {
-                throw ADOError.redirected
+            if let redirect = redirects.refused {
+                throw Self.error(refusing: redirect)
             }
             guard let http = response as? HTTPURLResponse else {
                 throw ADOError.network("No response from Azure DevOps.")
@@ -172,6 +172,11 @@ public struct ADOClient: Sendable {
         }
     }
 
+    /// A redirect to another host says where it pointed; one on the same host is an HTTP error like any other.
+    static func error(refusing redirect: RedirectGuard.Refusal) -> ADOError {
+        redirect.otherHost.map(ADOError.redirected) ?? .http(redirect.status)
+    }
+
     private static func describe(_ error: Error) -> String {
         guard let error = error as? DecodingError else { return String(describing: error) }
         switch error {
@@ -199,42 +204,34 @@ actor RateLimitGate {
     }
 }
 
-/// Follows a redirect only on the host the request went to, over HTTPS, so the Azure CLI's token goes nowhere else. One
-/// for each request, which then says whether it refused one: the request's answer is then the redirect, not what it
-/// asked for.
+/// Follows no redirect, so each request goes only where it's sent, with the Azure CLI's token: Azure DevOps answers it
+/// there. One for each request, which keeps the redirect it refused, for the client to say where it pointed.
 final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
-    private let refusal = Mutex(false)
+    /// A redirect it refused: its status, and the host it pointed to when that's another.
+    struct Refusal: Sendable, Equatable {
+        var status: Int
+        var otherHost: String?
+    }
 
-    /// Whether it refused a redirect.
-    var refused: Bool { refusal.withLock { $0 } }
+    private let refusal = Mutex<Refusal?>(nil)
+
+    /// The redirect it refused, if there was one.
+    var refused: Refusal? { refusal.withLock { $0 } }
 
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest
     ) async -> URLRequest? {
-        guard Self.follows(from: response.url, to: request.url) else {
-            refusal.withLock { $0 = true }
-            return nil
-        }
-        return request
+        let refused = Refusal(status: response.statusCode, otherHost: Self.otherHost(request.url, from: response.url))
+        refusal.withLock { $0 = refused }
+        return nil
     }
 
-    /// Whether a redirect from `source` to `target` stays where the request went: HTTPS, on the same host and port.
-    static func follows(from source: URL?, to target: URL?) -> Bool {
-        guard let source, let target, target.scheme?.lowercased() == "https", let host = target.host?.lowercased() else {
-            return false
-        }
-        return host == source.host?.lowercased() && port(target) == port(source)
-    }
-
-    /// The port `url` connects to: the one it names, or else its scheme's.
-    private static func port(_ url: URL) -> Int? {
-        if let port = url.port { return port }
-        switch url.scheme?.lowercased() {
-        case "https": return 443
-        case "http": return 80
-        default: return nil
-        }
+    /// The host `target` is on, percent-encoded, so it's in ASCII, when it's another than `source`'s: nil when it stays
+    /// on `source`'s, whatever its scheme, port or path, or has none.
+    static func otherHost(_ target: URL?, from source: URL?) -> String? {
+        guard let host = target?.host(percentEncoded: true), !host.isEmpty else { return nil }
+        return host.lowercased() == source?.host(percentEncoded: true)?.lowercased() ? nil : host
     }
 }
 

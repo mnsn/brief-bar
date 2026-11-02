@@ -1084,8 +1084,9 @@ slow down, nothing is sent until the time it gave, or for a minute when it doesn
 When nothing can be read (offline, for example), refreshes back off up to ten minutes, and waking the Mac or getting
 back online refreshes right away.
 
-Each request goes only to the host it's for, with the Azure CLI's token: a redirect is followed only on that host,
-over HTTPS, and one anywhere else isn't, as an error that says so (`RedirectGuard`, `ADOError.redirected`).
+Each request goes only where it's sent, with the Azure CLI's token: no redirect is followed (`RedirectGuard`). One to
+another host fails with an error that names it (`ADOError.redirected`), and one on the same host is an HTTP error like
+any other, as Azure DevOps answers each request where it's sent.
 
 Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
 server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a
@@ -1894,9 +1895,9 @@ With each pull request come its repository, author, branch (`headRefName`, for [
 draft, whether it can merge
 (`mergeable`), the review decision, the latest review from each reviewer, and the state of its latest
 commit's checks (`statusCheckRollup`). The client sends no cookies and keeps no cache
-(`GitHubClient.makeSession`). It connects to api.github.com only: a redirect is followed only there, over HTTPS, and
-one anywhere else isn't, as an error that says so (`RedirectGuard`, `GitHubError.redirected`), so the token goes
-nowhere else.
+(`GitHubClient.makeSession`). It connects to api.github.com only, and follows no redirect (`RedirectGuard`), so the
+token goes nowhere else: one to another host fails with an error that names it (`GitHubError.redirected`), and one on
+api.github.com is an HTTP error like any other, as GitHub answers the query where it's sent.
 
 It refreshes every 2 minutes by default (**Refresh Every** in its settings), when a list opens if the
 last read is more than 10 seconds old, and every minute while you need to sign in or are offline, so a
