@@ -3,6 +3,7 @@ using BriefBar.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 
 namespace BriefBar.Views;
 
@@ -31,6 +32,15 @@ public sealed partial class BarView : UserControl
         }
         var item = ViewModel.Items.FirstOrDefault(predicate: candidate => candidate.Target == target);
         return item is null ? null : SectionItems.ContainerFromItem(item: item) as FrameworkElement;
+    }
+
+    /// Shows its words, labels and quietest words in `palette`'s colors for them.
+    public void UsePalette(ThemePalette palette)
+    {
+        ArgumentNullException.ThrowIfNull(argument: palette);
+        ((SolidColorBrush)Resources["BarWordsBrush"]).Color = palette.Words;
+        ((SolidColorBrush)Resources["BarSecondaryWordsBrush"]).Color = palette.SecondaryWords;
+        ((SolidColorBrush)Resources["BarTertiaryWordsBrush"]).Color = palette.TertiaryWords;
     }
 
     /// An item was pressed: the panel it opens, and the item, for where the panel goes.

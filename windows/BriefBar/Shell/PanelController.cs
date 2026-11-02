@@ -2,6 +2,7 @@ using BriefBar.Core;
 using BriefBar.Core.Logging;
 using BriefBar.Core.Presentation;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 
 namespace BriefBar.Shell;
 
@@ -150,6 +151,9 @@ internal sealed class PanelController(AppShell shell)
     /// its item goes through, or the panel itself, and their menus. Settings is somewhere else, as another app is.
     public bool KeepsOpenFor(nint hwnd) => Foreground.IsOurs(hwnd: hwnd) && !shell.IsSettings(hwnd: hwnd);
 
+    /// Shows `theme`, Windows' mode, as the bars do.
+    public void UseTheme(ElementTheme theme) => window?.UseTheme(theme: theme);
+
     /// Fits it again, once what it shows has changed on screen, as a group folds.
     public void Refit()
     {
@@ -212,6 +216,7 @@ internal sealed class PanelController(AppShell shell)
     PanelWindow CreateWindow()
     {
         var created = new PanelWindow(controller: this);
+        created.UseTheme(theme: shell.ShellTheme);
         created.WindowGone += (_, _) => Forget(gone: created);
         return created;
     }
