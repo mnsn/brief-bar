@@ -154,6 +154,9 @@ final class AgentsModel: ObservableObject {
         AgentAccess.turnOff(in: defaults)
         state = .off
         CopilotSessionPrompts.set(false, in: defaults)
+        // As turning it off does, so that the page shows it off meanwhile, and Try Again can't turn it back on.
+        sessionPromptsAsked = false
+        sessionPromptsWanted = false
         Log.app.info("Turned off agents")
         change(demo: .absent) { await $0.remove() }
         changePlugin(demo: .absent) { await $0.remove() }
@@ -264,7 +267,7 @@ final class AgentsModel: ObservableObject {
         }
     }
 
-    /// Asks the CLI again for what you last turned it to, or else what it has.
+    /// Asks the CLI again for what you last turned it to, or, when it last checked what the CLI has, checks again.
     func retrySessionPrompts() {
         if let sessionPromptsWanted {
             setSessionPrompts(sessionPromptsWanted)
@@ -276,6 +279,8 @@ final class AgentsModel: ObservableObject {
     private func refreshSessionPrompts(force: Bool) {
         guard sessionPrompts != .working else { return }
         if !force, let sessionPromptsCheckedAt, Date().timeIntervalSince(sessionPromptsCheckedAt) < 30 { return }
+        // Try Again then asks the CLI again, rather than redo what you asked for before, which the CLI may have undone.
+        sessionPromptsWanted = nil
         // The demo has only what you did on this page.
         var demo = CopilotPluginRegistration.Status.absent
         if case .known(let status) = sessionPrompts { demo = status }
