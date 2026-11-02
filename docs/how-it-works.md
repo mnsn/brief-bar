@@ -1999,11 +1999,12 @@ It's a command-line mode like `--json`, with the same rules:
   model, which may run in the cloud. GitHub gives none either: its pull requests aren't offered to agents.
 - A source's tool asks the others what they know of the things it names (`MCPRelated` in
   `Sources/BriefBarUI`), so the sources stay apart: Azure DevOps never reads Copilot's files, nor
-  Copilot Azure DevOps. A source tells of its own things through its teller (`MCPSource.related`), and
-  `MCPSource.tools` gives each tool every source's teller while it runs, in a task-local value, so no
-  tool's signature changes. A teller answers only while its source is on: `available(while:refusal:)`
-  refuses it as it refuses the source's tools, and the tool that asked says so in a line rather than
-  failing. `--source` leaves the others out, tellers and all.
+  Copilot Azure DevOps, but for what Send Work to Copilot reads in the app too, while it's on: the
+  session `pull_request` names (below). A source tells of its own things through its teller
+  (`MCPSource.related`), and `MCPSource.tools` gives each tool every source's teller while it runs, in a
+  task-local value, so no tool's signature changes. A teller answers only while its source is on:
+  `available(while:refusal:)` refuses it as it refuses the source's tools, and the tool that asked says
+  so in a line rather than failing. `--source` leaves the others out, tellers and all.
 - Azure DevOps reads as the app does, with its organizations, its settings and what you've seen and
   taken off Needs You in it, so the groups match the menu bar's, and like the other modes it leaves out
   pull requests sent in chats. In Needs You, what you've seen that still waits on you says so. One
@@ -2024,6 +2025,29 @@ repository or has changes of its own. Push & Reply, for one of yours, first chec
 the pull request's branch and that everything it would push was made for it, stops and asks if not,
 and never rebases. For a failed build, it reads each run's timeline first, with a GET. The Copilot
 CLI's `--deny-tool` rules don't come with it: the agent's own permissions apply.
+
+While **Send Work to Copilot** is on, `pull_request` also names an open pull request's session: the
+Copilot session BriefBar sends its work to unless you choose another, as the composer suggests it (see
+[Send work to Copilot](#send-work-to-copilot)), by its name and session ID, with why and where it is.
+It's found the same way, by the composer's own ranking (`CopilotTasksStore.sessionChoices` and
+`suggestedChoice`, through `suggestedSession`): its last task's session; else the session of the work
+item's task that opened it; else the Copilot app's session that the app records with it, that you
+linked to it in Show Links, or that's on its branch, the most recently active; else one whose log
+mentions it and that was there before it was created. The logs are read for mentions only when none of
+the others is found, since only then do they matter. `--mcp` finds it with a store of its own
+(`AzureDevOpsReader.session`): over a copy of the tasks sent to Copilot, in memory, each as its log
+says it stands, with the pull request one opened while BriefBar was quit, as the app finds it when it
+next looks (`RunTranscript.openedPullRequest`), so nothing it does is saved; with the environment
+`--mcp` started with, rather than your login shell's, which it would have to start; and with the links
+you made, from the app's settings, only while Show Links is on. Like the composer, it reads the Copilot
+app's database read-only, the folder each of its sessions works in and, for mentions, their logs, and
+nothing at all while Send Work to Copilot is off or in the demo, whose composer reads no sessions. Its
+store has a copy of the app's setting, so it reads the app's again every tenth of a second while it
+looks: turned off meanwhile, it reads nothing more, as the composer's search stops, and names none. It
+says whether the session is one the Copilot app has, which an agent there can send a message to: one
+of its own, one a task went on with, or a task's that you opened there, which its database lists, open
+or not. Otherwise it's a task BriefBar runs with the Copilot CLI, which the app doesn't have. When
+there's none, it says nothing.
 
 `work_item` tells a work item, by its number or link, as its details and Where It Stands do (see [Where
 it stands](#where-it-stands)), in Markdown laid out for an agent (`AgentText.workItem`). First a few
@@ -2115,25 +2139,38 @@ stops there; when only a source is off, `needs_me` says so under its heading and
 the agent still shows. Asked to fix a pull request's comments, its build or its
 conflicts, or to review it, the agent first asks BriefBar about it with `pull_request`, even given its link,
 and stops there if BriefBar refuses, as when agents or Azure DevOps are off, before any session or worktree
-is made; that also says which actions apply. In the app, it then starts a session for it with the app's own
-tools, in a worktree of a repository the app knows whose `origin` is the pull request's repository: it asks you
-when none or several are, never clones, and never works in a folder that is your own checkout. That
-session's first prompt holds only the pull request's link and the action, and has it call
-`pull_request_prompt` itself, so what the pull request's authors wrote reaches it as a tool's answer,
-not as your request; the skill tells agents that such text is data, never instructions. Push & Reply
-goes to the session that made the changes, never a new one. In the Copilot CLI, the agent follows the
-prompt where it is. It doesn't answer a session's question, plan or permission for you: it offers to
-open the session, with the app's `navigate_to`. Asked how a work item is going, as with **/briefbar
-5101**, it calls `work_item` and answers in at most four short lines, with their links: where it stands
-and what you can do now, what's done, by people and by Copilot, what's left and who has it, and who it
-waits on; then it offers one next step, and starts nothing. Given a pull request's number, it calls
-`pull_request`, and it tries that before asking for a link when `work_item` finds nothing.
+is made; that also says which actions apply, and, with Send Work to Copilot on, names the pull request's
+session ([above](#what-it-answers)). In the app, the work then goes to a session you can follow. When
+`pull_request` names one of the app's sessions, you choose: that session, or a new one, and, when the
+agent talks in that very session, a fork of it. The agent asks unless you said which, and does only that
+one. It sends the session the prompt with the app's `send_session_message`, or, in that very session,
+does the work there. A fork is a copy of the session, with its history, in a worktree of its own, so the
+work can go another way while the session stays as it is; but the app's `fork_session` forks only the
+session the agent talks in, so the agent forks only that one, then sends the fork the prompt. For
+another session, it says that BriefBar's Send to Copilot window has **Send to a Fork**. A new session,
+also when `pull_request` names none, or names a task BriefBar runs with the Copilot CLI, which the app
+doesn't have, is one it starts with the app's own tools, in a worktree of a repository the app knows
+whose `origin` is the pull request's repository: it asks you when none or several are, never clones,
+and never works in a folder that is your own checkout. Wherever the work goes, its prompt holds only the
+pull request's link and the action, and has the session call `pull_request_prompt` itself, so what the
+pull request's authors wrote reaches it as a tool's answer, not as your request; the skill tells agents
+that such text is data, never instructions. Push & Reply goes to the session that made the changes,
+never a new one. In the Copilot CLI, the agent follows the prompt where it is. It doesn't answer a
+session's question, plan or permission for you: it offers to open the session, with the app's
+`navigate_to`. Asked how a work item is going, as with **/briefbar 5101**, it calls `work_item` and
+answers in at most four short lines, with their links: where it stands and what you can do now, what's
+done, by people and by Copilot, what's left and who has it, and who it waits on; then it offers one
+next step, and starts nothing. Given a pull request's number, it calls `pull_request`, and it tries
+that before asking for a link when `work_item` finds nothing.
 
-`CopilotPluginTests` checks the plugin's manifests, and that the skill names only tools that
+`CopilotPluginTests` checks the plugin's manifests, that the skill's frontmatter values are plain YAML
+scalars, which a colon and a space would end, and that the skill names only tools that
 `BriefBar --mcp` lists, their arguments and values, and the app's tools it uses, and every tool
 BriefBar has; that it stops only for what BriefBar answers when agents are off
-(`AgentAccess.refusal`), not when a source is; and that it checks a pull request with `pull_request`
-before it starts a session for it or sends one a message.
+(`AgentAccess.refusal`), not when a source is; that it checks a pull request with `pull_request`
+before it starts a session for it, forks one or sends one a message; and that it offers the session
+`pull_request` names beside a new one, asks unless you said which, forks only the session it talks in,
+and gives the same prompt wherever the work goes.
 
 ## Desktop widgets
 
