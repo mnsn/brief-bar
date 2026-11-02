@@ -1,6 +1,7 @@
 import AzureDevOpsCore
 import BriefBarUI
 import Foundation
+import SQLite3
 import Synchronization
 import Testing
 @testable import AzureDevOpsUI
@@ -94,6 +95,59 @@ import Testing
         #expect(prompt.contains("1. web-ci: https://dev.azure.com/contoso/Shop/_build/results?buildId=4"))
         #expect(prompt.contains("   - CheckoutTests.testTotal: expected 10, got 9"))
         #expect(prompt.contains("Work on its branch in a clone of shop-web"))
+        #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
+    /// `pull_request` names the session BriefBar sends the pull request's work to, as its Send to Copilot window would,
+    /// while Send Work to Copilot is on: here, one of the Copilot app's on its branch, made up, in a folder of its own.
+    @Test func namesTheSessionItsWorkGoesTo() async throws {
+        // In whole seconds, as the app's database keeps its times to the millisecond.
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, title: "Mine", created: now.addingTimeInterval(-day))])
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarAgentSession-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let id = "44444444-4444-4444-8444-444444444444"
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let updated = formatter.string(from: now.addingTimeInterval(-300))
+        var handle: OpaquePointer?
+        try #require(sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        // What the Copilot app's session list reads: a session in a clone of shop-web, on the pull request's branch. In one
+        // transaction, written at once.
+        try #require(sqlite3_exec(handle, """
+            BEGIN;
+            CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, github_owner TEXT, github_repo TEXT, main_repo_path TEXT);
+            CREATE TABLE sessions (id TEXT PRIMARY KEY NOT NULL, title TEXT, session_type TEXT NOT NULL, mode TEXT,
+                is_running INTEGER NOT NULL DEFAULT 0, was_interrupted INTEGER NOT NULL DEFAULT 0, interruption_reason TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT);
+            CREATE TABLE workspaces (id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, session_id TEXT, branch TEXT NOT NULL,
+                name TEXT NOT NULL, creator_session_id TEXT, archived_at TEXT, updated_at TEXT NOT NULL,
+                source_pr_repo_full_name TEXT, source_pr_number INTEGER, source_pr_html_url TEXT,
+                created_pr_repo_full_name TEXT, created_pr_number INTEGER, created_pr_html_url TEXT);
+            CREATE TABLE workspace_pull_request_links (workspace_id TEXT PRIMARY KEY NOT NULL, uri TEXT NOT NULL);
+            INSERT INTO projects (id, name) VALUES ('shop', 'shop-web');
+            INSERT INTO sessions (id, title, session_type, created_at, updated_at) VALUES ('\(id)', 'Fix the total', 'project', '\(updated)', '\(updated)');
+            INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at) VALUES ('w', 'shop', '\(id)', 'fix-total', 'Fix the total', '\(updated)');
+            COMMIT;
+            """, nil, nil, nil) == SQLITE_OK)
+        func agent(sending: Bool) -> AzureDevOpsAgent {
+            let defaults = defaults()
+            defaults.set(sending, forKey: SettingsKey.copilotEnabled)
+            return AzureDevOpsAgent(reader: AzureDevOpsReader(
+                demo: false, organizations: [], defaults: defaults, client: server.client(), appHome: home
+            ) {})
+        }
+
+        // Only while Send Work to Copilot is on, as its window reads sessions only then.
+        #expect(!(try await agent(sending: false).pullRequest(.int(1), now: now)).contains("Its session"))
+        let text = try await agent(sending: true).pullRequest(.int(1), now: now)
+        #expect(text.contains("""
+            Its session, where BriefBar sends its work unless you choose another: “Fix the total”, in the Copilot app, on its branch.
+              shop-web · fix-total · active 5m ago · session \(id)
+            """))
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 
