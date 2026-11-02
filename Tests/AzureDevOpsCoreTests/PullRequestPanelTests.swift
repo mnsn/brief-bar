@@ -281,9 +281,10 @@ import BriefBarCore
         #expect(retry.threads.waitingOnYou.map(\.id) == [11])
         #expect(retry.threads.waitingOnYou.first?.place == "PaymentsClient.cs:88")
         #expect(retry.threads.open.isEmpty)
-        #expect(retry.threads.resolved.map(\.id) == [14, 13, 15])
-        #expect(retry.threads.resolved.map(\.place) == ["RetryPolicy.cs:12", "PaymentsClient.cs:41", nil])
-        #expect(retry.threads.resolved.map(\.status) == ["Won't fix", "Resolved", "Closed"])
+        #expect(retry.threads.resolved.map(\.id) == [17, 14, 16, 13, 15])
+        #expect(retry.threads.resolved.map(\.place)
+            == ["PaymentsClientTests.cs:13", "PaymentsClient.cs:52", "PaymentsClient.cs:46", "PaymentsClient.cs:20", nil])
+        #expect(retry.threads.resolved.map(\.status) == ["Closed", "Won't fix", "Resolved", "Resolved", "Closed"])
         #expect(retry.reviewers.map(\.name) == ["Sam Rivera", "Priya Shah"])
         #expect(retry.reviewers.map(\.verdict) == ["No vote yet", "Approved"])
         #expect(retry.branch == "payments-retry → main")
@@ -295,7 +296,7 @@ import BriefBarCore
 
         let coupons = try panel(4091)
         #expect(coupons.threads.resolved.map(\.id) == [68, 67])
-        #expect(coupons.threads.resolved.map(\.place) == [nil, "CouponService.cs:118"])
+        #expect(coupons.threads.resolved.map(\.place) == [nil, "Rounding.cs:42"])
         #expect(coupons.readiness?.isReady == true)
     }
 }

@@ -19,9 +19,9 @@ extension DemoData {
                         + "less than a second to recover.", 22),
                     comment(2, me, "Done: it doubles each time now, from 200 ms.", 20),
                 ], location: .init(path: "/src/PaymentsClient.cs", right: .init(lines: 20...20), madeOn: .init(base: 1), changeTrackingId: 1)),
-                ReviewThread(id: 14, status: "wontFix", filePath: "/src/RetryPolicy.cs", line: 12, comments: [
-                    comment(1, sam, "Nit: BackoffPolicy might say more about what this does.", 21),
-                    comment(2, me, "I'd keep RetryPolicy: the other clients call theirs that too.", 19),
+                ReviewThread(id: 14, status: "wontFix", filePath: "/src/PaymentsClient.cs", line: 52, comments: [
+                    comment(1, sam, "Nit: IsRetryable might say more about what this checks.", 21),
+                    comment(2, me, "I'd keep IsTransient: the other clients call theirs that too.", 19),
                 ]),
                 ReviewThread(id: 15, status: "closed", comments: [
                     comment(1, priya, "Is the stub that fails every other call checked in, so that CI runs it too?", 24),
@@ -30,14 +30,16 @@ extension DemoData {
             ] + codeThreads(of: number, now: now)
         case 4088:
             return [
+                // On the first push's line 27, which the second push fixed (DemoCodeDelivery.swift).
                 ReviewThread(id: 43, status: "fixed", filePath: "/src/Delivery/DeliveryEstimate.cs", line: 27, comments: [
                     comment(1, maria, "This uses the server's time zone, but the cutoff for next-day delivery is the warehouse's.", 30),
                     comment(2, me, "Fixed: it takes the warehouse's time zone now.", 28),
-                ]),
+                ], location: .init(path: "/src/Delivery/DeliveryEstimate.cs", right: .init(lines: 27...27), madeOn: .init(base: 1),
+                                   changeTrackingId: 1)),
             ]
         case 4091:
             return [
-                ReviewThread(id: 67, status: "fixed", filePath: "/src/Coupons/CouponService.cs", line: 118, comments: [
+                ReviewThread(id: 67, status: "fixed", filePath: "/src/Coupons/Rounding.cs", line: 42, comments: [
                     comment(1, chen, "Does a negative total round away from zero too?", 26),
                     comment(2, me, "Yes, half away from zero both ways, with a test for each.", 25),
                 ]),

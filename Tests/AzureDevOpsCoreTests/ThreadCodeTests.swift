@@ -109,8 +109,10 @@ import BriefBarCore
         #expect(ThreadCode.sentence(for: .unreadable(.offline)) == "You're offline.")
 
         // Reading again may show it only when Azure DevOps couldn't be reached or asked to wait.
+        let otherDirectory = ADOError.otherDirectory(organization: "contoso", tenant: "00000000-0000-0000-0000-00000000abcd")
         for problem: ThreadExcerpt.Problem in [.unreadable(.offline), .unreadable(.throttled(retryAfter: 60)), .unreadable(.http(503)),
-                                               .unreadable(.network("The request timed out.")), .unreadable(.unauthorized)] {
+                                               .unreadable(.network("The request timed out.")), .unreadable(.unauthorized),
+                                               .unreadable(otherDirectory)] {
             #expect(ThreadCode.mayPass(problem))
         }
         for problem: ThreadExcerpt.Problem in [.binary, .tooLarge, .linesNotFound, .noIterations, .tooManyFiles, .notOnLines,

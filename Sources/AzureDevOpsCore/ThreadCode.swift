@@ -124,7 +124,7 @@ public enum ThreadCode {
         guard case .unreadable(let error) = problem else { return false }
         switch error {
         case .notFound, .forbidden, .decoding, .redirected: return false
-        case .auth, .unauthorized, .throttled, .offline, .http, .network: return true
+        case .auth, .unauthorized, .otherDirectory, .throttled, .offline, .http, .network: return true
         }
     }
 }

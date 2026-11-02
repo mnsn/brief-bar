@@ -329,9 +329,10 @@ private struct ThreadCard: View {
         CommentLine(comment: comment, now: now, isMine: me.map { comment.author.id == $0.lowercased() } ?? false, isQuiet: isQuiet)
     }
 
-    /// "Line 88, waits on you, active, 2 comments".
+    /// "PaymentsClient.cs, line 88, waits on you, Active, 2 comments".
     private var accessibilityLabel: String {
-        var parts = [place ?? "On the pull request"]
+        let name = thread.thread.fileName.flatMap { $0.isEmpty ? nil : $0 }
+        var parts = [name.map { name in place.map { "\(name), \($0.lowercased())" } ?? name } ?? "On the pull request"]
         if thread.waitsOnYou { parts.append("waits on you") }
         if thread.isNew { parts.append("new") }
         if let status = thread.status { parts.append(status) }
@@ -361,11 +362,13 @@ private struct ThreadCodeArea: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Divider()
-                .opacity(0.6)
-            content
-            Divider()
-                .opacity(0.6)
+            if showsSomething {
+                Divider()
+                    .opacity(0.6)
+                content
+                Divider()
+                    .opacity(0.6)
+            }
         }
         .onGeometryChange(for: Bool.self) { proxy in
             // Outside a scroll view, it's on screen.
@@ -382,6 +385,12 @@ private struct ThreadCodeArea: View {
             code.show(thread, of: pullRequest)
         }
         .onDisappear { code.hide(thread.id) }
+    }
+
+    /// Its code, why it can't show, or a stand-in until it's read: nothing for a thread that turns out not to be on lines.
+    private var showsSomething: Bool {
+        guard case .failed(let problem)? = code.state(of: thread.id) else { return true }
+        return ThreadCode.sentence(for: problem) != nil
     }
 
     @ViewBuilder

@@ -147,6 +147,9 @@ final class CodeNSView: NSView {
     /// As wide as its longest line, with its gutter.
     var idealWidth: CGFloat { gutter.width + contentWidth }
 
+    /// Its text, as selecting all of it copies it: the code, without the numbers.
+    var text: String { textView.string }
+
     func update(rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool, label: String, onOverflow: ((CGFloat) -> Void)?) {
         self.onOverflow = onOverflow
         textView.setAccessibilityLabel(label)

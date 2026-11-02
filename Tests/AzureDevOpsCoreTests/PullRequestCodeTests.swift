@@ -1020,18 +1020,24 @@ private actor LaterCode: CodeSource {
         for record in snapshot.records {
             for thread in record.details?.threads ?? [] where thread.filePath != nil {
                 let excerpt = try await PullRequestCode.demo(record.pullRequest).excerpt(of: thread, in: record.pullRequest).get()
-                #expect(excerpt.lines.filter(\.isCommented).map(\.newNumber) == [thread.line])
-                #expect(excerpt.changedSince == false)
-                shown[record.pullRequest.key.number] = excerpt
+                // Its lines, on the side it's on: before the change for one only on lines there.
+                let location = thread.location
+                let isLeft = location?.right == nil && location?.left != nil
+                let lines = try #require(location?.right?.lines ?? location?.left?.lines ?? thread.line.map { $0...$0 })
+                #expect(excerpt.lines.filter(\.isCommented).map { isLeft ? $0.oldNumber : $0.newNumber } == lines.map(Optional.some))
+                // Made on a push before the latest, it's on code that changed since.
+                #expect(excerpt.changedSince == (excerpt.iteration < excerpt.latestIteration))
+                shown[thread.id] = excerpt
             }
         }
-        #expect(Set(shown.keys) == [4102, 4091])
-        let backoff = try #require(shown[4102])
+        #expect(Set(shown.keys) == [11, 13, 14, 16, 17, 43, 63, 67])
+        #expect(shown[43]?.changedSince == true && shown[16]?.lines.contains { $0.kind == .removed && $0.isCommented } == true)
+        let backoff = try #require(shown[11])
         #expect(backoff.lines.first { $0.isCommented }?.text.contains("delay *= 2") == true)
         #expect(backoff.lines.first { $0.isCommented }?.kind == .added)
         #expect(backoff.change == .edit)
         #expect(backoff.latestIteration == 2)
-        let rounding = try #require(shown[4091])
+        let rounding = try #require(shown[63])
         #expect(rounding.lines.first { $0.isCommented }?.text.contains("MidpointRounding.AwayFromZero") == true)
         #expect(rounding.lines.contains { $0.kind == .removed && $0.text.contains("Math.Round(amount, 2);") })
     }
