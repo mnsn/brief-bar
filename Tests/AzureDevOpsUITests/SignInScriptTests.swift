@@ -3,8 +3,8 @@ import Foundation
 import Testing
 @testable import AzureDevOpsUI
 
-/// What Sign In runs in Terminal: `az login`, and for an organization in another directory, in that directory; and what
-/// the command line and agents say to run instead.
+/// What Sign In runs in Terminal: `az login`, and for an organization in another directory, or your own directory when it
+/// wants you to sign in again there, in that directory; and what the command line and agents say to run instead.
 @Suite struct SignInScriptTests {
     /// A made-up directory's ID.
     private static let tenant = "0b0b0b0b-2222-4222-8222-222222222222"
@@ -19,8 +19,9 @@ import Testing
     @Test func signsInToAnOrganizationsDirectoryWithItsID() {
         let script = AzureDevOps.signInScript(azPath: "/opt/homebrew/bin/az", tenant: Self.tenant)
         #expect(script.contains("\n'/opt/homebrew/bin/az' login --tenant '\(Self.tenant)' --allow-no-subscriptions --output none && "))
-        // What it says names neither the directory nor the organization.
-        #expect(script.contains("echo \"Signing in to the Azure CLI for BriefBar, in an organization's directory. Your browser will open.\""))
+        // What it says names neither the directory nor the organization: it may be your own directory's sign-in.
+        #expect(script.contains("echo \"Signing in to the Azure CLI for BriefBar, in the directory it needs. Your browser will open.\""))
+        #expect(script.contains("BriefBar picks it up at its next refresh."))
         #expect(script.components(separatedBy: Self.tenant).count == 2)
     }
 
@@ -39,6 +40,9 @@ import Testing
         #expect(AzureDevOpsReader.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant) --allow-no-subscriptions, then ask again.")
         #expect(AzureDevOpsCommandLine.describe(ADOError.forbidden) == "No access to this organization.")
         #expect(AzureDevOpsCommandLine.text(of: .signedOut("")) == "Sign in to the Azure CLI to see your pull requests. Run az login --allow-no-subscriptions.")
+        // Your own directory wanting you to sign in again, there.
+        #expect(AzureDevOpsCommandLine.text(of: .signedOut("", tenant: Self.tenant))
+            == "Sign in to the Azure CLI to see your pull requests. Run az login --tenant \(Self.tenant) --allow-no-subscriptions.")
         // The log gets neither the organization's name nor its directory's ID.
         #expect(!error.description.contains("fabrikam") && !error.description.contains(Self.tenant))
     }

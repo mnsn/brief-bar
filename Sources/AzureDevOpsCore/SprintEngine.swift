@@ -5,7 +5,8 @@ public struct SprintSnapshot: Sendable, Equatable {
     public var board: SprintBoard?
     /// Your teams in the watched organizations, to choose from.
     public var teams: [TeamRef]
-    /// The team the engine found with a sprint going on today, when none was chosen.
+    /// The team the engine found with a sprint going on today, when none was chosen, to keep: not while some
+    /// organizations' teams, in a directory to sign in to, couldn't be compared with it.
     public var foundTeam: TeamRef?
     public var problem: PulseProblem?
     public var refreshedAt: Date?
@@ -85,6 +86,9 @@ public actor SprintEngine {
     /// be looked for there until you sign in.
     private var teamsElsewhere: [(organization: String, error: ADOError)] = []
     private var foundTeam: TeamRef?
+    /// `foundTeam` was found while some organizations' teams were in a directory to sign in to: it's shown, but not kept,
+    /// and looked for again among them all once they can be read.
+    private var foundAmongSome = false
     /// Teams checked for a sprint going on today, and when.
     private var checkedTeams: Date?
     private var sprints: [String: (sprint: Sprint?, readAt: Date)] = [:]
@@ -276,7 +280,7 @@ public actor SprintEngine {
             account = signedIn
         }
         let date = now()
-        try await loadTeams(configuration.organizations, at: date)
+        try await loadTeams(configuration.organizations, at: date, choosing: configuration.team == nil)
         // Shown with the sprint, or without one: its team may be there.
         let elsewhere = PulseProblem.organizations(teamsElsewhere)
         guard let team = try await chosenTeam(configuration, at: date) else {
@@ -312,8 +316,9 @@ public actor SprintEngine {
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
-    /// teams it had; one in a directory the Azure CLI isn't signed in to is tried again every refresh, and said.
-    private func loadTeams(_ organizations: [String], at date: Date) async throws {
+    /// teams it had; one in a directory the Azure CLI isn't signed in to is tried again every refresh, and said. With no
+    /// teams to choose from when `choosing`, why is thrown; a team you chose is read whatever happens to them.
+    private func loadTeams(_ organizations: [String], at date: Date, choosing: Bool) async throws {
         var lastError: ADOError?
         var elsewhere: [(organization: String, error: ADOError)] = []
         for organization in organizations where teams[organization].map({ date.timeIntervalSince($0.readAt) > Self.teamsLifetime }) ?? true {
@@ -332,7 +337,7 @@ public actor SprintEngine {
         }
         teamsElsewhere = elsewhere
         // With no teams at all, signing in to a directory is what to do first.
-        if allTeams.isEmpty, let error = elsewhere.first?.error ?? lastError { throw error }
+        if choosing, allTeams.isEmpty, let error = elsewhere.first?.error ?? lastError { throw error }
     }
 
     private var allTeams: [TeamRef] {
@@ -340,10 +345,11 @@ public actor SprintEngine {
     }
 
     /// The team you chose; or, when you haven't, the one of your teams with a sprint going on today that has the most
-    /// work assigned to you (once: the app keeps it).
+    /// work assigned to you (once: the app keeps it, when it was found among all your teams).
     private func chosenTeam(_ configuration: Configuration, at date: Date) async throws -> TeamRef? {
         if let team = configuration.team { return team }
-        if let foundTeam { return foundTeam }
+        // Found among some of your teams: once the others can be read, it's looked for among them all.
+        if let foundTeam, !foundAmongSome || !teamsElsewhere.isEmpty { return foundTeam }
         // Checked recently and none had a sprint today: wait a while before checking them all again.
         if let checkedTeams, date.timeIntervalSince(checkedTeams) < Self.sprintLifetime { return nil }
         var candidates: [(team: TeamRef, sprint: Sprint)] = []
@@ -366,6 +372,7 @@ public actor SprintEngine {
         }
         guard candidates.count > 1 else {
             foundTeam = candidates.first?.team
+            foundAmongSome = !teamsElsewhere.isEmpty
             // None has a sprint today: don't look again for a while, unless some couldn't be read, or some organizations'
             // teams are in a directory to sign in to.
             if foundTeam == nil && !incomplete && teamsElsewhere.isEmpty { checkedTeams = date }
@@ -377,6 +384,7 @@ public actor SprintEngine {
             if mine > (best?.mine ?? -1) { best = (candidate.team, mine) }
         }
         foundTeam = best?.team
+        foundAmongSome = !teamsElsewhere.isEmpty
         return foundTeam
     }
 
@@ -446,7 +454,7 @@ public actor SprintEngine {
 
     private func snapshot() -> SprintSnapshot {
         SprintSnapshot(
-            board: board, teams: allTeams, foundTeam: configuration.team == nil ? foundTeam : nil, problem: problem,
+            board: board, teams: allTeams, foundTeam: configuration.team == nil && !foundAmongSome ? foundTeam : nil, problem: problem,
             refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
         )
     }

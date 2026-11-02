@@ -367,6 +367,8 @@ actor AzureDevOpsReader {
         var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
         if organizations.isEmpty { organizations = await self.organizations(client: client) }
         if organizations.isEmpty { throw MCPToolError(discoveryProblem ?? "BriefBar doesn't know your Azure DevOps organizations.") }
+        // One in a directory to sign in to may have it, as may the others: it's said only if none of them does.
+        var elsewhere: ADOError?
         for organization in organizations {
             let item = inSprint ?? WorkItem(
                 id: id, organization: organization, project: "", type: "Work Item", title: "Work item \(id)", state: "", category: .proposed
@@ -379,12 +381,17 @@ actor AzureDevOpsReader {
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
                 if case .auth(.signedOut) = error {
-                    throw MCPToolError("You're signed out of the Azure CLI. Run az login --allow-no-subscriptions, then ask again.")
+                    let command = PulseProblem.from(error).signInCommand ?? "az login --allow-no-subscriptions"
+                    throw MCPToolError("You're signed out of the Azure CLI. Run \(command), then ask again.")
                 }
-                if case .otherDirectory = error { throw MCPToolError(AzureDevOpsReader.describe(error)) }
+                if case .otherDirectory = error {
+                    elsewhere = elsewhere ?? error
+                    continue
+                }
                 throw MCPToolError(WorkItemDetailsStore.message(for: error))
             }
         }
+        if let elsewhere { throw MCPToolError(AzureDevOpsReader.describe(elsewhere)) }
         throw MCPToolError("None of your organizations has a work item \(id) you can see: give its link.")
     }
 

@@ -71,14 +71,15 @@ public struct AccessToken: Sendable, Equatable {
 public enum AuthError: Error, Sendable, Equatable, CustomStringConvertible {
     /// The Azure CLI isn't installed, or isn't where we look.
     case cliNotFound
-    /// The sign-in is missing or has expired: `az login` fixes it.
-    case signedOut(String)
+    /// The sign-in is missing or has expired: `az login` fixes it. With `tenant`, your sign-in's directory wants you to
+    /// sign in again while the Azure CLI is still signed in to you in another one: `az login --tenant` with it fixes it.
+    case signedOut(String, tenant: String? = nil)
     case failed(String)
 
     public var description: String {
         switch self {
         case .cliNotFound: return "The Azure CLI (az) isn't installed."
-        case .signedOut(let message): return message.isEmpty ? "Not signed in to the Azure CLI." : message
+        case .signedOut(let message, _): return message.isEmpty ? "Not signed in to the Azure CLI." : message
         case .failed(let message): return message
         }
     }
@@ -181,7 +182,8 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
 
     /// A token for `directory`, or for yours: in the directory BriefBar knows as yours. When the Azure CLI can't give one
     /// there, it's someone else's sign-in, if the CLI's default directory has another account: then that directory
-    /// becomes yours. If it's your account there, as a guest, your directory only needs you to sign in again.
+    /// becomes yours. If it's your account there, as a guest, your directory only needs you to sign in again, there:
+    /// a plain `az login` may sign in to another one without what yours asks for, such as multi-factor authentication.
     private func fetch(_ directory: String?) async throws -> AccessToken {
         if let directory { return try await run(tenant: directory) }
         guard let homeTenant else {
@@ -191,11 +193,11 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         }
         do {
             return try await run(tenant: homeTenant)
-        } catch AuthError.signedOut(let message) {
+        } catch AuthError.signedOut(let message, _) {
             let current = try await run(tenant: nil)
             // The directory your account is from, which a guest token names: the pinned one may be a guest's too.
             let yours = homeAccount?.tenant ?? homeTenant
-            if current.tenant != homeTenant, current.accountTenant == yours { throw AuthError.signedOut(message) }
+            if current.tenant != homeTenant, current.accountTenant == yours { throw AuthError.signedOut(message, tenant: homeTenant) }
             if let tenant = current.tenant { self.homeTenant = tenant }
             return current
         }

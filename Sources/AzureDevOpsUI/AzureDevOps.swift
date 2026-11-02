@@ -38,15 +38,15 @@ enum AzureDevOps {
         }
     }
 
-    /// What Terminal runs to sign in: `az login`, and with `tenant`, a directory's ID, `--tenant` with it. Only a GUID
-    /// is passed on, as Azure DevOps names directories.
+    /// What Terminal runs to sign in: `az login`, and with `tenant`, a directory's ID, `--tenant` with it: an
+    /// organization's, or your sign-in's own. Only a GUID is passed on, as Azure DevOps names directories.
     nonisolated static func signInScript(azPath: String?, tenant: String?) -> String {
         let az = azPath.map(quoted) ?? "az"
         let directory = tenant.flatMap { UUID(uuidString: $0) == nil ? nil : $0 }
         let login = directory.map { "\(az) login --tenant \(quoted($0))" } ?? "\(az) login"
         let (signingIn, signedIn) = directory == nil
             ? ("Signing in to the Azure CLI for BriefBar.", "BriefBar will refresh within a minute.")
-            : ("Signing in to the Azure CLI for BriefBar, in an organization's directory.", "BriefBar reads the organization at its next refresh.")
+            : ("Signing in to the Azure CLI for BriefBar, in the directory it needs.", "BriefBar picks it up at its next refresh.")
         return """
             #!/bin/zsh -l
             # Opened by BriefBar, which reads your pull requests with the Azure CLI's sign-in.

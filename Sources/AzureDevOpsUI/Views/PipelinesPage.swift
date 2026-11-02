@@ -798,8 +798,9 @@ private struct AddPipelineSheet: View {
                 results = []
                 // One in a directory to sign in to names its organization, with a way to sign in there.
                 let problem = PulseProblem.from(failure)
-                directoryProblem = problem.signInTenant == nil ? nil : problem
-                error = problem.signInTenant == nil ? failure.description : problem.message
+                let isElsewhere = PulseProblem.isOtherDirectory(failure)
+                directoryProblem = isElsewhere ? problem : nil
+                error = isElsewhere ? problem.message : failure.description
             }
         }
     }

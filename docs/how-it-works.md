@@ -1051,12 +1051,19 @@ directory your Azure CLI isn't signed in to", with **Sign In…**, which opens T
 account without Azure subscriptions. Until then, each refresh asks Azure DevOps once, with a token from your
 directory, which directory the organization is in, so a move is noticed too. The other organizations'
 pull requests stay listed and counted, as when any of them can't be read, and once the CLI is signed in
-there, the organization is read with the rest. A pull request you watch, or that was sent to you, in such
-an organization says the same, and is read at the next refresh once you've signed in, rather than an
-hour later. The Sprint and Pipelines sections, the Add Pipelines sheet and a work item's details say the
-same; the command line and agents, which have no button, say what to run. A directory's ID is never
-shown otherwise. While nothing could be read but such organizations, BriefBar looks again every minute,
-as it does while the CLI is signed out.
+there, the organization is read with the rest. An organization in such a directory says so, whatever else
+failed reading it. A pull request you watch, or that was sent to you, in such an organization says the
+same, and is read at the next refresh once you've signed in, rather than an hour later; such
+organizations don't take the ten reads a refresh gives those pull requests, each being tried once a
+refresh. When every organization you watch is in such a directory, the pull requests sent to you from
+others are still read. The Sprint and Pipelines sections, the Add Pipelines sheet and a work item's
+details say the same. A team you chose shows its sprint even while the teams of the organizations you
+watch wait on such a sign-in; a team BriefBar finds for you then is shown, but kept only once it's been
+compared with theirs. The command line and agents, which have no button, say what to run; an agent's
+work item, asked for by its number alone, is looked for in your other organizations too, and such an
+organization is named only when none of them has it. A directory's ID is never shown otherwise. While
+nothing could be read but such organizations, BriefBar looks again every minute, as it does while the
+CLI is signed out.
 
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another
@@ -1065,8 +1072,10 @@ sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts
 the account it last read your pull requests with, and the command line and agents do too. When the CLI
 can't give a token in your directory, BriefBar looks at its default directory's token: a guest's names
 where its account is from (`idp`), its own directory or, for a personal Microsoft account, `live.com`.
-When that's your account's, your directory only wants you to sign in again, and BriefBar says so;
-otherwise someone else has signed in to the CLI, and their directory becomes the one BriefBar reads
+When that's your account's, your directory only wants you to sign in again, and BriefBar says so, with
+**Sign In…** signing in there, with `az login --tenant` and your directory's ID: a plain `az login` may
+sign in to another directory without what yours asks for, such as multi-factor authentication. Otherwise
+someone else has signed in to the CLI, and their directory becomes the one BriefBar reads
 with. Tokens kept for other directories are for the same account as yours: when someone else signs in,
 those go too, and one from another directory for an account from elsewhere isn't kept, and makes
 BriefBar ask for yours again, which tells who's signed in.

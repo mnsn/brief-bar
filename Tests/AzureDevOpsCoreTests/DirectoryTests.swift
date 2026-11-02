@@ -150,7 +150,8 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         cli.signIn(to: Tenants.other)
         cli.expire(Tenants.home)
         await provider.invalidate()
-        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.")) {
+        // Signing in again there is what fixes it.
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.home)) {
             try await provider.token()
         }
         // Signed in to yours again, BriefBar reads as you there, not as your guest account in fabrikam's.
@@ -182,7 +183,8 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         cli.signIn(to: Tenants.third)
         cli.expire(Tenants.other)
         await provider.invalidate()
-        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.")) {
+        // There: a plain `az login` may sign in to another directory, without what this one asks for.
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.other)) {
             try await provider.token()
         }
         #expect(cli.asked == [nil, Tenants.other, nil])
@@ -196,7 +198,7 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         cli.signIn(to: Tenants.other)
         cli.expire(Tenants.home)
         await provider.invalidate()
-        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.")) {
+        await #expect(throws: AuthError.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.home)) {
             try await provider.token()
         }
         #expect(cli.asked == [nil, Tenants.home, nil])
@@ -374,6 +376,32 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(PulseProblem.offline.signInCommand == nil)
     }
 
+    @Test func signsInAgainInYourDirectoryWhenItWantsYouTo() {
+        // Your directory wants you to sign in again, there, while the Azure CLI is still signed in to you in another.
+        let again = PulseProblem.from(.auth(.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.home)))
+        #expect(again == .signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Tenants.home))
+        #expect(again.needsSignIn)
+        #expect(again.signInTenant == Tenants.home)
+        #expect(again.signInCommand == "az login --tenant \(Tenants.home) --allow-no-subscriptions")
+        #expect(again.message == "Sign in to the Azure CLI to see your pull requests.")
+        // Signed out altogether, anyone may sign in, wherever their account is.
+        let signedOut = PulseProblem.from(.auth(.signedOut("Run az login")))
+        #expect(signedOut.signInTenant == nil)
+        #expect(signedOut.signInCommand == "az login --allow-no-subscriptions")
+    }
+
+    @Test func anOrganizationInADirectoryToSignInToSaysSoWhateverElseFailedThere() {
+        // One of fabrikam's projects failed otherwise first, as one of its pinned pipelines' can.
+        let failures: [(organization: String, error: ADOError)] = [
+            (organization: "fabrikam", error: ADOError.http(500)),
+            (organization: "Fabrikam", error: ADOError.otherDirectory(organization: "Fabrikam", tenant: Tenants.other)),
+            (organization: "northwind", error: ADOError.forbidden),
+        ]
+        #expect(PulseProblem.organizations(failures) == .otherDirectory(
+            organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read northwind (No access to this organization.)."
+        ))
+    }
+
     @Test func anOrganizationInAnotherDirectoryDoesntHideTheOthers() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
@@ -453,6 +481,46 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(server.requests.filter { $0.url?.path.hasPrefix("/adatum/") == true }.count == 1)
     }
 
+    @Test func organizationsWaitingOnASignInDontTakeTheReadsOfPullRequestsSentToYou() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/11", json: Fixture.pullRequest(11, title: "Theirs", author: People.sam))
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        // Ten organizations in a directory to sign in to come first, as many as a refresh reads.
+        let elsewhere = (1...10).map { "adatum\($0)" }
+        for organization in elsewhere { server.put(organization, in: Tenants.other) }
+        let engine = PulseEngine(client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [])) { _ in }
+        await engine.setLinkedPullRequests(Set(elsewhere.map { PRKey($0, 1) } + [PRKey(Fixture.org, 11)]))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 11)])
+        // Each was tried once, and is said.
+        for organization in elsewhere {
+            #expect(server.requests.filter { $0.url?.path.hasPrefix("/\(organization)/") == true }.count == 1)
+        }
+        #expect(snapshot.problem?.signInTenant == Tenants.other)
+    }
+
+    @Test func pullRequestsSentToYouAreReadWhileEveryOrganizationYouWatchWaitsOnASignIn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.serveOrganization("fabrikam", mine: [Fixture.pullRequest(1, title: "Yours in fabrikam")])
+        server.put("fabrikam", in: Tenants.other)
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/11", json: Fixture.pullRequest(11, title: "Theirs", author: People.sam))
+        let engine = PulseEngine(
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: ["fabrikam"])
+        ) { _ in }
+        await engine.setLinkedPullRequests([PRKey(Fixture.org, 11)])
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        // fabrikam, the one you watch, waits on a sign-in to its directory; the one sent to you from contoso is read.
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 11)])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
     @Test func pinnedPipelinesInAnotherDirectorySayWhichOrganization() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
@@ -501,6 +569,56 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         // Your team's sprint shows, and fabrikam's teams, which may have yours, say what to do.
         #expect(snapshot.board?.sprint.name == "Sprint 7")
         #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func aTeamYouChoseIsReadWhileTheTeamsOfTheOrganizationsYouWatchWaitOnASignIn() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        server.put("fabrikam", in: Tenants.other)
+        // You chose contoso's team, and watch only fabrikam now, whose teams are in a directory to sign in to.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: ["fabrikam"], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.sprint.name == "Sprint 7")
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func aTeamFoundWhileSomeTeamsWaitOnASignInIsKeptOnlyOnceItsComparedWithThem() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i1": WorkFixture.relations([1]), "i9": WorkFixture.relations([5])],
+            items: [WorkFixture.workItem(1, "User Story"), WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        var snapshot = await engine.currentSnapshot()
+        // contoso's team's sprint shows, but isn't one for the app to keep: fabrikam's teams may have more of your work.
+        #expect(snapshot.board?.team.id == WorkFixture.team.id)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+
+        // Signed in there, the team with the most of your work is found among them all, and is the one to keep.
+        await tokens.signIn(to: Tenants.other)
+        await engine.refreshNow()
+        snapshot = await engine.currentSnapshot()
+        #expect(snapshot.foundTeam == web)
+        #expect(snapshot.board?.team.id == web.id)
+        #expect(snapshot.problem == nil)
     }
 
     // MARK: Finding and adding organizations

@@ -132,6 +132,26 @@ import Testing
         #expect(server.requests.count == once)
     }
 
+    /// A work item asked for by its number may be in any of your organizations: one in a directory to sign in to doesn't
+    /// stop the others being looked in, and is named only when none of them has it.
+    @Test func looksForAWorkItemPastAnOrganizationInAnotherDirectory() async throws {
+        let server = StubServer()
+        server.put("fabrikam", in: Tenants.other)
+        server.on("/\(Fixture.org)/_apis/wit/workitems/5", json: WorkFixture.workItem(5, "Task", "Show saved items"))
+        let reader = AzureDevOpsReader(
+            demo: false, organizations: [], defaults: defaults(organizations: ["fabrikam", Fixture.org]),
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        ) {}
+        let read = try await reader.workItem(5, organization: nil)
+        #expect(read.item.id == 5)
+        #expect(read.item.organization == Fixture.org)
+        await #expect(throws: MCPToolError(
+            "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other) --allow-no-subscriptions, then ask again."
+        )) {
+            try await reader.workItem(6, organization: nil)
+        }
+    }
+
     @Test func pinsAndUnpinsPipelinesByTheirLinks() async throws {
         let server = StubServer()
         server.on("/contoso/Shop/_apis/build/definitions/12", json: [

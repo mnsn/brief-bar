@@ -123,8 +123,9 @@ import BriefBarCore
     func tellsASignedOutCLIFromOtherFailures(_ output: String, _ signedOut: Bool) {
         let error = AzureCLITokenProvider.error(fromOutput: output)
         if signedOut {
-            guard case .signedOut(let message) = error else { Issue.record("Expected signedOut, got \(error)"); return }
+            guard case .signedOut(let message, let tenant) = error else { Issue.record("Expected signedOut, got \(error)"); return }
             #expect(!message.hasPrefix("ERROR:"))
+            #expect(tenant == nil)
         } else {
             #expect(error == .failed("Connection reset by peer"))
         }

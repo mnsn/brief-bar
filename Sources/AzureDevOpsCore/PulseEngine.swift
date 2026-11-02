@@ -5,7 +5,8 @@ import Synchronization
 public enum PulseProblem: Sendable, Equatable {
     case noOrganizations
     case cliNotFound
-    case signedOut(String)
+    /// With `tenant`, your sign-in's directory, which wants you to sign in again there (`AuthError.signedOut`).
+    case signedOut(String, tenant: String? = nil)
     case authFailed(String)
     case offline
     case throttled(until: Date)
@@ -45,10 +46,13 @@ public enum PulseProblem: Sendable, Equatable {
         }
     }
 
-    /// The directory to sign in to, when signing in to one fixes it, for some organizations.
+    /// The directory to sign in to, when signing in to one fixes it: some organizations', or your sign-in's own.
     public var signInTenant: String? {
-        if case .otherDirectory(_, let tenant, _) = self { return tenant }
-        return nil
+        switch self {
+        case .otherDirectory(_, let tenant, _): return tenant
+        case .signedOut(_, let tenant): return tenant
+        default: return nil
+        }
     }
 
     /// Signing in fixes it: to the Azure CLI, or to an organization's directory.
@@ -58,7 +62,8 @@ public enum PulseProblem: Sendable, Equatable {
     /// an account without Azure subscriptions too. A directory's ID is only ever said here, where signing in needs it.
     public var signInCommand: String? {
         switch self {
-        case .signedOut: return "az login --allow-no-subscriptions"
+        case .signedOut(_, let tenant):
+            return tenant.map { "az login --tenant \($0) --allow-no-subscriptions" } ?? "az login --allow-no-subscriptions"
         case .otherDirectory(_, let tenant, _): return "az login --tenant \(tenant) --allow-no-subscriptions"
         default: return nil
         }
@@ -67,7 +72,7 @@ public enum PulseProblem: Sendable, Equatable {
     public static func from(_ error: ADOError, organization: String? = nil) -> PulseProblem {
         switch error {
         case .auth(.cliNotFound): return .cliNotFound
-        case .auth(.signedOut(let message)): return .signedOut(message)
+        case .auth(.signedOut(let message, let tenant)): return .signedOut(message, tenant: tenant)
         case .auth(.failed(let message)): return .authFailed(message)
         case .offline: return .offline
         case .throttled(let seconds): return .throttled(until: Date().addingTimeInterval(seconds))
@@ -81,11 +86,16 @@ public enum PulseProblem: Sendable, Equatable {
 
     /// What's wrong when these organizations couldn't be read, while others could: signing in to a directory, which
     /// fixes those in it, comes first; then each of the rest, with why: the first reason for each, however its name is
-    /// spelled. Nil when there are none.
+    /// spelled, but that it's in a directory to sign in to over any other. Nil when there are none.
     public static func organizations(_ failures: [(organization: String, error: ADOError)]) -> PulseProblem? {
         var unique: [(organization: String, error: ADOError)] = []
-        for failure in failures where !unique.contains(where: { $0.organization.lowercased() == failure.organization.lowercased() }) {
-            unique.append(failure)
+        for failure in failures {
+            guard let index = unique.firstIndex(where: { $0.organization.lowercased() == failure.organization.lowercased() }) else {
+                unique.append(failure)
+                continue
+            }
+            // Signing in there is what to do about it, whatever else went wrong reading it.
+            if isOtherDirectory(failure.error), !isOtherDirectory(unique[index].error) { unique[index].error = failure.error }
         }
         guard !unique.isEmpty else { return nil }
         var elsewhere: [(organization: String, tenant: String)] = []
@@ -103,6 +113,12 @@ public enum PulseProblem: Sendable, Equatable {
     /// Each organization, and why it couldn't be read.
     private static func reasons(_ failures: [(organization: String, error: ADOError)]) -> String {
         failures.map { "\($0.organization) (\($0.error.description))" }.joined(separator: ", ")
+    }
+
+    /// Whether it's an organization in a directory the Azure CLI isn't signed in to.
+    public static func isOtherDirectory(_ error: ADOError) -> Bool {
+        if case .otherDirectory = error { return true }
+        return false
     }
 }
 
@@ -492,17 +508,15 @@ public actor PulseEngine {
             }
         }
 
-        if errors.count == organizations.count, let (organization, error) = errors.first {
-            // Signing in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
-            if errors.contains(where: { if case .otherDirectory = $0.error { true } else { false } }) {
-                problem = PulseProblem.organizations(errors)
-            } else {
-                problem = PulseProblem.from(error, organization: organizations.count > 1 ? organization : nil)
-            }
+        // No organization's lists could be read. When that's for want of a sign-in to their directory, the pull requests
+        // people sent you from other organizations are read all the same; otherwise nothing else could be either.
+        let readNone = !errors.isEmpty && errors.count == organizations.count
+        if readNone, !errors.contains(where: { PulseProblem.isOtherDirectory($0.error) }), let (organization, error) = errors.first {
+            problem = PulseProblem.from(error, organization: organizations.count > 1 ? organization : nil)
             failures += 1
             return
         }
-        failures = 0
+        if !readNone { failures = 0 }
 
         // Your pull requests that left the active list without completing were abandoned (or completed
         // just now): look each up by its ID, a few per refresh, and again next time if that fails.
@@ -576,10 +590,11 @@ public actor PulseEngine {
             problem = PulseProblem.from(throttled)
         } else if !errors.isEmpty || !linkedElsewhere.isEmpty {
             // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
+            // Signing in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
             problem = PulseProblem.organizations(errors + linkedElsewhere)
-            // Only pull requests sent to you, and none to list: nothing could be read, as when no organization could, so
-            // a sign-in there is picked up within a minute.
-            if organizations.isEmpty && active.isEmpty { failures += 1 }
+            // None of your organizations' lists, or only pull requests sent to you and none to list: nothing could be
+            // read, as when no organization could, so a sign-in there is picked up within a minute.
+            if readNone || (organizations.isEmpty && active.isEmpty) { failures += 1 }
         } else {
             problem = nil
         }
@@ -599,7 +614,8 @@ public actor PulseEngine {
             .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
             .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
         var elsewhere: [(organization: String, error: ADOError)] = []
-        // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others.
+        // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others:
+        // each such organization is tried once a refresh, and the rest of its pull requests wait with it.
         var reads = 0
         for key in due {
             if elsewhere.contains(where: { $0.organization.lowercased() == key.organization.lowercased() }) { continue }
@@ -630,7 +646,9 @@ public actor PulseEngine {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
                 break
             } catch ADOError.otherDirectory(let organization, let tenant) {
-                // Not this pull request's failure either: it stays as it was last read, until you sign in there.
+                // Not this pull request's failure either: it stays as it was last read, until you sign in there. Nor is it
+                // one of the ten.
+                reads -= 1
                 elsewhere.append((organization: key.organization, error: .otherDirectory(organization: organization, tenant: tenant)))
             } catch {
                 linkedFailures[key] = date

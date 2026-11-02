@@ -426,7 +426,7 @@ struct ProblemView: View {
         if problem == .cliNotFound {
             return "Install it with Homebrew (brew install azure-cli), then sign in once. No personal access token needed."
         }
-        if problem.signInTenant != nil {
+        if case .otherDirectory = problem {
             return "Sign In opens Terminal to run az login there, in your browser. If it's a project rather than an "
                 + "organization, remove it: a project's organization is the first part of its link."
         }
