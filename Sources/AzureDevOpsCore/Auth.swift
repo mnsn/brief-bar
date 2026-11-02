@@ -340,15 +340,29 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     }
 
     /// What the Azure CLI says, without IDs (a directory's, a request's), email addresses, or the name of a tenant or
-    /// directory it quotes: before it's cut short, so no part of one is left.
+    /// directory it quotes or names: before it's cut short, so no part of one is left, as on Windows.
+    /// - An address goes whole, with any character a Microsoft Entra user name can hold, as in O'Brien's, or a guest's,
+    ///   which holds its own address and its directory's domain (`robin_contoso.com#EXT#@fabrikam.onmicrosoft.com`).
+    /// - A quoted name, in single or double quotes, goes up to the last of the same quote on its line that can end one,
+    ///   not one inside a word, as a name can hold quotes itself (Fabrikam's Lab, Students' Lab); or, without one, to the
+    ///   line's end. One that's only a directory's ID, `<id>` by then, stays an ID.
+    /// - A name given without quotes, as in "the tenant named Fabrikam. This can happen…", goes to the line's end, as
+    ///   nothing tells where it ends.
     static func redacted(_ message: String) -> String {
         message
             .replacingOccurrences(
                 of: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", with: "<id>",
                 options: .regularExpression
             )
-            .replacingOccurrences(of: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", with: "<account>", options: .regularExpression)
-            .replacingOccurrences(of: "(?i)\\b(tenant|directory) '[^']*'", with: "$1 '<name>'", options: .regularExpression)
+            .replacingOccurrences(
+                of: "[A-Za-z0-9._%+!#^~-]+(?:'+[A-Za-z0-9._%+!#^~-]+)*'*@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", with: "<account>",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: "(?i)\\b(tenant|directory) (['\"])(?!<id>\\2)(?:[^\\r\\n]*\\2(?!\\w)|[^\\r\\n]*)", with: "$1 $2<name>$2",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "(?i)\\b(tenant|directory) named [^\\r\\n]*", with: "$1 named <name>", options: .regularExpression)
     }
 }
 

@@ -1074,8 +1074,8 @@ an agent's work item, asked for by its number alone, is looked for in your other
 such an organization is named only when none of them has it. With no organizations chosen, an agent
 looks in one of yours in such a directory again at most once a minute, so signing in there finds your
 pull requests there. A directory's ID is never shown otherwise,
-and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses or
-the names of directories it quotes.
+and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses (a
+guest's user name included) or the names of directories it quotes, in single or double quotes, or names.
 The log names none of these organizations, nor the others that couldn't be read with them, and says
 only how many are in such a directory: a pull request sent to you comes from a chat. While nothing could
 be read but such organizations, BriefBar looks again every minute, as it does while the CLI is signed

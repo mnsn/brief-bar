@@ -386,15 +386,62 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
             Interactive authentication is needed. Please run:
             az login --tenant "\(Tenants.other)"
             """
+        // A quoted name goes up to the line's last quote: what's between goes with it.
         #expect(AzureCLITokenProvider.error(fromOutput: output) == .signedOut(
-            "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>' and cannot access the application '<id>'. Trace ID: <id> Correlation ID: <id>"
+            "AADSTS50020: User account '<account>' from identity provider 'live.com' does not exist in tenant '<name>'. Trace ID: <id> Correlation ID: <id>"
         ))
-        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one.
+        // A directory's ID where it says to sign in, and one it would cut short: neither is left, nor any part of one. A
+        // quoted ID stays an ID.
         #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login --tenant \"\(Tenants.other)\"' to setup account.")
             == .signedOut("Please run 'az login --tenant \"<id>\"' to setup account."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: AADSTS90002: Tenant '\(Tenants.other)' not found.")
+            == .signedOut("AADSTS90002: Tenant '<id>' not found."))
         let long = AzureCLITokenProvider.error(fromOutput: "ERROR: Please run 'az login'. " + String(repeating: "x", count: 266) + " " + Tenants.other)
         #expect(!long.description.contains(String(Tenants.other.prefix(8))))
         #expect(long.description.hasSuffix(" <id>"))
+    }
+
+    /// A directory's name, however it's written, in single quotes or double, and whatever it holds: quotes of its own, or no
+    /// closing quote.
+    @Test func aDirectorysNameIsKeptOutHoweverItsQuoted() {
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam Example' isn't available.")
+            == .failed("Directory '<name>' isn't available."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam's Research Directory' isn't available.")
+            == .failed("Directory '<name>' isn't available."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory \"Fabrikam's Example\" isn't available.")
+            == .failed("Directory \"<name>\" isn't available."))
+        let lab = """
+            ERROR: AADSTS50020: User account 'robin@contoso.example' does not exist in tenant 'Fabrikam Students' Lab' and cannot access the application '\(AzureCLITokenProvider.azureDevOpsResource)'.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: lab) == .signedOut("AADSTS50020: User account '<account>' does not exist in tenant '<name>'."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: Directory 'Fabrikam Example") == .failed("Directory '<name>'"))
+    }
+
+    /// A name it gives without quotes goes, to the line's end.
+    @Test func aDirectoryNamedWithoutQuotesIsKeptOut() {
+        let output = """
+            ERROR: AADSTS500011: The resource principal named \(AzureCLITokenProvider.azureDevOpsResource) was not found in the tenant named Fabrikam Example. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: output)
+            == .signedOut("AADSTS500011: The resource principal named <id> was not found in the tenant named <name>"))
+    }
+
+    /// An address goes whole, whatever a Microsoft Entra user name holds: apostrophes, wherever they are, or a guest's sign-in
+    /// name in another directory, which holds their own address and their directory's domain, with `#` right before the `@`.
+    @Test func anAddressIsKeptOutWhateverItHolds() {
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: The user robin_contoso.example#EXT#@fabrikam.onmicrosoft.com couldn't be signed in.")
+            == .failed("The user <account> couldn't be signed in."))
+        let guest = """
+            ERROR: AADSTS50105: The signed in user 'robin_contoso.example#EXT#@fabrikam.onmicrosoft.com' is not assigned to a role for the application.
+            """
+        #expect(AzureCLITokenProvider.error(fromOutput: guest)
+            == .signedOut("AADSTS50105: The signed in user '<account>' is not assigned to a role for the application."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: AADSTS50020: User account 'O'Brien@contoso.example' does not exist.")
+            == .signedOut("AADSTS50020: User account '<account>' does not exist."))
+        #expect(AzureCLITokenProvider.error(fromOutput: "ERROR: User 'robin'@contoso.example' does not exist in MSAL token cache.")
+            == .signedOut("User '<account>' does not exist in MSAL token cache."))
+        #expect(AzureCLITokenProvider.redacted("o''brien@contoso.example") == "<account>")
+        #expect(AzureCLITokenProvider.redacted("robin~dev^ops!@contoso.example") == "<account>")
     }
 
     // MARK: Requests
