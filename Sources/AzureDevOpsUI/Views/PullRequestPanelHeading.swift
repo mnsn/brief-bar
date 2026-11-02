@@ -10,6 +10,8 @@ struct PullRequestPanelHeading: View {
     let panel: PullRequestPanel
     /// The list still has it; once it doesn't, such as a review that merged, this is how it was last.
     var isListed = true
+    /// How it's linked to what it opened from, as a page over a work item's details or another pull request's.
+    var linked: ItemStory.Fact? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: PRStore
@@ -68,7 +70,7 @@ struct PullRequestPanelHeading: View {
             .textSelection(.enabled)
     }
 
-    /// Its branch, who wrote it, and how its merge stands.
+    /// Its branch, who wrote it, how its merge stands, and, as a page, how it's linked to what it opened from.
     private var facts: some View {
         FlowLayout(spacing: 12, lineSpacing: 5) {
             if let branch = panel.branch {
@@ -87,6 +89,12 @@ struct PullRequestPanelHeading: View {
             if let merge = panel.merge {
                 Label(merge, systemImage: "arrow.triangle.merge")
                     .lineLimit(1)
+            }
+            if let linked {
+                Label(linked.value, systemImage: "link")
+                    .lineLimit(1)
+                    .help("\(linked.label): \(linked.value)")
+                    .accessibilityLabel("\(linked.label): \(linked.value)")
             }
         }
         .font(size: 11.5)

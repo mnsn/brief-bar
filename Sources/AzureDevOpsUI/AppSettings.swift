@@ -58,6 +58,11 @@ final class AppSettings: ObservableObject {
     @Published var followMerges: Bool {
         didSet { defaults.set(followMerges, forKey: Key.followMerges) }
     }
+    /// A pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window,
+    /// rather than opening in Azure DevOps. Off by default: they open in Azure DevOps, as they always did.
+    @Published var opensPullRequestsInBriefBar: Bool {
+        didSet { defaults.set(opensPullRequestsInBriefBar, forKey: Key.opensPullRequestsInBriefBar) }
+    }
     /// Pull requests you watch by their links, though you're not on them: listed as if you reviewed them, until
     /// they close or you stop watching them.
     @Published var watchedPullRequests: [PullRequestLink] {
@@ -166,6 +171,7 @@ final class AppSettings: ObservableObject {
         showToReview = defaults.bool(forKey: Key.showToReview)
         pullRequestOrder = defaults.string(forKey: Key.pullRequestOrder).flatMap(PROrder.init(rawValue:)) ?? .status
         followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
+        opensPullRequestsInBriefBar = defaults.bool(forKey: Key.opensPullRequestsInBriefBar)
         watchedPullRequests = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
@@ -485,6 +491,7 @@ enum SettingsKey {
     static let showToReview = "ado.showToReviewInMenuBar"
     static let pullRequestOrder = "ado.pullRequestOrder"
     static let followMerges = "ado.followMerges"
+    static let opensPullRequestsInBriefBar = "ado.opensPullRequestsInBriefBar"
     static let watchedPullRequests = "ado.watchedPullRequests"
     static let organizations = "ado.organizations"
     static let knownOrganizations = "ado.knownOrganizations"
