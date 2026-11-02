@@ -125,6 +125,31 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
     }
 }
 
+/// Code with two files, unchanged by the pull request, whose paths differ only in how their "é" is written: as one
+/// character, or as "e" and an accent. Read by their bytes, as Git reads paths.
+private struct AccentedCode: CodeSource {
+    static let composed = "/src/caf\u{E9}.cs"
+    static let decomposed = "/src/cafe\u{301}.cs"
+
+    func iterations(of pullRequest: PullRequest) async throws -> [PRIteration] {
+        [PRIteration(id: 1, sourceCommit: "abc", commonCommit: "b1")]
+    }
+
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
+        FileChanges(files: [])
+    }
+
+    func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
+        throw ADOError.notFound
+    }
+
+    func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {
+        if path.utf8.elementsEqual(Self.composed.utf8) { return .text("composed\n") }
+        if path.utf8.elementsEqual(Self.decomposed.utf8) { return .text("decomposed\n") }
+        throw ADOError.notFound
+    }
+}
+
 // MARK: - Decoding
 
 @Suite struct ThreadLocationDecodingTests {
@@ -449,6 +474,30 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
                                            in: pr).get()
         #expect(moved.path == "/src/Billing.cs")
         #expect(moved.originalPath == "/src/Payments.cs")
+    }
+
+    @Test func tellsApartPathsThatOnlyLookTheSame() async throws {
+        let (composed, decomposed) = (AccentedCode.composed, AccentedCode.decomposed)
+        // Equal as Swift compares strings, but two paths, of two files, to Git.
+        #expect(composed == decomposed)
+        let changes = FileChanges(files: [
+            FileChange(path: composed, kind: .edit, objectId: "one"), FileChange(path: decomposed, kind: .edit, objectId: "two"),
+        ])
+        #expect(changes.change(to: composed, trackingId: nil)?.objectId == "one")
+        #expect(changes.change(to: decomposed, trackingId: nil)?.objectId == "two")
+        let renamed = try Fixture.decode(ADOIterationChanges.self, CodeFixture.changes([
+            CodeFixture.change(decomposed, "rename", objectId: "one", original: "one", originalPath: composed),
+        ])).changeEntries.compactMap(FileChange.init)
+        #expect(renamed.first?.originalPath.map { Array($0.utf8) } == Array(composed.utf8))
+        #expect(FileChanges(files: renamed).change(to: composed, trackingId: nil)?.objectId == "one")
+        #expect(FileChanges(files: [FileChange(path: decomposed, kind: .add, objectId: "two")]).change(to: composed, trackingId: nil) == nil)
+
+        // Each read by its own path, at the same commit.
+        let code = PullRequestCode(pr, source: AccentedCode())
+        for (id, path, text) in [(1, composed, "composed"), (2, decomposed, "decomposed")] {
+            let thread = CodeFixture.thread(id, at: CodeFixture.location(path, right: 1...1, madeOn: nil, tracking: nil))
+            #expect(try await code.excerpt(of: thread, in: pr).get().lines.map(\.text) == [text])
+        }
     }
 
     @Test func saysWhenItCantTellAmongMoreFilesThanItReads() async throws {
@@ -1018,35 +1067,39 @@ private actor LaterCode: CodeSource {
         let snapshot = DemoData.update(DemoData.snapshot(now: now), at: now)
         var shown: [Int: ThreadExcerpt] = [:]
         for record in snapshot.records {
+            let code = PullRequestCode.demo(record.pullRequest)
             for thread in record.details?.threads ?? [] where thread.filePath != nil {
-                let excerpt = try await PullRequestCode.demo(record.pullRequest).excerpt(of: thread, in: record.pullRequest).get()
-                // Its lines, on the side it's on: before the change for one only on lines there.
-                let location = thread.location
-                let isLeft = location?.right == nil && location?.left != nil
-                let lines = try #require(location?.right?.lines ?? location?.left?.lines ?? thread.line.map { $0...$0 })
-                #expect(excerpt.lines.filter(\.isCommented).map { isLeft ? $0.oldNumber : $0.newNumber } == lines.map(Optional.some))
-                // Made on a push before the latest, it's on code that changed since.
-                #expect(excerpt.changedSince == (excerpt.iteration < excerpt.latestIteration))
+                let excerpt = try await code.excerpt(of: thread, in: record.pullRequest).get()
+                #expect(excerpt.lines.filter(\.isCommented).map(\.newNumber) == [thread.line])
+                #expect(excerpt.changedSince == false)
                 shown[thread.id] = excerpt
             }
         }
-        #expect(Set(shown.keys) == [11, 13, 14, 16, 17, 43, 63, 67])
-        #expect(shown[43]?.changedSince == true && shown[16]?.lines.contains { $0.kind == .removed && $0.isCommented } == true)
+        // 4102's backoff, attempts and retry policy, 4088's delivery estimate, and 4091's rounding and coupons.
+        #expect(Set(shown.keys) == [11, 13, 14, 43, 63, 67])
+        func commented(_ id: Int) -> String? {
+            shown[id]?.lines.first { $0.isCommented }?.text
+        }
         let backoff = try #require(shown[11])
-        #expect(backoff.lines.first { $0.isCommented }?.text.contains("delay *= 2") == true)
+        #expect(commented(11)?.contains("delay *= 2") == true)
         #expect(backoff.lines.first { $0.isCommented }?.kind == .added)
         #expect(backoff.change == .edit)
         #expect(backoff.latestIteration == 2)
-        let rounding = try #require(shown[63])
-        #expect(rounding.lines.first { $0.isCommented }?.text.contains("MidpointRounding.AwayFromZero") == true)
-        #expect(rounding.lines.contains { $0.kind == .removed && $0.text.contains("Math.Round(amount, 2);") })
+        #expect(commented(13)?.contains("retryOptions.Value.MaxAttempts") == true)
+        #expect(commented(14)?.contains("class RetryPolicy") == true)
+        #expect(shown[14]?.change == .add)
+        #expect(commented(43)?.contains("warehouse.TimeZone") == true)
+        #expect(commented(63)?.contains("MidpointRounding.AwayFromZero") == true)
+        #expect(shown[63]?.lines.contains { $0.kind == .removed && $0.text.contains("Math.Round(amount, 2);") } == true)
+        #expect(commented(67)?.contains("MidpointRounding.AwayFromZero") == true)
+        #expect(shown[67]?.lines.contains { $0.kind == .removed && $0.text.contains("Math.Truncate") } == true)
     }
 
     @Test func comparesTheDemosIterations() async throws {
         let pr = try #require(DemoData.records(now: Date()).first { $0.pullRequest.key.number == 4102 }?.pullRequest)
         let code = PullRequestCode.demo(pr)
         // Made on the first push, which retried 200 ms apart: the second changed it since.
-        let location = ReviewThread.Location(path: "/src/PaymentsClient.cs", right: ReviewThread.Span(lines: 86...86),
+        let location = ReviewThread.Location(path: "/src/PaymentsClient.cs", right: ReviewThread.Span(lines: 74...74),
                                              madeOn: ReviewThread.Comparison(base: 1), changeTrackingId: 1)
         let excerpt = try await code.excerpt(of: CodeFixture.thread(1, at: location), in: pr).get()
         #expect(excerpt.lines.first { $0.isCommented }?.text.contains("RetryDelay") == true)

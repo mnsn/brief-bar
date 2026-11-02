@@ -1030,10 +1030,10 @@ private enum MarkdownReader {
                 }
                 // An item that starts with HTML comments: they show nothing, blank lines and all, and the item's text is
                 // what follows the last one's end; without an end, it's all the rest. With nothing after them, the item
-                // has no paragraph for the lines after it to go on with.
+                // has no paragraph for the lines after it to go on with. Text indented as code starts with no comment.
                 var startsWithComment = false
                 var text = Substring(content)
-                while text.hasPrefix("<!--") {
+                while column - markerEnd <= 4, text.hasPrefix("<!--") {
                     startsWithComment = true
                     if let close = text.dropFirst(4).range(of: "-->") {
                         text = text[close.upperBound...].drop { $0 == " " || $0 == "\t" }
@@ -1247,9 +1247,10 @@ private enum MarkdownReader {
     /// apart: see `keptApart(_:)`.
     static let seam: Unicode.Scalar = "\u{FFFC}"
 
-    /// Text with a seam only where it keeps two runs of a mark apart that HTML kept apart, as in `` `a`<!-- -->`b` `` or
-    /// `**one**<b></b>**two**`: elsewhere it would be in the way, as between the two spaces that break a line and its
-    /// end.
+    /// Text with a seam only where it keeps apart two marks that HTML kept apart, which Markdown would read together: runs
+    /// of a mark, as in `` `a`<!-- -->`b` `` or `**one**<b></b>**two**`, a link's text and where it goes, as in
+    /// `[a]<!-- -->(b)`, and an image's `!` and its description. Elsewhere it would be in the way, as between the two
+    /// spaces that break a line and its end.
     static func keptApart(_ text: String) -> String {
         guard text.unicodeScalars.contains(seam) else { return text }
         var result = String.UnicodeScalarView()
@@ -1259,11 +1260,17 @@ private enum MarkdownReader {
                 apart = true
                 continue
             }
-            if apart, result.last == scalar, "*_~`".unicodeScalars.contains(scalar) { result.append(seam) }
+            if apart, let last = result.last, joins(last, scalar) { result.append(seam) }
             apart = false
             result.append(scalar)
         }
         return String(result)
+    }
+
+    /// Whether Markdown reads two marks together.
+    private static func joins(_ before: Unicode.Scalar, _ after: Unicode.Scalar) -> Bool {
+        if before == after { return "*_~`".unicodeScalars.contains(after) }
+        return (before == "]" && after == "(") || (before == "!" && after == "[")
     }
 
     /// Text without its seams, once it's read.
@@ -1271,40 +1278,71 @@ private enum MarkdownReader {
         String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != seam }))
     }
 
-    /// The HTML tags that format text, which keep their text: those ending a line or a block break the line there.
+    /// The HTML tags that format text, which keep their text.
     nonisolated(unsafe) private static let htmlTag = #/
         <(\/?)(a|abbr|b|bdi|bdo|big|blockquote|br|center|cite|code|dd|del|details|dfn|div|dl|dt|em|font|h[1-6]|hr|i|ins|
         kbd|li|mark|ol|p|pre|q|s|samp|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|u|ul|
         var|wbr)(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>
         /#.ignoresCase()
 
+    /// Those of them that start or end a block, such as a paragraph, which is on lines of its own.
+    private static let blockTags: Set<String> = [
+        "blockquote", "center", "dd", "details", "div", "dl", "dt", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "ol", "p",
+        "pre", "summary", "table", "tbody", "tfoot", "thead", "tr", "ul",
+    ]
+
+    /// An `<img>` tag, read whole, as any tag is.
+    nonisolated(unsafe) private static let imageTag = /<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()
+
     /// Any HTML tag, as CommonMark reads one: what's in its quoted attributes, `>` and backticks included, is the tag's.
     nonisolated(unsafe) private static let anyTag = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>/
 
-    /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, line breaks and the
-    /// ends of blocks such as paragraphs break the line, a table's cells are apart, an image is Markdown's, and the other
-    /// tags that format text keep their text. What isn't one of those stays, such as the `<T>` of `List<T>`, and so does
-    /// the start of a comment that doesn't end in the same paragraph, as CommonMark has it. Where HTML is taken out, a
-    /// seam is left.
+    /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, a line break breaks the
+    /// line, a block such as a paragraph starts and ends on lines of its own, a table's cells are apart, an image is
+    /// Markdown's, and the other tags that format text keep their text. What isn't one of those stays, such as the `<T>`
+    /// of `List<T>`, and so does the start of a comment that doesn't end in the same paragraph, as CommonMark has it.
+    /// Where HTML is taken out, a seam is left. Its tags are read once, from left to right, so what an image becomes
+    /// isn't read as HTML again.
     static func withoutHTML(_ text: Substring) -> String {
         guard text.contains("<") else { return String(text) }
-        let gone = String(seam)
-        var text = withoutComments(text)
-        text = text.replacing(/<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()) { tag in
-            let image = image(String(tag.output))
-            return image.isEmpty ? gone : image
+        let text = withoutComments(text)
+        var result = ""
+        // Whether what's shown so far ends a line, spaces and seams aside: blocks one after another, or one in another,
+        // break it once.
+        var endsLine = false
+        func show(_ piece: some StringProtocol) {
+            result += piece
+            if let last = piece.unicodeScalars.last(where: { $0 != seam && $0 != " " && $0 != "\t" }) { endsLine = last == "\n" }
         }
-        return text.replacing(htmlTag) { tag in
-            let closes = !tag.output.1.isEmpty
-            switch tag.output.2.lowercased() {
-            case "br", "hr": return "\n"
-            case "p", "div", "li", "tr", "summary", "details", "blockquote", "pre", "table", "dt", "dd", "h1", "h2", "h3", "h4",
-                 "h5", "h6":
-                return closes ? "\n" : gone
-            case "td", "th": return closes ? " " : gone
-            default: return gone
+        var plain = text.startIndex
+        var index = text.startIndex
+        while let open = text[index...].firstIndex(of: "<") {
+            if let tag = text[open...].prefixMatch(of: imageTag) {
+                show(text[plain..<open])
+                let image = image(String(tag.output))
+                show(image.isEmpty ? String(seam) : image)
+                plain = tag.range.upperBound
+            } else if let tag = text[open...].prefixMatch(of: htmlTag) {
+                show(text[plain..<open])
+                let name = tag.output.2.lowercased()
+                if name == "br" {
+                    show("\n")
+                } else if blockTags.contains(name) {
+                    if !endsLine { show("\n") }
+                } else if name == "td" || name == "th", !tag.output.1.isEmpty {
+                    show(" ")
+                } else {
+                    show(String(seam))
+                }
+                plain = tag.range.upperBound
+            } else {
+                index = text.index(after: open)
+                continue
             }
+            index = plain
         }
+        show(text[plain...])
+        return result
     }
 
     /// Text without its HTML comments, each a seam: each from `<!--` to the next `-->`, outside tags, whose quoted

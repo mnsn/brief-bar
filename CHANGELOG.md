@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, a line break
+  (`<br>`) breaks the line, an HTML comment shows nothing, and tags such as `<b>` or `<details>` keep only
+  their text, rather than showing as they were written.
 - **See each comment with its code, without opening Azure DevOps.** In a pull request's details, its
   comment threads now go by file, in the order its change lists them, with those on the pull request
   itself first. Each thread on code shows the lines it's on as its reviewer saw them, with their numbers,
@@ -42,9 +45,6 @@
   give a date rather than a number of seconds, and BriefBar waited a minute instead.
 - **The Copilot app's sessions are read all at once.** When the app saved a change as BriefBar read its
   database, a session's status and its latest activity could come from either side of it.
-- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, a line break
-  (`<br>`) breaks the line, an HTML comment shows nothing, and tags such as `<b>` or `<details>` keep only
-  their text, rather than showing as they were written.
 - **Agents can send a pull request's work to its own Copilot session.** With Send Work to Copilot on,
   BriefBar's `pull_request` tool names the session BriefBar sends a pull request's work to, such as the
   one on its branch or the one that opened it, and why. In the GitHub Copilot app, **/briefbar** then

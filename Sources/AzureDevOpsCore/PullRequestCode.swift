@@ -89,7 +89,7 @@ public struct FileChange: Sendable, Equatable, Hashable {
     /// Nil for one that isn't a file, such as a folder, or that doesn't say which.
     init?(_ dto: ADOIterationChanges.Change) {
         guard let item = dto.item, let path = item.path, !path.isEmpty, (item.gitObjectType ?? "blob") == "blob" else { return nil }
-        let original = dto.originalPath.flatMap { $0.isEmpty || $0 == path ? nil : $0 }
+        let original = dto.originalPath.flatMap { $0.isEmpty || GitPath($0) == GitPath(path) ? nil : $0 }
         var kind = Kind(dto.changeType)
         if original != nil { kind.insert(.rename) }
         self.init(
@@ -98,6 +98,25 @@ public struct FileChange: Sendable, Equatable, Hashable {
         )
     }
 
+}
+
+/// A file's path as Git tells paths apart: by their bytes. Swift's strings are equal when they're canonically
+/// equivalent, as "é" written as one character and as "e" with an accent after it, but to Git those are two paths, of
+/// two files.
+struct GitPath: Hashable, Sendable {
+    var string: String
+
+    init(_ string: String) {
+        self.string = string
+    }
+
+    static func == (lhs: GitPath, rhs: GitPath) -> Bool {
+        lhs.string.utf8.elementsEqual(rhs.string.utf8)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        for byte in string.utf8 { hasher.combine(byte) }
+    }
 }
 
 /// The files a diff changed: all of them, or as many as BriefBar reads of a diff that changed more.
@@ -110,7 +129,8 @@ struct FileChanges: Sendable, Equatable {
     /// change, or else before it, so that a file renamed from that path doesn't stand for one added there.
     func change(to path: String, trackingId: Int?) -> FileChange? {
         if let trackingId, let tracked = files.first(where: { $0.changeTrackingId == trackingId }) { return tracked }
-        return files.first { $0.path == path } ?? files.first { $0.originalPath == path }
+        let path = GitPath(path)
+        return files.first { GitPath($0.path) == path } ?? files.first { $0.originalPath.map(GitPath.init) == path }
     }
 }
 
@@ -393,7 +413,7 @@ public actor PullRequestCode {
         let leftCommit = comparison.isWithBase ? right.commonCommit : iterations.first { $0.id == comparison.first }?.sourceCommit
 
         let changes = try await changes(iteration: right.id, comparedTo: comparison.isWithBase ? 0 : comparison.first)
-        let change = changes.change(to: anchor.path, trackingId: anchor.changeTrackingId)
+        let change = changes.change(to: anchor.path.string, trackingId: anchor.changeTrackingId)
         // Among the files left out of a diff that changed more than it reads, it can't tell whether this one changed.
         if change == nil, !changes.isComplete { throw ThreadExcerpt.Problem.tooManyFiles }
         // The file after the change, then before it, by what each is read as: none for a side without the file, and a file
@@ -405,7 +425,7 @@ public actor PullRequestCode {
             oldFile = change.kind.contains(.add)
                 ? nil : try Self.file(change.originalObjectId, change.originalPath ?? change.path, at: leftCommit)
         } else {
-            newFile = try Self.file(nil, anchor.path, at: right.sourceCommit)
+            newFile = try Self.file(nil, anchor.path.string, at: right.sourceCommit)
             oldFile = newFile
         }
         let newText = try await text(newFile)
@@ -420,14 +440,14 @@ public actor PullRequestCode {
         var changedSince: Bool? = false
         if latest.id > right.id {
             let later = try? await self.changes(iteration: latest.id, comparedTo: right.id)
-            if let later, later.change(to: change?.path ?? anchor.path, trackingId: change?.changeTrackingId ?? anchor.changeTrackingId) != nil {
+            if let later, later.change(to: change?.path ?? anchor.path.string, trackingId: change?.changeTrackingId ?? anchor.changeTrackingId) != nil {
                 changedSince = true
             } else {
                 changedSince = later?.isComplete == true ? false : nil
             }
         }
         let excerpt = ThreadExcerpt(
-            threadId: threadId, path: change?.path ?? anchor.path, originalPath: change?.originalPath, change: change?.kind,
+            threadId: threadId, path: change?.path ?? anchor.path.string, originalPath: change?.originalPath, change: change?.kind,
             side: anchor.side, lines: window.lines, reachesStart: window.reachesStart, reachesEnd: window.reachesEnd,
             hiddenCommentedLines: window.hiddenCommentedLines, iteration: right.id, latestIteration: latest.id,
             changedSince: changedSince
@@ -481,7 +501,7 @@ public actor PullRequestCode {
     /// What a file is read as: by its object ID, or else by its path at a commit.
     private static func file(_ objectId: String?, _ path: String, at commit: String?) throws -> ReadKey {
         if let objectId, !objectId.isEmpty { return .object(objectId) }
-        if let commit, !commit.isEmpty { return .file(path, commit: commit) }
+        if let commit, !commit.isEmpty { return .file(GitPath(path), commit: commit) }
         throw ThreadExcerpt.Problem.noIterations
     }
 
@@ -504,7 +524,7 @@ public actor PullRequestCode {
                         return .changes(try await source.changes(of: pullRequest, iteration: iteration, comparedTo: comparedTo))
                     case .object(let objectId): return .file(try await source.file(of: pullRequest, objectId: objectId, limit: limit))
                     case .file(let path, let commit):
-                        return .file(try await source.file(of: pullRequest, path: path, commit: commit, limit: limit))
+                        return .file(try await source.file(of: pullRequest, path: path.string, commit: commit, limit: limit))
                     // Comparisons aren't read: `compare` begins them itself.
                     case .diff: throw CancellationError()
                     }
@@ -639,7 +659,7 @@ public actor PullRequestCode {
         case iterations(Head)
         case changes(iteration: Int, comparedTo: Int)
         case object(String)
-        case file(String, commit: String)
+        case file(GitPath, commit: String)
         /// Two versions of a file compared, by what each is read as: nil for a side without it.
         indirect case diff(ReadKey?, ReadKey?)
     }
@@ -663,7 +683,7 @@ public actor PullRequestCode {
 struct Anchor: Hashable, Sendable {
     /// Nil for the latest iteration's diff with the base.
     var comparison: ReviewThread.Comparison?
-    var path: String
+    var path: GitPath
     var side: ThreadExcerpt.Side
     var lines: ClosedRange<Int>
     var changeTrackingId: Int?
@@ -708,7 +728,7 @@ struct Anchor: Hashable, Sendable {
         newest: Int? = nil
     ) {
         self.comparison = comparison
-        self.path = path
+        self.path = GitPath(path)
         self.side = side
         self.lines = lines
         self.changeTrackingId = changeTrackingId

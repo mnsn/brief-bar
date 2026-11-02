@@ -30,6 +30,8 @@ import Testing
         #expect(plain("- <!--\n  hidden\n  --> kept\n- shown") == "• kept\n• shown")
         // An item that's only a comment has no paragraph for indented code after it to go on with.
         #expect(RichText(markdown: "- <!--\n  hidden\n  -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
+        // An item whose text is indented as code starts with no comment, and what follows it shows.
+        #expect(plain("-     <!--\n      literal code\n\nOutside") == "• <!--\nliteral code\nOutside")
         // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
         #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
@@ -52,6 +54,13 @@ import Testing
             .paragraph([RichText.Run("Unused variable "), RichText.Run("delay", style: .code), RichText.Run(".")]),
         ])
         #expect(plain("<p>First</p><p>Second</p>") == "First\nSecond")
+        // A block starts on a line of its own as it ends on one, and blocks one after another, or one in another, break
+        // the line once.
+        #expect(plain("Before<div>Inside</div>After") == "Before\nInside\nAfter")
+        #expect(plain("<div><p>One</p></div> <div><p>Two</p></div>") == "One\nTwo")
+        #expect(plain("Line<br><div>Block</div>") == "Line\nBlock")
+        #expect(plain("Before\n<div>Inside</div>") == "Before\nInside")
+        #expect(plain("`code`<div>Block</div>") == "code\nBlock")
         #expect(plain("<table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>") == "File Issues\na.cs 2")
     }
 
@@ -82,6 +91,19 @@ import Testing
                 RichText.Run("b", style: .code),
             ]),
         ])
+        // Nor are a link's text and where it goes, an image's too, or an image's `!` and its description: what's left is text,
+        // with its web address a link of its own.
+        let build = URL(string: "https://example.invalid/build")
+        #expect(RichText(markdown: "[build]<!-- bot -->(https://example.invalid/build)").blocks == [
+            .paragraph([RichText.Run("[build]("), RichText.Run("https://example.invalid/build", link: build), RichText.Run(")")]),
+        ])
+        let chart = URL(string: "https://example.invalid/chart.png")
+        #expect(RichText(markdown: "![chart]<!-- bot -->(https://example.invalid/chart.png)").blocks == [
+            .paragraph([RichText.Run("![chart]("), RichText.Run("https://example.invalid/chart.png", link: chart), RichText.Run(")")]),
+        ])
+        #expect(RichText(markdown: "!<b></b>[chart](https://example.invalid/chart)").blocks == [
+            .paragraph([RichText.Run("!"), RichText.Run("chart", link: URL(string: "https://example.invalid/chart"))]),
+        ])
     }
 
     @Test func readsImagesInHTMLAsImages() {
@@ -103,6 +125,11 @@ import Testing
         #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
         #expect(plain("<img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "Build [Linux] *1*")
         #expect(plain("<img src=data:image/png;base64,AAAA>") == "")
+        // A tag its description mentions is text, as the rest of it is.
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Use &lt;br /&gt; here\">").blocks == [
+            .paragraph([RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
+        ])
+        #expect(plain("<img alt='Use &lt;span class=\"x\"&gt; here'>") == "Use <span class=\"x\"> here")
     }
 
     @Test func leavesCodeAsItIs() {
@@ -168,6 +195,7 @@ import Testing
             String(repeating: "<!-- `x` ", count: 10_000),
             String(repeating: "<a title=\"<!--\"> ", count: 3_000),
             String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
+            "<div>" + String(repeating: "<b></b>", count: 3_000) + String(repeating: "<p></p>", count: 3_000),
             String(repeating: "> <!--\nx\n-->\n", count: 3_000),
             "- " + String(repeating: "<!-- a --> ", count: 6_000) + "text",
         ] {
