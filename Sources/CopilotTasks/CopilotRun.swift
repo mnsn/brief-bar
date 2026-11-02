@@ -132,28 +132,35 @@ public struct RunStatus: Sendable, Equatable {
     /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
     /// - Parameters:
     ///   - log: nil until Copilot has written one.
-    ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log entered before then is the
-    ///     history of a session it went on with, or forked, not how this run went, and counts as nothing written yet.
+    ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log was put in before then, and not
+    ///     since, is the history of a session it went on with, or forked, not how this run went, and counts as nothing
+    ///     written yet; one it put the log in again, as with an error after the session's error, dates from when it did.
     ///   - exitStatus: how its process ended, when BriefBar saw it end.
     ///   - stoppedByYou: you stopped it.
     ///   - output: what it printed, which says why when it couldn't start.
     public static func derive(
         log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
     ) -> RunStatus {
-        let log = log.flatMap { log -> SessionLogState? in
-            guard let startedAt, let since = log.phaseSince, since < startedAt else { return log }
-            return nil
+        var log = log
+        var phaseSince = log?.phaseSince
+        if let startedAt, let state = log {
+            if let setAt = state.phaseSetAt, setAt < startedAt {
+                log = nil
+                phaseSince = nil
+            } else if let since = phaseSince, since < startedAt {
+                phaseSince = state.phaseSetAt
+            }
         }
         if isRunning {
             return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
         }
         switch log?.phase {
         case .finished?:
-            return RunStatus(phase: .finished, since: log?.phaseSince, detail: log?.summary)
+            return RunStatus(phase: .finished, since: phaseSince, detail: log?.summary)
         case .failed?:
-            return RunStatus(phase: .failed, since: log?.phaseSince, detail: log?.errorMessage ?? lastLine(output))
+            return RunStatus(phase: .failed, since: phaseSince, detail: log?.errorMessage ?? lastLine(output))
         case .interrupted?:
-            return RunStatus(phase: .stopped, since: log?.phaseSince)
+            return RunStatus(phase: .stopped, since: phaseSince)
         case .running?, .unknown?, nil:
             if stoppedByYou {
                 return RunStatus(phase: .stopped, since: log?.lastEventAt)

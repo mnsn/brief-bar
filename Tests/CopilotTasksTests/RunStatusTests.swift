@@ -92,6 +92,27 @@ import Testing
         #expect(RunStatus.derive(log: done, isRunning: false, exitStatus: 1, stoppedByYou: false, output: nil).phase == .finished)
     }
 
+    /// Put back in the phase the session's history left, as with an error after the session's error, it says its own,
+    /// and since when.
+    @Test func saysItsOwnErrorAfterTheSessionsError() {
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        let failedAgain = log([
+            Line.userMessage(), Line.event("session.error", data: ["errorType": "quota", "message": "Out of credits"], at: 9),
+            Line.event("session.resume", at: 61),
+            Line.event("session.error", data: ["errorType": "authentication", "message": "Not signed in"], at: 62),
+        ])
+        #expect((failedAgain.phaseSince ?? .distantFuture) < startedAt)
+        let failed = RunStatus.derive(log: failedAgain, startedAt: startedAt, isRunning: false, exitStatus: 1, stoppedByYou: false, output: nil)
+        #expect(failed == RunStatus(phase: .failed, since: failedAgain.phaseSetAt, detail: "Not signed in"))
+        #expect((failed.since ?? .distantPast) > startedAt)
+        let abortedAgain = log([
+            Line.userMessage(), Line.event("abort", data: ["reason": "user"], at: 9),
+            Line.event("session.resume", at: 61), Line.event("abort", data: ["reason": "user"], at: 62),
+        ])
+        #expect(RunStatus.derive(log: abortedAgain, startedAt: startedAt, isRunning: false, exitStatus: nil, stoppedByYou: false, output: nil)
+                == RunStatus(phase: .stopped, since: abortedAgain.phaseSetAt))
+    }
+
     /// The CLI follows an option it refuses with its usage and a hint, which say nothing of why.
     @Test func saysTheCLIsErrorRatherThanItsHint() {
         let output = """
