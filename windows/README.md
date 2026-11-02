@@ -88,7 +88,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another app or Settings
   to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
-  button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
+  button, or the empty Overview. **General** lists each source and whether it's on, and what comes next ("Microsoft
+  Teams comes to BriefBar for Windows next."), until Windows has every source. A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
@@ -159,7 +160,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   included, with Windows' own colors in a contrast theme. Its state colors meet WCAG AA in light and dark (text 4.5:1,
   icons 3:1) on the acrylic and on that flat color alike, and on the accent, and the bar's behind an item that's open
   and pointed at too, where Windows' highlight lies under them twice, which tests check. States never rely on color
-  alone: each has its own icon and words.
+  alone: each has its own icon and words. Narrator reads each item in the bar and each row as one, in words, and
+  Settings' section titles are headings.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
@@ -284,6 +286,10 @@ SDK ships inside the app.
   registry, as `Personalize\SystemUsesLightTheme`, with `ColorPrevalence` for the accent on the taskbar, and a change
   comes as `WM_SETTINGCHANGE` with `ImmersiveColorSet` (`ShellColors`). With the accent, Windows paints the taskbar
   `AccentDark2`, checked against its pixels over Remote Desktop.
+- **`AutomationProperties.AccessibilityView="Raw"` hides only the element it's on**, not what's in it: Narrator read
+  a row's words again, one by one, after its name. Its words are raw each, through an implicit style, and a bar item
+  is a button without children (`BarItemButtonAutomationPeer`). That style doesn't reach into a list's own item
+  template, such as a row's checklist and links, so their words say it themselves.
 - **A click on the bar could be spent activating it** while some apps were in front, such as the Xbox app or a
   Windows Security prompt; the bar answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`.
 - **XAML moves focus to the bar on a press**, before the press reaches the item, which takes activation from an

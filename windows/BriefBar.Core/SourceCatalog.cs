@@ -34,9 +34,27 @@ public static class SourceCatalog
     public static IReadOnlyList<SourceEntry> OnWindows { get; } = [AzureDevOps, Copilot, GitHub];
 
     /// The sources the Mac has that Windows doesn't yet, by name: "Azure DevOps, GitHub, and Microsoft Teams".
-    public static string StillToCome => ListWords.Join(names: Enum.GetValues<SourceId>()
+    public static string StillToCome => ListWords.Join(names: StillToComeNames());
+
+    /// What Settings says about them, or nothing once Windows has them all.
+    public static string? StillToComeNote => NoteOnStillToCome(names: StillToComeNames());
+
+    /// "Microsoft Teams comes to BriefBar for Windows next." for one source, "Azure DevOps and Microsoft Teams come to
+    /// BriefBar for Windows one at a time." for more, and nothing for none.
+    public static string? NoteOnStillToCome(IReadOnlyList<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(argument: names);
+        return names.Count switch
+        {
+            0 => null,
+            1 => names[0] + " comes to BriefBar for Windows next.",
+            _ => ListWords.Join(names: names) + " come to BriefBar for Windows one at a time.",
+        };
+    }
+
+    static List<string> StillToComeNames() => Enum.GetValues<SourceId>()
         .Where(predicate: source => !OnWindows.Any(predicate: entry => entry.Id == source))
         .Select(selector: source => SourceIds.DisplayName(source: source))
         .Order(comparer: StringComparer.Ordinal)
-        .ToList());
+        .ToList();
 }

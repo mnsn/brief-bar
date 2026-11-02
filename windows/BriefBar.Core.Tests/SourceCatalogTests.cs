@@ -36,6 +36,17 @@ public sealed class SourceCatalogTests
     }
 
     [Fact]
+    public void SaysWhatsStillToComeInWords()
+    {
+        Assert.Equal(expected: "Microsoft Teams comes to BriefBar for Windows next.", actual: SourceCatalog.StillToComeNote);
+        Assert.Equal(
+            expected: "Azure DevOps and Microsoft Teams come to BriefBar for Windows one at a time.",
+            actual: SourceCatalog.NoteOnStillToCome(names: ["Azure DevOps", "Microsoft Teams"]));
+        // Once Windows has every source, Settings says nothing about it.
+        Assert.Null(@object: SourceCatalog.NoteOnStillToCome(names: []));
+    }
+
+    [Fact]
     public void ListsNamesAsWindowsWritesThem()
     {
         Assert.Equal(expected: string.Empty, actual: ListWords.Join(names: []));
