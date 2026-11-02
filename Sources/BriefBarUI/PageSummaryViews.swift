@@ -18,11 +18,14 @@ package struct PageSummarizeButton: View {
     }
 
     package var body: some View {
-        Content(ref: ref, summaries: services.summaries)
+        Content(ref: ref, links: services.links, summaries: services.summaries)
     }
 
     private struct Content: View {
         let ref: ItemRef
+        // Whether there's something to sum up changes with Show Links and what's linked, which `StorySummaries` passes
+        // on only once a summary's written.
+        @ObservedObject var links: Links
         @ObservedObject var summaries: StorySummaries
 
         var body: some View {
