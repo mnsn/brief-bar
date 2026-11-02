@@ -762,7 +762,13 @@ private enum MarkdownReader {
     /// How many quotes in quotes it reads as quotes: deeper, the rest is their text, so a line of `>`s can't recurse deep.
     private static let quoteDepth = 8
 
-    static func read(_ markdown: String, depth: Int = 0) -> [RichText.Block] {
+    static func read(_ markdown: String) -> [RichText.Block] {
+        read(markdown, depth: 0).blocks
+    }
+
+    /// Its blocks, and whether an HTML comment in it has no end there: then it goes on past it, as HTML reads one, to
+    /// its end or to the end of the text.
+    private static func read(_ markdown: String, depth: Int) -> (blocks: [RichText.Block], unended: Bool) {
         var raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
@@ -778,6 +784,7 @@ private enum MarkdownReader {
         /// Whether a paragraph, or an item's text, goes on: a line that starts nothing else is more of it, however it's
         /// indented, as CommonMark has it. An image on a line of its own shows as a block, but is part of it too.
         var paragraphOpen = false
+        var unended = false
         var index = 0
 
         /// Shows what's read of a paragraph, or an item's text. When it goes on, with an image on a line of its own, its
@@ -804,6 +811,32 @@ private enum MarkdownReader {
         /// Where the text of the list item that a line indented this much is in starts: 0 on the page.
         func enclosingIndent(_ indent: Int) -> Int {
             itemIndents.last { $0 <= indent } ?? 0
+        }
+        /// Hides an HTML comment, from line `start`, after `opening` on it or else from its start, to the line it ends
+        /// on, blank lines and all: what follows its end there goes on as a line of its own, in the list's item `inside`
+        /// columns in. False when it has no end, and so hides all the rest.
+        func skipComment(from start: Int, after opening: String.Index? = nil, inside: Int) -> Bool {
+            guard start < raw.count else { return false }
+            var end = start
+            var close = raw[start][(opening ?? raw[start].startIndex)...].range(of: "-->")
+            while close == nil, end + 1 < raw.count {
+                end += 1
+                close = raw[end].range(of: "-->")
+            }
+            guard let close else { return false }
+            var rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
+            // Others that end on the same line, read on in place.
+            while rest.hasPrefix("<!--"), let next = rest.dropFirst(4).range(of: "-->") {
+                rest = rest[next.upperBound...].drop { $0 == " " || $0 == "\t" }
+            }
+            if rest.isEmpty {
+                index = end + 1
+            } else {
+                raw[end] = String(repeating: " ", count: inside) + rest
+                lines[end] = Self.expandingIndentation(raw[end])
+                index = end
+            }
+            return true
         }
 
         while index < lines.count {
@@ -850,24 +883,9 @@ private enum MarkdownReader {
             if trimmed.hasPrefix("<!--"), let opening = raw[index].range(of: "<!--") {
                 flush()
                 closeLists(at: indent)
-                var end = index
-                var close = raw[index][opening.upperBound...].range(of: "-->")
-                while close == nil, end + 1 < raw.count {
-                    end += 1
-                    close = raw[end].range(of: "-->")
-                }
-                guard let close else { break }
-                var rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
-                // Others that end on the same line, read on in place.
-                while rest.hasPrefix("<!--"), let next = rest.dropFirst(4).range(of: "-->") {
-                    rest = rest[next.upperBound...].drop { $0 == " " || $0 == "\t" }
-                }
-                if rest.isEmpty {
-                    index = end + 1
-                } else {
-                    raw[end] = String(repeating: " ", count: inside) + rest
-                    lines[end] = Self.expandingIndentation(raw[end])
-                    index = end
+                guard skipComment(from: index, after: opening.upperBound, inside: inside) else {
+                    unended = true
+                    break
                 }
                 continue
             }
@@ -931,8 +949,14 @@ private enum MarkdownReader {
                 }
                 let inner = quoted.joined(separator: "\n")
                 if depth < quoteDepth {
-                    for block in read(inner, depth: depth + 1) {
+                    let quote = read(inner, depth: depth + 1)
+                    for block in quote.blocks {
                         if case .paragraph(let runs) = block { blocks.append(.quote(runs)) } else { blocks.append(block) }
+                    }
+                    // A comment in it that doesn't end there goes on past it.
+                    if quote.unended, !skipComment(from: index, inside: inside) {
+                        unended = true
+                        break
                     }
                 } else {
                     let runs = inline(inner)
@@ -1004,24 +1028,33 @@ private enum MarkdownReader {
                         content = String(task.2 ?? "")
                     }
                 }
-                // An item that starts with an HTML comment ending on a later line: the comment shows nothing, blank lines
-                // and all, and the item's text is what follows its end; without an end, it's all the rest. With nothing
-                // after it, the item has no paragraph for the lines after it to go on with.
-                let startsWithComment = content.hasPrefix("<!--") && !content.dropFirst(4).contains("-->")
-                if startsWithComment {
+                // An item that starts with HTML comments: they show nothing, blank lines and all, and the item's text is
+                // what follows the last one's end; without an end, it's all the rest. With nothing after them, the item
+                // has no paragraph for the lines after it to go on with.
+                var startsWithComment = false
+                var text = Substring(content)
+                while text.hasPrefix("<!--") {
+                    startsWithComment = true
+                    if let close = text.dropFirst(4).range(of: "-->") {
+                        text = text[close.upperBound...].drop { $0 == " " || $0 == "\t" }
+                        continue
+                    }
                     var end = index + 1
                     while end < lines.count, !lines[end].contains("-->") { end += 1 }
-                    if end < lines.count, let close = raw[end].range(of: "-->") {
-                        content = raw[end][close.upperBound...].trimmingCharacters(in: .whitespaces)
-                        index = end
-                    } else {
-                        content = ""
+                    guard end < lines.count, let close = raw[end].range(of: "-->") else {
+                        text = ""
                         index = lines.count - 1
+                        unended = true
+                        break
                     }
+                    text = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
+                    index = end
                 }
+                if startsWithComment { content = text.trimmingCharacters(in: .whitespaces) }
+                let hasText = !(startsWithComment && content.isEmpty)
                 pendingKind = .listItem(marker, depth: depth)
-                pending = [content]
-                paragraphOpen = !(startsWithComment && content.isEmpty)
+                pending = hasText ? [content] : []
+                paragraphOpen = hasText
                 index += 1
                 continue
             }
@@ -1033,7 +1066,7 @@ private enum MarkdownReader {
             index += 1
         }
         flush()
-        return blocks
+        return (blocks, unended)
     }
 
     /// A line without its indentation, but with what ends it: spaces after a backslash keep it from breaking the line.
