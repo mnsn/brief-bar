@@ -407,8 +407,8 @@ import Testing
 
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
-        func token() async throws -> AccessToken { throw Unused() }
-        func invalidate() async {}
+        func token(tenant: String?) async throws -> AccessToken { throw Unused() }
+        func invalidate(tenant: String?) async {}
     }
 }
 
