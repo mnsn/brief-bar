@@ -37,6 +37,7 @@ struct AzureDevOpsSettings: View {
             .disabled(!store.summarizer.isAvailable)
         Toggle("Show To Review in the Menu Bar", isOn: $settings.showToReview)
         Toggle("Follow Pipelines After You Merge", isOn: $settings.followMerges)
+        OpenInBriefBarSetting()
         ChatLinksSetting()
 
         SettingsDivider()
@@ -61,6 +62,29 @@ struct AzureDevOpsSettings: View {
         SettingsDivider()
 
         CopilotSetting()
+    }
+}
+
+/// Open Pull Requests in BriefBar, off by default: where a pull request clicked in the menu bar's list, a widget or a
+/// notification opens. On its page in Settings, it says what it does.
+struct OpenInBriefBarSetting: View {
+    @EnvironmentObject private var settings: AppSettings
+    @Environment(\.inSettingsForm) private var inSettingsForm
+
+    static let title = "Open Pull Requests in BriefBar"
+    static let explanation = """
+        Clicking a pull request in the menu bar's list or a widget, or one of its notifications, shows its details on the \
+        Pull Requests page of BriefBar's window, at the comment or the run it's about, rather than opening it in Azure \
+        DevOps. Either way, its menu has both, and in BriefBar's window a click shows its details.
+        """
+
+    var body: some View {
+        Toggle(isOn: $settings.opensPullRequestsInBriefBar) {
+            Text(Self.title)
+            if inSettingsForm {
+                Text(Self.explanation)
+            }
+        }
     }
 }
 

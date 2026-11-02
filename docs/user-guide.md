@@ -221,7 +221,8 @@ the model that writes a summary with the rest, and BriefBar keeps none of it.
 
 Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
 Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
-such as the comment or the run, in front of BriefBar.
+such as the comment or the run, in front of BriefBar: in Azure DevOps, or, for a pull request, in its
+details in BriefBar's window, with **Open Pull Requests in BriefBar** on.
 
 **Notifications Page**, in **Settings › General**, lists what BriefBar notified you of on a page of
 its own in BriefBar's window, right after the Overview, so you can see what you missed: a banner that
@@ -229,7 +230,8 @@ went away, a notification macOS didn't show, during a Focus or with notification
 and each update of a refresh that had more than its notifications show ("3 more pull request
 updates", which opens the page). It's off until you turn it on. Each entry says what it means for
 you, ✋, ✕ or ✓, when it came, and with a dot, that you haven't seen it yet. Click one to open what
-it's about, as its notification would, or right-click it to remove it; **Clear All** empties the
+it's about, as its notification would, but a pull request's right there in the window, in its details,
+or right-click it to remove it; **Clear All** empties the
 page. The page shows only while it lists something. BriefBar keeps the entries for a day, or for 4
 hours or 3 days (**Keep Notifications For**), in memory only: the page starts empty when BriefBar
 restarts or updates.
@@ -314,16 +316,27 @@ it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item
 turn**, and taking you to its comments, builds or reviewers; its comment threads, with where each is and
 what everyone said, the ones that wait on you first and the resolved ones behind **Show Resolved**; its
 builds and checks, what failed first, with where a build failed and its first error; who reviews it,
-which reviewers it requires and how each voted; and, with [Show Links](#links) on, the work items and
-Copilot sessions linked to it, which open in the details too, **‹**, **⌘[** or **Esc** going back. **↗**
-opens the pull request in Azure DevOps, at the comment that needs you, as a click in the menu bar's list
-does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
+which reviewers it requires and how each voted; and, with [Show Links](#links) on, the work items,
+Copilot sessions and pull requests linked to it, which open in the details too, one of your pull requests
+with the same details as its own, **‹**, **⌘[** or **Esc** going back. **↗**
+opens the pull request in Azure DevOps, at the comment that needs you, as **Open in Azure DevOps** in its
+menu does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
 Send Work to Copilot is on. The details show what BriefBar already read, so they read nothing more, and
 showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
 new, and where it was, rather than folding away as you read it, until you remove it from Needs You. Drag their
 left edge to make them wider or narrower: BriefBar keeps the width, separately from the Sprint page's details,
-and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
-widgets, a click still opens the pull request in Azure DevOps.
+and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them.
+
+**Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
+about: from the window's **Overview** and its brief, the **Notifications** page, and the **Pipelines**
+page, whose **Your Pull Requests** cards show the run you click, or the first that failed, and **After
+Your Merges** the run that failed or waits; and, as pages over a work item's details on the Sprint page,
+the same details for each of your pull requests, the way there in their header, such as **Bug 5110 ›
+!4091**. Opening it in BriefBar sees it, as opening it in Azure DevOps does. In the menu bar's list, widgets
+and notifications, a click opens a pull request in Azure DevOps, unless you turn on **Open Pull Requests in
+BriefBar** in Azure DevOps' settings: then those show its details in BriefBar's window too, at what it's
+about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
+**Show Details** in the window, and **Open in Azure DevOps**.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
@@ -336,7 +349,8 @@ before. The first time, only the last three days count as new, and each account 
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
 that fails or waits for an approval, all of them passing, or one canceled. Clicking one opens the
-comment, or the run, it's about. The first time, BriefBar finds the organizations where you have pull
+comment, or the run, it's about: in Azure DevOps, or in the pull request's details in BriefBar's window
+with **Open Pull Requests in BriefBar** on. The first time, BriefBar finds the organizations where you have pull
 requests; **Organizations** in its settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
@@ -379,7 +393,9 @@ With [Show Links](#links) on, the details start with **Where It Stands**: the pu
 pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
 it stands in a sentence. Under its title, **Waiting on** says who it all waits on, you first, such as
 **you, to complete !4091 · Copilot, on task 5103**; click the title to fold it to just that line. Click
-one, and its page shows what's known of it, right in the details: a pull request's reviewers and their
+one, and its page shows what's known of it, right in the details: for one of your pull requests, the same
+details as on the Pull Requests page, with what's left, its comment threads, builds and checks, and
+reviewers, and how it's linked to the work item; for another, its reviewers and their
 votes, its open comments and the ones waiting on you, conflicts, and each build or check that ran on it,
 with where a failed one failed; a Copilot session's question or plan, and what Copilot recorded of its
 work as it went: the story so far, a line for each of its checkpoints, what it did, what's next, and
@@ -443,7 +459,8 @@ Both start in BriefBar's window only, and read Azure DevOps only while something
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
 covered, a menu-bar item or its list. The pipelines after your merges are the exception: they're read
 with your pull requests, so that you hear when one fails. Click a pipeline or a run to open it in Azure
-DevOps, and a work item to see its details.
+DevOps, a work item to see its details, and a pull request, or one of its runs under **Your Pull
+Requests**, to see its details on the Pull Requests page.
 
 <p align="center">
   <picture>
@@ -801,6 +818,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
+| | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |

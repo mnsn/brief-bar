@@ -405,7 +405,9 @@ final class CopilotTasksStore: ObservableObject {
                 } else {
                     // Asked again for each send, so a tool you've just installed is found.
                     let environment = await environment(fresh: true)
-                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome)
+                    let launcher = CopilotLauncher(
+                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings
+                    )
                     run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
                         MainActor.assumeIsolated { self?.exited(id, status: status) }
                     }
@@ -479,6 +481,7 @@ final class CopilotTasksStore: ObservableObject {
         case .couldntStart?: return "Copilot couldn't start"
         case .openInApp?: return "the Copilot app has the session open"
         case .sharedCheckout?: return "another session works in the checkout"
+        case .cantFork?: return "the Copilot CLI didn't fork the session"
         case nil: return "unexpected error"
         }
     }
@@ -516,19 +519,24 @@ final class CopilotTasksStore: ObservableObject {
                 if DetachedProgram.isRunning(run.process) || awaitsExit(of: run) {
                     // Working, whatever its log says for now; the log gives its current step.
                     let log = await monitor.log(id: run.id, events: events)
-                    results.append((run, RunStatus.derive(log: log, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil), nil))
+                    let status = RunStatus.derive(
+                        log: log, startedAt: run.launchedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil
+                    )
+                    results.append((run, status, nil))
                     continue
                 }
                 let log = await monitor.log(id: run.id, events: events)
                 let output = output(of: run)
                 let needsLink = run.pullRequest == nil
+                let launchedAt = run.launchedAt
                 let found = await Task.detached { () -> (String?, URL?) in
                     let printed = LocalFile.tail(of: output, maxBytes: 8_192).map { String(decoding: $0, as: UTF8.self) }
-                    return (printed, needsLink ? RunTranscript.openedPullRequest(events: events, printed: printed) : nil)
+                    guard needsLink else { return (printed, nil) }
+                    return (printed, RunTranscript.openedPullRequest(events: events, printed: printed, since: launchedAt))
                 }.value
                 let status = RunStatus.derive(
-                    log: log, isRunning: false, exitStatus: exitStatuses[run.id], stoppedByYou: wasStoppedByYou(run.id),
-                    output: found.0
+                    log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
+                    stoppedByYou: wasStoppedByYou(run.id), output: found.0
                 )
                 results.append((run, status, found.1))
             }

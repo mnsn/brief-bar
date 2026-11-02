@@ -5,7 +5,9 @@ import Foundation
 
 /// The pull request whose details show beside the list on the Pull Requests page of BriefBar's window, the pages opened
 /// over them, and where in them to take you. What they show is what the list read already, so they follow it as it
-/// refreshes: nothing more is read for them.
+/// refreshes: nothing more is read for them. It's where a pull request opens from anywhere else in BriefBar: from the
+/// window's other pages, and, once you chose to Open Pull Requests in BriefBar, from the menu bar, widgets and
+/// notifications; or else in Azure DevOps.
 @MainActor
 final class PullRequestDetailsStore: ObservableObject {
     /// Somewhere in a pull request's details: one of its comment threads, one of its builds or checks, or one of their
@@ -32,6 +34,34 @@ final class PullRequestDetailsStore: ObservableObject {
             case .section(let section): .section(section)
             case .run, .check: checks.first { Place.of($0) == self }.map { .check($0.id) }
             }
+        }
+
+        /// What they scroll to for it, as `anchor(in:)` says: for a thread they don't have, their comments, and for a build
+        /// or a check they don't have, such as a run that isn't one a policy queued last, their builds and checks.
+        func anchor(in panel: PullRequestPanel) -> Anchor {
+            switch self {
+            case .thread(let id): panel.threads.contains(id) ? .thread(id) : .section(.comments)
+            case .section(let section): .section(section)
+            case .run, .check: anchor(in: panel.checks) ?? .section(.checks)
+            }
+        }
+
+        /// Where a link BriefBar made leads in a pull request: one of its threads, or one of its runs.
+        init(_ place: PullRequestPlace) {
+            switch place {
+            case .thread(let id): self = .thread(id)
+            case .run(let id): self = .run(id)
+            }
+        }
+
+        /// What a pull request's row is about, for its details to show there when it's opened from anywhere but beside the
+        /// list: the comment that needs you or that you answered, or the run after its merge, where its link leads; else,
+        /// for one that's failing, the first of its builds and checks that failed. Nil for their top, which starts with
+        /// what's left.
+        static func about(_ item: PRSnapshot, record: PRRecord?) -> Place? {
+            if let place = item.place { return Place(place) }
+            guard item.group == .failing else { return nil }
+            return PullRequestPanel(item, record: record).checks.first { $0.run.state == .failing }.map(Place.of)
         }
     }
 
@@ -65,6 +95,11 @@ final class PullRequestDetailsStore: ObservableObject {
 
     /// Sees a pull request, as opening it from the list does: the source's.
     var markSeen: (PRSnapshot) -> Void = { _ in }
+    /// Opens a pull request in Azure DevOps, which sees it too, at the comment its row says: the source's.
+    var openInAzureDevOps: (PRSnapshot) -> Void = { _ in }
+    /// Whether a pull request opens in BriefBar's window from the menu bar, a widget or a notification, rather than in Azure
+    /// DevOps: Open Pull Requests in BriefBar, the source's.
+    var opensInBriefBar: () -> Bool = { false }
     /// A pull request's cutoffs, and how the list would have one had you last looked at it at a time: the source's.
     var cutoffs: (PRKey) -> Cutoffs? = { _ in nil }
     var classify: (PRRecord, Date) -> PRSnapshot? = { _, _ in nil }
@@ -84,9 +119,11 @@ final class PullRequestDetailsStore: ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
 
     /// Shows what the list read, following it as it refreshes, and sees what it shows there, as opening it from the list
-    /// does.
+    /// does; opens the rest in Azure DevOps, as the list does, unless you chose to Open Pull Requests in BriefBar.
     func use(_ list: PRStore) {
         markSeen = { [weak list] item in list?.markSeen(item) }
+        openInAzureDevOps = { [weak list] item in list?.open(item) }
+        opensInBriefBar = { [weak list] in list?.settings.opensPullRequestsInBriefBar ?? false }
         readRecord = { [weak list] key in list?.record(for: key) }
         cutoffs = { [weak list] key in
             list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key)) }
@@ -130,6 +167,43 @@ final class PullRequestDetailsStore: ObservableObject {
     func reveal(_ key: PRKey, at place: Place? = nil) -> Bool {
         guard let item = listed.first(where: { $0.key == key }) else { return false }
         return reveal(item, at: place)
+    }
+
+    /// Where in its details a pull request's row is about (`Place.about`), from what the list read of it.
+    func about(_ item: PRSnapshot) -> Place? {
+        Place.about(item, record: readRecord(item.key))
+    }
+
+    /// The pull request as the list has it now, for what was kept of it a while, such as a line of a brief: as it was then
+    /// once the list doesn't have it.
+    private func current(_ item: PRSnapshot) -> PRSnapshot {
+        listed.first { $0.key == item.key } ?? item
+    }
+
+    /// From the menu bar, a widget or the brief: a pull request's details in BriefBar's window, at what its row is about,
+    /// once you chose to Open Pull Requests in BriefBar, while a window has the Pull Requests page; or else Azure DevOps,
+    /// at the comment its row says. Either sees it.
+    func open(_ item: PRSnapshot) {
+        let item = current(item)
+        if opensInBriefBar(), reveal(item, at: about(item)) { return }
+        openInAzureDevOps(item)
+    }
+
+    /// From another page of BriefBar's window, such as the Overview: its details on the Pull Requests page, at what its row
+    /// is about; or Azure DevOps, when no window has that page.
+    func showDetails(_ item: PRSnapshot) {
+        let item = current(item)
+        if reveal(item, at: about(item)) { return }
+        openInAzureDevOps(item)
+    }
+
+    /// What a notification is about, from Notification Center or the window's Notifications page: the details of its pull
+    /// request, which the list has, where its link leads, its own thread or run, or else at what its row is about. False,
+    /// showing nothing, when they can't show: for the caller to open its link.
+    /// - Parameter key: its pull request's key, as the notification keeps it (`PRKey.description`).
+    func reveal(notification key: String?, link: URL?) -> Bool {
+        guard let key = key.flatMap(PRKey.init(description:)), let item = listed.first(where: { $0.key == key }) else { return false }
+        return reveal(item, at: link.flatMap(PullRequestPlace.init(link:)).map(Place.init) ?? about(item))
     }
 
     /// What needs you on the pull request that shows, as when its details showed it, the rest as it is now: seeing it

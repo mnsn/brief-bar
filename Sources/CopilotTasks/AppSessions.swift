@@ -148,7 +148,8 @@ public enum AppSessions {
         return CopilotPaths(root: home).sessionDirectory(id)
     }
 
-    static func isSessionID(_ id: String) -> Bool {
+    /// Whether an ID is a session's, as the CLI writes them: a lowercase UUID, which can't step out of a folder.
+    public static func isSessionID(_ id: String) -> Bool {
         UUID(uuidString: id)?.uuidString.lowercased() == id
     }
 }
