@@ -78,6 +78,21 @@ import Testing
         #expect(LevelDBLog.parse(log.bytes + [UInt8](repeating: 0, count: 100)).end == log.bytes.count)
     }
 
+    /// A record at the end whose checksum doesn't match may be one LevelDB is still writing: a log stops before it,
+    /// counting nothing, and reading on from there tries it again.
+    @Test func stopsBeforeADamagedRecordAtTheEnd() {
+        var log = LogWriter()
+        log.add(LogWriter.batch(sequence: 1, [(key, Array("first".utf8))]))
+        let firstEnd = log.bytes.count
+        log.add(LogWriter.batch(sequence: 2, [(key, Array("second".utf8))]))
+        var bytes = log.bytes
+        bytes[bytes.count - 1] ^= 0xFF
+        let parsed = LevelDBLog.parse(bytes)
+        #expect(parsed.entries.map(\.sequence) == [1])
+        #expect(parsed.end == firstEnd)
+        #expect(parsed.corrupt == 0)
+    }
+
     @Test func skipsABlockWithABadChecksum() {
         var log = LogWriter()
         log.add(LogWriter.batch(sequence: 1, [(key, Array("lost".utf8))]))
@@ -269,8 +284,25 @@ import Testing
         }
     }
 
+    /// A table the MANIFEST lists, missing as the folder is read, as when compaction writes it and removes others
+    /// meanwhile, makes it start over. Still missing at the last attempt, the MANIFEST is one LevelDB would refuse: it
+    /// counts as unreadable, and every file is read.
+    @Test func saysWhenATableTheManifestListsIsMissing() throws {
+        try withTemporaryDirectory { directory in
+            try write(TableWriter.table(Self.entries(("a", 1))), to: directory.appendingPathComponent("000005.ldb"))
+            try write(TableWriter.table(Self.entries(("b", 2))), to: directory.appendingPathComponent("000007.ldb"))
+            let name = try ManifestWriter.save([ManifestWriter.edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [5, 9])],
+                                               number: 2, in: directory)
+
+            let read = try LevelDBFolder(url: directory).read()
+            #expect(read.unreadable == [name: .corrupt("manifest")])
+            #expect(Self.texts(read) == ["a": "a1", "b": "b1"])
+            #expect(read.tables == 2 && read.unlisted == 0)
+        }
+    }
+
     /// Without the MANIFEST, it can't tell which files are the database's: it reads them all, and says the MANIFEST
-    /// couldn't be read.
+    /// couldn't be read, or that CURRENT named one that isn't there.
     @Test func readsEveryFileWhenTheManifestCantBeRead() throws {
         try withTemporaryDirectory { directory in
             try write(TableWriter.table(Self.entries(("a", 1))), to: directory.appendingPathComponent("000005.ldb"))
@@ -291,10 +323,11 @@ import Testing
             #expect(elsewhere.unreadable == ["CURRENT": .corrupt("CURRENT")])
             #expect(Self.texts(elsewhere) == everything)
 
-            // A MANIFEST that's gone, as one LevelDB replaced as the folder was read: it starts over, then reads them all.
+            // A MANIFEST that's gone, as one LevelDB replaced as the folder was read, makes it start over; still gone at
+            // the last attempt, CURRENT names one that isn't there, which LevelDB refuses.
             try write(Array("MANIFEST-000003\n".utf8), to: directory.appendingPathComponent("CURRENT"))
             let gone = try LevelDBFolder(url: directory).read()
-            #expect(gone.unreadable.isEmpty)
+            #expect(gone.unreadable == ["CURRENT": .corrupt("CURRENT")])
             #expect(Self.texts(gone) == everything)
         }
     }
