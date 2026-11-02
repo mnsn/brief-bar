@@ -1775,7 +1775,11 @@ it applies. A few more details:
   older schema only loses nesting. Without the Copilot app, there's no database to read them from, so
   nothing nests.
   Within a group, a session whose parent is in the same group sits right under it, indented, its own
-  children under it in turn. A family takes the place of the member that sorts first, so **Needs you**
+  children under it in turn. Before grouping, a parent that finished (`.finished`) while sessions under
+  it, at any depth, still run or need you moves to them: to **Needs you** when one of them needs you,
+  else to **Running**, as **Waiting for child sessions** (`.waitingForChildren`), saying how many need
+  you and how many are running, and waiting since the earliest of them. A parent that stopped, failed
+  or went idle keeps its group. A family takes the place of the member that sorts first, so **Needs you**
   still starts with the longest wait; in it, the parent comes first, then its children in the group's
   order. A session whose parent is in another group keeps its place, with a **↳** tag naming the parent,
   which opens it, as clicking it would, except when its **Answer in “…”** names that session already. The
