@@ -4,6 +4,7 @@ namespace BriefBar.Interop;
 internal static class WindowMessages
 {
     public const uint WM_ACTIVATE = 0x0006;
+    public const uint WM_ERASEBKGND = 0x0014;
     public const uint WM_ENDSESSION = 0x0016;
     public const uint WM_SETTINGCHANGE = 0x001A;
     public const uint WM_MOUSEACTIVATE = 0x0021;

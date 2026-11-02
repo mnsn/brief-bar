@@ -89,7 +89,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
   button, or the empty Overview. **General** lists each source and whether it's on, and what comes next ("Microsoft
-  Teams comes to BriefBar for Windows next."), until Windows has every source. A source's page says, before you
+  Teams comes to BriefBar for Windows next."), until Windows has every source; its **Appearance** sets what the bar
+  shows behind its words, **Automatic**, **Like the taskbar** or a **Custom color** of your own, from Windows' color
+  picker, as see-through as you like ([below](#choices-for-windows)). A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
@@ -157,15 +159,18 @@ section names and the like, so nothing you see can reach it: a line with a strin
   the color of its words, as the taskbar's icons are, and a source's own color is on its panel's tile, in Settings and
   in the Overview's rows. The bar's icons grow with Windows' text size, as its words do, from 16 pixels to 20 at
   112.5% and up. The bar and the panel follow Windows' mode, and the bar the taskbar's accent color, as the taskbar
-  does ([below](#choices-for-windows)). Where Windows draws no acrylic, as over Remote Desktop, with Transparency
-  effects off or with energy saver, the bar and the panel show the flat color Windows shows in its place, `#EEEEEE` in
-  light and `#1C1C1C` in dark, as the taskbar does there. It follows light, dark, the accent and High Contrast as
-  Windows changes, the panel's and Settings' window frames included, with Windows' own colors in a contrast theme. Its
-  state colors meet WCAG AA in light and dark (text 4.5:1, icons 3:1) on the acrylic and on that flat color alike, and
-  on the accent, and the bar's behind an item that's open and pointed at too, where Windows' highlight lies under them
-  twice, which tests check. The bar's words, and its glyphs with them, are in Windows' colors wherever those read, and
-  a little lighter (or darker) where they don't. States never rely on color alone: each has its own icon and words.
-  Narrator reads each item in the bar and each row as one, in words, and Settings' section titles are headings.
+  does ([below](#choices-for-windows)). Over Remote Desktop, where Windows draws no acrylic, the desktop shows through
+  the bar, without blur: the flat color Windows shows there, `#EEEEEE` in light and `#1C1C1C` in dark, or the accent's
+  shade, at 80%. With Transparency effects off, the bar is flat, as the taskbar is; Windows shows its acrylic flat with
+  energy saver too; and the panel is flat wherever Windows draws no acrylic. It follows light, dark, the accent, High
+  Contrast and Transparency effects as Windows changes, the panel's and Settings' window frames included, with Windows'
+  own colors in a contrast theme. Its state colors meet WCAG AA in light and dark (text 4.5:1, icons 3:1) on the
+  acrylic and on the flat color alike, on the accent, on a see-through bar over any wallpaper, white to black, and on
+  the bar behind an item that's open and pointed at too, where Windows' highlight lies under them twice, which tests
+  check. The bar's words, and its glyphs with them, are in Windows' colors wherever those read, a little lighter (or
+  darker) where they don't, and opaque where the bar is see-through. States never rely on color alone: each has its
+  own icon and words. Narrator reads each item in the bar and each row as one, in words, and Settings' section titles
+  are headings.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
@@ -192,9 +197,13 @@ Where Windows differs, these were decided:
   Colors can set apart from the apps' mode that Settings, an app, follows; and with **Show accent color on Start and
   taskbar**, which Windows offers in dark, the bar takes the shade of the accent color the taskbar takes
   (`AccentDark2`), its state colors lightened as much as they need to stand out on it.
-- **Where Windows draws no acrylic, the bar is flat**, as the taskbar is there, such as over Remote Desktop, rather
-  than see-through: a tint without blur does show the wallpaper through, but leaves the counts' colors under 4.5:1
-  over a dark one.
+- **Over Remote Desktop, where Windows draws no acrylic, the bar is see-through**, with Transparency effects on: the
+  color the taskbar is flat in there, or the accent's shade, at 80% over the desktop, without blur, its words and
+  colors worked out to read on any wallpaper behind it. Settings › General › Appearance › **Bar background** can make
+  it flat there, as the taskbar is (**Like the taskbar**), or a color of your own (**Custom color**), which shows as
+  chosen, without blur, on every PC, acrylic or not, and opaque while Transparency effects is off. A color too
+  see-through, or too mid-toned, for the bar's words to read on every wallpaper shows as the nearest that does, more
+  opaque or a shade darker (or lighter), and Settings says so under it (`ReadableTint`).
 - **Teams' glyphs are outlined**, a person for chats and two people for group chats, as the bar's other glyphs are,
   where the Mac's are filled.
 - **The keyboard reaches the bar's items from a panel**, with Ctrl+1 to Ctrl+9 and Ctrl+Tab, since Windows has no
@@ -225,7 +234,7 @@ Where Windows differs, these were decided:
 | `BriefBar.Core/Settings/` | Where settings are kept: a JSON file for the app, memory for tests and the demo |
 | `BriefBar.Core/Logging/`, `Demo/` | The log, which can't take content, and the made-up data, Copilot's, Azure DevOps' and GitHub's through their real stores |
 | `BriefBar.Core.Tests/` | xUnit v3: the Swift tests ported, and tests for the above, with made-up data only |
-| `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
+| `BriefBar/Shell/` | The desktop: a bar per display and its space (`BarWindow`, `AppBarReservation`), what shows behind it (`ActiveAcrylic`, or `SeeThroughBackdrop` and `SeeThroughWindow`, where the desktop shows through), the panel (`PanelController`, `PanelWindow`), Settings (`SettingsWindow`), displays, full screen (`DesktopWatcher`), one copy per sign-in (`SingleInstance`), and quitting (`AppShell`) |
 | `BriefBar/Views/`, `ViewModels/`, `Themes/` | The bar, the panel and Settings in XAML; what they show; and their styles, per theme |
 | `BriefBar/Services/` | The sources you turned on and how each is made (`AppSources`), running them and handing what they show to the UI thread (`SourceHost`), the Copilot app as Windows knows it (`CopilotAppShell`), the terminal a Copilot CLI runs in (`CopilotCLIShell`), opening Azure DevOps' and GitHub's pages in your browser (`BrowserShell`), and the log file |
 | `BriefBar/Interop/` | The Win32 calls that WinUI doesn't cover |
@@ -287,7 +296,22 @@ SDK ships inside the app.
 - **Windows draws no acrylic over Remote Desktop**, even with Transparency effects on, and neither Mica nor its
   own backdrops, checked on Windows 11 25H2: every one shows its flat color, and so does the taskbar (`#EEEEEE` in
   light). That color is darker than light acrylic, so `StatePalette` checks contrast on both; on it, Needs you's
-  orange first stood 2.97:1.
+  orange first stood 2.97:1. `DesktopAcrylicController.IsSupported()` says yes there all the same, so BriefBar asks
+  Windows whether it's a Remote Desktop session (`SM_REMOTESESSION`).
+- **A window shows the desktop through it, without blur, one way**: Windows blurs behind it
+  (`DwmEnableBlurBehindWindow`) only over a region outside it, which turns per-pixel transparency on and blurs
+  nothing, and its own background is painted black, which Windows then shows as see-through (`SeeThroughWindow`).
+  Acrylic's and Mica's controllers show their flat color over Remote Desktop instead. Turning it on while the window
+  shows needs a repaint at once (`RedrawWindow` with `RDW_ERASENOW`): WinUI paints the background white in light,
+  and nothing paints it again until the window is resized or shown again, so the bar stayed its color over white.
+- **A system backdrop of your own takes a brush of Windows' compositor**, Windows.UI.Composition's, not WinUI's,
+  and that compositor needs a Windows.System dispatcher queue on the UI thread, which WinUI doesn't start
+  (`SystemCompositor`).
+- **Translucent words can't be made to read on a see-through bar**: Windows' own words are partly see-through, so
+  they darken over a darker wallpaper as the bar does, and over pure blue the quietest stood 2.84:1 at rest, though
+  they read behind an item's highlight. On a see-through bar, its words are opaque, worked out over the wallpaper
+  they stand out least on (`StatePalette.WordsOver`), which a test checks for every 30° of hue, gray, five
+  lightnesses and five opacities.
 - **WinUI and `UISettings` know only the apps' mode**, not Windows' own, which the taskbar follows: that's in the
   registry, as `Personalize\SystemUsesLightTheme`, with `ColorPrevalence` for the accent on the taskbar, and a change
   comes as `WM_SETTINGCHANGE` with `ImmersiveColorSet` (`ShellColors`). With the accent, Windows paints the taskbar
