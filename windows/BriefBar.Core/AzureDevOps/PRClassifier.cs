@@ -40,6 +40,7 @@ public static class PRClassifier
             CheckState = details is null ? null : CheckStateOf(checks: details.Checks),
             HasDetails = details is not null,
             IsWatched = record.IsWatched,
+            CreatedAt = pr.CreatedAt,
         };
         void Set(PRPlacement placement) => snapshot = snapshot with
         {
@@ -61,6 +62,7 @@ public static class PRClassifier
             default:
                 throw new InvalidOperationException(message: "A pull request in an unknown status.");
         }
+        snapshot = snapshot with { Readiness = PRReadiness.From(record: record) };
 
         var events = new List<PREvent>();
         if (details is not null)

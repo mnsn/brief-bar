@@ -52,6 +52,14 @@ public sealed class PRStore
     /// after it last looked.
     public bool ShouldRetryDiscovery(DateTimeOffset now) => NeedsDiscovery && (LastDiscovery is not { } last || now - last > discoveryRetry);
 
+    /// The list in the order you chose: `Items`, by status; or by when each was created. The Mac's `items(by:)`.
+    public IReadOnlyList<PRSnapshot> ItemsBy(PROrder order) => order.IsByDate() ? PROrdering.Sorted(snapshots: Items, order: order) : Items;
+
+    /// What a list by date has in one, by when each was created: every pull request but Done's and Idle's, which keep
+    /// their own sections after it. The Mac's `dateList(_:)`.
+    public IReadOnlyList<PRSnapshot> DateList(PROrder order) =>
+        [.. ItemsBy(order: order).Where(predicate: item => item.Group is not (PRGroup.Done or PRGroup.Idle))];
+
     /// What the engine read now. Someone else signed in to the Azure CLI: what they've seen is their own, as is what the
     /// panel showed in Answered.
     public void Receive(PulseSnapshot snapshot, DateTimeOffset now)

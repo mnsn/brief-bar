@@ -8,15 +8,20 @@ namespace BriefBar.Core.AzureDevOps;
 /// data.
 public static class AzureDevOpsRows
 {
+    /// The key of the one group a list by date has, before Done's and Idle's.
+    public const string DateListKey = "byDate";
+
     /// Where the Azure CLI's installation for Windows is explained.
     public static Uri InstallCliPage { get; } = new(uriString: "https://learn.microsoft.com/cli/azure/install-azure-cli-windows");
 
-    /// What the section shows as `store` and `settings` stand at `now`.
+    /// What the section shows as `store` and `settings` stand at `now`: its groups and rows in the order you chose, by
+    /// status or by when each was created (`AzureDevOpsSettings.PullRequestOrder`). Counts and the brief stay by status.
     public static SectionSnapshot Snapshot(PRStore store, AzureDevOpsSettings settings, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: store);
         ArgumentNullException.ThrowIfNull(argument: settings);
         var showToReview = settings.ShowToReview;
+        var order = settings.PullRequestOrder;
         var items = store.Items;
         var placeholder = PlaceholderOf(store: store, settings: settings);
         // Without organizations, the engine's problem says only that: the placeholder says what to do.
@@ -28,8 +33,8 @@ public static class AzureDevOpsRows
         return new SectionSnapshot(
             Info: Sections.AzureDevOpsPullRequests,
             Status: status,
-            Groups: Groups(items: items, showToReview: showToReview),
-            Rows: items.Select(selector: item => Row(item: item, showToReview: showToReview, counted: counted)).ToList(),
+            Groups: order.IsByDate() ? DateGroups(store: store, order: order, showToReview: showToReview) : Groups(items: items, showToReview: showToReview),
+            Rows: Rows(store: store, order: order, showToReview: showToReview, counted: counted, now: now),
             BriefLines: counted ? BriefLines(items: items, showToReview: showToReview) : [])
         {
             Commands = Commands(status: status, placeholder: placeholder),
@@ -44,6 +49,7 @@ public static class AzureDevOpsRows
             Quiet = placeholder == PRPlaceholder.None && store.State.HasLoaded && store.Counts.Active == 0 && problem is null
                 ? new QuietNote(Title: "All clear", Detail: IdleWords(idle: store.Counts[PRGroup.Idle]))
                 : null,
+            Sort = SortMenu(order: order),
         };
     }
 
@@ -60,9 +66,10 @@ public static class AzureDevOpsRows
 
     public static PRGroup? Group(string groupKey) => PRGroups.All.Cast<PRGroup?>().FirstOrDefault(predicate: group => group!.Value.RawValue() == groupKey);
 
-    /// One pull request's row: its reason's icon, its title, where it stands and where, what it's about, and what clicking
-    /// it does. Not `counted`, it has no state, so that neither the bar nor the Overview counts it.
-    public static ItemRow Row(PRSnapshot item, bool showToReview, bool counted = true)
+    /// One pull request's row: its reason's icon, its title, where it stands and where, what it's about, what's left before
+    /// you can complete it, for your own, and what clicking it does. Not `counted`, it has no state, so that neither the
+    /// bar nor the Overview counts it.
+    public static ItemRow Row(PRSnapshot item, bool showToReview, DateTimeOffset now, bool counted = true)
     {
         ArgumentNullException.ThrowIfNull(argument: item);
         var isNew = item.Group == PRGroup.NeedsYou && item.HasNews;
@@ -79,7 +86,8 @@ public static class AzureDevOpsRows
             Date = item.Since,
             IsNew = isNew,
             Commands = Commands(item: item),
-            ToolTip = ToolTip(item: item, isNew: isNew),
+            ToolTip = ToolTip(item: item, isNew: isNew, now: now),
+            Checklist = item.Readiness is { Items.Count: > 0 } readiness ? Checklist(readiness: readiness, isQuiet: item.Group == PRGroup.Idle) : null,
         };
     }
 
@@ -122,6 +130,64 @@ public static class AzureDevOpsRows
         PRReason.Declined => IconKey.PersonDelete,
         _ => throw new ArgumentOutOfRangeException(paramName: nameof(reason), actualValue: reason, message: "Not a reason."),
     };
+
+    /// The icon of where one thing that's left before you can complete a pull request stands, as a pipeline's run shows
+    /// it: done, failing, waiting on you, running, and a clock while it waits on someone else; open comments that don't
+    /// hold the pull request up, a speech bubble.
+    public static IconKey Icon(PRReadinessItem item)
+    {
+        ArgumentNullException.ThrowIfNull(argument: item);
+        if (!item.IsRequired)
+        {
+            return IconKey.Comment;
+        }
+        return item.State switch
+        {
+            ItemState.Done => IconKey.CheckmarkCircle,
+            ItemState.Failing => IconKey.DismissCircle,
+            ItemState.NeedsYou => IconKey.HandRaise,
+            ItemState.Running => IconKey.ArrowSync,
+            null => IconKey.Clock,
+            _ => throw new ArgumentOutOfRangeException(paramName: nameof(item), actualValue: item.State, message: "Not a state."),
+        };
+    }
+
+    /// What's left and what's done, a line each, for a row's tooltip and Narrator: "Left to complete it: 1 of 2 approvals
+    /// (Approved by Priya Shah); Resolve 1 comment", "Done: Build passed (payments-api CI)".
+    public static IReadOnlyList<string> ReadinessLines(PRReadiness readiness)
+    {
+        ArgumentNullException.ThrowIfNull(argument: readiness);
+        var blocking = readiness.Items.Where(predicate: item => item.IsRequired && !item.IsDone).ToList();
+        var optional = readiness.Items.Where(predicate: item => !item.IsRequired && !item.IsDone).ToList();
+        var done = readiness.Items.Where(predicate: item => item.IsDone).ToList();
+        var lines = new List<string>
+        {
+            blocking.Count == 0
+                ? "Nothing left to complete it" + (readiness.IsCurrent ? string.Empty : ", as last read")
+                : "Left to complete it: " + Described(items: blocking),
+        };
+        if (optional.Count > 0)
+        {
+            lines.Add(item: "Not required: " + Described(items: optional));
+        }
+        if (done.Count > 0)
+        {
+            lines.Add(item: "Done: " + Described(items: done));
+        }
+        if (!readiness.IsCurrent)
+        {
+            lines.Add(item: "It changed since its policies were read: they're read again at the next refresh");
+        }
+        return lines;
+    }
+
+    /// Whether a row's tooltip would say how long ago its pull request was created differently at `now` than at `then`,
+    /// when it was built: "Created 5m ago" moves on, as the Mac's does.
+    public static bool CreatedWordsChanged(IEnumerable<PRSnapshot> items, DateTimeOffset then, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(argument: items);
+        return items.Any(predicate: item => item.CreatedAt is { } created && CreatedWords(created: created, now: then) != CreatedWords(created: created, now: now));
+    }
 
     /// What the panel says in place of the list while it's empty, as the Mac does: it's finding your organizations, you
     /// have none to watch, or it's reading them for the first time, or those just chosen.
@@ -183,18 +249,72 @@ public static class AzureDevOpsRows
 
     /// Each group, in the list's order, the bar's state for those it counts: Needs you's Mark as seen while something there
     /// is new, Done's Clear, and Idle folded, as on the Mac.
-    static List<RowGroup> Groups(IReadOnlyList<PRSnapshot> items, bool showToReview) => PRGroups.All.Select(selector: group => new RowGroup(
-        Key: GroupKey(group: group), Title: group.Title(), State: group.State(showToReview: showToReview))
+    static List<RowGroup> Groups(IReadOnlyList<PRSnapshot> items, bool showToReview) =>
+        [.. PRGroups.All.Select(selector: group => StatusGroup(group: group, items: items, showToReview: showToReview))];
+
+    /// A list by date's groups: every pull request but Done's and Idle's in one, with Mark as seen while something new
+    /// there needs you; then Done's and Idle's, as they are by status.
+    static List<RowGroup> DateGroups(PRStore store, PROrder order, bool showToReview)
     {
-        Commands = group switch
+        var listed = store.DateList(order: order);
+        var byDate = new RowGroup(Key: DateListKey, Title: order.Title(), State: null)
         {
-            PRGroup.NeedsYou when items.Any(predicate: item => item.Group == PRGroup.NeedsYou && item.HasNews) =>
-                [new PanelCommand(Key: AzureDevOpsCommands.MarkAsSeen, Title: "Mark as seen", Help: "You've seen these: what's new moves on, and comments that wait on you stay until you reply, they're resolved, or you remove them")],
-            PRGroup.Done => [new PanelCommand(Key: AzureDevOpsCommands.Clear, Title: "Clear", Help: "Remove these from the list")],
-            _ => [],
-        },
-        IsFolded = group == PRGroup.Idle,
-    }).ToList();
+            Commands = listed.Any(predicate: item => item.Group == PRGroup.NeedsYou && item.HasNews) ? [MarkAsSeen()] : [],
+        };
+        return [byDate, .. new[] { PRGroup.Done, PRGroup.Idle }.Select(selector: group => StatusGroup(group: group, items: store.Items, showToReview: showToReview))];
+    }
+
+    static RowGroup StatusGroup(PRGroup group, IReadOnlyList<PRSnapshot> items, bool showToReview) =>
+        new(Key: GroupKey(group: group), Title: group.Title(), State: group.State(showToReview: showToReview))
+        {
+            Commands = group switch
+            {
+                PRGroup.NeedsYou when items.Any(predicate: item => item.Group == PRGroup.NeedsYou && item.HasNews) => [MarkAsSeen()],
+                PRGroup.Done => [new PanelCommand(Key: AzureDevOpsCommands.Clear, Title: "Clear", Help: "Remove these from the list")],
+                _ => [],
+            },
+            IsFolded = group == PRGroup.Idle,
+        };
+
+    static PanelCommand MarkAsSeen() => new(
+        Key: AzureDevOpsCommands.MarkAsSeen,
+        Title: "Mark as seen",
+        Help: "You've seen these: what's new moves on, and comments that wait on you stay until you reply, they're resolved, or you remove them");
+
+    /// The rows in the order you chose. By status, in their groups. By date, every pull request but Done's and Idle's in
+    /// one list, by when each was created, each still saying where it stands, and its time how long ago it was created;
+    /// then Done's, the latest first, as by status; then Idle's, in the same order as the list.
+    static List<ItemRow> Rows(PRStore store, PROrder order, bool showToReview, bool counted, DateTimeOffset now)
+    {
+        ItemRow RowOf(PRSnapshot item) => Row(item: item, showToReview: showToReview, now: now, counted: counted);
+        if (!order.IsByDate())
+        {
+            return [.. store.Items.Select(selector: RowOf)];
+        }
+        var byDate = store.ItemsBy(order: order);
+        var listed = store.DateList(order: order).Select(selector: item => RowOf(item: item) with { Group = DateListKey, Created = item.CreatedAt });
+        var done = store.Items.Where(predicate: item => item.Group == PRGroup.Done).Select(selector: RowOf);
+        var idle = byDate.Where(predicate: item => item.Group == PRGroup.Idle).Select(selector: item => RowOf(item: item) with { Created = item.CreatedAt });
+        return [.. listed, .. done, .. idle];
+    }
+
+    /// What's left before you can complete it, and what's done, on a line under its row; its words quiet, as an idle row's.
+    static RowChecklist Checklist(PRReadiness readiness, bool isQuiet) => new(
+        Items: new ValueList<RowChecklistItem>(items: readiness.Items.Select(selector: item => new RowChecklistItem(
+            Icon: Icon(item: item), State: item.IsRequired ? item.State : null, Label: item.Label, IsDone: item.IsDone))),
+        Summary: new ValueList<string>(items: ReadinessLines(readiness: readiness)),
+        IsQuiet: isQuiet);
+
+    /// "Build failed (shop-web CI · Run unit tests: 2 tests failed); Resolve 1 comment".
+    static string Described(IEnumerable<PRReadinessItem> items) =>
+        string.Join(separator: "; ", values: items.Select(selector: item => string.IsNullOrEmpty(value: item.Detail) ? item.Label : item.Label + " (" + item.Detail + ")"));
+
+    /// The menu at the top of the list that sorts it: by status, or by when each was created.
+    static SectionSort SortMenu(PROrder order) => new(
+        Choices: new ValueList<PanelCommand>(items: PROrders.All.Select(selector: choice => new PanelCommand(Key: AzureDevOpsCommands.Sort(order: choice), Title: choice.Title()))),
+        Chosen: AzureDevOpsCommands.Sort(order: order),
+        Name: "Sort pull requests",
+        Help: "Sort: " + order.Title() + ". By status groups them by what they need from you; Newest first and Oldest first list them by when each was created");
 
     /// Opening it first, then what its menu offers.
     static List<PanelCommand> Commands(PRSnapshot item)
@@ -212,8 +332,9 @@ public static class AzureDevOpsRows
         return commands;
     }
 
-    /// Everything its row shows, in full, and what clicking and its menu do.
-    static string ToolTip(PRSnapshot item, bool isNew)
+    /// Everything its row shows, in full, what's left before you can complete it, when it was created, and what clicking
+    /// and its menu do.
+    static string ToolTip(PRSnapshot item, bool isNew, DateTimeOffset now)
     {
         var lines = new List<string>
         {
@@ -225,9 +346,18 @@ public static class AzureDevOpsRows
         {
             lines.Add(item: detail);
         }
-        if (item.Approvals.Count > 0 && item.Group != PRGroup.Ready)
+        // What's left says who approved, for your own.
+        if (item.Approvals.Count > 0 && item.Group != PRGroup.Ready && item.Readiness is null)
         {
             lines.Add(item: "Approved by " + string.Join(separator: ", ", values: item.Approvals));
+        }
+        if (item.Readiness is { Items.Count: > 0 } readiness)
+        {
+            lines.AddRange(collection: ReadinessLines(readiness: readiness));
+        }
+        if (item.CreatedAt is { } created)
+        {
+            lines.Add(item: CreatedWords(created: created, now: now));
         }
         if (item.Group == PRGroup.NeedsYou && !isNew)
         {
@@ -243,6 +373,13 @@ public static class AzureDevOpsRows
             lines.Add(item: "You watch it: right-click to stop");
         }
         return string.Join(separator: '\n', values: lines);
+    }
+
+    /// "Created 2d ago", "Created 1h 5m ago", "Created just now".
+    static string CreatedWords(DateTimeOffset created, DateTimeOffset now)
+    {
+        var elapsed = Elapsed.Compact(since: created, now: now);
+        return elapsed == "now" ? "Created just now" : "Created " + elapsed + " ago";
     }
 
     /// How the section stands: what it can't read, and in a word or two for the bar, or when it last read.
