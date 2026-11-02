@@ -157,6 +157,10 @@ Enable agent access in **Settings › Agents**, then install the **Copilot plugi
 | `/briefbar 5101` | Where the work item stands, what's done, what's left and who it waits on. |
 | “Fix the comments on !4102” | In the Copilot app, a session of its own for the work, which you can follow and steer. |
 
+Turn on **Send Prompts to Copilot Sessions** there too, and Send to Copilot can send its prompt to one
+of the app's sessions itself, or to a fork of it, rather than copy it for you to paste. It's off by
+default, since it adds a small extension to each session the app has open, of about 46 MB.
+
 BriefBar also provides an opt-in **MCP server** for compatible agents, with install actions for
 VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams or GitHub.
 [Agent setup and available tools →](docs/user-guide.md#agents)

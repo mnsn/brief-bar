@@ -4,14 +4,20 @@ import Foundation
 import Testing
 @testable import CopilotTasks
 
-/// BriefBar's plugin for Copilot, as it is in `Resources/CopilotPlugin`: a marketplace on this Mac with one plugin in
-/// the Agent Plugins 1.0 format, whose one skill, `/briefbar`, names only BriefBar's tools and the app's that it uses.
-/// The build adds BriefBar's version to it (scripts/build-app.sh), and scripts/check-app.sh checks that.
+/// BriefBar's plugins for Copilot, as they are in `Resources/CopilotPlugin`: a marketplace on this Mac with two plugins in
+/// the Agent Plugins 1.0 format. One has one skill, `/briefbar`, which names only BriefBar's tools and the app's that it
+/// uses; the other, only BriefBar's extension for the app's sessions. The build adds BriefBar's version to them
+/// (scripts/build-app.sh), and scripts/check-app.sh checks that.
 @Suite struct CopilotPluginTests {
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().appendingPathComponent("Resources/CopilotPlugin", isDirectory: true)
     static let plugin = folder.appendingPathComponent("briefbar", isDirectory: true)
     static let skill = plugin.appendingPathComponent("skills/briefbar/SKILL.md")
+    static let sessions = folder.appendingPathComponent("briefbar-sessions", isDirectory: true)
+    /// The fields of a plugin's manifest that the CLI reads: it ignores anything else.
+    static let manifestFields: Set<String> = [
+        "$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions",
+    ]
 
     /// What the skill may name besides BriefBar's tools, their arguments and values: the GitHub Copilot app's tools and
     /// what they take.
@@ -25,17 +31,26 @@ import Testing
         try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any], "\(url.path) isn't a JSON object")
     }
 
-    @Test func marketplaceListsThePlugin() throws {
+    /// What's in a folder, without what Finder adds, such as .DS_Store, which the build leaves out.
+    static func contents(_ folder: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { !$0.hasPrefix(".") }.sorted()
+    }
+
+    @Test func marketplaceListsThePlugins() throws {
         let marketplace = try Self.object(Self.folder.appendingPathComponent("marketplace.json"))
         #expect(marketplace["name"] as? String == CopilotPluginRegistration.name)
         #expect((marketplace["owner"] as? [String: Any])?["name"] as? String == "BriefBar")
         let plugins = try #require(marketplace["plugins"] as? [[String: Any]])
-        #expect(plugins.count == 1)
-        #expect(plugins.first?["name"] as? String == CopilotPluginRegistration.name)
-        #expect(plugins.first?["source"] as? String == "./briefbar")
-        // The build sets it to BriefBar's.
-        #expect(plugins.first?["version"] == nil)
+        // BriefBar's, each in a folder of its own, at BriefBar's version, which the build sets.
+        #expect(plugins.compactMap { $0["name"] as? String } == CopilotPluginRegistration.Plugin.allCases.map(\.rawValue))
+        for plugin in plugins {
+            let name = try #require(plugin["name"] as? String)
+            #expect(plugin["source"] as? String == "./\(name)")
+            #expect(plugin["version"] == nil, "\(name)")
+            #expect(!((plugin["description"] as? String) ?? "").isEmpty, "\(name)")
+        }
         #expect(Self.folder.lastPathComponent == CopilotPluginRegistration.folderName)
+        #expect(try Self.contents(Self.folder) == ["briefbar", "briefbar-sessions", "marketplace.json"])
     }
 
     @Test func pluginFollowsAgentPlugins() throws {
@@ -45,12 +60,29 @@ import Testing
         #expect(manifest["version"] == nil)
         #expect(!((manifest["description"] as? String) ?? "").isEmpty)
         // Its manifest is closed: the CLI ignores anything else.
-        let fields: Set<String> = ["$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"]
-        #expect(Set(manifest.keys).isSubset(of: fields), "\(Set(manifest.keys).subtracting(fields))")
+        #expect(Set(manifest.keys).isSubset(of: Self.manifestFields), "\(Set(manifest.keys).subtracting(Self.manifestFields))")
         // Only the skill: BriefBar's MCP server is added on its own, when agents are turned on.
-        let contents = try FileManager.default.contentsOfDirectory(atPath: Self.plugin.path).sorted()
-        #expect(contents == ["plugin.json", "skills"])
-        #expect(try FileManager.default.contentsOfDirectory(atPath: Self.plugin.appendingPathComponent("skills").path) == ["briefbar"])
+        #expect(try Self.contents(Self.plugin) == ["plugin.json", "skills"])
+        #expect(try Self.contents(Self.plugin.appendingPathComponent("skills")) == ["briefbar"])
+    }
+
+    /// The other plugin holds only BriefBar's extension for the app's sessions, where the Copilot runtime finds it in an
+    /// Agent Plugins 1.0 plugin: in the app's own folder, `com.github.copilot`, as it ignores `"extensions": "extensions"`
+    /// there. Its tests are in Tests/CopilotPlugin, so they don't ship.
+    @Test func sessionsPluginHoldsOnlyItsExtension() throws {
+        let manifest = try Self.object(Self.sessions.appendingPathComponent("plugin.json"))
+        #expect(manifest["$schema"] as? String == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json")
+        #expect(manifest["name"] as? String == CopilotPluginRegistration.Plugin.sessions.rawValue)
+        #expect(manifest["version"] == nil)
+        #expect(((manifest["description"] as? String) ?? "").contains(CopilotSessionPrompts.title))
+        #expect(Set(manifest.keys).isSubset(of: Self.manifestFields), "\(Set(manifest.keys).subtracting(Self.manifestFields))")
+        let extensions = try #require(manifest["extensions"] as? [String: Any])
+        #expect(Array(extensions.keys) == ["com.github.copilot"])
+        #expect(try Self.contents(Self.sessions) == ["com.github.copilot", "plugin.json"])
+        let folder = Self.sessions.appendingPathComponent("com.github.copilot/extensions", isDirectory: true)
+        #expect(try Self.contents(Self.sessions.appendingPathComponent("com.github.copilot")) == ["extensions"])
+        #expect(try Self.contents(folder) == ["briefbar-sessions"])
+        #expect(try Self.contents(folder.appendingPathComponent("briefbar-sessions")) == ["extension.mjs", "outbox.mjs"])
     }
 
     @Test func skillIsNamedForItsCommand() throws {
