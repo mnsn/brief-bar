@@ -61,8 +61,12 @@ public sealed class ThemePalette
     public Brush OnFill =>
         IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.OnFill(dark: IsDark));
 
+    /// Needs you's pill on the bar, standing out on it as the bar's other colors do; its words, `PillText`, read on it
+    /// all the more, being black in dark and white in light.
     public Brush PillFill =>
-        IsHighContrast ? System(element: UIElementType.Highlight) : Brush(argb: StatePalette.PillFill(dark: IsDark));
+        IsHighContrast
+            ? System(element: UIElementType.Highlight)
+            : Brush(argb: OnBackground(argb: StatePalette.PillFill(dark: IsDark), least: Wcag.GraphicsContrast));
 
     public Brush PillText =>
         IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.PillText(dark: IsDark));

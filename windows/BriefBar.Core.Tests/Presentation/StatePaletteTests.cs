@@ -159,6 +159,10 @@ public sealed class StatePaletteTests
             }
             AssertContrast(foreground: Readable(color: StatePalette.Caution(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
             AssertContrast(foreground: Readable(color: StatePalette.Quiet(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
+            // Needs you's pill, and its words on it.
+            var pill = Readable(color: StatePalette.PillFill(dark: dark), least: Wcag.GraphicsContrast);
+            AssertContrast(foreground: pill, background: shown, least: Wcag.GraphicsContrast);
+            AssertContrast(foreground: StatePalette.PillText(dark: dark), background: pill, least: Wcag.TextContrast);
             foreach (var section in Sections.InBarOrder)
             {
                 AssertContrast(
