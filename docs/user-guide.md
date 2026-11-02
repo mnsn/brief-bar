@@ -833,7 +833,8 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   in, from its session state; which ones the app has open; and which of those active lately link to it in
   their logs. It reads nothing of Copilot's while the feature is off.
   **Send to Session** and **Send to a Fork** hand the prompt to BriefBar's extension in the session, through
-  a file only you can read, which goes once the extension is done with it; or, when they can't, put it on the
+  a file only you can read, which goes once the extension is done with it, and read what the extension says
+  became of it, and, for a fork, which session the app records it came from; or, when they can't, put it on the
   clipboard. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
