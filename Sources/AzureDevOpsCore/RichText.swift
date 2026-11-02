@@ -1030,10 +1030,10 @@ private enum MarkdownReader {
                 }
                 // An item that starts with HTML comments: they show nothing, blank lines and all, and the item's text is
                 // what follows the last one's end; without an end, it's all the rest. With nothing after them, the item
-                // has no paragraph for the lines after it to go on with.
+                // has no paragraph for the lines after it to go on with. Text indented as code starts with no comment.
                 var startsWithComment = false
                 var text = Substring(content)
-                while text.hasPrefix("<!--") {
+                while column - markerEnd <= 4, text.hasPrefix("<!--") {
                     startsWithComment = true
                     if let close = text.dropFirst(4).range(of: "-->") {
                         text = text[close.upperBound...].drop { $0 == " " || $0 == "\t" }
@@ -1247,9 +1247,10 @@ private enum MarkdownReader {
     /// apart: see `keptApart(_:)`.
     static let seam: Unicode.Scalar = "\u{FFFC}"
 
-    /// Text with a seam only where it keeps two runs of a mark apart that HTML kept apart, as in `` `a`<!-- -->`b` `` or
-    /// `**one**<b></b>**two**`: elsewhere it would be in the way, as between the two spaces that break a line and its
-    /// end.
+    /// Text with a seam only where it keeps apart two marks that HTML kept apart, which Markdown would read together: runs
+    /// of a mark, as in `` `a`<!-- -->`b` `` or `**one**<b></b>**two**`, a link's text and where it goes, as in
+    /// `[a]<!-- -->(b)`, and an image's `!` and its description. Elsewhere it would be in the way, as between the two
+    /// spaces that break a line and its end.
     static func keptApart(_ text: String) -> String {
         guard text.unicodeScalars.contains(seam) else { return text }
         var result = String.UnicodeScalarView()
@@ -1259,11 +1260,17 @@ private enum MarkdownReader {
                 apart = true
                 continue
             }
-            if apart, result.last == scalar, "*_~`".unicodeScalars.contains(scalar) { result.append(seam) }
+            if apart, let last = result.last, joins(last, scalar) { result.append(seam) }
             apart = false
             result.append(scalar)
         }
         return String(result)
+    }
+
+    /// Whether Markdown reads two marks together.
+    private static func joins(_ before: Unicode.Scalar, _ after: Unicode.Scalar) -> Bool {
+        if before == after { return "*_~`".unicodeScalars.contains(after) }
+        return (before == "]" && after == "(") || (before == "!" && after == "[")
     }
 
     /// Text without its seams, once it's read.

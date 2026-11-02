@@ -30,6 +30,8 @@ import Testing
         #expect(plain("- <!--\n  hidden\n  --> kept\n- shown") == "• kept\n• shown")
         // An item that's only a comment has no paragraph for indented code after it to go on with.
         #expect(RichText(markdown: "- <!--\n  hidden\n  -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
+        // An item whose text is indented as code starts with no comment, and what follows it shows.
+        #expect(plain("-     <!--\n      literal code\n\nOutside") == "• <!--\nliteral code\nOutside")
         // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
         #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
@@ -88,6 +90,19 @@ import Testing
                 RichText.Run("bold", style: .bold), RichText.Run("text, "), RichText.Run("a", style: .code), RichText.Run("x"),
                 RichText.Run("b", style: .code),
             ]),
+        ])
+        // Nor are a link's text and where it goes, an image's too, or an image's `!` and its description: what's left is text,
+        // with its web address a link of its own.
+        let build = URL(string: "https://example.invalid/build")
+        #expect(RichText(markdown: "[build]<!-- bot -->(https://example.invalid/build)").blocks == [
+            .paragraph([RichText.Run("[build]("), RichText.Run("https://example.invalid/build", link: build), RichText.Run(")")]),
+        ])
+        let chart = URL(string: "https://example.invalid/chart.png")
+        #expect(RichText(markdown: "![chart]<!-- bot -->(https://example.invalid/chart.png)").blocks == [
+            .paragraph([RichText.Run("![chart]("), RichText.Run("https://example.invalid/chart.png", link: chart), RichText.Run(")")]),
+        ])
+        #expect(RichText(markdown: "!<b></b>[chart](https://example.invalid/chart)").blocks == [
+            .paragraph([RichText.Run("!"), RichText.Run("chart", link: URL(string: "https://example.invalid/chart"))]),
         ])
     }
 
