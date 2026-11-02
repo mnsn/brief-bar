@@ -3,6 +3,7 @@ using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.Demo;
 using BriefBar.Core.GitHub;
+using BriefBar.Core.Presentation;
 using BriefBar.Core.Settings;
 using Microsoft.UI.Dispatching;
 
@@ -40,6 +41,7 @@ internal sealed class AppSources
             : new AzureDevOpsSettings(settings: Settings, now: madeAt);
         Copilot = new CopilotSettings(settings: Settings, now: madeAt);
         GitHub = new GitHubSettings(settings: Settings);
+        Appearance = new AppearanceSettings(settings: Settings);
         Switch = new SourceSwitch(settings: Settings, entries: SourceCatalog.OnWindows, make: Make);
     }
 
@@ -50,6 +52,9 @@ internal sealed class AppSources
     public CopilotSettings Copilot { get; }
 
     public GitHubSettings GitHub { get; }
+
+    /// What the bar shows behind its words, as chosen in Settings.
+    public AppearanceSettings Appearance { get; }
 
     public SourceSwitch Switch { get; }
 
