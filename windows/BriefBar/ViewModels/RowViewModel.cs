@@ -7,7 +7,7 @@ namespace BriefBar.ViewModels;
 
 /// One thing in a panel: a badge in its state's color (or a chat's initials), its title, where it stands, what it's
 /// about, and when; what pressing it does, and what its menu offers; how far it's indented, the tag that names what it
-/// belongs to, and how full it is.
+/// belongs to, how full it is, and what's left before it's done.
 public sealed class RowViewModel : Observable
 {
     /// How far each level of nesting indents a row, as on the Mac.
@@ -119,6 +119,12 @@ public sealed class RowViewModel : Observable
     /// How much of the ring is filled, from 0 to 1.
     public double MeterFraction { get; private set => Set(storage: ref field, value: value); }
 
+    /// What's left before it's done, and what's done, on a line under it, such as what's left before you can complete one
+    /// of your pull requests.
+    public IReadOnlyList<RowChecklistItemViewModel> Checklist { get; private set => Set(storage: ref field, value: value); } = [];
+
+    public bool HasChecklist { get; private set => Set(storage: ref field, value: value); }
+
     public void Update(ItemRow row, bool showsSource, ThemePalette palette, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: row);
@@ -132,7 +138,9 @@ public sealed class RowViewModel : Observable
         Detail = row.Detail ?? string.Empty;
         HasDetail = !string.IsNullOrEmpty(value: row.Detail);
         DetailLines = row.State == ItemState.NeedsYou ? 3 : 2;
-        Age = Elapsed.Compact(since: row.Date, now: now);
+        // In its section's own list sorted by when each was created, its time says how long ago it was.
+        var showsCreated = !showsSource && row.Created is not null;
+        Age = Elapsed.Compact(since: showsCreated ? row.Created : row.Date, now: now);
         Icon = row.Icon;
         BadgeBrush = row.State is { } badgeState ? palette.Fill(state: badgeState) : palette.Quiet;
         BadgeGlyphBrush = palette.OnFill;
@@ -158,7 +166,7 @@ public sealed class RowViewModel : Observable
         ShowsSource = showsSource;
         SourceGlyph = info?.Glyph ?? IconKey.Stack;
         SourceBrush = info is null ? palette.Quiet : palette.Glyph(tint: info.Tint);
-        AutomationName = RowWords.SpokenName(row: row, sourceName: showsSource ? info?.FullName : null, now: now);
+        AutomationName = RowWords.SpokenName(row: row, sourceName: showsSource ? info?.FullName : null, now: now, showsCreated: showsCreated);
         if (!row.Commands.SequenceEqual(second: Commands))
         {
             Commands = row.Commands;
@@ -175,6 +183,7 @@ public sealed class RowViewModel : Observable
         TagSpoken = row.Tag?.Spoken ?? string.Empty;
         TagCommand = row.Tag?.Command;
         UpdateMeter(meter: row.Meter, palette: palette);
+        UpdateChecklist(checklist: row.Checklist, palette: palette);
     }
 
     void UpdateMeter(RowMeter? meter, ThemePalette palette)
@@ -184,5 +193,20 @@ public sealed class RowViewModel : Observable
         MeterBrush = meter is { IsHigh: true } ? palette.Caution : palette.Quiet;
         MeterTrackBrush = palette.Quiet;
         MeterFraction = meter?.Fraction ?? 0;
+    }
+
+    /// Only a checklist that changed is put on screen again, not the same one at every refresh.
+    void UpdateChecklist(RowChecklist? checklist, ThemePalette palette)
+    {
+        List<RowChecklistItemViewModel> items = checklist is null ? [] : [.. checklist.Items.Select(selector: item => new RowChecklistItemViewModel(
+            Icon: item.Icon,
+            IconBrush: item.State is { } state ? palette.Fill(state: state) : palette.Quiet,
+            Label: item.Label,
+            IsQuiet: item.IsDone || checklist.IsQuiet))];
+        if (!items.SequenceEqual(second: Checklist))
+        {
+            Checklist = items;
+        }
+        HasChecklist = items.Count > 0;
     }
 }

@@ -5,9 +5,9 @@ using Microsoft.UI.Xaml.Media;
 
 namespace BriefBar.ViewModels;
 
-/// What the panel shows: its header, a banner when its section can't show everything, its brief, a word when all is
-/// quiet, its groups of rows, and what its footer can do. One panel serves every item, so it's updated in place,
-/// keeping its list's scroll position and focus.
+/// What the panel shows: its header, with a menu that sorts its list where it can be sorted, a banner when its section
+/// can't show everything, its brief, a word when all is quiet, its groups of rows, and what its footer can do. One panel
+/// serves every item, so it's updated in place, keeping its list's scroll position and focus.
 public sealed class PanelViewModel : Observable
 {
     /// BriefBar's own blue, for the Overview's tile.
@@ -77,6 +77,16 @@ public sealed class PanelViewModel : Observable
 
     public bool HasAccount { get; private set => Set(storage: ref field, value: value); }
 
+    /// How the section's list can be sorted, from a menu at the top of the panel; none in the Overview.
+    public SectionSort? Sort { get; private set => Set(storage: ref field, value: value); }
+
+    public bool HasSort { get; private set => Set(storage: ref field, value: value); }
+
+    /// What Narrator calls the sort menu's button, with the order in use: "Sort pull requests: By status".
+    public string SortName { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    public string SortHelp { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
     public ObservableCollection<RowGroupViewModel> Groups { get; } = [];
 
     public bool IsEmpty { get; private set => Set(storage: ref field, value: value); }
@@ -98,6 +108,10 @@ public sealed class PanelViewModel : Observable
     /// The source whose page Settings opens at from this panel: its section's, or none for the Overview.
     public SourceId? Source => Target.Section?.Source;
 
+    /// The list it shows was sorted another way, as you chose another order from its sort menu: the panel shows it from
+    /// its top again.
+    public event EventHandler? Resorted;
+
     public void Update(PanelTarget target, IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now, bool isDemo)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshots);
@@ -106,6 +120,8 @@ public sealed class PanelViewModel : Observable
         {
             unfolded.Clear();
         }
+        // The order the same list was in, before this update.
+        var sortedBefore = target == Target ? Sort?.Chosen : null;
         this.palette = palette;
         this.now = now;
         Target = target;
@@ -119,6 +135,10 @@ public sealed class PanelViewModel : Observable
         else
         {
             ShowOverview(snapshots: snapshots, palette: palette, now: now);
+        }
+        if (sortedBefore is not null && Sort?.Chosen is { } sorted && sorted != sortedBefore)
+        {
+            Resorted?.Invoke(sender: this, e: EventArgs.Empty);
         }
     }
 
@@ -160,6 +180,7 @@ public sealed class PanelViewModel : Observable
         ShowQuiet(quiet: null);
         ShowNotices(notices: []);
         ShowAccount(account: null);
+        ShowSort(sort: null);
         ShowGroups(groups: PanelLists.ForOverview(snapshots: snapshots), section: null, palette: palette, now: now);
         EmptyText = snapshots.Count == 0
             ? "No source is on. Turn one on in Settings, and what needs you shows here."
@@ -186,6 +207,7 @@ public sealed class PanelViewModel : Observable
             ShowQuiet(quiet: null);
             ShowNotices(notices: []);
             ShowAccount(account: null);
+            ShowSort(sort: null);
             ShowGroups(groups: [], section: section, palette: palette, now: now);
             EmptyText = "This source is off.";
             Commands = [];
@@ -201,6 +223,7 @@ public sealed class PanelViewModel : Observable
         ShowQuiet(quiet: snapshot.Quiet);
         ShowNotices(notices: snapshot.Notices);
         ShowAccount(account: snapshot.Account);
+        ShowSort(sort: snapshot.Sort);
         ShowGroups(groups: PanelLists.ForSection(snapshot: snapshot), section: section, palette: palette, now: now);
         // A section may say what it's doing as it starts, such as finding your organizations.
         EmptyText = snapshot.EmptyText
@@ -283,6 +306,14 @@ public sealed class PanelViewModel : Observable
         AccountName = account?.Name ?? string.Empty;
         AccountHelp = account?.Help ?? string.Empty;
         HasAccount = account is not null;
+    }
+
+    void ShowSort(SectionSort? sort)
+    {
+        Sort = sort;
+        HasSort = sort is not null;
+        SortName = sort is null ? string.Empty : sort.Name + (sort.ChosenChoice is { } chosen ? ": " + chosen.Title : string.Empty);
+        SortHelp = sort?.Help ?? string.Empty;
     }
 
     void ShowGroups(IReadOnlyList<PanelGroup> groups, SectionId? section, ThemePalette palette, DateTimeOffset now)

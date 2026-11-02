@@ -8,8 +8,9 @@ public static class RowWords
 {
     /// "GitHub Copilot sessions: Release 2.4.0, Needs permission, acme-api, git push origin main, 1 minute ago": its
     /// source first, for the Overview, which mixes sources (`sourceName`), then its title, where it stands, what it's
-    /// about, its links, how full it is, what its tag names, unread messages, whether it's new, and when.
-    public static string SpokenName(ItemRow row, string? sourceName, DateTimeOffset now)
+    /// about, its links, what's left before it's done, how full it is, what its tag names, unread messages, whether it's
+    /// new, and when: how long ago it was created when its list is sorted by that (`showsCreated`).
+    public static string SpokenName(ItemRow row, string? sourceName, DateTimeOffset now, bool showsCreated = false)
     {
         ArgumentNullException.ThrowIfNull(argument: row);
         var parts = new List<string> { row.Title };
@@ -19,6 +20,10 @@ public static class RowWords
             parts.Add(item: detail);
         }
         parts.AddRange(collection: row.Chips.Select(selector: chip => ChipWords(chip: chip)));
+        if (row.Checklist is { } checklist)
+        {
+            parts.AddRange(collection: checklist.Summary);
+        }
         if (row.Meter is { } meter)
         {
             parts.Add(item: meter.Spoken);
@@ -37,7 +42,9 @@ public static class RowWords
         {
             parts.Add(item: "new");
         }
-        parts.Add(item: Elapsed.Spoken(since: row.Date, now: now));
+        parts.Add(item: showsCreated && row.Created is { } created
+            ? "created " + Elapsed.Spoken(since: created, now: now)
+            : Elapsed.Spoken(since: row.Date, now: now));
         var spoken = Joined(parts: parts);
         return string.IsNullOrEmpty(value: sourceName) ? spoken : sourceName + ": " + spoken;
     }

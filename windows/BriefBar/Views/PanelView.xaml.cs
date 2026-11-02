@@ -11,10 +11,10 @@ using Windows.System;
 
 namespace BriefBar.Views;
 
-/// The panel under an item in the bar: a header, a banner when its section can't show everything, its brief, and its
-/// rows in groups, in a list the keyboard and Narrator move through. Pressing a row does what it offers first; its menu,
-/// from a right-click, the menu key or Shift+F10, offers everything it can do. Ctrl+1 to Ctrl+9, Ctrl+Tab and
-/// Ctrl+Shift+Tab ask for another of the bar's items (`PanelKeys`).
+/// The panel under an item in the bar: a header, with a menu that sorts its list where it can be sorted, a banner when its
+/// section can't show everything, its brief, and its rows in groups, in a list the keyboard and Narrator move through.
+/// Pressing a row does what it offers first; its menu, from a right-click, the menu key or Shift+F10, offers everything it
+/// can do. Ctrl+1 to Ctrl+9, Ctrl+Tab and Ctrl+Shift+Tab ask for another of the bar's items (`PanelKeys`).
 public sealed partial class PanelView : UserControl
 {
     ScrollViewer? scroller;
@@ -24,6 +24,7 @@ public sealed partial class PanelView : UserControl
         ViewModel = viewModel;
         InitializeComponent();
         GroupedRows.Source = viewModel.Groups;
+        viewModel.Resorted += OnResorted;
         AddItemKeys();
     }
 
@@ -248,6 +249,31 @@ public sealed partial class PanelView : UserControl
             RequestOf(section: section, command: command);
         }
     }
+
+    /// The sort menu: each order its section offers, the one in use checked.
+    void OnSortClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Sort is not { } sort || ViewModel.Target.Section is not { } section)
+        {
+            return;
+        }
+        var menu = new MenuFlyout();
+        foreach (var choice in sort.Choices)
+        {
+            var entry = new RadioMenuFlyoutItem { Text = choice.Title, GroupName = "Sort", IsChecked = choice.Key == sort.Chosen };
+            entry.Click += (_, _) => RequestOf(section: section, command: choice);
+            menu.Items.Add(item: entry);
+        }
+        menu.ShowAt(placementTarget: SortButton, showOptions: new FlyoutShowOptions { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight });
+    }
+
+    /// Sorted another way, the list starts at its top again, as it does as it opens, once it's laid out: otherwise it would
+    /// keep a row it still has in view, such as one of Done's, and open far down the list.
+    void OnResorted(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(priority: Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, callback: () =>
+    {
+        List.UpdateLayout();
+        ScrollToTop();
+    });
 
     void RequestOf(SectionId section, PanelCommand command) =>
         CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(

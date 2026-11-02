@@ -3,7 +3,8 @@ using System.Globalization;
 namespace BriefBar.Core.GitHub;
 
 /// Decides where each pull request goes. Something wrong with your own comes first, then what a reviewer asks of you,
-/// then whether it's waiting or ready. The Mac's `GitHubClassifier`.
+/// then whether it's waiting or ready. Without GitHub's review decision, the reviews decide, those by deleted accounts
+/// included, though only reviewers with names are named. The Mac's `GitHubClassifier`.
 public static class GitHubClassifier
 {
     public static GitHubPRSnapshot Classify(GitHubPullRequest pullRequest, GitHubPRRole role)
@@ -29,7 +30,7 @@ public static class GitHubClassifier
             return Snapshot(group: GitHubPRGroup.Failing, reason: GitHubPRReason.Conflicts, headline: "Merge conflicts");
         }
         var changesRequestedBy = pullRequest.Reviewers(state: GitHubReviewState.ChangesRequested);
-        if (pullRequest.ReviewDecision == GitHubReviewDecision.ChangesRequested || (pullRequest.ReviewDecision is null && changesRequestedBy.Count > 0))
+        if (pullRequest.ReviewDecision == GitHubReviewDecision.ChangesRequested || (pullRequest.ReviewDecision is null && pullRequest.HasReview(state: GitHubReviewState.ChangesRequested)))
         {
             return Snapshot(
                 group: GitHubPRGroup.ChangesRequested,
@@ -42,7 +43,7 @@ public static class GitHubClassifier
             return Snapshot(group: GitHubPRGroup.Waiting, reason: GitHubPRReason.ChecksRunning, headline: "Checks running");
         }
         var approvedBy = pullRequest.Reviewers(state: GitHubReviewState.Approved);
-        if (pullRequest.ReviewDecision == GitHubReviewDecision.Approved || (pullRequest.ReviewDecision is null && approvedBy.Count > 0))
+        if (pullRequest.ReviewDecision == GitHubReviewDecision.Approved || (pullRequest.ReviewDecision is null && pullRequest.HasReview(state: GitHubReviewState.Approved)))
         {
             return Snapshot(group: GitHubPRGroup.Ready, reason: GitHubPRReason.Approved, headline: "Approved", detail: approvedBy.Count == 0 ? null : "By " + Names(names: approvedBy));
         }
