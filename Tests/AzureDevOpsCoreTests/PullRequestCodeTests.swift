@@ -651,6 +651,24 @@ private actor FakeCode: CodeSource {
     }
 }
 
+/// How many run at once, and the most that did.
+private final class Running: Sendable {
+    private let counts = Mutex((now: 0, most: 0))
+
+    var most: Int { counts.withLock { $0.most } }
+
+    func start() {
+        counts.withLock {
+            $0.now += 1
+            $0.most = max($0.most, $0.now)
+        }
+    }
+
+    func finish() {
+        counts.withLock { $0.now -= 1 }
+    }
+}
+
 private func waitUntil(_ what: String, _ condition: () async -> Bool) async throws {
     let deadline = ContinuousClock.now + .seconds(10)
     while ContinuousClock.now < deadline {
@@ -781,42 +799,42 @@ private actor SwitchingCode: CodeSource {
 
     @Test func letsOnlyAFewRequestsGoAtATime() async throws {
         let limiter = RequestLimiter(limit: 2)
-        let running = Mutex((now: 0, most: 0))
+        let running = Running()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for _ in 0..<8 {
                 group.addTask {
                     try await limiter.run {
-                        running.withLock { $0.now += 1; $0.most = max($0.most, $0.now) }
+                        running.start()
                         try await Task.sleep(for: .milliseconds(20))
-                        running.withLock { $0.now -= 1 }
+                        running.finish()
                     }
                 }
             }
             try await group.waitForAll()
         }
-        #expect(running.withLock { $0.most } == 2)
+        #expect(running.most == 2)
     }
 
     @Test func aRequestCancelledWhileItWaitsNeverGoesOut() async throws {
         let limiter = RequestLimiter(limit: 1)
-        let release = Mutex(false)
-        let ran = Mutex(0)
+        let release = Locked(false)
+        let ran = Locked(0)
         let first = Task {
             try await limiter.run {
-                while !release.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(5)) }
+                while !release.value { try await Task.sleep(for: .milliseconds(5)) }
             }
         }
         try await Task.sleep(for: .milliseconds(20))
-        let second = Task { try await limiter.run { ran.withLock { $0 += 1 } } }
+        let second = Task { try await limiter.run { ran.increment() } }
         try await Task.sleep(for: .milliseconds(20))
         second.cancel()
         await #expect(throws: CancellationError.self) { try await second.value }
-        release.withLock { $0 = true }
+        release.set(true)
         try await first.value
-        #expect(ran.withLock { $0 } == 0)
+        #expect(ran.value == 0)
         // The place it waited for went to no one: the next one goes out at once.
-        try await limiter.run { ran.withLock { $0 += 1 } }
-        #expect(ran.withLock { $0 } == 1)
+        _ = try await limiter.run { ran.increment() }
+        #expect(ran.value == 1)
     }
 }
 
