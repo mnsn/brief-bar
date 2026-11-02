@@ -305,13 +305,15 @@ extension CopilotTasksStore {
     /// that the app records with it, that you linked to it, or that works on its branch, the most recently active; else
     /// with the one that mentions it and was there before it was created, which likely opened it. A work item's starts a
     /// new session unless you choose one.
+    /// - Parameter chosen: what you chose for the pull request's work, unless a task started on it since
+    ///   (`chosenSession(for:)`).
     static func suggestedChoice(
         _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, createdAt: Date?,
         chosen: PullRequestSessionChoice? = nil
     ) -> SessionChoice? {
         guard case .pullRequest = subject else { return nil }
         let usable = choices.filter { !$0.isUnavailable }
-        if let chosen, (continuable?.startedAt ?? .distantPast) <= chosen.date {
+        if let chosen {
             guard let id = chosen.session?.id else { return nil }
             if let session = usable.first(where: { $0.id == id }) { return session }
         }
@@ -330,10 +332,12 @@ extension CopilotTasksStore {
         }.min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
     }
 
-    /// The session you chose for a pull request's work, for a task on it: nil for a work item's.
+    /// The session you chose for a pull request's work, for a task on it, unless a task started on it since, which has taken
+    /// its place (`PullRequestSession.chosen(_:after:)`): nil for a work item's.
     func chosenSession(for subject: TaskSubject) -> PullRequestSessionChoice? {
         guard case .pullRequest(let pullRequest, _) = subject else { return nil }
-        return settings.chosenSession(for: PRKey(pullRequest.organization, pullRequest.id))
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        return PullRequestSession.chosen(settings.chosenSession(for: key), after: lastTask(forPullRequest: key))
     }
 
     /// Whether Copilot can go on with a session from here, with the CLI: why not, or nil. The app mustn't have it open; for

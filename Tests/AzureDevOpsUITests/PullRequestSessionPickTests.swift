@@ -47,6 +47,11 @@ import Testing
         PullRequestSessionChoice(pullRequest: key, session: id, date: now.addingTimeInterval(-ago))
     }
 
+    /// The latest task BriefBar started on it: a task's choice's session.
+    private func last(_ choice: SessionChoice) -> PullRequestSession.LastTask? {
+        choice.run.map { PullRequestSession.LastTask(id: choice.id, startedAt: $0.startedAt) }
+    }
+
     // MARK: Which one
 
     @Test func goesToItsLastTaskThenTheOneThatOpenedItThenTheAppsSession() {
@@ -55,36 +60,45 @@ import Testing
             task(opener, startedAgo: 86_400, reason: .openedIt),
             app(onBranch, [.onItsBranch], active: -60),
         ]
-        #expect(PullRequestSession.pick(choices, chosen: nil) == .session(choices[0], .lastTask))
+        #expect(PullRequestSession.pick(choices, chosen: nil, lastTask: last(choices[0])) == .session(choices[0], .lastTask))
+        // Its last task's worktree is gone, so it's not among them: the one that opened it, as the window goes there.
+        #expect(PullRequestSession.pick(Array(choices.dropFirst()), chosen: nil, lastTask: last(choices[0])) == .session(choices[1], .openedIt))
+        // An older task on it, whose worktree is there, isn't its last.
+        let older = task(other, startedAgo: 7_200)
+        #expect(PullRequestSession.pick([older] + choices.dropFirst(), chosen: nil, lastTask: last(choices[0])) == .session(choices[1], .openedIt))
         choices.removeFirst()
-        #expect(PullRequestSession.pick(choices, chosen: nil) == .session(choices[0], .openedIt))
+        #expect(PullRequestSession.pick(choices, chosen: nil, lastTask: nil) == .session(choices[0], .openedIt))
         choices.removeFirst()
-        #expect(PullRequestSession.pick(choices, chosen: nil) == .session(choices[0], .onItsBranch))
-        #expect(PullRequestSession.pick([], chosen: nil) == .newSession(chosenByYou: false))
+        #expect(PullRequestSession.pick(choices, chosen: nil, lastTask: nil) == .session(choices[0], .onItsBranch))
+        #expect(PullRequestSession.pick([], chosen: nil, lastTask: nil) == .newSession(chosenByYou: false))
     }
 
     /// Copilot working in its last task's session doesn't make another its: it's busy, and says so.
     @Test func staysWithItsLastTaskWhileCopilotWorksInIt() {
         let working = task(fixing, startedAgo: 60, busy: true)
         let choices = [working, app(onBranch, [.onItsBranch], active: -10)]
-        #expect(PullRequestSession.pick(choices, chosen: nil) == .session(working, .lastTask))
-        let session = PullRequestSession.make(choices, chosen: nil, createdAt: nil, canChoose: true)
+        #expect(PullRequestSession.pick(choices, chosen: nil, lastTask: last(working)) == .session(working, .lastTask))
+        let session = PullRequestSession.make(choices, chosen: nil, lastTask: last(working), createdAt: nil, canChoose: true)
         #expect(session.session?.isBusy == true)
         #expect(PullRequestSession.delivery(for: working, cliProblem: nil, canOpenInApp: true) == .busy("Copilot is still working in it."))
     }
 
     @Test func goesToTheSessionYouChoseUnlessATaskStartedSince() {
         let choices = [task(fixing, startedAgo: 3_600), app(onBranch, [.onItsBranch], active: -60), app(other, [], active: -7_200)]
+        let lastTask = last(choices[0])
         // Chosen after its last task: the one you chose, wherever it's from.
-        #expect(PullRequestSession.pick(choices, chosen: chosen(other, ago: 600)) == .session(choices[2], .chosenByYou))
-        #expect(PullRequestSession.pick(choices, chosen: chosen(nil, ago: 600)) == .newSession(chosenByYou: true))
+        #expect(PullRequestSession.pick(choices, chosen: chosen(other, ago: 600), lastTask: lastTask) == .session(choices[2], .chosenByYou))
+        #expect(PullRequestSession.pick(choices, chosen: chosen(nil, ago: 600), lastTask: lastTask) == .newSession(chosenByYou: true))
         // A task started since: its last task's.
-        #expect(PullRequestSession.pick(choices, chosen: chosen(other, ago: 7_200)) == .session(choices[0], .lastTask))
+        #expect(PullRequestSession.pick(choices, chosen: chosen(other, ago: 7_200), lastTask: lastTask) == .session(choices[0], .lastTask))
+        // Though its worktree is gone since.
+        #expect(PullRequestSession.pick(Array(choices.dropFirst()), chosen: chosen(other, ago: 7_200), lastTask: lastTask)
+            == .session(choices[1], .onItsBranch))
         // One that's gone leaves it to the rest.
         let gone = chosen("88888888-8888-4888-8888-888888888888", ago: 60)
-        #expect(PullRequestSession.pick(choices, chosen: gone) == .session(choices[0], .lastTask))
+        #expect(PullRequestSession.pick(choices, chosen: gone, lastTask: lastTask) == .session(choices[0], .lastTask))
         // Without tasks, whenever you chose.
-        #expect(PullRequestSession.pick(Array(choices.dropFirst()), chosen: chosen(other, ago: 99_999)) == .session(choices[2], .chosenByYou))
+        #expect(PullRequestSession.pick(Array(choices.dropFirst()), chosen: chosen(other, ago: 99_999), lastTask: nil) == .session(choices[2], .chosenByYou))
     }
 
     /// One the app records with it, that you linked or that's on its branch is its, unless another goes with it as well,
@@ -93,17 +107,17 @@ import Testing
         let branch = app(onBranch, [.onItsBranch], active: -3_600)
         let record = app(recorded, [.recordedByCopilot], active: -60)
         let both = app(linked, [.recordedByCopilot, .onItsBranch], active: -9_999)
-        #expect(PullRequestSession.pick([branch, record], chosen: nil) == .ask([record, branch]))
+        #expect(PullRequestSession.pick([branch, record], chosen: nil, lastTask: nil) == .ask([record, branch]))
         // Every reason the other has, and more.
-        #expect(PullRequestSession.pick([branch, both], chosen: nil) == .session(both, .recordedByCopilot))
-        #expect(PullRequestSession.pick([branch, record, both], chosen: nil) == .session(both, .recordedByCopilot))
+        #expect(PullRequestSession.pick([branch, both], chosen: nil, lastTask: nil) == .session(both, .recordedByCopilot))
+        #expect(PullRequestSession.pick([branch, record, both], chosen: nil, lastTask: nil) == .session(both, .recordedByCopilot))
         // Two on its branch.
         let second = app(other, [.onItsBranch], active: -10)
-        #expect(PullRequestSession.pick([branch, second], chosen: nil) == .ask([second, branch]))
+        #expect(PullRequestSession.pick([branch, second], chosen: nil, lastTask: nil) == .ask([second, branch]))
         // Once you chose, that one.
-        #expect(PullRequestSession.pick([branch, second], chosen: chosen(onBranch, ago: 60)) == .session(branch, .chosenByYou))
+        #expect(PullRequestSession.pick([branch, second], chosen: chosen(onBranch, ago: 60), lastTask: nil) == .session(branch, .chosenByYou))
         // Linked only through something else, or mentioning it, isn't enough.
-        #expect(PullRequestSession.pick([app(other, [.linked], active: 0), app(recorded, [.mentionsIt], active: 0)], chosen: nil)
+        #expect(PullRequestSession.pick([app(other, [.linked], active: 0), app(recorded, [.mentionsIt], active: 0)], chosen: nil, lastTask: nil)
             == .newSession(chosenByYou: false))
     }
 
@@ -115,25 +129,25 @@ import Testing
         let oldest = app(other, [.mentionsIt], active: -400, born: -200_000)
         let after = app(linked, [.mentionsIt], active: -2, born: -3_600)
         let choices = [after, older, oldest, app(onBranch, [], active: -1)]
-        let session = PullRequestSession.make(choices, chosen: nil, createdAt: created, canChoose: true)
+        let session = PullRequestSession.make(choices, chosen: nil, lastTask: nil, createdAt: created, canChoose: true)
         #expect(session.pick == .newSession(chosenByYou: false))
         #expect(session.guess?.id == other)
         // Without when it was created, there's no telling.
-        #expect(PullRequestSession.make(choices, chosen: nil, createdAt: nil, canChoose: true).guess == nil)
+        #expect(PullRequestSession.make(choices, chosen: nil, lastTask: nil, createdAt: nil, canChoose: true).guess == nil)
         // Not once something goes with it.
         let branch = app(onBranch, [.onItsBranch], active: -1)
-        #expect(PullRequestSession.make(choices.dropLast() + [branch], chosen: nil, createdAt: created, canChoose: true).guess == nil)
+        #expect(PullRequestSession.make(choices.dropLast() + [branch], chosen: nil, lastTask: nil, createdAt: created, canChoose: true).guess == nil)
     }
 
     @Test func listsWhatGoesWithItThenTheAppsOtherSessions() {
         let choices = [task(fixing, startedAgo: 60), app(onBranch, [.onItsBranch], active: -10)]
             + (0..<40).map { app(String(format: "aaaaaaaa-aaaa-4aaa-8aaa-%012d", $0), [], active: TimeInterval(-$0 * 60)) }
-        let session = PullRequestSession.make(choices, chosen: nil, createdAt: nil, canChoose: true)
+        let session = PullRequestSession.make(choices, chosen: nil, lastTask: last(choices[0]), createdAt: nil, canChoose: true)
         #expect(session.candidates.map(\.id) == [fixing, onBranch])
         #expect(session.others.count == PullRequestSession.otherLimit)
         // The one you chose shows with them, wherever it's from.
         let picked = String(format: "aaaaaaaa-aaaa-4aaa-8aaa-%012d", 39)
-        let chosenOne = PullRequestSession.make(choices, chosen: chosen(picked, ago: 1), createdAt: nil, canChoose: true)
+        let chosenOne = PullRequestSession.make(choices, chosen: chosen(picked, ago: 1), lastTask: last(choices[0]), createdAt: nil, canChoose: true)
         #expect(chosenOne.candidates.map(\.id) == [fixing, onBranch, picked])
         #expect(!chosenOne.others.contains { $0.id == picked })
     }
@@ -162,25 +176,36 @@ import Testing
 
     /// The window goes where you chose for the pull request, too, unless a task started on it since; a new session if you
     /// chose that; and one that's busy is never where it goes.
-    @Test func theWindowGoesToTheSessionYouChose() {
+    @Test func theWindowGoesToTheSessionYouChose() throws {
         let pullRequest = TaskPullRequest(
             organization: "Contoso", project: "Storefront", repository: "shop-web", id: 4071, title: "Fix totals",
             url: URL(string: "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4071")!,
             sourceBranch: "fix-totals", targetBranch: "main"
         )
         let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
-        let last = task(fixing, startedAgo: 3_600)
-        let choices = [last, app(onBranch, [.onItsBranch], active: -60), app(other, [], active: -7_200)]
+        let lastTask = task(fixing, startedAgo: 3_600)
+        let choices = [lastTask, app(onBranch, [.onItsBranch], active: -60), app(other, [], active: -7_200)]
         func suggested(_ chosen: PullRequestSessionChoice?) -> String? {
-            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: last.run, createdAt: nil, chosen: chosen)?.id
+            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: lastTask.run, createdAt: nil, chosen: chosen)?.id
         }
         #expect(suggested(nil) == fixing)
         #expect(suggested(chosen(other, ago: 60)) == other)
         #expect(suggested(chosen(nil, ago: 60)) == nil)
-        #expect(suggested(chosen(other, ago: 7_200)) == fixing)
         var busy = choices
         busy[2].isBusy = true
-        #expect(CopilotTasksStore.suggestedChoice(busy, for: subject, continuable: last.run, createdAt: nil, chosen: chosen(other, ago: 60))?.id == fixing)
+        #expect(CopilotTasksStore.suggestedChoice(busy, for: subject, continuable: lastTask.run, createdAt: nil, chosen: chosen(other, ago: 60))?.id == fixing)
+
+        // What it's given: what you chose, unless a task started on it since, in whatever session.
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let run = try #require(lastTask.run)
+        settings.choose(session: other, for: key, at: run.startedAt.addingTimeInterval(60))
+        settings.copilotRuns = [run]
+        #expect(store.chosenSession(for: subject)?.session == ItemRef.session(other))
+        settings.choose(session: other, for: key, at: run.startedAt.addingTimeInterval(-60))
+        #expect(store.chosenSession(for: subject) == nil)
+        #expect(store.lastTask(forPullRequest: key) == PullRequestSession.LastTask(id: fixing, startedAt: run.startedAt))
     }
 
     // MARK: What's kept

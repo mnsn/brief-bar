@@ -181,12 +181,18 @@ struct PullRequestSession: Equatable, Sendable {
     /// What make one of the Copilot app's sessions the pull request's.
     static let likelyReasons: Set<SessionChoice.Reason> = [.recordedByCopilot, .onItsBranch, .linkedByYou]
 
+    /// The latest task BriefBar started on a pull request (`CopilotTasksStore.lastTask`): its session's ID, and when.
+    struct LastTask: Equatable, Sendable {
+        var id: String
+        var startedAt: Date
+    }
+
     /// The pull request's session among the sessions its work could go to (`CopilotTasksStore.sessionChoices`, in their
     /// order: BriefBar's tasks, the newest first, then the Copilot app's), with the sessions it lists and its guess.
     static func make(
-        _ choices: [SessionChoice], chosen: PullRequestSessionChoice?, createdAt: Date?, canChoose: Bool
+        _ choices: [SessionChoice], chosen: PullRequestSessionChoice?, lastTask: LastTask?, createdAt: Date?, canChoose: Bool
     ) -> PullRequestSession {
-        let pick = pick(choices, chosen: chosen)
+        let pick = pick(choices, chosen: chosen, lastTask: lastTask)
         var candidates = choices.filter { $0.run != nil || !$0.reasons.isEmpty }
         if case .session(let choice, _) = pick, !candidates.contains(where: { $0.id == choice.id }) {
             candidates.append(choice)
@@ -197,21 +203,22 @@ struct PullRequestSession: Equatable, Sendable {
         return PullRequestSession(pick: pick, candidates: candidates, others: others, guess: guess, canChoose: canChoose)
     }
 
-    /// Where its work goes: the session you chose, or a new one if you chose that, unless BriefBar started a task on it in
-    /// another session since; else its last task's session, whether or not Copilot still works in it; else the session of
-    /// the work item's task that opened it; else the Copilot app's session that Copilot recorded with it, that you linked to
-    /// it or that's on its branch. Two of those go with it as well as each other unless one has every reason the other has
-    /// and more: then BriefBar asks which. Else a new session: one whose log only mentions it is a guess (`guess`).
-    static func pick(_ choices: [SessionChoice], chosen: PullRequestSessionChoice?) -> Pick {
-        let tasks = choices.filter { $0.run != nil }
-        let last = tasks.filter { $0.reasons.contains(.earlierTask) }
-            .max { ($0.run?.startedAt ?? .distantPast) < ($1.run?.startedAt ?? .distantPast) }
-        if let chosen, (last?.run?.startedAt ?? .distantPast) <= chosen.date {
+    /// Where its work goes: the session you chose, or a new one if you chose that, unless BriefBar started a task on it
+    /// since (`chosen(_:after:)`); else the session of its last task, as the Send to Copilot window goes on with it, whether
+    /// or not Copilot still works in it, while its worktree is there; else the session of the work item's task that opened
+    /// it; else the Copilot app's session that Copilot recorded with it, that you linked to it or that's on its branch. Two
+    /// of those go with it as well as each other unless one has every reason the other has and more: then BriefBar asks
+    /// which. Else a new session: one whose log only mentions it is a guess (`guess`).
+    static func pick(_ choices: [SessionChoice], chosen: PullRequestSessionChoice?, lastTask: LastTask?) -> Pick {
+        if let chosen = Self.chosen(chosen, after: lastTask) {
             guard let id = chosen.session?.id else { return .newSession(chosenByYou: true) }
             // One that's gone, such as a task you cleared, or a session the app archived, leaves it to the rest.
             if let session = choices.first(where: { $0.id == id }) { return .session(session, .chosenByYou) }
         }
-        if let last { return .session(last, .lastTask) }
+        let tasks = choices.filter { $0.run != nil }
+        if let lastTask, let last = tasks.first(where: { $0.id == lastTask.id && $0.reasons.contains(.earlierTask) }) {
+            return .session(last, .lastTask)
+        }
         if let opener = tasks.first(where: { $0.reasons.contains(.openedIt) }) { return .session(opener, .openedIt) }
         let likely = choices.filter { $0.run == nil && !likelyReasons.isDisjoint(with: $0.reasons) }
         let best = likely.filter { choice in
@@ -228,6 +235,12 @@ struct PullRequestSession: Equatable, Sendable {
             return .ask(best.sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) })
         }
         return .newSession(chosenByYou: false)
+    }
+
+    /// What you chose for its work, unless a task BriefBar started on it since, in whatever session, has taken its place.
+    static func chosen(_ chosen: PullRequestSessionChoice?, after lastTask: LastTask?) -> PullRequestSessionChoice? {
+        guard let chosen, (lastTask?.startedAt ?? .distantPast) <= chosen.date else { return nil }
+        return chosen
     }
 
     /// Of the Copilot app's sessions whose logs only mention it, the oldest that was there before it was created, which may
@@ -294,15 +307,26 @@ extension CopilotTasksStore {
         let found = await sessionChoices(for: subject)
         // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile.
         guard canSend, isOn else { return nil }
-        let session = PullRequestSession.make(found, chosen: settings.chosenSession(for: key), createdAt: createdAt, canChoose: true)
+        let session = PullRequestSession.make(
+            found, chosen: settings.chosenSession(for: key), lastTask: lastTask(forPullRequest: key), createdAt: createdAt, canChoose: true
+        )
         guard case .newSession(chosenByYou: false) = session.pick else { return session }
         let mentioned = await sessionsMentioning(subject, among: found, since: createdAt)
         guard canSend, isOn else { return nil }
         guard !mentioned.isEmpty else { return session }
         return PullRequestSession.make(
-            marking(mentioned, in: found, createdAt: createdAt), chosen: settings.chosenSession(for: key), createdAt: createdAt,
-            canChoose: true
+            marking(mentioned, in: found, createdAt: createdAt), chosen: settings.chosenSession(for: key),
+            lastTask: lastTask(forPullRequest: key), createdAt: createdAt, canChoose: true
         )
+    }
+
+    /// The latest task BriefBar started on a pull request, that got as far as starting, whatever its session and however
+    /// it stands: the one the Send to Copilot window goes on with, once it's done, and which takes the place of the session
+    /// you chose for its work before it started.
+    func lastTask(forPullRequest key: PRKey) -> PullRequestSession.LastTask? {
+        // The demo's made-up tasks have no run.
+        entries.first { $0.isOn(key) && ($0.run != nil || mode == .demo) }
+            .map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
     }
 
     /// How work for a pull request would reach a session now (`PullRequestSession.delivery`), as the Copilot app's database

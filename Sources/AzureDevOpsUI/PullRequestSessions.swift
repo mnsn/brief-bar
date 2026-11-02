@@ -146,7 +146,7 @@ final class PullRequestSessions: ObservableObject {
         case .demo:
             var session = PullRequestSession.make(
                 demoChoices(for: key, pullRequest: pullRequest), chosen: copilot.settings.chosenSession(for: key),
-                createdAt: record.pullRequest.createdAt, canChoose: true
+                lastTask: copilot.lastTask(forPullRequest: key), createdAt: record.pullRequest.createdAt, canChoose: true
             )
             session.delivery = session.session.map(demoDelivery)
             return session
@@ -280,7 +280,9 @@ final class PullRequestSessions: ObservableObject {
             guard copilot.canSend, let found = state.found else { return copilot.canSend ? sessions[key] : nil }
             choices = currentChoices(found, pullRequest: pullRequest, mentioned: state.mentioned, createdAt: state.createdAt)
         }
-        var session = PullRequestSession.make(choices, chosen: chosen, createdAt: state.createdAt, canChoose: true)
+        var session = PullRequestSession.make(
+            choices, chosen: chosen, lastTask: copilot.lastTask(forPullRequest: key), createdAt: state.createdAt, canChoose: true
+        )
         if let choice = session.session {
             if choice.isUnavailable {
                 session.delivery = PullRequestSession.delivery(for: choice, cliProblem: nil, canOpenInApp: copilot.canOpenInApp)
@@ -325,7 +327,7 @@ final class PullRequestSessions: ObservableObject {
     private func linked(_ key: PRKey, chosen: PullRequestSessionChoice?) -> PullRequestSession? {
         let choices = linkedChoices(key)
         guard !choices.isEmpty else { return nil }
-        return PullRequestSession.make(choices, chosen: chosen?.session == nil ? nil : chosen, createdAt: nil, canChoose: false)
+        return PullRequestSession.make(choices, chosen: chosen?.session == nil ? nil : chosen, lastTask: nil, createdAt: nil, canChoose: false)
     }
 
     /// The sessions Show Links links to a pull request, each as the Copilot app's, with why, the likeliest first: what the

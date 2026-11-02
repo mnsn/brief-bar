@@ -271,7 +271,7 @@ import Testing
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
         let app = AppSession(id: onBranch, name: "Retry backoff", lastActive: now.addingTimeInterval(-26 * 3_600))
         let choice = SessionChoice(kind: .app(app), name: "Retry backoff", place: "payments-api · payments-retry", lastActive: app.lastActive, reasons: [.onItsBranch, .mentionsIt])
-        let session = PullRequestSession.make([choice], chosen: nil, createdAt: nil, canChoose: true)
+        let session = PullRequestSession.make([choice], chosen: nil, lastTask: nil, createdAt: nil, canChoose: true)
         #expect(PullRequestSessionLine.why(choice, in: session) == "on its branch")
         let quiet = PullRequestSessionLine.standing(of: choice, links: links, entries: [])
         #expect(quiet == PullRequestSessionLine.Standing(text: "", state: nil, date: app.lastActive))
@@ -303,8 +303,8 @@ import Testing
         #expect(waiting.phrase(now: now) == "waiting for your answer")
 
         // Nothing's shown without a session, unless you can choose one.
-        let none = PullRequestSession.make([], chosen: nil, createdAt: nil, canChoose: false)
+        let none = PullRequestSession.make([], chosen: nil, lastTask: nil, createdAt: nil, canChoose: false)
         #expect(!PullRequestSessionLine.shows(none))
-        #expect(PullRequestSessionLine.shows(PullRequestSession.make([], chosen: nil, createdAt: nil, canChoose: true)))
+        #expect(PullRequestSessionLine.shows(PullRequestSession.make([], chosen: nil, lastTask: nil, createdAt: nil, canChoose: true)))
     }
 }

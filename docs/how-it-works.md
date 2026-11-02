@@ -1219,7 +1219,8 @@ closes it.
 **Its Copilot session.** With **Send Work to Copilot** on, a line under the heading names the Copilot session the
 pull request's work goes to (`PullRequestSessionLine`), one for each pull request (`PullRequestSession`): the
 session you chose for it, unless a task of BriefBar's started on it since, in whatever session; else its last
-task's, even while Copilot still works in it, which then says it's busy; else the session of the work item's task
+task's, while its worktree is there, even while Copilot still works in it, which then says it's busy; else the
+session of the work item's task
 that opened it; else the Copilot app's session that the app records with it, that you linked to it in Show Links or
 that's on its branch. Two of those that go with it as well as each other, neither with every reason the other has
 and more, aren't ranked by which was active last: the line asks which is its, and goes on with the one you choose.
