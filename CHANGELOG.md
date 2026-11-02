@@ -30,6 +30,24 @@
 - **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
   the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
   said it was done, as that earlier task had.
+- **Organizations in another directory.** When an Azure DevOps organization is in a directory (tenant)
+  your Azure CLI isn't signed in to, BriefBar says so and names it, rather than asking you to sign in
+  again, and its **Sign In…** signs in to that directory (`az login --tenant`). Your other
+  organizations' pull requests stay listed meanwhile, and once you've signed in there, BriefBar reads
+  both, still as you. **Add Organization…** now checks that your sign-in can read an organization as
+  you add it, and says why when it can't, with where a project's organization is when you entered a
+  project's name.
+- **Teams' read markers come only from the files Teams still uses.** Teams can leave behind a file it no
+  longer needs, which may hold a conversation it has since deleted. BriefBar read those files too, so a
+  deleted conversation's old read marker could come back; it now reads only the files Teams' database
+  lists, as Teams does. If that list is damaged, or names files that aren't there, the lists say some read
+  markers couldn't be read.
+- **A Teams account whose chats were never opened no longer says Teams' read markers have changed.** None
+  of its chats had a read marker yet, which BriefBar took for a Teams update that changed them. It now goes
+  by the field that holds one, which a chat never read has too.
+- **A damaged record in Teams' data says some read markers couldn't be read.** A record whose checksum
+  doesn't match may have held any chat's read marker, and the lists said nothing of it, so a chat you'd
+  read in Teams could stay unread here without a word.
 
 ## 0.10.2 - 2026-11-01
 

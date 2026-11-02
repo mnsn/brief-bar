@@ -5,7 +5,8 @@ public struct SprintSnapshot: Sendable, Equatable {
     public var board: SprintBoard?
     /// Your teams in the watched organizations, to choose from.
     public var teams: [TeamRef]
-    /// The team the engine found with a sprint going on today, when none was chosen.
+    /// The team the engine found with a sprint going on today, when none was chosen, to keep: not while some
+    /// organizations' teams, in a directory to sign in to, couldn't be compared with it.
     public var foundTeam: TeamRef?
     public var problem: PulseProblem?
     public var refreshedAt: Date?
@@ -81,7 +82,16 @@ public actor SprintEngine {
     /// Organization → your identity ID there.
     private var identities: [String: String] = [:]
     private var teams: [String: (teams: [TeamRef], readAt: Date)] = [:]
+    /// The organizations whose teams couldn't be read, in a directory the Azure CLI isn't signed in to: the sprint can't
+    /// be looked for there until you sign in.
+    private var teamsElsewhere: [(organization: String, error: ADOError)] = []
+    /// The organizations whose teams couldn't be read otherwise at the last refresh, and why: said with those in a
+    /// directory to sign in to.
+    private var teamsFailed: [(organization: String, error: ADOError)] = []
     private var foundTeam: TeamRef?
+    /// The organizations whose teams were in a directory to sign in to when `foundTeam` was found, by lowercased name:
+    /// while there are any, it's shown, but not kept, and it's looked for again among them all once one can be read.
+    private var foundWithout: Set<String> = []
     /// Teams checked for a sprint going on today, and when.
     private var checkedTeams: Date?
     private var sprints: [String: (sprint: Sprint?, readAt: Date)] = [:]
@@ -203,6 +213,9 @@ public actor SprintEngine {
             return max(until.timeIntervalSince(now()), interval)
         case .cliNotFound?, .signedOut?, .authFailed?:
             return min(interval, 60)
+        case .otherDirectory? where failures > 0:
+            // Nothing was read until you sign in to its organization's directory.
+            return min(interval, 60)
         default:
             guard failures > 0 else { return interval }
             return min(interval * pow(2, Double(min(failures, 4))), 600)
@@ -230,6 +243,11 @@ public actor SprintEngine {
             refreshedAt = now()
         } catch is CancellationError {
             // Hidden while it read: the rest waits until something shows the sprint again.
+        } catch let unread as TeamsUnread {
+            problem = unread.problem
+            failures += 1
+            hasLoaded = true
+            refreshedAt = now()
         } catch let error as ADOError {
             problem = PulseProblem.from(error)
             failures += 1
@@ -270,14 +288,35 @@ public actor SprintEngine {
             account = signedIn
         }
         let date = now()
-        try await loadTeams(configuration.organizations, at: date)
-        guard let team = try await chosenTeam(configuration, at: date) else {
+        try await loadTeams(configuration.organizations, at: date, choosing: configuration.team == nil)
+        let chosen = try await chosenTeam(configuration, at: date)
+        // Shown with the sprint, or without one: its team may be there. The organizations whose teams couldn't be read
+        // otherwise are named with them.
+        let elsewhere = teamsElsewhere.isEmpty ? nil : PulseProblem.organizations(teamsElsewhere + teamsFailed)
+        guard let team = chosen else {
             board = nil
-            return nil
+            // No team's sprint could be read, for want of a sign-in to their directory: as when no teams could be, it's
+            // looked at again within a minute.
+            if allTeams.isEmpty, let elsewhere { throw TeamsUnread(problem: elsewhere) }
+            return elsewhere
         }
+        do {
+            try await readBoard(of: team, at: date)
+        } catch let error as ADOError where elsewhere != nil {
+            // The team's sprint couldn't be read: said with the organizations whose teams wait on a sign-in, rather than in
+            // their stead, unless Azure DevOps asked to slow down, which comes first.
+            if case .throttled = error { throw error }
+            let unread = teamsElsewhere + teamsFailed + [(organization: team.organization, error: error)]
+            throw TeamsUnread(problem: PulseProblem.organizations(unread) ?? PulseProblem.from(error))
+        }
+        return elsewhere
+    }
+
+    /// Reads the team's sprint going on today, with its work items, for the board; without one, there's no board.
+    private func readBoard(of team: TeamRef, at date: Date) async throws {
         guard let sprint = try await currentSprint(of: team, at: date) else {
             board = nil
-            return nil
+            return
         }
         let me = try await identity(in: team.organization)
         let setup = try await boardSetup(of: team)
@@ -298,15 +337,18 @@ public actor SprintEngine {
             items += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
         }
         // The team may have changed while this loaded.
-        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return nil }
+        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return }
         board = SprintBoard.build(team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes)
-        return nil
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
-    /// teams it had.
-    private func loadTeams(_ organizations: [String], at date: Date) async throws {
+    /// teams it had, but one in a directory the Azure CLI isn't signed in to: its teams are dropped, read again every
+    /// refresh, and said, until you've signed in there. With no teams to choose from when `choosing`, why is thrown; a
+    /// team you chose is read whatever happens to them.
+    private func loadTeams(_ organizations: [String], at date: Date, choosing: Bool) async throws {
         var lastError: ADOError?
+        var elsewhere: [(organization: String, error: ADOError)] = []
+        var failed: [(organization: String, error: ADOError)] = []
         for organization in organizations where teams[organization].map({ date.timeIntervalSince($0.readAt) > Self.teamsLifetime }) ?? true {
             do {
                 let list = try await get(ADOEndpoint.myTeams(organization: organization), as: ADOList<ADOTeam>.self)
@@ -316,11 +358,30 @@ public actor SprintEngine {
             } catch let error as ADOError {
                 switch error {
                 case .forbidden, .notFound: teams[organization] = ([], date)
-                default: lastError = error
+                // Its teams wait on that sign-in: those read before aren't chosen from or compared meanwhile.
+                case .otherDirectory:
+                    teams[organization] = nil
+                    elsewhere.append((organization: organization, error: error))
+                // Nothing more goes out until then: that comes first, before any sign-in.
+                case .throttled: throw error
+                default:
+                    lastError = error
+                    failed.append((organization: organization, error: error))
                 }
             }
         }
-        if let lastError, allTeams.isEmpty { throw lastError }
+        teamsElsewhere = elsewhere
+        teamsFailed = failed
+        guard choosing, allTeams.isEmpty else { return }
+        // With no teams at all, signing in to a directory is what to do first: each organization it's needed for is
+        // named, then why the others couldn't be read.
+        if !elsewhere.isEmpty, let problem = PulseProblem.organizations(elsewhere + failed) { throw TeamsUnread(problem: problem) }
+        if let lastError { throw lastError }
+    }
+
+    /// No teams to choose from, for want of a sign-in to some organizations' directory: what's wrong.
+    private struct TeamsUnread: Error {
+        var problem: PulseProblem
     }
 
     private var allTeams: [TeamRef] {
@@ -328,15 +389,26 @@ public actor SprintEngine {
     }
 
     /// The team you chose; or, when you haven't, the one of your teams with a sprint going on today that has the most
-    /// work assigned to you (once: the app keeps it).
+    /// work assigned to you (once: the app keeps it, when it was found among all your teams).
     private func chosenTeam(_ configuration: Configuration, at date: Date) async throws -> TeamRef? {
         if let team = configuration.team { return team }
-        if let foundTeam { return foundTeam }
+        let missing = missingTeams()
+        // Found while some organizations' teams couldn't be compared with it: once one of theirs is read, it's looked for
+        // among them all, and so it is once its own organization's teams wait on a sign-in. Those that go missing
+        // meanwhile count too.
+        if let foundTeam, foundWithout.isSubset(of: missing), !Self.names(teamsElsewhere).contains(foundTeam.organization.lowercased()) {
+            if !foundWithout.isEmpty { foundWithout = missing }
+            return foundTeam
+        }
         // Checked recently and none had a sprint today: wait a while before checking them all again.
         if let checkedTeams, date.timeIntervalSince(checkedTeams) < Self.sprintLifetime { return nil }
         var candidates: [(team: TeamRef, sprint: Sprint)] = []
         var incomplete = false
-        for team in allTeams.prefix(Self.teamsToTry) {
+        // A few teams at most, not counting those of organizations waiting on a sign-in, which aren't asked.
+        var tried = 0
+        for team in allTeams where !Self.names(teamsElsewhere).contains(team.organization.lowercased()) {
+            guard tried < Self.teamsToTry else { break }
+            tried += 1
             do {
                 if let sprint = try await currentSprint(of: team, at: date), sprint.isCurrent(now: date, calendar: calendar) {
                     candidates.append((team, sprint))
@@ -347,6 +419,12 @@ public actor SprintEngine {
                 switch error {
                 // Nothing else can be read either.
                 case .auth, .unauthorized, .offline, .throttled: throw error
+                // Its organization is in a directory to sign in to now: as when its teams can't be read, it's said, and its
+                // teams are read again, and compared with what's found meanwhile, once you've signed in there. It doesn't
+                // count among the teams tried: the rest of its organization's aren't.
+                case .otherDirectory:
+                    tried -= 1
+                    waitForSignIn(to: team.organization, error)
                 // Just this team: look at the others, and at this one again next time.
                 default: incomplete = true
                 }
@@ -354,17 +432,48 @@ public actor SprintEngine {
         }
         guard candidates.count > 1 else {
             foundTeam = candidates.first?.team
-            // None has a sprint today: don't look again for a while, unless some couldn't be read.
-            if foundTeam == nil && !incomplete { checkedTeams = date }
+            foundWithout = missingTeams()
+            // None has a sprint today: don't look again for a while, unless some couldn't be read, or some organizations'
+            // teams are in a directory to sign in to.
+            if foundTeam == nil && !incomplete && teamsElsewhere.isEmpty { checkedTeams = date }
             return foundTeam
         }
         var best: (team: TeamRef, mine: Int)?
-        for candidate in candidates {
-            let mine = try await assignedToMe(in: candidate.sprint, of: candidate.team)
+        for candidate in candidates where !Self.names(teamsElsewhere).contains(candidate.team.organization.lowercased()) {
+            let mine: Int
+            do {
+                mine = try await assignedToMe(in: candidate.sprint, of: candidate.team)
+            } catch let error as ADOError where PulseProblem.isOtherDirectory(error) {
+                // Its sprint was known, but its organization is in a directory to sign in to now: the others are compared.
+                waitForSignIn(to: candidate.team.organization, error)
+                continue
+            }
             if mine > (best?.mine ?? -1) { best = (candidate.team, mine) }
         }
         foundTeam = best?.team
+        foundWithout = missingTeams()
         return foundTeam
+    }
+
+    /// The organizations whose teams can't be compared now, by lowercased name, among those watched: the ones waiting
+    /// on a sign-in, and the ones missing when the team was found whose teams haven't been read since.
+    private func missingTeams() -> Set<String> {
+        let read = Set(teams.keys.map { $0.lowercased() })
+        let watched = Set(configuration.organizations.map { $0.lowercased() })
+        return Self.names(teamsElsewhere).union(foundWithout.subtracting(read)).intersection(watched)
+    }
+
+    /// An organization whose team's sprint can't be read for want of a sign-in to its directory: its teams are
+    /// forgotten, to be read again at each refresh until you've signed in there, and it's said, as when they can't be.
+    private func waitForSignIn(to organization: String, _ error: ADOError) {
+        teams[organization] = nil
+        guard !Self.names(teamsElsewhere).contains(organization.lowercased()) else { return }
+        teamsElsewhere.append((organization: organization, error: error))
+    }
+
+    /// Organizations' names as Azure DevOps tells them apart: ignoring their letter case.
+    private static func names(_ failures: [(organization: String, error: ADOError)]) -> Set<String> {
+        Set(failures.map { $0.organization.lowercased() })
     }
 
     /// How many of a sprint's work items are assigned to you.
@@ -397,7 +506,10 @@ public actor SprintEngine {
     private func forgetAccount() {
         identities = [:]
         teams = [:]
+        teamsElsewhere = []
+        teamsFailed = []
         foundTeam = nil
+        foundWithout = []
         checkedTeams = nil
         sprints = [:]
         board = nil
@@ -432,7 +544,7 @@ public actor SprintEngine {
 
     private func snapshot() -> SprintSnapshot {
         SprintSnapshot(
-            board: board, teams: allTeams, foundTeam: configuration.team == nil ? foundTeam : nil, problem: problem,
+            board: board, teams: allTeams, foundTeam: configuration.team == nil && foundWithout.isEmpty ? foundTeam : nil, problem: problem,
             refreshedAt: refreshedAt, isRefreshing: isRefreshing, hasLoaded: hasLoaded
         )
     }

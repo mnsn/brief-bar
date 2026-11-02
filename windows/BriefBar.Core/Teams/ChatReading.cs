@@ -30,10 +30,8 @@ public static class ChatReading
         {
             return ChatUnread.None;
         }
-        // The cache's copy of a message comes first: it alone says whether the message was deleted.
-        var all = chat.Newest is { } newest
-            ? messages.Append(element: newest).DistinctBy(keySelector: message => message.Id).ToList()
-            : messages.DistinctBy(keySelector: message => message.Id).ToList();
+        // The chat's record and the cache each learn of a deletion on their own: either saying so is enough.
+        var all = Known(chat: chat, messages: messages);
         if (chat.MarkedUnread is { } markedUnread && mark?.Dismisses(markedUnread: markedUnread) != true)
         {
             return new ChatUnread(
@@ -49,6 +47,24 @@ public static class ChatReading
         var mine = all.Where(predicate: message => message.IsFromMe && message.IsContent).Select(selector: message => message.Id).DefaultIfEmpty(defaultValue: 0).Max();
         readUpTo = Math.Max(val1: readUpTo, val2: mine);
         return new ChatUnread(Messages: Written(messages: all, after: readUpTo, keepUnreadFor: keepUnreadFor, now: now), IsMarkedUnread: false);
+    }
+
+    /// Each message BriefBar knows of `chat`, once, oldest first: what Teams' message cache has of it, and its newest
+    /// message, as its record names it, should the cache not have that yet. Deleted when either copy says so: the record
+    /// and the cache each learn of a deletion on their own, and either can be first.
+    internal static List<TeamsMessage> Known(TeamsChat chat, IReadOnlyList<TeamsMessage> messages)
+    {
+        ArgumentNullException.ThrowIfNull(argument: chat);
+        ArgumentNullException.ThrowIfNull(argument: messages);
+        var all = (chat.Newest is { } newest ? messages.Append(element: newest) : messages)
+            .DistinctBy(keySelector: message => message.Id)
+            .OrderBy(keySelector: message => message.Id)
+            .ToList();
+        if (chat.Newest is { IsDeleted: true } deleted && all.FindIndex(match: message => message.Id == deleted.Id) is var index and >= 0)
+        {
+            all[index] = deleted;
+        }
+        return all;
     }
 
     /// Whether `chat` has an item newer than how far you've read it in Teams that isn't a message you wrote.
