@@ -66,6 +66,23 @@ public sealed class TeamsRecordsTests
         Assert.Equal(expected: "Chat", actual: Chat(chat: new MadeUpChat(Id: Fixture.Avery, Type: "Chat", ReadUpTo: 0, Newest: mine))?.Title);
     }
 
+    /// Teams' Mark as unread leaves the read marker alone and sets a bookmark, in the marker's form, to a message before
+    /// the newest; opening the chat sets it back to 0.
+    [Fact]
+    public void ReadsWhetherAChatIsMarkedUnread()
+    {
+        var newest = new MadeUpMessage(Id: TeamsData.Id(seconds: 30), Sender: "Jordan Lee", Html: "Shipping at 5");
+        MadeUpChat Crew(string? bookmark) => new(Id: Fixture.Crew, Type: "Chat", ReadUpTo: newest.Id, Newest: newest, Topic: "Launch crew", Bookmark: bookmark);
+
+        var marked = Chat(chat: Crew(bookmark: TeamsData.Bookmark(after: newest.Id - 1, markedAtSeconds: 60)));
+        Assert.Equal(expected: new ReadMarker(MessageId: newest.Id - 1, ReadAt: TeamsData.At(seconds: 60)), actual: marked?.MarkedUnread);
+        Assert.Equal(expected: newest.Id, actual: marked?.Marker?.MessageId);
+
+        Assert.Null(@object: Chat(chat: Crew(bookmark: "0;" + TeamsData.Digits(value: TeamsData.Id(seconds: 90)) + ";0"))?.MarkedUnread);
+        Assert.Null(@object: Chat(chat: Crew(bookmark: string.Empty))?.MarkedUnread);
+        Assert.Null(@object: Chat(chat: Crew(bookmark: null))?.MarkedUnread);
+    }
+
     [Fact]
     public void ReadsWhetherAChatIsMuted()
     {

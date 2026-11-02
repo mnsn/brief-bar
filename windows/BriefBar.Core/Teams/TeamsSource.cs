@@ -16,12 +16,12 @@ public sealed class TeamsSource : ISectionSource, IDisposable
         Version: 1,
         Summary: "Your unread Teams chats: 1:1 chats, and group and meeting chats",
         Reads: "Teams' own data on this PC, read-only, from the new Teams app's web storage: each chat's title and kind, "
-            + "its newest message and who sent it, and how far you've read it in Teams; and, for chats with unread "
-            + "messages, their messages, from Teams' message cache. BriefBar keeps them in memory only, and never changes "
-            + "Teams' data. When you mark a chat read in BriefBar, it keeps the chat's ID and the ID of the message you read "
-            + "it to, encrypted for your Windows account, until you've read that far in Teams. This differs from BriefBar "
-            + "for Mac, which reads the notifications Teams posts: new Teams on Windows shows its own notifications, which "
-            + "Windows doesn't keep.",
+            + "its newest message and who sent it, how far you've read it in Teams, and whether you've marked it unread "
+            + "there; and, for chats with unread messages, their messages, from Teams' message cache. BriefBar keeps them "
+            + "in memory only, and never changes Teams' data. When you mark a chat read in BriefBar, it keeps the chat's ID, "
+            + "the ID of the message you read it to and when, encrypted for your Windows account, until you've read that "
+            + "far in Teams. This differs from BriefBar for Mac, which reads the notifications Teams posts: new Teams on "
+            + "Windows shows its own notifications, which Windows doesn't keep.",
         Network: "None. Nothing about your chats leaves your PC.",
         Needs: "The new Teams app, signed in on this PC. BriefBar needs no permission to read its data, as Windows lets "
             + "the programs you run read each other's.");
@@ -289,10 +289,10 @@ public sealed class TeamsSource : ISectionSource, IDisposable
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
     });
 
-    /// Which chats each list has, and how many unread messages each: what a tick may change.
-    List<(string Id, int Unread)> Shape() => Enum.GetValues<ChatGroup>()
+    /// Which chats each list has, how many unread messages each, and whether it's unread: what a tick may change.
+    List<(string Id, int Unread, bool IsUnread)> Shape() => Enum.GetValues<ChatGroup>()
         .SelectMany(selector: group => store!.Unread(group: group).Concat(second: store.Recent(group: group)))
-        .Select(selector: conversation => (conversation.Id, conversation.Unread.Count))
+        .Select(selector: conversation => (conversation.Id, conversation.Unread.Count, conversation.IsUnread))
         .ToList();
 
     /// What the sections show now, from the store; logged when how they stand changes, in counts.
@@ -306,15 +306,16 @@ public sealed class TeamsSource : ISectionSource, IDisposable
         var complete = store.Snapshot?.IsComplete ?? false;
         var unreadChats = store.Unread(group: ChatGroup.Chats).Count;
         var unreadGroups = store.Unread(group: ChatGroup.Groups).Count;
+        var markedUnread = Enum.GetValues<ChatGroup>().Sum(selector: group => store.Unread(group: group).Count(predicate: conversation => conversation.IsMarkedUnread));
         var recentChats = store.Recent(group: ChatGroup.Chats).Count;
         var recentGroups = store.Recent(group: ChatGroup.Groups).Count;
         var state = string.Create(
             provider: System.Globalization.CultureInfo.InvariantCulture,
-            handler: $"{builtChats.Status.Condition}|{store.Problem}|{complete}|{unreadChats}|{unreadGroups}|{recentChats}|{recentGroups}|{report.Chats}");
+            handler: $"{builtChats.Status.Condition}|{store.Problem}|{complete}|{unreadChats}|{unreadGroups}|{markedUnread}|{recentChats}|{recentGroups}|{report.Chats}");
         if (state != loggedState)
         {
             loggedState = state;
-            Log.Write(line: $"teams: {builtChats.Status.Condition}, problem {store.Problem}, complete {complete}; {report.Chats} chats of {report.Conversations} conversations, {report.WithMarker} with a read marker; unread {unreadChats} chats and {unreadGroups} group chats, recent {recentChats} and {recentGroups}");
+            Log.Write(line: $"teams: {builtChats.Status.Condition}, problem {store.Problem}, complete {complete}; {report.Chats} chats of {report.Conversations} conversations, {report.WithMarker} with a read marker; unread {unreadChats} chats and {unreadGroups} group chats, {markedUnread} of them marked unread in Teams; recent {recentChats} and {recentGroups}");
         }
     }
 

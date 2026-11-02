@@ -81,11 +81,11 @@ public sealed class TeamsStore
         .FirstOrDefault(predicate: summary => summary.Id == id);
 
     /// Reads `conversation` in BriefBar, up to its newest message, as opening it from BriefBar or Mark as Read does, until
-    /// Teams' own marker gets there.
+    /// Teams' own marker gets there; and a Mark as unread that Teams has for it now, until it's opened in Teams.
     public void MarkRead(ConversationSummary conversation, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: conversation);
-        Mark(conversation: conversation);
+        Mark(conversation: conversation, now: now);
         Recompute(now: now);
     }
 
@@ -94,25 +94,25 @@ public sealed class TeamsStore
     {
         foreach (var conversation in Unread(group: group))
         {
-            Mark(conversation: conversation);
+            Mark(conversation: conversation, now: now);
         }
         Recompute(now: now);
     }
 
-    void Mark(ConversationSummary conversation)
+    /// Reads `conversation` up to its newest message, and a Mark as unread that Teams has for it now.
+    void Mark(ConversationSummary conversation, DateTimeOffset now)
     {
-        var upTo = Math.Max(val1: conversation.IsUnread ? conversation.Unread[^1].Id : 0, val2: conversation.Latest?.Id ?? 0);
+        var upTo = Math.Max(val1: conversation.Unread.Count > 0 ? conversation.Unread[^1].Id : 0, val2: conversation.Latest?.Id ?? 0);
         if (upTo > 0)
         {
-            marks.Mark(chat: conversation.Id, messageId: upTo);
+            marks.Mark(chat: conversation.Id, messageId: upTo, at: now);
         }
     }
 
     ConversationSummary Summary(TeamsChat chat, DateTimeOffset now, TimeSpan? keep)
     {
         var messages = Snapshot?.Messages.GetValueOrDefault(key: chat.Id) ?? [];
-        var markedUpTo = marks.Marks.TryGetValue(key: chat.Id, value: out var marked) ? marked : (long?)null;
-        var unreadMessages = ChatReading.Unread(chat: chat, messages: messages, markedUpTo: markedUpTo, keepUnreadFor: keep, now: now);
+        var unread = ChatReading.Unread(chat: chat, messages: messages, mark: marks.Marks.GetValueOrDefault(key: chat.Id), keepUnreadFor: keep, now: now);
         // The cache may have a message the chat's record doesn't name yet, or the other way round.
         var latest = messages.Count > 0 && messages[^1].Id > (chat.Newest?.Id ?? 0) ? messages[^1] : chat.Newest;
         return new ConversationSummary(
@@ -120,8 +120,9 @@ public sealed class TeamsStore
             Kind: chat.Kind,
             Title: chat.Title,
             FullTitle: chat.FullTitle,
-            Unread: unreadMessages,
+            Unread: unread.Messages,
             Latest: latest,
-            LastActivity: latest?.ArrivedAt);
+            LastActivity: latest?.ArrivedAt,
+            IsMarkedUnread: unread.IsMarkedUnread);
     }
 }

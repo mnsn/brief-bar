@@ -153,7 +153,7 @@ public sealed class TeamsSourceTests
     {
         using var folder = new TemporaryFolder();
         var path = folder.Combine("Teams", "read");
-        new TeamsReadMarks(path: path, protector: new FakeProtector()).Mark(chat: TeamsDemoData.Avery, messageId: 1_792_317_600_000);
+        new TeamsReadMarks(path: path, protector: new FakeProtector()).Mark(chat: TeamsDemoData.Avery, messageId: 1_792_317_600_000, at: now);
         var made = Make(folder: folder);
         using var source = made.Source;
         Assert.Equal(expected: path, actual: made.MarksPath);

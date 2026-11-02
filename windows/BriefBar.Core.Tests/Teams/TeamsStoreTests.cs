@@ -62,7 +62,7 @@ public sealed class TeamsStoreTests
 
         Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
         Assert.Equal(expected: ["Avery Quinn"], actual: store.Recent(group: ChatGroup.Chats).Select(selector: chat => chat.Title));
-        Assert.Equal(expected: new Dictionary<string, long> { [Fixture.Avery] = TeamsData.Id(seconds: 20) }, actual: marks.Marks);
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: TeamsData.Id(seconds: 20), At: now) }, actual: marks.Marks);
 
         // Avery writes again: only that is unread.
         var later = Messages(chat: Fixture.Avery, (10, "Lunch?"), (20, "Noon works"), (30, "See you there"));
@@ -117,6 +117,47 @@ public sealed class TeamsStoreTests
         store.Receive(snapshot: Snapshot(averyRead), now: now);
         Assert.Empty(collection: marks.Marks);
         Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+    }
+
+    /// A chat marked unread in Teams is unread, though your reply is its newest message, until you mark it read in
+    /// BriefBar; that mark stays while Teams has it marked unread, though its marker has passed it, and goes once it's
+    /// opened in Teams. Marked unread again, it's unread again.
+    [Fact]
+    public void ListsChatsMarkedUnreadInTeamsUntilTheyreRead()
+    {
+        var lunch = Messages(chat: Fixture.Avery, (10, "Lunch?"));
+        var reply = new TeamsMessage(ConversationId: Fixture.Avery, Id: TeamsData.Id(seconds: 20), Sender: "Made-up Me", IsFromMe: true, Type: "RichText/Html", Text: "Sure", ArrivedAt: TeamsData.At(seconds: 20));
+        var read = new TeamsChat(
+            Id: Fixture.Avery, Kind: ConversationKind.OneOnOne, Title: "Avery Quinn", FullTitle: null, Marker: new ReadMarker(MessageId: reply.Id), Newest: reply, IsMuted: false);
+        var marked = read with { MarkedUnread = new ReadMarker(MessageId: reply.Id - 1, ReadAt: TeamsData.At(seconds: 500)) };
+        var marks = TeamsReadMarks.InMemory();
+        var store = Store(marks: marks, (marked, [.. lunch, reply]));
+
+        var unread = Assert.Single(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.True(condition: unread.IsOnlyMarkedUnread);
+        Assert.Empty(collection: unread.Unread);
+        Assert.Equal(expected: TeamsData.At(seconds: 20), actual: unread.Date);
+        Assert.Equal(expected: DeepLink.Message(conversationId: Fixture.Avery, messageId: reply.Id), actual: unread.Link);
+        Assert.Empty(collection: store.Recent(group: ChatGroup.Chats));
+
+        store.MarkRead(conversation: unread, now: now);
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+        Assert.Equal(expected: ["Avery Quinn"], actual: store.Recent(group: ChatGroup.Chats).Select(selector: chat => chat.Title));
+
+        // Teams still has it marked unread: the mark stays, though Teams' marker is at the newest message.
+        store.Receive(snapshot: Snapshot((marked, [.. lunch, reply])), now: now);
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: reply.Id, At: now) }, actual: marks.Marks);
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+
+        // Opened in Teams.
+        store.Receive(snapshot: Snapshot((read, [.. lunch, reply])), now: now);
+        Assert.Empty(collection: marks.Marks);
+        Assert.Empty(collection: store.Unread(group: ChatGroup.Chats));
+
+        // Marked unread again.
+        var again = read with { MarkedUnread = new ReadMarker(MessageId: reply.Id - 1, ReadAt: now.AddMinutes(minutes: 5)) };
+        store.Receive(snapshot: Snapshot((again, [.. lunch, reply])), now: now.AddMinutes(minutes: 5));
+        Assert.True(condition: Assert.Single(collection: store.Unread(group: ChatGroup.Chats)).IsMarkedUnread);
     }
 
     /// Teams doesn't notify you of a muted chat: it's neither unread nor recent.

@@ -109,6 +109,9 @@ internal static class TeamsData
 
     public static string Digits(long value) => value.ToString(provider: CultureInfo.InvariantCulture);
 
+    /// What Teams' Mark as unread leaves in a chat's record: the message it's marked unread after, when, and a 0.
+    public static string Bookmark(long after, double markedAtSeconds) => Digits(value: after) + ";" + Digits(value: Id(seconds: markedAtSeconds)) + ";0";
+
     static TeamsCacheLocation Location(string folder) => new(Root: Path.Combine(path1: folder, path2: "EBWebView"), IsTeamsOwn: false);
 
     static string IndexedDBFolder(string folder) => Path.Combine(paths: [folder, "EBWebView", "WV2Profile_tfw", "IndexedDB"]);

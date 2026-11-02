@@ -10,6 +10,9 @@ public static class TeamsRows
     public const string UnreadGroup = "unread";
     public const string RecentGroup = "recent";
 
+    /// What the row of a chat marked unread in Teams says, without a message someone else wrote since.
+    public const string MarkedUnreadWords = "Marked as unread";
+
     /// How many unread messages a chat's tooltip shows at most, as on the Mac.
     const int ToolTipMessages = 5;
 
@@ -101,10 +104,15 @@ public static class TeamsRows
     }
 
     /// What a row says under its name: its newest unread message, else its newest, with who wrote it in a group chat, or
-    /// "You"; without previews, how many messages are unread.
+    /// "You"; without previews, how many messages are unread. A chat marked unread in Teams without a message from someone
+    /// else since says so instead.
     public static string Preview(ConversationSummary conversation, bool showPreviews)
     {
         ArgumentNullException.ThrowIfNull(argument: conversation);
+        if (conversation.IsOnlyMarkedUnread)
+        {
+            return MarkedUnreadWords;
+        }
         if (!showPreviews || conversation.Shown is not { } message)
         {
             return conversation.IsUnread ? UnreadWords(count: conversation.Unread.Count) : "No new messages";
@@ -154,18 +162,23 @@ public static class TeamsRows
         _ => count.ToString(provider: CultureInfo.InvariantCulture) + " recent chats",
     };
 
-    /// Everything its row shows, in full: its name, its unread messages, or its newest, and what clicking it does.
+    /// Everything its row shows, in full: its name, whether it's marked unread in Teams, its unread messages, or its
+    /// newest, and what clicking it does.
     static string ToolTip(ConversationSummary conversation, bool showPreviews)
     {
         var lines = new List<string> { conversation.FullTitle ?? conversation.Title };
+        if (conversation.IsMarkedUnread)
+        {
+            lines.Add(item: "Marked as unread in Teams");
+        }
         if (showPreviews)
         {
-            var messages = conversation.IsUnread
+            var messages = conversation.Unread.Count > 0
                 ? conversation.Unread.TakeLast(count: ToolTipMessages)
                 : conversation.Latest is { } latest ? [latest] : [];
             lines.AddRange(collection: messages.Select(selector: message => Line(message: message, kind: conversation.Kind)));
         }
-        else if (conversation.IsUnread)
+        else if (conversation.Unread.Count > 0)
         {
             lines.Add(item: UnreadWords(count: conversation.Unread.Count));
         }

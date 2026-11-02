@@ -3,7 +3,8 @@ using BriefBar.Core.Tests.ChromiumIndexedDB;
 namespace BriefBar.Core.Tests.Teams;
 
 /// A made-up conversation record: its ID, Teams' type for it ("Chat", "Meeting", "Topic"…), how far it was read in Teams
-/// (0 for never), its newest message, its topic and titles, and whether its alerts are on, as Teams spells them.
+/// (0 for never), its newest message, its topic and titles, whether its alerts are on, as Teams spells them, and what
+/// Mark as unread left in it (`consumptionHorizonBookmark`, such as "<message ID>;<when>;0", or "0;<when>;0" once read).
 internal sealed record MadeUpChat(
     string Id,
     string Type,
@@ -12,7 +13,8 @@ internal sealed record MadeUpChat(
     string? Topic = null,
     string? ShortTitle = null,
     string? LongTitle = null,
-    string? Alerts = null)
+    string? Alerts = null,
+    string? Bookmark = null)
 {
     public void Write(V8Writer writer)
     {
@@ -24,6 +26,10 @@ internal sealed record MadeUpChat(
         if (Alerts is not null)
         {
             properties.Add(item: ("alerts", value => value.Text(text: Alerts)));
+        }
+        if (Bookmark is not null)
+        {
+            properties.Add(item: ("consumptionHorizonBookmark", value => value.Text(text: Bookmark)));
         }
         List<(string Name, Action<V8Writer> Value)> thread = [("threadType", value => value.Text(text: Type == "Meeting" ? "meeting" : "chat"))];
         if (Topic is not null)

@@ -91,8 +91,83 @@ public sealed class ChatReadingTests
         Assert.Equal(expected: ["See you there"], actual: Texts(chat: Chat(newest: newest, readUpTo: TeamsData.Id(seconds: 20)), messages: [newest, newest with { Text = "See you there (cached)" }]));
     }
 
+    /// Marked unread in Teams, a chat is unread, read in Teams or not: what someone else wrote after where it was marked
+    /// unread counts, and without any, as when your own reply is the newest, it's unread all the same.
+    [Fact]
+    public void CountsAChatMarkedUnreadInTeams()
+    {
+        TeamsMessage[] group = [Message(seconds: 10, text: "Staging is green"), Message(seconds: 20, text: "Shipping at 5")];
+        var crew = Chat(newest: group[^1], readUpTo: TeamsData.Id(seconds: 20), kind: ConversationKind.Group) with
+        {
+            MarkedUnread = new ReadMarker(MessageId: TeamsData.Id(seconds: 20) - 1, ReadAt: TeamsData.At(seconds: 500)),
+        };
+        Assert.True(condition: ChatReading.MayBeUnread(chat: crew));
+        var crewUnread = Read(chat: crew, messages: group, mark: null);
+        Assert.True(condition: crewUnread.IsMarkedUnread);
+        Assert.Equal(expected: ["Shipping at 5"], actual: crewUnread.Messages.Select(selector: message => message.Text));
+
+        TeamsMessage[] answered = [Message(seconds: 10, text: "Lunch?"), Message(seconds: 20, text: "Sure", fromMe: true)];
+        var avery = Chat(newest: answered[^1], readUpTo: TeamsData.Id(seconds: 20)) with
+        {
+            MarkedUnread = new ReadMarker(MessageId: TeamsData.Id(seconds: 20) - 1, ReadAt: TeamsData.At(seconds: 500)),
+        };
+        Assert.True(condition: ChatReading.MayBeUnread(chat: avery));
+        var averyUnread = Read(chat: avery, messages: answered, mark: null);
+        Assert.True(condition: averyUnread.IsMarkedUnread);
+        Assert.True(condition: averyUnread.IsUnread);
+        Assert.Empty(collection: averyUnread.Messages);
+    }
+
+    /// Teams keeps a chat marked unread until it's opened, so BriefBar does too, whatever Keep Unread For says.
+    [Fact]
+    public void KeepsAChatMarkedUnreadWhateverKeepUnreadForSays()
+    {
+        TeamsMessage[] old = [Message(seconds: 1_000 - (3 * 86_400), text: "Three days ago")];
+        var chat = Chat(newest: old[^1], readUpTo: old[^1].Id) with { MarkedUnread = new ReadMarker(MessageId: old[^1].Id - 1, ReadAt: TeamsData.At(seconds: 1_000 - 86_400)) };
+
+        var unread = ChatReading.Unread(chat: chat, messages: old, mark: null, keepUnreadFor: TimeSpan.FromHours(value: 4), now: now);
+
+        Assert.True(condition: unread.IsMarkedUnread);
+        Assert.Equal(expected: ["Three days ago"], actual: unread.Messages.Select(selector: message => message.Text));
+    }
+
+    /// Marking it read in BriefBar reads a Mark as unread made before then; one made again since makes it unread again.
+    [Fact]
+    public void ReadsAMarkedChatWhenYouMarkItReadInBriefBar()
+    {
+        TeamsMessage[] messages = [Message(seconds: 10, text: "Lunch?"), Message(seconds: 20, text: "Noon works")];
+        var chat = Chat(newest: messages[^1], readUpTo: messages[^1].Id) with { MarkedUnread = new ReadMarker(MessageId: messages[^1].Id - 1, ReadAt: TeamsData.At(seconds: 500)) };
+
+        Assert.False(condition: Read(chat: chat, messages: messages, mark: new TeamsReadMark(UpTo: messages[^1].Id, At: TeamsData.At(seconds: 600))).IsUnread);
+        Assert.False(condition: Read(chat: chat, messages: messages, mark: new TeamsReadMark(UpTo: messages[^1].Id, At: TeamsData.At(seconds: 500))).IsUnread);
+        var markedAgain = Read(chat: chat, messages: messages, mark: new TeamsReadMark(UpTo: messages[^1].Id, At: TeamsData.At(seconds: 400)));
+        Assert.True(condition: markedAgain.IsMarkedUnread);
+        Assert.Equal(expected: ["Noon works"], actual: markedAgain.Messages.Select(selector: message => message.Text));
+        // Without a time, Teams' Mark as unread counts as made before any mark.
+        Assert.False(condition: Read(chat: chat with { MarkedUnread = new ReadMarker(MessageId: messages[^1].Id - 1) }, messages: messages, mark: new TeamsReadMark(UpTo: messages[^1].Id, At: TeamsData.At(seconds: 0))).IsUnread);
+    }
+
+    [Fact]
+    public void LeavesAMutedChatReadThoughItsMarkedUnread()
+    {
+        var newest = Message(seconds: 10, text: "Muted chatter");
+        var chat = Chat(newest: newest, readUpTo: newest.Id, muted: true) with { MarkedUnread = new ReadMarker(MessageId: newest.Id - 1, ReadAt: TeamsData.At(seconds: 500)) };
+
+        Assert.False(condition: ChatReading.MayBeUnread(chat: chat));
+        Assert.Equal(expected: ChatUnread.None, actual: Read(chat: chat, messages: [newest], mark: null));
+    }
+
+    static ChatUnread Read(TeamsChat chat, IReadOnlyList<TeamsMessage> messages, TeamsReadMark? mark) =>
+        ChatReading.Unread(chat: chat, messages: messages, mark: mark, keepUnreadFor: null, now: now);
+
     static List<string> Texts(TeamsChat chat, IReadOnlyList<TeamsMessage> messages, long? markedUpTo = null, TimeSpan? keepUnreadFor = null) =>
-        ChatReading.Unread(chat: chat, messages: messages, markedUpTo: markedUpTo, keepUnreadFor: keepUnreadFor, now: now).Select(selector: message => message.Text).ToList();
+        ChatReading.Unread(
+                chat: chat,
+                messages: messages,
+                mark: markedUpTo is { } upTo ? new TeamsReadMark(UpTo: upTo, At: now) : null,
+                keepUnreadFor: keepUnreadFor,
+                now: now)
+            .Messages.Select(selector: message => message.Text).ToList();
 
     static TeamsChat Chat(TeamsMessage? newest, long readUpTo, bool muted = false, ConversationKind kind = ConversationKind.OneOnOne) => new(
         Id: kind == ConversationKind.OneOnOne ? Fixture.Avery : Fixture.Sync,

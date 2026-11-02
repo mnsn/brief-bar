@@ -5,7 +5,7 @@ namespace BriefBar.Core.Teams;
 
 /// Reads Teams' own records: a conversation, from `conversation-manager`'s `conversations`, and the messages a reply chain
 /// holds, from `replychain-manager`'s `replychains-2`. Of a conversation it keeps its ID, kind, names, read marker, newest
-/// message and whether it's muted; the rest of the record is read only to get past it.
+/// message, whether it's muted and whether it's marked unread; the rest of the record is read only to get past it.
 internal static class TeamsRecords
 {
     /// The chat a conversation record holds, or null for one that isn't a chat, such as a channel. `recordKey` is the
@@ -38,7 +38,10 @@ internal static class TeamsRecords
             FullTitle: longTitle is not null && longTitle != title ? longTitle : null,
             Marker: ReadMarker.Parse(consumptionHorizon: properties?["consumptionhorizon"]?.AsString),
             Newest: newest,
-            IsMuted: Flag(value: properties?["alerts"]) == false);
+            IsMuted: Flag(value: properties?["alerts"]) == false,
+            // Mark as unread leaves the read marker as it was: it sets this, in the same form, to a message before the
+            // newest, and opening the chat sets it back to 0.
+            MarkedUnread: ReadMarker.Parse(consumptionHorizon: properties?["consumptionHorizonBookmark"]?.AsString));
     }
 
     /// The messages a reply chain's record holds: in a chat, each message is a reply chain of its own.

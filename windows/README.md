@@ -101,16 +101,19 @@ section names and the like, so nothing you see can reach it: a line with a strin
   says how the Mac reads them): two sections, **Chats** (1:1 chats) and **Group chats** (group and meeting chats).
   BriefBar reads Teams' web storage (Chromium's IndexedDB, in its WebView2 profile under
   `%LOCALAPPDATA%\Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams\EBWebView`), read-only and in place, as
-  Teams writes it: each chat's name and kind, its newest message and who sent it, and how far you've read it in Teams
-  (`consumptionhorizon`), from `conversation-manager`'s `conversations`; and, for chats that may be unread, their
-  messages, from Teams' message cache (`replychain-manager`'s `replychains-2`), reading only those chats' keys. A chat
-  is unread as Teams' own list has it: someone else wrote after how far you've read it, and after your own newest
-  message. Its groups are the Mac's: Unread, the newest first, with **Mark all read**, and Recent (read chats with
-  something new in the last day, ten at most), folded. A row shows a person's initials, or a group's icon, the newest
-  unread message (with its sender in a group chat), how many are unread, and when; it opens the chat in Teams at its
-  oldest unread message (`msteams:/l/message/…`), and reads it in BriefBar until Teams' own marker gets there, as Mark
-  as read does. Its foot has **Open Teams**. Its settings are the Mac's: Keep unread for (4 hours, 1 day, 3 days, or
-  until you read it) and Show message previews.
+  Teams writes it: each chat's name and kind, its newest message and who sent it, how far you've read it in Teams
+  (`consumptionhorizon`), and whether you've marked it unread there (`consumptionHorizonBookmark`), from
+  `conversation-manager`'s `conversations`; and, for chats that may be unread, their messages, from Teams' message
+  cache (`replychain-manager`'s `replychains-2`), reading only those chats' keys. A chat is unread as Teams' own list
+  has it: someone else wrote after how far you've read it, and after your own newest message; or you marked it unread
+  in Teams, until you open it there or mark it read in BriefBar, whatever Keep unread for says, as Teams keeps it bold.
+  Its groups are the Mac's: Unread, the newest first, with **Mark all read**, and Recent (read chats with something
+  new in the last day, ten at most), folded. A row shows a person's initials, or a group's icon, the newest unread
+  message (with its sender in a group chat), how many are unread, and when, or **Marked as unread** for a chat marked
+  unread without a message from someone else since; it opens the chat in Teams at its oldest unread message
+  (`msteams:/l/message/…`), and reads it in BriefBar until Teams' own marker gets there, as Mark as read does. Its foot
+  has **Open Teams**. Its settings are the Mac's: Keep unread for (4 hours, 1 day, 3 days, or until you read it) and
+  Show message previews.
 - **GitHub Copilot sessions**, as on the Mac ([How it works](../docs/how-it-works.md#github-copilot)): what each
   session in the GitHub Copilot app is doing, from the app's own files in `%USERPROFILE%\.copilot`, read-only,
   as they change. Its groups are the Mac's: Needs you (a question, a plan to review, a permission), Running, Done
@@ -208,10 +211,13 @@ Where Windows differs, these were decided:
   one program's data from another running as you; on the Mac, it needs Full Disk Access. What differs from the Mac:
   - It knows every chat as Teams has it, whether Teams notified you or not, and what you read in Teams, so the Mac's
     Mark Chats Read When You Read Them in Teams and Mark All Read When Teams' Badge Clears aren't settings here.
-  - A chat you mark read in BriefBar is kept by its ID and the message it was read to, sealed with Windows' DPAPI for
-    your account (`%LOCALAPPDATA%\BriefBar\Teams\read`), until Teams' own marker passes it. Any program running as you
-    can open what DPAPI sealed, as one can't open the Mac's keychain without asking. The Mac keeps your unread chats,
-    with their messages, sealed with a key in your keychain; Windows keeps no messages at all.
+  - A chat you mark unread in Teams is unread here too, as in Teams' list, though Teams' taskbar badge doesn't count
+    it. The Mac never sees it, since Mark as unread posts no notification.
+  - A chat you mark read in BriefBar is kept by its ID, the message it was read to and when, sealed with Windows' DPAPI
+    for your account (`%LOCALAPPDATA%\BriefBar\Teams\read`), until Teams' own marker passes it and Teams has it marked
+    unread no more from before then. Any program running as you can open what DPAPI sealed, as one can't open the
+    Mac's keychain without asking. The Mac keeps your unread chats, with their messages, sealed with a key in your
+    keychain; Windows keeps no messages at all.
   - Muted chats aren't unread here, as Teams doesn't notify you of them, and nor is a meeting's chat whose newest item
     is a recording, a transcript or a change to who's in it, though Teams' list marks those. Old meeting chats that
     nobody opened stay unread in Teams for good: Keep unread for's day leaves them out, as it does on the Mac.
@@ -407,7 +413,12 @@ SDK ships inside the app.
 - **Teams holds its LevelDB's lock while it runs**, but opens its files sharing reading and deleting: BriefBar reads
   them without the lock, as the Mac does, and holds none open between reads, so Teams can compact and delete them. A
   table Teams is still writing reads as broken until it's done, so one counts as unreadable only once it has stayed
-  unchanged for 5 seconds.
+  unchanged for 5 seconds. Meanwhile, and while some of its data can't be read, BriefBar keeps the marks of chats it
+  doesn't find: only a read of everything says a chat is gone (`TeamsSnapshot.IsComplete`).
+- **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
+  `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
+  the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
+  this PC, in counts). Teams' taskbar badge doesn't count chats marked unread.
 - **`FileSystemWatcher` reports Teams' writes to its LevelDB log** as they happen (checked on this PC), so BriefBar
   reads what was added half a second after a write, from where it stopped, rather than on a timer; and everything
   again every 10 minutes, which also finds Teams' data once you sign in.

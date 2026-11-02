@@ -7,10 +7,15 @@ namespace BriefBar.Core.Teams;
 public static class ChatBrief
 {
     /// "Priya Shah sent you 2 messages: “Can you look at the notes?”", "Launch crew: 3 new messages, the newest from
-    /// Jordan Lee." Without `showsText`, no message text at all.
+    /// Jordan Lee." Without `showsText`, no message text at all. A chat marked unread in Teams without a message from
+    /// someone else since says so: "Launch crew: marked as unread in Teams."
     public static string Sentence(ConversationSummary conversation, bool showsText)
     {
         ArgumentNullException.ThrowIfNull(argument: conversation);
+        if (conversation.IsOnlyMarkedUnread)
+        {
+            return conversation.Title + ": marked as unread in Teams.";
+        }
         var count = conversation.Unread.Count;
         var newest = conversation.Shown;
         string sentence;

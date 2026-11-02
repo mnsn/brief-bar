@@ -26,7 +26,7 @@ public static class DeepLink
     public static Uri? To(ConversationSummary conversation)
     {
         ArgumentNullException.ThrowIfNull(argument: conversation);
-        var message = conversation.IsUnread ? conversation.Unread[0].Id : conversation.Latest?.Id;
+        var message = conversation.Unread.Count > 0 ? conversation.Unread[0].Id : conversation.Latest?.Id;
         return (message is { } id ? Message(conversationId: conversation.Id, messageId: id) : null) ?? Chat(conversationId: conversation.Id);
     }
 }

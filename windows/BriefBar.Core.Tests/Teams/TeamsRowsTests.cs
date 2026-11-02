@@ -157,6 +157,45 @@ public sealed class TeamsRowsTests
         Assert.Contains(expectedSubstring: "some chats may be missing", actualString: Assert.Single(collection: partly.Notices).Message, comparisonType: StringComparison.Ordinal);
     }
 
+    /// A chat marked unread in Teams, without a message someone else wrote since, needs you, and says it's marked unread
+    /// rather than a number, with or without previews.
+    [Fact]
+    public void SaysWhenAChatIsOnlyMarkedUnread()
+    {
+        var reply = new TeamsMessage(
+            ConversationId: TeamsDemoData.Noah, Id: now.AddMinutes(minutes: -30).ToUnixTimeMilliseconds(), Sender: "Made-up Me", IsFromMe: true, Type: "RichText/Html",
+            Text: "Sure, see you then", ArrivedAt: now.AddMinutes(minutes: -30));
+        var chat = new TeamsChat(
+            Id: TeamsDemoData.Noah, Kind: ConversationKind.OneOnOne, Title: "Noah Kim", FullTitle: null, Marker: new ReadMarker(MessageId: reply.Id), Newest: reply,
+            IsMuted: false, MarkedUnread: new ReadMarker(MessageId: reply.Id - 1, ReadAt: now.AddMinutes(minutes: -5)));
+        var settings = new TeamsSettings(settings: new MemorySettings());
+        var store = new TeamsStore(settings: settings, marks: TeamsReadMarks.InMemory());
+        store.Receive(
+            snapshot: new TeamsSnapshot
+            {
+                Found = true,
+                IsComplete = true,
+                Chats = [chat],
+                Report = new TeamsDataReport { Folders = 1, Stores = 1, Conversations = 1, Chats = 1, WithMarker = 1 },
+            },
+            now: now);
+
+        var snapshot = TeamsRows.Snapshot(store: store, settings: settings, group: ChatGroup.Chats);
+
+        var row = Assert.Single(collection: snapshot.Rows);
+        Assert.Equal(expected: (TeamsRows.UnreadGroup, (ItemState?)ItemState.NeedsYou, "Marked as unread", 0), actual: (row.Group, row.State, row.Status, row.Unread));
+        Assert.Equal(expected: now.AddMinutes(minutes: -30), actual: row.Date);
+        Assert.Equal(expected: [TeamsCommands.Open, TeamsCommands.MarkRead], actual: row.Commands.Select(selector: command => command.Key));
+        Assert.Equal(expected: "Noah Kim\nMarked as unread in Teams\nYou: Sure, see you then\nClick to open in Microsoft Teams", actual: row.ToolTip);
+        Assert.Equal(expected: ["Noah Kim: marked as unread in Teams."], actual: snapshot.BriefLines.Select(selector: line => line.Sentence));
+        Assert.Equal(expected: new StateCounts(NeedsYou: 1), actual: snapshot.Counts);
+
+        settings.ShowMessagePreviews = false;
+        var hidden = Assert.Single(collection: TeamsRows.Snapshot(store: store, settings: settings, group: ChatGroup.Chats).Rows);
+        Assert.Equal(expected: "Marked as unread", actual: hidden.Status);
+        Assert.Equal(expected: "Noah Kim\nMarked as unread in Teams\nClick to open in Microsoft Teams", actual: hidden.ToolTip);
+    }
+
     [Fact]
     public void NamesPeopleByTheirInitials()
     {

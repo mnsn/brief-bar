@@ -148,11 +148,38 @@ public sealed class TeamsEngineTests
         var now = TeamsData.At(seconds: 100);
         Assert.Equal(
             expected: ["Noon works", "See you there"],
-            actual: ChatReading.Unread(chat: chats[Fixture.Avery], messages: snapshot.Messages[Fixture.Avery], markedUpTo: null, keepUnreadFor: null, now: now).Select(selector: message => message.Text));
+            actual: ChatReading.Unread(chat: chats[Fixture.Avery], messages: snapshot.Messages[Fixture.Avery], mark: null, keepUnreadFor: null, now: now).Messages.Select(selector: message => message.Text));
         Assert.Equal(
             expected: ["Notes are in the chat"],
-            actual: ChatReading.Unread(chat: chats[Fixture.Sync], messages: snapshot.Messages[Fixture.Sync], markedUpTo: null, keepUnreadFor: null, now: now).Select(selector: message => message.Text));
+            actual: ChatReading.Unread(chat: chats[Fixture.Sync], messages: snapshot.Messages[Fixture.Sync], mark: null, keepUnreadFor: null, now: now).Messages.Select(selector: message => message.Text));
         Assert.True(condition: chats[Fixture.Big].IsMuted);
+    }
+
+    /// Marked unread in Teams, a chat may be unread though your reply is its newest message: its messages are read, and
+    /// what Mark as unread left in it with them.
+    [Fact]
+    public void ReadsTheMessagesOfAChatMarkedUnread()
+    {
+        using var folder = new TemporaryFolder();
+        var lunch = Avery(seconds: 10, text: "Lunch?");
+        var reply = new MadeUpMessage(Id: TeamsData.Id(seconds: 20), Sender: "Made-up Me", Html: "Sure", FromMe: true);
+        var (location, _) = TeamsData.Write(
+            folder: folder.Path,
+            chats:
+            [
+                new MadeUpChat(
+                    Id: Fixture.Avery, Type: "Chat", ReadUpTo: reply.Id, Newest: reply, ShortTitle: "Avery Quinn", Bookmark: TeamsData.Bookmark(after: reply.Id - 1, markedAtSeconds: 60)),
+            ],
+            replyChains: [Chain(chat: Fixture.Avery, lunch), Chain(chat: Fixture.Avery, reply)]);
+
+        var snapshot = TeamsEngine.LoadOnce(location: location);
+
+        var chat = Assert.Single(collection: snapshot.Chats);
+        Assert.Equal(expected: new ReadMarker(MessageId: reply.Id - 1, ReadAt: TeamsData.At(seconds: 60)), actual: chat.MarkedUnread);
+        Assert.Equal(expected: 2, actual: snapshot.Messages[Fixture.Avery].Count);
+        var unread = ChatReading.Unread(chat: chat, messages: snapshot.Messages[Fixture.Avery], mark: null, keepUnreadFor: null, now: TeamsData.At(seconds: 100));
+        Assert.True(condition: unread.IsMarkedUnread);
+        Assert.Empty(collection: unread.Messages);
     }
 
     [Fact]

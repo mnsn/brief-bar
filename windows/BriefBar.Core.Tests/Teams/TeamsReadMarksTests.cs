@@ -10,6 +10,8 @@ namespace BriefBar.Core.Tests.Teams;
 /// them; deleted when you turn Teams off. The Mac's `UnreadTests` of its sealed file, where Windows keeps less.
 public sealed class TeamsReadMarksTests
 {
+    static readonly DateTimeOffset at = TeamsData.At(seconds: 1_000);
+
     [Fact]
     public void SealsWhatItSaves()
     {
@@ -19,7 +21,7 @@ public sealed class TeamsReadMarksTests
         marks.Load();
         Assert.False(condition: File.Exists(path: path));
 
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
 
         var saved = File.ReadAllBytes(path: path);
         Assert.True(condition: saved.AsSpan().StartsWith(value: FakeProtector.Header));
@@ -27,18 +29,18 @@ public sealed class TeamsReadMarksTests
         Assert.False(condition: File.Exists(path: path + ".tmp"));
         var reopened = new TeamsReadMarks(path: path, protector: new FakeProtector());
         reopened.Load();
-        Assert.Equal(expected: new Dictionary<string, long> { [Fixture.Avery] = TeamsData.Id(seconds: 30) }, actual: reopened.Marks);
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: TeamsData.Id(seconds: 30), At: at) }, actual: reopened.Marks);
     }
 
     [Fact]
     public void KeepsTheFurthestMarkOfEachChat()
     {
         var marks = TeamsReadMarks.InMemory();
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 20));
-        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 20), at: at);
+        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10), at: at);
 
-        Assert.Equal(expected: new Dictionary<string, long> { [Fixture.Avery] = TeamsData.Id(seconds: 30), [Fixture.Sam] = TeamsData.Id(seconds: 10) }, actual: marks.Marks);
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Avery] = new(UpTo: TeamsData.Id(seconds: 30), At: at), [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) }, actual: marks.Marks);
     }
 
     /// Teams' marker passing a mark, or its chat leaving Teams' data, ends it; with none left, the file and its folder go.
@@ -48,8 +50,8 @@ public sealed class TeamsReadMarksTests
         using var folder = new TemporaryFolder();
         var path = folder.Combine("Teams", "read");
         var marks = new TeamsReadMarks(path: path, protector: new FakeProtector());
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
-        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
+        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10), at: at);
 
         marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 20)), Chat(id: Fixture.Sam, readUpTo: TeamsData.Id(seconds: 10))], dropAbsent: true);
         Assert.Equal(expected: [Fixture.Avery], actual: marks.Marks.Keys);
@@ -66,8 +68,8 @@ public sealed class TeamsReadMarksTests
     public void KeepsTheMarksOfChatsAReadMayHaveMissed()
     {
         var marks = TeamsReadMarks.InMemory();
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
-        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
+        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10), at: at);
 
         marks.Prune(chats: [Chat(id: Fixture.Sam, readUpTo: TeamsData.Id(seconds: 10))], dropAbsent: false);
 
@@ -80,7 +82,7 @@ public sealed class TeamsReadMarksTests
     {
         using var folder = new TemporaryFolder();
         var path = folder.Combine("Teams", "read");
-        new TeamsReadMarks(path: path, protector: new FakeProtector()).Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
+        new TeamsReadMarks(path: path, protector: new FakeProtector()).Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
 
         var other = new TeamsReadMarks(path: path, protector: new FakeProtector(key: 0x33));
         other.Load();
@@ -101,13 +103,13 @@ public sealed class TeamsReadMarksTests
         using var folder = new TemporaryFolder();
         var path = folder.Combine("read");
         var protector = new FakeProtector();
-        var saved = new Dictionary<string, long> { ["not a chat"] = 5, [Fixture.Avery] = -1, [Fixture.Sam] = TeamsData.Id(seconds: 10) };
+        var saved = new Dictionary<string, TeamsReadMark> { ["not a chat"] = new(UpTo: 5, At: at), [Fixture.Avery] = new(UpTo: -1, At: at), [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) };
         File.WriteAllBytes(path: path, bytes: protector.Protect(data: JsonSerializer.SerializeToUtf8Bytes(value: saved)));
 
         var marks = new TeamsReadMarks(path: path, protector: protector);
         marks.Load();
 
-        Assert.Equal(expected: new Dictionary<string, long> { [Fixture.Sam] = TeamsData.Id(seconds: 10) }, actual: marks.Marks);
+        Assert.Equal(expected: new Dictionary<string, TeamsReadMark> { [Fixture.Sam] = new(UpTo: TeamsData.Id(seconds: 10), At: at) }, actual: marks.Marks);
     }
 
     /// Turning Teams off deletes the file, and its folder once it's empty; nothing is saved from then on.
@@ -117,13 +119,13 @@ public sealed class TeamsReadMarksTests
         using var folder = new TemporaryFolder();
         var path = folder.Combine("Teams", "read");
         var marks = new TeamsReadMarks(path: path, protector: new FakeProtector());
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
 
         marks.Delete();
 
         Assert.Empty(collection: marks.Marks);
         Assert.False(condition: Directory.Exists(path: folder.Combine("Teams")));
-        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10));
+        marks.Mark(chat: Fixture.Sam, messageId: TeamsData.Id(seconds: 10), at: at);
         Assert.Empty(collection: marks.Marks);
         Assert.False(condition: File.Exists(path: path));
 
@@ -137,7 +139,7 @@ public sealed class TeamsReadMarksTests
     {
         var marks = TeamsReadMarks.InMemory();
         marks.Load();
-        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30));
+        marks.Mark(chat: Fixture.Avery, messageId: TeamsData.Id(seconds: 30), at: at);
         Assert.Single(collection: marks.Marks);
 
         marks.Prune(chats: [Chat(id: Fixture.Avery, readUpTo: TeamsData.Id(seconds: 30))], dropAbsent: false);

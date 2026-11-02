@@ -4,15 +4,15 @@ using BriefBar.Core.Logging;
 
 namespace BriefBar.Core.Teams;
 
-/// The chats you marked read in BriefBar, each up to the message it was read to, kept by ID only until Teams' own marker
-/// passes it: Mark as Read can't change Teams. Saved in `%LOCALAPPDATA%\BriefBar\Teams\read`, sealed for your Windows
-/// account (`ISecretProtector`), as the Mac seals its unread chats with a key in your keychain. Not thread-safe:
-/// `TeamsSource` uses it under its lock.
+/// The chats you marked read in BriefBar, each up to the message it was read to and when, kept by ID only until Teams'
+/// own marker passes it and the chat isn't marked unread in Teams from before then: Mark as Read can't change Teams.
+/// Saved in `%LOCALAPPDATA%\BriefBar\Teams\read`, sealed for your Windows account (`ISecretProtector`), as the Mac seals
+/// its unread chats with a key in your keychain. Not thread-safe: `TeamsSource` uses it under its lock.
 public sealed class TeamsReadMarks
 {
     readonly string? path;
     readonly ISecretProtector? protector;
-    readonly Dictionary<string, long> marks = new(comparer: StringComparer.Ordinal);
+    readonly Dictionary<string, TeamsReadMark> marks = new(comparer: StringComparer.Ordinal);
     bool deleted;
 
     public TeamsReadMarks(string path, ISecretProtector protector)
@@ -37,8 +37,8 @@ public sealed class TeamsReadMarks
         path3: "Teams",
         path4: "read");
 
-    /// How far each chat was marked read, by chat.
-    public IReadOnlyDictionary<string, long> Marks => marks;
+    /// How far each chat was marked read, and when, by chat.
+    public IReadOnlyDictionary<string, TeamsReadMark> Marks => marks;
 
     /// Reads what was saved. A file that can't be opened, as one sealed for someone else or damaged, is deleted.
     public void Load()
@@ -64,12 +64,12 @@ public sealed class TeamsReadMarks
         }
         try
         {
-            var saved = JsonSerializer.Deserialize<Dictionary<string, long>>(utf8Json: protector.Unprotect(sealedData: sealedData));
-            foreach (var (chat, messageId) in saved ?? [])
+            var saved = JsonSerializer.Deserialize<Dictionary<string, TeamsReadMark>>(utf8Json: protector.Unprotect(sealedData: sealedData));
+            foreach (var (chat, mark) in saved ?? [])
             {
-                if (ConversationIds.IsValid(id: chat) && messageId > 0)
+                if (ConversationIds.IsValid(id: chat) && mark is { UpTo: > 0 })
                 {
-                    marks[chat] = messageId;
+                    marks[chat] = mark;
                 }
             }
         }
@@ -80,20 +80,29 @@ public sealed class TeamsReadMarks
         }
     }
 
-    /// Marks `chat` read up to `messageId`, and saves it.
-    public void Mark(string chat, long messageId)
+    /// Marks `chat` read up to `messageId` at `at`, which also reads a Mark as unread that Teams has from before then, and
+    /// saves it.
+    public void Mark(string chat, long messageId, DateTimeOffset at)
     {
         ArgumentNullException.ThrowIfNull(argument: chat);
-        if (deleted || (marks.TryGetValue(key: chat, value: out var known) && known >= messageId))
+        if (deleted)
         {
             return;
         }
-        marks[chat] = messageId;
+        var mark = marks.TryGetValue(key: chat, value: out var known)
+            ? new TeamsReadMark(UpTo: Math.Max(val1: known.UpTo, val2: messageId), At: known.At > at ? known.At : at)
+            : new TeamsReadMark(UpTo: messageId, At: at);
+        if (mark == known)
+        {
+            return;
+        }
+        marks[chat] = mark;
         Save();
     }
 
-    /// Forgets the marks Teams' own markers have passed and, with `dropAbsent`, those of chats that aren't in `chats`, and
-    /// saves what's left. Only a read of all of Teams' data says a chat is gone: one that missed something may only have
+    /// Forgets the marks that have nothing left to do, and, with `dropAbsent`, those of chats that aren't in `chats`, and
+    /// saves what's left. A mark is done once Teams' own marker has passed it and Teams doesn't have the chat marked unread
+    /// from before it. Only a read of all of Teams' data says a chat is gone: one that missed something may only have
     /// missed that chat.
     public void Prune(IEnumerable<TeamsChat> chats, bool dropAbsent)
     {
@@ -104,7 +113,9 @@ public sealed class TeamsReadMarks
         }
         var byId = chats.ToDictionary(keySelector: chat => chat.Id, comparer: StringComparer.Ordinal);
         var passed = marks
-            .Where(predicate: mark => byId.TryGetValue(key: mark.Key, value: out var chat) ? (chat.Marker?.MessageId ?? 0) >= mark.Value : dropAbsent)
+            .Where(predicate: mark => byId.TryGetValue(key: mark.Key, value: out var chat)
+                ? (chat.Marker?.MessageId ?? 0) >= mark.Value.UpTo && !(chat.MarkedUnread is { } markedUnread && mark.Value.Dismisses(markedUnread: markedUnread))
+                : dropAbsent)
             .Select(selector: mark => mark.Key)
             .ToList();
         if (passed.Count == 0)
