@@ -26,15 +26,26 @@ struct DemoCode: CodeSource {
 
     /// By pull request number.
     static let pullRequests: [Int: Changes] = [
-        // Sam asks to cap the backoff that the second push added, on line 88 of the payments client.
+        // Sam asks to cap the backoff that the second push added, on line 88 of the payments client. Before it, Priya
+        // asked for its number of attempts to come from configuration (line 41), and Sam for another name for the retry
+        // policy (its line 12).
         4102: Changes(pushedAgo: [nil, 3 * 3_600], files: [
             File(path: "/src/PaymentsClient.cs", base: paymentsClientBase, versions: [paymentsClientRetries, paymentsClientBackoff]),
             File(path: "/tests/PaymentsClientTests.cs", base: nil, versions: [nil, paymentsClientTests]),
+            File(path: "/src/RetryPolicy.cs", base: nil, versions: [retryPolicy, retryPolicy]),
+            File(path: "/src/RetryOptions.cs", base: nil, versions: [nil, retryOptions]),
         ]),
-        // Priya asks for a test of the rounding on line 42, a few seconds after the demo starts.
+        // Maria pointed out that the cutoff is the warehouse's, on line 27 of the delivery estimate, which the second push
+        // fixed.
+        4088: Changes(pushedAgo: [nil, 28 * 3_600], files: [
+            File(path: "/src/Delivery/DeliveryEstimate.cs", base: nil, versions: [deliveryEstimateServerTime, deliveryEstimate]),
+        ]),
+        // Priya asks for a test of the rounding on line 42, a few seconds after the demo starts. Before it, Chen asked how
+        // a negative total rounds, on line 118 of the coupon service, which rounds yen to whole yen since the second push.
         4091: Changes(pushedAgo: [nil, 4.5 * 3_600], files: [
             File(path: "/src/Coupons/Rounding.cs", base: roundingBase, versions: [roundingFixed, roundingFixed]),
             File(path: "/tests/Coupons/RoundingTests.cs", base: nil, versions: [nil, roundingTests]),
+            File(path: "/src/Coupons/CouponService.cs", base: couponServiceBase, versions: [couponServiceRounded, couponService]),
         ]),
     ]
 
@@ -77,7 +88,7 @@ struct DemoCode: CodeSource {
 
     func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {
         let number = pullRequest.key.number
-        guard let made = Self.pullRequests[number], let file = made.files.first(where: { $0.path == path }) else {
+        guard let made = Self.pullRequests[number], let file = made.files.first(where: { GitPath($0.path) == GitPath(path) }) else {
             throw ADOError.notFound
         }
         let iteration = commit == Self.base(number)
@@ -173,10 +184,9 @@ struct DemoCode: CodeSource {
 
     """
 
-    /// After the first push: retries a few times, 200 ms apart.
+    /// After the first push: tries three times, 200 ms apart, again the failures the retry policy says may pass.
     static let paymentsClientRetries = """
     using System;
-    using System.Net;
     using System.Net.Http;
     using System.Net.Http.Json;
     using System.Security.Cryptography;
@@ -225,17 +235,6 @@ struct DemoCode: CodeSource {
             return status ?? throw new PaymentException("The payment provider sent an empty status.");
         }
 
-        /// <summary>Whether a failed request may pass if it's sent again: the provider is busy, or didn't answer.</summary>
-        private static bool IsTransient(HttpStatusCode status) => status switch
-        {
-            HttpStatusCode.RequestTimeout => true,
-            HttpStatusCode.TooManyRequests => true,
-            HttpStatusCode.BadGateway => true,
-            HttpStatusCode.ServiceUnavailable => true,
-            HttpStatusCode.GatewayTimeout => true,
-            _ => false,
-        };
-
         /// <summary>
         /// Sends a request, and sends it again while it fails in a way that may pass.
         /// </summary>
@@ -253,7 +252,7 @@ struct DemoCode: CodeSource {
                     return await ReadResultAsync(response, cancellation);
                 }
 
-                if (!IsTransient(response.StatusCode) || attempt == MaxAttempts)
+                if (!RetryPolicy.IsTransient(response.StatusCode) || attempt == MaxAttempts)
                 {
                     throw new PaymentException($"The payment provider answered {(int)response.StatusCode}.");
                 }
@@ -279,10 +278,9 @@ struct DemoCode: CodeSource {
 
     """
 
-    /// After the second: exponential backoff, from 200 ms, doubling on line 88.
+    /// After the second: as many times as configured, on line 41, and from 200 ms apart, doubling on line 88.
     static let paymentsClientBackoff = """
     using System;
-    using System.Net;
     using System.Net.Http;
     using System.Net.Http.Json;
     using System.Security.Cryptography;
@@ -291,6 +289,7 @@ struct DemoCode: CodeSource {
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Options;
 
     namespace Storefront.Payments;
 
@@ -302,16 +301,26 @@ struct DemoCode: CodeSource {
         /// <summary>How long to wait before the first retry.</summary>
         private static readonly TimeSpan FirstDelay = TimeSpan.FromMilliseconds(200);
 
-        /// <summary>How many times to try a request, the first time included.</summary>
-        private const int MaxAttempts = 6;
-
         private readonly HttpClient http;
         private readonly ILogger<PaymentsClient> logger;
 
-        public PaymentsClient(HttpClient http, ILogger<PaymentsClient> logger)
+        /// <summary>How many times to try a request, the first time included.</summary>
+        private readonly int maxAttempts;
+
+        /// <summary>
+        /// A client for the payment provider that <paramref name="http"/> is set up for.
+        /// </summary>
+        /// <param name="http">Sends the requests, with the provider's address and credentials.</param>
+        /// <param name="retryOptions">How many times a request that fails for a moment is tried.</param>
+        /// <param name="logger">Logs the requests that are tried again.</param>
+        public PaymentsClient(HttpClient http, IOptions<RetryOptions> retryOptions, ILogger<PaymentsClient> logger)
         {
+            ArgumentNullException.ThrowIfNull(http);
+            ArgumentNullException.ThrowIfNull(retryOptions);
             this.http = http;
             this.logger = logger;
+            // The Payments:Retry section of the configuration, or five attempts.
+            maxAttempts = retryOptions.Value.MaxAttempts;
         }
 
         public Task<PaymentResult> AuthorizeAsync(PaymentRequest request, CancellationToken cancellation) =>
@@ -331,19 +340,9 @@ struct DemoCode: CodeSource {
             return status ?? throw new PaymentException("The payment provider sent an empty status.");
         }
 
-        /// <summary>Whether a failed request may pass if it's sent again: the provider is busy, or didn't answer.</summary>
-        private static bool IsTransient(HttpStatusCode status) => status switch
-        {
-            HttpStatusCode.RequestTimeout => true,
-            HttpStatusCode.TooManyRequests => true,
-            HttpStatusCode.BadGateway => true,
-            HttpStatusCode.ServiceUnavailable => true,
-            HttpStatusCode.GatewayTimeout => true,
-            _ => false,
-        };
-
         /// <summary>
-        /// Sends a request, and sends it again while it fails in a way that may pass, waiting longer each time.
+        /// Sends a request, and sends it again while it fails in a way that may pass, waiting twice as long before each
+        /// retry as before the one before it.
         /// </summary>
         private async Task<PaymentResult> SendAsync(HttpMethod method, string path, object body, CancellationToken cancellation)
         {
@@ -360,13 +359,13 @@ struct DemoCode: CodeSource {
                     return await ReadResultAsync(response, cancellation);
                 }
 
-                if (!IsTransient(response.StatusCode) || attempt == MaxAttempts)
+                if (!RetryPolicy.IsTransient(response.StatusCode) || attempt == maxAttempts)
                 {
                     throw new PaymentException($"The payment provider answered {(int)response.StatusCode}.");
                 }
 
                 logger.LogWarning("Payment request failed with {Status}; retrying in {Delay} ms (attempt {Attempt} of {MaxAttempts}).",
-                    (int)response.StatusCode, delay.TotalMilliseconds, attempt, MaxAttempts);
+                    (int)response.StatusCode, delay.TotalMilliseconds, attempt, maxAttempts);
                 await Task.Delay(delay, cancellation);
                 delay *= 2;
             }
@@ -598,6 +597,508 @@ struct DemoCode: CodeSource {
 
             Assert.Equal(10m, parts[0] + parts[1] + parts[2]);
             Assert.Equal(3.33m, parts[0]);
+        }
+    }
+
+    """
+
+    /// The failures worth trying again, which the first push adds: the class Sam would rename, on line 12.
+    static let retryPolicy = """
+    using System.Net;
+
+    namespace Storefront.Payments;
+
+    /// <summary>
+    /// Which failed requests to the payment provider are worth sending again.
+    /// </summary>
+    /// <remarks>
+    /// The provider answers 429 or 503 while it's busy, and the gateway in front of it 502 or 504 when it doesn't hear
+    /// back in time: those requests may pass a moment later. Others would fail the same way again.
+    /// </remarks>
+    public static class RetryPolicy
+    {
+        /// <summary>Whether a request that failed with <paramref name="status"/> may pass if it's sent again.</summary>
+        public static bool IsTransient(HttpStatusCode status) => status switch
+        {
+            HttpStatusCode.RequestTimeout => true,
+            HttpStatusCode.TooManyRequests => true,
+            HttpStatusCode.BadGateway => true,
+            HttpStatusCode.ServiceUnavailable => true,
+            HttpStatusCode.GatewayTimeout => true,
+            _ => false,
+        };
+    }
+
+    """
+
+    /// How many times to try, from configuration, which the second push adds.
+    static let retryOptions = """
+    namespace Storefront.Payments;
+
+    /// <summary>
+    /// How the payments client tries again a request that failed for a moment: the Payments:Retry section of the
+    /// configuration.
+    /// </summary>
+    public sealed class RetryOptions
+    {
+        public const string Section = "Payments:Retry";
+
+        /// <summary>How many times to try a request, the first time included.</summary>
+        public int MaxAttempts { get; set; } = 5;
+    }
+
+    """
+
+    /// The delivery estimate as the first push adds it: by the server's clock, on line 27.
+    static let deliveryEstimateServerTime = """
+    using System;
+    using Storefront.Inventory;
+
+    namespace Storefront.Delivery;
+
+    /// <summary>
+    /// When an order placed now arrives: the carrier's next delivery day after it ships, which is today before the
+    /// warehouse's cutoff, and tomorrow after it.
+    /// </summary>
+    public sealed class DeliveryEstimate
+    {
+        /// <summary>Orders placed before this time of day ship the same day.</summary>
+        public static readonly TimeOnly Cutoff = new(14, 0);
+
+        private readonly TimeProvider clock;
+        private readonly ICarrierCalendar carrier;
+
+        public DeliveryEstimate(TimeProvider clock, ICarrierCalendar carrier)
+        {
+            this.clock = clock;
+            this.carrier = carrier;
+        }
+
+        /// <summary>The day an order of items from <paramref name="warehouse"/> placed now arrives.</summary>
+        public DateOnly ArrivesOn(Warehouse warehouse)
+        {
+            var now = clock.GetLocalNow();
+            var shipsOn = DateOnly.FromDateTime(now.DateTime);
+            if (TimeOnly.FromDateTime(now.DateTime) >= Cutoff)
+            {
+                shipsOn = shipsOn.AddDays(1);
+            }
+
+            return carrier.NextDeliveryDay(after: shipsOn);
+        }
+    }
+
+    """
+
+    /// After the second: by the warehouse's.
+    static let deliveryEstimate = """
+    using System;
+    using Storefront.Inventory;
+
+    namespace Storefront.Delivery;
+
+    /// <summary>
+    /// When an order placed now arrives: the carrier's next delivery day after it ships, which is today before the
+    /// warehouse's cutoff, and tomorrow after it.
+    /// </summary>
+    public sealed class DeliveryEstimate
+    {
+        /// <summary>Orders placed before this time of day, at the warehouse, ship the same day.</summary>
+        public static readonly TimeOnly Cutoff = new(14, 0);
+
+        private readonly TimeProvider clock;
+        private readonly ICarrierCalendar carrier;
+
+        public DeliveryEstimate(TimeProvider clock, ICarrierCalendar carrier)
+        {
+            this.clock = clock;
+            this.carrier = carrier;
+        }
+
+        /// <summary>The day an order of items from <paramref name="warehouse"/> placed now arrives.</summary>
+        public DateOnly ArrivesOn(Warehouse warehouse)
+        {
+            var now = TimeZoneInfo.ConvertTime(clock.GetUtcNow(), warehouse.TimeZone);
+            var shipsOn = DateOnly.FromDateTime(now.DateTime);
+            if (TimeOnly.FromDateTime(now.DateTime) >= Cutoff)
+            {
+                shipsOn = shipsOn.AddDays(1);
+            }
+
+            return carrier.NextDeliveryDay(after: shipsOn);
+        }
+    }
+
+    """
+
+    /// The coupon service before the pull request: totals cut to the cent, on line 117.
+    static let couponServiceBase = """
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using Microsoft.Extensions.Logging;
+    using Storefront.Payments.Carts;
+
+    namespace Storefront.Payments.Coupons;
+
+    /// <summary>
+    /// Applies coupons to carts: checks that a code may be used, and takes its discount off the cart's total.
+    /// </summary>
+    public sealed class CouponService
+    {
+        private readonly ICouponStore coupons;
+        private readonly TimeProvider clock;
+        private readonly ILogger<CouponService> logger;
+
+        public CouponService(ICouponStore coupons, TimeProvider clock, ILogger<CouponService> logger)
+        {
+            this.coupons = coupons;
+            this.clock = clock;
+            this.logger = logger;
+        }
+
+        /// <summary>
+        /// The cart's total with the coupon <paramref name="code"/> applied, or why it can't be.
+        /// </summary>
+        public async Task<CouponResult> ApplyAsync(Cart cart, string code, CancellationToken cancellation)
+        {
+            var coupon = await coupons.FindAsync(Normalize(code), cancellation);
+            if (coupon is null)
+            {
+                return CouponResult.Rejected("This code doesn't exist.");
+            }
+
+            if (Validate(coupon, cart) is { } problem)
+            {
+                logger.LogInformation("Coupon {Code} rejected: {Problem}", coupon.Code, problem);
+                return CouponResult.Rejected(problem);
+            }
+
+            var total = Apply(coupon, cart);
+            logger.LogInformation("Coupon {Code} applied to cart {Cart}: {Before} to {After} {Currency}.",
+                coupon.Code, cart.Id, cart.Total, total, cart.Currency);
+            return CouponResult.Applied(coupon, total);
+        }
+
+        /// <summary>Codes are typed in any case, with spaces around them.</summary>
+        public static string Normalize(string code) => code.Trim().ToUpperInvariant();
+
+        /// <summary>
+        /// Why <paramref name="coupon"/> can't be used on <paramref name="cart"/>, or null when it can.
+        /// </summary>
+        private string? Validate(Coupon coupon, Cart cart)
+        {
+            var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            if (today < coupon.ValidFrom)
+            {
+                return $"This code can be used from {coupon.ValidFrom:d}.";
+            }
+
+            if (today > coupon.ValidUntil)
+            {
+                return "This code has expired.";
+            }
+
+            if (coupon.Currency is { } currency && currency != cart.Currency)
+            {
+                return $"This code is for totals in {currency}.";
+            }
+
+            if (cart.Total < coupon.MinimumTotal)
+            {
+                return $"This code needs a total of at least {coupon.MinimumTotal} {cart.Currency}.";
+            }
+
+            if (coupon.UsesLeft == 0)
+            {
+                return "This code has been used as many times as it can be.";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The cart's items that <paramref name="coupon"/> takes money off: all of them, or those in its categories.
+        /// </summary>
+        private static IEnumerable<CartItem> Discounted(Coupon coupon, Cart cart) =>
+            coupon.Categories.Count == 0
+                ? cart.Items
+                : cart.Items.Where(item => coupon.Categories.Contains(item.Category));
+
+        /// <summary>
+        /// The cart's total with the coupon's discount taken off, in the cart's currency.
+        /// </summary>
+        /// <remarks>
+        /// The discount is split across the discounted items, in proportion to their prices, so that a refund of one
+        /// item gives back what was paid for it.
+        /// </remarks>
+        internal static decimal Apply(Coupon coupon, Cart cart)
+        {
+            var prices = Discounted(coupon, cart).Select(item => item.Price * item.Quantity).ToArray();
+            var subtotal = prices.Sum();
+            var discount = coupon.Kind switch
+            {
+                CouponKind.Percentage => Rounding.PercentageDiscount(subtotal, coupon.Value),
+                CouponKind.Fixed => Rounding.FixedDiscount(subtotal, coupon.Value),
+                _ => throw new InvalidOperationException($"Unknown coupon kind {coupon.Kind}."),
+            };
+
+            var parts = Rounding.Split(discount, prices);
+            var total = cart.Total - parts.Sum();
+
+            // To the cent: the payment provider takes no fraction of one.
+            return Math.Truncate(total * 100m) / 100m;
+        }
+    }
+
+    """
+
+    /// After the first push: rounded half away from zero.
+    static let couponServiceRounded = """
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using Microsoft.Extensions.Logging;
+    using Storefront.Payments.Carts;
+
+    namespace Storefront.Payments.Coupons;
+
+    /// <summary>
+    /// Applies coupons to carts: checks that a code may be used, and takes its discount off the cart's total.
+    /// </summary>
+    public sealed class CouponService
+    {
+        private readonly ICouponStore coupons;
+        private readonly TimeProvider clock;
+        private readonly ILogger<CouponService> logger;
+
+        public CouponService(ICouponStore coupons, TimeProvider clock, ILogger<CouponService> logger)
+        {
+            this.coupons = coupons;
+            this.clock = clock;
+            this.logger = logger;
+        }
+
+        /// <summary>
+        /// The cart's total with the coupon <paramref name="code"/> applied, or why it can't be.
+        /// </summary>
+        public async Task<CouponResult> ApplyAsync(Cart cart, string code, CancellationToken cancellation)
+        {
+            var coupon = await coupons.FindAsync(Normalize(code), cancellation);
+            if (coupon is null)
+            {
+                return CouponResult.Rejected("This code doesn't exist.");
+            }
+
+            if (Validate(coupon, cart) is { } problem)
+            {
+                logger.LogInformation("Coupon {Code} rejected: {Problem}", coupon.Code, problem);
+                return CouponResult.Rejected(problem);
+            }
+
+            var total = Apply(coupon, cart);
+            logger.LogInformation("Coupon {Code} applied to cart {Cart}: {Before} to {After} {Currency}.",
+                coupon.Code, cart.Id, cart.Total, total, cart.Currency);
+            return CouponResult.Applied(coupon, total);
+        }
+
+        /// <summary>Codes are typed in any case, with spaces around them.</summary>
+        public static string Normalize(string code) => code.Trim().ToUpperInvariant();
+
+        /// <summary>
+        /// Why <paramref name="coupon"/> can't be used on <paramref name="cart"/>, or null when it can.
+        /// </summary>
+        private string? Validate(Coupon coupon, Cart cart)
+        {
+            var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            if (today < coupon.ValidFrom)
+            {
+                return $"This code can be used from {coupon.ValidFrom:d}.";
+            }
+
+            if (today > coupon.ValidUntil)
+            {
+                return "This code has expired.";
+            }
+
+            if (coupon.Currency is { } currency && currency != cart.Currency)
+            {
+                return $"This code is for totals in {currency}.";
+            }
+
+            if (cart.Total < coupon.MinimumTotal)
+            {
+                return $"This code needs a total of at least {coupon.MinimumTotal} {cart.Currency}.";
+            }
+
+            if (coupon.UsesLeft == 0)
+            {
+                return "This code has been used as many times as it can be.";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The cart's items that <paramref name="coupon"/> takes money off: all of them, or those in its categories.
+        /// </summary>
+        private static IEnumerable<CartItem> Discounted(Coupon coupon, Cart cart) =>
+            coupon.Categories.Count == 0
+                ? cart.Items
+                : cart.Items.Where(item => coupon.Categories.Contains(item.Category));
+
+        /// <summary>
+        /// The cart's total with the coupon's discount taken off, in the cart's currency.
+        /// </summary>
+        /// <remarks>
+        /// The discount is split across the discounted items, in proportion to their prices, so that a refund of one
+        /// item gives back what was paid for it.
+        /// </remarks>
+        internal static decimal Apply(Coupon coupon, Cart cart)
+        {
+            var prices = Discounted(coupon, cart).Select(item => item.Price * item.Quantity).ToArray();
+            var subtotal = prices.Sum();
+            var discount = coupon.Kind switch
+            {
+                CouponKind.Percentage => Rounding.PercentageDiscount(subtotal, coupon.Value),
+                CouponKind.Fixed => Rounding.FixedDiscount(subtotal, coupon.Value),
+                _ => throw new InvalidOperationException($"Unknown coupon kind {coupon.Kind}."),
+            };
+
+            var parts = Rounding.Split(discount, prices);
+            var total = cart.Total - parts.Sum();
+
+            // Half away from zero, as the payment provider rounds.
+            return Rounding.RoundToCents(total);
+        }
+    }
+
+    """
+
+    /// After the second: and yen to whole yen, on line 118.
+    static let couponService = """
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using Microsoft.Extensions.Logging;
+    using Storefront.Payments.Carts;
+
+    namespace Storefront.Payments.Coupons;
+
+    /// <summary>
+    /// Applies coupons to carts: checks that a code may be used, and takes its discount off the cart's total.
+    /// </summary>
+    public sealed class CouponService
+    {
+        private readonly ICouponStore coupons;
+        private readonly TimeProvider clock;
+        private readonly ILogger<CouponService> logger;
+
+        public CouponService(ICouponStore coupons, TimeProvider clock, ILogger<CouponService> logger)
+        {
+            this.coupons = coupons;
+            this.clock = clock;
+            this.logger = logger;
+        }
+
+        /// <summary>
+        /// The cart's total with the coupon <paramref name="code"/> applied, or why it can't be.
+        /// </summary>
+        public async Task<CouponResult> ApplyAsync(Cart cart, string code, CancellationToken cancellation)
+        {
+            var coupon = await coupons.FindAsync(Normalize(code), cancellation);
+            if (coupon is null)
+            {
+                return CouponResult.Rejected("This code doesn't exist.");
+            }
+
+            if (Validate(coupon, cart) is { } problem)
+            {
+                logger.LogInformation("Coupon {Code} rejected: {Problem}", coupon.Code, problem);
+                return CouponResult.Rejected(problem);
+            }
+
+            var total = Apply(coupon, cart);
+            logger.LogInformation("Coupon {Code} applied to cart {Cart}: {Before} to {After} {Currency}.",
+                coupon.Code, cart.Id, cart.Total, total, cart.Currency);
+            return CouponResult.Applied(coupon, total);
+        }
+
+        /// <summary>Codes are typed in any case, with spaces around them.</summary>
+        public static string Normalize(string code) => code.Trim().ToUpperInvariant();
+
+        /// <summary>
+        /// Why <paramref name="coupon"/> can't be used on <paramref name="cart"/>, or null when it can.
+        /// </summary>
+        private string? Validate(Coupon coupon, Cart cart)
+        {
+            var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            if (today < coupon.ValidFrom)
+            {
+                return $"This code can be used from {coupon.ValidFrom:d}.";
+            }
+
+            if (today > coupon.ValidUntil)
+            {
+                return "This code has expired.";
+            }
+
+            if (coupon.Currency is { } currency && currency != cart.Currency)
+            {
+                return $"This code is for totals in {currency}.";
+            }
+
+            if (cart.Total < coupon.MinimumTotal)
+            {
+                return $"This code needs a total of at least {coupon.MinimumTotal} {cart.Currency}.";
+            }
+
+            if (coupon.UsesLeft == 0)
+            {
+                return "This code has been used as many times as it can be.";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The cart's items that <paramref name="coupon"/> takes money off: all of them, or those in its categories.
+        /// </summary>
+        private static IEnumerable<CartItem> Discounted(Coupon coupon, Cart cart) =>
+            coupon.Categories.Count == 0
+                ? cart.Items
+                : cart.Items.Where(item => coupon.Categories.Contains(item.Category));
+
+        /// <summary>
+        /// The cart's total with the coupon's discount taken off, in the cart's currency.
+        /// </summary>
+        /// <remarks>
+        /// The discount is split across the discounted items, in proportion to their prices, so that a refund of one
+        /// item gives back what was paid for it.
+        /// </remarks>
+        internal static decimal Apply(Coupon coupon, Cart cart)
+        {
+            var prices = Discounted(coupon, cart).Select(item => item.Price * item.Quantity).ToArray();
+            var subtotal = prices.Sum();
+            var discount = coupon.Kind switch
+            {
+                CouponKind.Percentage => Rounding.PercentageDiscount(subtotal, coupon.Value),
+                CouponKind.Fixed => Rounding.FixedDiscount(subtotal, coupon.Value),
+                _ => throw new InvalidOperationException($"Unknown coupon kind {coupon.Kind}."),
+            };
+
+            var parts = Rounding.Split(discount, prices);
+            var total = cart.Total - parts.Sum();
+
+            // Half away from zero, as the payment provider rounds: to the cent, or to the whole yen, which has no
+            // smaller unit.
+            return cart.Currency == "JPY" ? Math.Round(total, MidpointRounding.AwayFromZero) : Rounding.RoundToCents(total);
         }
     }
 

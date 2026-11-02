@@ -1067,29 +1067,39 @@ private actor LaterCode: CodeSource {
         let snapshot = DemoData.update(DemoData.snapshot(now: now), at: now)
         var shown: [Int: ThreadExcerpt] = [:]
         for record in snapshot.records {
+            let code = PullRequestCode.demo(record.pullRequest)
             for thread in record.details?.threads ?? [] where thread.filePath != nil {
-                let excerpt = try await PullRequestCode.demo(record.pullRequest).excerpt(of: thread, in: record.pullRequest).get()
+                let excerpt = try await code.excerpt(of: thread, in: record.pullRequest).get()
                 #expect(excerpt.lines.filter(\.isCommented).map(\.newNumber) == [thread.line])
                 #expect(excerpt.changedSince == false)
-                shown[record.pullRequest.key.number] = excerpt
+                shown[thread.id] = excerpt
             }
         }
-        #expect(Set(shown.keys) == [4102, 4091])
-        let backoff = try #require(shown[4102])
-        #expect(backoff.lines.first { $0.isCommented }?.text.contains("delay *= 2") == true)
+        // 4102's backoff, attempts and retry policy, 4088's delivery estimate, and 4091's rounding and coupons.
+        #expect(Set(shown.keys) == [11, 13, 14, 43, 63, 67])
+        func commented(_ id: Int) -> String? {
+            shown[id]?.lines.first { $0.isCommented }?.text
+        }
+        let backoff = try #require(shown[11])
+        #expect(commented(11)?.contains("delay *= 2") == true)
         #expect(backoff.lines.first { $0.isCommented }?.kind == .added)
         #expect(backoff.change == .edit)
         #expect(backoff.latestIteration == 2)
-        let rounding = try #require(shown[4091])
-        #expect(rounding.lines.first { $0.isCommented }?.text.contains("MidpointRounding.AwayFromZero") == true)
-        #expect(rounding.lines.contains { $0.kind == .removed && $0.text.contains("Math.Round(amount, 2);") })
+        #expect(commented(13)?.contains("retryOptions.Value.MaxAttempts") == true)
+        #expect(commented(14)?.contains("class RetryPolicy") == true)
+        #expect(shown[14]?.change == .add)
+        #expect(commented(43)?.contains("warehouse.TimeZone") == true)
+        #expect(commented(63)?.contains("MidpointRounding.AwayFromZero") == true)
+        #expect(shown[63]?.lines.contains { $0.kind == .removed && $0.text.contains("Math.Round(amount, 2);") } == true)
+        #expect(commented(67)?.contains("MidpointRounding.AwayFromZero") == true)
+        #expect(shown[67]?.lines.contains { $0.kind == .removed && $0.text.contains("Math.Truncate") } == true)
     }
 
     @Test func comparesTheDemosIterations() async throws {
         let pr = try #require(DemoData.records(now: Date()).first { $0.pullRequest.key.number == 4102 }?.pullRequest)
         let code = PullRequestCode.demo(pr)
         // Made on the first push, which retried 200 ms apart: the second changed it since.
-        let location = ReviewThread.Location(path: "/src/PaymentsClient.cs", right: ReviewThread.Span(lines: 86...86),
+        let location = ReviewThread.Location(path: "/src/PaymentsClient.cs", right: ReviewThread.Span(lines: 74...74),
                                              madeOn: ReviewThread.Comparison(base: 1), changeTrackingId: 1)
         let excerpt = try await code.excerpt(of: CodeFixture.thread(1, at: location), in: pr).get()
         #expect(excerpt.lines.first { $0.isCommented }?.text.contains("RetryDelay") == true)
