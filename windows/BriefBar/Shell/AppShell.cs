@@ -147,6 +147,7 @@ internal sealed class AppShell : IDisposable
         {
             var viewModel = new SettingsViewModel(
                 sources: appSources.Switch,
+                teams: appSources.Teams,
                 azureDevOps: appSources.AzureDevOps,
                 copilot: appSources.Copilot,
                 gitHub: appSources.GitHub,
