@@ -15,12 +15,18 @@ struct PRRowView: View {
     /// What's left before you can complete it, under it, for your own: in lists, folded Idle's too, but not in a widget,
     /// whose rows keep one height.
     var showsReadiness = true
+    /// Its details show beside the list.
+    var isSelected = false
     /// Opens the message it was sent in (right-click); nil when it wasn't.
     var openSource: (() -> Void)? = nil
     /// Stops watching it (right-click); nil when you don't watch it.
     var stopWatching: (() -> Void)? = nil
     /// Takes it off Needs You (right-click); nil when it isn't there.
     var dismiss: (() -> Void)? = nil
+    /// Shows its details, which a click does then, on the window's page; nil where a click opens it in Azure DevOps, which
+    /// its menu does then.
+    var showDetails: (() -> Void)? = nil
+    /// Opens it in Azure DevOps.
     var action: () -> Void
 
     @LocalState private var isHovered = false
@@ -34,7 +40,7 @@ struct PRRowView: View {
         HStack(alignment: .top, spacing: 0) {
             // The row, and its summary under it, which ends where its time does, left of its actions.
             VStack(alignment: .leading, spacing: 0) {
-                Button(action: action) {
+                Button(action: showDetails ?? action) {
                     content
                         .padding(.horizontal, 8)
                         .padding(.vertical, compact ? 5 : 6)
@@ -45,7 +51,8 @@ struct PRRowView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(item.title), \(item.headline)")
                 .accessibilityValue(accessibilityValue)
-                .accessibilityHint("Opens the pull request in Azure DevOps")
+                .accessibilityHint(showDetails == nil ? "Opens the pull request in Azure DevOps" : "Shows its details")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
                 RowSummary(subject: item.key.linkRef)
                     .padding(.leading, 8 + options.rowIconWidth * textScale + (options.readableRows ? 10 : 9))
@@ -72,11 +79,16 @@ struct PRRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.22 : 0.16) : isHovered ? Color.primary.opacity(0.08) : .clear)
         )
         .onHover { isHovered = $0 }
         .contextMenu { menuItems }
-        .rowActions(for: item.title, openTitle: "Open in Azure DevOps", open: action) { additionalMenuItems }
+        .rowActions(for: item.title, openTitle: showDetails == nil ? "Open in Azure DevOps" : "Show Details", open: showDetails ?? action) {
+            if showDetails != nil {
+                Button("Open in Azure DevOps", action: action)
+            }
+            additionalMenuItems
+        }
     }
 
     private var content: some View {
@@ -134,26 +146,15 @@ struct PRRowView: View {
 
     @ViewBuilder
     private var menuItems: some View {
+        if let showDetails {
+            Button("Show Details", action: showDetails)
+        }
         Button("Open in Azure DevOps", action: action)
         additionalMenuItems
     }
 
-    @ViewBuilder
     private var additionalMenuItems: some View {
-        // Right after opening it, a group of its own.
-        SummarizeMenuItems(item.key.linkRef)
-        if let source = item.chatSource, let openSource {
-            Button(source.messageURL == nil ? "Show \(source.appName)" : "Open Message in \(source.appName)", action: openSource)
-        }
-        if let dismiss {
-            Button("Remove from Needs You", action: dismiss)
-        }
-        PullRequestCopilotMenuItems(item: item)
-        LinkMenuItems(item.key.linkRef)
-        if item.isWatched, let stopWatching {
-            Divider()
-            Button("Stop Watching", action: stopWatching)
-        }
+        PullRequestMenuItems(item: item, openSource: openSource, dismiss: dismiss, stopWatching: stopWatching)
     }
 
     private var compactLine: String {
@@ -185,7 +186,7 @@ struct PRRowView: View {
         if item.group == .needsYou && !isNew {
             lines.append("You've seen it: it stays here until you reply, the comments are resolved, or you remove it")
         }
-        lines.append("Click to open in Azure DevOps")
+        lines.append(showDetails == nil ? "Click to open in Azure DevOps" : "Click to see its details")
         let menu = showsActions ? "Use Actions" : "Right-click"
         if let source = item.chatSource {
             lines.append(source.messageURL == nil ? "\(menu) to show \(source.appName)" : "\(menu) to open the message in \(source.appName)")
