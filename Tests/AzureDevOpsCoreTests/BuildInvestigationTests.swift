@@ -479,6 +479,11 @@ enum InvestigationFixture {
         // Without its commits, nothing's the same.
         let unknown = try build(12, result: "failed", queued: t(-hour), source: nil, merge: nil)
         #expect(try BuildComparison.earlierPass(of: unknown, among: [build(6, queued: t(-2 * hour), source: nil, merge: nil)]) == nil)
+        // Nor another merge, unless both say which they built: one that doesn't may have built the same.
+        #expect(try pass(among: [build(6, queued: t(-2 * hour), merge: nil)]) == nil)
+        #expect(try pass(among: [build(6, queued: t(-2 * hour), merge: ""), build(5, queued: t(-3 * hour), merge: "other")]) == "5 before")
+        let unmerged = try build(12, result: "failed", queued: t(-hour), merge: nil)
+        #expect(try BuildComparison.earlierPass(of: unmerged, among: [build(6, queued: t(-2 * hour), merge: "other")]) == nil)
     }
 
     @Test func findsAStepAndItsLogOnTheRunsPage() throws {

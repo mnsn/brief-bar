@@ -315,10 +315,13 @@ private actor GatedTokens: AccessTokenProvider {
         let many = StubServer()
         FailedRun.serve(many)
         serveTestRuns(many, count: 750)
-        let partial = try #require(try await BuildInvestigationReader.read(client: many.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        let cut = try await BuildInvestigationReader.read(client: many.client(), buildId: 77, of: FailedRun.pullRequest)
+        let partial = try #require(cut.tests)
         #expect(partial.runs == BuildInvestigationReader.testRunsCounted)
         #expect(!partial.isComplete)
         #expect(requests(many, to: "/_apis/test/runs").count == 5)
+        // Those it doesn't add up weren't left unread: reading them again wouldn't add them.
+        #expect(cut.unread[.tests] == nil)
     }
 
     @Test func readsTheFailuresOfATestRunThatDoesntCountThem() async throws {
@@ -370,15 +373,34 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(await investigator.keptBuilds.isEmpty)
     }
 
-    @Test func aTestRunThatCantBeReadLeavesTheTotalsPartial() async throws {
+    @Test func aTestRunThatCantBeReadLeavesTheTotalsPartialAndUnread() async throws {
         let server = StubServer()
         FailedRun.serve(server, replies: ["testRuns": .json(Fixture.list([
             ["id": 701, "name": "Unit", "totalTests": 3, "passedTests": 3], ["name": "Without an ID", "totalTests": 9, "passedTests": 9],
         ]))])
-        let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        let investigation = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
+        let tests = try #require(investigation.tests)
         #expect(tests.runs == 1)
         #expect(tests.total == 3)
         #expect(!tests.isComplete)
+        // The one that can't be read is read again next time.
+        #expect(investigation.unread[.tests].map { if case .decoding = $0 { true } else { false } } == true)
+
+        // So is one whose counts can't be read, though it's there.
+        let counts = StubServer()
+        FailedRun.serve(counts, replies: ["testRuns": .json(Fixture.list([
+            ["id": 701, "name": "Unit", "totalTests": 3, "passedTests": 3], ["id": 702, "name": "Many", "totalTests": "many", "passedTests": 9],
+        ]))])
+        counts.on("/\(Fixture.org)/p1/_apis/test/Runs/702/results", json: Fixture.list([]))
+        let uncounted = try await BuildInvestigationReader.read(client: counts.client(), buildId: 77, of: FailedRun.pullRequest)
+        let partial = try #require(uncounted.tests)
+        #expect(partial.runs == 2)
+        #expect(partial.passed == 12)
+        #expect(!partial.isComplete)
+        #expect(uncounted.unread[.tests].map { if case .decoding = $0 { true } else { false } } == true)
+        let investigator = BuildInvestigator(client: counts.client())
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        #expect(await investigator.keptBuilds.isEmpty)
     }
 
     @Test func whatCantBeReadIsntTakenForNone() async throws {
@@ -693,6 +715,8 @@ private actor GatedTokens: AccessTokenProvider {
         retargeted.targetBranch = "release"
         let reading = Task { try await investigator.investigation(buildId: 77, of: retargeted) }
         let readAlone = (try? await waitUntil("the read for release") { requests(server, to: "/timeline").count == 1 }) != nil
+        // Were it waiting for the held read for main instead, that's let go, so the test fails rather than waits for ever.
+        if !readAlone { await tokens.releaseAll() }
         // Another caller comparing it with main, once the read for release is done, shares the read for main.
         _ = try? await reading.value
         let alsoToMain = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }

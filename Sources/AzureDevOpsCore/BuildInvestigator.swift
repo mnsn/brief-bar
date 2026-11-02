@@ -358,37 +358,48 @@ public enum BuildInvestigationReader {
         }
     }
 
-    /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once, and whether that's all of
-    /// them: not when there are more, or one of them couldn't be read.
-    static func readTestRuns(client: ADOClient, organization: String, projectId: String, buildId: Int) async throws
-        -> (runs: [ADOTestRun], all: Bool) {
-        var runs: [ADOTestRun] = []
-        var seen: Set<Int> = []
+    /// A run's test runs, as far as they could be read.
+    struct TestRuns: Sendable {
+        /// Those that could be read, each once.
+        var runs: [ADOTestRun]
+        /// As many came back as it adds up, `testRunsCounted`: it may have published more.
+        var isCut = false
+        /// Some couldn't be read.
         var unreadable = false
+    }
+
+    /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once.
+    static func readTestRuns(client: ADOClient, organization: String, projectId: String, buildId: Int) async throws -> TestRuns {
+        var read = TestRuns(runs: [])
+        var seen: Set<Int> = []
         for skip in stride(from: 0, to: testRunsCounted, by: testRunsPerRequest) {
             let page = try await client.get(ADOEndpoint.testRuns(
                 organization: organization, projectId: projectId, buildId: buildId, skip: skip, top: testRunsPerRequest
             ), as: ADOList<ADOTestRun>.self)
-            runs += page.value.filter { seen.insert($0.id).inserted }
-            unreadable = unreadable || page.skipped > 0
-            if page.value.count + page.skipped < testRunsPerRequest { return (runs, !unreadable) }
+            read.runs += page.value.filter { seen.insert($0.id).inserted }
+            read.unreadable = read.unreadable || page.skipped > 0
+            if page.value.count + page.skipped < testRunsPerRequest { return read }
         }
-        return (runs, false)
+        read.isCut = true
+        return read
     }
 
     /// The run's tests, added up, and the failed tests of its first test runs with failures, each read at the same time:
-    /// nil when it published none.
+    /// nil when it published none. Test runs, their counts or failed tests that couldn't be read are an error, as reading
+    /// them again may work, but the rest are there all the same.
     static func readTests(
-        client: ADOClient, organization: String, projectId: String, runs read: Result<(runs: [ADOTestRun], all: Bool), ADOError>
+        client: ADOClient, organization: String, projectId: String, runs read: Result<TestRuns, ADOError>
     ) async -> (tests: BuildTests?, error: ADOError?) {
-        let runs: [ADOTestRun]
-        let all: Bool
+        let testRuns: TestRuns
         switch read {
-        case .success(let value): (runs, all) = (value.runs, value.all)
+        case .success(let value): testRuns = value
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
+        let runs = testRuns.runs
+        var problem: ADOError? = testRuns.unreadable ? .decoding("test runs that couldn't be read")
+            : runs.contains(where: \.hasUnreadableCounts) ? .decoding("test counts that couldn't be read") : nil
         // None at all is no tests; none that could be read is an error.
-        guard !runs.isEmpty else { return (nil, all ? nil : .decoding("test runs that couldn't be read")) }
+        guard !runs.isEmpty else { return (nil, problem) }
         // The test runs with failures, and then those that don't say how many failed.
         let failing = Array(runs
             .filter { (BuildTests.failed(in: $0) ?? 1) > 0 }
@@ -412,7 +423,6 @@ public enum BuildInvestigationReader {
         // How many failed results came back for each, whether or not they could be read.
         var results: [Int: Int] = [:]
         var failures: [FailedTest] = []
-        var problem: ADOError?
         for run in failing {
             switch answers[run.id] {
             case .success(let list)?:
@@ -426,7 +436,7 @@ public enum BuildInvestigationReader {
         }
         let tests = BuildTests(
             runs: runs, results: results, listed: failedTestsListed, failures: Array(failures.prefix(failedTestsListed)),
-            countsAllRuns: all
+            countsAllRuns: !testRuns.isCut && !testRuns.unreadable
         )
         return (tests, problem)
     }

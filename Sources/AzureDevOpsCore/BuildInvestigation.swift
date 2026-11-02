@@ -37,8 +37,8 @@ public struct BuildInvestigation: Sendable, Equatable {
     /// The run compared with the pull request's latest commit, and with the pipeline's other runs: whether it's the
     /// change's doing.
     public var comparison: BuildComparison
-    /// What couldn't be read, and why: reading it again may work. What isn't there, or may not be read, isn't here: it's
-    /// just missing.
+    /// What couldn't be read, all of it or some, and why: reading it again may work. What could be is there all the same,
+    /// such as the tests that could be added up. What isn't there, or may not be read, isn't here: it's just missing.
     public var unread: [Part: ADOError]
     public var readAt: Date
 
@@ -720,8 +720,8 @@ public struct BuildComparison: Sendable, Equatable {
     public struct EarlierPass: Sendable, Equatable {
         public var run: PipelineRun
         /// It built the very same commit, such as the same merge of the pull request into its target branch, which makes
-        /// a failure now look flaky. Otherwise it built the merge of the pull request's same commit before the target branch
-        /// changed: the target's changes since may be why it fails now.
+        /// a failure now look flaky. Otherwise it built another merge of the pull request's same commit, from before the
+        /// target branch changed: the target's changes since may be why it fails now.
         public var builtTheSame: Bool
 
         public init(run: PipelineRun, builtTheSame: Bool) {
@@ -766,8 +766,12 @@ public struct BuildComparison: Sendable, Equatable {
 
     /// The latest of `runs`, the pipeline's on the pull request, that passed before `build` on the same commit, and whether
     /// it built the very same one: the latest that built the same commit as `build`, such as the same merge, or else the
-    /// latest that built a merge of the pull request's same source commit.
+    /// latest that built another merge of the pull request's same source commit. That's only when both say which commit
+    /// they built: one that doesn't may have built the same.
     static func earlierPass(of build: ADOBuild, among runs: [ADOBuild]) -> (build: ADOBuild, builtTheSame: Bool)? {
+        func known(_ commit: String?) -> Bool {
+            !(commit ?? "").isEmpty
+        }
         func same(_ one: String?, _ other: String?) -> Bool {
             guard let one, let other, !one.isEmpty else { return false }
             return one.caseInsensitiveCompare(other) == .orderedSame
@@ -780,10 +784,11 @@ public struct BuildComparison: Sendable, Equatable {
                 && (build.sourceBranch == nil || run.sourceBranch == build.sourceBranch) && isEarlier(run, than: build)
         }
         if let run = latest(passed.filter({ same($0.sourceVersion, build.sourceVersion) })) { return (run, true) }
-        if let run = latest(passed.filter({ same($0.triggerInfo?["pr.sourceSha"], build.triggerInfo?["pr.sourceSha"]) })) {
-            return (run, false)
+        guard known(build.sourceVersion) else { return nil }
+        let merged = passed.filter { run in
+            known(run.sourceVersion) && same(run.triggerInfo?["pr.sourceSha"], build.triggerInfo?["pr.sourceSha"])
         }
-        return nil
+        return latest(merged).map { (build: $0, builtTheSame: false) }
     }
 
     /// Queued before: by when they were queued, or by ID, which grows, when either doesn't say.
