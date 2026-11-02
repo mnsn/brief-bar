@@ -513,7 +513,8 @@ SDK ships inside the app.
   would read tables that edit removed. It refuses files that are still missing too, so after three tries, BriefBar
   counts them against the MANIFEST, or against CURRENT. Like LevelDB, BriefBar skips the rest of a block that reads as
   zeros, as space never written, and reads on, rather than stopping there and missing the edits after it; only zeros
-  that run to the end may be space not written yet, which it reads again later. Checked on this PC: Teams' MANIFEST
+  that run to the end may be space not written yet, which it reads again later, unless they break off an edit of the
+  MANIFEST, which LevelDB never leaves as it writes, and refuses. Checked on this PC: Teams' MANIFEST
   listed every table there (18, then 20 after Teams compacted), and its one log was live, so the chats read are the
   same.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets

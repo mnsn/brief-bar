@@ -120,7 +120,7 @@ public sealed class LevelDBManifestTests
         Assert.Equal(expected: 7UL, actual: version.LogNumber);
     }
 
-    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, though it reads on after them.
+    /// Zeros that break off an edit split across blocks make LevelDB refuse the MANIFEST, whether more follows them or not.
     [Fact]
     public void RefusesAManifestWhoseEditBreaksOffAtZeros()
     {
@@ -138,6 +138,11 @@ public sealed class LevelDBManifestTests
         var error = Assert.Throws<FormatErrorException>(testCode: () => LevelDBManifest.Parse(bytes: manifest));
 
         Assert.Equal(expected: FormatError.Corrupt(what: "manifest"), actual: error.Error);
+        // So it does when the zeros run to the end; without them, the edit may still be being written, and the version
+        // before it counts.
+        var atTheEnd = Assert.Throws<FormatErrorException>(testCode: () => LevelDBManifest.Parse(bytes: [.. log.Bytes[..LevelDBLog.BlockSize], .. new byte[100]]));
+        Assert.Equal(expected: FormatError.Corrupt(what: "manifest"), actual: atTheEnd.Error);
+        Assert.Equal(expected: new HashSet<ulong> { 5 }, actual: LevelDBManifest.Parse(bytes: log.Bytes[..LevelDBLog.BlockSize]).Tables);
     }
 
     /// Microsoft Edge's, in the fixture: as LevelDB creates a database, with no tables, and its log number 0, which keeps
