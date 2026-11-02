@@ -1702,9 +1702,11 @@ printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
 task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
-own too once you went on with it in the app, as it looks right before git deletes it, after each answer
-(`CopilotTasksStore.worktreeInUse`); from that look until git is done, its checkout is busy, so no task of
-BriefBar's starts there meanwhile. A prompt sent to a session stays on disk only in its request, until the
+own too once you went on with it in the app, or that a session BriefBar is sending a prompt to works in,
+as it looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`); from that
+look until git is done, its checkout is busy, so no task of BriefBar's starts there meanwhile, as a
+session's is while BriefBar sends it a prompt, until the prompt has gone or been taken back
+(`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
 session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
 

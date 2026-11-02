@@ -273,6 +273,8 @@ import Testing
         let madeForks = Mutex<[String]?>(nil)
         /// The times the forks were asked for since.
         let forksSince = Mutex<[Date]>([])
+        /// No other prompt is on its way to a fork.
+        let reservable = Mutex(true)
 
         var sender: SessionSender.Effects {
             SessionSender.Effects(
@@ -293,6 +295,7 @@ import Testing
                     if stopsWhenAsked.withLock({ $0 }) { withUnsafeCurrentTask { $0?.cancel() } }
                     return allowed.withLock { $0 }
                 },
+                reserve: { [self] _ in reservable.withLock { $0 } },
                 now: { [self] in Date().addingTimeInterval(ahead.withLock { $0 }) }
             )
         }
@@ -444,6 +447,11 @@ import Testing
         #expect(forked.received == [.init(kind: "send", prompt: "Try it another way")])
         // The fork opens, once its request is written.
         #expect(effects.opened.withLock { $0 } == [fork])
+
+        // Another prompt on its way to the fork already: this one isn't written.
+        effects.reservable.withLock { $0 = false }
+        #expect(await sender(outbox, effects).forkAndSend("Try it", from: session) == .forkedNotSent(fork: fork, .busy))
+        #expect(forked.received.count == 1)
     }
 
     /// BriefBar sends to the fork only once the app records it as a fork of the session, waiting while it doesn't list it

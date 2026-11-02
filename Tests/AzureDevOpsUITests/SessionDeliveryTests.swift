@@ -508,6 +508,67 @@ private final class ExtensionStandIn: Sendable {
         #expect(ext.received == ["Fix them again"])
     }
 
+    /// While a prompt is on its way to a session, where it works stays as it is: git removes no task's worktree there, and
+    /// no task starts there, until the prompt has gone, or been taken back.
+    @Test func keepsTheCheckoutOfASessionAPromptIsOnItsWayTo() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.showForTests = { _ in true }
+        let worktree = home.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let run = CopilotRun(
+            id: session, workItem: nil, options: CopilotModel.standard, repository: home, worktree: worktree, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished
+        )
+        let task = SessionChoice(kind: .task(run), name: "Fix Comments", reasons: [.earlierTask])
+        // Its extension listens, and takes it a moment later.
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        defer { ext.stop() }
+
+        let sending = Task { await store.deliver("Fix the comments", to: task) }
+        for _ in 0..<400 where requests(home).isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(store.isWorking(inFolder: worktree))
+        #expect(await store.worktreeInUse(run) == "BriefBar is sending a prompt to a session that works in it. Remove it once that's done.")
+        ext.start()
+        #expect(await sending.value == .sent)
+        #expect(!store.isWorking(inFolder: worktree))
+        #expect(await store.worktreeInUse(run) == nil)
+    }
+
+    /// A fork that another prompt is on its way to isn't sent a second one meanwhile: BriefBar copies the prompt for it
+    /// instead, and gives back only what it took.
+    @Test func sendsAForkOnePromptAtATime() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, forkedFrom: session)
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { id, text in copied.append("\(id) \(text)"); return true }
+        let outbox = home.appendingPathComponent("Outbox")
+        let original = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let forked = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        try original.listen()
+        try forked.listen()
+        original.start { [fork] _ in ["ok": true, "forkSessionId": fork] }
+        forked.start()
+        defer {
+            original.stop()
+            forked.stop()
+        }
+        try hold(session, home: home)
+        try hold(fork, home: home)
+        store.delivering.insert(fork)
+
+        let result = await store.deliver("Try it", to: choice(session), forking: true)
+        #expect(result == .fellBack(SessionFallback(reason: SendFailure.busy.description, session: fork, fork: fork)))
+        #expect(forked.received.isEmpty)
+        #expect(copied == ["\(fork) Try it"])
+        #expect(store.delivering == [fork])
+    }
+
     /// One prompt at a time for each session: a second one while the first is on its way isn't sent.
     @Test func sendsOnePromptAtATimeToASession() async throws {
         let (store, home) = try store()

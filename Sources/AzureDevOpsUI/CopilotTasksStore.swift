@@ -123,6 +123,9 @@ final class CopilotTasksStore: ObservableObject {
     var deliveryTimingForTests: SessionSender.Timing?
     /// The sessions BriefBar sends a prompt to now, through its extension in them (`deliver`): one at a time, each.
     @Published var delivering: Set<String> = []
+    /// Where each session that BriefBar sends a prompt to now works, by the session's ID: no task starts there, and git
+    /// removes no worktree there, until the prompt has gone or been taken back (`busyFolders`).
+    var deliveringFolders: [String: URL] = [:]
     /// Azure DevOps was turned off, or BriefBar is quitting: a prompt on its way to a session goes no further.
     private(set) var hasStopped = false
 
@@ -457,7 +460,7 @@ final class CopilotTasksStore: ObservableObject {
     /// they get ready, and those of runs whose Copilot process still runs; and those of worktrees git removes now. A new
     /// task's worktree is its own.
     func busyFolders() -> Set<String> {
-        var folders = Set(removingWorktrees.values.map(Self.checkoutKey))
+        var folders = Set((Array(removingWorktrees.values) + Array(deliveringFolders.values)).map(Self.checkoutKey))
         for entry in pending where entry.status.phase.isActive {
             if let folder = continuingFolders[entry.id] { folders.insert(Self.checkoutKey(folder)) }
         }
@@ -874,6 +877,10 @@ final class CopilotTasksStore: ObservableObject {
     /// Why a task's worktree can't be removed now, as BriefBar's own tasks say, or nil.
     private func taskInWorktree(_ run: CopilotRun) -> String? {
         if removingWorktrees[run.id] != nil { return "BriefBar is removing it already." }
+        let checkout = Self.checkoutKey(run.worktree)
+        if deliveringFolders.values.contains(where: { Self.checkoutKey($0) == checkout }) {
+            return "BriefBar is sending a prompt to a session that works in it. Remove it once that's done."
+        }
         if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
             return "Copilot is working in it for a task BriefBar sent. Remove it once that's done."
         }

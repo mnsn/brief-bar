@@ -23,6 +23,8 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
     case cancelled
     /// BriefBar may send nothing anymore: Send Work to Copilot, or Send Prompts to Copilot Sessions, was turned off.
     case turnedOff
+    /// BriefBar is sending the session another prompt.
+    case busy
 
     public var description: String {
         switch self {
@@ -46,6 +48,7 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
         case .outbox(let why): return why
         case .cancelled: return "BriefBar stopped sending it."
         case .turnedOff: return "BriefBar can't send anything now."
+        case .busy: return "BriefBar is sending it a prompt already."
         }
     }
 }
@@ -102,6 +105,9 @@ public struct SessionSender: Sendable {
         /// Whether BriefBar may still send, as you turned it on: asked before each request, and while one waits for an
         /// extension to take it.
         public var mayGoOn: @Sendable () async -> Bool
+        /// Takes the fork for this send, before its prompt is written, so that no other prompt goes to it meanwhile: false
+        /// when BriefBar sends it another already.
+        public var reserve: @Sendable (String) async -> Bool
         public var now: @Sendable () -> Date
 
         public init(
@@ -109,7 +115,8 @@ public struct SessionSender: Sendable {
             forkRecord: @escaping @Sendable (String) -> ForkRecord,
             forks: @escaping @Sendable (_ original: String, _ since: Date) -> [String]? = { _, _ in nil },
             isLive: @escaping @Sendable (OutboxListener) -> Bool = { CopilotOutbox.isLive($0) },
-            mayGoOn: @escaping @Sendable () async -> Bool = { true }, now: @escaping @Sendable () -> Date = { Date() }
+            mayGoOn: @escaping @Sendable () async -> Bool = { true },
+            reserve: @escaping @Sendable (String) async -> Bool = { _ in true }, now: @escaping @Sendable () -> Date = { Date() }
         ) {
             self.open = open
             self.isHeld = isHeld
@@ -117,6 +124,7 @@ public struct SessionSender: Sendable {
             self.forks = forks
             self.isLive = isLive
             self.mayGoOn = mayGoOn
+            self.reserve = reserve
             self.now = now
         }
     }
@@ -185,6 +193,7 @@ public struct SessionSender: Sendable {
             case .failure(let stopped): return .notSent(stopped)
             }
         }
+        guard await effects.reserve(fork) else { return .forkedNotSent(fork: fork, .busy) }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
         switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
         case .success: return .forkedAndSent(fork: fork)

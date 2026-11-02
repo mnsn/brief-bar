@@ -88,8 +88,8 @@ extension SessionFallback {
     }
 }
 
-/// The sessions that a delivery opened, so that it shows each once.
-@MainActor private final class OpenedSessions {
+/// Sessions a delivery opened, so that it shows each once; or took, as a fork it sends to, to give back once it's done.
+@MainActor private final class SessionIDs {
     var ids: Set<String> = []
 }
 
@@ -107,6 +107,7 @@ extension SendFailure {
         case .outbox: return "the outbox can't be used"
         case .cancelled: return "cancelled"
         case .turnedOff: return "turned off"
+        case .busy: return "a prompt is on its way to it already"
         }
     }
 }
@@ -196,8 +197,13 @@ extension CopilotTasksStore {
             return await fallBack(prompt, in: id, forking: forking, reason: why, foreseen: true, handOff: handOff)
         }
         if case .loads = reach, !canOpenInApp { return .notSent(Self.cantOpenInApp) }
+        // Where it works stays as it is until the prompt has gone, or been taken back.
+        if let folder = choice.folder ?? folder(of: choice) { deliveringFolders[id] = folder }
+        defer { deliveringFolders[id] = nil }
 
-        let opened = OpenedSessions()
+        let opened = SessionIDs()
+        let reserved = SessionIDs()
+        defer { delivering.subtract(reserved.ids) }
         let homes = await sessionHomes()
         let appHome = appHome
         let effects = SessionSender.Effects(
@@ -214,6 +220,14 @@ extension CopilotTasksStore {
             forks: { original, since in AppSessions.forks(of: original, since: since, home: appHome) },
             mayGoOn: { [weak self] in
                 await MainActor.run { self?.maySendToSessions ?? false }
+            },
+            reserve: { [weak self] fork in
+                await MainActor.run {
+                    guard let self, !self.delivering.contains(fork) else { return false }
+                    self.delivering.insert(fork)
+                    reserved.ids.insert(fork)
+                    return true
+                }
             }
         )
         let sender = SessionSender(outbox: outbox, effects: effects, timing: deliveryTimingForTests ?? SessionSender.Timing())
@@ -333,8 +347,11 @@ extension CopilotTasksStore {
     }
 
     /// The process of the Copilot CLI that has the session open now, as its lock says: nil when none does, or the app does.
+    /// Nothing's read once Send Work to Copilot is off, or Azure DevOps has stopped.
     private func cliHolder(of id: String) async -> pid_t? {
+        guard canSend, isOn, !hasStopped else { return nil }
         let homes = await sessionHomes()
+        guard canSend, isOn, !hasStopped else { return nil }
         let holder = await Task.detached(priority: .userInitiated) {
             homes.lazy.compactMap { AppSessions.holder(of: id, home: $0) }.first
         }.value
