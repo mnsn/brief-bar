@@ -518,8 +518,9 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             {
                 return;
             }
+            var previous = settings.Account;
             store.Receive(snapshot: state, now: time.GetUtcNow());
-            KeepAccountOrigin(account: state.Account);
+            KeepAccountOrigin(account: state.Account, previous: previous);
             Rebuild();
         }
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
@@ -527,13 +528,23 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
 
     /// Keeps where `account`, the one the engine read as, is from, for after a restart, as its directory is kept with what
     /// it has seen: a sign-in that your own directory wants again then isn't taken for someone else's. Only while the
-    /// sign-in's tokens are still that account's, so that one account's is never kept for another; and under the lock,
-    /// after the generation's check, so that a read the engine queued before Azure DevOps was turned off saves nothing.
-    void KeepAccountOrigin(string? account)
+    /// sign-in's tokens are still that account's, so that one account's is never kept for another. A read as another
+    /// account than `previous`, the one whose origin was kept, that they aren't for forgets it, as it was the last
+    /// account's. Under the lock, after the generation's check, so that a read the engine queued before Azure DevOps was
+    /// turned off saves nothing.
+    void KeepAccountOrigin(string? account, string? previous)
     {
-        if (account is not null && reading.AccountOrigin(account: account) is { } origin)
+        if (account is null)
+        {
+            return;
+        }
+        if (reading.AccountOrigin(account: account) is { } origin)
         {
             settings.AccountOrigin = origin;
+        }
+        else if (!string.Equals(a: account, b: previous, comparisonType: StringComparison.Ordinal))
+        {
+            settings.AccountOrigin = null;
         }
     }
 

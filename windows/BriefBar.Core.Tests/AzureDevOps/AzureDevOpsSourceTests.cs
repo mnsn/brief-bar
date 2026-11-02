@@ -14,6 +14,7 @@ public sealed class AzureDevOpsSourceTests
     /// Made-up directories' IDs: your sign-in's, and another one.
     const string HomeTenant = "0a0a0a0a-1111-4111-8111-111111111111";
     const string OtherTenant = "0b0b0b0b-2222-4222-8222-222222222222";
+    const string ThirdTenant = "0c0c0c0c-3333-4333-8333-333333333333";
 
     static readonly DateTimeOffset now = TestTimes.T(seconds: 0);
 
@@ -162,30 +163,45 @@ public sealed class AzureDevOpsSourceTests
     }
 
     /// Where the account it reads as is from is kept, for after a restart, while the sign-in's tokens are that account's,
-    /// so one account's is never kept for another. Turning Azure DevOps off forgets it, with what you've seen, and a read the
-    /// engine queued before it stopped saves neither again.
+    /// so one account's is never kept for another: a read as another account they aren't for forgets the last one's.
+    /// Turning Azure DevOps off forgets it, with what you've seen, and a read the engine queued before it stopped saves
+    /// neither again.
     [Fact]
     public async Task KeepsWhereYourAccountIsFromUntilItsTurnedOff()
     {
         var storage = new MemorySettings();
         var settings = AzureDevOpsDemoData.Settings(storage: storage, now: now);
         const string yours = HomeTenant + "/robin";
-        var made = Make(settings: settings, origin: account => account == yours ? "live.com" : null);
+        const string theirs = ThirdTenant + "/sam";
+        // The account the sign-in's tokens are for now, if any.
+        string? signedIn = yours;
+        var made = Make(settings: settings, origin: account => account != signedIn ? null : account == yours ? "live.com" : ThirdTenant);
         using var source = made.Source;
         await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
         await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = yours, HasLoaded = true });
         Assert.Equal(expected: "live.com", actual: settings.AccountOrigin);
         Assert.Equal(expected: "live.com", actual: storage.Read(key: AzureDevOpsSettings.AccountOriginKey)?.GetValue<string>());
         Assert.Equal(expected: "live.com", actual: new AzureDevOpsSettings(settings: storage, now: now).AccountOrigin);
-        // A read as an account the sign-in's tokens aren't for leaves it as it was.
-        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = "0c0c0c0c-3333-4333-8333-333333333333/sam", HasLoaded = true });
+        // A read as the same account, once the sign-in's tokens aren't its, leaves it as it was: it's still that account's.
+        signedIn = null;
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = yours, HasLoaded = true });
         Assert.Equal(expected: "live.com", actual: settings.AccountOrigin);
+        // A read as another account they aren't for, as one the engine started before the sign-in changed again, forgets
+        // it: it was the last account's, and this one's isn't known.
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
+        Assert.Equal(expected: theirs, actual: settings.Account);
+        Assert.Null(@object: settings.AccountOrigin);
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.AccountOriginKey));
+        // Once they're that account's, its own is kept.
+        signedIn = theirs;
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
+        Assert.Equal(expected: ThirdTenant, actual: settings.AccountOrigin);
 
         source.DeleteSavedData();
         Assert.Null(@object: settings.AccountOrigin);
         Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.AccountOriginKey));
         // The engine's last read, queued before it stopped, arrives after, with who's signed in.
-        made.Engine().Publish(snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = yours, HasLoaded = true });
+        made.Engine().Publish(snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
         await Task.Delay(millisecondsDelay: 200, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Null(@object: settings.Account);
         Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.SeenKey));
