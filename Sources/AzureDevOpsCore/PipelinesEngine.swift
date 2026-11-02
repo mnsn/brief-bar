@@ -315,6 +315,8 @@ public actor PipelinesEngine {
         // Organizations found to be in a directory to sign in to: asked nothing more this refresh, so they don't hold up
         // the others with requests that can't work.
         var waiting: Set<String> = []
+        // Runs whose stages wait on a sign-in to their organization's directory, though its runs were read: said too.
+        var stagesElsewhere: [(organization: String, error: ADOError)] = []
         for key in groups.keys.sorted() {
             guard let pipelines = groups[key], let first = pipelines.first else { continue }
             guard !waiting.contains(first.organization.lowercased()) else { continue }
@@ -411,10 +413,15 @@ public actor PipelinesEngine {
                 attempts[item.key] = nil
             } catch ADOError.throttled(let seconds) {
                 throttled = .throttled(retryAfter: seconds)
-            } catch let error as ADOError {
-                // Its stages stay as they were, and are tried again later; its organization's, once you've signed in to
-                // its directory.
-                if case .otherDirectory = error { waiting.insert(item.key.organization.lowercased()) }
+            } catch ADOError.otherDirectory(let organization, let tenant) {
+                // Its stages stay as they were, and wait on a sign-in to its directory, which is said: not a timeline that
+                // keeps failing, it's tried again at the next refresh, so signing in there reads it then.
+                waiting.insert(item.key.organization.lowercased())
+                stagesElsewhere.append((
+                    organization: item.key.organization, error: .otherDirectory(organization: organization, tenant: tenant)
+                ))
+            } catch is ADOError {
+                // Its stages stay as they were, and are tried again later.
                 let failures = (attempts[item.key]?.failures ?? 0) + 1
                 attempts[item.key] = Attempts(last: startedAt, failures: failures)
             }
@@ -425,17 +432,20 @@ public actor PipelinesEngine {
         attempts = attempts.filter { latestKeys.contains($0.key) }
 
         // Signing in to a directory comes first, after waiting for Azure DevOps: it's the one thing you can do about it.
-        let elsewhere = errors.contains { if case .otherDirectory = $0.error { true } else { false } }
+        let reported = errors + stagesElsewhere
+        let elsewhere = reported.contains { PulseProblem.isOtherDirectory($0.error) }
         if let throttled {
             problem = PulseProblem.from(throttled)
             failures += 1
         } else if let first = errors.first, errors.count == attemptedLists {
-            problem = elsewhere ? PulseProblem.organizations(errors) : PulseProblem.from(first.error)
+            problem = elsewhere ? PulseProblem.organizations(reported) : PulseProblem.from(first.error)
             failures += 1
-        } else if let first = errors.first {
+        } else if elsewhere {
             // The other pipelines show.
-            problem = elsewhere
-                ? PulseProblem.organizations(errors) : PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
+            problem = PulseProblem.organizations(reported)
+            failures = 0
+        } else if let first = errors.first {
+            problem = PulseProblem.unreachable("Couldn't read some pipelines: \(first.error.description)")
             failures = 0
         } else {
             problem = nil

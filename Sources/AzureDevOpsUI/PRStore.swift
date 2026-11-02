@@ -58,8 +58,6 @@ final class PRStore: ObservableObject {
     /// Asks for tokens in the directory BriefBar last read your pull requests with, so signing in to another directory
     /// for an organization there, which makes it the Azure CLI's default, doesn't read you as someone else.
     private let tokens: AzureCLITokenProvider
-    /// The account whose origin was last kept for after a restart (`AppSettings.accountOrigin`).
-    private var originKeptFor: String?
     /// Stopped, as when Azure DevOps is turned off: a read the engine queued before then is dropped, so nothing it
     /// carries, such as who's signed in, is saved again once the source has deleted it.
     private var isStopped = false
@@ -90,16 +88,14 @@ final class PRStore: ObservableObject {
 
     init(
         settings: AppSettings, summarizer: Summarizer = Summarizer(), notifier: Notifier? = nil, mode: Mode = .live,
-        chats: ChatReading = .inert
+        chats: ChatReading = .inert, tokens: AzureCLITokenProvider? = nil
     ) {
         self.settings = settings
         self.summarizer = summarizer
         self.notifier = notifier
         self.mode = mode
         self.chats = chats
-        let tokens = AzureCLITokenProvider(
-            homeTenant: settings.seen.account.flatMap(AccessToken.tenant(ofAccount:)), homeAccountTenant: settings.accountOrigin
-        )
+        let tokens = tokens ?? AzureCLITokenProvider(homeTenant: settings.pinnedDirectory, homeAccountTenant: settings.accountOrigin)
         self.tokens = tokens
         client = ADOClient(tokens: tokens)
         summarizer.isEnabled = settings.summaries
@@ -383,6 +379,8 @@ final class PRStore: ObservableObject {
 
     private func tick() {
         recompute()
+        // Whichever section read with your sign-in's token: the pipelines or the sprint, without pull requests, too.
+        if mode == .live { Task { await keepSignIn() } }
         // Retry finding organizations, for example once you've signed in.
         if mode == .live, settings.organizations.isEmpty, !settings.hasDiscovered, discovery != .running,
            Date().timeIntervalSince(lastDiscovery ?? .distantPast) > 60 {
@@ -405,9 +403,16 @@ final class PRStore: ObservableObject {
             Task { await engine.stop() }
         }
         engine = nil
-        // Turned off, Azure DevOps forgets where the account is from: nothing saves it again.
-        originKeptFor = nil
         isStopped = true
+    }
+
+    /// Keeps your sign-in's directory, and where your account is from, as the Azure CLI's tokens tell them once any
+    /// section has read with one, for after a restart (`AppSettings.accountDirectory`, `accountOrigin`). Never once
+    /// stopped, as when Azure DevOps is turned off, which forgets them.
+    func keepSignIn() async {
+        guard mode == .live, !isStopped, let signedIn = await tokens.signedIn, !isStopped else { return }
+        if settings.accountDirectory != signedIn.directory { settings.accountDirectory = signedIn.directory }
+        if settings.accountOrigin != signedIn.origin { settings.accountOrigin = signedIn.origin }
     }
 
     // MARK: Actions
@@ -578,16 +583,9 @@ final class PRStore: ObservableObject {
             answeredInPanel = [:]
             Log.app.info("Signed in to the Azure CLI as another account")
         }
-        // Where the account is from, kept for after a restart, as its directory is: a sign-in that your own directory wants
-        // again then isn't taken for someone else's.
-        if mode == .live, let account = snapshot.account, account != originKeptFor {
-            originKeptFor = account
-            Task { [weak self, tokens] in
-                // Only while it's still this account's, and Azure DevOps hasn't been turned off meanwhile.
-                guard let origin = await tokens.accountTenant(of: account), let self, self.originKeptFor == account else { return }
-                if self.settings.accountOrigin != origin { self.settings.accountOrigin = origin }
-            }
-        }
+        // Your sign-in's directory, and where the account is from, kept for after a restart: a sign-in that your own
+        // directory wants again then isn't taken for someone else's, nor another directory's default for yours.
+        if mode == .live, snapshot.account != nil { Task { await keepSignIn() } }
         state = snapshot
         let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
             .map(\.pullRequest).sorted { ($0.createdAt, $0.key) > ($1.createdAt, $1.key) }

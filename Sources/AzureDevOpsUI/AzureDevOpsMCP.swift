@@ -33,6 +33,11 @@ actor AzureDevOpsReader {
     private var engine: PulseEngine?
     /// Your organizations with pull requests, found once when the app has none chosen.
     private var discovered: [String]?
+    /// Your organizations discovery couldn't look in, for want of a sign-in to their directory, or as they failed: looked in
+    /// again at most once a minute, so that signing in there finds yours there.
+    private var discoveryPending: [String] = []
+    /// When the pending ones were last looked in.
+    private var pendingLookedAt: Date?
     private var discoveryProblem: String?
     private var readAt: Date?
     /// The read under way, which says whether what it read is worth keeping.
@@ -124,7 +129,7 @@ actor AzureDevOpsReader {
             return
         }
         if let readAt, now.timeIntervalSince(readAt) < Self.freshFor { return }
-        let task = Task { await read() }
+        let task = Task { await read(now: now) }
         reading = task
         let keep = await task.value
         reading = nil
@@ -144,9 +149,9 @@ actor AzureDevOpsReader {
     }
 
     /// Returns whether what it read is worth keeping.
-    private func read() async -> Bool {
+    private func read(now: Date) async -> Bool {
         guard let client else { return false }
-        let organizations = await organizations(client: client)
+        let organizations = await organizations(client: client, now: now)
         let options = AzureDevOpsCommandLine.classifierOptions(defaults)
         let configuration = PulseEngine.Configuration(
             organizations: organizations, keepDoneFor: options.keepDoneFor,
@@ -160,17 +165,33 @@ actor AzureDevOpsReader {
         return Self.keeps(await engine.currentSnapshot().problem)
     }
 
-    /// `--org`, the app's organizations, or with none chosen yet, the ones where you have pull requests.
-    private func organizations(client: ADOClient) async -> [String] {
+    /// `--org`, the app's organizations, or with none chosen yet, the ones where you have pull requests: those in a
+    /// directory the Azure CLI isn't signed in to are looked in again at most once a minute, whichever call asks.
+    private func organizations(client: ADOClient, now: Date) async -> [String] {
         if !named.isEmpty { return named }
         let chosen = defaults.stringArray(forKey: SettingsKey.organizations) ?? []
         if !chosen.isEmpty { return chosen }
-        if let discovered { return discovered }
+        if var discovered {
+            guard !discoveryPending.isEmpty, now.timeIntervalSince(pendingLookedAt ?? .distantPast) >= Self.freshFor else {
+                return discovered
+            }
+            pendingLookedAt = now
+            let probe = await OrganizationDiscovery.probe(discoveryPending, client: client)
+            let new = probe.withPullRequests.filter { name in
+                !discovered.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+            }
+            discovered += new
+            discoveryPending = probe.elsewhere + probe.failures.keys.sorted()
+            self.discovered = discovered
+            return discovered
+        }
         do {
-            let found = try await OrganizationDiscovery.discover(client: client).withPullRequests
-            discovered = found
+            let found = try await OrganizationDiscovery.discover(client: client)
+            discovered = found.withPullRequests
+            discoveryPending = found.elsewhere
+            pendingLookedAt = now
             discoveryProblem = nil
-            return found
+            return found.withPullRequests
         } catch {
             discoveryProblem = "Couldn't find your organizations: \(Self.describe(error))"
             return []
@@ -205,7 +226,7 @@ actor AzureDevOpsReader {
         if demo { return (DemoData.sprintBoard(now: now), nil) }
         guard let client else { return (nil, nil) }
         let team = defaults.data(forKey: SettingsKey.sprintTeam).flatMap { try? JSONDecoder().decode(TeamRef.self, from: $0) }
-        let configuration = SprintEngine.Configuration(organizations: await organizations(client: client), team: team)
+        let configuration = SprintEngine.Configuration(organizations: await organizations(client: client, now: now), team: team)
         if let read = sprintRead, read.configuration == configuration, now.timeIntervalSince(read.at) < Self.freshFor {
             return (read.snapshot.board, read.snapshot.problem.map(Self.text(of:)))
         }
@@ -461,7 +482,7 @@ actor AzureDevOpsReader {
         }
         guard let client else { throw MCPToolError("BriefBar can't read Azure DevOps here.") }
         var organizations = organization.map { [$0] } ?? inSprint.map { [$0.organization] } ?? []
-        if organizations.isEmpty { organizations = await self.organizations(client: client) }
+        if organizations.isEmpty { organizations = await self.organizations(client: client, now: now) }
         if organizations.isEmpty { throw MCPToolError(discoveryProblem ?? "BriefBar doesn't know your Azure DevOps organizations.") }
         // One in a directory to sign in to may have it, as may the others: it's said only if none of them does.
         var elsewhere: ADOError?

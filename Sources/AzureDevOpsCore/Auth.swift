@@ -181,6 +181,14 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         return homeAccount.tenant
     }
 
+    /// Whom your sign-in's tokens are for, once one has been read, whichever section asked: the account, your sign-in's
+    /// directory, and where the account is from, all as one token tells them, for the app to keep and give back after a
+    /// restart (`homeTenant`, `homeAccountTenant`).
+    public var signedIn: (account: String, directory: String?, origin: String?)? {
+        guard let homeAccount, let account = homeAccount.account else { return nil }
+        return (account: account, directory: homeTenant, origin: homeAccount.tenant)
+    }
+
     /// Keeps a token until it nears its expiry. One for your directory that's another account's means someone else
     /// signed in to the Azure CLI: the other directories' tokens, the last account's, go, and so do those on their way.
     private func keep(_ token: AccessToken, for directory: String?) {
