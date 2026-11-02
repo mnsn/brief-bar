@@ -38,46 +38,21 @@ public sealed partial class BoundaryTests
     public void OnlySQLiteConnectionOpensDatabases()
     {
         Assert.Empty(collection: Uses(api: DatabaseApi(), allowed: ["BriefBar.Core/SQLiteConnection.cs"]));
-        Assert.Contains(collection: SourceFiles(), filter: file => file == "BriefBar.Core/SQLiteConnection.cs");
+        Assert.Contains(collection: SourceTree.Files(), filter: file => file == "BriefBar.Core/SQLiteConnection.cs");
     }
 
     [Fact]
     public void FindsTheCode()
     {
         // Guards the two tests above against passing because they read nothing.
-        Assert.Contains(collection: SourceFiles(), filter: file => file.EndsWith(value: "BriefBar.Core/ItemState.cs", comparisonType: StringComparison.Ordinal));
-        Assert.Contains(collection: SourceFiles(), filter: file => file.EndsWith(value: "BriefBar/App.xaml.cs", comparisonType: StringComparison.Ordinal));
+        Assert.Contains(collection: SourceTree.Files(), filter: file => file.EndsWith(value: "BriefBar.Core/ItemState.cs", comparisonType: StringComparison.Ordinal));
+        Assert.Contains(collection: SourceTree.Files(), filter: file => file.EndsWith(value: "BriefBar/App.xaml.cs", comparisonType: StringComparison.Ordinal));
     }
 
     /// The files outside `allowed` that use `api`, with what they use.
-    static List<string> Uses(Regex api, string[] allowed) => SourceFiles()
+    static List<string> Uses(Regex api, string[] allowed) => SourceTree.Files()
         .Where(predicate: file => !allowed.Any(predicate: place => file.StartsWith(value: place, comparisonType: StringComparison.Ordinal)))
-        .SelectMany(selector: file => api.Matches(input: File.ReadAllText(path: Path.Combine(path1: WindowsFolder(), path2: file)))
+        .SelectMany(selector: file => api.Matches(input: SourceTree.Read(file: file))
             .Select(selector: match => file + ": " + match.Value))
         .ToList();
-
-    /// Every C# file in windows/, relative to it, with forward slashes, except build output and these tests.
-    static List<string> SourceFiles()
-    {
-        var root = WindowsFolder();
-        return Directory.EnumerateFiles(path: root, searchPattern: "*.cs", searchOption: SearchOption.AllDirectories)
-            .Select(selector: path => Path.GetRelativePath(relativeTo: root, path: path).Replace(oldChar: '\\', newChar: '/'))
-            .Where(predicate: path => !path.Contains(value: "/bin/", comparisonType: StringComparison.Ordinal)
-                && !path.Contains(value: "/obj/", comparisonType: StringComparison.Ordinal)
-                && !path.StartsWith(value: "BriefBar.Core.Tests/", comparisonType: StringComparison.Ordinal))
-            .ToList();
-    }
-
-    /// windows/, found from where the tests run.
-    static string WindowsFolder()
-    {
-        for (var folder = new DirectoryInfo(path: AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
-        {
-            if (File.Exists(path: Path.Combine(path1: folder.FullName, path2: "BriefBar.Windows.slnx")))
-            {
-                return folder.FullName;
-            }
-        }
-        throw new InvalidOperationException(message: "The tests run outside windows/, so they can't read its code.");
-    }
 }
