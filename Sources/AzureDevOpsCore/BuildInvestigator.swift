@@ -330,7 +330,8 @@ public enum BuildInvestigationReader {
     }
 
     /// The end of the failed step's log, from its line count in the run's logs: nil when it has no log. When the run's logs
-    /// don't have it, but some of them couldn't be read, it may be one of those: that's an error, not a missing log.
+    /// don't have it, but some of them couldn't be read, it may be one of those: that's an error, not a missing log. So is
+    /// a line count that can't be read.
     static func readLog(
         client: ADOClient, organization: String, projectId: String, buildId: Int, step: ADOTimeline.Record?,
         logs: Result<ADOList<ADOBuildLog>, ADOError>
@@ -344,7 +345,7 @@ public enum BuildInvestigationReader {
         guard let entry = list.value.first(where: { $0.id == logId }) else {
             return (nil, list.skipped > 0 ? .decoding("a log that couldn't be read") : nil)
         }
-        guard let lineCount = entry.lineCount, lineCount >= 0 else { return (nil, nil) }
+        guard let lineCount = entry.lineCount, lineCount >= 0 else { return (nil, .decoding("a log's length that couldn't be read")) }
         guard lineCount > 0 else { return (BuildLog(stepId: step.id, logId: logId, lines: [], lineCount: 0), nil) }
         let first = max(1, lineCount - logLines + 1)
         let lines = await attempt {
@@ -366,16 +367,38 @@ public enum BuildInvestigationReader {
         var isCut = false
         /// Some couldn't be read.
         var unreadable = false
+        /// Why those after the first hundred stopped coming: the runs before are here.
+        var error: ADOError?
+
+        /// They're all its test runs.
+        var isWhole: Bool {
+            !isCut && !unreadable && error == nil
+        }
+
+        /// What couldn't be read of them, runs or their counts: reading them again may work.
+        var problem: ADOError? {
+            if let error { return error }
+            if unreadable { return .decoding("test runs that couldn't be read") }
+            if runs.contains(where: \.hasUnreadableCounts) { return .decoding("test counts that couldn't be read") }
+            return nil
+        }
     }
 
-    /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once.
+    /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once. Throws when the first
+    /// hundred can't be read.
     static func readTestRuns(client: ADOClient, organization: String, projectId: String, buildId: Int) async throws -> TestRuns {
         var read = TestRuns(runs: [])
         var seen: Set<Int> = []
         for skip in stride(from: 0, to: testRunsCounted, by: testRunsPerRequest) {
-            let page = try await client.get(ADOEndpoint.testRuns(
-                organization: organization, projectId: projectId, buildId: buildId, skip: skip, top: testRunsPerRequest
-            ), as: ADOList<ADOTestRun>.self)
+            let page: ADOList<ADOTestRun>
+            do {
+                page = try await client.get(ADOEndpoint.testRuns(
+                    organization: organization, projectId: projectId, buildId: buildId, skip: skip, top: testRunsPerRequest
+                ), as: ADOList<ADOTestRun>.self)
+            } catch where skip > 0 {
+                read.error = (error as? ADOError) ?? .network(error.localizedDescription)
+                return read
+            }
             read.runs += page.value.filter { seen.insert($0.id).inserted }
             read.unreadable = read.unreadable || page.skipped > 0
             if page.value.count + page.skipped < testRunsPerRequest { return read }
@@ -396,8 +419,7 @@ public enum BuildInvestigationReader {
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
         let runs = testRuns.runs
-        var problem: ADOError? = testRuns.unreadable ? .decoding("test runs that couldn't be read")
-            : runs.contains(where: \.hasUnreadableCounts) ? .decoding("test counts that couldn't be read") : nil
+        var problem = testRuns.problem
         // None at all is no tests; none that could be read is an error.
         guard !runs.isEmpty else { return (nil, problem) }
         // The test runs with failures, and then those that don't say how many failed.
@@ -436,7 +458,7 @@ public enum BuildInvestigationReader {
         }
         let tests = BuildTests(
             runs: runs, results: results, listed: failedTestsListed, failures: Array(failures.prefix(failedTestsListed)),
-            countsAllRuns: !testRuns.isCut && !testRuns.unreadable
+            countsAllRuns: testRuns.isWhole
         )
         return (tests, problem)
     }

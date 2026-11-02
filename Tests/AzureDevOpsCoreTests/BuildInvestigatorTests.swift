@@ -293,12 +293,13 @@ private actor GatedTokens: AccessTokenProvider {
     }
 
     @Test func addsUpTestRunsAHundredARequest() async throws {
-        /// Serves `count` test runs of two passed tests each, as pages of what's asked for.
-        func serveTestRuns(_ server: StubServer, count: Int) {
+        /// Serves `count` test runs of two passed tests each, as pages of what's asked for, but fails the page `failing` skips to.
+        func serveTestRuns(_ server: StubServer, count: Int, failing: Int? = nil) {
             server.on("/\(Fixture.org)/p1/_apis/test/runs") { request in
                 let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
                 let skip = Int(items.first { $0.name == "$skip" }?.value ?? "") ?? 0
                 let top = Int(items.first { $0.name == "$top" }?.value ?? "") ?? 0
+                if skip == failing { return .status(500) }
                 let page = (skip..<min(count, skip + top)).map { ["id": 1_000 + $0, "totalTests": 2, "passedTests": 2] as [String: Any] }
                 return .json(Fixture.list(page))
             }
@@ -322,6 +323,24 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(requests(many, to: "/_apis/test/runs").count == 5)
         // Those it doesn't add up weren't left unread: reading them again wouldn't add them.
         #expect(cut.unread[.tests] == nil)
+
+        // A page after the first that can't be read keeps those before, and is read again next time.
+        let failing = StubServer()
+        FailedRun.serve(failing)
+        serveTestRuns(failing, count: 250, failing: 200)
+        let stopped = try await BuildInvestigationReader.read(client: failing.client(), buildId: 77, of: FailedRun.pullRequest)
+        let some = try #require(stopped.tests)
+        #expect(some.runs == 200)
+        #expect(some.total == 400)
+        #expect(!some.isComplete)
+        #expect(stopped.unread[.tests] == .http(500))
+        // When the first can't be read, there's nothing to keep.
+        let none = StubServer()
+        FailedRun.serve(none)
+        serveTestRuns(none, count: 250, failing: 0)
+        let unread = try await BuildInvestigationReader.read(client: none.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(unread.tests == nil)
+        #expect(unread.unread[.tests] == .http(500))
     }
 
     @Test func readsTheFailuresOfATestRunThatDoesntCountThem() async throws {
@@ -417,6 +436,15 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(unlisted.log == nil)
         #expect(unlisted.unread[.log].map { if case .decoding = $0 { true } else { false } } == true)
         #expect(requests(logs, to: "/logs/9").isEmpty)
+        // Nor one whose length can't be read.
+        for log: [String: Any] in [["id": 9], ["id": 9, "lineCount": "many"], ["id": 9, "lineCount": -1]] {
+            let lengths = StubServer()
+            FailedRun.serve(lengths, replies: ["logs": .json(Fixture.list([log]))])
+            let unmeasured = try await BuildInvestigationReader.read(client: lengths.client(), buildId: 77, of: FailedRun.pullRequest)
+            #expect(unmeasured.log == nil)
+            #expect(unmeasured.unread[.log].map { if case .decoding = $0 { true } else { false } } == true)
+            #expect(requests(lengths, to: "/logs/9").isEmpty)
+        }
     }
 
     @Test func stepsThatCantBeReadAreUnread() async throws {
@@ -454,7 +482,7 @@ private actor GatedTokens: AccessTokenProvider {
     @Test func aRunWithoutALogOrTestsHasNone() async throws {
         let server = StubServer()
         FailedRun.serve(server, replies: [
-            "logs": .json(Fixture.list([["id": 4, "lineCount": 12], ["id": 9]])), "testRuns": .json(Fixture.list([])),
+            "logs": .json(Fixture.list([["id": 4, "lineCount": 12]])), "testRuns": .json(Fixture.list([])),
         ])
         let investigation = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
         #expect(investigation.log == nil)
