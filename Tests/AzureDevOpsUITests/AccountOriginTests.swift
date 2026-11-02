@@ -20,4 +20,18 @@ import Testing
         #expect(settings.accountOrigin == nil)
         #expect(defaults.string(forKey: SettingsKey.accountOrigin) == nil)
     }
+
+    @Test func aReadArrivingAfterAzureDevOpsIsTurnedOffSavesNothing() {
+        let defaults = MemoryDefaults()
+        let settings = AppSettings(defaults: defaults)
+        let store = PRStore(settings: settings, mode: .live)
+        // Turned off: the source stops the store, then deletes what was saved.
+        store.stop()
+        settings.forgetSeen()
+        // The engine's last read, queued before it stopped, arrives after, with who's signed in.
+        store.receive(PulseSnapshot(account: "\(Self.tenant)/robin", hasLoaded: true))
+        #expect(settings.seen.account == nil)
+        #expect(defaults.data(forKey: SettingsKey.seen) == nil)
+        #expect(defaults.string(forKey: SettingsKey.accountOrigin) == nil)
+    }
 }

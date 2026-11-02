@@ -1082,7 +1082,7 @@ directory the CLI's default. So signing in to an organization's directory change
 sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
 the account it last read your pull requests with, and where that account is from, which it keeps with
 it (`ado.accountOrigin`); the command line and agents do too. Turning Azure DevOps off forgets both,
-with what you've seen. When the CLI can't give a token in your
+with what you've seen, and nothing read before then saves them again. When the CLI can't give a token in your
 directory, BriefBar looks at its default directory's token: a guest's names where its account is from
 (`idp`), its own directory or, for a personal Microsoft account, `live.com`. When that's your account's,
 your directory only wants you to sign in again, and BriefBar says so, with **Sign In…** signing in
@@ -1090,9 +1090,9 @@ there, with `az login --tenant` and your directory's ID: a plain `az login` may 
 directory without what yours asks for, such as multi-factor authentication. Otherwise someone else has
 signed in to the CLI, and their directory becomes the one BriefBar reads with. Tokens kept for other
 directories are for the same account as yours: when someone else signs in, those go too, and one from
-another directory for an account from elsewhere isn't used by anything that asked for it, nor kept, and
-makes BriefBar ask for yours again, which tells who's signed in. Nor is one that was on its way when
-someone else signed in, wherever they're from.
+another directory for an account from elsewhere isn't used by anything that asked for it, nor kept:
+every token kept goes with it, and BriefBar asks for yours again, which tells who's signed in. Nor is one
+that was on its way when someone else signed in, wherever they're from.
 
 **Add Organization…** checks that your sign-in can read the organization, with `_apis/connectionData`,
 before watching it, and says why when it can't. One it reads is watched. One in a directory the CLI

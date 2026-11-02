@@ -15,21 +15,24 @@ private func madeUpToken(tenant: String, object: String = "robin", guestFrom hom
     return [encoded(#"{"alg":"none"}"#), encoded(#"{"tid":"\#(tenant)","oid":"\#(object)"\#(idp)}"#), "c2ln"].joined(separator: ".")
 }
 
-/// Holds the Azure CLI's first run for a directory until let go, with the token it had when asked: someone else may sign in
-/// meanwhile.
+/// Holds one of the Azure CLI's runs for a directory, the first unless said, until let go, with the token it had when
+/// asked: someone else may sign in meanwhile.
 actor HeldDirectory {
     private let tenant: String
+    private let run: Int
+    private var runs = 0
     private var held: CheckedContinuation<Void, Never>?
-    private var hasHeld = false
     private(set) var isHolding = false
 
-    init(_ tenant: String) {
+    init(_ tenant: String, run: Int = 1) {
         self.tenant = tenant
+        self.run = run
     }
 
     func hold(_ asked: String) async {
-        guard asked == tenant, !hasHeld else { return }
-        hasHeld = true
+        guard asked == tenant else { return }
+        runs += 1
+        guard runs == run else { return }
         isHolding = true
         await withCheckedContinuation { held = $0 }
     }
@@ -308,6 +311,72 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) { try await fabrikams.value }
         #expect(try await provider.token(tenant: Tenants.other).account == "\(Tenants.other)/sam-guest")
         #expect(cli.asked == [nil, Tenants.other, Tenants.home, Tenants.other])
+    }
+
+    @Test func someoneElseFoundThroughAnotherDirectoryDropsEveryTokenKept() async throws {
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other])
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        _ = try await provider.token()
+        let fabrikams = try await provider.token(tenant: Tenants.other)
+        // Someone else signs in, from a third directory, a guest in fabrikam's too, and a token from their own directory is
+        // the first to tell.
+        cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other], as: "sam")
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) {
+            try await provider.token(tenant: Tenants.third)
+        }
+        // fabrikam's, kept for the last account, goes too: it isn't read as them meanwhile.
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) {
+            try await provider.token(tenant: Tenants.other)
+        }
+        // Once theirs is read, fabrikam's is theirs.
+        #expect(try await provider.token().tenant == Tenants.third)
+        let theirs = try await provider.token(tenant: Tenants.other)
+        #expect(theirs.account == "\(Tenants.other)/sam-guest")
+        #expect(theirs.account != fabrikams.account)
+        #expect(cli.asked == [nil, Tenants.other, Tenants.third, Tenants.other, Tenants.home, nil, Tenants.other])
+    }
+
+    @Test func aTokenOnItsWayForTheLastAccountDoesntDropTheNextAccounts() async throws {
+        let held = HeldDirectory(Tenants.other)
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other], held: held)
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        _ = try await provider.token()
+        // fabrikam's token, for you, is on its way when someone else signs in, from a third directory, and BriefBar has read
+        // as them since, in their own directory too.
+        let fabrikams = Task { try await provider.token(tenant: Tenants.other) }
+        try await waitUntil("the Azure CLI to be asked for fabrikam's directory") { await held.isHolding }
+        cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other], as: "sam")
+        await provider.invalidate()
+        let theirHome = try await provider.token()
+        #expect(theirHome.tenant == Tenants.third)
+        let theirs = try await provider.token(tenant: Tenants.third)
+        await held.release()
+        // Yours, the last account's, isn't theirs: nobody gets it, and what's kept for them stays.
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) { try await fabrikams.value }
+        #expect(try await provider.token() == theirHome)
+        #expect(try await provider.token(tenant: Tenants.third) == theirs)
+        #expect(cli.asked == [nil, Tenants.other, Tenants.home, nil, Tenants.third])
+    }
+
+    @Test func yourTokenOnItsWayWhenSomeoneElseIsFoundIsntKept() async throws {
+        let held = HeldDirectory(Tenants.home, run: 2)
+        let cli = FakeAzureCLI(defaultTenant: Tenants.home, signedIn: [Tenants.home, Tenants.other], held: held)
+        let provider = AzureCLITokenProvider(locator: Self.locator, runner: cli)
+        _ = try await provider.token()
+        // Yours is asked for again, and is on its way when someone else signs in, from a third directory, a guest in
+        // fabrikam's, as a token from fabrikam's directory tells meanwhile.
+        await provider.invalidate()
+        let yours = Task { try await provider.token() }
+        try await waitUntil("the Azure CLI to be asked for your directory again") { await held.isHolding }
+        cli.switchAccount(to: Tenants.third, signedIn: [Tenants.third, Tenants.other], as: "sam")
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) {
+            try await provider.token(tenant: Tenants.other)
+        }
+        await held.release()
+        // It was the last account's: nobody waiting for it gets it, nor is it kept, and the next one is theirs.
+        await #expect(throws: AuthError.failed("Someone else signed in to the Azure CLI.")) { try await yours.value }
+        #expect(try await provider.token().tenant == Tenants.third)
+        #expect(cli.asked == [nil, Tenants.home, Tenants.other, Tenants.home, nil])
     }
 
     @Test func whatTheAzureCLISaysKeepsNoIDsOrNames() {

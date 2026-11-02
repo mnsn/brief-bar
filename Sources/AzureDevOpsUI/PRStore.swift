@@ -60,6 +60,9 @@ final class PRStore: ObservableObject {
     private let tokens: AzureCLITokenProvider
     /// The account whose origin was last kept for after a restart (`AppSettings.accountOrigin`).
     private var originKeptFor: String?
+    /// Stopped, as when Azure DevOps is turned off: a read the engine queued before then is dropped, so nothing it
+    /// carries, such as who's signed in, is saved again once the source has deleted it.
+    private var isStopped = false
     /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
     let client: ADOClient
     private var engine: PulseEngine?
@@ -141,6 +144,7 @@ final class PRStore: ObservableObject {
 
     func start() {
         guard ticker == nil else { return }
+        isStopped = false
         observeSettings()
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -403,6 +407,7 @@ final class PRStore: ObservableObject {
         engine = nil
         // Turned off, Azure DevOps forgets where the account is from: nothing saves it again.
         originKeptFor = nil
+        isStopped = true
     }
 
     // MARK: Actions
@@ -565,6 +570,7 @@ final class PRStore: ObservableObject {
     // MARK: Updates
 
     func receive(_ snapshot: PulseSnapshot) {
+        guard !isStopped else { return }
         // Someone else signed in to the Azure CLI: what they've seen is their own, and the list to compare the next
         // one with, to announce what's new, was the other account's, as was what the panel showed in Answered.
         if mode == .live, let account = snapshot.account, settings.useAccount(account) {

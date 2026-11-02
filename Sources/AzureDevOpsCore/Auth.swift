@@ -194,12 +194,20 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
         cached[directory] = token
     }
 
-    /// A token for `directory`, kept, with the account it was kept for. One from another directory that comes back after
-    /// someone else signed in is the last account's, whichever directory they're from: nobody gets it, and it isn't kept.
+    /// A token for `directory`, kept, with the account it was kept for. One that comes back after someone else signed in may
+    /// be the last account's, whichever directory it's for, and one from another directory for an account from elsewhere
+    /// than yours means someone else has: nobody gets either, and neither is kept.
     private func fetchAndKeep(_ directory: String?) async throws -> (token: AccessToken, account: Int) {
         let account = accounts
         let token = try await fetch(directory)
-        if directory != nil, accounts != account { throw AuthError.failed("Someone else signed in to the Azure CLI.") }
+        if accounts != account { throw AuthError.failed("Someone else signed in to the Azure CLI.") }
+        // Every token kept goes, the last account's, with any on its way: the next one for yours tells who's signed in,
+        // and what's read as them starts over.
+        if directory != nil, let yours = homeAccount?.tenant, let theirs = token.accountTenant, yours != theirs {
+            cached = [:]
+            accounts += 1
+            throw AuthError.failed("Someone else signed in to the Azure CLI.")
+        }
         keep(token, for: directory)
         return (token: token, account: accounts)
     }
@@ -209,17 +217,7 @@ public actor AzureCLITokenProvider: AccessTokenProvider {
     /// becomes yours. If it's your account there, as a guest, your directory only needs you to sign in again, there:
     /// a plain `az login` may sign in to another one without what yours asks for, such as multi-factor authentication.
     private func fetch(_ directory: String?) async throws -> AccessToken {
-        if let directory {
-            let token = try await run(tenant: directory)
-            // For an account from elsewhere than yours: someone else signed in to the Azure CLI. No caller waiting for it
-            // gets it, and yours goes, so that the next one for yours tells, and what's read as them starts over.
-            if let yours = homeAccount?.tenant, let theirs = token.accountTenant, yours != theirs {
-                let home: String? = nil
-                cached[home] = nil
-                throw AuthError.failed("Someone else signed in to the Azure CLI.")
-            }
-            return token
-        }
+        if let directory { return try await run(tenant: directory) }
         guard let homeTenant else {
             let token = try await run(tenant: nil)
             self.homeTenant = token.tenant
