@@ -513,6 +513,31 @@ describe("forking", () => {
         assert.equal(result.forkSessionId, undefined);
     });
 
+    test("says a fork may have been made when the call fails any other way", async () => {
+        for (const error of [
+            Object.assign(new Error("Pending response rejected since connection got disposed"), { code: -32097 }),
+            Object.assign(new Error("Request session.tools.execute failed."), { code: -32603 }),
+            new Error("The connection closed."),
+            "Thrown as text.",
+        ]) {
+            const { session } = fakeSession(undefined, {
+                execute() {
+                    throw error;
+                },
+            });
+            const outbox = listenTo(session);
+            const value = request(session.sessionId, { kind: "fork" });
+            writeRequest(value);
+            await outbox.scan();
+            const result = readResult(value.requestId);
+            assert.equal(result.ok, false);
+            assert.equal(result.kind, "fork");
+            assert.equal(result.error.code, "fork_failed", String(error?.message ?? error));
+            assert.equal(result.forkSessionId, undefined);
+            outbox.stop();
+        }
+    });
+
     test("says how a slow fork went once it's done, and nothing before", async () => {
         let finish;
         const forkId = randomUUID();

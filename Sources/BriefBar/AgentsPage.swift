@@ -243,20 +243,16 @@ final class AgentsModel: ObservableObject {
     }
 
     /// You can turn it on or off: not while the CLI is at it, nor where a marketplace by BriefBar's name isn't its own,
-    /// nor in a copy of BriefBar without the plugin.
+    /// nor turn it on in a copy of BriefBar without the plugin. Such a copy can turn it off, as another copy's may be on.
     var canChangeSessionPrompts: Bool {
-        guard hasPlugin else { return false }
-        switch sessionPrompts {
-        case .working, .known(.taken): return false
-        case .unknown, .known: return true
-        }
+        canAskForSessionPrompts && (hasPlugin || areSessionPromptsOn)
     }
 
-    /// Installs BriefBar's extension for the app's sessions, or removes it: only when you ask. Turned off, BriefBar stops
-    /// sending prompts to sessions at once, whatever the CLI says, as the sessions that are open keep the extension until
-    /// they start again.
+    /// Installs BriefBar's extension for the app's sessions, or removes it: only when you ask. Any copy of BriefBar can
+    /// remove it, but only one with the plugin can install it. Turned off, BriefBar stops sending prompts to sessions at
+    /// once, whatever the CLI says, as the sessions that are open keep the extension until they start again.
     func setSessionPrompts(_ isOn: Bool) {
-        guard canChangeSessionPrompts else { return }
+        guard canAskForSessionPrompts, hasPlugin || !isOn else { return }
         sessionPromptsAsked = isOn
         sessionPromptsWanted = isOn
         Log.app.info("Turned \(isOn ? "on" : "off", privacy: .public) Send Prompts to Copilot Sessions")
@@ -284,6 +280,14 @@ final class AgentsModel: ObservableObject {
         var demo = CopilotPluginRegistration.Status.absent
         if case .known(let status) = sessionPrompts { demo = status }
         changeSessionPrompts(demo: demo) { await $0.status() }
+    }
+
+    /// The CLI isn't at it, and a marketplace by BriefBar's name is its own, if there's one.
+    private var canAskForSessionPrompts: Bool {
+        switch sessionPrompts {
+        case .working, .known(.taken): return false
+        case .unknown, .known: return true
+        }
     }
 
     static func isOn(_ status: CopilotPluginRegistration.Status) -> Bool {
@@ -864,7 +868,9 @@ private struct SessionPromptsRow: View {
                         Button("Remove") { agents.setSessionPrompts(false) }
                     }
                 } else if case .installedElsewhere(let path) = status {
-                    Text("On, from the copy of BriefBar at \(UserPath.abbreviate(path)). Turn it off and on to use this copy.")
+                    Text(agents.hasPlugin
+                         ? "On, from the copy of BriefBar at \(UserPath.abbreviate(path)). Turn it off and on to use this copy."
+                         : "On, from the copy of BriefBar at \(UserPath.abbreviate(path)).")
                         .foregroundStyle(.secondary)
                 } else {
                     Label("""

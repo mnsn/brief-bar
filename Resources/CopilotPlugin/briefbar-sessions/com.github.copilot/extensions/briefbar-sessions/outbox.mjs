@@ -32,6 +32,8 @@ const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{
 const FORK_SESSION_ID = new RegExp(`\\bsession_id: (${UUID_PATTERN})\\b`, "i");
 // What the runtime answers for a tool the session doesn't offer, such as fork_session in a chat or in the Copilot CLI.
 const MISSING_TOOL = /\bTool 'fork_session' does not exist\b/;
+// JSON-RPC's code for a method the other end doesn't have, as a runtime without `tools.execute` answers.
+const METHOD_NOT_FOUND = -32601;
 const LONGEST_RETRY_MS = 5 * 60 * 1000;
 
 /** Why the outbox can't be used, such as a folder that isn't private to you. */
@@ -297,7 +299,11 @@ export function listen(session, options = {}) {
         try {
             answer = await session.rpc.tools.execute({ name: "fork_session", arguments: {} });
         } catch (error) {
-            return failed("fork_unavailable", because("Copilot didn't let this session fork", error?.message), "fork");
+            // Only a runtime without the method surely didn't fork. Another error, such as the connection closing
+            // while the fork ran, can come after the fork was made.
+            return error?.code === METHOD_NOT_FOUND
+                ? failed("fork_unavailable", because("Copilot didn't let this session fork", error?.message), "fork")
+                : failed("fork_failed", because("Copilot didn't say how the fork went", error?.message), "fork");
         }
         return forked(answer, sessionId);
     }

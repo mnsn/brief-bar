@@ -2187,8 +2187,10 @@ are yours and only yours, as BriefBar does, and follows no link below your home 
   sends the prompt to the fork through the fork's own extension. A fork takes about 20 seconds.
 - Last, it writes the result, never with the prompt: done, with the message's ID or the fork's session's,
   or why not: `invalid`, `expired`, `send_failed`, `fork_unavailable` where the session doesn't offer the
-  app's fork, as a chat may not, or `fork_failed`. Then it removes the request it claimed, if BriefBar
-  hasn't removed it already, as turning Azure DevOps off does.
+  app's fork, as a chat may not, or `fork_failed`, where the fork failed or Copilot couldn't say how it
+  went, so that a fork may exist. It writes it once `session.send` or the fork is done, however long that
+  takes. Then it removes the request it claimed, if BriefBar hasn't removed it already, as turning Azure
+  DevOps off does.
 - As it starts, it removes the requests of its session that an extension which ended mid-request had
   claimed, since they hold prompts.
 
