@@ -127,7 +127,7 @@ Copilot instead. The app and its plain-language brief work without either AI fea
 ## Hand the next step to Copilot
 
 With **Send Work to Copilot** on in Azure DevOps' settings, send a sprint task to Copilot with its
-context already filled in. Review or edit the prompt, choose a repository and model, and follow the
+context already filled in. Review, edit or copy the prompt, choose a repository and model, and follow the
 task from running to its linked pull request. For pull requests, choose **Fix Comments**, **Fix the
 Build**, **Resolve Conflicts** or **Pre-review**, and send follow-up work to the session that opened
 the pull request instead of starting from scratch.
