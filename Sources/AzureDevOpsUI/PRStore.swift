@@ -58,7 +58,14 @@ final class PRStore: ObservableObject {
     /// How pull requests sent in chats are read: only the app's own store is given Notification Center.
     let chats: ChatReading
     private let notifier: Notifier?
-    private let tokens = AzureCLITokenProvider()
+    /// Asks for tokens in the directory BriefBar last read your pull requests with, so signing in to another directory
+    /// for an organization there, which makes it the Azure CLI's default, doesn't read you as someone else.
+    private let tokens: AzureCLITokenProvider
+    /// The account whose origin was last kept for after a restart (`AppSettings.accountOrigin`).
+    private var originKeptFor: String?
+    /// Stopped, as when Azure DevOps is turned off: a read the engine queued before then is dropped, so nothing it
+    /// carries, such as who's signed in, is saved again once the source has deleted it.
+    private var isStopped = false
     /// Shared with the Sprint and Pipelines sections: one sign-in, and one wait when Azure DevOps asks to slow down.
     let client: ADOClient
     private var engine: PulseEngine?
@@ -69,6 +76,8 @@ final class PRStore: ObservableObject {
     private var delivered: Set<String> = []
     private var lastDiscovery: Date?
     private var discoveryProblem: PulseProblem?
+    /// Checking the organizations you're adding, while it runs: by name, in lowercase.
+    private var accessChecks: [String: Task<Void, Never>] = [:]
     private var ticker: Timer?
     private var monitor: NetworkMonitor?
     private var chatMonitor: ChatLinkMonitor?
@@ -91,6 +100,10 @@ final class PRStore: ObservableObject {
         self.notifier = notifier
         self.mode = mode
         self.chats = chats
+        let tokens = AzureCLITokenProvider(
+            homeTenant: settings.seen.account.flatMap(AccessToken.tenant(ofAccount:)), homeAccountTenant: settings.accountOrigin
+        )
+        self.tokens = tokens
         client = ADOClient(tokens: tokens)
         summarizer.isEnabled = settings.summaries
         notifier?.$isBlocked
@@ -134,6 +147,7 @@ final class PRStore: ObservableObject {
 
     func start() {
         guard ticker == nil else { return }
+        isStopped = false
         observeSettings()
         let ticker = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -385,6 +399,8 @@ final class PRStore: ObservableObject {
         ticker = nil
         monitor?.cancel()
         monitor = nil
+        accessChecks.values.forEach { $0.cancel() }
+        accessChecks = [:]
         // Stops reading Notification Center; what it found stays until Azure DevOps is turned off.
         chatMonitor?.stop()
         chatMonitor = nil
@@ -392,6 +408,9 @@ final class PRStore: ObservableObject {
             Task { await engine.stop() }
         }
         engine = nil
+        // Turned off, Azure DevOps forgets where the account is from: nothing saves it again.
+        originKeptFor = nil
+        isStopped = true
     }
 
     // MARK: Actions
@@ -490,14 +509,39 @@ final class PRStore: ObservableObject {
         AzureDevOps.openPullRequests(organizations: organizations)
     }
 
-    func signIn() {
+    /// Signs in to the Azure CLI, or installs it first: for `problem`, or the pull requests' when there's none, and in
+    /// its organizations' directory when that's what's wrong.
+    func signIn(for problem: PulseProblem? = nil) {
+        let problem = problem ?? self.problem
         if problem == .cliNotFound {
             AzureDevOps.open(AzureDevOps.installCLIPage)
             return
         }
+        signIn(toTenant: problem?.signInTenant)
+    }
+
+    /// Opens Terminal to sign in to the Azure CLI; with `tenant`, in that directory.
+    func signIn(toTenant tenant: String?) {
         Task {
             let path = await tokens.executablePath
-            AzureDevOps.signIn(azPath: path)
+            AzureDevOps.signIn(azPath: path, tenant: tenant)
+        }
+    }
+
+    /// Whether your sign-in can read an organization you're adding, and if not, why: it's watched unless it can't be
+    /// read for a reason that neither signing in nor waiting fixes, then `found` hears what the check found. Stopping
+    /// Azure DevOps cancels it, and then nothing is watched or told.
+    func add(organization name: String, found: @escaping (OrganizationDiscovery.Access) -> Void) {
+        // Adding it again checks again; adding another checks that one too.
+        let key = name.lowercased()
+        accessChecks[key]?.cancel()
+        accessChecks[key] = Task { [weak self] in
+            guard let self else { return }
+            let access = await OrganizationDiscovery.access(to: name, client: client)
+            guard !Task.isCancelled else { return }
+            accessChecks[key] = nil
+            if access.watches, !settings.isWatching(name) { settings.toggleOrganization(name) }
+            found(access)
         }
     }
 
@@ -530,12 +574,23 @@ final class PRStore: ObservableObject {
     // MARK: Updates
 
     func receive(_ snapshot: PulseSnapshot) {
+        guard !isStopped else { return }
         // Someone else signed in to the Azure CLI: what they've seen is their own, and the list to compare the next
         // one with, to announce what's new, was the other account's, as was what the panel showed in Answered.
         if mode == .live, let account = snapshot.account, settings.useAccount(account) {
             announced = nil
             answeredInPanel = [:]
             Log.app.info("Signed in to the Azure CLI as another account")
+        }
+        // Where the account is from, kept for after a restart, as its directory is: a sign-in that your own directory wants
+        // again then isn't taken for someone else's.
+        if mode == .live, let account = snapshot.account, account != originKeptFor {
+            originKeptFor = account
+            Task { [weak self, tokens] in
+                // Only while it's still this account's, and Azure DevOps hasn't been turned off meanwhile.
+                guard let origin = await tokens.accountTenant(of: account), let self, self.originKeptFor == account else { return }
+                if self.settings.accountOrigin != origin { self.settings.accountOrigin = origin }
+            }
         }
         state = snapshot
         let authored = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }
@@ -601,7 +656,7 @@ final class PRStore: ObservableObject {
         }
         if newProblem != problem {
             problem = newProblem
-            if let newProblem { Log.app.error("\(newProblem.message, privacy: .public)") }
+            if let newProblem { Log.app.error("\(newProblem.logMessage, privacy: .public)") }
         }
 
         reader = state.userName

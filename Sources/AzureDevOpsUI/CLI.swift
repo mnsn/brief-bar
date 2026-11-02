@@ -160,6 +160,33 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         )
     }
 
+    /// The Azure CLI's tokens, asked for in the directory the app last read your pull requests with, as the app asks
+    /// for them: so what's read is its account's.
+    static func tokens(_ defaults: UserDefaults? = appDefaults) -> AzureCLITokenProvider {
+        AzureCLITokenProvider(
+            homeTenant: seenBook(defaults).current.account.flatMap(AccessToken.tenant(ofAccount:)),
+            homeAccountTenant: defaults?.string(forKey: SettingsKey.accountOrigin)
+        )
+    }
+
+    /// A problem, as the command line says it: with what to run when signing in fixes it, since there's no Sign In
+    /// button. Only this says a directory's ID, which signing in to it needs.
+    static func text(of problem: PulseProblem) -> String {
+        problem.signInCommand.map { "\(problem.message) Run \($0)." } ?? problem.message
+    }
+
+    /// What went wrong, as the command line says it: for an organization in a directory the Azure CLI isn't signed in
+    /// to, which one, and what to run; when signed out, what to run, in your directory when it's that one that wants you
+    /// to sign in again.
+    static func describe(_ error: Error) -> String {
+        guard let error = error as? ADOError else { return error.localizedDescription }
+        if case .otherDirectory = error { return text(of: PulseProblem.from(error)) }
+        if case .auth(.signedOut) = error, let command = PulseProblem.from(error).signInCommand {
+            return "You're signed out of the Azure CLI. Run \(command)."
+        }
+        return error.description
+    }
+
     /// Without pull requests sent in chats: only the app finds those, and keeps them in memory. With the ones you watch.
     static func resolve(_ snapshot: PulseSnapshot, seen: SeenState, options: ClassifierOptions, now: Date = Date()) -> [PRSnapshot] {
         PROrdering.sorted(snapshot.records.compactMap { record in
@@ -177,7 +204,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             return Loaded(organizations: snapshot.organizations,
                           items: resolve(snapshot, seen: DemoData.seenState(now: now), options: ClassifierOptions(), now: now))
         }
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         var organizations = options.organizations
         if organizations.isEmpty {
             organizations = appDefaults?.stringArray(forKey: SettingsKey.organizations) ?? []
@@ -194,7 +221,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             switch found {
             case .success(let found): organizations = found.withPullRequests
             case .failure(let error):
-                return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(error.description)")
+                return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(describe(error))")
             }
         }
         let configuration = PulseEngine.Configuration(
@@ -209,7 +236,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         return Loaded(
             organizations: organizations,
             items: resolve(snapshot, seen: seenBook().state(for: snapshot.account), options: classifierOptions()),
-            problem: snapshot.problem?.message
+            problem: snapshot.problem.map(text(of:))
         )
     }
 
@@ -239,7 +266,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     private static func listOrganizations() -> Int32 {
-        let client = ADOClient(tokens: AzureCLITokenProvider())
+        let client = ADOClient(tokens: AzureDevOpsCommandLine.tokens())
         let result: Result<([String], OrganizationDiscovery.Probe), ADOError> = wait {
             do {
                 let all = try await OrganizationDiscovery.memberships(client: client)
@@ -262,7 +289,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             }
             return 0
         case .failure(let error):
-            FileHandle.standardError.write(Data("\(error.description)\n".utf8))
+            FileHandle.standardError.write(Data("\(describe(error))\n".utf8))
             return 1
         }
     }
@@ -343,7 +370,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
         let printer = WatchPrinter(seen: seenBook(), options: classifierOptions())
         let queue = DispatchQueue(label: "BriefBar.AzureDevOps.watch")
         let engine = PulseEngine(
-            client: ADOClient(tokens: AzureCLITokenProvider()), configuration: PulseEngine.Configuration(organizations: organizations)
+            client: ADOClient(tokens: AzureDevOpsCommandLine.tokens()), configuration: PulseEngine.Configuration(organizations: organizations)
         ) { snapshot in queue.async { printer.print(snapshot) } }
         setvbuf(stdout, nil, _IOLBF, 0)
         print("Watching \(organizations.joined(separator: ", ")), refreshing every minute — Ctrl-C to stop")
@@ -372,7 +399,7 @@ private final class WatchPrinter: @unchecked Sendable {
     func print(_ snapshot: PulseSnapshot) {
         guard !snapshot.isRefreshing else { return }
         let now = Date()
-        let message = snapshot.problem?.message
+        let message = snapshot.problem.map(AzureDevOpsCommandLine.text(of:))
         if message != problem {
             problem = message
             if let message { Swift.print("\(formatter.string(from: now))  ! \(message)") }

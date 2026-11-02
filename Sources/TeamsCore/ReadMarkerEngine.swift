@@ -1,4 +1,5 @@
 import BriefBarCore
+import ChromiumIndexedDB
 import Foundation
 import NotificationCenterDB
 
@@ -32,7 +33,10 @@ public struct ReadMarkerSnapshot: Sendable, Equatable {
     }
 }
 
-/// A table must stay unchanged and unreadable for the full confirmation interval, not just for two scans.
+/// A file that can't be read counts only once it has stayed so for the full confirmation interval, not just for two
+/// scans. A table must stay unchanged for that long: LevelDB writes a table where it'll stay, so one being written reads
+/// as broken until it's done. The MANIFEST, CURRENT and logs only grow by whole records, or are replaced, so LevelDB
+/// writing to one doesn't make it readable, and doesn't start the wait over.
 struct UnreadableTableTracker: Sendable {
     private struct Observation: Sendable {
         var file: FileInfo
@@ -55,8 +59,10 @@ struct UnreadableTableTracker: Sendable {
     mutating func update(_ files: [String: FileInfo], at now: ContinuousClock.Instant) -> Int {
         var current: [String: Observation] = [:]
         for (path, file) in files {
-            if let previous = observations[path], previous.file == file {
-                current[path] = previous
+            // A table that changed may only have been being written; LevelDB writing more to another file doesn't make
+            // it readable. Either way, the file as it is now is what a change is checked against.
+            if let previous = observations[path], previous.file == file || !LevelDBFolder.isTable(path) {
+                current[path] = Observation(file: file, since: previous.since)
             } else {
                 current[path] = Observation(file: file, since: now)
             }
