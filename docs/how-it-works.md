@@ -997,9 +997,11 @@ All three formats are undocumented, so every read is checked:
 - **Archives** are decoded with secure coding and plist classes only, so an unexpected class makes a
   record unreadable instead of being instantiated.
 - **Teams' read markers.** Files, log records and values that can't be read are counted, values by
-  why. If Teams' folder has no `conversations` store, or none of its conversations has a marker
-  BriefBar understands, the lists say Teams' read markers have changed; if more than a quarter can't
-  be read, or a file can't, they say some couldn't be read. A table LevelDB is still writing isn't in
+  why. If Teams' folder has no `conversations` store, or none of its conversations has the read
+  marker field in the form BriefBar understands, the lists say Teams' read markers have changed: a
+  chat never read has the field too, as `0;…`, so a new account, whose chats have no marker yet,
+  isn't taken for one. If more than a quarter can't be read, or a file can't, they say some couldn't
+  be read. A table LevelDB is still writing isn't in
   its MANIFEST yet, so isn't read; one that can't be read counts only after it has stayed unchanged
   and unreadable for at least 5 s, since without the MANIFEST, LevelDB writes a table where it'll
   stay, and one being written reads as broken until it's done. Each read rechecks those table paths,

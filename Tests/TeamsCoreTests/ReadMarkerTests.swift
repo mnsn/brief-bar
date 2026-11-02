@@ -245,7 +245,7 @@ final class MarkerCollector: Sendable {
         report.stores = 1
         report.conversations = 10
         #expect(report.problem == .readMarkersChanged)
-        report.withMarker = 8
+        report.withHorizon = 10
         #expect(report.problem == nil)
         report.unreadable = ["corrupt property count": 1]
         #expect(report.problem == nil)
@@ -450,7 +450,8 @@ final class MarkerCollector: Sendable {
         let report = await Diagnostics.report(paths: paths, cache: location, followsReadsInTeams: true, appVersion: "0.1.0")
         #expect(report.contains("Teams' read markers: overridden by BRIEFBAR_TEAMS_CACHE, access granted"))
         #expect(report.contains("Folders: WV2Profile_tfw/http_teams.localhost_8766.indexeddb.leveldb"))
-        #expect(report.contains("Conversation stores: 1, conversations: 7, chats with a read marker: 5"))
+        #expect(report.contains("Conversation stores: 1, conversations: 7, chats with a read marker: 5, "
+            + "conversations with a read marker field: 7"))
         #expect(report.contains("1 x Blink 21, V8 16, from a blob file"))
         #expect(report.contains("Verdict: OK"))
         #expect(report.contains("Chats in Notification Center: 3, with a read marker: 2, read in Teams up to their newest notification: 1"))

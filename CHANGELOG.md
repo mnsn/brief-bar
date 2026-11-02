@@ -28,6 +28,9 @@
   longer needs, which may hold a conversation it has since deleted. BriefBar read those files too, so a
   deleted conversation's old read marker could come back; it now reads only the files Teams' database
   lists, as Teams does.
+- **A Teams account whose chats were never opened no longer says Teams' read markers have changed.** None
+  of its chats had a read marker yet, which BriefBar took for a Teams update that changed them. It now goes
+  by the field that holds one, which a chat never read has too.
 
 ## 0.10.2 - 2026-11-01
 
