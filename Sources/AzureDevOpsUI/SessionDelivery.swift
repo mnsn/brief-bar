@@ -67,6 +67,9 @@ struct SessionFallback: Equatable {
     /// It copied `/fork <prompt>`, so the app's own `/fork` forks the session and sends the fork the prompt, as you paste
     /// it and send it there.
     var pastesFork = false
+    /// It copied the prompt for a fork you make first, in the terminal, with the Copilot CLI's own `/fork`, which takes a
+    /// name for the fork rather than a prompt.
+    var forksFirst = false
     /// The session, or the fork, may have the prompt already, or the session may have forked: its extension took it but
     /// didn't say how it went, or said it failed, which it also says once it stops waiting (`SendFailure.mayHaveGone`).
     var mayHaveSent = false
@@ -83,7 +86,8 @@ extension SessionFallback {
     enum Place: Equatable {
         /// In the Copilot app.
         case app
-        /// In the terminal that the Copilot CLI that has it open runs in, which came to the front.
+        /// In the terminal that the Copilot CLI that has it open runs in, which came to the front: not necessarily the
+        /// session's own window or tab in it.
         case terminal
     }
 }
@@ -281,7 +285,6 @@ extension CopilotTasksStore {
         _ prompt: String, in session: String, forking: Bool, fork: String? = nil, reason: String, foreseen: Bool = false,
         mayHaveSent: Bool = false, handOff: CommentHandOff?
     ) async -> SessionDelivery {
-        let pastesFork = forking && fork == nil
         let way: Showing?
         if openForTests != nil {
             way = await cliHolder(of: session).map(Showing.terminal) ?? .app
@@ -296,6 +299,12 @@ extension CopilotTasksStore {
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)
         }
+        let place: SessionFallback.Place
+        if case .terminal = way { place = .terminal } else { place = .app }
+        // The app's own /fork takes a prompt, and sends it to the fork; the CLI's takes a name for the fork, so in its
+        // terminal you fork the session first, then paste the prompt.
+        let forksHere = forking && fork == nil
+        let pastesFork = forksHere && place == .app
         guard copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             if case .terminal = way {
                 Log.app.error("Couldn't bring up the terminal of the Copilot CLI that has a session open")
@@ -306,11 +315,9 @@ extension CopilotTasksStore {
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
         if let handOff { handedOff(handOff, prompt) }
-        let place: SessionFallback.Place
-        if case .terminal = way { place = .terminal } else { place = .app }
         return .fellBack(SessionFallback(
-            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, mayHaveSent: mayHaveSent, place: place, session: session,
-            fork: fork
+            reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, forksFirst: forksHere && place == .terminal,
+            mayHaveSent: mayHaveSent, place: place, session: session, fork: fork
         ))
     }
 
@@ -402,8 +409,8 @@ extension CopilotTasksStore {
         return responsibleBundle.map { AppSessions.folderKey($0) == folder } ?? false
     }
 
-    /// Brings the app that a CLI runs in to the front, such as Terminal: the one macOS holds responsible for it. False when
-    /// it can't tell, as in tmux or over SSH.
+    /// Brings the app that a CLI runs in to the front, such as Terminal: the one macOS holds responsible for it, but not
+    /// necessarily the CLI's own window or tab in it. False when it can't tell, as in tmux or over SSH.
     static func bringUp(_ pid: pid_t) -> Bool {
         guard let responsible = Responsibility.responsible(for: pid), responsible.pid != pid,
               let url = NSRunningApplication(processIdentifier: responsible.pid)?.bundleURL

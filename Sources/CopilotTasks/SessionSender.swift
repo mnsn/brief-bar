@@ -170,29 +170,38 @@ public struct SessionSender: Sendable {
     }
 
     /// Forks the session, then sends the fork the prompt. The session itself gets no message: the app only notes the fork
-    /// in it. A fork its extension couldn't name, or didn't say it made, is the one fork of the session that the app's
-    /// database records since the request, if there's just one: otherwise there's no telling which, if any.
+    /// in it. The fork is one that the app's database records as the session's, made since the request: the one its
+    /// extension names; or, when it named none, or one that isn't, or didn't say it made one, the one fork of the session
+    /// made since, if there's just one. Otherwise there's no telling which, if any.
     public func forkAndSend(_ prompt: String, from session: String) async -> SendOutcome {
         // When it starts, to the instant: the request's own times are whole seconds, and a fork made earlier in the same
         // second is none of its own.
         let started = effects.now()
-        let fork: String
+        let unnamed: SendFailure
         switch await request(.fork(session, now: started)) {
         case .success(let result):
-            guard let id = result.forkSessionId else { return .notSent(.failed(.forkFailed, nil)) }
-            switch await confirm(id, asForkOf: session) {
-            case nil: fork = id
-            case .unconfirmedFork?: return .notSent(.unconfirmedFork)
+            guard let id = result.forkSessionId else {
+                unnamed = .failed(.forkFailed, nil)
+                break
+            }
+            switch await confirm(id, asForkOf: session, madeSince: started) {
+            case nil: return await sendFork(prompt, to: id)
+            case .unconfirmedFork?: unnamed = .unconfirmedFork
             case let stopped?: return .forkedNotSent(fork: id, stopped)
             }
         case .failure(let why):
             guard Self.mayHaveForked(why) else { return .notSent(why) }
-            switch await theFork(of: session, madeSince: started) {
-            case .success(let found?): fork = found
-            case .success(nil): return .notSent(why)
-            case .failure(let stopped): return .notSent(stopped)
-            }
+            unnamed = why
         }
+        switch await theFork(of: session, madeSince: started) {
+        case .success(let found?): return await sendFork(prompt, to: found)
+        case .success(nil): return .notSent(unnamed)
+        case .failure(let stopped): return .notSent(stopped)
+        }
+    }
+
+    /// Sends the fork the prompt, once no other is on its way to it.
+    private func sendFork(_ prompt: String, to fork: String) async -> SendOutcome {
         guard await effects.reserve(fork) else { return .forkedNotSent(fork: fork, .busy) }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
         switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
@@ -273,14 +282,21 @@ public struct SessionSender: Sendable {
         }
     }
 
-    /// Why the app's database doesn't confirm the session as a fork of `original`, or nil once it does: it's waited for as
-    /// the app makes the fork, and while it can't be read, until it says so in time (`unconfirmedFork`). Nothing's read once
-    /// it's stopped, or turned off.
-    func confirm(_ fork: String, asForkOf original: String) async -> SendFailure? {
+    /// Why the app's database doesn't confirm the session as a fork of `original` made since `since`, or nil once it does:
+    /// it's waited for as the app makes the fork, and while it can't be read, until it says so in time (`unconfirmedFork`).
+    /// One that it records as a fork already, of another session or from before the request, is none of its own, as when
+    /// the name a session was given misled its extension. Nothing's read once it's stopped, or turned off.
+    func confirm(_ fork: String, asForkOf original: String, madeSince since: Date) async -> SendFailure? {
         let start = effects.now()
         while true {
             if let stopped = await stopped() { return stopped }
-            if case .forked(let from) = effects.forkRecord(fork) { return from == original ? nil : .unconfirmedFork }
+            // What it's recorded as, before the session's forks are read: one recorded as a fork by then is among them, if
+            // it's one of its own.
+            let record = effects.forkRecord(fork)
+            if let forks = effects.forks(original, since) {
+                if forks.contains(fork) { return nil }
+                if case .forked = record { return .unconfirmedFork }
+            }
             if effects.now().timeIntervalSince(start) > timing.confirm { return .unconfirmedFork }
             await pause()
         }

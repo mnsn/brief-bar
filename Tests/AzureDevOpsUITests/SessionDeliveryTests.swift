@@ -139,12 +139,17 @@ private final class ExtensionStandIn: Sendable {
 
     /// The app's database, with the session and its fork, which it records as forked from `forkedFrom`.
     private func database(at home: URL, forkedFrom: String) throws {
-        try database(at: home, forks: [(fork, forkedFrom, "2026-10-27T10:01:00.000Z")])
+        try database(at: home, forks: [(fork, forkedFrom, afterTheRequest())])
+    }
+
+    /// When the app made a fork after the request, however long this Mac takes to write it.
+    private func afterTheRequest() -> String {
+        Date().addingTimeInterval(600).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
     }
 
     /// The app's database, with the session and the forks it records: each one's ID, the session it was forked from, and
-    /// when it was made.
-    private func database(at home: URL, forks: [(id: String, original: String, created: String)]) throws {
+    /// when it was made; and other sessions, which are no forks.
+    private func database(at home: URL, forks: [(id: String, original: String, created: String)], others: [String] = []) throws {
         var handle: OpaquePointer?
         guard sqlite3_open(home.appendingPathComponent("data.db").path, &handle) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
         defer { sqlite3_close(handle) }
@@ -165,6 +170,9 @@ private final class ExtensionStandIn: Sendable {
                     VALUES ('\(fork.id)', 'Fix the totals', 'project', '\(fork.created)', '\(fork.created)', '\(fork.original)');
                 INSERT INTO workspaces (id, project_id, session_id, branch, name, updated_at)
                     VALUES ('w-fork-\(index)', 'shop', '\(fork.id)', 'fix-totals-fork', 'Fix the totals', '\(fork.created)');
+                """ }.joined() + others.map { id in """
+                INSERT INTO sessions (id, title, session_type, created_at, updated_at)
+                    VALUES ('\(id)', 'Something else', 'project', '2026-10-01T09:00:00.000Z', '2026-10-27T10:00:00.000Z');
                 """ }.joined()
         guard sqlite3_exec(handle, statements, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
     }
@@ -277,8 +285,8 @@ private final class ExtensionStandIn: Sendable {
         }
         try hold(session, home: home)
         try hold(fork, home: home)
-        // Made after the request, however long this Mac takes to write it, and after an older fork of the session.
-        let made = Date().addingTimeInterval(600).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        // Made after the request, and after an older fork of the session.
+        let made = afterTheRequest()
         let older = "c6666666-6666-4666-8666-66666666666d"
         try database(at: home, forks: [(fork, session, made), (older, session, "2026-10-27T10:01:00.000Z")])
 
@@ -300,6 +308,53 @@ private final class ExtensionStandIn: Sendable {
         #expect(copied == ["\(session) /fork Try it"])
         #expect(forked.received == ["Try it another way"])
         #expect(CopilotComposerView.fallbackNote(fallback).hasSuffix("If the session forked already, don't."))
+    }
+
+    /// The session its extension names gets the prompt only once the app records it as a fork of the session made since
+    /// the request: an older fork, as a name that holds another session's ID could have it say, doesn't, and the one fork
+    /// made since does; and nor does a session that's no fork at all.
+    @Test func sendsOnlyToAForkMadeSinceTheRequest() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var shown: [String] = []
+        var copied: [String] = []
+        store.showForTests = { id in shown.append(id); return true }
+        store.openForTests = { id, text in copied.append("\(id) \(text)"); return true }
+        store.deliveryTimingForTests?.confirm = 0.3
+        let older = "c6666666-6666-4666-8666-66666666666d"
+        let plain = "e8888888-8888-4888-8888-88888888888e"
+        let reported = Mutex(older)
+        let outbox = home.appendingPathComponent("Outbox")
+        let original = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let forked = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        let misnamed = ExtensionStandIn(outbox: outbox, sessionId: older)
+        let notAFork = ExtensionStandIn(outbox: outbox, sessionId: plain)
+        for ext in [original, forked, misnamed, notAFork] { try ext.listen() }
+        original.start { _ in ["ok": true, "forkSessionId": reported.withLock { $0 }] }
+        for ext in [forked, misnamed, notAFork] { ext.start() }
+        defer {
+            for ext in [original, forked, misnamed, notAFork] { ext.stop() }
+        }
+        for id in [session, fork, older, plain] { try hold(id, home: home) }
+        try database(at: home, forks: [(fork, session, afterTheRequest()), (older, session, "2026-10-27T10:01:00.000Z")])
+
+        #expect(await store.deliver("Try it another way", to: choice(session), forking: true) == .forkedAndSent(fork: fork))
+        #expect(forked.received == ["Try it another way"])
+        #expect(misnamed.received.isEmpty)
+        #expect(shown == [fork])
+
+        // A session that's no fork, and no fork made since.
+        reported.withLock { $0 = plain }
+        try FileManager.default.removeItem(at: home.appendingPathComponent("data.db"))
+        try database(at: home, forks: [(older, session, "2026-10-27T10:01:00.000Z")], others: [plain])
+        let result = await store.deliver("Try it", to: choice(session), forking: true)
+        #expect(result == .fellBack(SessionFallback(
+            reason: SendFailure.unconfirmedFork.description, pastesFork: true, mayHaveSent: true, session: session
+        )))
+        #expect(original.received == ["fork", "fork"])
+        #expect(notAFork.received.isEmpty)
+        #expect(forked.received.count == 1)
+        #expect(copied == ["\(session) /fork Try it"])
     }
 
     /// When the app doesn't record the session that the extension says it forked as a fork of it, BriefBar sends it
@@ -433,7 +488,19 @@ private final class ExtensionStandIn: Sendable {
         }
         #expect(fallback.place == .terminal)
         #expect(copied == ["Fix the comments"])
-        #expect(CopilotComposerView.fallbackNote(fallback).hasSuffix("BriefBar copied the prompt and brought up the terminal of the Copilot CLI that has the session open: paste it there, and send it."))
+        // It can't bring up the session's own tab, so the window says to find it.
+        #expect(CopilotComposerView.fallbackNote(fallback).hasSuffix("BriefBar copied the prompt and brought up the terminal where a Copilot CLI has the session open. Find the session's window or tab there, paste it, and send it."))
+
+        // The CLI's own /fork takes a name for the fork, not a prompt: BriefBar copies the prompt alone, to paste once
+        // you've forked the session there.
+        guard case .fellBack(let forking) = await store.deliver("Try it", to: choice(session), forking: true) else {
+            Issue.record("BriefBar didn't copy the prompt for a fork")
+            return
+        }
+        #expect(forking.forksFirst)
+        #expect(!forking.pastesFork)
+        #expect(copied.last == "Try it")
+        #expect(CopilotComposerView.fallbackNote(forking).hasSuffix("Find the session's window or tab there, fork it with /fork, then paste the prompt in the fork, and send it."))
 
         comesUp = false
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(CopilotTasksStore.cantBringUp))

@@ -1642,12 +1642,14 @@ with the CLI isn't the app's, which can't load it.
 Sending (`CopilotTasksStore.deliver`, `SessionSender`) takes one prompt at a time for each session, and
 waits without blocking a thread: up to 10 seconds for a listening extension to claim a request, 45 for a
 session to load and 30 more for its extension, a minute for a send's result and two for a fork's, which
-took about 22 seconds. To fork, the session's extension runs the app's own `fork_session`, which says the
-fork's session ID. BriefBar sends the fork the prompt only once the app's database records it as a fork
-of the session (`forked_from_session_id`, read-only), and the fork's own extension, which listens by the
-time the fork is made, takes it. When the extension couldn't name the fork it made, or didn't say how the
-fork went, the fork is the one the database records of the session since the request, if there's just one;
-with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
+took about 22 seconds. To fork, the session's extension runs the app's own `fork_session`, whose text says
+the fork's session ID, beside the session's name, which you or an agent chose. BriefBar sends the fork the
+prompt only once the app's database records it as a fork of the session made since the request
+(`forked_from_session_id` and `created_at`, read-only), and the fork's own extension, which listens by the
+time the fork is made, takes it. When the extension couldn't name the fork it made, named a session the
+database doesn't record so, as a name that holds another session's ID could have it do, or didn't say how
+the fork went, the fork is the one the database records of the session since the request, if there's just
+one; with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
 app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
 it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
 Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and
@@ -1657,7 +1659,10 @@ so that the session takes no other prompt from it meanwhile.
 When BriefBar can't send it, it copies the prompt, and shows the session, for you to paste and send;
 when the window knows that beforehand, its button says **Open in Copilot** (`CopilotComposerView.sendTitle`).
 For a fork, it copies `/fork` and the prompt, and shows the session:
-pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. Once the
+pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. A CLI's
+terminal comes to the front, but not necessarily the session's own window or tab in it, so the window stays
+open to say to find it there; and since the CLI's own `/fork` takes a name for the fork rather than a
+prompt, for a fork there BriefBar copies the prompt alone, to paste once you've forked the session. Once the
 session forked but the prompt didn't reach the fork, it copies the prompt and shows the fork. When the
 window didn't say beforehand that it would, it stays open to say why; and when the extension took the
 request but didn't say how it went, or said it failed, which it also says once it stops waiting for the

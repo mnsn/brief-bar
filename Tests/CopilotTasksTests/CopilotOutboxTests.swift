@@ -441,6 +441,7 @@ import Testing
         let effects = Effects()
         effects.held.withLock { $0 = [session, fork] }
         effects.record.withLock { $0 = .forked(from: session) }
+        effects.madeForks.withLock { $0 = [fork] }
 
         #expect(await sender(outbox, effects).forkAndSend("Try it another way", from: session) == .forkedAndSent(fork: fork))
         #expect(original.received == [.init(kind: "fork", prompt: nil)])
@@ -454,8 +455,8 @@ import Testing
         #expect(forked.received.count == 1)
     }
 
-    /// BriefBar sends to the fork only once the app records it as a fork of the session, waiting while it doesn't list it
-    /// yet, or its database can't be read.
+    /// BriefBar sends to the fork only once the app records it as a fork of the session made since the request, waiting
+    /// while it doesn't list it yet, or its database can't be read.
     @Test func sendsOnlyToWhatTheAppRecordsAsTheFork() async throws {
         let (outbox, folder) = try outbox()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -474,21 +475,64 @@ import Testing
         let sender = sender(outbox, effects)
 
         effects.record.withLock { $0 = .forked(from: other) }
+        effects.madeForks.withLock { $0 = [] }
         #expect(await sender.forkAndSend("Try it", from: session) == .notSent(.unconfirmedFork))
         effects.record.withLock { $0 = .notListed }
         let impatient = self.sender(outbox, effects, timing: .patient.with { $0.confirm = 0.3 })
         #expect(await impatient.forkAndSend("Try it", from: session) == .notSent(.unconfirmedFork))
         #expect(forked.received.isEmpty)
 
-        // Listed a moment later.
+        // Listed a moment later, as the session's fork since the request.
         Task {
             try? await Task.sleep(for: .milliseconds(100))
+            effects.madeForks.withLock { $0 = [fork] }
             effects.record.withLock { $0 = .forked(from: session) }
         }
         #expect(await sender.forkAndSend("Try it", from: session) == .forkedAndSent(fork: fork))
         effects.record.withLock { $0 = .unreadable }
+        effects.madeForks.withLock { $0 = nil }
         #expect(await impatient.forkAndSend("Try it again", from: session) == .notSent(.unconfirmedFork))
         #expect(forked.received.map(\.prompt) == ["Try it"])
+    }
+
+    /// The session its extension names is the fork only once the app records it as a fork of the session made since the
+    /// request. Its text may name another, as when the name a session was given holds another session's ID: an older fork
+    /// of the session, which the one fork since gets the prompt instead of, at once; or a session that's no fork at all.
+    @Test func sendsOnlyToAForkMadeSinceTheRequest() async throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let older = "c6666666-6666-4666-8666-66666666666d"
+        let reported = Mutex(older)
+        let original = FakeExtension(outbox: outbox.url, sessionId: session)
+        let forked = FakeExtension(outbox: outbox.url, sessionId: fork)
+        let misnamed = FakeExtension(outbox: outbox.url, sessionId: older)
+        let notAFork = FakeExtension(outbox: outbox.url, sessionId: other)
+        for ext in [original, forked, misnamed, notAFork] { try ext.listen() }
+        original.start { _ in .done(fork: reported.withLock { $0 }) }
+        for ext in [forked, misnamed, notAFork] { ext.start() }
+        defer {
+            for ext in [original, forked, misnamed, notAFork] { ext.stop() }
+        }
+        let effects = Effects()
+        effects.held.withLock { $0 = [session, fork, older, other] }
+        // The older fork is one of the session's, but only the new one was made since the request.
+        effects.record.withLock { $0 = .forked(from: session) }
+        effects.madeForks.withLock { $0 = [fork] }
+
+        #expect(await sender(outbox, effects).forkAndSend("Try it", from: session) == .forkedAndSent(fork: fork))
+        #expect(forked.received.map(\.prompt) == ["Try it"])
+        #expect(misnamed.received.isEmpty)
+        // Turned down at the first look, without waiting for the app to record it otherwise.
+        #expect(effects.recordReads.withLock { $0 } == 1)
+
+        // No fork at all, and none made since.
+        reported.withLock { $0 = other }
+        effects.record.withLock { $0 = .notAFork }
+        effects.madeForks.withLock { $0 = [] }
+        let impatient = sender(outbox, effects, timing: .patient.with { $0.confirm = 0.3 })
+        #expect(await impatient.forkAndSend("Try it", from: session) == .notSent(.unconfirmedFork))
+        #expect(notAFork.received.isEmpty)
+        #expect(forked.received.count == 1)
     }
 
     @Test func saysWhenTheForkDidntGetThePrompt() async throws {
@@ -501,6 +545,7 @@ import Testing
         let effects = Effects()
         effects.held.withLock { $0 = [session, fork] }
         effects.record.withLock { $0 = .forked(from: session) }
+        effects.madeForks.withLock { $0 = [fork] }
         // The fork's runtime runs, but no extension listens in it.
         let impatient = sender(outbox, effects, timing: .patient.with { $0.listen = 0.3 })
         #expect(await impatient.forkAndSend("Try it", from: session) == .forkedNotSent(fork: fork, .noListener))
@@ -572,6 +617,7 @@ import Testing
         let effects = Effects()
         effects.held.withLock { $0 = [session, fork] }
         effects.record.withLock { $0 = .forked(from: session) }
+        effects.madeForks.withLock { $0 = [fork] }
         let sender = sender(outbox, effects)
         let original = FakeExtension(outbox: outbox.url, sessionId: session)
         let forked = FakeExtension(outbox: outbox.url, sessionId: fork)

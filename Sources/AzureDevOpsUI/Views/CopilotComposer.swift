@@ -748,6 +748,10 @@ struct CopilotComposerView: View {
     private var appFootnote: String {
         let works = "Copilot works on it there, with the session's own model, mode and permissions, where you can follow it."
         if reach?.sends(forking: delivery.forks) == false {
+            if reach == .noListener(inApp: false) {
+                let then = delivery.forks ? "fork it with /fork, then paste the prompt in the fork" : "paste it"
+                return "BriefBar copies the prompt and brings up the terminal where a Copilot CLI has the session open. Find the session's window or tab there, \(then), and send it."
+            }
             return delivery.forks
                 ? "BriefBar copies /fork and the prompt, and opens the session in the Copilot app: paste it there, and send it. The app forks the session, and sends the fork the prompt."
                 : "BriefBar copies the prompt and opens the session in the Copilot app: paste it there, and send it. \(works)"
@@ -761,20 +765,24 @@ struct CopilotComposerView: View {
         return "\(sends) \(works)"
     }
 
-    /// Why BriefBar couldn't send it itself, and what it did instead: what it copied, and where to paste it.
+    /// Why BriefBar couldn't send it itself, and what it did instead: what it copied, and where to paste it. BriefBar brings
+    /// up a CLI's terminal, but not necessarily the session's window or tab in it, so you find that yourself.
     static func fallbackNote(_ fallback: SessionFallback) -> String {
         var reason = fallback.reason
         if let last = reason.last, !".!?".contains(last) { reason += "." }
-        let copied = fallback.pastesFork ? "/fork and the prompt" : "the prompt"
-        let shown: String
+        let session = fallback.fork == nil ? "session" : "fork"
+        var text: String
         switch fallback.place {
-        case .app: shown = fallback.fork == nil ? "opened the session in the Copilot app" : "opened the fork in the Copilot app"
-        case .terminal: shown = "brought up the terminal of the Copilot CLI that has the session open"
+        case .app:
+            let copied = fallback.pastesFork ? "/fork and the prompt" : "the prompt"
+            text = "\(reason) BriefBar copied \(copied) and opened the \(session) in the Copilot app: paste it there, and send it."
+        case .terminal:
+            let then = fallback.forksFirst ? "fork it with /fork, then paste the prompt in the fork" : "paste it"
+            text = "\(reason) BriefBar copied the prompt and brought up the terminal where a Copilot CLI has the \(session) open. Find the \(session)'s window or tab there, \(then), and send it."
         }
-        var text = "\(reason) BriefBar copied \(copied) and \(shown): paste it there, and send it."
         if fallback.mayHaveSent {
             text += fallback.fork != nil ? " If the fork has it already, don't."
-                : fallback.pastesFork ? " If the session forked already, don't." : " If the session has it already, don't."
+                : fallback.pastesFork || fallback.forksFirst ? " If the session forked already, don't." : " If the session has it already, don't."
         }
         return text
     }
@@ -1047,8 +1055,9 @@ struct CopilotComposerView: View {
     }
 
     /// Sends it to the session in the Copilot app, or to a fork of it (`CopilotTasksStore.deliver`). The window closes once
-    /// it's sent, or once BriefBar copied it for you to paste, as the window said it would; it stays to say why when
-    /// BriefBar copied it unexpectedly, or nothing went. Closing the window, or showing another task in it, stops it
+    /// it's sent, or once BriefBar copied it for you to paste and opened the session in the app, as the window said it
+    /// would; it stays to say why when BriefBar copied it unexpectedly, or nothing went, and where to paste it when a CLI
+    /// has the session open in a terminal. Closing the window, or showing another task in it, stops it
     /// (`CopilotComposer.stopSending`).
     private func deliver(to target: SessionChoice) {
         isDelivering = true
@@ -1066,7 +1075,8 @@ struct CopilotComposerView: View {
             case .sent, .forkedAndSent:
                 close()
             case .fellBack(let fallback):
-                if fallback.wasForeseen, saidItWouldCopy { close() } else { self.fallback = fallback }
+                // In a terminal, the window stays to say where to paste it: BriefBar can't bring up the session's own tab.
+                if fallback.wasForeseen, saidItWouldCopy, fallback.place == .app { close() } else { self.fallback = fallback }
             case .notSent(let why):
                 if why == CopilotTasksStore.cantOpenInApp {
                     appProblem = why

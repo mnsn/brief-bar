@@ -500,7 +500,10 @@ since before the option was on, that you need to restart the session. Until then
 can't send it, it copies the prompt and opens the session, for you to paste and send; when the window
 knows that beforehand, its button says **Open in Copilot**. For a fork, it copies `/fork` and the prompt,
 which the app's own `/fork` takes: paste it in the session and send it, and the app forks the session and
-sends the fork the prompt.
+sends the fork the prompt. When a Copilot CLI has the session open in a terminal, BriefBar brings that
+terminal up instead, and the window stays open, since it can't pick the session's window or tab there: find
+it, and paste the prompt. For a fork, fork the session there with `/fork` first, which takes a name for the
+fork rather than a prompt, then paste the prompt in the fork.
 
 **Run with the CLI** is only there while the Copilot app doesn't have the session open: the app keeps an
 open session's history in memory and wouldn't see a turn the CLI runs in it, so the session's history
