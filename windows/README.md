@@ -190,9 +190,7 @@ Where Windows differs, these were decided:
 - **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
   `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
   where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
-  lee"), where the Mac writes "sam, kai and lee". Its empty list says **All quiet** only when it read them all: the
-  Mac's says so under a note that it's offline, can't reach GitHub or couldn't read some pull requests too, even before
-  any read has worked.
+  lee"), where the Mac writes "sam, kai and lee".
 
 ## The code
 

@@ -100,9 +100,16 @@ public struct GitHubPullRequest: Sendable, Codable, Equatable, Identifiable {
     /// owner/name#number.
     public var reference: String { "\(repository)#\(number)" }
 
+    /// The reviewers whose latest review says `state`, each once, in order. A deleted account has no name, so it isn't
+    /// among them: `hasReview(_:)` counts it.
     func reviewers(_ state: Review.State) -> [String] {
         var seen = Set<String>()
         return reviews.filter { $0.state == state }.compactMap(\.reviewer).filter { seen.insert($0).inserted }
+    }
+
+    /// Whether any reviewer's latest review says `state`, a deleted account's too.
+    func hasReview(_ state: Review.State) -> Bool {
+        reviews.contains { $0.state == state }
     }
 }
 
@@ -211,7 +218,8 @@ public enum GitHubClassifier {
             return snapshot(.failing, .conflicts, "Merge conflicts")
         }
         let changesRequestedBy = pullRequest.reviewers(.changesRequested)
-        if pullRequest.reviewDecision == .changesRequested || (pullRequest.reviewDecision == nil && !changesRequestedBy.isEmpty) {
+        if pullRequest.reviewDecision == .changesRequested
+            || (pullRequest.reviewDecision == nil && pullRequest.hasReview(.changesRequested)) {
             return snapshot(
                 .changesRequested, .changesRequested, "Changes requested",
                 changesRequestedBy.isEmpty ? nil : "By \(names(changesRequestedBy))"
@@ -221,7 +229,7 @@ public enum GitHubClassifier {
             return snapshot(.waiting, .checksRunning, "Checks running")
         }
         let approvedBy = pullRequest.reviewers(.approved)
-        if pullRequest.reviewDecision == .approved || (pullRequest.reviewDecision == nil && !approvedBy.isEmpty) {
+        if pullRequest.reviewDecision == .approved || (pullRequest.reviewDecision == nil && pullRequest.hasReview(.approved)) {
             return snapshot(.ready, .approved, "Approved", approvedBy.isEmpty ? nil : "By \(names(approvedBy))")
         }
         return snapshot(.waiting, .waitingForReview, "Waiting for review")

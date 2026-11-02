@@ -18,6 +18,8 @@ public struct SQLiteError: Error, Sendable, Equatable, CustomStringConvertible {
 /// A short-lived, read-only SQLite connection. It never changes the database's contents. Like any
 /// reader next to a WAL writer, it takes brief shared locks and updates SQLite's shared-memory
 /// index (`-shm`). What a query sorts stays in memory (`temp_store`), never in a temporary file.
+/// Every query reads the database as it was at the first, so a commit that lands between two of
+/// them can't mix into one read.
 public final class SQLiteConnection {
     private let handle: OpaquePointer
 
@@ -39,10 +41,14 @@ public final class SQLiteConnection {
         }
         // What a query sorts that doesn't fit in memory would otherwise go to a temporary file, which a program
         // running as you could open before SQLite deletes it. It's this connection's setting: nothing is written.
-        guard sqlite3_exec(db, "PRAGMA temp_store = MEMORY", nil, nil, nil) == SQLITE_OK else {
-            let error = SQLiteError(message: String(cString: sqlite3_errmsg(db)), code: sqlite3_errcode(db))
-            sqlite3_close(db)
-            throw error
+        // Then one snapshot for every query: a read transaction, which takes no lock until the first query reads.
+        // Closing the connection ends it.
+        for statement in ["PRAGMA temp_store = MEMORY", "BEGIN DEFERRED"] {
+            guard sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK else {
+                let error = SQLiteError(message: String(cString: sqlite3_errmsg(db)), code: sqlite3_errcode(db))
+                sqlite3_close(db)
+                throw error
+            }
         }
         handle = db
         sqlite3_busy_timeout(db, 2_000)

@@ -253,6 +253,8 @@ final class StubServer: Sendable {
         var headers: [String: String] = ["Content-Type": "application/json; charset=utf-8"]
         var body = Data()
         var error: URLError?
+        /// Where the request is redirected, with its headers, as a server's 307 would.
+        var redirect: URL?
 
         static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> Reply {
             var reply = Reply(status: status, body: Fixture.data(object))
@@ -268,6 +270,10 @@ final class StubServer: Sendable {
 
         static func failure(_ code: URLError.Code) -> Reply {
             Reply(error: URLError(code))
+        }
+
+        static func redirect(to location: String) -> Reply {
+            Reply(status: 307, headers: ["Location": location], redirect: URL(string: location))
         }
     }
 
@@ -368,6 +374,15 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
+        if let target = reply.redirect {
+            // As Apple's CustomHTTPProtocol sample does: report the redirect, then end this load. URLSession asks the
+            // task's delegate, then loads the new request with another instance, or ends the task.
+            var redirected = URLRequest(url: target)
+            redirected.allHTTPHeaderFields = request.allHTTPHeaderFields
+            client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+            client?.urlProtocol(self, didFailWithError: CocoaError(.userCancelled))
+            return
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: reply.body)
         client?.urlProtocolDidFinishLoading(self)

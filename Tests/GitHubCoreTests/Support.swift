@@ -118,6 +118,18 @@ actor FakeTokens: GitHubTokenProviding {
     }
 }
 
+/// A token for a read that gives up as it comes, as one does when GitHub is turned off just then.
+struct GivingUpTokens: GitHubTokenProviding {
+    let server: String
+
+    func token() async throws -> GitHubToken {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return GitHubToken(value: "\(server):0", fetchedAt: referenceDate)
+    }
+
+    func invalidate() async {}
+}
+
 /// Answers GraphQL requests. Each test gets its own server; requests find it through their bearer token, which
 /// starts with the server's ID, so tests can run in parallel.
 final class StubServer: Sendable {
@@ -126,6 +138,8 @@ final class StubServer: Sendable {
         var headers: [String: String] = ["Content-Type": "application/json; charset=utf-8"]
         var body = Data()
         var error: URLError?
+        /// Where the request is redirected, with its headers, as a server's 307 would.
+        var redirect: URL?
 
         static func json(_ object: Any, status: Int = 200, headers: [String: String] = [:]) -> Reply {
             var reply = Reply(status: status, body: Fixture.data(object))
@@ -141,6 +155,10 @@ final class StubServer: Sendable {
 
         static func failure(_ code: URLError.Code) -> Reply {
             Reply(error: URLError(code))
+        }
+
+        static func redirect(to location: String) -> Reply {
+            Reply(status: 307, headers: ["Location": location], redirect: URL(string: location))
         }
     }
 
@@ -210,6 +228,15 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
+        if let target = reply.redirect {
+            // As Apple's CustomHTTPProtocol sample does: report the redirect, then end this load. URLSession asks the
+            // task's delegate, then loads the new request with another instance, or ends the task.
+            var redirected = URLRequest(url: target)
+            redirected.allHTTPHeaderFields = request.allHTTPHeaderFields
+            client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+            client?.urlProtocol(self, didFailWithError: CocoaError(.userCancelled))
+            return
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: reply.body)
         client?.urlProtocolDidFinishLoading(self)
@@ -279,23 +306,37 @@ final class FakeRunner: ProcessRunning, @unchecked Sendable {
     private var outcomes: [Outcome]
     private var fallback: Outcome
     private var log: [Call] = []
-    /// How long each run takes, so callers at the same time can overlap.
+    private var delays: [Duration]
+    private var stops = 0
+    /// How long each run takes, after those in `delays`, so callers at the same time can overlap.
     let delay: Duration
 
-    init(_ outcomes: [Outcome] = [], fallback: Outcome = .output("", status: 1), delay: Duration = .zero) {
+    /// `delays`: how long the first runs take, one each.
+    init(_ outcomes: [Outcome] = [], fallback: Outcome = .output("", status: 1), delay: Duration = .zero, delays: [Duration] = []) {
         self.outcomes = outcomes
         self.fallback = fallback
         self.delay = delay
+        self.delays = delays
     }
 
     var calls: [Call] { lock.withLock { log } }
 
+    /// How many runs were stopped, as `ProcessRunner` stops one whose task is cancelled.
+    var stopped: Int { lock.withLock { stops } }
+
     func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
-        let outcome = lock.withLock {
+        let (outcome, duration) = lock.withLock {
             log.append(Call(executable: executable.path, arguments: arguments, environment: environment, timeout: timeout))
-            return outcomes.isEmpty ? fallback : outcomes.removeFirst()
+            return (outcomes.isEmpty ? fallback : outcomes.removeFirst(), delays.isEmpty ? delay : delays.removeFirst())
         }
-        if delay > .zero { try await Task.sleep(for: delay) }
+        if duration > .zero {
+            do {
+                try await Task.sleep(for: duration)
+            } catch {
+                lock.withLock { stops += 1 }
+                throw error
+            }
+        }
         switch outcome {
         case .result(let result): return result
         case .error(let message): throw Failure(errorDescription: message)
