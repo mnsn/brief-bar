@@ -523,7 +523,7 @@ as you wrote it when you choose another session, and **Reset** goes back to the 
 | Group | Status | When |
 |---|---|---|
 | **Needs you** | Waiting for your answer, Plan ready for review, Needs permission | The agent asked a question, finished a plan, or waits for a tool call's permission |
-| **Running** | Working, Starting…, Answer in “…” | A turn is in progress (the current step is shown), or, with **Show Relayed Questions Once**, the session coordinating it asks you its question or plan for it |
+| **Running** | Working, Starting…, Answer in “…”, Waiting for child sessions | A turn is in progress (the current step is shown), or, with **Show Relayed Questions Once**, the session coordinating it asks you its question or plan for it, or, with **Nest Sessions Under Their Parents**, it finished while sessions it started still run |
 | **Done** | Finished | The turn ended normally; shows the agent's summary if there is one |
 | **Stopped** | Interrupted, Error, Stopped responding | You cancelled the turn, it failed, or it went silent mid-turn for 90 s |
 | **Idle** | Idle | Everything else |
@@ -552,7 +552,9 @@ passing on a question shows as **Working**.
 The Copilot app's sidebar shows the sessions that a session started under it. **Nest Sessions Under
 Their Parents**, off by default, does the same within each group: a session in the same group as the
 session that started it shows right under it, indented, and the two move together to where the one
-waiting longest, or the most recent, would be. A session whose parent is in another group stays in its
+waiting longest, or the most recent, would be. A session that finished while sessions it started still
+run stays with them, in **Running**, or in **Needs you** when one of them needs you, as **Waiting for
+child sessions**, saying how many need you and how many are running. A session whose parent is in another group stays in its
 place, with a **↳** tag that names the session that started it; click the tag to open that session.
 Counts don't change. **Everything by State** mixes every section's items, so it doesn't nest sessions,
 and shows the tag on each one that another session started.
