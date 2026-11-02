@@ -196,7 +196,7 @@ struct OverviewPage: View {
                 VStack(alignment: .leading, spacing: 18) {
                     StateListProblems(list: list, model: model)
                     if !options.compactBriefs, !list.brief.isEmpty {
-                        BriefPanel(lines: list.brief, writer: model.briefWriter)
+                        BriefPanel(lines: list.brief, writer: model.briefWriter, inWindow: true)
                             .padding(.horizontal, -4)
                     }
                     if list.groups.isEmpty {
@@ -213,7 +213,7 @@ struct OverviewPage: View {
                     ForEach(list.groups) { group in
                         section(group)
                         if options.compactBriefs, group.id == list.groups.first?.id, !list.brief.isEmpty {
-                            BriefPanel(lines: list.brief, writer: model.briefWriter)
+                            BriefPanel(lines: list.brief, writer: model.briefWriter, inWindow: true)
                                 .padding(.horizontal, -4)
                         }
                     }
@@ -248,8 +248,10 @@ struct OverviewPage: View {
                     }
                     HStack(alignment: .top, spacing: 0) {
                         SourceMark(section: entry.section, model: model)
+                        // On a window's page: a pull request shows its details on its own page, rather than in Azure DevOps.
                         entry.row.view
                             .environment(\.shownSection, entry.section)
+                            .environment(\.panelStyle, .page)
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
@@ -309,10 +311,13 @@ struct StateListProblems: View {
 }
 
 /// The brief across sources: a few lines, each opening its thing, worded by Apple Intelligence on this Mac when it can,
-/// or else in BriefBar's own words, without ✨.
+/// or else in BriefBar's own words, without ✨. On a page of BriefBar's window, a thing whose details show there, such as a
+/// pull request, shows them.
 struct BriefPanel: View {
     let lines: [BriefLine]
     @ObservedObject var writer: BriefWriter
+    /// It's on a page of BriefBar's window, rather than in the menu bar.
+    var inWindow = false
 
     var body: some View {
         let texts = lines.map { writer.text(for: $0) }
@@ -321,7 +326,7 @@ struct BriefPanel: View {
         BriefContainer(count: lines.count, isWritten: isWritten) { collapsed in
             ForEach(collapsed ? Array(pairs.prefix(2)) : pairs, id: \.0.id) { line, text in
                 Button {
-                    line.open()
+                    if inWindow { line.openInWindow() } else { line.open() }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Circle()
