@@ -187,18 +187,27 @@ import BriefBarCore
         defer { try? FileManager.default.removeItem(at: directory) }
         let paths = paths(in: directory)
         let collector = SnapshotCollector()
-        let engine = NotificationEngine(paths: paths, reloadDelay: 0.05, accessIntervals: (0.1, 0.1), onChange: collector.add)
+        // No safety rescan within the test: the engine has to find the database by itself.
+        let engine = NotificationEngine(
+            paths: paths, reloadDelay: 0.05, safetyInterval: 3_600, accessIntervals: (0.1, 0.1), onChange: collector.add
+        )
         engine.start()
         defer { engine.stop() }
 
-        let missing = try await collector.wait("no database") { $0.access == .missing }
+        // Up to a minute each: on a busy machine, the engine can take longer than a wait's usual 10 s.
+        let missing = try await collector.wait("no database", timeout: .seconds(60)) { $0.access == .missing }
         #expect(missing.notifications == nil)
         #expect(missing.problem == .databaseMissing(path: paths.database.path))
 
-        let db = try TestDatabase(at: paths.database)
-        defer { db.close() }
+        // It appears whole. The engine reads it as soon as it's there, so made in place, it could be read half made, and
+        // what was written while the engine set up its watches would wait for the safety rescan.
+        let made = directory.appendingPathComponent("made/db")
+        let db = try TestDatabase(at: made)
         try db.add(Record.message(Chat.avery, title: "Avery Quinn", body: "Hi", at: t(0)), delivered: t(0))
-        try await collector.wait("the database") { $0.access == .granted && $0.notifications?.count == 1 }
+        db.close()
+        try FileManager.default.createDirectory(at: paths.directory, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: made, to: paths.database)
+        try await collector.wait("the database", timeout: .seconds(60)) { $0.access == .granted && $0.notifications?.count == 1 }
     }
 
     @Test func reportsAChangedFormat() throws {

@@ -301,23 +301,17 @@ extension Locked where Value == Int {
         }
     }
 
+    /// Told to wait, it sends nothing until the time it was given.
     @Test func honorsRetryAfter() async throws {
         let server = StubServer()
         server.on("/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": "30"]) }
         let client = server.client()
         let url = ADOEndpoint.connectionData(organization: "contoso")
+        let asked = Date()
         await #expect(throws: ADOError.throttled(retryAfter: 30)) { try await client.get(url, as: ADOConnectionData.self) }
+        let answered = Date()
 
-        // Until then, nothing is sent.
-        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
-        let sent = server.requests.count
-        do {
-            _ = try await client.get(url, as: ADOConnectionData.self)
-            Issue.record("Expected to be throttled")
-        } catch ADOError.throttled(let wait) {
-            #expect(wait > 25 && wait <= 30)
-        }
-        #expect(server.requests.count == sent)
+        try await expectToWait(30, toldBetween: asked, and: answered, client: client, url: url, server: server)
     }
 
     /// `Retry-After` can give the date to wait until instead (RFC 9110). The client counts from its own clock as the answer
@@ -412,17 +406,11 @@ extension Locked where Value == Int {
         server.on("/_apis/connectionData") { _ in .status(503) }
         let client = server.client()
         let url = ADOEndpoint.connectionData(organization: "contoso")
+        let asked = Date()
         await #expect(throws: ADOError.throttled(retryAfter: 60)) { try await client.get(url, as: ADOConnectionData.self) }
+        let answered = Date()
 
-        server.on("/_apis/connectionData", json: ["authenticatedUser": ["id": "ME"]])
-        let sent = server.requests.count
-        do {
-            _ = try await client.get(url, as: ADOConnectionData.self)
-            Issue.record("Expected to be throttled")
-        } catch ADOError.throttled(let wait) {
-            #expect(wait > 55 && wait <= 60)
-        }
-        #expect(server.requests.count == sent)
+        try await expectToWait(60, toldBetween: asked, and: answered, client: client, url: url, server: server)
     }
 
     @Test func reportsAuthFailures() async {
@@ -531,4 +519,32 @@ private func httpDate(_ date: Date) -> String {
     formatter.timeZone = TimeZone(identifier: "GMT")
     formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
     return formatter.string(from: date)
+}
+
+/// Asks `client` for `url` again, once it was told, between `asked` and `answered`, to wait `seconds`. The server would
+/// answer now, but until then the client sends nothing, and says how much of the wait is left, counted on the clock: no
+/// more than was left as it's asked again, and no less than is left once it answers, however slow the machine. Only a
+/// machine slow enough for the wait to be over by then sees it send, and then not before the wait could be over.
+private func expectToWait(
+    _ seconds: TimeInterval, toldBetween asked: Date, and answered: Date, client: ADOClient, url: URL, server: StubServer
+) async throws {
+    let arrived = Locked<Date?>(nil)
+    server.on(url.path) { _ in
+        arrived.set(Date())
+        return .json(["authenticatedUser": ["id": "ME"]])
+    }
+    let sent = server.requests.count
+    let askedAgain = Date()
+    do {
+        _ = try await client.get(url, as: ADOConnectionData.self)
+        // When it reached the server, which is no earlier than when the client sent it, rather than when it returned.
+        let arrival = try #require(arrived.value)
+        #expect(asked.addingTimeInterval(seconds) <= arrival)
+        #expect(server.requests.count == sent + 1)
+    } catch ADOError.throttled(let wait) {
+        // As the client counts: from when it was told plus the wait, to now.
+        #expect(wait <= answered.addingTimeInterval(seconds).timeIntervalSince(askedAgain))
+        #expect(wait >= asked.addingTimeInterval(seconds).timeIntervalSince(Date()))
+        #expect(server.requests.count == sent)
+    }
 }

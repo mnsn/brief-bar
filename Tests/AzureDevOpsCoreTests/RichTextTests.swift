@@ -4,6 +4,14 @@ import Testing
 
 private typealias Run = RichText.Run
 
+/// The processor time `body` takes on this thread. Unlike the time on the clock, everything else a busy machine runs
+/// meanwhile doesn't add to it, so it shows how much work the code did.
+private func processorTime(_ body: () -> Void) -> Duration {
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    body()
+    return .nanoseconds(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start)
+}
+
 @Suite struct RichTextHTMLTests {
     @Test func readsTheEditorsLinesAsLinesOfOneParagraph() {
         let text = RichText(html: "<div>First line</div><div>Second <b>bold</b> line</div><div><br></div><div>&nbsp;</div><div>After a blank line</div>")
@@ -114,9 +122,9 @@ private typealias Run = RichText.Run
         // Every "<a " would otherwise be read to the end again: a long description would take minutes.
         let html = "Start " + String(repeating: "<a ", count: 50_000) + "end"
         var text = RichText()
-        let elapsed = ContinuousClock().measure { text = RichText(html: html) }
+        let used = processorTime { text = RichText(html: html) }
         #expect(text.plainText == html)
-        #expect(elapsed < .seconds(3))
+        #expect(used < .seconds(3))
         // What follows it is its text too, even what would be a tag in a value that never ends.
         #expect(RichText(html: "Hi <a title=\"x <b>bold</b>").plainText == "Hi <a title=\"x <b>bold</b>")
         #expect(RichText(html: "<b>Bold</b> <i").blocks == [.paragraph([Run("Bold", style: .bold), Run(" <i")])])
@@ -126,9 +134,9 @@ private typealias Run = RichText.Run
         // Every piece of text, and every closing tag, would otherwise look through all the elements open.
         let html = String(repeating: "<span>x", count: 20_000) + String(repeating: "</b>", count: 20_000)
         var text = RichText()
-        let elapsed = ContinuousClock().measure { text = RichText(html: html) }
+        let used = processorTime { text = RichText(html: html) }
         #expect(text.plainText == String(repeating: "x", count: 20_000))
-        #expect(elapsed < .seconds(3))
+        #expect(used < .seconds(3))
         // Styles nest as written; deeper than they're followed, the text keeps the style around it, and closing tags still
         // close what they opened.
         let spans = RichText.htmlInlineDepth + 8
