@@ -18,7 +18,6 @@ public sealed class StatePaletteTests
             AssertContrast(foreground: StatePalette.Text(state: state, dark: dark), background: background, least: Wcag.TextContrast);
         }
         AssertContrast(foreground: StatePalette.Caution(dark: dark), background: background, least: Wcag.TextContrast);
-        AssertContrast(foreground: StatePalette.PillText(dark: dark), background: StatePalette.PillFill(dark: dark), least: Wcag.TextContrast);
         // Quiet is for words too: a chat's preview, or the heading of a group that isn't counted.
         AssertContrast(foreground: StatePalette.Quiet(dark: dark), background: background, least: Wcag.TextContrast);
     }
@@ -68,7 +67,6 @@ public sealed class StatePaletteTests
             AssertContrast(
                 foreground: StatePalette.OnFill(dark: dark), background: StatePalette.Fill(state: state, dark: dark), least: Wcag.GraphicsContrast);
         }
-        AssertContrast(foreground: StatePalette.PillFill(dark: dark), background: background, least: Wcag.GraphicsContrast);
         AssertContrast(foreground: StatePalette.Quiet(dark: dark), background: background, least: Wcag.GraphicsContrast);
     }
 
@@ -82,6 +80,20 @@ public sealed class StatePaletteTests
                 foreground: StatePalette.Glyph(tint: section.Tint, dark: dark),
                 background: StatePalette.Background(dark: dark),
                 least: Wcag.GraphicsContrast);
+        }
+    }
+
+    /// The bar's glyphs are in the color of its words, so they read as well.
+    [Fact]
+    public void TheBarsGlyphsReadAsItsWordsDo()
+    {
+        foreach (var dark in new[] { false, true })
+        {
+            var background = StatePalette.Background(dark: dark);
+            AssertContrast(
+                foreground: StatePalette.Over(argb: StatePalette.Ink(dark: dark), background: background),
+                background: background,
+                least: Wcag.TextContrast);
         }
     }
 

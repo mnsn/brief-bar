@@ -64,10 +64,10 @@ section names and the like, so nothing you see can reach it: a line with a strin
 - **On its left, what needs you, in words**: "8 need you · 3 went wrong · 3 done or ready", each number in its
   state's color, across every source. It opens the Overview. What's running isn't in those words, as it isn't in
   the Mac's counts added up, but its tooltip says it.
-- **On its right, an item per section**, in the Mac's order: the source's glyph, its short name ("Copilot",
-  "Azure DevOps") and its counts by state. Needs you is a filled pill; the rest are an icon and a number, and
-  zero is quiet. Its tooltip says each count in words, and how fresh it is ("Live", "Updated 20 s ago"), or that
-  the section is starting, can't read, is paused or is stale.
+- **On its right, an item per section**, in the Mac's order: the source's glyph, in the color of its words, its short
+  name ("Copilot", "Azure DevOps") and its counts by state, each its state's icon in the state's color and a number,
+  as on the Mac: Needs you is an orange hand. Zero is quiet. Its tooltip says each count in words, and how fresh it
+  is ("Live", "Updated 20 s ago"), or that the section is starting, can't read, is paused or is stale.
 - **The items are buttons**, as tall as the bar, so a flick of the pointer to the screen's edge lands on one.
   Narrator names each in words ("GitHub Copilot sessions: 3 need you, 2 running, 1 done or ready, 1 went wrong"),
   and UI Automation can press them. The item whose panel is open is marked, as the taskbar marks the app in front.
@@ -152,7 +152,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   each shown at a size Fluent drew it for, so it lines up with the pixels, Segoe UI Variable, sentence case, and the
-  panel's rounded corners and shadow. It follows light, dark and High
+  panel's rounded corners and shadow. The bar's glyphs are in the color of its words, as the taskbar's icons are, and
+  a source's own color is on its panel's tile, in Settings and in the Overview's rows. The bar's icons grow with
+  Windows' text size, as its words do, from 16 pixels to 20 at 112.5% and up. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
   4.5:1, icons 3:1), which a test checks. States never rely on color alone: each has its own icon and words.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
@@ -177,6 +179,8 @@ Where Windows differs, these were decided:
 - **Hiding the panel and the window from screen sharing and recordings** will be a choice in Settings, off by
   default.
 - **Sentence case** ("Needs you"), as Windows writes it.
+- **Teams' glyphs are outlined**, a person for chats and two people for group chats, as the bar's other glyphs are,
+  where the Mac's are filled.
 - **The keyboard reaches the bar's items from a panel**, with Ctrl+1 to Ctrl+9 and Ctrl+Tab, since Windows has no
   key like the Mac's Ctrl+F8 for a bar like this one. Starting BriefBar again opens the Overview, as reopening it
   shows the Mac's first item.
@@ -302,9 +306,11 @@ SDK ships inside the app.
   context ring draws its own (`MeterRing`).
 - **Fluent draws each icon anew for each size**, on that size's pixels, and an icon scaled to another size blurs, at
   100% and 150% most: the bar's state icons were 16-unit drawings shown at 14 pixels, and Copilot's 20-unit pulse at
-  16. Icons show at 12, 16, 20 or 24 pixels, each from its drawing for that size (`IconPaths.Of(icon, size)`). Where
-  Fluent has none, the nearest is scaled: Pulse at 16, Branch Request at 24, and the plan's, the clock's and the power
-  icon's at 16, in a row's badge.
+  16. Icons show at 12, 16, 20 or 24 pixels, each from its drawing for that size (`IconPaths.Of(icon, size)`), in one
+  style, regular or filled, at every size. Where Fluent has none, the nearest is scaled: Pulse at 16, Branch Request
+  at 24, and the plan's, the clock's and the power icon's at 16, in a row's badge. Not every drawing is whole: Fluent's
+  Hourglass Half, filled, at 16 is only its sand, which showed as a small triangle on a pull request whose checks were
+  running. BriefBar has the regular one, and a test checks that each drawing reaches across its square.
 - **A read-only SQLite connection to a database in WAL mode creates its `-wal` and `-shm` files** when they're
   gone, as when the Copilot app isn't running: `AppDatabase` opens such a database immutable instead, without locks.
   That holds only while the app leaves the file alone, so it checks the file's size and time, and that there's still

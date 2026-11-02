@@ -21,6 +21,19 @@ public sealed class IconPathsTests
         }
     }
 
+    /// Each drawing reaches across at least half its square, so one that's only part of its icon shows: Fluent's
+    /// Hourglass Half, filled, at 16 is only its sand.
+    [Fact]
+    public void EveryDrawingReachesAcrossItsSquare()
+    {
+        var partial = Enum.GetValues<IconKey>()
+            .SelectMany(selector: icon => IconPaths.Drawings(icon: icon).Select(selector: drawing => (Icon: icon, Drawing: drawing)))
+            .Where(predicate: shown => SvgPathExtent.LongerSide(svg: shown.Drawing.Svg) < shown.Drawing.Size / 2.0)
+            .Select(selector: shown => shown.Icon + " at " + shown.Drawing.Size)
+            .ToList();
+        Assert.Empty(collection: partial);
+    }
+
     [Fact]
     public void HasEachIconOnceAtEachSize()
     {
@@ -48,6 +61,22 @@ public sealed class IconPathsTests
         Assert.Empty(collection: missing);
     }
 
+    /// The bar's state and badge icons show at 16, and at 20 with Windows' larger text sizes (`BarMetrics.IconSize`).
+    [Fact]
+    public void HasTheBarsStateIconsAtBothItsSizes()
+    {
+        var icons = StateCounts.AllStates
+            .SelectMany(selector: state => new[] { StateWords.Icon(state: state, section: SectionId.CopilotSessions), StateWords.Icon(state: state, section: SectionId.AzureDevOpsPullRequests) })
+            .Append(element: IconKey.PauseCircle)
+            .Distinct();
+        var missing = icons
+            .SelectMany(selector: icon => new[] { BarMetrics.SmallIconDip, BarMetrics.LargeIconDip }.Select(selector: size => (Icon: icon, Size: size)))
+            .Where(predicate: shown => IconPaths.Of(icon: shown.Icon, size: shown.Size).Size != (int)shown.Size)
+            .Select(selector: shown => shown.Icon + " at " + shown.Size)
+            .ToList();
+        Assert.Empty(collection: missing);
+    }
+
     [Theory]
     [InlineData(IconKey.Person, 16, 16)]
     [InlineData(IconKey.Person, 20, 20)]
@@ -56,7 +85,8 @@ public sealed class IconPathsTests
     // The nearest drawing, where Fluent has none at that size; the larger of two as near.
     [InlineData(IconKey.Pulse, 16, 20)]
     [InlineData(IconKey.BranchRequest, 24, 20)]
-    [InlineData(IconKey.HandRaise, 20, 16)]
+    [InlineData(IconKey.HandRaise, 20, 20)]
+    [InlineData(IconKey.Settings, 20, 16)]
     [InlineData(IconKey.Person, 18, 20)]
     public void ShowsTheDrawingMadeForTheSizeOrTheNearest(IconKey icon, double size, int drawn)
     {

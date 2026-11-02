@@ -51,11 +51,9 @@ public sealed class ThemePalette
     public Brush OnFill =>
         IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.OnFill(dark: IsDark));
 
-    public Brush PillFill =>
-        IsHighContrast ? System(element: UIElementType.Highlight) : Brush(argb: StatePalette.PillFill(dark: IsDark));
-
-    public Brush PillText =>
-        IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.PillText(dark: IsDark));
+    /// A source's glyph on the bar, in the color of its words.
+    public Brush Ink =>
+        IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: StatePalette.Ink(dark: IsDark));
 
     public Brush Caution =>
         IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: StatePalette.Caution(dark: IsDark));

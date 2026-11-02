@@ -76,7 +76,12 @@ internal sealed class AppShell : IDisposable
         sources.Changed += (_, _) => Refresh();
         desktop.ForegroundChanged += (_, _) => panel.Dismiss(reason: PanelCloseReason.OtherApp);
         desktop.FullScreenChanged += (_, _) => ApplyFullScreen();
-        uiSettings.TextScaleFactorChanged += (_, _) => queue.TryEnqueue(callback: () => PlaceBars(force: true));
+        // Windows' text size makes the bar taller, and its icons bigger.
+        uiSettings.TextScaleFactorChanged += (_, _) => queue.TryEnqueue(callback: () =>
+        {
+            PlaceBars(force: true);
+            Refresh();
+        });
         // Light, dark, accent and High Contrast changes; AccessibilitySettings' own event needs a UWP window.
         uiSettings.ColorValuesChanged += (_, _) => queue.TryEnqueue(callback: () => ThemeChanged(theme: CurrentTheme()));
         ArrangeBars();
@@ -319,7 +324,7 @@ internal sealed class AppShell : IDisposable
             var display = displays[index];
             var bar = plan.ForDisplays[index] is { } taken ? windows[taken] : new BarWindow(shell: this, display: display);
             bar.TakeOver(display: display);
-            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now);
+            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now, iconSize: BarMetrics.IconSize(textScale: TextScale));
             arranged.Add(item: bar);
         }
         bars.Clear();
@@ -366,7 +371,7 @@ internal sealed class AppShell : IDisposable
         var snapshots = sources.Snapshots();
         foreach (var bar in bars)
         {
-            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now);
+            bar.ViewModel.Update(snapshots: snapshots, palette: Palette, now: now, iconSize: BarMetrics.IconSize(textScale: TextScale));
         }
         panel.Refresh(now: now);
     }
