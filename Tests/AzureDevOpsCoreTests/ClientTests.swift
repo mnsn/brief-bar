@@ -320,18 +320,25 @@ extension Locked where Value == Int {
         #expect(server.requests.count == sent)
     }
 
-    /// `Retry-After` can give the date to wait until instead (RFC 9110).
+    /// `Retry-After` can give the date to wait until instead (RFC 9110). The client counts from its own clock as the answer
+    /// comes, so the wait is at most what's left of it when the request is sent, and at least what's left once the answer
+    /// is in, however long that takes.
     @Test func honorsARetryAfterDate() async throws {
         let server = StubServer()
-        let until = httpDate(Date().addingTimeInterval(600))
-        server.on("/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": until]) }
+        // On a whole second, as an HTTP date gives it.
+        let until = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 + 600).rounded(.up))
+        let header = httpDate(until)
+        server.on("/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": header]) }
         let client = server.client()
         let url = ADOEndpoint.connectionData(organization: "contoso")
+        let sent = Date()
         do {
             _ = try await client.get(url, as: ADOConnectionData.self)
             Issue.record("Expected to be throttled")
         } catch ADOError.throttled(let wait) {
-            #expect(wait > 590 && wait <= 600)
+            let answered = Date()
+            #expect(wait <= until.timeIntervalSince(sent))
+            #expect(wait >= until.timeIntervalSince(answered))
         }
     }
 
