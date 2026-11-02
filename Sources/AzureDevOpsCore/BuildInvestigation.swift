@@ -340,9 +340,10 @@ public struct BuildIssue: Sendable, Equatable {
 
     nonisolated(unsafe) private static let sourcesFolder = /^(?:[A-Za-z]:)?\/(?:[^\/]*\/)*?\d+\/s\//
     /// `src/Cart.cs(41,5): error CS1002: …`, as MSBuild, the C# compiler and TypeScript write it, after MSBuild's node
-    /// number (`3>`) when there is one.
+    /// number (`3>`) when there is one. The path may have parentheses of its own, as `C:\Program Files (x86)\…` does: the
+    /// place is the one just before the error.
     nonisolated(unsafe) private static let msbuildPlace =
-        /\s*(?:\d+>)?([^\s(][^(]*?)\((\d+)(?:,(\d+))?(?:,\d+,\d+)?\)\s*:\s*(?:[A-Za-z ]+\s)?(?:error|warning)\b/
+        /\s*(?:\d+>)?(\S.*?)\((\d+)(?:,(\d+))?(?:,\d+,\d+)?\)\s*:\s*(?:[A-Za-z ]+\s)?(?:error|warning)\b/
     /// `Sources/Cart.swift:41:5: error: …`, as Clang, GCC and Swift write it, with a drive first on Windows: `C:\a\1\s\…`.
     nonisolated(unsafe) private static let compilerPlace =
         /((?:[A-Za-z]:[\\\/])?[^\s:][^:]*):(\d+):(?:(\d+):)?\s*(?:fatal\s+)?(?:error|warning)\b/
@@ -539,8 +540,9 @@ public struct BuildTests: Sendable, Equatable {
     /// `BuildInvestigationReader.failedTestsListed`.
     public var failures: [FailedTest]
     /// Whether the totals count everything. Not when it published more test runs than BriefBar adds up,
-    /// `BuildInvestigationReader.testRunsCounted`, whose totals count that many; nor when a test run that doesn't say how
-    /// many of its tests failed wasn't read whole, whose failures nobody looked into are what `failed` counts of it.
+    /// `BuildInvestigationReader.testRunsCounted`, whose totals count that many; nor when a test run's counts can't be read;
+    /// nor when a test run that doesn't say how many of its tests failed wasn't read whole, whose failures nobody looked
+    /// into are what `failed` counts of it.
     public var isComplete: Bool
 
     public init(total: Int, passed: Int, failed: Int, runs: Int, failures: [FailedTest], isComplete: Bool = true) {
@@ -571,7 +573,7 @@ public struct BuildTests: Sendable, Equatable {
     /// - Parameter countsAllRuns: `runs` are all its test runs.
     init(runs: [ADOTestRun], results: [Int: Int], listed: Int, failures: [FailedTest], countsAllRuns: Bool) {
         var failed = 0
-        var isComplete = countsAllRuns
+        var isComplete = countsAllRuns && !runs.contains(where: \.hasUnreadableCounts)
         for run in runs {
             if let known = Self.failed(in: run) {
                 failed += known

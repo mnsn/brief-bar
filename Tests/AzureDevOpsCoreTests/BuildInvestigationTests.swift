@@ -198,6 +198,10 @@ enum InvestigationFixture {
         #expect(try place("D:/a/1/s/src/Cart.cpp:41: warning: unused variable 'e'") == ["src/Cart.cpp", "41", "-"])
         #expect(try place("/usr/share/dotnet/sdk/8.0.100/Microsoft.Common.targets(2,3): warning MSB3277: Conflicts")
             == ["/usr/share/dotnet/sdk/8.0.100/Microsoft.Common.targets", "2", "3"])
+        // A path with parentheses of its own.
+        #expect(try place("C:\\Program Files (x86)\\MSBuild\\Microsoft.Common.CurrentVersion.targets(2352,5): warning MSB3277: Conflicts")
+            == ["C:/Program Files (x86)/MSBuild/Microsoft.Common.CurrentVersion.targets", "2352", "5"])
+        #expect(try place("src/Cart (copy)/Total.cs(12): error CS1002: ; expected") == ["src/Cart (copy)/Total.cs", "12", "-"])
         for nowhere in [
             "Bash exited with code '1'.", "Error: The process '/usr/bin/dotnet' failed with exit code 1", "Test Run Failed.",
             "Retrying in 5 seconds (attempt 2): error 503", "error: pathspec 'main' did not match",
@@ -342,9 +346,17 @@ enum InvestigationFixture {
         #expect(read.unlisted == 10)
         #expect(!read.isComplete)
         // The failed results that came back for them, when they all did, say how many failed.
-        let whole = BuildTests(runs: runs, results: [2: 2, 4: 0, 5: 1, 6: 1, 7: 1], listed: 20, failures: [], countsAllRuns: true)
+        let readable = runs.filter { $0.id != 4 }
+        let whole = BuildTests(runs: readable, results: [2: 2, 5: 1, 6: 1, 7: 1], listed: 20, failures: [], countsAllRuns: true)
         #expect(whole.failed == 14)
         #expect(whole.isComplete)
+        // A count that's there but isn't a number leaves the totals partial, however its failures were read.
+        #expect(runs.map(\.hasUnreadableCounts) == [false, false, false, true, false, false, false])
+        #expect(!BuildTests(runs: [runs[3]], results: [4: 0], listed: 20, failures: [], countsAllRuns: true).isComplete)
+        let counts = try Fixture.decode([ADOTestRun].self, [
+            ["id": 8, "totalTests": NSNull(), "passedTests": 0], ["id": 9, "totalTests": 3, "passedTests": "3"],
+        ])
+        #expect(counts.map(\.hasUnreadableCounts) == [false, true])
         // As many as a read lists are some of them.
         let cut = BuildTests(runs: runs, results: [2: 3, 4: 0, 5: 1, 6: 1, 7: 1], listed: 3, failures: [], countsAllRuns: true)
         #expect(cut.failed == 15)

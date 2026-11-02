@@ -59,6 +59,8 @@ public struct ADOTestRun: Decodable, Sendable {
     public var unanalyzedTests: Int?
     /// How many tests had each outcome.
     public var runStatistics: LenientArray<Statistic>?
+    /// One of its counts is there but isn't a number, so its totals can't be told. One that isn't there is none.
+    public var hasUnreadableCounts: Bool
 
     public struct Statistic: Decodable, Sendable {
         /// `Passed`, `Failed`, `NotExecuted`…
@@ -84,6 +86,9 @@ public struct ADOTestRun: Decodable, Sendable {
         passedTests = container.lenient(Int.self, forKey: .passedTests)
         unanalyzedTests = container.lenient(Int.self, forKey: .unanalyzedTests)
         runStatistics = container.lenient(LenientArray<Statistic>.self, forKey: .runStatistics)
+        hasUnreadableCounts = [CodingKeys.totalTests, .passedTests, .unanalyzedTests].contains { key in
+            container.contains(key) && (try? container.decodeNil(forKey: key)) != true && container.lenient(Int.self, forKey: key) == nil
+        }
     }
 }
 
