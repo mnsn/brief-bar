@@ -219,16 +219,15 @@ final class CopilotServer: Sendable {
     }
 
     /// Ends its input, which tells it to quit, and waits up to `grace` seconds for it to; then asks it, with whatever it
-    /// started, to stop, and two seconds later makes them. Its exit status, once it exited.
+    /// started, to stop, and two seconds later makes them, even once it has exited (`RunningProgram.stop(grace:)`). Its
+    /// exit status, once it exited.
     @discardableResult
     func close() async -> Int32? {
         let program = program.withLock { $0 }
         program?.closeInput()
         if let status = await exitStatus(within: grace) { return status }
-        program?.terminate()
-        if let status = await exitStatus(within: 2) { return status }
-        program?.terminate(force: true)
-        return await exitStatus(within: 2)
+        program?.stop(grace: 2)
+        return await exitStatus(within: 3)
     }
 
     /// Its exit status, once it exits within `timeout` seconds; nil if it doesn't.
@@ -259,7 +258,7 @@ final class CopilotServer: Sendable {
             messages.forEach(handle)
         case .failure:
             end(with: .unreadable)
-            program.withLock { $0 }?.terminate()
+            program.withLock { $0 }?.stop(grace: 2)
         }
     }
 
@@ -303,11 +302,8 @@ final class CopilotServer: Sendable {
         let program = program.withLock { $0 }
         program?.closeInput()
         queue.asyncAfter(deadline: .now() + grace) { [weak self] in
-            program?.terminate()
-            self?.queue.asyncAfter(deadline: .now() + 2) { [weak self] in
-                program?.terminate(force: true)
-                self?.end(with: .timedOut)
-            }
+            program?.stop(grace: 2)
+            self?.queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.end(with: .timedOut) }
         }
     }
 

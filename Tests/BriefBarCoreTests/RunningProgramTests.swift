@@ -227,6 +227,29 @@ import Testing
         #expect(await exits.next() == SIGTERM)
     }
 
+    /// What it started that ignores being asked to stop is made to, even once the program itself has quit.
+    @Test(.timeLimit(.minutes(1)))
+    func stopsWhatItStartedEvenOnceItHasQuit() async throws {
+        let recorder = Recorder()
+        // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open, so the
+        // program's own exit is heard at once.
+        let program = try recorder.start(
+            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & wait"]
+        )
+        var lines = recorder.lines.makeAsyncIterator()
+        let child = try #require(await lines.next().flatMap { pid_t($0) })
+        #expect(kill(child, 0) == 0)
+        program.stop(grace: 0.3)
+        var exits = recorder.exits.makeAsyncIterator()
+        // It quits when asked; what it started doesn't, until it's made to.
+        #expect(await exits.next() == SIGTERM)
+        #expect(kill(child, 0) == 0)
+        for _ in 0..<300 where kill(child, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(kill(child, 0) == -1 && errno == ESRCH)
+    }
+
     @Test func reportsAProgramThatCantRun() {
         #expect(throws: (any Error).self) {
             try Recorder().start("/nonexistent/BriefBarUpdater")

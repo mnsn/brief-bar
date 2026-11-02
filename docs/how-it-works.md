@@ -1629,8 +1629,14 @@ to.
   question`, opened with no tools, without your skills, MCP servers or plugins, and with the model you choose or else
   the session's own, and deletes the fork once it's answered, failed or been cancelled: a fork that's been asked for is
   waited for, even once the question's cancelled, so that it can be deleted, and one the server can't delete, having
-  ended, another one does, or else BriefBar again before the next question. The session's log and `workspace.yaml` stay
-  as they were, byte for byte, and it can be asked while it works, or while the Copilot app has it open.
+  ended, another one does, or else BriefBar again later (below). The session's log and `workspace.yaml` stay as they
+  were, byte for byte, and it can be asked while it works, or while the Copilot app has it open.
+
+A fork that neither the server that made it nor another could delete, for a task or a question, is kept with the runs, by
+its session ID only (`ado.copilot.forksToDelete`, `LeftoverForks`), and deleted before the next question, fork or task,
+even once BriefBar has started again; one that something has open then is left for later, and each is forgotten once
+its folder is gone. Any program running as you can change the preferences, so an ID that isn't a session's is never
+used.
 
 Forking with an older CLI can change the session it forks: tried on a session that 1.0.105 wrote, 1.0.78 added a line
 to its log, and 1.0.87 replaced the whole log with that line. 1.0.95, 1.0.99, 1.0.102, 1.0.103 and 1.0.105 left it as it
@@ -1663,7 +1669,9 @@ Neither source reads anything more for it.
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
 and the pull request's link go to the preferences (`ado.copilot.runs`),
 without their titles; and so
-do your choices and the repository of each project. Any program running as you can change the
+do your choices and the repository of each project, and the session IDs of the forks BriefBar couldn't delete yet
+(`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on again. Any program
+running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
 are read without following a symbolic link. What Copilot printed when it ended stays in a file only you

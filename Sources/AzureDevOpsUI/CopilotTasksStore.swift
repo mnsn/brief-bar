@@ -405,7 +405,9 @@ final class CopilotTasksStore: ObservableObject {
                 } else {
                     // Asked again for each send, so a tool you've just installed is found.
                     let environment = await environment(fresh: true)
-                    let launcher = CopilotLauncher(outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome)
+                    let launcher = CopilotLauncher(
+                        outputFolder: Self.outputFolder, environment: { environment }, appHome: appHome, leftovers: settings
+                    )
                     run = try await launcher.launch(request, id: id, now: now) { [weak self] status in
                         MainActor.assumeIsolated { self?.exited(id, status: status) }
                     }

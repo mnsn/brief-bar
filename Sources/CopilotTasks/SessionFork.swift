@@ -97,14 +97,51 @@ extension CopilotServer {
     }
 }
 
-/// Forks a session for a task (`CopilotLauncher.Request.forking`), and deletes the fork when the task can't start in it.
+/// Where BriefBar keeps the forks it made and couldn't delete yet, by their session IDs only: with its runs, in the app
+/// (`AppSettings`), so that none is left behind, with a copy of a conversation, when BriefBar quits first. Each is deleted
+/// before the next question, fork or task (`SessionForker.deleteLeftovers(through:)`). Any program running as you can
+/// change what's kept, so an ID is used only once it's checked to be a session's.
+public protocol LeftoverForks: Sendable {
+    /// The forks still to delete, by their session IDs.
+    func leftoverForks() async -> [String]
+    /// Keeps a fork to delete later.
+    func keepLeftoverFork(_ id: String) async
+    /// Forgets a fork that's gone, or that isn't a session's.
+    func dropLeftoverFork(_ id: String) async
+}
+
+/// Leftover forks kept in memory only, until BriefBar quits: for tests.
+public actor InMemoryLeftoverForks: LeftoverForks {
+    private var forks: [String]
+
+    public init(_ forks: [String] = []) {
+        self.forks = forks
+    }
+
+    public func leftoverForks() -> [String] {
+        forks
+    }
+
+    public func keepLeftoverFork(_ id: String) {
+        if !forks.contains(id) { forks.append(id) }
+    }
+
+    public func dropLeftoverFork(_ id: String) {
+        forks.removeAll { $0 == id }
+    }
+}
+
+/// Forks a session for a task (`CopilotLauncher.Request.forking`), and deletes the fork when the task can't start in it,
+/// or later, before the next question, fork or task, when it can't now (`leftovers`).
 struct SessionForker: Sendable {
     var copilot: URL
     var environment: [String: String]
     var timeout: TimeInterval = 60
+    /// Where the forks it couldn't delete yet are kept; nowhere when nil.
+    var leftovers: (any LeftoverForks)?
 
-    /// The fork's ID: a new session with the session's whole history, named `name`. Throws `LaunchError.cantFork`; and
-    /// cancelled once it's asked for, it deletes the fork it made.
+    /// The fork's ID: a new session with the session's whole history, named `name`, once the forks left over from before
+    /// are deleted. Throws `LaunchError.cantFork`; and cancelled once it's asked for, it deletes the fork it made.
     func fork(_ id: String, name: String?) async throws -> String {
         let server: CopilotServer
         do {
@@ -115,6 +152,7 @@ struct SessionForker: Sendable {
         let fork: String
         do {
             try await server.connectForForking(timeout: timeout)
+            await deleteLeftovers(through: server)
             fork = try await server.fork(id, name: name, timeout: timeout)
         } catch {
             await server.close()
@@ -128,17 +166,44 @@ struct SessionForker: Sendable {
         return fork
     }
 
-    /// Deletes a fork it made, whatever happens to the task that asked, even once it's cancelled. Whether it's gone, as
-    /// its folder says.
+    /// Deletes a fork it made, whatever happens to the task that asked, even once it's cancelled; one that isn't gone,
+    /// as its folder says, is kept to delete later (`leftovers`). Whether it's gone.
     @discardableResult
     func discard(_ fork: String) async -> Bool {
-        let copilot = copilot, environment = environment, timeout = timeout
-        await Task {
-            guard let server = try? CopilotServer.start(copilot, environment: environment) else { return }
-            _ = try? await server.delete(fork, timeout: timeout)
-            await server.close()
+        let forker = self
+        return await Task {
+            if let server = try? CopilotServer.start(forker.copilot, environment: forker.environment) {
+                _ = try? await server.delete(fork, timeout: forker.timeout)
+                await server.close()
+            }
+            guard !forker.isGone(fork) else { return true }
+            await forker.leftovers?.keepLeftoverFork(fork)
+            return false
         }.value
-        return isGone(fork)
+    }
+
+    /// Deletes the forks left over from before (`leftovers`), through `server`, or else one of its own, started only when
+    /// there's one to delete. Each is dropped once its folder is gone, or if its ID isn't a session's; one that's open now,
+    /// as if you'd opened it, is left for later.
+    func deleteLeftovers(through server: CopilotServer? = nil) async {
+        guard let leftovers else { return }
+        let home = CopilotCLI.home(environment: environment)
+        var due: [String] = []
+        for fork in await leftovers.leftoverForks() {
+            if !AppSessions.isSessionID(fork) || isGone(fork) {
+                await leftovers.dropLeftoverFork(fork)
+            } else if !AppSessions.isOpen(fork, home: home) {
+                due.append(fork)
+            }
+        }
+        guard !due.isEmpty else { return }
+        let own = server == nil ? try? CopilotServer.start(copilot, environment: environment) : nil
+        guard let deleter = server ?? own else { return }
+        for fork in due {
+            _ = try? await deleter.delete(fork, timeout: timeout)
+            if isGone(fork) { await leftovers.dropLeftoverFork(fork) }
+        }
+        await own?.close()
     }
 
     /// Whether a session's folder is gone from the CLI's folder.
@@ -246,18 +311,21 @@ public actor SessionQuestions {
     private let loadEnvironment: @Sendable () async -> [String: String]
     private let locate: @Sendable ([String: String]) -> URL?
     private let timeouts: Timeouts
+    private let leftovers: any LeftoverForks
     private var environment: [String: String]?
-    /// Forks that neither the server that made them nor another could delete: each is deleted before the next question.
-    private(set) var undeleted: Set<String> = []
 
     /// - Parameters:
+    ///   - leftovers: where the forks it couldn't delete yet are kept, to delete before the next question: with BriefBar's
+    ///     runs, so that none is left behind when BriefBar quits first.
     ///   - loadEnvironment: your login shell's environment, asked for once (`LoginEnvironment.load`).
     ///   - locate: finds `copilot` (`CopilotCLI.locate`).
     public init(
+        leftovers: any LeftoverForks,
         loadEnvironment: @escaping @Sendable () async -> [String: String] = { await LoginEnvironment.load() },
         locate: @escaping @Sendable ([String: String]) -> URL? = { CopilotCLI.locate(environment: $0) },
         timeouts: Timeouts = Timeouts()
     ) {
+        self.leftovers = leftovers
         self.loadEnvironment = loadEnvironment
         self.locate = locate
         self.timeouts = timeouts
@@ -280,15 +348,12 @@ public actor SessionQuestions {
         } catch {
             return .failure(Self.failure(error))
         }
-        let forker = SessionForker(copilot: copilot, environment: environment, timeout: timeouts.cleanUp)
+        let forker = SessionForker(copilot: copilot, environment: environment, timeout: timeouts.cleanUp, leftovers: leftovers)
         var fork: String?
         let result: Result<String, Failure>
         do {
             try await server.connectForForking(timeout: timeouts.start)
-            for leftover in undeleted {
-                _ = try? await server.delete(leftover, timeout: timeouts.cleanUp)
-                if forker.isGone(leftover) { undeleted.remove(leftover) }
-            }
+            await forker.deleteLeftovers(through: server)
             let made = try await server.fork(id, name: Self.forkName, timeout: timeouts.fork)
             fork = made
             // Cancelled while the fork was made, it's deleted unasked.
@@ -301,18 +366,13 @@ public actor SessionQuestions {
             result = .failure(Self.failure(error))
         }
         // Whatever happened, even once it's cancelled, the fork goes, then the server: through another server, when this
-        // one has ended, or can't; and if that can't either, before the next question.
+        // one has ended, or can't; and if that can't either, it's kept to delete before the next question, fork or task.
         let made = fork, cleanUp = timeouts.cleanUp
-        let gone = await Task {
-            guard let made else {
-                await server.close()
-                return true
-            }
-            _ = try? await server.delete(made, timeout: cleanUp)
+        await Task {
+            if let made { _ = try? await server.delete(made, timeout: cleanUp) }
             await server.close()
-            return forker.isGone(made) ? true : await forker.discard(made)
+            if let made, !forker.isGone(made) { await forker.discard(made) }
         }.value
-        if let made, !gone { undeleted.insert(made) }
         return result
     }
 

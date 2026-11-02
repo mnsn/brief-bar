@@ -25,6 +25,11 @@ public final class RunningProgram: @unchecked Sendable {
     private var reading: DispatchSourceRead?
     private var exitWatch: DispatchSourceProcess?
     private var status: Int32?
+    /// It was reaped: from then on, its process group's number can be another's, so nothing is sent to it.
+    private var reaped = false
+    /// It's being stopped, with whatever it started (`stop(grace:)`): it isn't reaped until they've been made to, so that
+    /// its group's number stays its own.
+    private var stopping = false
     private var finished = false
 
     /// How what it writes reaches BriefBar.
@@ -217,12 +222,27 @@ public final class RunningProgram: @unchecked Sendable {
         writeQueue.sync { input >= 0 ? (true, fcntl(input, F_GETNOSIGPIPE) == 1) : (false, false) }
     }
 
-    /// Asks it, and whatever it started in its process group, to stop; or, with `force`, makes them, for a program that
-    /// ignores being asked.
-    public func terminate(force: Bool = false) {
+    /// Asks it, and whatever it started in its process group, to stop.
+    public func terminate() {
         queue.async { [self] in
-            guard status == nil else { return }
-            killpg(pid, force ? SIGKILL : SIGTERM)
+            guard !reaped else { return }
+            killpg(pid, SIGTERM)
+        }
+    }
+
+    /// Asks it, and whatever it started in its process group, to stop, and makes them `grace` seconds later, even once it
+    /// has exited, since something it started may ignore being asked. It isn't reaped until then, so its group's number
+    /// stays its own; its exit is heard as it happens all the same.
+    public func stop(grace: TimeInterval) {
+        queue.async { [self] in
+            guard !reaped, !stopping else { return }
+            stopping = true
+            killpg(pid, SIGTERM)
+            queue.asyncAfter(deadline: .now() + grace) { [self] in
+                killpg(pid, SIGKILL)
+                stopping = false
+                reapIfDone()
+            }
         }
     }
 
@@ -234,7 +254,7 @@ public final class RunningProgram: @unchecked Sendable {
         reading.resume()
         self.reading = reading
         let exitWatch = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
-        exitWatch.setEventHandler { self.reap(exited: true) }
+        exitWatch.setEventHandler { self.noteExit() }
         exitWatch.resume()
         self.exitWatch = exitWatch
     }
@@ -286,19 +306,21 @@ public final class RunningProgram: @unchecked Sendable {
         }
     }
 
-    /// Collects its exit status. Once told it `exited`, it waits for that: the exit can be reported a moment before
-    /// the status can be collected, and isn't reported again.
-    private func reap(exited: Bool) {
+    /// Reads its exit status once it has exited, without reaping it, then reaps it unless it's being stopped
+    /// (`reapIfDone`). It waits for that: the exit can be reported a moment before the status can be read, and isn't
+    /// reported again.
+    private func noteExit() {
         guard status == nil else { return }
-        var raw: Int32 = 0
-        var result: pid_t
+        var info = siginfo_t()
+        var result: Int32
         repeat {
-            result = waitpid(pid, &raw, exited ? 0 : WNOHANG)
+            result = waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT)
         } while result == -1 && errno == EINTR
-        guard result == pid else { return }
+        guard result == 0, info.si_pid == pid else { return }
         exitWatch?.cancel()
-        let signal = raw & 0x7f
-        status = signal == 0 ? (raw >> 8) & 0xff : signal
+        // Exited normally: its exit code. Ended by a signal: the signal.
+        status = info.si_code == CLD_EXITED ? info.si_status & 0xff : info.si_status & 0x7f
+        reapIfDone()
         closeInput()
         // Output that something it started still holds open isn't waited for long.
         queue.asyncAfter(deadline: .now() + 0.5) { [self] in
@@ -306,6 +328,14 @@ public final class RunningProgram: @unchecked Sendable {
             finishIfDone()
         }
         finishIfDone()
+    }
+
+    /// Reaps it once it has exited, unless it's being stopped, which reaps it once it's done.
+    private func reapIfDone() {
+        guard status != nil, !reaped, !stopping else { return }
+        var raw: Int32 = 0
+        while waitpid(pid, &raw, 0) == -1 && errno == EINTR {}
+        reaped = true
     }
 
     private func finishIfDone() {

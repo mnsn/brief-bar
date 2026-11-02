@@ -244,6 +244,32 @@ import Testing
         #expect(await server.close() == SIGTERM)
     }
 
+    /// What it started that ignores being asked to stop is made to, even once the server itself has quit.
+    @Test(.timeLimit(.minutes(1)))
+    func stopsWhatTheServerStartedEvenOnceItHasQuit() async throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let server = folder.appendingPathComponent("copilot")
+        let childFile = folder.appendingPathComponent("child")
+        // What it starts says who it is once it ignores being asked to stop.
+        try "#!/bin/sh\n/bin/sh -c 'trap \"\" TERM; echo $$ > \"$CHILD\"; while :; do sleep 1; done' &\nwhile :; do sleep 1; done\n"
+            .write(to: server, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: server.path)
+        let started = try CopilotServer.start(server, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
+        var child: pid_t?
+        for _ in 0..<400 {
+            child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            if child != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let pid = try #require(child)
+        #expect(await started.close() == SIGTERM)
+        for _ in 0..<400 where kill(pid, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(kill(pid, 0) == -1 && errno == ESRCH)
+    }
+
     /// One that ignores both its input ending and being asked to stop, while BriefBar waits for a fork it may have made,
     /// is made to stop, and nothing waits for it any longer.
     @Test(.timeLimit(.minutes(1)))
@@ -492,6 +518,80 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: fixture.arguments.path))
     }
 
+    /// A fork that's no use and can't be deleted now is kept where BriefBar keeps its runs, and deleted before the next task,
+    /// even once BriefBar has started again.
+    @Test(.timeLimit(.minutes(1)))
+    func keepsAForkItCouldntDeleteAndDeletesItBeforeTheNextTask() async throws {
+        let repository = try await RepositoryFixture()
+        defer { repository.remove() }
+        let remote = "https://dev.azure.com/contoso/Storefront/_git/checkout"
+        try await repository.git(["-C", repository.checkout.path, "remote", "set-url", "origin", remote])
+        try await repository.git(["-C", repository.checkout.path, "config", "url.\(repository.origin.path).insteadOf", remote])
+        var fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment)
+        let busy = repository.folder.appendingPathComponent("busy")
+        try Data().write(to: busy)
+        fixture.environment["FAKE_DELETE_FAILS"] = busy.path
+        let kept = InMemoryLeftoverForks()
+        func launcher() -> CopilotLauncher {
+            let environment = fixture.environment
+            let copilot = fixture.copilot
+            return CopilotLauncher(
+                outputFolder: repository.folder.appendingPathComponent("output"), environment: { environment },
+                locate: { _ in copilot }, appHome: fixture.home, leftovers: kept
+            )
+        }
+        // The pull request's branch is gone, so the fork's worktree can't be made, and the fork can't be deleted now.
+        let elsewhere = repository.folder.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        let forking = CopilotLauncher.Request(
+            subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix it", options: CopilotModel.quick,
+            repository: repository.checkout, worktreesFolder: nil, forking: session(in: elsewhere, repository: elsewhere)
+        )
+        await #expect(throws: LaunchError.self) { try await launcher().launch(forking) { _ in } }
+        #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
+        #expect(await kept.leftoverForks() == [FakeCopilot.fork])
+        #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
+
+        // The next task, of any kind, deletes it first.
+        try FileManager.default.removeItem(at: busy)
+        _ = try await launch(launcher(), CopilotLauncher.Request(
+            subject: .workItem(sampleItem), prompt: "Fix it", options: CopilotModel.quick, repository: repository.checkout,
+            worktreesFolder: nil
+        ))
+        #expect(fixture.methods == ["connect", "sessions.fork", "session.delete", "session.delete"])
+        #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
+        #expect(await kept.leftoverForks().isEmpty)
+    }
+
+    /// What's kept is checked first: an ID that isn't a session's, or whose folder is gone, is dropped without asking the
+    /// CLI; one that something has open now is left for later; and a fork is asked for only once the others are deleted.
+    @Test(.timeLimit(.minutes(1)))
+    func deletesWhatsLeftOverOnlyOnceItsCheckedFirst() async throws {
+        let fixture = try FakeCopilot.Fixture()
+        defer { fixture.remove() }
+        let gone = "3a4b5c6d-7e8f-4a0b-9c1d-2e3f4a5b6c7d"
+        let open = "4b5c6d7e-8f9a-4b1c-8d2e-3f4a5b6c7d8e"
+        let openFolder = fixture.home.appendingPathComponent("session-state/\(open)")
+        try FileManager.default.createDirectory(at: openFolder, withIntermediateDirectories: true)
+        // As a running program, this one, keeps it while it has the session open.
+        try Data().write(to: openFolder.appendingPathComponent("inuse.\(getpid()).lock"))
+        try FileManager.default.createDirectory(at: fixture.forkFolder, withIntermediateDirectories: true)
+        let kept = InMemoryLeftoverForks(["../../Library/Messages", gone, open, FakeCopilot.fork])
+        let forker = SessionForker(copilot: fixture.copilot, environment: fixture.environment, timeout: 20, leftovers: kept)
+
+        await forker.deleteLeftovers()
+        #expect(fixture.methods == ["session.delete"])
+        #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
+        #expect(await kept.leftoverForks() == [open])
+        #expect(FileManager.default.fileExists(atPath: openFolder.path))
+
+        // With nothing to delete, nothing starts.
+        try FileManager.default.removeItem(at: openFolder)
+        await forker.deleteLeftovers()
+        #expect(fixture.methods == ["session.delete"])
+        #expect(await kept.leftoverForks().isEmpty)
+    }
+
     @Test func forksOnlyASessionTheCLIHas() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
@@ -528,10 +628,15 @@ import Testing
 
 /// A side question to a session, asked of a fork of it, which is deleted after.
 @Suite struct SessionQuestionsTests {
-    private func questions(_ fixture: FakeCopilot.Fixture, finds: Bool = true, timeouts: SessionQuestions.Timeouts = .init()) -> SessionQuestions {
+    private func questions(
+        _ fixture: FakeCopilot.Fixture, finds: Bool = true, timeouts: SessionQuestions.Timeouts = .init(),
+        leftovers: any LeftoverForks = InMemoryLeftoverForks()
+    ) -> SessionQuestions {
         let environment = fixture.environment
         let copilot = fixture.copilot
-        return SessionQuestions(loadEnvironment: { environment }, locate: { _ in finds ? copilot : nil }, timeouts: timeouts)
+        return SessionQuestions(
+            leftovers: leftovers, loadEnvironment: { environment }, locate: { _ in finds ? copilot : nil }, timeouts: timeouts
+        )
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -651,7 +756,8 @@ import Testing
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
     }
 
-    /// A fork that no server can delete for now is deleted before the next question.
+    /// A fork that no server can delete for now is kept where BriefBar keeps its runs, and deleted before the next
+    /// question, even once BriefBar has started again.
     @Test(.timeLimit(.minutes(1)))
     func aForkThatCouldntBeDeletedIsDeletedBeforeTheNextQuestion() async throws {
         var fixture = try FakeCopilot.Fixture()
@@ -659,21 +765,22 @@ import Testing
         let busy = fixture.folder.appendingPathComponent("busy")
         try Data().write(to: busy)
         fixture.environment["FAKE_DELETE_FAILS"] = busy.path
-        let questions = questions(fixture)
-        #expect(await questions.ask("Why?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
+        let kept = InMemoryLeftoverForks()
+        #expect(await questions(fixture, leftovers: kept).ask("Why?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
         // Through its own server, then another.
         #expect(fixture.methods.suffix(2) == ["session.delete", "session.delete"])
         #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
-        #expect(await questions.undeleted == [FakeCopilot.fork])
+        #expect(await kept.leftoverForks() == [FakeCopilot.fork])
 
+        // BriefBar starts again: what it kept is still there.
         try FileManager.default.removeItem(at: busy)
         let before = fixture.methods.count
-        #expect(await questions.ask("And then?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
+        #expect(await questions(fixture, leftovers: kept).ask("And then?", session: FakeCopilot.session) == .success("Sam wants the retries capped."))
         #expect(Array(fixture.methods.dropFirst(before)) == [
             "connect", "session.delete", "sessions.fork", "session.resume", "session.ui.ephemeralQuery", "session.delete",
         ])
         #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
-        #expect(await questions.undeleted.isEmpty)
+        #expect(await kept.leftoverForks().isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))

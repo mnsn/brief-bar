@@ -83,18 +83,23 @@ public struct CopilotLauncher: Sendable {
     let locate: @Sendable ([String: String]) -> URL?
     /// The Copilot app's folder: whose sessions it keeps out of, when one of them runs a turn in the same checkout.
     let appHome: URL
+    /// Where the forks it couldn't delete yet are kept, each deleted before the next task; nowhere when nil.
+    let leftovers: (any LeftoverForks)?
 
     /// - Parameters:
     ///   - environment: what Copilot and git run with; by default, your login shell's (`LoginEnvironment`).
     ///   - locate: finds `copilot` in that environment; by default, `CopilotCLI.locate`.
     ///   - appHome: the Copilot app's folder; by default, `AppSessions.home()`.
+    ///   - leftovers: where the forks it couldn't delete yet are kept, with BriefBar's runs, each deleted before the next
+    ///     task; nowhere when nil.
     public init(
         outputFolder: URL, runner: any ProcessRunning = ProcessRunner(),
         environment: (@Sendable () async -> [String: String])? = nil,
         locate: @escaping @Sendable ([String: String]) -> URL? = { CopilotCLI.locate(environment: $0) },
-        appHome: URL = AppSessions.home()
+        appHome: URL = AppSessions.home(), leftovers: (any LeftoverForks)? = nil
     ) {
         self.appHome = appHome
+        self.leftovers = leftovers
         self.outputFolder = outputFolder
         self.runner = runner
         self.environment = environment ?? { await LoginEnvironment.load(runner: runner) }
@@ -144,14 +149,17 @@ public struct CopilotLauncher: Sendable {
         } catch let error as GitError {
             throw LaunchError.git(error)
         }
-        // The fork first: it takes a moment, and says at once when this Copilot CLI can't make one.
-        let forker = SessionForker(copilot: copilot, environment: environment)
+        // The fork first: it takes a moment, and says at once when this Copilot CLI can't make one. Forks left over from
+        // before go before it, or before any other task.
+        let forker = SessionForker(copilot: copilot, environment: environment, leftovers: leftovers)
         var fork: String?
         if let forking = request.forking {
             let made = try await forker.fork(forking.id, name: CopilotCommand.sessionName(for: request.subject))
             fork = made
             id = made
             forked?(made)
+        } else {
+            await forker.deleteLeftovers()
         }
         let worktree: URL
         var made = false
