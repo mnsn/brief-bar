@@ -66,6 +66,25 @@ public sealed class LevelDBLogTests
         Assert.Equal(expected: log.Bytes.Length, actual: LevelDBLog.Parse(bytes: [.. log.Bytes, .. new byte[100]]).End);
     }
 
+    /// A record at the end whose checksum doesn't match may be one LevelDB is still writing: a log stops before it, counting
+    /// nothing, and reading on from there tries it again.
+    [Fact]
+    public void StopsBeforeADamagedRecordAtTheEnd()
+    {
+        var log = new LogWriter();
+        log.Add(batch: LogWriter.Batch(sequence: 1, (key, Encodings.Utf8(text: "first"))));
+        var firstEnd = log.Bytes.Length;
+        log.Add(batch: LogWriter.Batch(sequence: 2, (key, Encodings.Utf8(text: "second"))));
+        var bytes = log.Bytes;
+        bytes[^1] ^= 0xFF;
+
+        var parsed = LevelDBLog.Parse(bytes: bytes);
+
+        Assert.Equal(expected: [1UL], actual: parsed.Entries.Select(selector: entry => entry.Sequence));
+        Assert.Equal(expected: firstEnd, actual: parsed.End);
+        Assert.Equal(expected: 0, actual: parsed.Corrupt);
+    }
+
     [Fact]
     public void SkipsABlockWithABadChecksum()
     {

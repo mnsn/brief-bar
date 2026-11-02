@@ -86,6 +86,21 @@ public sealed class LevelDBManifestTests
         Assert.Throws<FormatErrorException>(testCode: () => LevelDBManifest.Parse(bytes: damaged));
     }
 
+    /// LevelDB refuses a MANIFEST whose last record is all there but damaged, rather than taking it for one it's still
+    /// writing: going by the version before it would read tables that edit removed.
+    [Fact]
+    public void RefusesAManifestWhoseLastRecordIsDamaged()
+    {
+        var manifest = ManifestWriter.Manifest(
+            ManifestWriter.Edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 6, lastSequence: 0, added: [5]),
+            ManifestWriter.Edit(logNumber: 7, nextFile: 9, lastSequence: 4, deleted: [5], added: [8]));
+        manifest[^1] ^= 0xFF;
+
+        var error = Assert.Throws<FormatErrorException>(testCode: () => LevelDBManifest.Parse(bytes: manifest));
+
+        Assert.Equal(expected: FormatError.Corrupt(what: "manifest"), actual: error.Error);
+    }
+
     /// Microsoft Edge's, in the fixture: as LevelDB creates a database, with no tables, and its log number 0, which keeps
     /// every log.
     [Fact]

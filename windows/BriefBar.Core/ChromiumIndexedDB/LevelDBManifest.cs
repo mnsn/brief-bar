@@ -40,7 +40,8 @@ public static class LevelDBManifest
 
     /// The version that `bytes`, a MANIFEST, leaves the database at. An edit at the end that isn't all there yet, as one
     /// LevelDB is still writing, is left out. Throws `FormatErrorException` where LevelDB would refuse to open the
-    /// database: for a damaged record, an edit it doesn't understand, or no log, next file or last sequence number.
+    /// database: for a damaged record, the last one included, an edit it doesn't understand, or no log, next file or last
+    /// sequence number.
     public static LevelDBVersion Parse(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(argument: bytes);
@@ -99,7 +100,14 @@ public static class LevelDBManifest
             files.UnionWith(other: added);
         }
 
-        var (_, corrupt) = LevelDBLog.Records(bytes: bytes, fileOffset: 0, record: edit => Apply(edit: new ByteReader(bytes: edit.ToArray())));
+        // As LevelDB does, a damaged last record counts as one, rather than one that may still be being written: going by
+        // the version before it would read tables that edit removed, perhaps only some of them. One LevelDB is still
+        // writing changes as it finishes it, so a later read gets past it.
+        var (_, corrupt) = LevelDBLog.Records(
+            bytes: bytes,
+            fileOffset: 0,
+            damagedEndIsCorrupt: true,
+            record: edit => Apply(edit: new ByteReader(bytes: edit.ToArray())));
         if (corrupt > 0 || logNumber is not { } log || !hasNextFile || !hasLastSequence)
         {
             throw FormatErrorException.Corrupt(what: "manifest");

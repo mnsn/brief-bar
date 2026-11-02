@@ -15,14 +15,15 @@ public static class LevelDBLog
     const byte LastRecord = 4;
 
     /// Parses `bytes`, which start at `fileOffset` in the log: 0, or a previous `End`. Stops before a record or a batch
-    /// that isn't all there yet. Only writes to keys that `keep` accepts are kept.
+    /// that isn't all there yet, and before a record at the end whose checksum doesn't match, which may still be being
+    /// written: reading on from `End` tries it again. Only writes to keys that `keep` accepts are kept.
     public static LevelDBLogParse Parse(byte[] bytes, long fileOffset = 0, Func<ArraySegment<byte>, bool>? keep = null)
     {
         ArgumentNullException.ThrowIfNull(argument: bytes);
         keep ??= _ => true;
         var entries = new List<LevelDBEntry>();
         var corruptBatches = 0;
-        var (end, corrupt) = Records(bytes: bytes, fileOffset: fileOffset, record: batch =>
+        var (end, corrupt) = Records(bytes: bytes, fileOffset: fileOffset, damagedEndIsCorrupt: false, record: batch =>
         {
             try
             {
@@ -38,9 +39,11 @@ public static class LevelDBLog
 
     /// Hands each record of `bytes`, which start at `fileOffset` in a file in the log's format, to `record`, in order:
     /// whole, where it was split across blocks. A log's records are write batches, and a MANIFEST's version edits. Stops
-    /// before a record that isn't all there yet. Returns the file offset after the last whole record, and how many
-    /// records or blocks were skipped because they broke the format or their checksum didn't match.
-    internal static (long End, int Corrupt) Records(byte[] bytes, long fileOffset, Action<ReadOnlySpan<byte>> record)
+    /// before a record that isn't all there yet; and before a record at the end whose checksum doesn't match, unless
+    /// `damagedEndIsCorrupt`, as LevelDB has it for a MANIFEST, when it skips it like any other. Returns the file offset
+    /// after the last whole record, and how many records or blocks were skipped because they broke the format or their
+    /// checksum didn't match.
+    internal static (long End, int Corrupt) Records(byte[] bytes, long fileOffset, bool damagedEndIsCorrupt, Action<ReadOnlySpan<byte>> record)
     {
         var end = fileOffset;
         var corrupt = 0;
@@ -93,8 +96,8 @@ public static class LevelDBLog
             var data = bytes.AsSpan(start: position + HeaderSize, length: size);
             if (CRC32C.Unmask(masked: checksum) != CRC32C.Checksum(bytes: data, initial: CRC32C.Checksum(bytes: [type])))
             {
-                // At the end of the file, it may still be being written: try again later.
-                if (position + HeaderSize + size >= bytes.Length)
+                // At the end of a log, it may still be being written: try again later.
+                if (!damagedEndIsCorrupt && position + HeaderSize + size >= bytes.Length)
                 {
                     break;
                 }
