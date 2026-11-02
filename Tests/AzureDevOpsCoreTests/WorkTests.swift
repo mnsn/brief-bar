@@ -133,7 +133,7 @@ actor HeldTokens: AccessTokenProvider {
         self.holdAt = holdAt
     }
 
-    func token() async throws -> AccessToken {
+    func token(tenant: String?) async throws -> AccessToken {
         calls += 1
         if calls == holdAt {
             isHolding = true
@@ -142,7 +142,7 @@ actor HeldTokens: AccessTokenProvider {
         return AccessToken(value: value, expiresOn: .distantFuture)
     }
 
-    func invalidate() {}
+    func invalidate(tenant: String?) {}
 
     func release() {
         held?.resume()

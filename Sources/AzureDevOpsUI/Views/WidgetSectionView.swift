@@ -75,10 +75,23 @@ struct WidgetSectionView: View {
             Text("Pull Requests")
                 .font(size: 13, weight: .semibold)
             if let problem = store.problem {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(size: 11)
-                    .foregroundStyle(.secondary)
-                    .help(problem.message)
+                if problem.offersSignIn {
+                    // The list may show other organizations' pull requests, without the placeholder's button.
+                    Button { store.signIn() } label: {
+                        Image(systemName: "person.crop.circle.badge.exclamationmark")
+                            .font(size: 11)
+                            .foregroundStyle(.orange)
+                    }
+                    .buttonStyle(.plain)
+                    .help(problem.message + (problem == .cliNotFound ? " Click to install it." : " Click to sign in."))
+                    .accessibilityLabel(problem == .cliNotFound ? "Install the Azure CLI" : "Sign In")
+                    .accessibilityHint(problem.message)
+                } else {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(size: 11)
+                        .foregroundStyle(.secondary)
+                        .help(problem.message)
+                }
             }
             Spacer()
             if store.hasLoaded && store.counts.active == 0 {
@@ -100,7 +113,7 @@ struct WidgetSectionView: View {
                     .font(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if problem.needsSignIn {
+                if problem.offersSignIn {
                     Button(problem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn() }
                         .controlSize(.small)
                 }

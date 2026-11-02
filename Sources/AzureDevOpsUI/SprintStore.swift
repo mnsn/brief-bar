@@ -94,7 +94,7 @@ final class SprintStore: ObservableObject {
         if teams != snapshot.teams { teams = snapshot.teams }
         if problem != snapshot.problem {
             problem = snapshot.problem
-            if let problem = snapshot.problem { Log.app.error("Sprint: \(problem.message, privacy: .public)") }
+            if let problem = snapshot.problem { Log.app.error("Sprint: \(problem.logMessage, privacy: .public)") }
         }
         if isRefreshing != snapshot.isRefreshing { isRefreshing = snapshot.isRefreshing }
         if refreshedAt != snapshot.refreshedAt { refreshedAt = snapshot.refreshedAt }

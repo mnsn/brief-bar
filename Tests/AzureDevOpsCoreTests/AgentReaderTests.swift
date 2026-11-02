@@ -160,9 +160,49 @@ import Testing
             _ = try await agent.needsYou()
             Issue.record("Read without signing in")
         } catch let error as MCPToolError {
-            #expect(error.description == "Sign in to the Azure CLI to see your pull requests. Run az login, then ask again.")
+            #expect(error.description == "Sign in to the Azure CLI to see your pull requests. Run az login --allow-no-subscriptions, then ask again.")
         } catch {
             Issue.record("Unexpected \(error)")
+        }
+    }
+
+    /// An agent has no Sign In button: it's told what to run, with the directory's ID, which signing in needs.
+    @Test func saysWhatToRunForAnOrganizationInAnotherDirectory() async {
+        let now = Date()
+        let server = StubServer()
+        server.serveOrganization(mine: [Fixture.pullRequest(1, title: "Mine", created: now.addingTimeInterval(-day))])
+        server.serveOrganization("fabrikam")
+        server.put("fabrikam", in: Tenants.other)
+        let reader = AzureDevOpsReader(
+            demo: false, organizations: [], defaults: defaults(organizations: [Fixture.org, "fabrikam"]),
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        ) {}
+        let read = await reader.pullRequests(now: now)
+        #expect(read.items.map { $0.key.number } == [1])
+        #expect(read.problem == "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other) --allow-no-subscriptions, then ask again in a minute.")
+        // The others were read: calls within the minute share that read, as when any organization can't be read.
+        let once = server.requests.count
+        _ = await reader.pullRequests(now: now.addingTimeInterval(30))
+        #expect(server.requests.count == once)
+    }
+
+    /// A work item asked for by its number may be in any of your organizations: one in a directory to sign in to doesn't
+    /// stop the others being looked in, and is named only when none of them has it.
+    @Test func looksForAWorkItemPastAnOrganizationInAnotherDirectory() async throws {
+        let server = StubServer()
+        server.put("fabrikam", in: Tenants.other)
+        server.on("/\(Fixture.org)/_apis/wit/workitems/5", json: WorkFixture.workItem(5, "Task", "Show saved items"))
+        let reader = AzureDevOpsReader(
+            demo: false, organizations: [], defaults: defaults(organizations: ["fabrikam", Fixture.org]),
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        ) {}
+        let read = try await reader.workItem(5, organization: nil)
+        #expect(read.item.id == 5)
+        #expect(read.item.organization == Fixture.org)
+        await #expect(throws: MCPToolError(
+            "fabrikam is in a directory your Azure CLI isn't signed in to. Run az login --tenant \(Tenants.other) --allow-no-subscriptions, then ask again."
+        )) {
+            try await reader.workItem(6, organization: nil)
         }
     }
 
@@ -181,5 +221,24 @@ import Testing
         #expect(pinned.map(\.definitionId) == [12])
         #expect(try await agent.unpin(.string("https://dev.azure.com/contoso/Shop/_build?definitionId=12")) == "Unpinned “web-ci”.")
         #expect(announced.value == 2)
+    }
+}
+
+/// The projects the Add Pipelines sheet searches in, as the app reads them: those of an organization in a directory to
+/// sign in to are said to be missing, with a way to sign in there.
+@MainActor
+@Suite struct PipelineProjectsTests {
+    @Test func saysWhichOrganizationsProjectsWaitOnASignIn() async {
+        let server = StubServer()
+        server.on("/contoso/_apis/projects", json: Fixture.list([["id": "p1", "name": "Shop"]]))
+        server.put("fabrikam", in: Tenants.other)
+        let defaults = MemoryDefaults()
+        defaults.set([Fixture.org, "fabrikam"], forKey: SettingsKey.organizations)
+        let pipelines = PipelinesStore(
+            settings: AppSettings(defaults: defaults), mode: .live, client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        )
+        let (projects, problem) = await pipelines.allProjects()
+        #expect(projects.map(\.name) == ["Shop"])
+        #expect(problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
     }
 }
