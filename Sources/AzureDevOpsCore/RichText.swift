@@ -769,11 +769,11 @@ private enum MarkdownReader {
     /// Its blocks, and whether an HTML comment in it has no end there: then it goes on past it, as HTML reads one, to
     /// its end or to the end of the text.
     private static func read(_ markdown: String, depth: Int) -> (blocks: [RichText.Block], unended: Bool) {
-        var raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
         // structure. What's after the indentation, and code, keep their tabs.
-        var lines = raw.map(Self.expandingIndentation)
+        let lines = raw.map(Self.expandingIndentation)
         var blocks: [RichText.Block] = []
         var pending: [String] = []
         var pendingKind = Pending.paragraph
@@ -813,9 +813,10 @@ private enum MarkdownReader {
             itemIndents.last { $0 <= indent } ?? 0
         }
         /// Hides an HTML comment, from line `start`, after `opening` on it or else from its start, to the line it ends
-        /// on, blank lines and all: what follows its end there goes on as a line of its own, in the list's item `inside`
-        /// columns in. False when it has no end, and so hides all the rest.
-        func skipComment(from start: Int, after opening: String.Index? = nil, inside: Int) -> Bool {
+        /// on, blank lines and all. What follows its end there is the HTML block's too: it shows as HTML shows it, not
+        /// read as Markdown, and the next line starts a block of its own. False when the comment, or one after it there,
+        /// has no end, and so hides all the rest.
+        func skipComment(from start: Int, after opening: String.Index? = nil) -> Bool {
             guard start < raw.count else { return false }
             var end = start
             var close = raw[start][(opening ?? raw[start].startIndex)...].range(of: "-->")
@@ -824,19 +825,11 @@ private enum MarkdownReader {
                 close = raw[end].range(of: "-->")
             }
             guard let close else { return false }
-            var rest = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
-            // Others that end on the same line, read on in place.
-            while rest.hasPrefix("<!--"), let next = rest.dropFirst(4).range(of: "-->") {
-                rest = rest[next.upperBound...].drop { $0 == " " || $0 == "\t" }
-            }
-            if rest.isEmpty {
-                index = end + 1
-            } else {
-                raw[end] = String(repeating: " ", count: inside) + rest
-                lines[end] = Self.expandingIndentation(raw[end])
-                index = end
-            }
-            return true
+            index = end + 1
+            let rest = Self.literal(raw[end][close.upperBound...])
+            let runs = inline(rest.text)
+            if !runs.isEmpty { blocks.append(.paragraph(runs)) }
+            return !rest.unended
         }
 
         while index < lines.count {
@@ -879,11 +872,11 @@ private enum MarkdownReader {
             }
             // An HTML comment that starts a line, as bots leave them in their comments, is a block of its own, which shows
             // nothing, blank lines and all, to the line it ends on; without an end, it's all the rest. What follows its end
-            // there goes on, in the list's item it's in.
+            // there shows as HTML shows it.
             if trimmed.hasPrefix("<!--"), let opening = raw[index].range(of: "<!--") {
                 flush()
                 closeLists(at: indent)
-                guard skipComment(from: index, after: opening.upperBound, inside: inside) else {
+                guard skipComment(from: index, after: opening.upperBound) else {
                     unended = true
                     break
                 }
@@ -954,7 +947,7 @@ private enum MarkdownReader {
                         if case .paragraph(let runs) = block { blocks.append(.quote(runs)) } else { blocks.append(block) }
                     }
                     // A comment in it that doesn't end there goes on past it.
-                    if quote.unended, !skipComment(from: index, inside: inside) {
+                    if quote.unended, !skipComment(from: index) {
                         unended = true
                         break
                     }
@@ -1028,9 +1021,10 @@ private enum MarkdownReader {
                         content = String(task.2 ?? "")
                     }
                 }
-                // An item that starts with HTML comments: they show nothing, blank lines and all, and the item's text is
-                // what follows the last one's end; without an end, it's all the rest. With nothing after them, the item
-                // has no paragraph for the lines after it to go on with. Text indented as code starts with no comment.
+                // An item that starts with HTML comments: they show nothing, blank lines and all; without an end, it's all
+                // the rest. What follows the last one's end on its line is the HTML block's too, which shows as HTML shows
+                // it, and the item has no paragraph for the lines after it to go on with: with nothing there, the next
+                // paragraph in it is its text. Text indented as code starts with no comment.
                 var startsWithComment = false
                 var text = Substring(content)
                 while column - markerEnd <= 4, text.hasPrefix("<!--") {
@@ -1050,11 +1044,20 @@ private enum MarkdownReader {
                     text = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
                     index = end
                 }
-                if startsWithComment { content = text.trimmingCharacters(in: .whitespaces) }
-                let hasText = !(startsWithComment && content.isEmpty)
                 pendingKind = .listItem(marker, depth: depth)
-                pending = hasText ? [content] : []
-                paragraphOpen = hasText
+                pending = []
+                if !startsWithComment {
+                    pending = [content]
+                    paragraphOpen = true
+                } else if !text.isEmpty {
+                    let rest = Self.literal(text)
+                    pending = [rest.text]
+                    flush()
+                    if rest.unended {
+                        unended = true
+                        index = lines.count - 1
+                    }
+                }
                 index += 1
                 continue
             }
@@ -1247,6 +1250,34 @@ private enum MarkdownReader {
     /// apart: see `keptApart(_:)`.
     static let seam: Unicode.Scalar = "\u{FFFC}"
 
+    /// Text as HTML shows it, which Markdown doesn't read: each mark Markdown would read is escaped, but in HTML's tags
+    /// and comments, which stay HTML, and in character references, which HTML reads too. Unended when a comment in it
+    /// has no end: HTML hides everything after one, which isn't in the text.
+    static func literal(_ text: Substring) -> (text: String, unended: Bool) {
+        var result = ""
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            if character == "<" {
+                if text[index...].hasPrefix("<!--") {
+                    guard let end = text[text.index(index, offsetBy: 4)...].range(of: "-->") else { return (result, true) }
+                    result += text[index..<end.upperBound]
+                    index = end.upperBound
+                    continue
+                }
+                if let tag = text[index...].prefixMatch(of: anyTag) {
+                    result += text[tag.range]
+                    index = tag.range.upperBound
+                    continue
+                }
+            }
+            if character.isASCII, character.isPunctuation || character.isSymbol, character != "&" { result.append("\\") }
+            result.append(character)
+            index = text.index(after: index)
+        }
+        return (result, false)
+    }
+
     /// Text with a seam only where it keeps apart two marks that HTML kept apart, which Markdown would read together: runs
     /// of a mark, as in `` `a`<!-- -->`b` `` or `**one**<b></b>**two**`, a link's text and where it goes, as in
     /// `[a]<!-- -->(b)`, and an image's `!` and its description. Elsewhere it would be in the way, as between the two
@@ -1369,19 +1400,16 @@ private enum MarkdownReader {
 
     /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.
     private static func image(_ tag: String) -> String {
-        var attributes: [String: String] = [:]
-        // Each name after a space or a slash, so that a long word that isn't one is read once.
-        for match in tag.matches(of: /[\s\/]([A-Za-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/) {
-            attributes[match.output.1.lowercased()] = String(match.output.2 ?? match.output.3 ?? match.output.4 ?? "")
-        }
-        // Its description is text, with HTML's character references, which the inline reader is to show as it is: each
-        // mark it would read is escaped.
-        let alt = HTMLEntities.decode(attributes["alt"] ?? "").reduce(into: "") { escaped, character in
+        // Its attributes, each read whole, so that what another's quoted value says isn't one, with their character
+        // references read once.
+        let attributes = Tag.parse(tag, at: tag.startIndex)?.attributes ?? [:]
+        // Its description is text, which the inline reader is to show as it is: each mark it would read is escaped.
+        let alt = (attributes["alt"] ?? "").reduce(into: "") { escaped, character in
             if character.isASCII, character.isPunctuation || character.isSymbol { escaped.append("\\") }
             escaped.append(character)
         }
-        // Its source is HTML's too, as `&amp;` between a query's parameters: read once, and kept from being read again.
-        guard let url = RichText.webLink(attributes["src"].map { HTMLEntities.decode($0) }) else { return alt }
+        // Its source, kept from being read again: an ampersand in it is written as a reference to one.
+        guard let url = RichText.webLink(attributes["src"]) else { return alt }
         return "![\(alt)](<\(url.absoluteString.replacingOccurrences(of: "&", with: "&amp;"))>)"
     }
 

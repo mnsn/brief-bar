@@ -17,10 +17,22 @@ import Testing
         #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
         #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
         #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
-        #expect(plain("<!-- one --><!-- two --> <!-- three\n--> Shown") == "Shown")
+        // One that ends on the line it starts makes the block that line: one after it there that doesn't end on it hides
+        // the rest, as HTML reads it.
+        #expect(plain("<!-- one --><!-- two --> <!-- three\n--> Hidden") == "")
         // One that ends on the line it starts is a block of its own: what follows it is what it would be after any other.
         #expect(RichText(markdown: "<!-- bot -->\n    <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
-        // What follows one's end stays in the list's item it's in, which goes on, counting on.
+        // What follows one's end on its line is the HTML block's: it shows as written, not read as Markdown, on the page,
+        // in a list's item, whose next line is a paragraph of its own, and in a quote; and HTML in it is still HTML.
+        #expect(RichText(markdown: "<!-- bot --> # Title").blocks == [.paragraph([RichText.Run("# Title")])])
+        #expect(RichText(markdown: "- <!-- bot --> **literal**\n  more").blocks == [
+            .listItem(.bullet, depth: 0, [RichText.Run("**literal**")]), .paragraph([RichText.Run("more")]),
+        ])
+        #expect(plain("- <!-- x --> a\\ \n  more") == "• a\\\nmore")
+        #expect(RichText(markdown: "> <!-- bot --> _quoted_").blocks == [.quote([RichText.Run("_quoted_")])])
+        #expect(plain("<!-- bot --> <b>bold</b>, `code` and a\\b") == "bold, `code` and a\\b")
+        #expect(plain("<!-- bot --> shown <!-- unended\n\nhidden") == "shown")
+        // What follows one's end shows in the list's item it's in, which goes on, counting on.
         let numbered = RichText(markdown: "1. one\n   <!--\n   x\n   --> after\n1. two")
         #expect(numbered.plainText == "1. one\nafter\n2. two")
         #expect(numbered.blocks.last == .listItem(.number(2), depth: 0, [RichText.Run("two")]))
@@ -130,6 +142,11 @@ import Testing
             .paragraph([RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
         ])
         #expect(plain("<img alt='Use &lt;span class=\"x\"&gt; here'>") == "Use <span class=\"x\"> here")
+        // Its own source and description, whatever another attribute's quoted value says.
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/real.png\" alt=\"Real\" "
+            + "data-v2=\" src='https://example.invalid/other.svg' alt='Other'\">").blocks == [
+            .paragraph([RichText.Run("Real", link: URL(string: "https://example.invalid/real.png"))]),
+        ])
     }
 
     @Test func leavesCodeAsItIs() {

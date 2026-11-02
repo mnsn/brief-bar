@@ -180,13 +180,13 @@ public sealed class AuthTests
             runner: cli,
             time: clock);
         var cancellationToken = TestContext.Current.CancellationToken;
-        Assert.Equal(expected: "token1", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
-        Assert.Equal(expected: "token1", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "token1", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "token1", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
         // Within five minutes of expiring, it asks again.
         clock.Set(time: TestTimes.T(seconds: 301));
-        Assert.Equal(expected: "token2", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
-        provider.Invalidate();
-        Assert.Equal(expected: "token3", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "token2", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
+        provider.Invalidate(tenant: null);
+        Assert.Equal(expected: "token3", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
         Assert.Equal(expected: 3, actual: cli.Runs.Count);
         // Each time the `az` it found, with the fixed arguments, quietly, for a minute at most.
         Assert.All(collection: cli.Runs, action: run =>
@@ -204,7 +204,7 @@ public sealed class AuthTests
     {
         var cli = new FakeProcessRunner(answer: _ => new ProcessResult(ExitCode: 0, Output: """{"accessToken": "abc"}""", Error: string.Empty));
         var provider = new AzureCLITokenProvider(locator: new AzureCLILocator(environment: new Dictionary<string, string?>()), runner: cli);
-        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(cancellationToken: TestContext.Current.CancellationToken));
+        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(tenant: null, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(expected: AuthError.CliNotFound, actual: error.Error);
         Assert.Empty(collection: cli.Runs);
     }
@@ -221,7 +221,7 @@ public sealed class AuthTests
         var provider = new AzureCLITokenProvider(
             locator: new AzureCLILocator(environment: new Dictionary<string, string?> { ["PATH"] = folder.Path }), time: new TestClock(start: TestTimes.T(seconds: 0)));
 
-        var token = await provider.TokenAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var token = await provider.TokenAsync(tenant: null, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(expected: "account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json;false;true;true", actual: token.Value);
         Assert.Equal(expected: DateTimeOffset.FromUnixTimeSeconds(seconds: 1_792_564_306), actual: token.ExpiresOn);
@@ -240,17 +240,17 @@ public sealed class AuthTests
         var provider = new AzureCLITokenProvider(
             locator: new AzureCLILocator(environment: new Dictionary<string, string?> { ["PATH"] = first + ";" + second }), time: new TestClock(start: TestTimes.T(seconds: 0)));
         var cancellationToken = TestContext.Current.CancellationToken;
-        Assert.Equal(expected: "first", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "first", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
 
         // Moved.
         File.Delete(path: Path.Combine(path1: first, path2: "az.cmd"));
         File.WriteAllText(path: Path.Combine(path1: second, path2: "az.cmd"), contents: "@echo {\"accessToken\": \"second\", \"expires_on\": 1792564306}\r\n");
-        provider.Invalidate();
-        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(cancellationToken: cancellationToken));
+        provider.Invalidate(tenant: null);
+        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(tenant: null, cancellationToken: cancellationToken));
         Assert.Equal(expected: AuthError.Failed(message: "Couldn't run the Azure CLI."), actual: error.Error);
         Assert.Null(@object: provider.Program);
 
-        Assert.Equal(expected: "second", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "second", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
         Assert.Equal(expected: Path.Combine(path1: second, path2: "az.cmd"), actual: provider.Program);
     }
 
@@ -271,13 +271,13 @@ public sealed class AuthTests
             time: new TestClock(start: TestTimes.T(seconds: 0)));
         var cancellationToken = TestContext.Current.CancellationToken;
 
-        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(cancellationToken: cancellationToken));
+        var error = await Assert.ThrowsAsync<AuthException>(testCode: () => provider.TokenAsync(tenant: null, cancellationToken: cancellationToken));
         Assert.Equal(expected: AuthError.Failed(message: "Couldn't run the Azure CLI."), actual: error.Error);
         Assert.Null(@object: provider.Program);
 
         // Moved where it can run.
         refusedIsThere = false;
-        Assert.Equal(expected: "moved", actual: (await provider.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: "moved", actual: (await provider.TokenAsync(tenant: null, cancellationToken: cancellationToken)).Value);
         Assert.Equal(expected: folder.Combine("az.cmd"), actual: provider.Program);
     }
 }

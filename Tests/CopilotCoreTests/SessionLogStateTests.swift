@@ -150,6 +150,27 @@ import Testing
         #expect(retried.errorMessage == nil)
     }
 
+    /// Put in the phase it was in already, as by an error after an error, it's been in it since the first, and was last
+    /// put in it by the second.
+    @Test func saysWhenItWasLastPutInItsPhase() {
+        let failed = [Line.userMessage(at: t(1)), Line.sessionError("Rate limited", at: t(2))]
+        #expect(logState(failed).phaseSetAt == t(2))
+        let failedAgain = logState(failed + [Line.resume(at: t(60)), Line.sessionError("Not signed in", at: t(61))])
+        #expect(failedAgain.activity == .failed(at: t(2), message: "Not signed in"))
+        #expect(failedAgain.phaseSetAt == t(61))
+
+        let aborted = [Line.userMessage(at: t(1)), Line.abort(at: t(2))]
+        let abortedAgain = logState(aborted + [Line.resume(at: t(60)), Line.abort(at: t(61))])
+        #expect(abortedAgain.phaseSince == t(2) && abortedAgain.phaseSetAt == t(61))
+
+        // A resume that ends what the last process left running puts it in that phase when that process last wrote.
+        let crashed = logState([Line.userMessage(at: t(1)), Line.toolStart("bash", id: "c1", at: t(3)), Line.resume(at: t(60))])
+        #expect(crashed.phase == .interrupted && crashed.phaseSetAt == t(3))
+        // And what doesn't change its phase, such as a resume after a finished turn, doesn't say it was put in it.
+        let finished = logState([Line.userMessage(at: t(1)), Line.assistantMessage(at: t(2)), Line.turnEnd(at: t(3)), Line.resume(at: t(60))])
+        #expect(finished.phaseSetAt == t(3))
+    }
+
     @Test func shutdownInterruptsOnlyARunningTurn() {
         let midTurn = logState([
             Line.userMessage(at: t(1)),

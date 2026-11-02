@@ -18,6 +18,10 @@ public sealed record SectionSnapshot(
     /// What the banner offers for its problem or out-of-date list, such as signing in.
     public PanelCommand? ProblemCommand { get; init; }
 
+    /// What the banner says after its problem, in its panel only, such as what signing in does there: not in the bar's
+    /// tooltip, which says the problem alone.
+    public string? ProblemHint { get; init; }
+
     /// What its panel says when nothing in it is counted, such as Copilot's "All quiet" over its idle sessions; none for
     /// a section that just lists nothing.
     public QuietNote? Quiet { get; init; }

@@ -1797,6 +1797,51 @@ its `config.json`). The CLI gives a worktree of a repository you trust the same 
 more: a worktree of one you don't trust loads only your own configuration. BriefBar doesn't pass
 `--trust-folder`: the CLI refuses it with `--session-id`, and wouldn't start.
 
+**Forking a session, and asking one a side question.** Nothing offers these yet: the pull request panel will
+(`CopilotLauncher.Request.forking`, `SessionQuestions`). Send to Copilot's **Send to a Fork** forks one of the app's
+open sessions another way, through BriefBar's extension ([below](#its-extension-for-the-apps-sessions)). The Copilot
+CLI's `/fork` and `/ask` are commands of its terminal: with `-p`, tried with 1.0.105, they're words sent to the model,
+and join the session's history. So BriefBar asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts
+`copilot --headless --stdio` with your shell's environment, responsible for itself (`RunningProgram`), and sends it
+JSON-RPC requests, each after a `Content-Length` header. It refuses whatever the server asks of it, ignores what it
+says unasked, and ends its input once it's done, which ends it; once it has quit, or five seconds later if it hasn't,
+its whole process group is asked to stop, and two seconds later made to, as it is when the server quits by itself
+first, so that nothing it started stays behind (`RunningProgram.end(grace:)`, `endsWhatItStartedWhenItQuits`).
+
+- **A fork** (`sessions.fork`) is a new session with the session's whole history, as the CLI saved it: it takes a
+  moment, and no request to the model. The session itself stays as it was, even while it works or the Copilot app has
+  it open; the CLI only leaves an empty `.workspace-fork.lock` in its folder, as its own `/fork` does. A task in a fork
+  gets a worktree of its own, `copilot-worktrees/<repository>/wi-<id>-fork` or `pr-<id>-fork`, detached at the commit
+  the session's checkout has, when the repository has that commit too, as its worktrees do (`Git.head(of:in:)`); for a
+  session that works elsewhere, such as a folder of repositories, where a new task's worktree would start. What the
+  session changed without committing stays in its checkout, as with the CLI's `/fork worktree`. The fork is named for
+  the task, and the CLI goes on with it as with any session that's there: its `--session-id`, without `--name`, in that
+  worktree, which it works in from then on. If the worktree can't be made, or Copilot can't start, the fork is deleted
+  (`session.delete`).
+- **A side question** (`session.ui.ephemeralQuery`) is what `/ask` sends: one request to the model, with the session's
+  conversation and no tools, which neither the question nor the answer joins. Asked of the session itself, the CLI would
+  have to open it, and its log records both, among the model's calls. So BriefBar asks a fork of it instead, `BriefBar
+  question`, opened with no tools, without your skills, MCP servers or plugins, and with the model you choose or else
+  the session's own, and deletes the fork once it's answered, failed or been cancelled: a fork that's been asked for is
+  waited for, even once the question's cancelled, so that it can be deleted, and one the server can't delete, having
+  ended, another one does, or else BriefBar again later (below). The session's log and `workspace.yaml` stay as they
+  were, byte for byte, and it can be asked while it works, or while the Copilot app has it open.
+
+Each fork is kept with the runs from the moment it's made, by its session's ID and the CLI's folder it's in, nothing
+else (`ado.copilot.forksToDelete`, `LeftoverForks`), until it's deleted or a task has taken it on, so none is left
+behind, with a copy of a conversation, if BriefBar quits meanwhile. One that neither the server that made it nor
+another could delete stays kept, and is deleted before the next question, fork or task, even once BriefBar has started
+again; one that something has open then is left for later, and so is one this BriefBar still uses, for a question or a
+task that's starting (`ForksInFlight`). Each is forgotten once its folder is gone. Should your shell's `COPILOT_HOME`
+change, one in the other folder waits until that's the CLI's folder again: the folder kept only tells which are the
+CLI's, and is never where BriefBar deletes anything. Any program running as you can change the preferences, so one
+that isn't a session's is never used.
+
+Forking with an older CLI can change the session it forks: tried on a session that 1.0.105 wrote, 1.0.78 added a line
+to its log, and 1.0.87 replaced the whole log with that line. 1.0.95, 1.0.99, 1.0.102, 1.0.103 and 1.0.105 left it as it
+was, so BriefBar forks nothing with a CLI older than 1.0.95, as the server's `connect` says
+(`CopilotServer.forksSafelyFrom`).
+
 **Following it.** Copilot logs the session to `~/.copilot/session-state/<id>/events.jsonl` (under
 `COPILOT_HOME`, if your shell sets it), as for the app's sessions, and BriefBar reads it the same way
 ([below](#how-a-status-is-decided)), every three seconds while a task runs, and not at all otherwise or
@@ -1805,9 +1850,13 @@ start time, so one that gets its ID after a restart isn't mistaken for it. While
 working, whatever its log says for now: in autopilot, Copilot goes on after a turn that looks like its
 last, and after an error. Once it's gone, and BriefBar has heard how it ended if it started it, its log
 and output are complete, and say how it went: done if Copilot called it done or exited cleanly, failed
-if Copilot reported an error or exited badly, and stopped otherwise. The pull request is then the last
-link to one in Copilot's summary, its last message, or what it printed, and a notification says how it
-went; clicking it opens the pull request, or the work item.
+if Copilot reported an error or exited badly, and stopped otherwise. A task that went on with a session,
+or forked one, has that session's history in its log too, which doesn't count: one that stops before
+Copilot writes anything, as when the CLI refuses its options, failed, even if the session had finished,
+and didn't open the session's pull request (`CopilotRun.launchedAt`). The pull request is then the one
+the task it went on with had, or else the last link to one in what Copilot said since it started, in its
+summary or its last message, or in what it printed. A notification says how it went; clicking it opens
+the pull request, or the work item.
 
 **Showing it.** Nothing opens: Copilot works in a session of its own, which the Copilot app doesn't list.
 So as you send a task, while its worktree is still getting ready, a notification says Copilot is on it,
@@ -1823,7 +1872,9 @@ Neither source reads anything more for it.
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
 and the pull request's link go to the preferences (`ado.copilot.runs`),
 without their titles; and so
-do your choices and the repository of each project. Any program running as you can change the
+do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
+and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
+again. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept
 there: a task keeps its session's ID, a UUID, which names its session log and its output, and those
 are read without following a symbolic link. What Copilot printed when it ended stays in a file only you
@@ -2165,9 +2216,9 @@ reads or writes the CLI's configuration itself: other servers' settings are ther
 Turning agents on replaces a server that runs another copy of BriefBar, such as one you built, with
 this one; afterwards, the page offers **Use This Copy** when the CLI runs another. Turning agents off
 removes whichever copy it runs. A server named `briefbar` that isn't BriefBar stays as it is. Turning
-them off also removes BriefBar's plugin, if you installed it ([below](#its-copilot-plugin)); turning them
-on never installs it. If the CLI can't remove either, the page says so while agents are off, with **Try
-Again** ([below](#its-copilot-plugin)).
+them off also removes BriefBar's plugin and its extension for the app's sessions, if you installed them
+([below](#its-copilot-plugin)); turning them on never installs either. If the CLI can't remove any of
+them, the page says so while agents are off, with **Try Again** ([below](#its-copilot-plugin)).
 
 The page's **Install** lists the agents' apps on your Mac that BriefBar can be installed in (`AgentApp` in
 `Sources/BriefBarCore`), as LaunchServices finds them by bundle identifier. Visual Studio Code and
@@ -2300,25 +2351,30 @@ nothing more, and `AgentAccess`'s version stays as it was.
 **Installing it.** Only **Install**, on the Agents page once agents are on, installs it; turning agents
 off removes it (`CopilotPluginRegistration` in `Sources/CopilotTasks`). As for the server, BriefBar runs
 the CLI's own commands, with your login shell's environment, and never reads or writes the CLI's
-files. `copilot plugin marketplace add` registers the folder in BriefBar.app that holds the plugin,
+files. `copilot plugin marketplace add` registers the folder in BriefBar.app that holds its plugins,
 `Contents/Resources/CopilotPlugin`, as a marketplace named `briefbar`, and `copilot plugin install
-briefbar@briefbar` turns the plugin on. The CLI loads a plugin from a marketplace on this Mac where it
-is, without copying it, so the plugin is the one in the app: an update to BriefBar updates it for the
-sessions that start afterwards. The build adds BriefBar's version to it, and `scripts/check-app.sh`
-checks that. Removing it turns the plugin off first, with `copilot plugin uninstall`, so that it doesn't
-come back on with its marketplace, then removes the marketplace, without `--force`: that would uninstall
-whatever else the marketplace has, so the CLI refuses instead if it has a plugin it copied, and says
-which. What the page says
+briefbar@briefbar` turns the plugin on. The marketplace has BriefBar's other plugin too, its extension
+for the app's sessions ([below](#its-extension-for-the-apps-sessions)), which **Send Prompts to Copilot
+Sessions** installs the same way, as `briefbar-sessions@briefbar`: each is installed and removed on its
+own. The CLI loads a plugin from a marketplace on this Mac where it is, without copying it, so the
+plugin is the one in the app: an update to BriefBar updates it for the sessions that start afterwards.
+The build adds BriefBar's version to each, and `scripts/check-app.sh` checks that. Removing one turns it
+off first, with `copilot plugin uninstall`, so that it doesn't come back on with its marketplace, then
+removes the marketplace, unless BriefBar's other plugin is on, which keeps it, and without `--force`:
+that would uninstall whatever else the marketplace has, so the CLI refuses instead if it has a plugin it
+copied, and says which. What the page says
 comes from `copilot plugin list --json`, whose `installedFrom` is the folder the plugin loads from, and
-`copilot plugin marketplace list --json`. A marketplace's name, and its folder's, prove nothing, as
+`copilot plugin marketplace list --json`. The CLI lists every plugin of a marketplace on this Mac,
+installed or not, turned off unless it was turned on, so one of BriefBar's that's off while the other is
+on counts as not installed. A marketplace's name, and its folder's, prove nothing, as
 anyone can choose them, so BriefBar changes one named `briefbar` only if it's this copy's, or the
 `Contents/Resources/CopilotPlugin` folder of an app whose bundle identifier is BriefBar's, as it reads it
 in that app's `Info.plist`: another copy of BriefBar, such as one you built, which **Use This Copy**
-replaces. It leaves any other, and one in an app that's no longer there, and says how to remove it
-yourself. Opened where it was downloaded, BriefBar runs from a temporary copy (App Translocation), and
-doesn't install the plugin from there.
+replaces, with whatever of BriefBar's was on there. It leaves any other, and one in an app that's no
+longer there, and says how to remove it yourself. Opened where it was downloaded, BriefBar runs from a
+temporary copy (App Translocation), and doesn't install the plugin from there.
 
-**Turning agents off.** BriefBar removes its MCP server and its plugin from the CLI. Agents are off
+**Turning agents off.** BriefBar removes its MCP server and its plugins from the CLI. Agents are off
 then, so the page shows only what's still going on: removing them, and what the CLI couldn't remove,
 with **Try Again**, which removes it again (`AgentCleanup`). BriefBar's checks and changes reach the
 CLI one at a time, in the order they were asked for, and the page shows what the last one found only
@@ -2367,6 +2423,66 @@ BriefBar has; that it stops only for what BriefBar answers when agents are off
 before it starts a session for it, forks one or sends one a message; and that it offers the session
 `pull_request` names beside a new one, asks unless you said which, forks only the session it talks in,
 and gives the same prompt wherever the work goes.
+
+### Its extension for the app's sessions
+
+**Send Prompts to Copilot Sessions**, on the Agents page once agents are on, lets Send to Copilot send a
+prompt to one of the GitHub Copilot app's sessions itself, with **Send to Session**, or fork the session
+and send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste
+([Send work to Copilot](#send-work-to-copilot)). The app's
+links only open a session, and an MCP server only answers a tool call, but an extension can: the
+Copilot SDK's extensions are processes that the app's runtime starts in each session it has open, which
+join that session (`joinSession()`) and can send it a message (`session.send`). So BriefBar's second
+plugin, `briefbar-sessions` (`Resources/CopilotPlugin/briefbar-sessions`), holds one extension and
+nothing else: no skill, tool, hook or command. Agents get nothing more, and `AgentAccess`'s version
+stays as it was.
+
+**Turning it on.** It's off until you turn it on, as anything is that not everyone would want: then the
+page installs the plugin with the CLI's own commands, as **Install** installs the other
+([above](#its-copilot-plugin)), and turning it off, or turning agents off, removes it
+(`CopilotPluginRegistration`, for `.sessions`). BriefBar keeps whether it's on, as the CLI last said,
+in its preferences (`CopilotSessionPrompts`), and sends prompts to sessions only while it is. The app's
+runtime starts the extension in the sessions that start after it's installed, at once, but those already
+open get it only once they start again; and turning it off doesn't stop it in the sessions that are
+open, until they start again, so BriefBar stops sending at once, whatever the CLI says. Each session
+the app has open runs it as a process of its own, of about 46 MB. The plugin's manifest is in the Agent
+Plugins 1.0 format, as the other's is, where the runtime reads an extension only from the app's own
+folder: `com.github.copilot/extensions/briefbar-sessions/extension.mjs`. Tried with the runtime of the
+GitHub Copilot app 1.1.34: a plugin loaded in place from a marketplace on this Mac runs its extension
+there, one that's listed but not installed doesn't, and a root `extensions` folder isn't read.
+
+**What it does.** It acts only on the requests BriefBar writes for its own session, in the files that
+**Sending to a session, or a fork of it** describes ([Send work to Copilot](#send-work-to-copilot)), and
+nothing else: no network, no other program, and nothing logged. It uses only folders and files that
+are yours and only yours, as BriefBar does, and follows no link below your home folder.
+
+- Once it has joined its session, it says so in `listening`, and stops saying so when it stops: when
+  the runtime stops it, or goes away and so ends its connection.
+- It watches `requests` (`fs.watch`), and takes only its own session's, oldest first. It claims one by
+  renaming it, so that each is handled once, by one extension. Then it reads it, without following a
+  link, and acts on it only if it's a regular file that only you can read, of 256 KiB or less, in version
+  1 of the format, with every field valid, for its own session, and not expired: made at most 120 seconds
+  before it expires, and not past that.
+- A `send` hands its prompt to `session.send`, which queues it while a turn runs. It's your own message
+  in the session: one more turn, with the session's model, mode and permissions.
+- A `fork` runs the app's own `fork_session` through `session.rpc.tools.execute`, with no model turn,
+  and says which session is the fork, from what the tool answers: the app records it as the original's
+  fork, with its history and its uncommitted changes, in a worktree of its own, and the original gains
+  only a note that it was forked. The fork's runtime, and its extension, start at once, so BriefBar then
+  sends the prompt to the fork through the fork's own extension. A fork takes about 20 seconds.
+- Last, it writes the result, never with the prompt: done, with the message's ID or the fork's session's,
+  or why not: `invalid`, `expired`, `send_failed`, `fork_unavailable` where the session doesn't offer the
+  app's fork, as a chat may not, or `fork_failed`, where the fork failed or Copilot couldn't say how it
+  went, so that a fork may exist. It writes it once `session.send` or the fork is done, however long that
+  takes. Then it removes the request it claimed, if BriefBar hasn't removed it already, as turning Azure
+  DevOps off does.
+- As it starts, it removes the requests of its session that an extension which ended mid-request had
+  claimed, since they hold prompts.
+
+`Tests/CopilotPlugin` tests it with Node's test runner, with made-up sessions and requests in an outbox
+in a temporary folder, and the extension as the runtime starts it, with a stand-in for the SDK's
+`joinSession` (`make plugin-test`, which CI runs). The tests aren't in BriefBar.app, which ships only the
+extension, as `CopilotPluginTests` and `scripts/check-app.sh` check.
 
 ## Desktop widgets
 
@@ -2559,6 +2675,9 @@ when BriefBar does.
 - `make test` runs every module's tests, with made-up data, and with a single thread in Swift's
   cooperative pool (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), so that code that blocks a thread of it
   while waiting for async work hangs on any Mac, not only on one with few cores.
+- `make plugin-test` runs the tests of BriefBar's extension for the Copilot app's sessions
+  (`Tests/CopilotPlugin`), with Node's test runner and a stand-in for the Copilot SDK
+  ([Its extension for the app's sessions](#its-extension-for-the-apps-sessions)). CI runs it too.
 - `make demo-check` checks that every source's made-up data lands in the expected groups, and in the
   expected states, each section's and all of them added up. It runs the same checks the Pulse apps ran
   on their demos.
@@ -2573,8 +2692,8 @@ when BriefBar does.
   its updater contain only arm64 code; a designated requirement that names a certificate, unless
   `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
   signed-appcast keys, and with `--release` the
-  public key); FoundationModels linked weakly so it opens on macOS 15; its Copilot plugin, at its own
-  version; and that it runs, starts the updater, which loads Sparkle, and passes the demo check.
+  public key); FoundationModels linked weakly so it opens on macOS 15; its Copilot plugins, at its own
+  version, without their tests; and that it runs, starts the updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS
   opens, that the updater is responsible for itself and that other code in place of Sparkle never runs
   as BriefBar ([above](#the-hardened-runtime-and-library-validation)). CI runs it on every package.
