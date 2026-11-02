@@ -1,14 +1,18 @@
+import AppKit
 import AzureDevOpsCore
 import BriefBarCore
 import BriefBarUI
 import SwiftUI
 
-/// A pull request's comment threads, in its details: those that wait on you first, then the other open ones, each saying
-/// where it is and how it stands, with what each person said, and ↗ to open it in Azure DevOps; the resolved ones fold
-/// away until you ask for them.
+/// A pull request's comment threads, in its details, as someone reviewing it in Azure DevOps sees them: by file, as the
+/// change lists its files, those on the pull request itself apart, first; in each, those that wait on you first, then the
+/// other open ones. A thread on lines of a file shows the code it's on above what each person said, in full; each says who
+/// it waits on and how it stands, with ↗ to open it in Azure DevOps. The resolved ones fold away until you ask for them.
 struct PullRequestCommentsSection: View {
     let item: PRSnapshot
     let panel: PullRequestPanel
+    /// The pull request as the list read it last, whose code the threads' code is read from; nil when the list has none.
+    let pullRequest: PullRequest?
     /// Your identity ID in its organization, to ring your avatar.
     let me: String?
     /// Where the details are asked to go: a resolved thread there unfolds the resolved ones.
@@ -38,9 +42,7 @@ struct PullRequestCommentsSection: View {
                         .font(size: 12.5)
                         .foregroundStyle(.secondary)
                 }
-                ForEach(threads.waitingOnYou + threads.open) { thread in
-                    card(thread, me: me)
-                }
+                files(threads.openByFile)
                 if !threads.resolved.isEmpty {
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) { showsResolved.toggle() }
@@ -58,9 +60,7 @@ struct PullRequestCommentsSection: View {
                     .help(showsResolved ? "Hide the threads that are resolved" : "Show the threads that are fixed, won't be fixed, closed or by design")
                     .accessibilityValue(showsResolved ? "Expanded" : "Collapsed")
                     if showsResolved {
-                        ForEach(threads.resolved) { thread in
-                            card(thread, me: me)
-                        }
+                        files(threads.resolvedByFile)
                     }
                 }
             }
@@ -74,36 +74,125 @@ struct PullRequestCommentsSection: View {
         }
     }
 
-    private func card(_ thread: PullRequestPanel.Thread, me: String?) -> some View {
-        ThreadCard(thread: thread, url: item.pageURL(thread: thread.id), me: me, now: store.now,
-                   isHighlighted: highlighted == .thread(thread.id))
-            .id(PullRequestDetailsStore.Anchor.thread(thread.id))
+    private func files(_ files: [PullRequestPanel.FileThreads]) -> some View {
+        ForEach(files) { file in
+            FileThreadsView(file: file) { thread in
+                ThreadCard(
+                    thread: thread, item: item, pullRequest: pullRequest, me: me, now: store.now,
+                    isHighlighted: highlighted == .thread(thread.id)
+                )
+                .id(PullRequestDetailsStore.Anchor.thread(thread.id))
+            }
+        }
     }
 }
 
-/// One thread: where it is, how it stands, and what each person said in it, the first first.
+/// A file's threads, under its name and folder, or those on the pull request itself.
+private struct FileThreadsView<Card: View>: View {
+    let file: PullRequestPanel.FileThreads
+    @ViewBuilder var card: (PullRequestPanel.Thread) -> Card
+
+    @EnvironmentObject private var code: PullRequestCodeStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header
+            ForEach(file.threads) { thread in
+                card(thread)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: file.path == nil ? "text.bubble" : "doc.text")
+                .font(size: 11, weight: .medium)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(file.name ?? "On the pull request")
+                .font(size: 12.5, weight: .semibold)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
+            if let folder = file.folder {
+                Text(folder)
+                    .font(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            if let change {
+                Text(change)
+                    .font(size: 11)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .help(file.path.map { path in change.map { "\(path) · \($0)" } ?? path } ?? "Comments on the whole pull request")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// What the change did to the file, as the code read of its threads says, when it did more than edit it: "Added",
+    /// "Deleted", "Renamed from RetryPolicy.cs".
+    private var change: String? {
+        let read = file.threads.lazy.compactMap { thread -> ThreadExcerpt? in
+            if case .read(let excerpt)? = code.state(of: thread.id) { excerpt } else { nil }
+        }.first
+        guard let read, let kind = read.change else { return nil }
+        if kind.contains(.add) { return "Added" }
+        if kind.contains(.delete) { return "Deleted" }
+        if kind.contains(.rename), let original = read.originalPath {
+            return "Renamed from " + (original as NSString).lastPathComponent
+        }
+        return nil
+    }
+}
+
+/// One thread: how it stands and who it waits on, the code it's on, and what each person said in it, the first first.
 private struct ThreadCard: View {
     let thread: PullRequestPanel.Thread
-    /// The pull request's page, at this thread.
-    let url: URL
+    let item: PRSnapshot
+    let pullRequest: PullRequest?
     /// Your identity ID, to ring your avatar.
     let me: String?
     let now: Date
     let isHighlighted: Bool
 
+    @Environment(\.detailsWidening) private var widening
+    /// The comments folded between the first and the latest show.
+    @LocalState private var isUnfolded = false
+    /// How much wider its code's longest line is than the room it has.
+    @LocalState private var codeOverflow: CGFloat = 0
+
     /// Resolved, and nothing in it waits on you: it reads quieter.
     private var isQuiet: Bool { thread.isResolved && !thread.waitsOnYou }
 
+    /// The pull request's page, at this thread.
+    private var url: URL { item.pageURL(thread: thread.id) }
+
+    /// The lines it's on, which its code shows.
+    private var span: (lines: ClosedRange<Int>, side: ThreadExcerpt.Side)? { ThreadCode.span(of: thread.thread) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            ForEach(thread.comments, id: \.id) { comment in
-                CommentLine(comment: comment, now: now, isMine: me.map { comment.author.id == $0 } ?? false, isQuiet: isQuiet)
+                .padding(.horizontal, 10)
+                .padding(.top, 9)
+                .padding(.bottom, span == nil ? 2 : 8)
+            if span != nil, let pullRequest {
+                ThreadCodeArea(thread: thread.thread, item: item, pullRequest: pullRequest, overflow: $codeOverflow)
             }
+            comments
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.8 : 0), lineWidth: 1.5)
@@ -116,32 +205,38 @@ private struct ThreadCard: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    // MARK: Header
+
     private var header: some View {
         HStack(alignment: .top, spacing: 6) {
-            // Its chips beside where it is while they fit, or else under it, rather than cutting the file's name short.
+            // Its words beside where it is while they fit, or else under it.
             FlowLayout(spacing: 6, lineSpacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: thread.place == nil ? "text.bubble" : "doc.text")
-                        .font(size: 11, weight: .medium)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(thread.place ?? "On the pull request")
+                if let lines = place {
+                    Text(lines)
                         .font(size: 12, weight: .semibold)
                         .foregroundStyle(isQuiet ? .secondary : .primary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(thread.thread.filePath.map { path in thread.thread.line.map { "\(path), line \($0)" } ?? path }
-                              ?? "A comment on the whole pull request")
+                        .help(placeHelp)
                 }
                 if thread.waitsOnYou {
                     Chip(text: "Waits on you", color: ItemState.needsYou.textColor, symbol: ItemState.needsYou.symbol)
                 }
-                // Open threads are active: only another status is worth saying.
-                if let status = thread.status, status != "Active" {
-                    Chip(text: status, color: Self.color(of: thread))
-                }
+                standing
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let widening, widening.canWiden, codeOverflow > 1 {
+                Button {
+                    widening.widen(widening.width + codeOverflow + 2)
+                } label: {
+                    Image(systemName: "arrow.left.and.right")
+                        .font(size: 11, weight: .medium)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Make the details wider, to show its code's lines in full")
+                .accessibilityLabel("Make the Details Wider")
+            }
             if thread.isNew {
                 Circle()
                     .fill(.tint)
@@ -164,7 +259,33 @@ private struct ThreadCard: View {
         }
     }
 
-    /// Resolved green, pending orange; won't fix, closed and by design gray.
+    /// "Line 88", "Lines 86–88", "Whole file"; nil for one on the pull request, which its file's heading says.
+    private var place: String? {
+        if let span { return ThreadCode.linesName(span.lines) }
+        return thread.thread.filePath.map { $0.isEmpty ? nil : "Whole file" } ?? nil
+    }
+
+    private var placeHelp: String {
+        guard let span else { return "A comment on the whole file" }
+        let lines = span.lines.count == 1 ? "line \(span.lines.lowerBound)" : "lines \(span.lines.lowerBound) to \(span.lines.upperBound)"
+        return span.side == .left ? "On \(lines) of the file before the change" : "On \(lines)"
+    }
+
+    /// "Active · Waiting on Sam", "Resolved": how it stands, in its color, and who has to answer.
+    private var standing: some View {
+        let status = thread.status.map { Text($0).foregroundStyle(Self.color(of: thread)) }
+        let waiting = waitingOn.map { Text("Waiting on \($0)").foregroundStyle(.secondary) }
+        let separator = status != nil && waiting != nil ? Text(" · ").foregroundStyle(.tertiary) : nil
+        return ([status, separator, waiting].compactMap { $0 }.reduce(Text(""), +))
+            .font(size: 11.5)
+            .lineLimit(1)
+    }
+
+    private var waitingOn: String? {
+        pullRequest.flatMap { thread.waitingOn(in: $0, me: me) }
+    }
+
+    /// Resolved green, pending orange; active, won't fix, closed and by design gray.
     private static func color(of thread: PullRequestPanel.Thread) -> Color {
         switch thread.thread.status {
         case "fixed"?: ItemState.done.textColor
@@ -173,18 +294,224 @@ private struct ThreadCard: View {
         }
     }
 
-    /// "PaymentsClient.cs:88, waits on you, 2 comments".
+    // MARK: Comments
+
+    private var comments: some View {
+        let all = thread.comments
+        let folded = isUnfolded ? 0 : thread.foldedComments
+        return VStack(alignment: .leading, spacing: 10) {
+            if folded > 0, let first = all.first, let latest = all.last {
+                line(first)
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { isUnfolded = true }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "ellipsis")
+                            .font(size: 10, weight: .bold)
+                        Text(verbatim: folded == 1 ? "Show 1 more comment" : "Show \(folded) more comments")
+                    }
+                    .font(size: 11.5, weight: .medium)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .padding(.leading, 28)
+                .help("Show the comments between the first and the latest")
+                line(latest)
+            } else {
+                ForEach(all, id: \.id) { comment in
+                    line(comment)
+                }
+            }
+        }
+    }
+
+    private func line(_ comment: ReviewComment) -> some View {
+        CommentLine(comment: comment, now: now, isMine: me.map { comment.author.id == $0.lowercased() } ?? false, isQuiet: isQuiet)
+    }
+
+    /// "Line 88, waits on you, active, 2 comments".
     private var accessibilityLabel: String {
-        var parts = [thread.place ?? "On the pull request"]
+        var parts = [place ?? "On the pull request"]
         if thread.waitsOnYou { parts.append("waits on you") }
         if thread.isNew { parts.append("new") }
         if let status = thread.status { parts.append(status) }
+        if let waitingOn { parts.append("waiting on \(waitingOn)") }
         parts.append(thread.comments.count == 1 ? "1 comment" : "\(thread.comments.count) comments")
         return parts.joined(separator: ", ")
     }
 }
 
-/// What someone said in a thread: who and when, then what, as plain text.
+/// The code a thread is on, read as it comes on screen and called off as it leaves before it's read: what's read, a
+/// stand-in as tall as it's likely to be until then, or why it can't show.
+private struct ThreadCodeArea: View {
+    let thread: ReviewThread
+    let item: PRSnapshot
+    let pullRequest: PullRequest
+    @Binding var overflow: CGFloat
+
+    @EnvironmentObject private var code: PullRequestCodeStore
+    @Environment(\.textScale) private var textScale
+    @LocalState private var isOnScreen = false
+
+    /// What its code is read again for, while it's on screen: a push, or the thread followed to other lines.
+    private struct Reading: Equatable {
+        var isOnScreen: Bool
+        var ask: PullRequestCodeStore.Ask
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+                .opacity(0.6)
+            content
+            Divider()
+                .opacity(0.6)
+        }
+        .onGeometryChange(for: Bool.self) { proxy in
+            // Outside a scroll view, it's on screen.
+            proxy.bounds(of: .scrollView).map { $0.intersects(CGRect(origin: .zero, size: proxy.size)) } ?? true
+        } action: { isOnScreen = $0 }
+        .task(id: Reading(isOnScreen: isOnScreen, ask: PullRequestCodeStore.Ask(thread, pullRequest))) {
+            guard isOnScreen else {
+                code.hide(thread.id)
+                return
+            }
+            // Not for a thread scrolled past.
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            code.show(thread, of: pullRequest)
+        }
+        .onDisappear { code.hide(thread.id) }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch code.state(of: thread.id) {
+        case .read(let excerpt)?:
+            VStack(alignment: .leading, spacing: 0) {
+                CodeView(
+                    // Without the indentation its lines share, to make the most of the room it has.
+                    rows: ThreadCode.outdented(ThreadCode.rows(of: excerpt)),
+                    showsOldNumbers: excerpt.side == .left || excerpt.lines.contains { $0.kind == .removed },
+                    label: codeLabel(excerpt)
+                ) { overflow = $0 }
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.55))
+                if excerpt.changedSince == true {
+                    changedSince(excerpt)
+                }
+            }
+        case .failed(let problem)?:
+            if let sentence = ThreadCode.sentence(for: problem) {
+                unreadable(sentence, mayPass: ThreadCode.mayPass(problem))
+            }
+        case .reading?, nil:
+            placeholder
+        }
+    }
+
+    /// "Code of PaymentsClient.cs, lines 85 to 91; the comment is on line 88".
+    private func codeLabel(_ excerpt: ThreadExcerpt) -> String {
+        let numbers = excerpt.lines.compactMap { excerpt.side == .left ? $0.oldNumber : $0.newNumber }
+        let marked = excerpt.lines.filter(\.isCommented).compactMap { excerpt.side == .left ? $0.oldNumber : $0.newNumber }
+        var label = "Code of " + (excerpt.path as NSString).lastPathComponent
+        if let first = numbers.min(), let last = numbers.max() { label += ", lines \(first) to \(last)" }
+        if let first = marked.min(), let last = marked.max() {
+            label += first == last ? "; the comment is on line \(first)" : "; the comment is on lines \(first) to \(last)"
+        }
+        return label
+    }
+
+    /// The file changed after the comment was made on it: what changed since opens in Azure DevOps.
+    private func changedSince(_ excerpt: ThreadExcerpt) -> some View {
+        let url = item.filePageURL(path: excerpt.path, since: excerpt)
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(size: 10.5, weight: .medium)
+                .accessibilityHidden(true)
+            Text("The code changed since this comment.")
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                AzureDevOps.open(url)
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(size: 11, weight: .medium)
+                    .frame(width: 18, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("See what changed in it since, in Azure DevOps")
+            .accessibilityLabel("See What Changed in Azure DevOps")
+        }
+        .font(size: 11.5)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.03))
+    }
+
+    /// Why its code can't show, with ↗ to the thread in Azure DevOps, where it does, and Try Again when that may help.
+    private func unreadable(_ sentence: String, mayPass: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "eye.slash")
+                .font(size: 10.5, weight: .medium)
+                .accessibilityHidden(true)
+            Text("BriefBar can't show its code. " + sentence)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if mayPass {
+                Button {
+                    code.show(thread, of: pullRequest, again: true)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(size: 11, weight: .medium)
+                        .frame(width: 18, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Read its code again")
+                .accessibilityLabel("Try Again")
+            }
+            Button {
+                AzureDevOps.open(item.pageURL(thread: thread.id))
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(size: 11, weight: .medium)
+                    .frame(width: 18, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("See its code in Azure DevOps")
+            .accessibilityLabel("Open in Azure DevOps")
+        }
+        .font(size: 11.5)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+    }
+
+    /// As tall as its code is likely to be, so that what's under it stays put once it's read.
+    private var placeholder: some View {
+        let metrics = CodeMetrics(scale: textScale)
+        let rows = ThreadCode.expectedRows(of: thread) ?? 1
+        let widths: [CGFloat] = [0.5, 0.8, 0.35, 0.7, 0.6, 0.9, 0.45, 0.65]
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<rows, id: \.self) { row in
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(width: 220 * widths[row % widths.count], height: max(4, metrics.lineHeight * 0.42))
+                    .frame(height: metrics.lineHeight)
+            }
+        }
+        .padding(.leading, 12 + 4 * metrics.digitWidth)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.3))
+        .accessibilityElement()
+        .accessibilityLabel("Reading its code")
+    }
+}
+
+/// What someone said in a thread: who and when, then all of it, formatted as they wrote it.
 private struct CommentLine: View {
     let comment: ReviewComment
     let now: Date
@@ -205,14 +532,12 @@ private struct CommentLine: View {
                         .lineLimit(1)
                         .help(comment.publishedAt.formatted(date: .complete, time: .shortened))
                 }
-                Text(comment.text)
-                    .font(size: 12.5)
+                .accessibilityElement(children: .combine)
+                RichTextView(text: RichText(markdown: comment.markdown), size: 12.5)
                     .foregroundStyle(isQuiet ? .secondary : .primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }

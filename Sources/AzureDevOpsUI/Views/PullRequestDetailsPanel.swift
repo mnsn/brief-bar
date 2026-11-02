@@ -19,6 +19,8 @@ struct PullRequestDetailsPanel: View {
     @LocalState private var returnTo: ItemRef?
     /// The thread, the build or the check the details just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// `--render` draws them without waiting for animations, which it doesn't run.
+    @Environment(\.isRendering) private var isRendering
 
     var body: some View {
         if let item = details.selected {
@@ -83,9 +85,10 @@ struct PullRequestDetailsPanel: View {
             try? await Task.sleep(for: .milliseconds(60))
             details.reached(place)
             guard let anchor else { return }
-            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
             if case .section = anchor { return }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = anchor }
+            if anchor == .top { return }
+            withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { highlighted = anchor }
             try? await Task.sleep(for: .seconds(1.6))
             if highlighted == anchor {
                 withAnimation(.easeOut(duration: 0.4)) { highlighted = nil }
@@ -236,12 +239,38 @@ struct PullRequestDetailsPanel: View {
         return item.group == .needsYou ? "\(title), at the comment that needs you" : "\(title), at the comment you answered"
     }
 
-    /// "!4102", which the heading under it names in full, or, on a page, the way there: "!4102 › 5160", the pull request
-    /// and each page but the last one going back to it.
+    /// "!4102", which the heading under it names in full; the thread they were taken to after it, "!4102 ›
+    /// PaymentsClient.cs:41", the pull request going back to their top; or, on a page, the way there: "!4102 › 5160", the
+    /// pull request and each page but the last one going back to it.
     @ViewBuilder
     private func crumbs(_ item: PRSnapshot) -> some View {
         let pages = details.pages
-        if pages.isEmpty {
+        if pages.isEmpty, let thread = trailThread(item) {
+            HStack(spacing: 5) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { details.goToTop() }
+                } label: {
+                    Text(verbatim: "!\(item.key.number)")
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Back to the top of " + Self.name(of: item))
+                .layoutPriority(1)
+                Image(systemName: "chevron.right")
+                    .font(size: 8.5, weight: .semibold)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+                Text(thread.place ?? "Comment")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(thread.thread.filePath.map { path in thread.thread.line.map { "\(path), line \($0)" } ?? path }
+                          ?? "A comment on the whole pull request")
+            }
+            .font(size: 12, weight: .medium).monospacedDigit()
+        } else if pages.isEmpty {
             Text(verbatim: "!\(item.key.number)")
                 .font(size: 12, weight: .medium).monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -290,6 +319,12 @@ struct PullRequestDetailsPanel: View {
             }
             .font(size: 12, weight: .medium).monospacedDigit()
         }
+    }
+
+    /// The thread the details were taken to, which the trail names, while they have it.
+    private func trailThread(_ item: PRSnapshot) -> PullRequestPanel.Thread? {
+        guard let id = details.trailThread else { return nil }
+        return panel(for: item).threads.all.first { $0.id == id }
     }
 
     /// The pull request's own: opening it, copying it, and what its row's menu has, Copilot's actions among them while
@@ -363,6 +398,7 @@ struct PullRequestDetailsPanel: View {
         let ref = item.key.linkRef
         return VStack(alignment: .leading, spacing: 20) {
             PullRequestPanelHeading(item: item, panel: panel, isListed: details.isListed)
+                .id(PullRequestDetailsStore.Anchor.top)
             PullRequestSessionLine(item: item)
             // Its summary, of it and what's linked to it, under what it is.
             PageSummary(ref: ref)
@@ -371,7 +407,9 @@ struct PullRequestDetailsPanel: View {
                     details.go(to: .section(section))
                 }
             }
-            PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)
+            PullRequestCommentsSection(
+                item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place, highlighted: highlighted
+            )
                 .id(PullRequestDetailsStore.Anchor.section(.comments))
             PullRequestChecksSection(panel: panel, highlighted: highlighted)
                 .id(PullRequestDetailsStore.Anchor.section(.checks))

@@ -13,10 +13,12 @@ extension DemoData {
         switch number {
         case 4102:
             return [
-                ReviewThread(id: 13, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 41, comments: [
-                    comment(1, priya, "Should the number of retries come from configuration rather than a constant?", 22),
-                    comment(2, me, "Done: it reads RetryOptions.MaxAttempts now, five by default.", 20),
-                ]),
+                // On the first push's line 20, which the second push changed (DemoCode).
+                ReviewThread(id: 13, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 20, comments: [
+                    comment(1, priya, "Should the delay grow with each attempt? Three tries 200 ms apart give a busy provider "
+                        + "less than a second to recover.", 22),
+                    comment(2, me, "Done: it doubles each time now, from 200 ms.", 20),
+                ], location: .init(path: "/src/PaymentsClient.cs", right: .init(lines: 20...20), madeOn: .init(base: 1), changeTrackingId: 1)),
                 ReviewThread(id: 14, status: "wontFix", filePath: "/src/RetryPolicy.cs", line: 12, comments: [
                     comment(1, sam, "Nit: BackoffPolicy might say more about what this does.", 21),
                     comment(2, me, "I'd keep RetryPolicy: the other clients call theirs that too.", 19),
@@ -25,7 +27,7 @@ extension DemoData {
                     comment(1, priya, "Is the stub that fails every other call checked in, so that CI runs it too?", 24),
                     comment(2, me, "Yes, it's in tests/Stubs, and it runs with the unit tests.", 23),
                 ]),
-            ]
+            ] + codeThreads(of: number, now: now)
         case 4088:
             return [
                 ReviewThread(id: 43, status: "fixed", filePath: "/src/Delivery/DeliveryEstimate.cs", line: 27, comments: [
