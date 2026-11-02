@@ -28,8 +28,9 @@ const REQUEST_NAME = new RegExp(`^(${UUID_PATTERN})\\.(${UUID_PATTERN})\\.json$`
 const CLAIMED_NAME = new RegExp(`^\\.(${UUID_PATTERN})\\.(${UUID_PATTERN})\\.claimed-(\\d+)$`);
 const TEMPORARY_NAME = new RegExp(`^\\..+\\.(\\d+)\\.${UUID_PATTERN}\\.tmp$`);
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
-// The app's fork_session answers "Forked session into new workspace '…' (workspace_id: …, session_id: <id>). …".
-const FORK_SESSION_ID = new RegExp(`\\bsession_id: (${UUID_PATTERN})\\b`, "i");
+// The app's fork_session answers "Forked session into new workspace '…' (workspace_id: …, session_id: <id>). …". The
+// workspace's name is the session's, which you choose, so it may hold one too: the fork's is the last.
+const FORK_SESSION_ID = new RegExp(`\\bsession_id: (${UUID_PATTERN})\\b`, "gi");
 // What the runtime answers for a tool the session doesn't offer, such as fork_session in a chat or in the Copilot CLI.
 const MISSING_TOOL = /\bTool 'fork_session' does not exist\b/;
 // JSON-RPC's code for a method the other end doesn't have, as a runtime without `tools.execute` answers.
@@ -553,7 +554,7 @@ export function forked(answer, sessionId) {
     const error = typeof result.error === "string" ? result.error : undefined;
     switch (result.resultType) {
         case "success": {
-            const id = texts.map((text) => FORK_SESSION_ID.exec(text)?.[1]).find(Boolean)?.toLowerCase();
+            const id = texts.map((text) => [...text.matchAll(FORK_SESSION_ID)].at(-1)?.[1]).find(Boolean)?.toLowerCase();
             if (!id || id === sessionId) return failed("fork_failed", "The fork gave no session ID.", "fork");
             return { ok: true, kind: "fork", forkSessionId: id };
         }

@@ -476,6 +476,13 @@ describe("forking", () => {
         };
         assert.deepEqual(forked(answer, sessionId), { ok: true, kind: "fork", forkSessionId: fork.toLowerCase() });
         assert.deepEqual(forked(answer.textResultForLlm, sessionId), { ok: true, kind: "fork", forkSessionId: fork.toLowerCase() });
+        // The fork's name is the session's, which you choose, and comes before its ID.
+        for (const named of [randomUUID(), sessionId]) {
+            const text = answer.textResultForLlm.replace("'Work fork'", `'Ask about session_id: ${named} fork'`);
+            assert.deepEqual(forked({ ...answer, textResultForLlm: text }, sessionId), {
+                ok: true, kind: "fork", forkSessionId: fork.toLowerCase(),
+            });
+        }
 
         const code = (value) => forked(value, sessionId).error?.code;
         assert.equal(code({ resultType: "success", textResultForLlm: "Forked." }), "fork_failed");
