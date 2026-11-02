@@ -32,6 +32,9 @@
   offers to send the work there, rather than always starting a new session, and asks which you want
   unless you've said; asked in that very session, it can also fork it, so the work goes another way while
   the session stays as it is. Since agents get more, they wait until you've seen what they get now.
+- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
+  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
+  errors, which showed as `[31m`.
 
 ## 0.10.2 - 2026-11-01
 

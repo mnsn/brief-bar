@@ -260,12 +260,7 @@ public struct PipelineFailure: Sendable, Codable, Equatable {
     public static func first(in timeline: ADOTimeline) -> PipelineFailure? {
         let records = timeline.records.elements
         let byId = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        func earliest(_ type: String) -> ADOTimeline.Record? {
-            records
-                .filter { $0.type == type && $0.result == "failed" }
-                .min { ($0.finishTime ?? .distantFuture, $0.order ?? .max) < ($1.finishTime ?? .distantFuture, $1.order ?? .max) }
-        }
-        guard let failed = earliest("Task") ?? earliest("Job") ?? earliest("Stage") else { return nil }
+        guard let failed = failedRecord(in: timeline) else { return nil }
         var stage: String?
         var parent = failed.parentId.flatMap { byId[$0] }
         while let record = parent {
@@ -279,9 +274,20 @@ public struct PipelineFailure: Sendable, Codable, Equatable {
         return PipelineFailure(stage: stage.map(PlainText.singleLine), step: step, message: message?.isEmpty == false ? message : nil)
     }
 
-    /// One line, without the log's `##[error]` prefix, at most 300 characters.
+    /// Where a run failed first: its earliest failed task, or job or stage when no task failed.
+    static func failedRecord(in timeline: ADOTimeline) -> ADOTimeline.Record? {
+        let records = timeline.records.elements
+        func earliest(_ type: String) -> ADOTimeline.Record? {
+            records
+                .filter { $0.type == type && $0.result == "failed" }
+                .min { ($0.finishTime ?? .distantFuture, $0.order ?? .max) < ($1.finishTime ?? .distantFuture, $1.order ?? .max) }
+        }
+        return earliest("Task") ?? earliest("Job") ?? earliest("Stage")
+    }
+
+    /// One line, as a terminal shows it, without the log's `##[error]` prefix, at most 300 characters.
     static func clean(_ message: String) -> String {
-        var text = PlainText.singleLine(message)
+        var text = PlainText.terminalLine(message)
         if text.hasPrefix("##[error]") { text = String(text.dropFirst("##[error]".count)) }
         return text.count > 300 ? String(text.prefix(299)) + "…" : text
     }
