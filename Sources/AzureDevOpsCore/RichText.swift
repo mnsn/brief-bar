@@ -1022,17 +1022,20 @@ private enum MarkdownReader {
                     }
                 }
                 // An item that starts with HTML comments: they show nothing, blank lines and all; without an end, it's all
-                // the rest. What follows the last one's end on its line is the HTML block's too, which shows as HTML shows
-                // it, and the item has no paragraph for the lines after it to go on with: with nothing there, the next
-                // paragraph in it is its text. Text indented as code starts with no comment.
+                // the rest. The first one's end ends the HTML block it starts, with its line: what follows on it, but other
+                // comments that end there, is the block's too, which shows as HTML shows it, a comment that doesn't end
+                // there included, and the item has no paragraph for the lines after it to go on with. With nothing there,
+                // the next paragraph in it is its text. Text indented as code starts with no comment.
                 var startsWithComment = false
                 var text = Substring(content)
                 while column - markerEnd <= 4, text.hasPrefix("<!--") {
-                    startsWithComment = true
                     if let close = text.dropFirst(4).range(of: "-->") {
+                        startsWithComment = true
                         text = text[close.upperBound...].drop { $0 == " " || $0 == "\t" }
                         continue
                     }
+                    guard !startsWithComment else { break }
+                    startsWithComment = true
                     var end = index + 1
                     while end < lines.count, !lines[end].contains("-->") { end += 1 }
                     guard end < lines.count, let close = raw[end].range(of: "-->") else {

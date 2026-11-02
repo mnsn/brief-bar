@@ -47,6 +47,10 @@ import Testing
         // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
         #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
+        // Only an item's first comment goes on past its line: one after it there that doesn't end on it hides the rest.
+        #expect(plain("- <!-- one --> <!-- two\n  --> Hidden\n\nAfter") == "")
+        #expect(plain("- <!--\n  one\n  --> <!-- two\n  --> Hidden\n\nAfter") == "")
+        #expect(plain("- <!-- one --> <!-- two -->\n  more") == "• more")
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
         // One in a quote that doesn't end there goes on past it, to its end or the end of the text, as HTML reads it.
         #expect(plain("> <!--\n> hidden\n\nAlso hidden") == "")
