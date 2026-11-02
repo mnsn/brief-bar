@@ -331,8 +331,8 @@ recorded with it, that you linked to it with Show Links, or that's on its branch
 it as well as each other, the line asks **Which session is this pull request's?** instead of guessing, and
 its work goes to the one you choose. One whose log only has a link to it may have opened it, but that's a
 guess, so it's offered in the line's menu, never chosen for you. Click the line to see the session's page in
-the details; while it waits for your answer, the line is orange, and a click opens it in the Copilot app,
-where you answer it. While Copilot works in it, or in its checkout, for a task BriefBar sent, nothing more
+the details, with Show Links on, or else to open one of the app's sessions in Copilot; while it waits for your
+answer, the line is orange, and a click opens it in the Copilot app, where you answer it. While Copilot works in it, or in its checkout, for a task BriefBar sent, nothing more
 goes there until that's done. **⌄** opens it in Copilot, or **Continue in Terminal** for a task BriefBar runs
 with the Copilot CLI; and, under **Use for This Pull Request**, lists the sessions that go with it, each
 with why and how it stands, the app's other sessions, and **New Session**: the one you check is where the
