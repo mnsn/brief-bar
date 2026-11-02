@@ -132,6 +132,11 @@ extension CopilotTasksStore {
     /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for it.
     static let cantBringUp = "BriefBar copied the prompt, but the Copilot CLI has the session open where BriefBar can't bring it up, such as in tmux or over SSH. Paste it there, and send it: opening the session in a second terminal, or in the app, would fork its history."
 
+    /// Why a session that a CLI has open didn't come up, once BriefBar copied the prompt for a fork of it that you make
+    /// there first: the CLI's own `/fork` takes a name for the fork, not a prompt, and pasted in the session itself, the
+    /// prompt would go to it rather than to a fork.
+    static let cantBringUpToFork = "BriefBar copied the prompt, but the Copilot CLI has the session open where BriefBar can't bring it up, such as in tmux or over SSH. Fork the session there with /fork, then paste the prompt in the fork, and send it. Don't open the session in a second terminal, or in the app: the CLI wouldn't see what happens there."
+
     /// Where BriefBar's requests to its extension go (`CopilotOutbox`).
     var outbox: CopilotOutbox { outboxForTests ?? .standard }
 
@@ -308,7 +313,7 @@ extension CopilotTasksStore {
         guard copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             if case .terminal = way {
                 Log.app.error("Couldn't bring up the terminal of the Copilot CLI that has a session open")
-                return .notSent(Self.cantBringUp)
+                return .notSent(forksHere ? Self.cantBringUpToFork : Self.cantBringUp)
             }
             Log.app.error("Couldn't open a session in the Copilot app")
             return .notSent(Self.cantOpenInApp)

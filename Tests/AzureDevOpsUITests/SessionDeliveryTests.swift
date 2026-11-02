@@ -111,6 +111,11 @@ private final class ExtensionStandIn: Sendable {
         store.appHomeForTests = home
         store.outboxForTests = CopilotOutbox(root: home, path: ["Outbox"])
         store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin"])
+        // Whatever runs the tests, with or without the Copilot app: the app opens its links, and this test's own process
+        // stands in for the app's runtime (`hold`). A test of a session that a CLI has open, or of a Mac without the app,
+        // says so itself.
+        store.appHoldsForTests = { $0 == getpid() }
+        store.opensLinksForTests = true
         // Long enough for each step even while other tests keep the process busy for many seconds: a test that waits for
         // a step to time out shortens that step's.
         var timing = SessionSender.Timing()
@@ -504,6 +509,10 @@ private final class ExtensionStandIn: Sendable {
 
         comesUp = false
         #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(CopilotTasksStore.cantBringUp))
+        // For a fork, it says to fork the session there first, then to paste the prompt in the fork: pasted in the session
+        // itself, it would go to the session.
+        #expect(await store.deliver("Try it", to: choice(session), forking: true) == .notSent(CopilotTasksStore.cantBringUpToFork))
+        #expect(copied.last == "Try it")
     }
 
     /// The app holds a session through its runtime, which macOS attributes to the app: by the runtime's executable, in the

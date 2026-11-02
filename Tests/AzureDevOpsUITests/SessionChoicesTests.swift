@@ -52,6 +52,10 @@ private struct DatabaseError: Error {
         store.appHomeForTests = home
         store.outboxForTests = CopilotOutbox(root: home, path: ["Outbox"])
         store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin"])
+        // Whatever runs the tests, with or without the Copilot app: the app opens its links, and this test's own process
+        // stands in for the app's runtime. A test of a Mac without the app says so itself.
+        store.appHoldsForTests = { $0 == getpid() }
+        store.opensLinksForTests = true
         return store
     }
 
