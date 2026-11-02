@@ -1342,8 +1342,9 @@ private enum MarkdownReader {
             if character.isASCII, character.isPunctuation || character.isSymbol { escaped.append("\\") }
             escaped.append(character)
         }
-        guard let url = RichText.webLink(attributes["src"]) else { return alt }
-        return "![\(alt)](<\(url.absoluteString)>)"
+        // Its source is HTML's too, as `&amp;` between a query's parameters: read once, and kept from being read again.
+        guard let url = RichText.webLink(attributes["src"].map { HTMLEntities.decode($0) }) else { return alt }
+        return "![\(alt)](<\(url.absoluteString.replacingOccurrences(of: "&", with: "&amp;"))>)"
     }
 
     /// Inline Markdown: emphasis, code, strikethrough, links and images, which link to where they are.

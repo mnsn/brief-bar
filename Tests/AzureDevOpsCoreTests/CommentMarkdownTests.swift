@@ -92,6 +92,13 @@ import Testing
         #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Build [Linux] **failed** &amp; _x_\">").blocks == [
             .paragraph([RichText.Run("Build [Linux] **failed** & _x_", link: URL(string: "https://example.invalid/b.png"))]),
         ])
+        // And its source, read once.
+        #expect(RichText(markdown: "<img src=\"https&#58;//example.invalid/b.svg?style=flat&amp;label=a%20b\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?style=flat&label=a%20b"))]),
+        ])
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.svg?q=&amp;lt;\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?q=&lt;"))]),
+        ])
         // Only of a web page, and otherwise its description.
         #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
         #expect(plain("<img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "Build [Linux] *1*")
