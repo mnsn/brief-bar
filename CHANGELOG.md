@@ -27,6 +27,13 @@
   offers to send the work there, rather than always starting a new session, and asks which you want
   unless you've said; asked in that very session, it can also fork it, so the work goes another way while
   the session stays as it is. Since agents get more, they wait until you've seen what they get now.
+- **Organizations in another directory.** When an Azure DevOps organization is in a directory (tenant)
+  your Azure CLI isn't signed in to, BriefBar says so and names it, rather than asking you to sign in
+  again, and its **Sign In…** signs in to that directory (`az login --tenant`). Your other
+  organizations' pull requests stay listed meanwhile, and once you've signed in there, BriefBar reads
+  both, still as you. **Add Organization…** now checks that your sign-in can read an organization as
+  you add it, and says why when it can't, with where a project's organization is when you entered a
+  project's name.
 
 ## 0.10.2 - 2026-11-01
 

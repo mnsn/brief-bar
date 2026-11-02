@@ -1031,6 +1031,81 @@ out. A token lasts about an hour; BriefBar reuses it until five minutes before i
 again if Azure DevOps rejects it. The token also says who it's for: when you sign in to the CLI as
 someone else, BriefBar starts over with their pull requests, and what they've seen.
 
+#### Organizations in other directories
+
+An organization belongs to one directory (a Microsoft Entra tenant), and Azure DevOps reads it only
+with a token from that directory. When it rejects a token, with 401 or a sign-in page, it names the
+organization's directories in `X-VSS-ResourceTenant`. When the token's own directory (its `tid`) isn't
+among them, BriefBar asks the CLI for a token from the organization's directory, and tries again:
+
+```sh
+az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --tenant <directory> --output json
+```
+
+It remembers the organization's directory while it runs, once a token from there works, so its next
+requests get such a token right away; one that moves to yet another directory is followed the same way.
+Only GUIDs from the header are used, never the empty one. When the CLI can't give a token from there,
+because it isn't signed in to that directory, that organization's problem says so: "fabrikam is in a
+directory your Azure CLI isn't signed in to", with **Sign In…**, which opens Terminal to run
+`az login --tenant` with the directory's ID, and `--allow-no-subscriptions`, as every sign-in does, for an
+account without Azure subscriptions. Until then, each refresh asks Azure DevOps once, with a token from your
+directory, which directory the organization is in, so a move is noticed too. The other organizations'
+pull requests stay listed and counted, as when any of them can't be read, and once the CLI is signed in
+there, the organization is read with the rest. Until then, what's listed from it stays as it was read: its
+pull requests' details, builds and merges aren't asked for. An organization in such a directory says so,
+whatever else failed reading it, but Azure DevOps asking BriefBar to slow down comes first. A pull
+request you watch, or that was sent to you, in such an organization says the same, and is read at the
+next refresh once you've signed in, rather than an hour later; such organizations don't take the ten
+reads a refresh gives those pull requests, each being tried once a refresh. When every organization you
+watch is in such a directory, the pull requests sent to you from others are still read. The Sprint and
+Pipelines sections, the Add Pipelines sheet, its projects included, and a work item's details say the
+same, and the sheet offers **Try Again** to read its projects and search again once you've signed in;
+pinned pipelines in such an organization are asked for once a refresh. A team you chose shows its
+sprint even while the teams of the organizations you watch wait on such a sign-in, and the Sprint names
+them with any other organizations whose teams, or your team's sprint, couldn't be read; a team BriefBar
+finds for you then is shown, but kept only once it's been compared with theirs: it's looked for again as
+each of their directories is signed in to, or as its own needs a sign-in, and stays unkept until their
+teams are read. A team whose sprint can't be read for want of such a sign-in counts among them, and
+doesn't take the turn of another. The command line and agents, which have no button, say what to run;
+an agent's work item, asked for by its number alone, is looked for in your other organizations too, and
+such an organization is named only when none of them has it. A directory's ID is never shown otherwise,
+and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses or
+the names of directories it quotes.
+The log names none of these organizations, nor the others that couldn't be read with them, and says
+only how many are in such a directory: a pull request sent to you comes from a chat. While nothing could
+be read but such organizations, BriefBar looks again every minute, as it does while the CLI is signed
+out.
+
+Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
+then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another
+directory the CLI's default. So signing in to an organization's directory changes neither whose
+sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
+the account it last read your pull requests with, and where that account is from, which it keeps with
+it (`ado.accountOrigin`); the command line and agents do too. Turning Azure DevOps off forgets both,
+with what you've seen, and nothing read before then saves them again. When the CLI can't give a token in your
+directory, BriefBar looks at its default directory's token: a guest's names where its account is from
+(`idp`), its own directory or, for a personal Microsoft account, `live.com`. When that's your account's,
+your directory only wants you to sign in again, and BriefBar says so, with **Sign In…** signing in
+there, with `az login --tenant` and your directory's ID: a plain `az login` may sign in to another
+directory without what yours asks for, such as multi-factor authentication. Otherwise someone else has
+signed in to the CLI, and their directory becomes the one BriefBar reads with. Tokens kept for other
+directories are for the same account as yours: when someone else signs in, those go too, and one from
+another directory for an account from elsewhere isn't used by anything that asked for it, nor kept:
+every token kept goes with it, and BriefBar asks for yours again, which tells who's signed in. Nor is one
+that was on its way when someone else signed in, wherever they're from.
+
+**Add Organization…** checks that your sign-in can read the organization, with `_apis/connectionData`,
+before watching it, and says why when it can't. One it reads is watched. One in a directory the CLI
+isn't signed in to is watched too, and **Sign In…** signs in there. One it can't read otherwise isn't:
+one that Azure DevOps can't find, that isn't one of your organizations (`_apis/accounts`), or that you
+have no access to. Only those are checked against your organizations: one read in another directory is
+read as your guest account there, which `_apis/accounts`, asked as you, may not list. A project's name,
+entered as an organization's, can be another organization's, even one in another directory: so when an
+organization is in another directory, or isn't one of yours, BriefBar also says where a project's
+organization is, the first part of its link. One that couldn't be checked, offline say, or whose
+membership couldn't be, is watched, and its list says what's wrong. Turning Azure DevOps off while it
+checks stops the check, and nothing is added.
+
 An app started from Finder or as a login item doesn't get your shell's `PATH`, so BriefBar looks
 for `az` in `/opt/homebrew/bin`, `/usr/local/bin` and the other usual places, then asks your login
 shell (`command -v az`). Its runs of `az` turn off the CLI's telemetry and warnings, and each is
@@ -1049,7 +1124,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 
 | Request | When | Provides |
 |---|---|---|
-| `_apis/connectionData` | once per organization, and again when you sign in as someone else | your identity ID and name |
+| `_apis/connectionData` | once per organization, and again when you sign in as someone else; and when you add an organization, to check that your sign-in can read it | your identity ID and name |
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=active` | every refresh | your active pull requests, across all projects |
 | `_apis/git/pullrequests?searchCriteria.reviewerId=…&status=active` | every refresh | the ones you review |
 | `_apis/git/pullrequests?searchCriteria.creatorId=…&status=completed&minTime=…` | every refresh | yours completed in the Done window |
@@ -1065,7 +1140,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
 | `_apis/git/pullrequests/{id}` | only with Show Links: for a pull request linked to a sprint's work item, or that you linked, that your lists don't show, ten a refresh, the ones never read first; again every quarter of an hour while it's open, and every six hours once it's closed | the pull request, to show it |
-| `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
+| `app.vssps.visualstudio.com/_apis/profile/profiles/me`, `…/_apis/accounts` | finding your organizations; and when an organization you add can't be read, to tell whether it's one of yours | your organizations; then each one is checked for your pull requests, and when Azure DevOps asked to slow down before every one was checked, or none were found because some couldn't be checked (offline, say), it tries again a minute later, rather than keeping what it found as all there is |
 
 The list endpoints have no "last updated" field, and new comments don't change anything in them,
 so a pull request's details (policies and threads, two requests) are fetched on a schedule
@@ -1677,8 +1752,11 @@ plain sentence if the model isn't available or fails. BriefBar explicitly uses
   BriefBar restarts.
 - Pull requests assigned only to a group or team you're in aren't listed: Azure DevOps's reviewer
   search matches you, not your groups.
-- Organizations in other Microsoft Entra tenants than the Azure CLI's default can't be read with its
-  token.
+- An organization in another directory than your sign-in's is read only once the Azure CLI is signed
+  in to that directory too. The CLI gives tokens for the account it's signed in with, so organizations
+  that each need a different account can't all be read at once. BriefBar doesn't tell a directory your
+  account isn't in from one it only has to sign in to again: either way, it offers to sign in there, and
+  signing in says which it is.
 - A failed build says where it failed only when its run's timeline can be read, and then only its
   first error: the rest is in its log, which BriefBar doesn't read.
 - The pipelines after a merge are found in its repository's project: a run that a trigger starts in
