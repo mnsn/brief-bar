@@ -47,6 +47,16 @@ enum PullRequestTasks {
         (record.details?.checks ?? []).filter { $0.kind == .build && $0.state == .failed && $0.isBlocking }
     }
 
+    /// The pull request, as a task sent to Copilot knows it.
+    static func task(for record: PRRecord) -> TaskPullRequest {
+        let pr = record.pullRequest
+        return TaskPullRequest(
+            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch,
+            projectId: pr.projectId, repositoryId: pr.repositoryId
+        )
+    }
+
     /// The prompt for an action. For a failed build, each build's errors are read first, one GET each, with `client`;
     /// without one, it has only what BriefBar read already.
     static func prompt(
