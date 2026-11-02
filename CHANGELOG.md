@@ -16,6 +16,9 @@
   give a date rather than a number of seconds, and BriefBar waited a minute instead.
 - **The Copilot app's sessions are read all at once.** When the app saved a change as BriefBar read its
   database, a session's status and its latest activity could come from either side of it.
+- **Build errors without stray color codes.** Where a pull request's or a pipeline's run failed, and in the
+  prompt that asks Copilot to fix it, BriefBar leaves out the color codes some tools write into their
+  errors, which showed as `[31m`.
 
 ## 0.10.2 - 2026-11-01
 
