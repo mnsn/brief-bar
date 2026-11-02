@@ -324,6 +324,26 @@ extension CopilotTasksStore {
         }.min { ($0.appSession?.createdAt ?? .distantFuture) < ($1.appSession?.createdAt ?? .distantFuture) }
     }
 
+    /// The session a pull request's work goes to unless you choose another, as the composer suggests it
+    /// (`suggestedChoice`), for whatever names one session for a pull request, such as `pull_request` for agents: the
+    /// sessions it could go to (`sessionChoices`), and only when none of those is suggested, which of the app's sessions
+    /// mention it (`sessionsMentioning`), which takes longer and matters only then. Nil while Send Work to Copilot is
+    /// off, and when there's none: then it goes to a new session.
+    func suggestedSession(for pullRequest: TaskPullRequest, createdAt: Date?) async -> SessionChoice? {
+        // Where it goes doesn't depend on what it's for.
+        let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
+        let continuable = continuable(forPullRequest: PRKey(pullRequest.organization, pullRequest.id))
+        let found = await sessionChoices(for: subject)
+        if let suggested = Self.suggestedChoice(found, for: subject, continuable: continuable, createdAt: createdAt) {
+            return suggested
+        }
+        let mentioned = await sessionsMentioning(subject, among: found, since: createdAt)
+        guard !mentioned.isEmpty else { return nil }
+        return Self.suggestedChoice(
+            marking(mentioned, in: found, createdAt: createdAt), for: subject, continuable: continuable, createdAt: createdAt
+        )
+    }
+
     /// Whether Copilot can go on with a session from here, with the CLI: why not, or nil. The app mustn't have it open; for
     /// one of the app's sessions, the CLI has to know it; neither a task of BriefBar's nor another of the app's sessions
     /// that runs a turn may be working in the checkout it works in, which can be shared, whichever folder of it each works
