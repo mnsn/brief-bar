@@ -4,13 +4,18 @@
     "name": "BriefBar"
   },
   "metadata": {
-    "description": "BriefBar's plugin, in BriefBar.app on this Mac, which installs it when you ask and updates it with itself."
+    "description": "BriefBar's plugins, in BriefBar.app on this Mac, which installs each one only when you ask and updates them with itself."
   },
   "plugins": [
     {
       "name": "briefbar",
       "description": "/briefbar shows what needs you, from BriefBar, tells how a work item and its pull requests stand, and hands pull requests to sessions you can follow.",
       "source": "./briefbar"
+    },
+    {
+      "name": "briefbar-sessions",
+      "description": "Lets BriefBar send a prompt to one of the GitHub Copilot app's sessions, or to a fork of it, when you ask: Send Prompts to Copilot Sessions, in BriefBar's Settings › Agents.",
+      "source": "./briefbar-sessions"
     }
   ]
 }
