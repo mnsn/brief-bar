@@ -184,7 +184,7 @@ Where Windows differs, these were decided:
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`) and waiting as long as they ask (`RateLimitGate`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`) and waiting as long as they ask (`RetryAfter`, `RateLimitGate`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/GitHub/` | GitHub pull requests, ported from `Sources/GitHubCore` with the Swift names (`PullRequestQuery`, `GitHubClient`, `GitHubCLITokenProvider`, `GitHubClassifier`, `GitHubReader`…), the store and settings from `GitHubUI` (`GitHubStore`, `GitHubSettings`), and the source (`GitHubSource`, `GitHubRows`) |
@@ -337,12 +337,12 @@ SDK ships inside the app.
   most 8 are read a refresh, changed ones first, then those due longest, so pull requests whose builds run can't keep
   the others waiting.
 - **Azure DevOps can ask BriefBar to slow down** (429 or 503): as on the Mac, nothing is sent until the time it gave
-  (`Retry-After`), or for a minute when it doesn't say, whichever reader asks next. The readers of the pull requests
-  you watch, of those that left your lists, of failed builds and of merges stop, and count nothing as failed: a pull
-  request you watch is read once BriefBar may send again, not an hour later. The reader of threads and policies
-  stops too: a pull request it was reading then waits its usual interval, and the rest keep their turn. Finding
-  your organizations saves nothing then, rather than only the ones it had checked, and the first time, it tries
-  again a minute later.
+  (`Retry-After`, a number of seconds or, as RFC 9110 allows, a date, which GitHub's client reads the same way), or for
+  a minute when it doesn't say, whichever reader asks next. The readers of the pull requests you watch, of those that
+  left your lists, of failed builds and of merges stop, and count nothing as failed: a pull request you watch is read
+  once BriefBar may send again, not an hour later. The reader of threads and policies stops too: a pull request it was
+  reading then waits its usual interval, and the rest keep their turn. Finding your organizations saves nothing then,
+  rather than only the ones it had checked, and the first time, it tries again a minute later.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 

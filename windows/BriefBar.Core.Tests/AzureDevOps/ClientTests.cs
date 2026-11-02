@@ -133,6 +133,35 @@ public sealed class ClientTests
         Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
     }
 
+    /// `Retry-After` may be a date, as RFC 9110 allows: nothing goes out until then, by the client's own clock.
+    [Fact]
+    public async Task HonorsRetryAfterAsADate()
+    {
+        var server = new StubServer();
+        var until = TestTimes.T(seconds: 90).ToString(format: "r", formatProvider: System.Globalization.CultureInfo.InvariantCulture);
+        server.On(path: "/_apis/connectionData", reply: _ => StubReply.Code(status: 429, headers: new Dictionary<string, string> { ["Retry-After"] = until }));
+        var clock = new TestClock(start: TestTimes.T(seconds: 0));
+        using var client = server.Client(time: clock);
+        var url = ADOEndpoint.ConnectionData(organization: "contoso");
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 90)), actual: error.Error);
+
+        // Until then, nothing is sent.
+        server.On(path: "/_apis/connectionData", json: Me);
+        var sent = server.Requests.Count;
+        clock.Set(time: TestTimes.T(seconds: 60));
+        var held = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 30)), actual: held.Error);
+        Assert.Equal(expected: sent, actual: server.Requests.Count);
+
+        // Then it is.
+        clock.Set(time: TestTimes.T(seconds: 90));
+        var me = await client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken);
+        Assert.Equal(expected: "ME", actual: me.AuthenticatedUser.Id);
+        Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
+    }
+
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then,
     /// whichever engine asks next, as for another organization.
     [Theory]

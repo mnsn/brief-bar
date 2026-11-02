@@ -9,7 +9,7 @@ namespace BriefBar.Core.AzureDevOps;
 /// Reads from Azure DevOps. It only ever sends GET requests, each with a bearer token from the Azure CLI's sign-in:
 /// BriefBar never changes anything there. No cookies and no cache: every request carries its own token, through the
 /// system's proxy. A rejected token is replaced once. Asked to slow down, it sends nothing until the time Azure DevOps
-/// gave (`Retry-After`), or for a minute when it doesn't say. The Mac's `ADOClient`.
+/// gave (`Retry-After`, in seconds or as a date), or for a minute when it doesn't say. The Mac's `ADOClient`.
 public sealed class ADOClient : IDisposable
 {
     /// How long to wait when Azure DevOps asks to slow down without saying for how long.
@@ -70,7 +70,7 @@ public sealed class ADOClient : IDisposable
         {
             using var request = Request(url: url, token: token.Value);
             using var response = await SendAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-            var retryAfter = RetryAfter(response: response);
+            var retryAfter = RetryAfter.Wait(value: Header(response: response, name: "Retry-After"), now: time.GetUtcNow());
             if (retryAfter is { } asked)
             {
                 gate.Hold(wait: asked);
@@ -132,21 +132,9 @@ public sealed class ADOClient : IDisposable
     static bool IsJson(HttpResponseMessage response) =>
         response.Content.Headers.ContentType?.MediaType?.Contains(value: "json", comparisonType: StringComparison.OrdinalIgnoreCase) == true;
 
-    /// How long `Retry-After` asks to wait, at most an hour; null without one.
-    static TimeSpan? RetryAfter(HttpResponseMessage response)
-    {
-        var wait = response.Headers.RetryAfter switch
-        {
-            { Delta: { } delta } => delta,
-            { Date: { } date } => date - DateTimeOffset.UtcNow,
-            _ => (TimeSpan?)null,
-        };
-        if (wait is not { } positive || positive <= TimeSpan.Zero)
-        {
-            return null;
-        }
-        return positive > TimeSpan.FromHours(value: 1) ? TimeSpan.FromHours(value: 1) : positive;
-    }
+    /// The first value of the header `name`, as Azure DevOps sent it.
+    static string? Header(HttpResponseMessage response, string name) =>
+        response.Headers.NonValidated.TryGetValues(headerName: name, values: out var values) ? values.FirstOrDefault() : null;
 
     /// Sends `request`, saying what kept it from Azure DevOps as an `ADOError`. Stopping, as BriefBar quits or Azure DevOps
     /// is turned off, isn't one.

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
@@ -14,9 +13,6 @@ namespace BriefBar.Core.GitHub;
 /// replaced once; when GitHub asks it to slow down, nothing goes out until the time GitHub gave. The Mac's `GitHubClient`.
 public sealed class GitHubClient : IDisposable
 {
-    /// The longest BriefBar waits when GitHub asks it to.
-    static readonly TimeSpan longestWait = TimeSpan.FromHours(value: 1);
-
     /// How long it waits when GitHub says to slow down only in words.
     static readonly TimeSpan wordsWait = TimeSpan.FromMinutes(value: 1);
 
@@ -61,15 +57,15 @@ public sealed class GitHubClient : IDisposable
     public void Dispose() => http.Dispose();
 
     /// How long to wait when GitHub refuses a request for its rate limits, or null when it refused it for another reason:
-    /// `Retry-After` for its secondary limits, at most an hour; the hourly limit's reset when that's used up; or a minute
-    /// when it only says so in words. 429 is always a rate limit.
+    /// `Retry-After` for its secondary limits, in seconds or as a date, at most an hour (`RetryAfter`); the hourly limit's
+    /// reset when that's used up; or a minute when it only says so in words. 429 is always a rate limit.
     internal static TimeSpan? RateLimitWait(HttpResponseMessage response, byte[] body, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: response);
         ArgumentNullException.ThrowIfNull(argument: body);
-        if (Seconds(text: Header(response: response, name: "Retry-After")?.Trim()) is { } seconds && seconds > 0)
+        if (RetryAfter.Wait(value: Header(response: response, name: "Retry-After"), now: now) is { } asked)
         {
-            return seconds >= longestWait.TotalSeconds ? longestWait : TimeSpan.FromSeconds(value: seconds);
+            return asked;
         }
         if (Header(response: response, name: "x-ratelimit-remaining") == "0" && ResetWait(response: response, now: now) is { } untilReset)
         {
@@ -88,11 +84,11 @@ public sealed class GitHubClient : IDisposable
     internal static TimeSpan? ResetWait(HttpResponseMessage response, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: response);
-        if (Seconds(text: Header(response: response, name: "x-ratelimit-reset")) is not { } reset)
+        if (RetryAfter.Seconds(text: Header(response: response, name: "x-ratelimit-reset")) is not { } reset)
         {
             return null;
         }
-        var seconds = Math.Clamp(value: reset - ((now - DateTimeOffset.UnixEpoch).Ticks / (double)TimeSpan.TicksPerSecond), min: 1, max: longestWait.TotalSeconds);
+        var seconds = Math.Clamp(value: reset - ((now - DateTimeOffset.UnixEpoch).Ticks / (double)TimeSpan.TicksPerSecond), min: 1, max: RetryAfter.Longest.TotalSeconds);
         return TimeSpan.FromSeconds(value: seconds);
     }
 
@@ -203,12 +199,6 @@ public sealed class GitHubClient : IDisposable
     /// The first value of the header `name`, as GitHub sent it.
     static string? Header(HttpResponseMessage response, string name) =>
         response.Headers.NonValidated.TryGetValues(headerName: name, values: out var values) ? values.FirstOrDefault() : null;
-
-    /// A number of seconds, as Swift's `TimeInterval(text)` reads one; null for anything else, or one that isn't finite.
-    static double? Seconds(string? text) =>
-        text is not null && double.TryParse(s: text, style: NumberStyles.Float, provider: CultureInfo.InvariantCulture, result: out var seconds) && double.IsFinite(d: seconds)
-            ? seconds
-            : null;
 
     /// Sends `request`, saying what kept it from GitHub as a `GitHubError`. Stopping, as BriefBar quits or GitHub is turned
     /// off, isn't one.

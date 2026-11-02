@@ -357,8 +357,12 @@ public sealed class ClientTests
 
         using var long429 = Response(status: 403, ("Retry-After", "99999"));
         Assert.Equal(expected: TimeSpan.FromHours(value: 1), actual: GitHubClient.RateLimitWait(response: long429, body: [], now: now));
+        using var longDate = Response(status: 403, ("Retry-After", now.AddDays(days: 1).ToString(format: "r", formatProvider: System.Globalization.CultureInfo.InvariantCulture)));
+        Assert.Equal(expected: TimeSpan.FromHours(value: 1), actual: GitHubClient.RateLimitWait(response: longDate, body: [], now: now));
         using var zero = Response(status: 403, ("Retry-After", "0"));
         Assert.Null(@object: GitHubClient.RateLimitWait(response: zero, body: [], now: now));
+        using var passed = Response(status: 403, ("Retry-After", now.AddMinutes(minutes: -1).ToString(format: "r", formatProvider: System.Globalization.CultureInfo.InvariantCulture)));
+        Assert.Null(@object: GitHubClient.RateLimitWait(response: passed, body: [], now: now));
         using var words = Response(status: 403, ("Retry-After", "soon"));
         Assert.Null(@object: GitHubClient.RateLimitWait(response: words, body: [], now: now));
         using var someLeft = Response(status: 403, ("x-ratelimit-remaining", "3"), ("x-ratelimit-reset", Epoch(offset: 60)));
@@ -390,5 +394,30 @@ public sealed class ClientTests
         using var client = server.Client();
         await client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "BriefBar", actual: Assert.Single(collection: server.Requests).UserAgent);
+    }
+
+    /// `Retry-After` may be a date, as RFC 9110 allows: nothing goes out until then, by the client's clock.
+    [Fact]
+    public async Task WaitsUntilTheDateGitHubGives()
+    {
+        var clock = new TestClock(start: TestTimes.Reference);
+        var server = new GitHubStubServer();
+        var until = TestTimes.T(seconds: 15 * GitHubFixture.Minute).ToString(format: "r", formatProvider: System.Globalization.CultureInfo.InvariantCulture);
+        server.Reply(GitHubStubServer.Text(text: """{"message":"You have exceeded a secondary rate limit."}""", status: 429, headers: Headers(("Retry-After", until))));
+        server.Always(reply: StubReply.Json(body: Answer));
+        using var client = server.Client(time: clock);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var error = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: cancellationToken));
+        Assert.Equal(expected: GitHubError.Throttled(retryAfter: TimeSpan.FromMinutes(value: 15)), actual: error.Error);
+
+        clock.Set(time: TestTimes.T(seconds: 10 * GitHubFixture.Minute));
+        var held = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: cancellationToken));
+        Assert.Equal(expected: GitHubError.Throttled(retryAfter: TimeSpan.FromMinutes(value: 5)), actual: held.Error);
+        Assert.Single(collection: server.Requests);
+
+        clock.Set(time: TestTimes.T(seconds: 15 * GitHubFixture.Minute));
+        Assert.Equal(expected: GitHubFixture.Me, actual: (await client.PullRequestsAsync(cancellationToken: cancellationToken)).Data.Viewer.Login);
+        Assert.Equal(expected: 2, actual: server.Requests.Count);
     }
 }
