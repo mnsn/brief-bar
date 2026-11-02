@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **GitHub's list says All quiet only once it has read all your pull requests.** It said so under a note
+  that you were offline, that GitHub couldn't be reached or that some pull requests couldn't be read, and
+  even before it had read any. Now it shows only the note.
+- **A review by a deleted GitHub account counts.** On a pull request without a review decision, changes
+  it requested put the pull request under Changes Requested, and its approval under Ready to Merge,
+  rather than Waiting.
+- **Azure DevOps and GitHub never follow a redirect**, so your sign-in's token goes only where it should. When
+  one redirects BriefBar to another host, the list says so.
+- **Turning GitHub off stops a run of the GitHub CLI that's under way**, so the token it would get goes
+  nowhere.
+- **When Azure DevOps or GitHub asks BriefBar to wait until a given time, it waits until then.** Either can
+  give a date rather than a number of seconds, and BriefBar waited a minute instead.
+- **The Copilot app's sessions are read all at once.** When the app saved a change as BriefBar read its
+  database, a session's status and its latest activity could come from either side of it.
+
 ## 0.10.2 - 2026-11-01
 
 - **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with

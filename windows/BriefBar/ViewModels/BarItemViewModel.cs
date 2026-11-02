@@ -8,11 +8,11 @@ namespace BriefBar.ViewModels;
 /// A section's item in the bar: its glyph and name, its counts, and a badge when it doesn't show the whole story.
 public sealed class BarItemViewModel : Observable
 {
-    public BarItemViewModel(BarItemContent content, ThemePalette palette)
+    public BarItemViewModel(BarItemContent content, ThemePalette palette, double iconSize)
     {
         ArgumentNullException.ThrowIfNull(argument: content);
         Section = content.Section;
-        Update(content: content, palette: palette);
+        Update(content: content, palette: palette, iconSize: iconSize);
     }
 
     public SectionId Section { get; }
@@ -47,19 +47,25 @@ public sealed class BarItemViewModel : Observable
     /// Its panel is showing.
     public bool IsOpen { get; set => Set(storage: ref field, value: value); }
 
-    public void Update(BarItemContent content, ThemePalette palette)
+    /// How big its icons are, as Windows' text size makes the bar (`BarMetrics.IconSize`).
+    public double IconSize { get; private set => Set(storage: ref field, value: value); } = BarMetrics.SmallIconDip;
+
+    public void Update(BarItemContent content, ThemePalette palette, double iconSize)
     {
         ArgumentNullException.ThrowIfNull(argument: content);
         ArgumentNullException.ThrowIfNull(argument: palette);
         Label = content.Label;
         Glyph = content.Glyph;
-        GlyphBrush = content.IsQuiet || content.Badge == BarItemBadge.Paused ? palette.Quiet : palette.Glyph(tint: content.Tint);
+        // In the color of its words, as the taskbar's icons and the Mac's menu bar are; its source's color stays on its
+        // panel's tile, in Settings and in the Overview's rows.
+        GlyphBrush = content.IsQuiet || content.Badge == BarItemBadge.Paused ? palette.Quiet : palette.Ink;
+        IconSize = iconSize;
         CollectionSync.Sync(
             items: Chips,
             values: content.Chips,
             matches: (item, chip) => item.State == chip.State,
-            create: chip => new CountChipViewModel(chip: chip, palette: palette),
-            update: (item, chip) => item.Update(chip: chip, palette: palette));
+            create: chip => new CountChipViewModel(chip: chip, palette: palette, iconSize: iconSize),
+            update: (item, chip) => item.Update(chip: chip, palette: palette, iconSize: iconSize));
         ShowsStarting = content.Badge == BarItemBadge.Starting;
         ShowsBadge = content.Badge is BarItemBadge.Problem or BarItemBadge.Paused or BarItemBadge.Stale;
         BadgeIcon = content.Badge == BarItemBadge.Paused ? IconKey.PauseCircle : IconKey.Warning;

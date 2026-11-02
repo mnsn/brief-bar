@@ -9,6 +9,7 @@ import Testing
 final class FakeRunner: ProcessRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var log: [[String]] = []
+    private var stops = 0
     let result: ProcessResult
     let delay: Duration
 
@@ -19,9 +20,19 @@ final class FakeRunner: ProcessRunning, @unchecked Sendable {
 
     var calls: [[String]] { lock.withLock { log } }
 
+    /// How many runs were stopped, as `ProcessRunner` stops one whose task is cancelled.
+    var stopped: Int { lock.withLock { stops } }
+
     func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
         lock.withLock { log.append(arguments) }
-        if delay > .zero { try await Task.sleep(for: delay) }
+        if delay > .zero {
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                lock.withLock { stops += 1 }
+                throw error
+            }
+        }
         return result
     }
 }

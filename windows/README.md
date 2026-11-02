@@ -65,10 +65,10 @@ section names and the like, so nothing you see can reach it: a line with a strin
 - **On its left, what needs you, in words**: "8 need you · 3 went wrong · 3 done or ready", each number in its
   state's color, across every source. It opens the Overview. What's running isn't in those words, as it isn't in
   the Mac's counts added up, but its tooltip says it.
-- **On its right, an item per section**, in the Mac's order: the source's glyph, its short name ("Copilot",
-  "Azure DevOps") and its counts by state. Needs you is a filled pill; the rest are an icon and a number, and
-  zero is quiet. Its tooltip says each count in words, and how fresh it is ("Live", "Updated 20 s ago"), or that
-  the section is starting, can't read, is paused or is stale.
+- **On its right, an item per section**, in the Mac's order: the source's glyph, in the color of its words, its short
+  name ("Copilot", "Azure DevOps") and its counts by state, each its state's icon in the state's color and a number,
+  as on the Mac: Needs you is an orange hand. Zero is quiet. Its tooltip says each count in words, and how fresh it
+  is ("Live", "Updated 20 s ago"), or that the section is starting, can't read, is paused or is stale.
 - **The items are buttons**, as tall as the bar, so a flick of the pointer to the screen's edge lands on one.
   Narrator names each in words ("GitHub Copilot sessions: 3 need you, 2 running, 1 done or ready, 1 went wrong"),
   and UI Automation can press them. The item whose panel is open is marked, as the taskbar marks the app in front.
@@ -89,7 +89,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another app or Settings
   to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
-  button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
+  button, or the empty Overview. **General** lists each source and whether it's on; while Windows lacks a source the
+  Mac has, it says which comes next ("Microsoft Teams comes to BriefBar for Windows next."), and with Teams, it lacks
+  none. A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
@@ -170,9 +172,20 @@ section names and the like, so nothing you see can reach it: a line with a strin
   auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
   links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
-  Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
-  Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
-  4.5:1, icons 3:1), which a test checks. States never rely on color alone: each has its own icon and words.
+  each from the drawing Fluent made for the pixels it covers on its display, so it lines up with them at 100%, 125%,
+  150% and 200%, Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. The bar's glyphs are in
+  the color of its words, as the taskbar's icons are, and a source's own color is on its panel's tile, in Settings and
+  in the Overview's rows. The bar's icons grow with Windows' text size, as its words do, from 16 pixels to 20 at
+  112.5% and up. The bar and the panel follow Windows' mode, and the bar the taskbar's accent color, as the taskbar
+  does ([below](#choices-for-windows)). Where Windows draws no acrylic, as over Remote Desktop, with Transparency
+  effects off or with energy saver, the bar and the panel show the flat color Windows shows in its place, `#EEEEEE` in
+  light and `#1C1C1C` in dark, as the taskbar does there. It follows light, dark, the accent and High Contrast as
+  Windows changes, the panel's and Settings' window frames included, with Windows' own colors in a contrast theme. Its
+  state colors meet WCAG AA in light and dark (text 4.5:1, icons 3:1) on the acrylic and on that flat color alike, and
+  on the accent, and the bar's behind an item that's open and pointed at too, where Windows' highlight lies under them
+  twice, which tests check. The bar's words, and its glyphs with them, are in Windows' colors wherever those read, and
+  a little lighter (or darker) where they don't. States never rely on color alone: each has its own icon and words.
+  Narrator reads each item in the bar and each row as one, in words, and Settings' section titles are headings.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
@@ -195,6 +208,15 @@ Where Windows differs, these were decided:
 - **Hiding the panel and the window from screen sharing and recordings** will be a choice in Settings, off by
   default.
 - **Sentence case** ("Needs you"), as Windows writes it.
+- **The bar and the panel look like the taskbar and its flyouts**: in Windows' mode, which Settings › Personalization ›
+  Colors can set apart from the apps' mode that Settings, an app, follows; and with **Show accent color on Start and
+  taskbar**, which Windows offers in dark, the bar takes the shade of the accent color the taskbar takes
+  (`AccentDark2`), its state colors lightened as much as they need to stand out on it.
+- **Where Windows draws no acrylic, the bar is flat**, as the taskbar is there, such as over Remote Desktop, rather
+  than see-through: a tint without blur does show the wallpaper through, but leaves the counts' colors under 4.5:1
+  over a dark one.
+- **Teams' glyphs are outlined**, a person for chats and two people for group chats, as the bar's other glyphs are,
+  where the Mac's are filled.
 - **The keyboard reaches the bar's items from a panel**, with Ctrl+1 to Ctrl+9 and Ctrl+Tab, since Windows has no
   key like the Mac's Ctrl+F8 for a bar like this one. Starting BriefBar again opens the Overview, as reopening it
   shows the Mac's first item.
@@ -230,9 +252,7 @@ Where Windows differs, these were decided:
 - **GitHub signs in with `gh auth login --hostname github.com --web` in a console window**, which stays open too, as
   `az login`'s does, where the Mac opens Terminal. BriefBar finds `gh` where `BRIEFBAR_GH` says, in your `PATH`, or
   where its installer or WinGet puts it. Names in a GitHub row are listed as Windows writes a list ("By sam, kai, and
-  lee"), where the Mac writes "sam, kai and lee". Its empty list says **All quiet** only when it read them all: the
-  Mac's says so under a note that it's offline, can't reach GitHub or couldn't read some pull requests too, even before
-  any read has worked.
+  lee"), where the Mac writes "sam, kai and lee".
 
 ## The code
 
@@ -299,7 +319,26 @@ SDK ships inside the app.
   down Alt+F4 (`SC_CLOSE`), and turns any other close into quitting BriefBar.
 - **Acrylic turns into a flat color in an inactive window**, and the bar is never active: `ActiveAcrylic` keeps
   `IsInputActive` on.
+- **A backdrop of the app's own ends it when Windows switches between light and dark**, unless it overrides
+  `OnDefaultSystemBackdropConfigurationChanged` and doesn't call the base: WinUI calls it then with a target or
+  `XamlRoot` it holds only weakly, so either can be null despite the signature, and the base implementation rejects a
+  null one (`E_INVALIDARG`), which ended BriefBar. `ActiveAcrylic` follows the theme as its content does instead, and
+  `SystemBackdropTests` checks that every backdrop in the app overrides it, and that nothing calls the base.
 - **Windows 11 draws a 1-pixel border** around windows; the bar turns it off (`DWMWA_BORDER_COLOR`).
+- **WinUI leaves a window's frame light in dark**: Windows drew the dark panel's border and shadow for light, until
+  the panel and Settings said their theme (`DWMWA_USE_IMMERSIVE_DARK_MODE`, `FrameTheme`).
+- **Windows draws no acrylic over Remote Desktop**, even with Transparency effects on, and neither Mica nor its
+  own backdrops, checked on Windows 11 25H2: every one shows its flat color, and so does the taskbar (`#EEEEEE` in
+  light). That color is darker than light acrylic, so `StatePalette` checks contrast on both; on it, Needs you's
+  orange first stood 2.97:1.
+- **WinUI and `UISettings` know only the apps' mode**, not Windows' own, which the taskbar follows: that's in the
+  registry, as `Personalize\SystemUsesLightTheme`, with `ColorPrevalence` for the accent on the taskbar, and a change
+  comes as `WM_SETTINGCHANGE` with `ImmersiveColorSet` (`ShellColors`). With the accent, Windows paints the taskbar
+  `AccentDark2`, checked against its pixels over Remote Desktop.
+- **`AutomationProperties.AccessibilityView="Raw"` hides only the element it's on**, not what's in it: Narrator read
+  a row's words again, one by one, after its name. Its words are raw each, through an implicit style, and a bar item
+  is a button without children (`BarItemButtonAutomationPeer`). That style doesn't reach into a list's own item
+  template, such as a row's checklist and links, so their words say it themselves.
 - **A click on the bar could be spent activating it** while some apps were in front, such as the Xbox app or a
   Windows Security prompt; the bar answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`.
 - **XAML moves focus to the bar on a press**, before the press reaches the item, which takes activation from an
@@ -336,6 +375,17 @@ SDK ships inside the app.
   `combase.dll`, no managed exception and nothing in the log, only a dump in `%LOCALAPPDATA%\CrashDumps`. A list
   reuses its rows' elements as it scrolls and changes, so a view model must never hold a `Geometry`: Copilot's
   context ring draws its own (`MeterRing`).
+- **Fluent draws each icon anew for each size**, on that size's pixels, and an icon scaled to another size blurs: the
+  bar's state icons were 16-unit drawings shown at 14 pixels, and Copilot's 20-unit pulse at 16. That holds for a
+  display's pixels, not Windows' scaled ones: a 16-pixel icon covers 20 of a display's pixels at 125% and 24 at 150%,
+  where its 16 drawing blurred too. Each icon shows the drawing made for the pixels it covers (`IconPaths.Of(icon,
+  size, scale)`), or one for half as many, doubled, as at 200%, and picks again when its window moves to a display at
+  another scale (`DisplayScaleWatcher`). BriefBar has each icon at 16, 20 and 24, a checklist's at 12 and Copilot's
+  pulse at 32, in one style, regular or filled, at every size. Where Fluent has none, the nearest is scaled: the
+  pulse at 16, Branch Request at 24 and 12, the plan's, the clock's and the power icon's at 16 and 12, and the raised
+  hand at 12, as tests list. Not every drawing is whole: Fluent's Hourglass Half, filled, at 16 is only its sand, which
+  showed as a small triangle on a pull request whose checks were running. BriefBar has the regular one, and a test
+  checks that each drawing reaches across its square.
 - **A read-only SQLite connection to a database in WAL mode creates its `-wal` and `-shm` files** when they're
   gone, as when the Copilot app isn't running: `AppDatabase` opens such a database immutable instead, without locks.
   That holds only while the app leaves the file alone, so it checks the file's size and time, and that there's still

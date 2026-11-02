@@ -36,6 +36,25 @@ public sealed class SourceCatalogTests
         Assert.Equal(expected: Sections.GitHubPullRequests.Tint, actual: gitHub.Tint);
     }
 
+    /// Windows has every source the Mac has: none is still to come, and Settings says nothing about it.
+    [Fact]
+    public void HasNoSourceStillToCome()
+    {
+        Assert.Equal(expected: string.Empty, actual: SourceCatalog.StillToCome);
+        Assert.Null(@object: SourceCatalog.StillToComeNote);
+    }
+
+    [Fact]
+    public void SaysWhatsStillToComeInWords()
+    {
+        Assert.Equal(expected: "Microsoft Teams comes to BriefBar for Windows next.", actual: SourceCatalog.NoteOnStillToCome(names: ["Microsoft Teams"]));
+        Assert.Equal(
+            expected: "Azure DevOps and Microsoft Teams come to BriefBar for Windows one at a time.",
+            actual: SourceCatalog.NoteOnStillToCome(names: ["Azure DevOps", "Microsoft Teams"]));
+        // Once Windows has every source, Settings says nothing about it.
+        Assert.Null(@object: SourceCatalog.NoteOnStillToCome(names: []));
+    }
+
     [Fact]
     public void ListsNamesAsWindowsWritesThem()
     {
