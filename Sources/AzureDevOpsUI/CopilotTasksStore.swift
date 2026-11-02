@@ -528,9 +528,11 @@ final class CopilotTasksStore: ObservableObject {
                 let log = await monitor.log(id: run.id, events: events)
                 let output = output(of: run)
                 let needsLink = run.pullRequest == nil
+                let launchedAt = run.launchedAt
                 let found = await Task.detached { () -> (String?, URL?) in
                     let printed = LocalFile.tail(of: output, maxBytes: 8_192).map { String(decoding: $0, as: UTF8.self) }
-                    return (printed, needsLink ? RunTranscript.openedPullRequest(events: events, printed: printed) : nil)
+                    guard needsLink else { return (printed, nil) }
+                    return (printed, RunTranscript.openedPullRequest(events: events, printed: printed, since: launchedAt))
                 }.value
                 let status = RunStatus.derive(
                     log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],

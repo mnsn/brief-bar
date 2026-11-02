@@ -212,6 +212,28 @@ import Testing
         #expect(missing.summary == nil && missing.message == nil)
     }
 
+    /// Going on with a session, or forking one, the log has that session's history too: a link it gave before the run
+    /// started isn't to the pull request the run opened; one the run gave, or printed, is.
+    @Test func findsOnlyThePullRequestTheRunsOwnWordsName() throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let events = folder.appendingPathComponent("events.jsonl")
+        let link = { (id: Int) in "https://dev.azure.com/contoso/Storefront/_git/web/pullrequest/\(id)" }
+        let history = [Line.userMessage(), Line.taskComplete("Opened \(link(77))", at: 20), Line.message("It's \(link(77))", at: 21)]
+        try (history.joined(separator: "\n") + "\n").write(to: events, atomically: true, encoding: .utf8)
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        // With no start to go by, the whole log counts.
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil)?.absoluteString == link(77))
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil, since: startedAt) == nil)
+        #expect(RunTranscript.openedPullRequest(events: events, printed: "Opened \(link(78))\n", since: startedAt)?.absoluteString == link(78))
+        let own = [Line.event("session.resume", at: 61), Line.userMessage("Try it with a cap", at: 62), Line.message("It's \(link(79))", at: 90)]
+        let handle = try FileHandle(forWritingTo: events)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((own.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+        #expect(RunTranscript.openedPullRequest(events: events, printed: nil, since: startedAt)?.absoluteString == link(79))
+    }
+
     @Test func followsARunsLogAsItGrows() async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

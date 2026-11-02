@@ -337,8 +337,10 @@ actor AzureDevOpsReader {
                 // Turned off meanwhile, nothing more of Copilot's is read.
                 guard sendsToCopilot else { return nil }
                 let (events, output) = (run.events(in: home), run.output(in: CopilotTasksStore.outputFolder))
+                let launchedAt = run.launchedAt
                 run.pullRequest = await Task.detached {
-                    RunTranscript.openedPullRequest(events: events, printed: nil) ?? LocalFile.tail(of: output, maxBytes: 8_192)
+                    RunTranscript.openedPullRequest(events: events, printed: nil, since: launchedAt)
+                        ?? LocalFile.tail(of: output, maxBytes: 8_192)
                         .flatMap { RunTranscript.pullRequest(in: String(decoding: $0, as: UTF8.self)) }
                 }.value
             }

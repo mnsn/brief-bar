@@ -514,16 +514,18 @@ import Testing
         #expect(arguments.contains("shell(git push)"))
     }
 
-    /// The fork has the session's whole log, which ends with its task done. If Copilot then stops before it writes
-    /// anything, as when the CLI refuses its options, the task failed: it didn't finish as the session had.
+    /// The fork has the session's whole log, which ends with its task done, and the pull request it opened. If Copilot then
+    /// stops before it writes anything, as when the CLI refuses its options, the task failed: it didn't finish as the
+    /// session had, nor open that pull request.
     @Test(.timeLimit(.minutes(1)))
     func aForkWhoseCopilotStopsAtOnceFailedThoughTheSessionHadFinished() async throws {
         let repository = try await RepositoryFixture()
         defer { repository.remove() }
         let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment, ["FAKE_RUN": "fails"])
+        let opened = "https://dev.azure.com/contoso/Storefront/_git/checkout/pullrequest/4102"
         let history = try FileHandle(forWritingTo: fixture.sessionLog)
         try history.seekToEnd()
-        try history.write(contentsOf: Data((Line.taskComplete("Capped the retries", at: 20) + "\n").utf8))
+        try history.write(contentsOf: Data((Line.taskComplete("Capped the retries in \(opened)", at: 20) + "\n").utf8))
         try history.close()
         let request = CopilotLauncher.Request(
             subject: .workItem(sampleItem), prompt: "Try it with a cap", options: CopilotModel.quick, repository: repository.checkout,
@@ -546,6 +548,9 @@ import Testing
             log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatus, stoppedByYou: false, output: printed
         )
         #expect(status == RunStatus(phase: .failed, detail: "error: unknown option '--autopilot'"))
+        let events = run.events(in: fixture.home)
+        #expect(RunTranscript.openedPullRequest(events: events, printed: printed)?.absoluteString == opened)
+        #expect(RunTranscript.openedPullRequest(events: events, printed: printed, since: run.launchedAt) == nil)
     }
 
     @Test(.timeLimit(.minutes(1)))

@@ -204,10 +204,16 @@ public enum RunTranscript {
     }
 
     /// The pull request a run that ended opened: the last link to one in the summary it called the task done with, else in
-    /// its last message, else in what it printed.
-    public static func openedPullRequest(events: URL, printed: String?) -> URL? {
-        let words = lastWords(events: events)
-        return [words.summary, words.message, printed].compactMap { $0 }.lazy.compactMap { pullRequest(in: $0) }.first
+    /// its last message, else in what it printed. Going on with a session, or forking one, its log has that session's
+    /// history too: from `since` on (`CopilotRun.launchedAt`), only what Copilot said then counts, not a link the session
+    /// gave before. A link the run carries over from the one it went on with isn't looked for again.
+    public static func openedPullRequest(events: URL, printed: String?, since: Date? = nil) -> URL? {
+        let words = SessionTranscript.lastWords(events: events)
+        let said = [words.summary, words.message].compactMap { $0 }.filter { words in
+            guard let since else { return true }
+            return words.date.map { $0 >= since } ?? false
+        }
+        return (said.map(\.text) + [printed].compactMap { $0 }).lazy.compactMap { pullRequest(in: $0) }.first
     }
 
     /// The last link to a pull request in a text: Azure DevOps' (dev.azure.com or visualstudio.com) or GitHub's, to the

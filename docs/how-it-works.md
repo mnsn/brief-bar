@@ -1797,10 +1797,11 @@ last, and after an error. Once it's gone, and BriefBar has heard how it ended if
 and output are complete, and say how it went: done if Copilot called it done or exited cleanly, failed
 if Copilot reported an error or exited badly, and stopped otherwise. A task that went on with a session,
 or forked one, has that session's history in its log too, which doesn't count: one that stops before
-Copilot writes anything, as when the CLI refuses its options, failed, even if the session had finished
-(`CopilotRun.launchedAt`). The pull request is then the last link to one in Copilot's summary, its last
-message, or what it printed, and a notification says how it went; clicking it opens the pull request, or
-the work item.
+Copilot writes anything, as when the CLI refuses its options, failed, even if the session had finished,
+and didn't open the session's pull request (`CopilotRun.launchedAt`). The pull request is then the one
+the task it went on with had, or else the last link to one in what Copilot said since it started, in its
+summary or its last message, or in what it printed. A notification says how it went; clicking it opens
+the pull request, or the work item.
 
 **Showing it.** Nothing opens: Copilot works in a session of its own, which the Copilot app doesn't list.
 So as you send a task, while its worktree is still getting ready, a notification says Copilot is on it,

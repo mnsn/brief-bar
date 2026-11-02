@@ -302,6 +302,40 @@ import Testing
         store.stop()
     }
 
+    /// A task that forked a session, or went on with one, has that session's history in its log too. Gone before Copilot
+    /// wrote anything of its own, it failed, though the history ends with the task done, and it didn't open the pull
+    /// request the history names; a pull request it carried over from the task it went on with stays.
+    @Test func takesNeitherHowItWentNorItsPullRequestFromTheSessionsHistory() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarCopilotHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let opened = "https://dev.azure.com/contoso/Storefront/_git/shop-web/pullrequest/4102"
+        // Written the day before the tasks started.
+        let history = [
+            #"{"type":"user.message","data":{"content":"Fix the totals"},"id":"e1","timestamp":"2026-10-17T10:00:00.000Z","parentId":null}"#,
+            #"{"type":"session.task_complete","data":{"summary":"Opened \#(opened)","success":true},"id":"e2","timestamp":"2026-10-17T10:05:00.000Z","parentId":null}"#,
+        ].joined(separator: "\n") + "\n"
+        for id in [first, second] {
+            let folder = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try history.write(to: folder.appendingPathComponent("events.jsonl"), atomically: true, encoding: .utf8)
+        }
+        let settings = AppSettings(defaults: MemoryDefaults())
+        settings.copilotEnabled = true
+        var fork = run(first, startedAt: now)
+        fork.forkedFrom = third
+        var goneOn = run(second, startedAt: now)
+        goneOn.pullRequest = URL(string: opened)
+        settings.copilotRuns = [fork, goneOn]
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        store.useEnvironment(["COPILOT_HOME": home.path])
+        store.refresh()
+        try await settle { store.statuses.count == 2 }
+        #expect(store.statuses[first]?.phase == .failed)
+        #expect(store.statuses[second]?.phase == .failed)
+        #expect(settings.copilotRuns.map(\.ended) == [.failed, .failed])
+        #expect(settings.copilotRuns.map(\.pullRequest) == [nil, URL(string: opened)])
+    }
+
     /// The demo shows made-up sends of its own tasks, and never starts anything.
     @Test func theDemoSendsNothing() {
         let settings = AppSettings(defaults: MemoryDefaults())
