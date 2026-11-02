@@ -68,7 +68,7 @@ struct MenuPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if store.hasLoaded && store.items.isEmpty && store.problem?.needsSignIn != true {
+            if store.isAllQuiet {
                 QuietView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)

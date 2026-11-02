@@ -72,7 +72,8 @@ final class GitHubStore: ObservableObject {
         self.ticker = ticker
     }
 
-    /// Stops reading, and forgets what it read.
+    /// Stops reading, and forgets what it read. Cancelling the read under way stops a run of `gh` it waits for, so the
+    /// token that run would get reaches nothing (`GitHubCLITokenProvider.token()`).
     func stop() {
         generation += 1
         task?.cancel()
@@ -215,5 +216,12 @@ final class GitHubStore: ObservableObject {
 
     func items(in group: GitHubPRGroup) -> [GitHubPRSnapshot] {
         items.filter { $0.group == group }
+    }
+
+    /// Whether the list can say "All quiet": its last read worked, read every pull request there is and found none. Not
+    /// before a read has worked, nor while it says you're offline, GitHub can't be reached, some pull requests couldn't
+    /// be read or there are more than it reads.
+    var isAllQuiet: Bool {
+        hasLoaded && problem == nil && notice == nil && !moreThanShown && items.isEmpty
     }
 }
