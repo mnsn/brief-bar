@@ -17,7 +17,7 @@ struct PullRequestChecksSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageSectionHeader(title: "Builds and Checks", count: panel.checks.isEmpty ? nil : panel.checks.count)
-            if !panel.checksKnown {
+            if panel.checksUnknown {
                 Label("Its project doesn't let you read its policies, so BriefBar can't tell how its builds and checks stand.",
                       systemImage: "lock")
                     .font(size: 12)

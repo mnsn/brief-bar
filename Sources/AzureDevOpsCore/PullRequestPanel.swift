@@ -35,6 +35,9 @@ public struct PullRequestPanel: Sendable, Equatable {
     public var checks: [CheckLine]
     /// False when its project doesn't let you read its policies: then nobody can tell its builds and checks.
     public var checksKnown: Bool
+    /// Its details say nobody can tell its builds and checks: they can't, and there's nothing else to show, such as the
+    /// pipelines that ran after it merged.
+    public var checksUnknown: Bool { !checksKnown && checks.isEmpty }
     /// Who reviews it, the ones it requires first.
     public var reviewers: [ReviewerLine]
 

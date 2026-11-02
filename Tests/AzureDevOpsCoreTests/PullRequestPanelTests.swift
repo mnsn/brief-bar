@@ -191,6 +191,16 @@ import BriefBarCore
         #expect(!panel.hasDetails && panel.isClosed)
         #expect(panel.threads.isEmpty)
         #expect(panel.readiness == nil)
+
+        // As its details kept it from before it merged, when its project didn't let you read its policies: what ran
+        // after it shows all the same.
+        var kept = merged
+        kept.details = makeDetails(for: pr, checksKnown: false, lastActivity: t(-2 * hour))
+        let unreadable = try self.panel(kept)
+        #expect(!unreadable.checksKnown && unreadable.checks.map(\.buildId) == [77])
+        #expect(!unreadable.checksUnknown)
+        // Open, nobody can tell its builds and checks.
+        #expect(try self.panel(record(makePR(), checksKnown: false)).checksUnknown)
     }
 
     // MARK: Reviewers
