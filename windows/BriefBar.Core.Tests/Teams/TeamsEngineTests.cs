@@ -159,6 +159,29 @@ public sealed class TeamsEngineTests
         Assert.False(condition: snapshot.IsComplete);
     }
 
+    /// A conversation record whose key can't be read may be a chat's: it counts as unreadable, whether Teams writes it as
+    /// BriefBar watches or it's read from scratch, so the read isn't complete.
+    [Fact]
+    public async Task CountsConversationKeysItCantReadAsUnreadable()
+    {
+        using var folder = new TemporaryFolder();
+        var (location, log) = MadeUp(folder: folder);
+        byte[] unreadableKey = [.. IndexedDBKeys.Prefix(database: TeamsData.ConversationsDatabase, objectStore: TeamsData.Store, index: 1), 9];
+        var collector = new TeamsCollector();
+        using var engine = new TeamsEngine(location: location, onChange: collector.Add, reloadDelay: quickly);
+        engine.Start();
+        Assert.True(condition: collector.Latest!.IsComplete);
+
+        TeamsData.Append(path: log, LogWriter.Batch(sequence: 100, (unreadableKey, V8Writer.Record(body: writer => writer.Flag(value: true)))));
+        var written = await collector.Until(what: "the record Teams wrote", predicate: snapshot => snapshot.Report.Unreadable.Count > 0);
+        Assert.Equal(expected: new Dictionary<string, int> { ["unreadable key"] = 1 }, actual: written.Report.Unreadable);
+        Assert.False(condition: written.IsComplete);
+
+        var fromScratch = TeamsEngine.LoadOnce(location: location);
+        Assert.Equal(expected: new Dictionary<string, int> { ["unreadable key"] = 1 }, actual: fromScratch.Report.Unreadable);
+        Assert.False(condition: fromScratch.IsComplete);
+    }
+
     /// A folder that can't be listed may hold Teams' data. With others that could be read, some of Teams' data couldn't
     /// be; alone, reading Teams' data failed, which isn't Teams' data changing, and a panel opening reads it all again.
     /// Either way, the read isn't complete.
