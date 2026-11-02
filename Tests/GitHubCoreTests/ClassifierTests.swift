@@ -67,6 +67,19 @@ import Testing
         #expect(approved.detail == "By lee")
     }
 
+    /// A deleted account's review has no reviewer, and still counts: it's named with no one.
+    @Test func withoutADecisionADeletedAccountsReviewCounts() {
+        let changes = classify(Fixture.make(reviews: [.init(reviewer: nil, state: .changesRequested), .init(reviewer: "lee", state: .approved)]))
+        #expect(changes.group == .changesRequested)
+        #expect(changes.detail == nil)
+        #expect(changes.briefSentence == "Changes are requested on “Pull request 1”.")
+        let approved = classify(Fixture.make(reviews: [.init(reviewer: nil, state: .approved)]))
+        #expect(approved.group == .ready)
+        #expect(approved.detail == nil)
+        let named = classify(Fixture.make(reviews: [.init(reviewer: nil, state: .changesRequested), .init(reviewer: "sam", state: .changesRequested)]))
+        #expect(named.detail == "By sam")
+    }
+
     /// GitHub's decision wins over individual reviews: an approval after changes were requested, say.
     @Test func theDecisionWinsOverReviews() {
         let snapshot = classify(Fixture.make(decision: .approved, reviews: [.init(reviewer: "sam", state: .changesRequested)]))

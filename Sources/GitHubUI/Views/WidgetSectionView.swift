@@ -58,7 +58,7 @@ struct WidgetSectionView: View {
                     .help(problem.message)
             }
             Spacer()
-            if store.hasLoaded && store.problem?.needsSignIn != true && store.counts.total == 0 {
+            if store.isAllQuiet {
                 Text("All quiet")
                     .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
@@ -81,8 +81,14 @@ struct WidgetSectionView: View {
                 }
             }
             .padding(.horizontal, 14)
-        } else if store.hasLoaded {
+        } else if store.isAllQuiet {
             QuietView()
+        } else if let notice = store.notice {
+            // Nothing listed, as some pull requests couldn't be read: why, rather than that it's quiet.
+            Label(notice, systemImage: "info.circle")
+                .font(size: 11)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
         }
     }
 

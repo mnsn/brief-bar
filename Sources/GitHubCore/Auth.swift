@@ -1,5 +1,6 @@
 import BriefBarCore
 import Foundation
+import Synchronization
 
 /// A token for GitHub, from the GitHub CLI's sign-in. It's kept in memory only.
 public struct GitHubToken: Sendable, Equatable {
@@ -50,7 +51,7 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
     private let now: @Sendable () -> Date
     private var executable: URL?
     private var cached: GitHubToken?
-    private var pending: Task<GitHubToken, Error>?
+    private var pending: SharedRun?
 
     public init(
         locator: GitHubCLILocator = GitHubCLILocator(), runner: any ProcessRunning = ProcessRunner(),
@@ -61,14 +62,27 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
         self.now = now
     }
 
+    /// The token, from memory or a run of `gh`. A caller that gives up, as a read does when GitHub is turned off, gets no
+    /// token: not from memory, nor from the run it waits for, which stops once no caller waits for it, and keeps nothing.
     public func token() async throws -> GitHubToken {
+        try Task.checkCancellation()
         if let cached, now().timeIntervalSince(cached.fetchedAt) < Self.lifetime { return cached }
         // Callers asking at the same time share one `gh` run.
-        if let pending { return try await pending.value }
-        let task = Task { try await self.fetch() }
-        pending = task
-        defer { pending = nil }
-        let token = try await task.value
+        let run: SharedRun
+        if let pending, pending.join() {
+            run = pending
+        } else {
+            run = SharedRun(Task { try await self.fetch() })
+            pending = run
+        }
+        let result = await withTaskCancellationHandler {
+            await run.task.result
+        } onCancel: {
+            run.leave()
+        }
+        if pending === run { pending = nil }
+        try Task.checkCancellation()
+        let token = try result.get()
         cached = token
         return token
     }
@@ -90,6 +104,9 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
             result = try await runner.run(
                 executable, arguments: ["auth", "token", "--hostname", Self.host], environment: Self.environment(), timeout: 30
             )
+        } catch let error as CancellationError {
+            // Stopped, as no caller waits for it anymore: `gh` is where it was.
+            throw error
         } catch {
             // It may have been uninstalled or moved: look again next time.
             self.executable = nil
@@ -99,6 +116,42 @@ public actor GitHubCLITokenProvider: GitHubTokenProviding {
             throw Self.error(fromOutput: String(decoding: result.stderr, as: UTF8.self))
         }
         return try Self.parseToken(result.stdout, now: now())
+    }
+
+    /// A run of `gh` that callers asking at the same time share. Each caller that gives up leaves it, and the last to
+    /// leave stops it.
+    private final class SharedRun: Sendable {
+        private struct Callers {
+            var waiting = 1
+            var stopped = false
+        }
+
+        let task: Task<GitHubToken, Error>
+        private let callers = Mutex(Callers())
+
+        /// Waited for by the caller that starts it.
+        init(_ task: Task<GitHubToken, Error>) {
+            self.task = task
+        }
+
+        /// Another caller waits for it too, unless it's stopped.
+        func join() -> Bool {
+            callers.withLock { callers in
+                guard !callers.stopped else { return false }
+                callers.waiting += 1
+                return true
+            }
+        }
+
+        /// A caller gave up: once none waits for it, it stops.
+        func leave() {
+            let isLast = callers.withLock { callers in
+                callers.waiting -= 1
+                callers.stopped = callers.waiting == 0
+                return callers.stopped
+            }
+            if isLast { task.cancel() }
+        }
     }
 
     /// A Mac app doesn't get the shell's PATH, so add the usual places; and keep `gh` from prompting, checking for
