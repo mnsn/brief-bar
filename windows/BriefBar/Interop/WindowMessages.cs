@@ -30,6 +30,9 @@ internal static class WindowMessages
     /// `WM_SETTINGCHANGE`'s: the work area changed, as when a display or a docked bar comes or goes.
     public const int SPI_SETWORKAREA = 0x002F;
 
+    /// `WM_SETTINGCHANGE`'s words when Windows' colors change: its mode, the apps', the accent or High Contrast.
+    public const string ImmersiveColorSet = "ImmersiveColorSet";
+
     /// `WM_SYSCOMMAND`'s: close the window, as Alt+F4 asks. Its low four bits are Windows' own.
     public const int SC_CLOSE = 0xF060;
     public const int SC_MASK = 0xFFF0;

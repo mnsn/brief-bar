@@ -23,7 +23,7 @@
                     VerticalAlignment="Center"
                     Fill="{x:Bind ViewModel.OnTileBrush, Mode=OneWay}"
                     Icon="{x:Bind ViewModel.Glyph}"
-                    Size="26" />
+                    Size="24" />
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                 <TextBlock
