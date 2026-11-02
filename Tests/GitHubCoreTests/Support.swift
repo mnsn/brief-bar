@@ -229,10 +229,12 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         }
         let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
         if let target = reply.redirect {
-            // URLSession asks the task's delegate whether to follow it, and if so, loads it as a new request.
+            // As Apple's CustomHTTPProtocol sample does: report the redirect, then end this load. URLSession asks the
+            // task's delegate, then loads the new request with another instance, or ends the task.
             var redirected = URLRequest(url: target)
             redirected.allHTTPHeaderFields = request.allHTTPHeaderFields
             client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+            client?.urlProtocol(self, didFailWithError: CocoaError(.userCancelled))
             return
         }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

@@ -383,6 +383,9 @@ extension Locked where Value == Int {
         let source = ADOEndpoint.connectionData(organization: "contoso")
         #expect(RedirectGuard.follows(from: source, to: URL(string: "https://dev.azure.com/contoso/_apis/connectionData?again")))
         #expect(RedirectGuard.follows(from: ADOEndpoint.profile, to: URL(string: "https://app.vssps.visualstudio.com/_apis/profile/profiles/me")))
+        // HTTPS's own port, named or not, is the same port.
+        #expect(RedirectGuard.follows(from: source, to: URL(string: "https://dev.azure.com:443/contoso/_apis/connectionData")))
+        #expect(RedirectGuard.follows(from: URL(string: "https://dev.azure.com:443/contoso/_apis/connectionData"), to: source))
         for target in [
             "https://contoso.visualstudio.com/_apis/connectionData", "https://elsewhere.example/contoso/_apis/connectionData",
             "http://dev.azure.com/contoso/_apis/connectionData", "https://dev.azure.com:8443/contoso/_apis/connectionData",

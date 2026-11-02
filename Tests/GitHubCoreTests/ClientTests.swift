@@ -310,6 +310,9 @@ import Testing
         let endpoint = GitHubClient.endpoint
         #expect(RedirectGuard.follows(from: endpoint, to: URL(string: "https://api.github.com/graphql?again")))
         #expect(RedirectGuard.follows(from: endpoint, to: URL(string: "https://API.GitHub.com/graphql")))
+        // HTTPS's own port, named or not, is the same port.
+        #expect(RedirectGuard.follows(from: endpoint, to: URL(string: "https://api.github.com:443/graphql")))
+        #expect(RedirectGuard.follows(from: URL(string: "https://api.github.com:443/graphql"), to: endpoint))
         for target in [
             "https://elsewhere.example/graphql", "https://api.github.com.elsewhere.example/graphql", "http://api.github.com/graphql",
             "https://api.github.com:8443/graphql",

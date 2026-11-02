@@ -89,9 +89,10 @@ public struct ADOClient: Sendable {
             let (data, response): (Data, URLResponse)
             do {
                 (data, response) = try await session.data(for: Self.request(url, token: token.value), delegate: redirects)
-            } catch let error as URLError {
-                throw Self.map(error)
             } catch {
+                // A refused redirect ends the request, however URLSession ends it.
+                if redirects.refused { throw ADOError.redirected }
+                if let error = error as? URLError { throw Self.map(error) }
                 throw ADOError.network(error.localizedDescription)
             }
             if redirects.refused {
@@ -223,7 +224,17 @@ final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
         guard let source, let target, target.scheme?.lowercased() == "https", let host = target.host?.lowercased() else {
             return false
         }
-        return host == source.host?.lowercased() && target.port == source.port
+        return host == source.host?.lowercased() && port(target) == port(source)
+    }
+
+    /// The port `url` connects to: the one it names, or else its scheme's.
+    private static func port(_ url: URL) -> Int? {
+        if let port = url.port { return port }
+        switch url.scheme?.lowercased() {
+        case "https": return 443
+        case "http": return 80
+        default: return nil
+        }
     }
 }
 
