@@ -2,6 +2,7 @@ using BriefBar.Core;
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.GitHub;
+using BriefBar.Core.Teams;
 
 namespace BriefBar.ViewModels;
 
@@ -12,11 +13,18 @@ public sealed class SettingsViewModel
 
     /// `findOrganizations` asks Azure DevOps to look for your organizations again.
     public SettingsViewModel(
-        SourceSwitch sources, AzureDevOpsSettings azureDevOps, CopilotSettings copilot, GitHubSettings gitHub, ThemePalette palette, Action findOrganizations)
+        SourceSwitch sources,
+        TeamsSettings teams,
+        AzureDevOpsSettings azureDevOps,
+        CopilotSettings copilot,
+        GitHubSettings gitHub,
+        ThemePalette palette,
+        Action findOrganizations)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);
         this.sources = sources;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
+        Teams = new TeamsSettingsViewModel(settings: teams);
         AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
         Copilot = new CopilotSettingsViewModel(settings: copilot);
         GitHub = new GitHubSettingsViewModel(settings: gitHub);
@@ -24,6 +32,8 @@ public sealed class SettingsViewModel
     }
 
     public IReadOnlyList<SourceSettingsViewModel> Sources { get; }
+
+    public TeamsSettingsViewModel Teams { get; }
 
     public AzureDevOpsSettingsViewModel AzureDevOps { get; }
 
@@ -34,8 +44,6 @@ public sealed class SettingsViewModel
     public static string Intro =>
         "Every source is off until you turn it on. Each one first says what it reads, where it connects and what it needs, "
         + "and turning it on is your consent: BriefBar never turns a source on by itself.";
-
-    public static string StillToCome => SourceCatalog.StillToCome + " come to BriefBar for Windows one at a time.";
 
     /// Whether each source is on, as it stands now.
     public void Refresh()

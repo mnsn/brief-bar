@@ -1,6 +1,8 @@
 # Checks BriefBar for Windows end to end with made-up data, through UI Automation: a bar at the top of each display,
 # with the work area below it; its items named in words; the Overview's panel, its groups and rows; Ctrl+1, Ctrl+2,
 # Ctrl+Tab and Ctrl+Shift+Tab in the panel; the same item on another display's bar, right after a press on this one;
+# Teams' two panels, from its made-up chats, with the Mac's groups, Recent folded, Mark all read, chats that open and
+# read, and its page in Settings, whose Show message previews off has chats say how many messages are unread;
 # Copilot's panel, from its made-up sessions, with the Mac's groups, Idle folded, Clear and rows that open; Settings,
 # with Copilot's page and its settings, closing the panel as it comes to the front; Azure DevOps' panel, from its
 # made-up pull requests, with the Mac's groups, Mark as seen, Answered seen once the panel closes, sorting by date and
@@ -386,6 +388,71 @@ function Test-GitHub($process, $bar) {
     Check ($chosen -eq 'Every 2 minutes') "which reads every 2 minutes, as it starts ($chosen)"
 }
 
+# Opens one of Teams' panels under `$bar` by its item, `$item` ("Teams chats"), and returns its list, `$title` ("Chats").
+function Open-Teams($bar, [string] $item, [string] $title) {
+    Invoke-Item (Get-Button $bar "${item}: *")
+    Wait-Until { $list = Get-PanelList $bar; if ($list -and $list.Current.Name -eq $title) { $list } } 5
+}
+
+# Teams' panels, from its made-up chats (`TeamsDemoData`) as Teams' own data would have them: each lists its unread chats,
+# the newest first, with how many messages each has unread, then Recent, folded, as the Mac does; Mark all read reads
+# them all; a chat that opens closing the panel, and read from then on; then its page in Settings, whose Show message
+# previews off has a chat say how many messages are unread instead of what they say.
+function Test-Teams($process, $bar) {
+    Check ($null -ne (Get-Button $bar 'Teams chats: 2 need you.*')) "Teams chats' item counts its made-up unread chats"
+    Check ($null -ne (Get-Button $bar 'Teams group chats: 2 need you.*')) "and Teams group chats' its unread group and meeting chats"
+    # Past the 600 ms in which a press counts as the one that closed the panel, should one have.
+    Start-Sleep -Milliseconds 700
+    $list = Open-Teams $bar 'Teams chats' 'Chats'
+    Check ($null -ne $list) "pressing it opens Teams' chats"
+    if (-not $list) { return }
+    $groups = Get-AllGroupNames $list
+    Check (($groups -join ' | ') -eq 'Unread: 2 | Recent: 1') "its groups are the Mac's, in its order ($($groups -join ', '))"
+    Check ($null -ne (Get-Button $bar 'Open Teams')) 'its foot opens Teams'
+    $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
+    Check ($null -ne $row -and $row.Current.Name -like 'Avery Quinn, I moved the deck to the shared folder. 2 unread messages, *') "its newest unread chat comes first, with its newest message and how many are unread ($(if ($row) { $row.Current.Name -replace ',.*$', '' }))"
+    $recentRows = { @(@($list.FindAll($Scope::Children, (Condition $A::NameProperty 'Recent: 1')))[0].FindAll($Scope::Children, (Condition $A::ControlTypeProperty $Type::ListItem))).Count }
+    Check ($null -ne (Get-Button $list 'Show recent, 1') -and (& $recentRows) -eq 0) 'its recent chats start folded'
+    $markAll = Get-Button $list 'Mark all read'
+    if ($markAll) { Invoke-Item $markAll }
+    $read = Wait-Until { $names = Get-AllGroupNames $list; if (($names -join ' | ') -eq 'Recent: 3') { $names } } 5
+    Check ($null -ne $read -and $null -ne $list.FindFirst($Scope::Descendants, (Condition $A::NameProperty 'No unread chats'))) 'Mark all read reads them all'
+    Check ($null -ne (Get-Button $bar 'Teams chats: nothing new.*')) 'and the bar stops counting them'
+
+    # A chat that opens, from the group chats' panel: read from then on.
+    Start-Sleep -Milliseconds 700
+    $list = Open-Teams $bar 'Teams group chats' 'Group chats'
+    Check ($null -ne $list) "pressing Teams group chats' item opens them"
+    if (-not $list) { return }
+    $row = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem))
+    Check ($null -ne $row -and $row.Current.Name -like 'Launch crew & Design, Jordan Lee: Shipping at 5 unless someone objects. 3 unread messages, *') 'a group chat says who wrote its newest message'
+    if ($row) { Invoke-Item $row }
+    Check ($null -ne (Wait-Until { if (-not (Get-PanelList $bar)) { $true } } 3)) 'pressing a chat closes the panel, as it opens it in Teams'
+    Check ($null -ne (Wait-Until { Get-Button $bar 'Teams group chats: 1 need you.*' } 3)) 'and reads it'
+
+    # Settings, from the panel's foot, at Teams' page.
+    Start-Sleep -Milliseconds 700
+    $list = Open-Teams $bar 'Teams group chats' 'Group chats'
+    if ($list) { Invoke-Item (Get-Button $bar 'Settings') }
+    $settings = Wait-Until { $A::RootElement.FindFirst($Scope::Children, [System.Windows.Automation.AndCondition]::new(
+                (Condition $A::ProcessIdProperty $process.Id), (Condition $A::NameProperty 'BriefBar Settings'))) } 5
+    $title = if ($settings) { Wait-Until { $found = $settings.FindFirst($Scope::Descendants, (Condition $A::AutomationIdProperty 'PageTitle')); if ($found -and $found.Current.Name -eq 'Microsoft Teams') { $found } } 3 }
+    Check ($null -ne $title) "its Settings button opens Settings at Teams' page"
+    if (-not $title) { return }
+    $keep = $settings.FindFirst($Scope::Descendants, [System.Windows.Automation.AndCondition]::new(
+            (Condition $A::ControlTypeProperty $Type::ComboBox), (Condition $A::NameProperty 'Keep unread for')))
+    $chosen = if ($keep) { $keep.GetCurrentPattern([System.Windows.Automation.SelectionPattern]::Pattern).Current.GetSelection() | ForEach-Object { $_.Current.Name } }
+    Check ($chosen -eq '1 day') "which keeps messages unread for a day, as it starts ($chosen)"
+    $toggle = Get-Button $settings 'Show message previews'
+    $state = if ($toggle) { $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) }
+    Check ($null -ne $state -and $state.Current.ToggleState -eq 'On') 'and shows message previews'
+    if (-not $state) { return }
+    $state.Toggle()
+    $list = Open-Teams $bar 'Teams group chats' 'Group chats'
+    $counted = Wait-Until { if ($list) { $found = $list.FindFirst($Scope::Descendants, (Condition $A::ControlTypeProperty $Type::ListItem)); if ($found -and $found.Current.Name -like 'Weekly sync, 1 new message, 1 unread message, *') { $found } } } 5
+    Check ($null -ne $counted) 'Show message previews off has a chat say how many messages are unread, not what they say'
+}
+
 # Asks BriefBar to quit with `$ask`, and checks that every display's work area is back within a second, and that it
 # ends within three, without an error: an unexpected error gives the space back too, and ends with 1.
 function Test-Quit($process, $before, [scriptblock] $ask, [string] $how) {
@@ -498,6 +565,7 @@ function Test-Running($process, $before) {
         Write-Host 'skip  the same item on another display (one display)'
     }
 
+    Test-Teams -process $process -bar $first
     Test-Copilot -process $process -bar $first
     Test-AzureDevOps -process $process -bar $first
     Test-GitHub -process $process -bar $first

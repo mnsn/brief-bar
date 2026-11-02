@@ -1,12 +1,21 @@
 using BriefBar.Core.AzureDevOps;
 using BriefBar.Core.Copilot;
 using BriefBar.Core.GitHub;
+using BriefBar.Core.Teams;
 
 namespace BriefBar.Core;
 
-/// The sources BriefBar for Windows has so far, in the Mac's order: they arrive one at a time.
+/// The sources BriefBar for Windows has, in the Mac's order.
 public static class SourceCatalog
 {
+    public static SourceEntry Teams { get; } = new(
+        Id: SourceId.Teams,
+        Name: SourceIds.DisplayName(source: SourceId.Teams),
+        Glyph: IconKey.People,
+        Tint: Sections.TeamsChats.Tint,
+        Description: TeamsSource.Description,
+        Sections: [Sections.TeamsChats, Sections.TeamsGroupChats]);
+
     public static SourceEntry AzureDevOps { get; } = new(
         Id: SourceId.AzureDevOps,
         Name: SourceIds.DisplayName(source: SourceId.AzureDevOps),
@@ -31,12 +40,5 @@ public static class SourceCatalog
         Description: GitHubSource.Description,
         Sections: [Sections.GitHubPullRequests]);
 
-    public static IReadOnlyList<SourceEntry> OnWindows { get; } = [AzureDevOps, Copilot, GitHub];
-
-    /// The sources the Mac has that Windows doesn't yet, by name: "Azure DevOps, GitHub, and Microsoft Teams".
-    public static string StillToCome => ListWords.Join(names: Enum.GetValues<SourceId>()
-        .Where(predicate: source => !OnWindows.Any(predicate: entry => entry.Id == source))
-        .Select(selector: source => SourceIds.DisplayName(source: source))
-        .Order(comparer: StringComparer.Ordinal)
-        .ToList());
+    public static IReadOnlyList<SourceEntry> OnWindows { get; } = [Teams, AzureDevOps, Copilot, GitHub];
 }
