@@ -5,6 +5,14 @@
     xmlns:views="using:BriefBar.Views"
     xmlns:vm="using:BriefBar.ViewModels">
 
+    <!-- The bar's words, labels and quietest words: Windows' colors where they read on what's behind them, and as
+         little lighter in dark (darker in light) as it takes where they don't (`ThemePalette.Words`, `UsePalette`). -->
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="BarWordsBrush" Color="Black" />
+        <SolidColorBrush x:Key="BarSecondaryWordsBrush" Color="Black" />
+        <SolidColorBrush x:Key="BarTertiaryWordsBrush" Color="Black" />
+    </UserControl.Resources>
+
     <!-- The bar: on the left, the Overview's item, which says what needs you in words; on the right, an item per
          section. A press on the empty space between them closes the panel. -->
     <Grid
@@ -12,7 +20,7 @@
         Padding="2,0,2,0"
         AutomationProperties.LandmarkType="Navigation"
         AutomationProperties.Name="BriefBar"
-        Background="Transparent"
+        Background="{ThemeResource BarAndPanelBackgroundBrush}"
         PointerPressed="OnRootPressed">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
@@ -41,7 +49,7 @@
                     Height="{x:Bind ViewModel.Overview.IconSize, Mode=OneWay}"
                     VerticalAlignment="Center"
                     DoneBrush="{x:Bind ViewModel.Overview.MarkDoneBrush, Mode=OneWay}"
-                    LineBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                    LineBrush="{StaticResource BarWordsBrush}"
                     NeedsYouBrush="{x:Bind ViewModel.Overview.MarkNeedsYouBrush, Mode=OneWay}"
                     RunningBrush="{x:Bind ViewModel.Overview.MarkRunningBrush, Mode=OneWay}" />
                 <ItemsControl
@@ -60,7 +68,7 @@
                                     Margin="4,0,4,0"
                                     VerticalAlignment="Center"
                                     FontSize="13"
-                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Foreground="{StaticResource BarTertiaryWordsBrush}"
                                     Text="·"
                                     Visibility="{x:Bind ShowsSeparator, Mode=OneWay}" />
                                 <TextBlock
@@ -72,7 +80,7 @@
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     FontSize="13"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Foreground="{StaticResource BarSecondaryWordsBrush}"
                                     Text="{x:Bind Words, Mode=OneWay}" />
                             </StackPanel>
                         </DataTemplate>
@@ -81,7 +89,7 @@
                 <TextBlock
                     VerticalAlignment="Center"
                     FontSize="13"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Foreground="{StaticResource BarSecondaryWordsBrush}"
                     Text="{x:Bind ViewModel.Overview.EmptyText, Mode=OneWay}"
                     Visibility="{x:Bind ViewModel.Overview.ShowsEmptyText, Mode=OneWay}" />
             </StackPanel>
@@ -116,12 +124,12 @@
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontSize="13"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Foreground="{StaticResource BarSecondaryWordsBrush}"
                                 Text="{x:Bind Label, Mode=OneWay}" />
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontSize="13"
-                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Foreground="{StaticResource BarTertiaryWordsBrush}"
                                 Text="…"
                                 Visibility="{x:Bind ShowsStarting, Mode=OneWay}" />
                             <ItemsControl
@@ -149,7 +157,7 @@
                                                 VerticalAlignment="Center"
                                                 FontSize="14"
                                                 FontWeight="SemiBold"
-                                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                Foreground="{StaticResource BarWordsBrush}"
                                                 Text="{x:Bind Count, Mode=OneWay}" />
                                         </StackPanel>
                                     </DataTemplate>

@@ -11,7 +11,10 @@
 
     <!-- The panel under an item: its header, with a menu that sorts its list where it can be sorted, a banner when its
          section can't show everything, then its brief and its groups of rows, and a footer. -->
-    <Grid x:Name="Root" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid
+        x:Name="Root"
+        Background="{ThemeResource BarAndPanelBackgroundBrush}"
+        KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -302,13 +305,19 @@
             </ListView.ItemContainerStyle>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:RowViewModel">
-                    <!-- The row names itself (AutomationName); the grid only lays it out, so Narrator says it once. -->
+                    <!-- The row names itself (AutomationName), so Narrator says it once: the grid only lays it out, and
+                         its words are drawn only, not read again one by one. Its tag stays a button of its own. -->
                     <Grid
                         Margin="{x:Bind Indent, Mode=OneWay}"
                         AutomationProperties.AccessibilityView="Raw"
                         AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
                         ColumnSpacing="10"
                         ToolTipService.ToolTip="{x:Bind ToolTip, Mode=OneWay}">
+                        <Grid.Resources>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
+                            </Style>
+                        </Grid.Resources>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="32" />
@@ -410,8 +419,10 @@
                                                     Fill="{x:Bind Foreground}"
                                                     Icon="{x:Bind Icon}"
                                                     Size="12" />
+                                                <!-- Raw, as the row's words are: the row's style doesn't reach this template. -->
                                                 <TextBlock
                                                     VerticalAlignment="Center"
+                                                    AutomationProperties.AccessibilityView="Raw"
                                                     FontSize="12"
                                                     FontWeight="SemiBold"
                                                     Foreground="{x:Bind Foreground}"
@@ -455,8 +466,10 @@
                                                 Fill="{x:Bind IconBrush}"
                                                 Icon="{x:Bind Icon}"
                                                 Size="12" />
+                                            <!-- Raw, as the row's words are: the row's style doesn't reach this template. -->
                                             <TextBlock
                                                 Grid.Column="1"
+                                                AutomationProperties.AccessibilityView="Raw"
                                                 FontSize="13"
                                                 Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                                 Text="{x:Bind Label}"
@@ -464,6 +477,7 @@
                                                 Visibility="{x:Bind IsNotQuiet}" />
                                             <TextBlock
                                                 Grid.Column="1"
+                                                AutomationProperties.AccessibilityView="Raw"
                                                 FontSize="13"
                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                 Text="{x:Bind Label}"
