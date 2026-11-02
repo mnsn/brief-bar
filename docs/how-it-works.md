@@ -1454,7 +1454,9 @@ are. A work item that can't be read says why, with **Sign In…** when that's th
 can't be read leave the rest. Its long text fields come as HTML, or as Markdown for those switched to
 it (`multilineFieldsFormat`), and its comments as HTML too (`renderedText`). BriefBar draws them
 itself (`RichText`, `RichTextView`), without a web view: headings, lists and task lists, quotes, code,
-tables, links and their styles. Scripts and styles are left out, only links to web pages and email
+tables, links and their styles. HTML in Markdown shows as Azure DevOps shows it, outside code: an HTML
+comment shows nothing, a line break or the end of a paragraph breaks the line, and the other tags that
+format text keep their text. Scripts and styles are left out, only links to web pages and email
 addresses open (in your browser), and an image is a link to it, never loaded. What's read stays in
 memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but for
 the details on screen, which stay while they show; it shows again without being read for a minute.
