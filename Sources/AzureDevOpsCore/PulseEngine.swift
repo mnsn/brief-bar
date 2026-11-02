@@ -329,6 +329,9 @@ public actor PulseEngine {
     private var linked: [PRKey: (listed: Listed, readAt: Date)] = [:]
     /// Linked pull requests read as closed, or gone or forbidden.
     private var closedLinks: Set<PRKey> = []
+    /// The organizations that couldn't be read at the last refresh for want of a sign-in to their directory, by lowercased
+    /// name: what's listed from them stays as it was read, and nothing more is asked of them until you've signed in there.
+    private var waitingOnSignIn: Set<String> = []
     private var active: [PRKey: Listed] = [:]
     private var done: [PRKey: PullRequest] = [:]
     private var details: [PRKey: PRDetails] = [:]
@@ -577,20 +580,27 @@ public actor PulseEngine {
         completed = completed.filter { watched.contains($0.key.organization.lowercased()) }
         vanished = vanished.filter { watched.contains($0.key.organization.lowercased()) }
         firstLoaded = firstLoaded.filter { watched.contains($0.key.lowercased()) }
-        let (linkedElsewhere, linkedRead) = await addLinked(to: &listed, at: startedAt)
+        let (linkedElsewhere, linkedRead, linkedThrottled) = await addLinked(to: &listed, at: startedAt)
         active = listed
         done = completed.filter { listed[$0.key] == nil && ($0.value.closedAt ?? .distantPast) > closedSince }
         details = details.filter { listed[$0.key] != nil }
         entries = entries.filter { listed[$0.key] != nil }
+        waitingOnSignIn = Self.folded((errors + linkedElsewhere).filter { PulseProblem.isOtherDirectory($0.error) }.map { $0.organization })
 
-        // Details for every pull request without them (all of them on the first load), and a budget of others.
-        let candidates = listed.values.map {
-            RefreshPlanner.Candidate(key: $0.pullRequest.key, fingerprint: $0.pullRequest.fingerprint)
-        }
+        // Details for every pull request without them (all of them on the first load), and a budget of others: but for
+        // the ones in organizations waiting on a sign-in, which stay as they were read.
+        let candidates = listed.values
+            .filter { !waitingOnSignIn.contains($0.pullRequest.key.organization.lowercased()) }
+            .map { RefreshPlanner.Candidate(key: $0.pullRequest.key, fingerprint: $0.pullRequest.fingerprint) }
         let keys = RefreshPlanner.plan(
             candidates, cache: entries, now: startedAt, options: configuration.planner, limit: configuration.planner.budget
         )
-        var throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        // Asked to slow down already, reading an organization's lists or a pull request sent to you: nothing more goes
+        // out until then, and that's what's said.
+        var throttled = slowDown?.error ?? linkedThrottled
+        if throttled == nil {
+            throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
+        }
         if throttled == nil {
             throttled = await readBuildFailures(at: startedAt, interval: configuration.interval)
         }
@@ -624,10 +634,11 @@ public actor PulseEngine {
     /// refresh. A link that spells an organization in other letters is to the pull request in your lists: `PRKey` ignores
     /// their case, as Azure DevOps does. One in an organization in a directory the Azure CLI isn't signed in to is read at
     /// the next refresh, with the others there, rather than an hour later, since signing in there is what reads it:
-    /// those organizations are returned, to say so, with how many pull requests were read.
+    /// those organizations are returned, to say so, with how many pull requests were read, and the error if Azure DevOps
+    /// asked to slow down.
     private func addLinked(
         to listed: inout [PRKey: Listed], at date: Date
-    ) async -> (elsewhere: [(organization: String, error: ADOError)], read: Int) {
+    ) async -> (elsewhere: [(organization: String, error: ADOError)], read: Int, throttled: ADOError?) {
         let wanted = linkedKeys.filter { listed[$0] == nil }
         linked = linked.filter { wanted.contains($0.key) }
         let due = wanted
@@ -635,6 +646,7 @@ public actor PulseEngine {
             .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
         var elsewhere: [(organization: String, error: ADOError)] = []
         var fetched = 0
+        var throttled: ADOError?
         // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others:
         // each such organization is tried once a refresh, and the rest of its pull requests wait with it.
         var reads = 0
@@ -664,8 +676,9 @@ public actor PulseEngine {
                 closedLinks.remove(key)
                 let role: PRRole = pr.author.id == me ? .author : pr.reviewer(me) != nil ? .reviewer : .linked
                 linked[key] = (Listed(pullRequest: pr, role: role), date)
-            } catch ADOError.throttled {
+            } catch ADOError.throttled(let seconds) {
                 // Not a failure of this pull request's: nothing more goes out until then, so the rest wait too.
+                throttled = .throttled(retryAfter: seconds)
                 break
             } catch ADOError.otherDirectory(let organization, let tenant) {
                 // Not this pull request's failure either: it stays as it was last read, until you sign in there. Nor is it
@@ -686,7 +699,7 @@ public actor PulseEngine {
             }
         }
         for (key, read) in linked { listed[key] = read.listed }
-        return (elsewhere, fetched)
+        return (elsewhere, fetched, throttled)
     }
 
     /// Without organizations to watch or pull requests sent to you, there's nothing to read, or to list.
@@ -803,6 +816,8 @@ public actor PulseEngine {
         buildAttempts = buildAttempts.filter { wanted.contains($0.key) }
         let due = wanted
             .filter { build in
+                // An organization waiting on a sign-in is asked nothing more.
+                guard !waitingOnSignIn.contains(build.organization.lowercased()) else { return false }
                 guard !buildsRead.contains(build) else { return false }
                 guard let tried = buildAttempts[build], tried.failures > 1 else { return true }
                 return date.timeIntervalSince(tried.last) >= min(interval * pow(2, Double(tried.failures - 2)), 1_800)
@@ -849,6 +864,7 @@ public actor PulseEngine {
         let interval = configuration.interval
         let due = merged
             .filter { pr in
+                guard !waitingOnSignIn.contains(pr.key.organization.lowercased()) else { return false }
                 let follow = merges[pr.key] ?? MergeFollow()
                 guard let mergedAt = pr.closedAt,
                       MergeChain.isFollowing(mergedAt: mergedAt, runs: follow.latestRuns, at: date)
@@ -908,7 +924,7 @@ public actor PulseEngine {
     /// read first, then the ones read longest ago.
     private func readMergeTimelines(at date: Date) async -> ADOError? {
         var due: [(key: PRKey, found: MergeFollow.Found, lastRead: Date?)] = []
-        for (key, follow) in merges {
+        for (key, follow) in merges where !waitingOnSignIn.contains(key.organization.lowercased()) {
             for (pipeline, runs) in follow.byPipeline {
                 guard let run = runs.first, run.status != .queued else { continue }
                 let read = follow.timelines[run.id]

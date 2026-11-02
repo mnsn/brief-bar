@@ -1051,23 +1051,26 @@ directory your Azure CLI isn't signed in to", with **Sign In…**, which opens T
 account without Azure subscriptions. Until then, each refresh asks Azure DevOps once, with a token from your
 directory, which directory the organization is in, so a move is noticed too. The other organizations'
 pull requests stay listed and counted, as when any of them can't be read, and once the CLI is signed in
-there, the organization is read with the rest. An organization in such a directory says so, whatever else
-failed reading it. A pull request you watch, or that was sent to you, in such an organization says the
-same, and is read at the next refresh once you've signed in, rather than an hour later; such
-organizations don't take the ten reads a refresh gives those pull requests, each being tried once a
-refresh. When every organization you watch is in such a directory, the pull requests sent to you from
-others are still read. The Sprint and Pipelines sections, the Add Pipelines sheet and a work item's
-details say the same, and the sheet offers **Try Again** to search again once you've signed in. A team
-you chose shows its sprint even while the teams of the organizations you watch wait on such a sign-in;
-a team BriefBar finds for you then is shown, but kept only once it's been compared with theirs: it's
-looked for again as each of their directories is signed in to. A team whose sprint can't be read for
-want of such a sign-in counts among them. The command line and agents, which have no button, say what
-to run; an agent's work item, asked for by its number alone, is looked for in your other organizations
-too, and such an organization is named only when none of them has it. A directory's ID is never shown
-otherwise. The log names none of these organizations, nor the others that couldn't be read with them,
-and says only how many are in such a directory: a pull request sent to you comes from a chat. While
-nothing could be read but such organizations, BriefBar looks again every minute, as it does while the
-CLI is signed out.
+there, the organization is read with the rest. Until then, what's listed from it stays as it was read: its
+pull requests' details, builds and merges aren't asked for. An organization in such a directory says so,
+whatever else failed reading it, but Azure DevOps asking BriefBar to slow down comes first. A pull
+request you watch, or that was sent to you, in such an organization says the same, and is read at the
+next refresh once you've signed in, rather than an hour later; such organizations don't take the ten
+reads a refresh gives those pull requests, each being tried once a refresh. When every organization you
+watch is in such a directory, the pull requests sent to you from others are still read. The Sprint and
+Pipelines sections, the Add Pipelines sheet and a work item's details say the same, and the sheet
+offers **Try Again** to search again once you've signed in. A team you chose shows its sprint even while
+the teams of the organizations you watch wait on such a sign-in, and the Sprint names them with any other
+organizations whose teams couldn't be read; a team BriefBar finds for you then is shown, but kept only
+once it's been compared with theirs: it's looked for again as each of their directories is signed in
+to, or as its own needs a sign-in. A team whose sprint can't be read for want of such a sign-in counts
+among them, and doesn't take the turn of another. The command line and agents, which have no button,
+say what to run; an agent's work item, asked for by its number alone, is looked for in your other
+organizations too, and such an organization is named only when none of them has it. A directory's ID is
+never shown otherwise. The log names none of these organizations, nor the others that couldn't be read
+with them, and says only how many are in such a directory: a pull request sent to you comes from a chat.
+While nothing could be read but such organizations, BriefBar looks again every minute, as it does while
+the CLI is signed out.
 
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another

@@ -85,6 +85,9 @@ public actor SprintEngine {
     /// The organizations whose teams couldn't be read, in a directory the Azure CLI isn't signed in to: the sprint can't
     /// be looked for there until you sign in.
     private var teamsElsewhere: [(organization: String, error: ADOError)] = []
+    /// The organizations whose teams couldn't be read otherwise at the last refresh, and why: said with those in a
+    /// directory to sign in to.
+    private var teamsFailed: [(organization: String, error: ADOError)] = []
     private var foundTeam: TeamRef?
     /// The organizations whose teams were in a directory to sign in to when `foundTeam` was found, by lowercased name:
     /// while there are any, it's shown, but not kept, and it's looked for again among them all once one can be read.
@@ -287,8 +290,9 @@ public actor SprintEngine {
         let date = now()
         try await loadTeams(configuration.organizations, at: date, choosing: configuration.team == nil)
         let chosen = try await chosenTeam(configuration, at: date)
-        // Shown with the sprint, or without one: its team may be there.
-        let elsewhere = PulseProblem.organizations(teamsElsewhere)
+        // Shown with the sprint, or without one: its team may be there. The organizations whose teams couldn't be read
+        // otherwise are named with them.
+        let elsewhere = teamsElsewhere.isEmpty ? nil : PulseProblem.organizations(teamsElsewhere + teamsFailed)
         guard let team = chosen else {
             board = nil
             // No team's sprint could be read, for want of a sign-in to their directory: as when no teams could be, it's
@@ -341,6 +345,8 @@ public actor SprintEngine {
                 switch error {
                 case .forbidden, .notFound: teams[organization] = ([], date)
                 case .otherDirectory: elsewhere.append((organization: organization, error: error))
+                // Nothing more goes out until then: that comes first, before any sign-in.
+                case .throttled: throw error
                 default:
                     lastError = error
                     failed.append((organization: organization, error: error))
@@ -348,6 +354,7 @@ public actor SprintEngine {
             }
         }
         teamsElsewhere = elsewhere
+        teamsFailed = failed
         guard choosing, allTeams.isEmpty else { return }
         // With no teams at all, signing in to a directory is what to do first: each organization it's needed for is
         // named, then why the others couldn't be read.
@@ -368,13 +375,21 @@ public actor SprintEngine {
     /// work assigned to you (once: the app keeps it, when it was found among all your teams).
     private func chosenTeam(_ configuration: Configuration, at date: Date) async throws -> TeamRef? {
         if let team = configuration.team { return team }
-        // Found while some organizations' teams couldn't be read: once one of them can be, it's looked for among them all.
-        if let foundTeam, foundWithout.isSubset(of: Self.names(teamsElsewhere)) { return foundTeam }
+        // Found while some organizations' teams couldn't be read: once one of them can be, it's looked for among them all;
+        // and so it is once its own organization's teams wait on a sign-in.
+        if let foundTeam, foundWithout.isSubset(of: Self.names(teamsElsewhere)),
+           !Self.names(teamsElsewhere).contains(foundTeam.organization.lowercased()) {
+            return foundTeam
+        }
         // Checked recently and none had a sprint today: wait a while before checking them all again.
         if let checkedTeams, date.timeIntervalSince(checkedTeams) < Self.sprintLifetime { return nil }
         var candidates: [(team: TeamRef, sprint: Sprint)] = []
         var incomplete = false
-        for team in allTeams.prefix(Self.teamsToTry) where !Self.names(teamsElsewhere).contains(team.organization.lowercased()) {
+        // A few teams at most, not counting those of organizations waiting on a sign-in, which aren't asked.
+        var tried = 0
+        for team in allTeams where !Self.names(teamsElsewhere).contains(team.organization.lowercased()) {
+            guard tried < Self.teamsToTry else { break }
+            tried += 1
             do {
                 if let sprint = try await currentSprint(of: team, at: date), sprint.isCurrent(now: date, calendar: calendar) {
                     candidates.append((team, sprint))
@@ -402,8 +417,15 @@ public actor SprintEngine {
             return foundTeam
         }
         var best: (team: TeamRef, mine: Int)?
-        for candidate in candidates {
-            let mine = try await assignedToMe(in: candidate.sprint, of: candidate.team)
+        for candidate in candidates where !Self.names(teamsElsewhere).contains(candidate.team.organization.lowercased()) {
+            let mine: Int
+            do {
+                mine = try await assignedToMe(in: candidate.sprint, of: candidate.team)
+            } catch let error as ADOError where PulseProblem.isOtherDirectory(error) {
+                // Its sprint was known, but its organization is in a directory to sign in to now: the others are compared.
+                waitForSignIn(to: candidate.team.organization, error)
+                continue
+            }
             if mine > (best?.mine ?? -1) { best = (candidate.team, mine) }
         }
         foundTeam = best?.team
@@ -455,6 +477,7 @@ public actor SprintEngine {
         identities = [:]
         teams = [:]
         teamsElsewhere = []
+        teamsFailed = []
         foundTeam = nil
         checkedTeams = nil
         sprints = [:]
