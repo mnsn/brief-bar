@@ -105,35 +105,45 @@ import Testing
     }
 
     /// Turning GitHub off cancels the read waiting for a token: the run of `gh` under way stops, and what it would have
-    /// printed reaches nothing, not even the next read.
-    @Test func aCallerThatGivesUpStopsTheRunItWaitsFor() async throws {
-        let runner = FakeRunner([.output("gho_late"), .output("gho_next")], delays: [.seconds(30)])
+    /// printed reaches nothing, not even the next read. The run goes on until it's stopped, however slow the machine.
+    @Test(.timeLimit(.minutes(1)))
+    func aCallerThatGivesUpStopsTheRunItWaitsFor() async throws {
+        let runner = FakeRunner([.output("gho_late"), .output("gho_next")], held: true)
         let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
 
         let reading = Task { try await provider.token() }
-        for _ in 0..<500 where runner.calls.isEmpty {
+        while runner.calls.isEmpty {
             try await Task.sleep(for: .milliseconds(10))
         }
         reading.cancel()
+        // Until the run stops: if it never did, the time limit would end the test here.
+        while runner.stopped == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         await #expect(throws: CancellationError.self) { try await reading.value }
         #expect(runner.stopped == 1)
+        runner.release()
         #expect(try await provider.token().value == "gho_next")
         #expect(runner.calls.count == 2)
     }
 
-    /// A caller that gives up gets no token, but the run goes on for another that still waits for it.
-    @Test func aRunGoesOnForTheCallersStillWaiting() async throws {
-        let runner = FakeRunner([.output("gho_shared")], delay: .milliseconds(300))
+    /// A caller that gives up gets no token, but the run goes on for another that still waits for it. The run lasts until
+    /// the test lets it end, once the caller has given up, however slow the machine.
+    @Test(.timeLimit(.minutes(1)))
+    func aRunGoesOnForTheCallersStillWaiting() async throws {
+        let runner = FakeRunner([.output("gho_shared")], held: true)
         let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
 
         let staying = Task { try await provider.token() }
-        for _ in 0..<500 where runner.calls.isEmpty {
+        while runner.calls.isEmpty {
             try await Task.sleep(for: .milliseconds(10))
         }
         let leaving = Task { try await provider.token() }
+        // Time to join the run; joined or not, it gives up while the run goes on.
         try await Task.sleep(for: .milliseconds(50))
         leaving.cancel()
+        runner.release()
 
         await #expect(throws: CancellationError.self) { try await leaving.value }
         #expect(try await staying.value.value == "gho_shared")
