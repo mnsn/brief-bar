@@ -595,9 +595,12 @@ public actor PulseEngine {
         let keys = RefreshPlanner.plan(
             candidates, cache: entries, now: startedAt, options: configuration.planner, limit: configuration.planner.budget
         )
-        // Asked to slow down already, reading an organization's lists or a pull request sent to you: nothing more goes
-        // out until then, and that's what's said.
+        // Asked to slow down already, reading an organization's lists, a pull request that left them or one sent to you:
+        // nothing more goes out until then, and that's what's said.
         var throttled = slowDown?.error ?? linkedThrottled
+        if throttled == nil, let wait = await client.gate.remainingWait() {
+            throttled = .throttled(retryAfter: wait)
+        }
         if throttled == nil {
             throttled = await fetchDetails(keys.compactMap { listed[$0]?.pullRequest }, configuration: configuration)
         }

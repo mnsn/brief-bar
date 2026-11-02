@@ -635,6 +635,8 @@ private struct AddPipelineSheet: View {
     @LocalState private var error: String?
     /// When signing in fixes it, in an organization's directory or to the Azure CLI: a way to.
     @LocalState private var signInProblem: PulseProblem?
+    /// When some organizations' projects couldn't be listed for want of a sign-in to their directory.
+    @LocalState private var projectsProblem: PulseProblem?
     @LocalState private var pending: Task<Void, Never>?
 
     var body: some View {
@@ -716,17 +718,39 @@ private struct AddPipelineSheet: View {
                         Button(signInProblem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: signInProblem) }
                             .buttonStyle(.borderedProminent)
                     }
-                    // Once signed in there, or back online, the same search again.
-                    Button("Try Again") { search(after: 0) }
+                    // Once signed in there, or back online, the projects and the same search again.
+                    Button("Try Again") {
+                        Task {
+                            await loadProjects()
+                            search(after: 0)
+                        }
+                    }
                 }
                 .controlSize(.small)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if project == nil && link == nil {
-            Text("Choose a project to search in.")
-                .font(style: .body)
-                .foregroundStyle(.secondary)
+            if let projectsProblem {
+                // No project to choose from, as some organizations' projects wait on a sign-in to their directory.
+                VStack(spacing: 10) {
+                    Label(projectsProblem.message, systemImage: "exclamationmark.triangle")
+                        .font(style: .body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button("Sign In…") { store.signIn(for: projectsProblem) }
+                            .buttonStyle(.borderedProminent)
+                        Button("Try Again") { Task { await loadProjects() } }
+                    }
+                    .controlSize(.small)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("Choose a project to search in.")
+                    .font(style: .body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else if results.isEmpty && !isSearching {
             Text(link != nil ? "No pipeline at that link." : noResults)
                 .font(style: .body)
@@ -754,7 +778,8 @@ private struct AddPipelineSheet: View {
     private func loadProjects() async {
         suggested = pipelines.suggestedProjects(pullRequests: store.items, teams: sprint.teams)
         if project == nil { project = suggested.first }
-        let all = await pipelines.allProjects()
+        let (all, problem) = await pipelines.allProjects()
+        projectsProblem = problem
         others = all.filter { candidate in
             !suggested.contains { $0.organization == candidate.organization && $0.name.caseInsensitiveCompare(candidate.name) == .orderedSame }
         }

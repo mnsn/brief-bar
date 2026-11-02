@@ -300,9 +300,23 @@ public actor SprintEngine {
             if allTeams.isEmpty, let elsewhere { throw TeamsUnread(problem: elsewhere) }
             return elsewhere
         }
+        do {
+            try await readBoard(of: team, at: date)
+        } catch let error as ADOError where elsewhere != nil {
+            // The team's sprint couldn't be read: said with the organizations whose teams wait on a sign-in, rather than in
+            // their stead, unless Azure DevOps asked to slow down, which comes first.
+            if case .throttled = error { throw error }
+            let unread = teamsElsewhere + teamsFailed + [(organization: team.organization, error: error)]
+            throw TeamsUnread(problem: PulseProblem.organizations(unread) ?? PulseProblem.from(error))
+        }
+        return elsewhere
+    }
+
+    /// Reads the team's sprint going on today, with its work items, for the board; without one, there's no board.
+    private func readBoard(of team: TeamRef, at date: Date) async throws {
         guard let sprint = try await currentSprint(of: team, at: date) else {
             board = nil
-            return elsewhere
+            return
         }
         let me = try await identity(in: team.organization)
         let setup = try await boardSetup(of: team)
@@ -323,9 +337,8 @@ public actor SprintEngine {
             items += list.value.map { WorkItem(organization: team.organization, project: team.projectName, $0, categories: setup.categories) }
         }
         // The team may have changed while this loaded.
-        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return elsewhere }
+        guard self.configuration.team == nil || self.configuration.team?.id == team.id else { return }
         board = SprintBoard.build(team: team, sprint: sprint, me: me, relations: relations, items: items, taskTypes: setup.taskTypes)
-        return elsewhere
     }
 
     /// Your teams in each organization, read again every few hours. An organization that can't be read keeps the
@@ -375,10 +388,12 @@ public actor SprintEngine {
     /// work assigned to you (once: the app keeps it, when it was found among all your teams).
     private func chosenTeam(_ configuration: Configuration, at date: Date) async throws -> TeamRef? {
         if let team = configuration.team { return team }
-        // Found while some organizations' teams couldn't be read: once one of them can be, it's looked for among them all;
-        // and so it is once its own organization's teams wait on a sign-in.
-        if let foundTeam, foundWithout.isSubset(of: Self.names(teamsElsewhere)),
-           !Self.names(teamsElsewhere).contains(foundTeam.organization.lowercased()) {
+        let missing = missingTeams()
+        // Found while some organizations' teams couldn't be compared with it: once one of theirs is read, it's looked for
+        // among them all, and so it is once its own organization's teams wait on a sign-in. Those that go missing
+        // meanwhile count too.
+        if let foundTeam, foundWithout.isSubset(of: missing), !Self.names(teamsElsewhere).contains(foundTeam.organization.lowercased()) {
+            if !foundWithout.isEmpty { foundWithout = missing }
             return foundTeam
         }
         // Checked recently and none had a sprint today: wait a while before checking them all again.
@@ -410,7 +425,7 @@ public actor SprintEngine {
         }
         guard candidates.count > 1 else {
             foundTeam = candidates.first?.team
-            foundWithout = Self.names(teamsElsewhere)
+            foundWithout = missingTeams()
             // None has a sprint today: don't look again for a while, unless some couldn't be read, or some organizations'
             // teams are in a directory to sign in to.
             if foundTeam == nil && !incomplete && teamsElsewhere.isEmpty { checkedTeams = date }
@@ -429,8 +444,16 @@ public actor SprintEngine {
             if mine > (best?.mine ?? -1) { best = (candidate.team, mine) }
         }
         foundTeam = best?.team
-        foundWithout = Self.names(teamsElsewhere)
+        foundWithout = missingTeams()
         return foundTeam
+    }
+
+    /// The organizations whose teams can't be compared now, by lowercased name, among those watched: the ones waiting
+    /// on a sign-in, and the ones missing when the team was found whose teams haven't been read since.
+    private func missingTeams() -> Set<String> {
+        let read = Set(teams.keys.map { $0.lowercased() })
+        let watched = Set(configuration.organizations.map { $0.lowercased() })
+        return Self.names(teamsElsewhere).union(foundWithout.subtracting(read)).intersection(watched)
     }
 
     /// An organization whose team's sprint can't be read for want of a sign-in to its directory: its teams are
@@ -479,6 +502,7 @@ public actor SprintEngine {
         teamsElsewhere = []
         teamsFailed = []
         foundTeam = nil
+        foundWithout = []
         checkedTeams = nil
         sprints = [:]
         board = nil

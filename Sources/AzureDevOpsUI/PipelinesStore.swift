@@ -204,15 +204,24 @@ final class PipelinesStore: ObservableObject {
     }
 
     /// Every project in the organizations you watch.
-    func allProjects() async -> [ProjectRef] {
+    /// Every project in your organizations, to search in; and when some organizations' projects couldn't be read for want
+    /// of a sign-in to their directory, what's wrong, with a way to sign in. Other failures leave theirs out, as before.
+    func allProjects() async -> (projects: [ProjectRef], problem: PulseProblem?) {
         if mode == .demo {
-            return [ProjectRef(organization: DemoData.organization, id: DemoData.team.projectId, name: DemoData.team.projectName)]
+            return ([ProjectRef(organization: DemoData.organization, id: DemoData.team.projectId, name: DemoData.team.projectName)], nil)
         }
         var projects: [ProjectRef] = []
+        var elsewhere: [(organization: String, error: ADOError)] = []
         for organization in settings.organizations {
-            projects += (try? await PipelineSearch.projects(organization: organization, client: client)) ?? []
+            do {
+                projects += try await PipelineSearch.projects(organization: organization, client: client)
+            } catch let error as ADOError where PulseProblem.isOtherDirectory(error) {
+                elsewhere.append((organization: organization, error: error))
+            } catch {
+                continue
+            }
         }
-        return projects
+        return (projects, PulseProblem.organizations(elsewhere))
     }
 
     /// A project's pipelines whose names contain `text`, after the one with that number when `text` is a number.

@@ -610,6 +610,32 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(details.isEmpty)
     }
 
+    @Test func askingToSlowDownLookingUpAPullRequestThatLeftYourListsComesFirstToo() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.serveOrganization()
+        let gone = Locked(false)
+        server.on("/contoso/_apis/git/pullrequests", query: ["searchCriteria.creatorId": Fixture.me, "searchCriteria.status": "active"]) { _ in
+            .json(Fixture.list(gone.value ? [] : [Fixture.pullRequest(1, title: "Yours")]))
+        }
+        server.on("/contoso/_apis/git/pullrequests/1") { _ in .status(429, headers: ["Retry-After": "120"]) }
+        server.put("fabrikam", in: Tenants.other)
+        let engine = PulseEngine(
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [Fixture.org, "fabrikam"])
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().records.map(\.id) == [PRKey(Fixture.org, 1)])
+
+        // Your pull request leaves your lists, and looking it up is asked to wait: that comes first, over fabrikam's
+        // directory, though nothing else is read after it.
+        gone.set(true)
+        await engine.refreshNow()
+        let problem = await engine.currentSnapshot().problem
+        var throttled = false
+        if case .throttled? = problem { throttled = true }
+        #expect(throttled)
+    }
+
     @Test func pullRequestsSentToYouThatCantBeReadAgainAreLookedAtWithinAMinute() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
@@ -686,6 +712,20 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(none.problem == .otherDirectory(
             organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read contoso (Azure DevOps answered with HTTP 500.)."
         ))
+    }
+
+    @Test func anOrganizationInAnotherDirectoryIsAskedOnceARefreshForItsPinnedPipelines() async throws {
+        let server = StubServer()
+        let web = PipelineRef(organization: "fabrikam", projectId: "p1", projectName: "Shop", definitionId: 31, name: "web CI")
+        let api = PipelineRef(organization: "fabrikam", projectId: "p2", projectName: "Other", definitionId: 40, name: "api CI")
+        server.put("fabrikam", in: Tenants.other)
+        let snapshot = await PipelinesEngine.loadOnce(
+            client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home)),
+            configuration: PipelinesEngine.Configuration(pipelines: [web, api])
+        )
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        // Its first project's pipelines say where it is; its other project's aren't asked for, this refresh.
+        #expect(server.requests.count == 1)
     }
 
     @Test func theSprintSaysWhichOrganizationsTeamsAreInAnotherDirectory() async throws {
@@ -898,6 +938,87 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem == .otherDirectory(
             organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read northwind (Azure DevOps answered with HTTP 500.)."
         ))
+    }
+
+    @Test func theSprintSaysWhyItsTeamCouldntBeReadWithADirectoryToSignInTo() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        WorkFixture.serve(server)
+        server.on("/iterations/i1/workitems") { _ in .status(500) }
+        server.put("fabrikam", in: Tenants.other)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        // Signing in to fabrikam's directory is still offered, with why your team's sprint couldn't be read.
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(
+            organizations: ["fabrikam"], tenant: Tenants.other, others: "Couldn't read contoso (Azure DevOps answered with HTTP 500.)."
+        ))
+    }
+
+    @Test func aTeamFoundWhileSomeTeamsWaitOnASignInStaysUnkeptUntilTheirTeamsAreRead() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        WorkFixture.serve(server, relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")])
+        server.on("/fabrikam/_apis/teams") { _ in .status(500) }
+        server.put("fabrikam", in: Tenants.other)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens), configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"]),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().foundTeam == nil)
+
+        // Signed in to fabrikam's directory, its teams can't be read for another reason: they still haven't been compared.
+        await tokens.signIn(to: Tenants.other)
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == WorkFixture.team.id)
+        #expect(snapshot.foundTeam == nil)
+    }
+
+    @Test func aTeamFoundWhileSomeTeamsWaitOnASignInIsComparedAgainWhenAnotherDirectoryComesBack() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.third)
+        let shipping = TeamRef(organization: "northwind", projectId: "p8", projectName: "Ship", id: "t8", name: "Ship Team")
+        // northwind's team has no sprint at first. (Before the fixture's routes, so its work items' route comes first.)
+        let hasSprint = Locked(false)
+        server.on("/t8/_apis/work/teamsettings/iterations") { _ in
+            .json(Fixture.list(hasSprint.value ? [WorkFixture.iteration("i8", name: "Sprint 8")] : []))
+        }
+        WorkFixture.serve(
+            server, relations: ["i1": WorkFixture.relations([1]), "i8": WorkFixture.relations([5])],
+            items: [WorkFixture.workItem(1, "User Story"), WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        server.on("/northwind/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/northwind/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(shipping)]))
+        server.put("fabrikam", in: Tenants.other)
+        server.put("northwind", in: Tenants.third)
+        let clock = Locked(t(0))
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam", "northwind"]),
+            now: { clock.value }, calendar: WorkFixture.utc
+        ) { _ in }
+        // contoso's team is found while fabrikam's teams wait on a sign-in.
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().board?.team.id == WorkFixture.team.id)
+
+        // Hours later, northwind's directory wants a sign-in too; signed in there again later, its team has a sprint with
+        // your work, and it's compared, though fabrikam's teams still wait.
+        await tokens.signOut(of: Tenants.third)
+        clock.set(t(SprintEngine.teamsLifetime + 60))
+        await engine.refreshNow()
+        await tokens.signIn(to: Tenants.third)
+        hasSprint.set(true)
+        clock.set(t(2 * SprintEngine.teamsLifetime + 120))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == shipping.id)
+        #expect(snapshot.foundTeam == nil)
     }
 
     @Test func aTeamFoundWhoseOrganizationThenWaitsOnASignInIsntShownForAnother() async throws {

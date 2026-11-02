@@ -169,3 +169,22 @@ import Testing
         #expect(announced.value == 2)
     }
 }
+
+/// The projects the Add Pipelines sheet searches in, as the app reads them: those of an organization in a directory to
+/// sign in to are said to be missing, with a way to sign in there.
+@MainActor
+@Suite struct PipelineProjectsTests {
+    @Test func saysWhichOrganizationsProjectsWaitOnASignIn() async {
+        let server = StubServer()
+        server.on("/contoso/_apis/projects", json: Fixture.list([["id": "p1", "name": "Shop"]]))
+        server.put("fabrikam", in: Tenants.other)
+        let defaults = MemoryDefaults()
+        defaults.set([Fixture.org, "fabrikam"], forKey: SettingsKey.organizations)
+        let pipelines = PipelinesStore(
+            settings: AppSettings(defaults: defaults), mode: .live, client: server.client(tokens: FakeTokens(server.id, tenant: Tenants.home))
+        )
+        let (projects, problem) = await pipelines.allProjects()
+        #expect(projects.map(\.name) == ["Shop"])
+        #expect(problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+}
