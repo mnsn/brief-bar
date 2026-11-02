@@ -3,8 +3,8 @@ namespace BriefBar.Core;
 /// Where a redirect from Azure DevOps or GitHub would send a request. Neither client follows one (`ADOClient`,
 /// `GitHubClient`), as .NET's own handlers do by default, to any host: each source's description names the hosts it
 /// connects to, and a redirect would send the request wherever it said, with its body for a 307 or a 308. Neither needs
-/// one, as Azure DevOps and GitHub answer each request BriefBar sends where it sends it, so one to another host is refused
-/// in words that name it.
+/// one, as Azure DevOps and GitHub answer each request BriefBar sends where it sends it, so one to another host is refused,
+/// in words that don't name it, as the Mac's: a host can carry an organization's name.
 internal static class Redirects
 {
     /// The host `location`, a redirect's, sends a request for `requested` to, when it's another host, in ASCII, as a name

@@ -4,12 +4,16 @@ using BriefBar.Core.AzureDevOps;
 namespace BriefBar.Core.Tests.AzureDevOps;
 
 /// A made-up Azure DevOps: answers requests from routes, the latest added first, and 404 for anything else, and keeps every
-/// request it got. As the Swift tests' `StubServer`, which `ADOClient`s reach through a handler of their own.
+/// request it got. An organization can be in a directory (`Put`): then a request for it with a token from another one gets
+/// 401, naming its directory, as Azure DevOps answers. As the Swift tests' `StubServer`, which `ADOClient`s reach through a
+/// handler of their own.
 internal sealed class StubServer
 {
     readonly Lock gate = new();
     readonly List<Func<StubRequest, StubReply?>> routes = [];
     readonly List<StubRequest> requests = [];
+    /// Organizations in a directory, by name, ignoring case.
+    readonly Dictionary<string, string> directories = new(comparer: StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<StubRequest> Requests
     {
@@ -72,15 +76,32 @@ internal sealed class StubServer
         On(path: "/threads", json: Fixture.List(items: []));
     }
 
+    /// Puts `organization` in the directory `tenant`: a request for it with a token from another one gets 401, naming its
+    /// directory in `X-VSS-ResourceTenant`, as Azure DevOps answers, whatever its routes say.
+    public void Put(string organization, string tenant)
+    {
+        lock (gate)
+        {
+            directories[organization] = tenant;
+        }
+    }
+
     /// Notes `request`, with its `body`, and answers it.
     internal StubReply Handle(HttpRequestMessage request, byte[]? body)
     {
         var noted = StubRequest.Of(request: request, body: body);
         List<Func<StubRequest, StubReply?>> current;
+        string? directory;
         lock (gate)
         {
             requests.Add(item: noted);
             current = [.. routes];
+            var organization = noted.Path.Split(separator: '/', options: StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            directory = organization is null ? null : directories.GetValueOrDefault(key: organization);
+        }
+        if (directory is not null && noted.Tenant != directory)
+        {
+            return StubReply.Code(status: 401, headers: new Dictionary<string, string> { ["X-VSS-ResourceTenant"] = directory });
         }
         foreach (var route in current)
         {
