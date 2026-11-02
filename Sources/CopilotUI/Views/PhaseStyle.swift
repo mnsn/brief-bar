@@ -55,6 +55,7 @@ extension StatusReason {
         case .working: return "bolt.circle.fill"
         case .starting: return "hourglass.circle.fill"
         case .relayed: return "arrowshape.turn.up.left.circle.fill"
+        case .waitingForChildren: return "person.2.wave.2.fill"
         case .finished: return "checkmark.circle.fill"
         case .interrupted: return "stop.circle.fill"
         case .failed: return "xmark.octagon.fill"
@@ -66,7 +67,7 @@ extension StatusReason {
     var color: Color {
         switch self {
         case .question, .planApproval, .permission: return .orange
-        case .working, .starting, .relayed: return .blue
+        case .working, .starting, .relayed, .waitingForChildren: return .blue
         case .finished: return .green
         case .interrupted: return .gray
         case .failed: return .red
@@ -79,7 +80,11 @@ extension StatusReason {
 extension SessionSnapshot {
     /// Symbol and tint for a row; idle rows keep their last state's symbol, greyed out.
     var rowSymbol: String { reason.symbol }
-    var rowColor: Color { phase == .idle ? .secondary : reason.color }
+    var rowColor: Color {
+        guard phase != .idle else { return .secondary }
+        if reason == .waitingForChildren { return phase == .needsYou ? .orange : .blue }
+        return reason.color
+    }
 
     var subtitle: String {
         var parts = [headline]
