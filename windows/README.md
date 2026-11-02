@@ -18,9 +18,9 @@ BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64\BriefBar.exe --demo
 
 Without `--demo`, the bar says **No source is on** until you turn one on: right-click the bar and choose
 **Settings**, or press **Open Settings** in the Overview. Settings, and what you turned on, are saved in
-`%LOCALAPPDATA%\BriefBar\Settings.json`; with `--demo`, nothing is saved. The first build downloads the Windows
-App SDK from NuGet, about 300 MB. It ships inside the app, so there's nothing else to install. Add
-`--runtime win-arm64` to build for Arm64.
+`%LOCALAPPDATA%\BriefBar\Settings.json`; with `--demo`, nothing is saved. The first build downloads the parts of the
+Windows App SDK that BriefBar uses from NuGet, about 120 MB. They ship inside the app, so there's nothing else to
+install. Add `--runtime win-arm64` to build for Arm64.
 
 To quit, right-click the bar and choose **Quit BriefBar**, use **More** (…) at the bottom of any panel, press
 **Quit** in Settings, or run `scripts\quit.ps1`. Quit before you build again, since the build replaces the running
