@@ -126,19 +126,19 @@ public enum FileText: Sendable, Equatable {
     public static let limit = 1 << 20
 
     /// From a file's bytes, as many as were read: text in UTF-8, or UTF-16 with its byte order mark, or else in Windows'
-    /// Latin alphabet. A NUL byte in its first 8,000, as Git tells, makes it binary.
+    /// Latin alphabet. A NUL byte in its first 8,000, as Git tells, makes it binary, unless it's UTF-16's.
     init(_ bytes: Data, isComplete: Bool) {
         guard isComplete else {
             self = .tooLarge
             return
         }
         let utf8BOM: [UInt8] = [0xEF, 0xBB, 0xBF]
-        if bytes.starts(with: utf8BOM) {
-            self = String(data: bytes.dropFirst(utf8BOM.count), encoding: .utf8).map(FileText.text) ?? .binary
-        } else if bytes.starts(with: [0xFF, 0xFE]) || bytes.starts(with: [0xFE, 0xFF]) {
+        if bytes.starts(with: [0xFF, 0xFE]) || bytes.starts(with: [0xFE, 0xFF]) {
             self = String(data: bytes, encoding: .utf16).map(FileText.text) ?? .binary
         } else if bytes.prefix(8_000).contains(0) {
             self = .binary
+        } else if bytes.starts(with: utf8BOM) {
+            self = String(data: bytes.dropFirst(utf8BOM.count), encoding: .utf8).map(FileText.text) ?? .binary
         } else {
             let text = String(data: bytes, encoding: .utf8) ?? String(data: bytes, encoding: .windowsCP1252)
                 ?? String(data: bytes, encoding: .isoLatin1)
@@ -272,10 +272,13 @@ actor RequestLimiter {
 /// Reads the code a pull request's comment threads are on, for its panel: a thread's when asked for it, and only what
 /// that needs, a few requests at a time. What it reads is read once, however many threads need it: files by their
 /// object IDs, or their paths at commits, which never change. It never reads by itself, or again on a schedule: the
-/// pull request's iterations are read again only for a push it hadn't seen, or a thread made on an iteration it hadn't.
-/// A read that every thread waiting on it gave up on is called off. One reader for the pull request a panel shows:
-/// given another, it starts over.
+/// pull request's iterations are read again only for a push it hadn't seen, a move to another target branch, or a thread
+/// made on an iteration it hadn't.
+/// A read that every thread waiting on it gave up on is called off. One reader for each pull request: asked about
+/// another, it says so.
 public actor PullRequestCode {
+    /// The pull request it reads.
+    public nonisolated let key: PRKey
     private let source: any CodeSource
     private let requests: RequestLimiter
     private let fileLimit: Int
@@ -291,8 +294,6 @@ public actor PullRequestCode {
     /// The files it keeps, first read first, and how big they are.
     private var files: [(key: ReadKey, size: Int)] = []
     private var excerpts: [ExcerptKey: ThreadExcerpt] = [:]
-    /// Counts the pull requests it's read for, so that what was read for another isn't kept.
-    private var generation = 0
 
     /// Reads Azure DevOps through `client`, `concurrency` requests at a time.
     public init(_ pullRequest: PullRequest, client: ADOClient, concurrency: Int = 4) {
@@ -303,6 +304,7 @@ public actor PullRequestCode {
         _ pullRequest: PullRequest, source: any CodeSource, concurrency: Int = 4, fileLimit: Int = FileText.limit,
         memoryLimit: Int = 32 << 20
     ) {
+        key = pullRequest.key
         self.pullRequest = pullRequest
         self.source = source
         requests = RequestLimiter(limit: concurrency)
@@ -322,12 +324,39 @@ public actor PullRequestCode {
     /// The code a thread on lines of a file is on, as its reviewer saw it: in the diff it was made on, before Azure DevOps
     /// followed it to later ones. A thread that doesn't say which diff is on the latest iteration's diff with the base.
     /// - Parameters:
-    ///   - pullRequest: as it was last read, so that a push it doesn't know of yet makes it read the iterations again.
+    ///   - pullRequest: its pull request, as it was last read, so that a push it doesn't know of yet, or a move to another
+    ///     branch, makes it read the iterations again.
     ///   - context: how many lines it shows before and after the thread's.
     public func excerpt(
         of thread: ReviewThread, in pullRequest: PullRequest, context: Int = ThreadExcerpt.context
     ) async -> Result<ThreadExcerpt, ThreadExcerpt.Problem> {
-        follow(pullRequest)
+        guard pullRequest.key == key else { return .failure(.otherPullRequest) }
+        update(pullRequest)
+        return await excerpt(of: thread, context: context)
+    }
+
+    /// The code of each of these threads that's on lines of a file, by the thread's ID, read together.
+    public func excerpts(
+        of threads: [ReviewThread], in pullRequest: PullRequest, context: Int = ThreadExcerpt.context
+    ) async -> [Int: Result<ThreadExcerpt, ThreadExcerpt.Problem>] {
+        let threads = threads.filter { Anchor($0) != nil }
+        guard pullRequest.key == key else {
+            return Dictionary(threads.map { ($0.id, .failure(.otherPullRequest)) }, uniquingKeysWith: { first, _ in first })
+        }
+        update(pullRequest)
+        return await withTaskGroup(of: (Int, Result<ThreadExcerpt, ThreadExcerpt.Problem>).self) { group in
+            for thread in threads {
+                group.addTask { (thread.id, await self.excerpt(of: thread, context: context)) }
+            }
+            var results: [Int: Result<ThreadExcerpt, ThreadExcerpt.Problem>] = [:]
+            for await (id, result) in group { results[id] = result }
+            return results
+        }
+    }
+
+    // MARK: Reading
+
+    private func excerpt(of thread: ReviewThread, context: Int) async -> Result<ThreadExcerpt, ThreadExcerpt.Problem> {
         guard let anchor = Anchor(thread) else { return .failure(.notOnLines) }
         do {
             return .success(try await excerpt(of: thread.id, at: anchor, context: context))
@@ -340,34 +369,16 @@ public actor PullRequestCode {
         }
     }
 
-    /// The code of each of these threads that's on lines of a file, by the thread's ID, read together.
-    public func excerpts(
-        of threads: [ReviewThread], in pullRequest: PullRequest, context: Int = ThreadExcerpt.context
-    ) async -> [Int: Result<ThreadExcerpt, ThreadExcerpt.Problem>] {
-        follow(pullRequest)
-        return await withTaskGroup(of: (Int, Result<ThreadExcerpt, ThreadExcerpt.Problem>).self) { group in
-            for thread in threads where Anchor(thread) != nil {
-                group.addTask { (thread.id, await self.excerpt(of: thread, in: pullRequest, context: context)) }
-            }
-            var results: [Int: Result<ThreadExcerpt, ThreadExcerpt.Problem>] = [:]
-            for await (id, result) in group { results[id] = result }
-            return results
-        }
-    }
-
-    // MARK: Reading
-
     private func excerpt(of threadId: Int, at anchor: Anchor, context: Int) async throws -> ThreadExcerpt {
-        let generation = generation
-        let iterations = try await iterations(including: anchor.comparison?.second, for: generation)
+        let iterations = try await iterations(including: anchor.comparison?.second)
         guard let latest = iterations.last else { throw ThreadExcerpt.Problem.noIterations }
-        let key = ExcerptKey(threadId: threadId, anchor: anchor, latest: latest.id, context: context)
-        if let kept = excerpts[key] { return kept }
+        let shown = ExcerptKey(threadId: threadId, anchor: anchor, latest: latest.id, context: context)
+        if let kept = excerpts[shown] { return kept }
         let comparison = anchor.comparison ?? ReviewThread.Comparison(base: latest.id)
         guard let right = iterations.first(where: { $0.id == comparison.second }) else { throw ThreadExcerpt.Problem.noIterations }
         let leftCommit = comparison.isWithBase ? right.commonCommit : iterations.first { $0.id == comparison.first }?.sourceCommit
 
-        let changes = try await changes(iteration: right.id, comparedTo: comparison.isWithBase ? 0 : comparison.first, for: generation)
+        let changes = try await changes(iteration: right.id, comparedTo: comparison.isWithBase ? 0 : comparison.first)
         let change = changes.change(to: anchor.path, trackingId: anchor.changeTrackingId)
         // Among the files left out of a diff that changed more than it reads, it can't tell whether this one changed.
         if change == nil, !changes.isComplete { throw ThreadExcerpt.Problem.tooManyFiles }
@@ -376,11 +387,11 @@ public actor PullRequestCode {
         let oldText: String
         if let change {
             newText = change.kind.contains(.delete)
-                ? "" : try Self.text(await file(change.objectId, change.path, at: right.sourceCommit, for: generation))
+                ? "" : try Self.text(await file(change.objectId, change.path, at: right.sourceCommit))
             oldText = change.kind.contains(.add)
-                ? "" : try Self.text(await file(change.originalObjectId, change.originalPath ?? change.path, at: leftCommit, for: generation))
+                ? "" : try Self.text(await file(change.originalObjectId, change.originalPath ?? change.path, at: leftCommit))
         } else {
-            newText = try Self.text(await file(nil, anchor.path, at: right.sourceCommit, for: generation))
+            newText = try Self.text(await file(nil, anchor.path, at: right.sourceCommit))
             oldText = newText
         }
         let diff = await Self.compare(oldText, newText)
@@ -392,7 +403,7 @@ public actor PullRequestCode {
         // read, or when it changed more files than were read and this one isn't among them.
         var changedSince: Bool? = false
         if latest.id > right.id {
-            let later = try? await self.changes(iteration: latest.id, comparedTo: right.id, for: generation)
+            let later = try? await self.changes(iteration: latest.id, comparedTo: right.id)
             if let later, later.change(to: change?.path ?? anchor.path, trackingId: change?.changeTrackingId ?? anchor.changeTrackingId) != nil {
                 changedSince = true
             } else {
@@ -405,11 +416,9 @@ public actor PullRequestCode {
             hiddenCommentedLines: window.hiddenCommentedLines, iteration: right.id, latestIteration: latest.id,
             changedSince: changedSince
         )
-        // Nothing for an ask that stopped waiting, or for a pull request it no longer reads for; and kept unless whether it
-        // changed since is still to be read.
+        // Nothing for an ask that stopped waiting; and kept unless whether it changed since is still to be read.
         try Task.checkCancellation()
-        guard generation == self.generation else { throw CancellationError() }
-        if changedSince != nil { excerpts[key] = excerpt }
+        if changedSince != nil { excerpts[shown] = excerpt }
         return excerpt
     }
 
@@ -429,25 +438,25 @@ public actor PullRequestCode {
 
     /// The pull request's iterations, oldest first: read again for a push it hadn't seen or a move to another target, or
     /// for an iteration it doesn't have.
-    private func iterations(including id: Int?, for generation: Int) async throws -> [PRIteration] {
+    private func iterations(including id: Int?) async throws -> [PRIteration] {
         let key = ReadKey.iterations(Self.head(of: pullRequest))
         let kept = reads[key]
-        guard case .iterations(let iterations) = try await read(key, for: generation) else { return [] }
+        guard case .iterations(let iterations) = try await read(key) else { return [] }
         guard let id, !iterations.contains(where: { $0.id == id }), kept != nil else { return iterations }
         // A thread made on an iteration after the ones read before: once, they're read again.
         if reads[key] == kept { forget(key) }
-        guard case .iterations(let again) = try await read(key, for: generation) else { return [] }
+        guard case .iterations(let again) = try await read(key) else { return [] }
         return again
     }
 
-    private func changes(iteration: Int, comparedTo: Int, for generation: Int) async throws -> FileChanges {
+    private func changes(iteration: Int, comparedTo: Int) async throws -> FileChanges {
         let key = ReadKey.changes(iteration: iteration, comparedTo: comparedTo)
-        guard case .changes(let changes) = try await read(key, for: generation) else { return FileChanges(files: []) }
+        guard case .changes(let changes) = try await read(key) else { return FileChanges(files: []) }
         return changes
     }
 
     /// A file by its object ID, or else by its path at a commit.
-    private func file(_ objectId: String?, _ path: String, at commit: String?, for generation: Int) async throws -> FileText {
+    private func file(_ objectId: String?, _ path: String, at commit: String?) async throws -> FileText {
         let key: ReadKey
         if let objectId, !objectId.isEmpty {
             key = .object(objectId)
@@ -456,15 +465,13 @@ public actor PullRequestCode {
         } else {
             throw ThreadExcerpt.Problem.noIterations
         }
-        guard case .file(let text) = try await read(key, for: generation) else { return .binary }
+        guard case .file(let text) = try await read(key) else { return .binary }
         return text
     }
 
     /// What's read under a key: read once, and kept, unless it failed in a way that asking again might not. Nothing is
-    /// read for a pull request it no longer reads for (`generation` is the one the ask began with), or for an ask that
-    /// stopped waiting, which a read that others still wait on doesn't stop: it goes no further.
-    private func read(_ key: ReadKey, for generation: Int) async throws -> Read {
-        guard generation == self.generation else { throw CancellationError() }
+    /// read for an ask that stopped waiting, which a read that others still wait on doesn't stop: it goes no further.
+    private func read(_ key: ReadKey) async throws -> Read {
         try Task.checkCancellation()
         let task: Task<Read, Error>
         if let kept = reads[key] {
@@ -543,20 +550,10 @@ public actor PullRequestCode {
         files.removeAll { $0.key == key }
     }
 
-    /// Starts over for another pull request, and forgets the iterations read before a push.
-    private func follow(_ pullRequest: PullRequest) {
-        guard pullRequest.key == self.pullRequest.key else {
-            for task in reads.values { task.cancel() }
-            reads = [:]
-            asks = [:]
-            files = []
-            excerpts = [:]
-            generation += 1
-            self.pullRequest = pullRequest
-            return
-        }
+    /// Takes the pull request as it was last read: after a push, or a move to another target branch, its iterations are
+    /// read again.
+    private func update(_ pullRequest: PullRequest) {
         if Self.head(of: pullRequest) != Self.head(of: self.pullRequest) {
-            // The iterations as of before a push, or before it was moved to another target branch, which made another.
             reads = reads.filter { if case .iterations = $0.key { false } else { true } }
         }
         self.pullRequest = pullRequest

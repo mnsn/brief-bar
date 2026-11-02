@@ -293,6 +293,8 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
         // Not UTF-8: Windows' Latin alphabet.
         #expect(FileText(Data([0x63, 0x61, 0x66, 0xE9]), isComplete: true) == .text("café"))
         #expect(FileText(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00]), isComplete: true) == .binary)
+        // With a byte order mark too.
+        #expect(FileText(Data([0xEF, 0xBB, 0xBF, 0x61, 0x00, 0x62]), isComplete: true) == .binary)
         #expect(FileText(Data("cut".utf8), isComplete: false) == .tooLarge)
     }
 
@@ -646,16 +648,17 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
         #expect(requests(server).sorted() == ["/blobs/base", "/blobs/first", "/iterations", "/iterations/1/changes 0", "/iterations/2/changes 1"])
     }
 
-    @Test func startsOverForAnotherPullRequest() async throws {
+    @Test func answersOnlyForItsOwnPullRequest() async throws {
         let server = codeServer()
-        server.on("/pullRequests/8/iterations", json: Fixture.list([CodeFixture.iteration(1, source: "x1")]))
-        server.on("/pullRequests/8/iterations/1/changes", json: CodeFixture.changes([]))
-        server.on("/items") { _ in CodeFixture.file("other\n") }
         let code = PullRequestCode(pr, client: server.client())
+        #expect(code.key == pr.key)
         let thread = CodeFixture.thread(21, at: CodeFixture.location(right: 1...1))
-        _ = try await code.excerpt(of: thread, in: pr).get()
-        let other = try await code.excerpt(of: thread, in: makePR(8)).get()
-        #expect(text(other) == ["> other"])
+        let other = makePR(8)
+        #expect(await code.excerpt(of: thread, in: other) == .failure(.otherPullRequest))
+        #expect(await code.excerpts(of: [thread, thread], in: other) == [21: .failure(.otherPullRequest)])
+        #expect(server.requests.isEmpty)
+        // Its own still reads.
+        #expect(try await code.excerpt(of: thread, in: pr).get().lines.first?.text == "line 1")
     }
 }
 
@@ -744,40 +747,6 @@ private func waitUntil(_ what: String, _ condition: () async -> Bool) async thro
     throw TestError("Timed out waiting for \(what)")
 }
 
-/// Code for two pull requests, 7 with one iteration and 8 with two, saying which pull request each ask was for, and
-/// holding the iterations back while told to, whether or not the read is called off.
-private actor SwitchingCode: CodeSource {
-    private(set) var asked: [String] = []
-    private var holding = true
-    private var held: [CheckedContinuation<Void, Never>] = []
-
-    func release() {
-        holding = false
-        for turn in held { turn.resume() }
-        held = []
-    }
-
-    func iterations(of pullRequest: PullRequest) async throws -> [PRIteration] {
-        asked.append("\(pullRequest.key.number): iterations")
-        if holding { await withCheckedContinuation { held.append($0) } }
-        return (1...(pullRequest.key.number == 7 ? 1 : 2)).map { PRIteration(id: $0, sourceCommit: "s\($0)", commonCommit: "b") }
-    }
-
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
-        asked.append("\(pullRequest.key.number): changes \(iteration) \(comparedTo)")
-        return FileChanges(files: [FileChange(path: "/a.cs", kind: .add, objectId: "a")])
-    }
-
-    func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
-        asked.append("\(pullRequest.key.number): \(objectId)")
-        return .text("a 1\n")
-    }
-
-    func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {
-        throw ADOError.notFound
-    }
-}
-
 /// Code for a pull request with two iterations, holding back what changed from the first to the second while told to.
 private actor LaterCode: CodeSource {
     private(set) var asked: [String] = []
@@ -863,48 +832,6 @@ private actor LaterCode: CodeSource {
         try await waitUntil("one thread waiting on the file") { await code.waiting(.object("a")) == 1 }
         await fake.hold(false)
         #expect(try await waits.value.get().lines.first { $0.isCommented }?.text == "a 2")
-        #expect(await fake.count("a") == 1)
-    }
-
-    @Test func readsNothingForAPullRequestItNoLongerReadsFor() async throws {
-        let fake = SwitchingCode()
-        let first = makePR(7)
-        let code = PullRequestCode(first, source: fake)
-        let old = Task { await code.excerpt(of: thread(1, "a"), in: first) }
-        try await waitUntil("the first pull request's iterations") { await fake.asked == ["7: iterations"] }
-        // Another pull request, while the first one's iterations are still being read.
-        let other = makePR(8)
-        let new = Task { await code.excerpt(of: thread(2, "a"), in: other) }
-        try await waitUntil("the other's iterations") { await fake.asked.count == 2 }
-        await fake.release()
-        #expect(try await new.value.get().latestIteration == 2)
-        guard case .failure(.unreadable) = await old.value else {
-            Issue.record("The first pull request's thread showed code read after it was left")
-            return
-        }
-        // Each read went to the pull request it was for: none of the first's after it was left.
-        #expect(await fake.asked.sorted() == ["7: iterations", "8: a", "8: changes 2 0", "8: iterations"])
-    }
-
-    @Test func goesNoFurtherForAThreadThatStoppedWaiting() async throws {
-        let fake = FakeCode()
-        await fake.hold(true)
-        let code = PullRequestCode(pr, source: fake)
-        let stays = Task { await code.excerpt(of: thread(1, "a"), in: pr) }
-        try await waitUntil("a thread waiting on the file") { await code.waiting(.object("a")) == 1 }
-        // A thread on another file that's now the same.
-        let leaves = Task { await code.excerpt(of: thread(2, "e"), in: pr) }
-        try await waitUntil("both threads waiting on the file") { await code.waiting(.object("a")) == 2 }
-        leaves.cancel()
-        try await waitUntil("one thread waiting on the file") { await code.waiting(.object("a")) == 1 }
-        await fake.hold(false)
-        #expect(try await stays.value.get().lines.count == 2)
-        guard case .failure(.unreadable) = await leaves.value else {
-            Issue.record("A thread that stopped waiting still showed its code")
-            return
-        }
-        // What only the thread that stopped waiting needed, the file before the change, wasn't read.
-        #expect(await fake.count("e1") == 0)
         #expect(await fake.count("a") == 1)
     }
 

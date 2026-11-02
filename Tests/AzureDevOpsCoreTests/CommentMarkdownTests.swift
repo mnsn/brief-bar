@@ -17,8 +17,10 @@ import Testing
         #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
         #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
         #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
-        // In a list's item, and in a quote.
+        // In a list's item, starting it too, and in a quote.
         #expect(plain("- one\n\n  <!--\n  hidden\n\n  -->\n- two") == "• one\n• two")
+        #expect(plain("- <!--\n  hidden\n\n  more\n  -->\n- shown") == "• shown")
+        #expect(plain("- <!--\n  hidden\n  --> kept\n- shown") == "• kept\n• shown")
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
         // What looks like code in one is the comment's; code that starts first is code.
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
@@ -42,6 +44,12 @@ import Testing
         #expect(plain("Use <b>bold</b>, <i>italics</i>, <sub>small</sub> and <span style=\"color:red\">red</span>.")
             == "Use bold, italics, small and red.")
         #expect(plain("<a href=\"https://example.invalid/rules\">The rule</a> says so") == "The rule says so")
+        // What's in an attribute's quotes is the tag's, a bracket or backticks included.
+        #expect(plain("<span title=\"a > b\">shown</span>") == "shown")
+        #expect(plain("<span title=\"use `x`\">Shown</span> and `<b>`") == "Shown and <b>")
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.svg\" alt=\"A > B\">").blocks == [
+            .paragraph([RichText.Run("A > B", link: URL(string: "https://example.invalid/badge.svg"))]),
+        ])
     }
 
     @Test func readsImagesInHTMLAsImages() {
@@ -102,6 +110,8 @@ import Testing
             "<img " + String(repeating: "a", count: 100_000) + ">",
             "<img src=" + String(repeating: "a-b ", count: 25_000) + ">",
             String(repeating: "` <!-- ``", count: 20_000),
+            String(repeating: "<span title=\"`x` > ", count: 10_000),
+            "<span title=\"" + String(repeating: "<a b ", count: 20_000),
         ] {
             let start = ContinuousClock.now
             _ = RichText(markdown: long)

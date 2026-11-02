@@ -991,6 +991,19 @@ private enum MarkdownReader {
                         content = String(task.2 ?? "")
                     }
                 }
+                // An item that starts with an HTML comment ending on a later line: the comment shows nothing, blank lines
+                // and all, and the item's text is what follows its end; without an end, it's all the rest.
+                if content.hasPrefix("<!--"), !content.dropFirst(4).contains("-->") {
+                    var end = index + 1
+                    while end < lines.count, !lines[end].contains("-->") { end += 1 }
+                    if end < lines.count, let close = raw[end].range(of: "-->") {
+                        content = raw[end][close.upperBound...].trimmingCharacters(in: .whitespaces)
+                        index = end
+                    } else {
+                        content = ""
+                        index = lines.count - 1
+                    }
+                }
                 pendingKind = .listItem(marker, depth: depth)
                 pending = [content]
                 paragraphOpen = true
@@ -1099,8 +1112,8 @@ private enum MarkdownReader {
     // MARK: HTML in Markdown
 
     /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
-    /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment goes on to its
-    /// end, whatever looks like code in it. A backslash before a run makes its first backtick just a backtick, but in code
+    /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment or tag goes on
+    /// to its end, whatever looks like code in it. A backslash before a run makes its first backtick just a backtick, but in code
     /// a backslash is a backslash, so a run after one still ends a span. A bracket after a backslash starts no tag: it goes
     /// to the Markdown reader as it is, which shows it.
     static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
@@ -1166,6 +1179,8 @@ private enum MarkdownReader {
             } else if text[index...].hasPrefix("<!--") {
                 let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex)
                 index = end?.upperBound ?? text.endIndex
+            } else if text[index] == "<", let tag = text[index...].prefixMatch(of: Self.anyTag) {
+                index = tag.range.upperBound
             } else {
                 index = text.index(after: index)
             }
@@ -1177,8 +1192,11 @@ private enum MarkdownReader {
     nonisolated(unsafe) private static let htmlTag = #/
         <(\/?)(a|abbr|b|bdi|bdo|big|blockquote|br|center|cite|code|dd|del|details|dfn|div|dl|dt|em|font|h[1-6]|hr|i|ins|
         kbd|li|mark|ol|p|pre|q|s|samp|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|u|ul|
-        var|wbr)(?:\s[^<>]*)?\/?>
+        var|wbr)(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>
         /#.ignoresCase()
+
+    /// Any HTML tag, as CommonMark reads one: what's in its quoted attributes, `>` and backticks included, is the tag's.
+    nonisolated(unsafe) private static let anyTag = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>/
 
     /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, line breaks and the
     /// ends of blocks such as paragraphs break the line, a table's cells are apart, an image is Markdown's, and the other
@@ -1187,7 +1205,7 @@ private enum MarkdownReader {
     static func withoutHTML(_ text: Substring) -> String {
         guard text.contains("<") else { return String(text) }
         var text = withoutComments(text)
-        text = text.replacing(/<img\b[^<>]*>/.ignoresCase()) { image(String($0.output)) }
+        text = text.replacing(/<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>/.ignoresCase()) { image(String($0.output)) }
         return text.replacing(htmlTag) { tag in
             let closes = !tag.output.1.isEmpty
             switch tag.output.2.lowercased() {
