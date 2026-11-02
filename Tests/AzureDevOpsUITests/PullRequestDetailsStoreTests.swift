@@ -310,6 +310,34 @@ import Testing
         #expect(!seen.hasNews)
     }
 
+    /// A refresh that leaves the pull request out, as a review that merged, keeps what was read of it with its last row,
+    /// though the list read it again before it left it out.
+    @Test func whatALeftPullRequestShowsStaysWithItsLastRow() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        let review = try #require(store.items.first { $0.role == .reviewer })
+        details.show(review)
+        #expect(details.isListed)
+        let row = try #require(details.selected)
+        let read = try #require(details.record)
+        // The next refresh reads it merged: done is for your own pull requests.
+        var snapshot = DemoData.snapshot(now: now)
+        snapshot.refreshedAt = now.addingTimeInterval(60)
+        let index = try #require(snapshot.records.firstIndex { $0.id == review.key })
+        snapshot.records[index].pullRequest.status = .completed
+        snapshot.records[index].pullRequest.closedAt = now
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == review.key })
+        #expect(store.record(for: review.key)?.pullRequest.status == .completed)
+        #expect(!details.isListed)
+        #expect(details.selected == row)
+        #expect(details.record == read)
+    }
+
     /// Removed from Needs You from its row, which, seen, no longer has the new comment in a resolved thread that its details
     /// still show, and so is taken off only up to an older one, a reply in an open thread: then what you've seen is seen
     /// in its details too.
@@ -336,10 +364,8 @@ import Testing
 
         let details = PullRequestDetailsStore()
         details.use(store)
-        details.itemsChanged(store.items)
         details.show(row)
         store.receive(snapshot)
-        details.itemsChanged(store.items)
         func waiting() throws -> [Int] {
             let item = try #require(details.selected)
             let record = store.record(for: item.key)
@@ -351,7 +377,6 @@ import Testing
 
         store.dismiss(seen)
         store.receive(snapshot)
-        details.itemsChanged(store.items)
         #expect(try !waiting().contains(13))
         #expect(try waiting().isEmpty)
     }

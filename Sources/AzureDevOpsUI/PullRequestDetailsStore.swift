@@ -79,8 +79,11 @@ final class PullRequestDetailsStore: ObservableObject {
     private var account: String?
     /// The cutoffs of the pull request that shows, from before its details showed it.
     private var before: Cutoffs?
+    /// The list's changes, followed.
+    private var subscriptions: Set<AnyCancellable> = []
 
-    /// Shows what the list read, and sees what it shows there, as opening it from the list does.
+    /// Shows what the list read, following it as it refreshes, and sees what it shows there, as opening it from the list
+    /// does.
     func use(_ list: PRStore) {
         markSeen = { [weak list] item in list?.markSeen(item) }
         readRecord = { [weak list] key in list?.record(for: key) }
@@ -88,6 +91,14 @@ final class PullRequestDetailsStore: ObservableObject {
             list.map { Cutoffs(seen: $0.seenCutoff(for: key), dismissed: $0.dismissedCutoff(for: key)) }
         }
         classify = { [weak list] record, seen in list?.snapshot(of: record, seenAt: seen) }
+        subscriptions = []
+        list.$items
+            .sink { [weak self] items in MainActor.assumeIsolated { self?.itemsChanged(items) } }
+            .store(in: &subscriptions)
+        // Once a refresh is listed, not before: one it leaves out keeps what was read of it with its last row.
+        list.refreshed
+            .sink { [weak self] in MainActor.assumeIsolated { self?.recordsChanged() } }
+            .store(in: &subscriptions)
     }
 
     /// Shows a pull request's details, from their top or at a place in them, without what was open over another's. It's

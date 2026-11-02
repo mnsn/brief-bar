@@ -30,6 +30,9 @@ final class PRStore: ObservableObject {
     @Published private(set) var hasLoaded = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshedAt: Date?
+    /// Each refresh, once its pull requests are listed: what was read of one can change without its row, such as an
+    /// optional build that passed. `refreshedAt` changes before they're listed.
+    let refreshed = PassthroughSubject<Void, Never>()
     @Published private(set) var discovery: Discovery = .idle
     @Published private(set) var brief: [BriefItem] = []
     /// The pipelines after your merges, the newest merge first.
@@ -557,6 +560,7 @@ final class PRStore: ObservableObject {
         // Watched pull requests that closed, or that you can't read anymore, aren't watched anymore.
         if mode == .live { settings.unwatch(snapshot.closedLinks) }
         recompute(announce: true)
+        refreshed.send()
     }
 
     private func recompute(announce: Bool = false) {

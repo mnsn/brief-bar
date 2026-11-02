@@ -162,13 +162,6 @@ package final class AzureDevOpsSource: BriefBarSource {
         details.use(store)
         details.hasPage = { [services] in services.hasPage(.azureDevOpsPullRequests) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsPullRequests) }
-        store.$items
-            .sink { [weak details] items in MainActor.assumeIsolated { details?.itemsChanged(items) } }
-            .store(in: &cancellables)
-        // Each refresh, as its records are there already.
-        store.$refreshedAt
-            .sink { [weak details] _ in MainActor.assumeIsolated { details?.recordsChanged() } }
-            .store(in: &cancellables)
         return details
     }
 
