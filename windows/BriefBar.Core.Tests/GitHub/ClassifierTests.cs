@@ -87,6 +87,30 @@ public sealed class ClassifierTests
         Assert.Equal(expected: "By lee", actual: approved.Detail);
     }
 
+    /// Without a decision, the reviews decide, a deleted account's too, which GitHub gives without an author: it counts,
+    /// though only reviewers with names are named.
+    [Fact]
+    public void WithoutADecisionReviewsByDeletedAccountsCount()
+    {
+        var changes = Classify(pullRequest: GitHubFixture.Make(reviews: [new GitHubReview(Reviewer: null, State: GitHubReviewState.ChangesRequested)]));
+        Assert.Equal(expected: GitHubPRGroup.ChangesRequested, actual: changes.Group);
+        Assert.Equal(expected: GitHubPRReason.ChangesRequested, actual: changes.Reason);
+        Assert.Null(@object: changes.Detail);
+        Assert.Equal(expected: "Changes are requested on “Pull request 1”.", actual: changes.BriefSentence);
+        var alongside = Classify(pullRequest: GitHubFixture.Make(reviews:
+            [new GitHubReview(Reviewer: null, State: GitHubReviewState.ChangesRequested), Review(reviewer: "sam", state: GitHubReviewState.ChangesRequested)]));
+        Assert.Equal(expected: "By sam", actual: alongside.Detail);
+
+        var approved = Classify(pullRequest: GitHubFixture.Make(checks: GitHubChecks.Passing, reviews: [new GitHubReview(Reviewer: null, State: GitHubReviewState.Approved)]));
+        Assert.Equal(expected: GitHubPRGroup.Ready, actual: approved.Group);
+        Assert.Equal(expected: GitHubPRReason.Approved, actual: approved.Reason);
+        Assert.Null(@object: approved.Detail);
+
+        // As GitHub answers it.
+        var decoded = GitHubFixture.Decoded(pullRequest: GitHubFixture.PullRequest(number: 3, reviews: [("CHANGES_REQUESTED", null)]));
+        Assert.Equal(expected: GitHubPRGroup.ChangesRequested, actual: Classify(pullRequest: decoded).Group);
+    }
+
     /// GitHub's decision wins over individual reviews: an approval after changes were requested, say.
     [Fact]
     public void TheDecisionWinsOverReviews()
