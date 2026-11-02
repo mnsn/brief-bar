@@ -157,7 +157,7 @@ Enable agent access in **Settings › Agents**, then install the **Copilot plugi
 |---|---|
 | `/briefbar` | What needs you across Azure DevOps and Copilot; in the Copilot app, an inbox you can search, sort and group. |
 | `/briefbar 5101` | Where the work item stands, what's done, what's left and who it waits on. |
-| “Fix the comments on !4102” | In the Copilot app, a session of its own for the work, which you can follow and steer. |
+| “Fix the comments on !4102” | In the Copilot app, the pull request's own session, a fork of it or a new one, which you can follow and steer. |
 
 BriefBar also provides an opt-in **MCP server** for compatible agents, with install actions for
 VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams or GitHub.
