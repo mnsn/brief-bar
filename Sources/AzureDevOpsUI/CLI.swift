@@ -173,10 +173,14 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
     }
 
     /// What went wrong, as the command line says it: for an organization in a directory the Azure CLI isn't signed in
-    /// to, which one, and what to run.
+    /// to, which one, and what to run; when signed out, what to run, in your directory when it's that one that wants you
+    /// to sign in again.
     static func describe(_ error: Error) -> String {
         guard let error = error as? ADOError else { return error.localizedDescription }
         if case .otherDirectory = error { return text(of: PulseProblem.from(error)) }
+        if case .auth(.signedOut) = error, let command = PulseProblem.from(error).signInCommand {
+            return "You're signed out of the Azure CLI. Run \(command)."
+        }
         return error.description
     }
 
@@ -214,7 +218,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             switch found {
             case .success(let found): organizations = found.withPullRequests
             case .failure(let error):
-                return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(error.description)")
+                return Loaded(organizations: [], items: [], problem: "Couldn't find your organizations: \(describe(error))")
             }
         }
         let configuration = PulseEngine.Configuration(
@@ -282,7 +286,7 @@ package enum AzureDevOpsCommandLine: SourceCommandLine {
             }
             return 0
         case .failure(let error):
-            FileHandle.standardError.write(Data("\(error.description)\n".utf8))
+            FileHandle.standardError.write(Data("\(describe(error))\n".utf8))
             return 1
         }
     }

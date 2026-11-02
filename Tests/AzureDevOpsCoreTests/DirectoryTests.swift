@@ -511,7 +511,7 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
         server.on("/contoso/_apis/git/pullrequests/11", json: Fixture.pullRequest(11, title: "Theirs", author: People.sam))
         let engine = PulseEngine(
-            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: ["fabrikam"])
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: ["fabrikam"], interval: 300)
         ) { _ in }
         await engine.setLinkedPullRequests([PRKey(Fixture.org, 11)])
         await engine.refreshNow()
@@ -519,6 +519,25 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         // fabrikam, the one you watch, waits on a sign-in to its directory; the one sent to you from contoso is read.
         #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 11)])
         #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        // Something was read: the next refresh comes as often as usual.
+        #expect(await engine.nextDelay() == 300)
+    }
+
+    @Test func askingToSlowDownComesBeforeADirectoryToSignInTo() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.put("fabrikam", in: Tenants.other)
+        server.on("/northwind/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": "120"]) }
+        let engine = PulseEngine(
+            client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: ["fabrikam", "northwind"])
+        ) { _ in }
+        await engine.refreshNow()
+        // Nothing goes out until then, and nothing can be read either, signed in there or not.
+        let problem = await engine.currentSnapshot().problem
+        var throttled = false
+        if case .throttled? = problem { throttled = true }
+        #expect(throttled)
+        #expect(await engine.nextDelay() > 100)
     }
 
     @Test func pullRequestsSentToYouThatCantBeReadAgainAreLookedAtWithinAMinute() async throws {
@@ -684,6 +703,96 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.foundTeam == web)
         #expect(snapshot.board?.team.id == web.id)
         #expect(snapshot.problem == nil)
+    }
+
+    @Test func aTeamFoundWhileSomeTeamsWaitOnASignInIsLookedForAgainAsEachDirectoryIsSignedInTo() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i1": WorkFixture.relations([1]), "i9": WorkFixture.relations([5])],
+            items: [WorkFixture.workItem(1, "User Story"), WorkFixture.workItem(5, "Task", "Yours", assignee: People.me)]
+        )
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        server.put("northwind", in: Tenants.third)
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam", "northwind"]),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().board?.team.id == WorkFixture.team.id)
+
+        // Signed in to fabrikam's directory, its team, with more of your work, is found; northwind's teams still wait on a
+        // sign-in, so it isn't kept yet.
+        await tokens.signIn(to: Tenants.other)
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == web.id)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(organizations: ["northwind"], tenant: Tenants.third, others: nil))
+    }
+
+    @Test func aTeamWhoseSprintWaitsOnASignInIsSaidAndWhatsFoundMeanwhileIsntKept() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")]
+        )
+        server.on("/fabrikam/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        // Your teams are read with the team you chose.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"], team: WorkFixture.team),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().teams.map(\.id) == [WorkFixture.team.id, web.id])
+
+        // BriefBar then looks for one, once the Azure CLI has signed out of fabrikam's directory: its team's sprint can't
+        // be read, so it's said, and the team found meanwhile isn't kept.
+        await tokens.signOut(of: Tenants.other)
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: [Fixture.org, "fabrikam"]))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.board?.team.id == WorkFixture.team.id)
+        #expect(snapshot.foundTeam == nil)
+        #expect(snapshot.problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+    }
+
+    @Test func whenNoTeamsSprintCanBeReadForWantOfASignInItsLookedAtAgainWithinAMinute() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        await tokens.signIn(to: Tenants.other)
+        let web = TeamRef(organization: "fabrikam", projectId: "p9", projectName: "Web", id: "t9", name: "Web Team")
+        WorkFixture.serve(
+            server, sprints: [WorkFixture.team.id: [WorkFixture.iteration()], web.id: [WorkFixture.iteration("i9", name: "Sprint 9")]],
+            relations: ["i1": WorkFixture.relations([1])], items: [WorkFixture.workItem(1, "User Story")]
+        )
+        server.on("/fabrikam/_apis/teams", json: Fixture.list([WorkFixture.teamJSON(web)]))
+        server.put("fabrikam", in: Tenants.other)
+        // fabrikam's teams are read while contoso's team, which you chose, shows.
+        let engine = SprintEngine(
+            client: server.client(tokens: tokens),
+            configuration: SprintEngine.Configuration(organizations: ["fabrikam"], team: WorkFixture.team, interval: 300),
+            now: { t(0) }, calendar: WorkFixture.utc
+        ) { _ in }
+        await engine.refreshNow()
+
+        // BriefBar then looks for one of your teams, once the Azure CLI has signed out of fabrikam's directory.
+        await tokens.signOut(of: Tenants.other)
+        await engine.setConfiguration(SprintEngine.Configuration(organizations: ["fabrikam"], interval: 300))
+        await engine.refreshNow()
+        #expect(await engine.currentSnapshot().problem == .otherDirectory(organizations: ["fabrikam"], tenant: Tenants.other, others: nil))
+        #expect(await engine.nextDelay() == 60)
     }
 
     // MARK: Finding and adding organizations

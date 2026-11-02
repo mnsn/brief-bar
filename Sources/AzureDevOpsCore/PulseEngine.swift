@@ -518,10 +518,13 @@ public actor PulseEngine {
             }
         }
 
-        // No organization's lists could be read. When that's for want of a sign-in to their directory, the pull requests
-        // people sent you from other organizations are read all the same; otherwise nothing else could be either.
+        // No organization's lists could be read. Azure DevOps asking to slow down comes first: nothing more goes out until
+        // then. Otherwise, when that's for want of a sign-in to their directory, the pull requests people sent you from
+        // other organizations are read all the same; when it isn't, nothing else could be either.
         let readNone = !errors.isEmpty && errors.count == organizations.count
-        if readNone, !errors.contains(where: { PulseProblem.isOtherDirectory($0.error) }), let (organization, error) = errors.first {
+        let slowDown = errors.first { if case .throttled = $0.error { true } else { false } }
+        let inOtherDirectories = errors.contains { PulseProblem.isOtherDirectory($0.error) }
+        if readNone, let (organization, error) = slowDown ?? (inOtherDirectories ? nil : errors.first) {
             problem = PulseProblem.from(error, organization: organizations.count > 1 ? organization : nil)
             failures += 1
             return
@@ -602,10 +605,14 @@ public actor PulseEngine {
             // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
             // Signing in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
             problem = PulseProblem.organizations(errors + linkedElsewhere)
-            // None of your organizations' lists, or only pull requests sent to you and none of them read, even if some are
-            // still listed as last read: nothing could be read, as when no organization could, so a sign-in there is
-            // picked up within a minute.
-            if readNone || (organizations.isEmpty && linkedRead == 0) { failures += 1 }
+            // Nothing could be read, neither your organizations' lists nor the pull requests sent to you, even if some
+            // are still listed as last read: as when no organization could be, a sign-in there is picked up within a
+            // minute. Pull requests sent to you that could be read count, as any organization's lists do.
+            if (readNone || organizations.isEmpty) && linkedRead == 0 {
+                failures += 1
+            } else {
+                failures = 0
+            }
         } else {
             problem = nil
         }

@@ -633,8 +633,8 @@ private struct AddPipelineSheet: View {
     @LocalState private var results: [PipelineRef] = []
     @LocalState private var isSearching = false
     @LocalState private var error: String?
-    /// When a link's organization is in a directory the Azure CLI isn't signed in to: a way to sign in there.
-    @LocalState private var directoryProblem: PulseProblem?
+    /// When signing in fixes it, in an organization's directory or to the Azure CLI: a way to.
+    @LocalState private var signInProblem: PulseProblem?
     @LocalState private var pending: Task<Void, Never>?
 
     var body: some View {
@@ -712,8 +712,8 @@ private struct AddPipelineSheet: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    if let directoryProblem {
-                        Button("Sign In…") { store.signIn(for: directoryProblem) }
+                    if let signInProblem {
+                        Button(signInProblem == .cliNotFound ? "Install the Azure CLI…" : "Sign In…") { store.signIn(for: signInProblem) }
                             .buttonStyle(.borderedProminent)
                     }
                     // Once signed in there, or back online, the same search again.
@@ -792,19 +792,19 @@ private struct AddPipelineSheet: View {
             case .success(let found):
                 results = found
                 error = nil
-                directoryProblem = nil
+                signInProblem = nil
             case .failure(.notFound) where link != nil, .failure(.forbidden) where link != nil:
                 // Says there's no pipeline there, in the list.
                 results = []
                 error = nil
-                directoryProblem = nil
+                signInProblem = nil
             case .failure(let failure):
                 results = []
-                // One in a directory to sign in to names its organization, with a way to sign in there.
+                // One that signing in fixes comes with a way to: one in a directory to sign in to names its
+                // organization, and your own directory wanting you to sign in again signs in there.
                 let problem = PulseProblem.from(failure)
-                let isElsewhere = PulseProblem.isOtherDirectory(failure)
-                directoryProblem = isElsewhere ? problem : nil
-                error = isElsewhere ? problem.message : failure.description
+                signInProblem = problem.offersSignIn ? problem : nil
+                error = PulseProblem.isOtherDirectory(failure) ? problem.message : failure.description
             }
         }
     }

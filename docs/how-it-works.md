@@ -1059,13 +1059,15 @@ refresh. When every organization you watch is in such a directory, the pull requ
 others are still read. The Sprint and Pipelines sections, the Add Pipelines sheet and a work item's
 details say the same, and the sheet offers **Try Again** to search again once you've signed in. A team
 you chose shows its sprint even while the teams of the organizations you watch wait on such a sign-in;
-a team BriefBar finds for you then is shown, but kept only once it's been compared with theirs. The
-command line and agents, which have no button, say what to run; an agent's work item, asked for by its
-number alone, is looked for in your other organizations too, and such an organization is named only
-when none of them has it. A directory's ID is never shown otherwise. The log names none of these
-organizations, nor the others that couldn't be read with them, and says only how many are in such a
-directory: a pull request sent to you comes from a chat. While nothing could be read but such
-organizations, BriefBar looks again every minute, as it does while the CLI is signed out.
+a team BriefBar finds for you then is shown, but kept only once it's been compared with theirs: it's
+looked for again as each of their directories is signed in to. A team whose sprint can't be read for
+want of such a sign-in counts among them. The command line and agents, which have no button, say what
+to run; an agent's work item, asked for by its number alone, is looked for in your other organizations
+too, and such an organization is named only when none of them has it. A directory's ID is never shown
+otherwise. The log names none of these organizations, nor the others that couldn't be read with them,
+and says only how many are in such a directory: a pull request sent to you comes from a chat. While
+nothing could be read but such organizations, BriefBar looks again every minute, as it does while the
+CLI is signed out.
 
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another
@@ -1740,7 +1742,9 @@ plain sentence if the model isn't available or fails. BriefBar explicitly uses
   search matches you, not your groups.
 - An organization in another directory than your sign-in's is read only once the Azure CLI is signed
   in to that directory too. The CLI gives tokens for the account it's signed in with, so organizations
-  that each need a different account can't all be read at once.
+  that each need a different account can't all be read at once. BriefBar doesn't tell a directory your
+  account isn't in from one it only has to sign in to again: either way, it offers to sign in there, and
+  signing in says which it is.
 - A failed build says where it failed only when its run's timeline can be read, and then only its
   first error: the rest is in its log, which BriefBar doesn't read.
 - The pipelines after a merge are found in its repository's project: a run that a trigger starts in

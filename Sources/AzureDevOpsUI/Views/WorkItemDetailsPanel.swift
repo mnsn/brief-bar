@@ -306,10 +306,15 @@ struct WorkItemDetailsPanel: View {
             WhereItStandsSection(subject: item.linkRef, hidesWhenEmpty: item.type.caseInsensitiveCompare("Task") == .orderedSame)
             if let read = details.details {
                 if let failure = details.failure {
-                    Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
-                        .font(size: 11.5)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if PulseProblem.from(failure).offersSignIn {
+                        // Signing in is what reads it again: a way to, above what was read before.
+                        FailureView(error: failure)
+                    } else {
+                        Label("Couldn't read it again: \(WorkItemDetailsStore.message(for: failure))", systemImage: "exclamationmark.triangle")
+                            .font(size: 11.5)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 properties(item, read)
                 texts(read)

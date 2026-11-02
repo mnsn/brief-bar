@@ -102,9 +102,13 @@ actor AzureDevOpsReader {
     }
 
     /// An error reading something on its own, as an agent is told it: for an organization in a directory the Azure CLI
-    /// isn't signed in to, which one, and what to run.
+    /// isn't signed in to, which one, and what to run; when signed out, what to run, in your directory when it's that one
+    /// that wants you to sign in again.
     static func describe(_ error: Error) -> String {
         guard let error = error as? ADOError else { return error.localizedDescription }
+        if case .auth(.signedOut) = error, let command = PulseProblem.from(error).signInCommand {
+            return "You're signed out of the Azure CLI. Run \(command), then ask again."
+        }
         guard case .otherDirectory(let organization, let tenant) = error else { return error.description }
         return "\(organization) is in a directory your Azure CLI isn't signed in to. "
             + "Run az login --tenant \(tenant) --allow-no-subscriptions, then ask again."
@@ -165,7 +169,7 @@ actor AzureDevOpsReader {
             discoveryProblem = nil
             return found
         } catch {
-            discoveryProblem = "Couldn't find your organizations: \((error as? ADOError)?.description ?? error.localizedDescription)"
+            discoveryProblem = "Couldn't find your organizations: \(Self.describe(error))"
             return []
         }
     }
@@ -380,10 +384,7 @@ actor AzureDevOpsReader {
             case .failure(let error):
                 // Another of your organizations may have it.
                 if case .notFound = error, organizations.count > 1 { continue }
-                if case .auth(.signedOut) = error {
-                    let command = PulseProblem.from(error).signInCommand ?? "az login --allow-no-subscriptions"
-                    throw MCPToolError("You're signed out of the Azure CLI. Run \(command), then ask again.")
-                }
+                if case .auth(.signedOut) = error { throw MCPToolError(AzureDevOpsReader.describe(error)) }
                 if case .otherDirectory = error {
                     elsewhere = elsewhere ?? error
                     continue

@@ -39,6 +39,13 @@ import Testing
         #expect(AzureDevOpsCommandLine.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant) --allow-no-subscriptions.")
         #expect(AzureDevOpsReader.describe(error) == "\(sentence) Run az login --tenant \(Self.tenant) --allow-no-subscriptions, then ask again.")
         #expect(AzureDevOpsCommandLine.describe(ADOError.forbidden) == "No access to this organization.")
+        // Your own directory wanting you to sign in again, there, and signed out altogether.
+        let again = ADOError.auth(.signedOut("AADSTS50076: Sign in with multi-factor authentication.", tenant: Self.tenant))
+        #expect(AzureDevOpsCommandLine.describe(again)
+            == "You're signed out of the Azure CLI. Run az login --tenant \(Self.tenant) --allow-no-subscriptions.")
+        #expect(AzureDevOpsReader.describe(again)
+            == "You're signed out of the Azure CLI. Run az login --tenant \(Self.tenant) --allow-no-subscriptions, then ask again.")
+        #expect(AzureDevOpsCommandLine.describe(ADOError.auth(.signedOut(""))) == "You're signed out of the Azure CLI. Run az login --allow-no-subscriptions.")
         #expect(AzureDevOpsCommandLine.text(of: .signedOut("")) == "Sign in to the Azure CLI to see your pull requests. Run az login --allow-no-subscriptions.")
         // Your own directory wanting you to sign in again, there.
         #expect(AzureDevOpsCommandLine.text(of: .signedOut("", tenant: Self.tenant))
