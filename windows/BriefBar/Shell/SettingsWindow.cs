@@ -20,12 +20,14 @@ internal sealed partial class SettingsWindow : Window
     const double HeightDip = 720;
 
     readonly AppShell shell;
+    readonly SettingsViewModel viewModel;
     readonly SettingsView view;
     bool closed;
 
     public SettingsWindow(AppShell shell, SettingsViewModel viewModel)
     {
         this.shell = shell;
+        this.viewModel = viewModel;
         Hwnd = WindowNative.GetWindowHandle(target: this);
         Title = "BriefBar Settings";
         view = new SettingsView(viewModel: viewModel, palette: shell.Palette);
@@ -59,6 +61,9 @@ internal sealed partial class SettingsWindow : Window
     public void Refresh() => view.Refresh();
 
     public void UsePalette(ThemePalette palette) => view.UsePalette(palette: palette);
+
+    /// Windows' colors or Transparency effects changed, or what the bar shows: Appearance says what it shows now.
+    public void AppearanceChanged() => viewModel.Appearance.Refresh();
 
     /// Centered on the main display, at its size or as large as the display allows.
     void PlaceOnPrimaryDisplay()

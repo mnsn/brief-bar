@@ -19,4 +19,8 @@ public abstract class Observable : INotifyPropertyChanged
         PropertyChanged?.Invoke(sender: this, e: new PropertyChangedEventArgs(propertyName: propertyName));
         return true;
     }
+
+    /// Says `propertyName` changed, for a property whose value is kept elsewhere, such as in settings.
+    protected void RaisePropertyChanged(string propertyName) =>
+        PropertyChanged?.Invoke(sender: this, e: new PropertyChangedEventArgs(propertyName: propertyName));
 }
