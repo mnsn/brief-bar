@@ -314,6 +314,8 @@ actor AzureDevOpsReader {
             // (`CopilotTasksStore.refresh`): from what Copilot said last, else from what it printed.
             if run.ended == nil, !task.status.phase.isActive { run.ended = task.status.phase }
             if run.ended != nil, run.pullRequest == nil {
+                // Turned off meanwhile, nothing more of Copilot's is read.
+                guard sendsToCopilot else { return nil }
                 let (events, output) = (run.events(in: home), run.output(in: CopilotTasksStore.outputFolder))
                 run.pullRequest = await Task.detached {
                     RunTranscript.openedPullRequest(events: events, printed: nil) ?? LocalFile.tail(of: output, maxBytes: 8_192)
@@ -322,6 +324,7 @@ actor AzureDevOpsReader {
             }
             runs.append(run)
         }
+        guard sendsToCopilot else { return nil }
         let pullRequest = PullRequestTasks.task(for: record)
         let store = await Self.store(for: pullRequest, runs: runs, links: yourLinks(now: now), workItems: workItemTitles(now: now), appHome: appHome)
         // The store has a copy of the app's setting: it stops reading once the app's is off, as the app's store does.
