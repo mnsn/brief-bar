@@ -1,5 +1,6 @@
 import AzureDevOpsCore
 import BriefBarCore
+import Combine
 import Foundation
 
 /// The pull request whose details show beside the list on the Pull Requests page of BriefBar's window, the pages opened
@@ -147,9 +148,10 @@ final class PullRequestDetailsStore: ObservableObject {
     }
 
     /// The list read its pull requests again, which may change what it read of the one that shows without changing its
-    /// row, such as an optional build: what's kept of it follows, for once the list doesn't have it anymore.
+    /// row, such as an optional build: what's kept of it follows, while the list has it, for once it doesn't anymore.
+    /// Then it stays as it was, even while the list still reads it, as one sent in a chat that you've seen.
     func recordsChanged() {
-        guard let selected, let read = readRecord(selected.key), read != record else { return }
+        guard isListed, let selected, let read = readRecord(selected.key), read != record else { return }
         record = read
     }
 

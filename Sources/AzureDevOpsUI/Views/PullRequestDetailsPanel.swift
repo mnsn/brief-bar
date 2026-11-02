@@ -350,8 +350,8 @@ struct PullRequestDetailsPanel: View {
 
     private func content(_ item: PRSnapshot) -> some View {
         // What the list read of it, as it is now, which a refresh can change without changing its row; once the list
-        // doesn't have it anymore, as it was last.
-        let record = store.record(for: item.key) ?? details.record
+        // doesn't have it anymore, as it was then, with the rest of it.
+        let record = details.isListed ? store.record(for: item.key) ?? details.record : details.record
         let panel = PullRequestPanel(item, record: record)
         let ref = item.key.linkRef
         return VStack(alignment: .leading, spacing: 20) {

@@ -138,6 +138,12 @@ import BriefBarCore
             Check(name: "Status check", kind: .status, state: .pending), Check(name: "Status check", kind: .status, state: .passed),
         ]))
         #expect(twins.checks.map(\.id) == ["check Status check", "check Status check 2"])
+        // Even with one named as the second would be.
+        let lints = try self.panel(record(makePR(), checks: ["lint", "lint", "lint 2"].map {
+            Check(name: $0, kind: .status, state: .pending)
+        }))
+        #expect(Set(lints.checks.map(\.id)).count == 3)
+        #expect(lints.checks.map(\.id) == ["check lint", "check lint 2", "check lint 2 2"])
 
         // Without its policies, nobody can tell.
         let unknown = try self.panel(record(makePR(), checksKnown: false))

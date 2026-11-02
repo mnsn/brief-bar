@@ -129,11 +129,17 @@ import Testing
         #expect(store.record?.details?.checks.map(\.name) == ["lint"])
         // No longer listed, as a review that merged, it stays as it was last, threads, policies and reviewers too, until
         // you close it, even once the list has forgotten what it read.
-        store.readRecord = { _ in nil }
         store.itemsChanged(items.filter { $0.key != retry.key })
         #expect(!store.isListed)
         #expect(store.selected?.headline == "Sam Rivera replied again")
         #expect(store.record?.id == retry.key)
+        // While the list still reads it, as one sent in a chat that you've seen, what's kept doesn't follow either.
+        read.details?.checks = []
+        store.recordsChanged()
+        #expect(store.record?.details?.checks.map(\.name) == ["lint"])
+        store.readRecord = { _ in nil }
+        store.recordsChanged()
+        #expect(store.record?.details?.checks.map(\.name) == ["lint"])
         store.close()
         #expect(store.record == nil && !store.isListed)
     }

@@ -189,14 +189,18 @@ extension PullRequestPanel {
             id = merge.runId.map { "run \($0)" } ?? "after merge \(run.name)"
         }
 
-        /// Each with an ID of its own: the second of the same name or run is "check Build 2".
+        /// Each with an ID of its own: the second of the same name or run is "check Build 2", or the first number after
+        /// that no other has, as when another is named "Build 2".
         static func identified(_ lines: [CheckLine]) -> [CheckLine] {
-            var seen: [String: Int] = [:]
+            var used: Set<String> = []
             return lines.map { line in
                 var line = line
-                let count = seen[line.id, default: 0] + 1
-                seen[line.id] = count
-                if count > 1 { line.id += " \(count)" }
+                let base = line.id
+                var number = 1
+                while !used.insert(line.id).inserted {
+                    number += 1
+                    line.id = "\(base) \(number)"
+                }
                 return line
             }
         }
