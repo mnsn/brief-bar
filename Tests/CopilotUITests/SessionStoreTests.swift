@@ -339,6 +339,39 @@ import Testing
         #expect(resolved.map(\.depth) == [0, 1, 0, 0])
     }
 
+    @Test func aFinishedParentStaysActiveWhileANestedChildRuns() {
+        let now = Date()
+        var parent = ended("parent", at: now.addingTimeInterval(-30))
+        parent.meta.name = "Plan the release"
+        let child = SessionRecord(
+            meta: SessionMeta(
+                id: "child", name: "Write the release notes", isRunning: true, updatedAt: now,
+                parentSessionId: "parent"
+            ),
+            log: nil
+        )
+        let state = EngineSnapshot(records: [parent, child])
+        let settings = AppSettings(defaults: MemoryDefaults())
+        let store = SessionStore(settings: settings, paths: nil)
+
+        store.receive(state)
+        #expect(store.sessions(in: .done).map(\.id) == ["parent"])
+        #expect(store.sessions(in: .running).map(\.id) == ["child"])
+
+        settings.nestSessions = true
+        store.receive(state)
+        #expect(store.sessions(in: .done).isEmpty)
+        #expect(store.sessions(in: .running).map(\.id) == ["parent", "child"])
+        #expect(store.sessions(in: .running).map(\.depth) == [0, 1])
+        #expect(store.sessions(in: .running).first?.headline == "Waiting for child sessions")
+        #expect(store.sessions(in: .running).first?.detail == "1 running")
+
+        var finishedChild = ended("child", at: now.addingTimeInterval(10))
+        finishedChild.meta.parentSessionId = "parent"
+        store.receive(EngineSnapshot(records: [parent, finishedChild]))
+        #expect(store.sessions(in: .done).map(\.id) == ["parent", "child"])
+    }
+
     @Test func nestingSessionsIsOptInAndPersists() {
         let defaults = MemoryDefaults()
         #expect(!AppSettings(defaults: defaults).nestSessions)
