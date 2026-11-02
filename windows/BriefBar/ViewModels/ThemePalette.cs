@@ -40,8 +40,9 @@ public sealed class ThemePalette
 
     public bool IsHighContrast { get; }
 
-    /// The color it's shown on when that isn't the bar's and the panel's own, such as the taskbar's accent color behind
-    /// the bar: its states', caution's and quiet colors stand out on it as on their own (`StatePalette.Readable`).
+    /// The color its states', caution's, quiet and glyphs' colors are worked out against when that isn't the panel's,
+    /// such as the bar's behind an item that's open and pointed at (`StatePalette.BarBackground`), so they stand out
+    /// there too (`StatePalette.Readable`).
     public uint? Background { get; }
 
     /// Icons, dots and badges in a state.

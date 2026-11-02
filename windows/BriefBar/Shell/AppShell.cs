@@ -71,7 +71,8 @@ internal sealed class AppShell : IDisposable
     /// theme.
     public ThemePalette Palette { get; private set; }
 
-    /// The colors of the bar: the panel's, or on the accent color, as dark, light enough to stand out on it.
+    /// The colors of the bar: the panel's, made to stand out behind an item that's open and pointed at, on the bar's own
+    /// background or on the accent color.
     public ThemePalette BarPalette { get; private set; }
 
     /// The accent color's shade Windows paints the taskbar with while it shows the accent color: `AccentDark2`, checked
@@ -320,7 +321,7 @@ internal sealed class AppShell : IDisposable
         }
         Palette = palette;
         BarPalette = barPalette;
-        Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}, accent {barPalette.Background is not null}");
+        Log.Write(line: $"theme: dark {palette.IsDark}, high contrast {palette.IsHighContrast}, accent {Look.UsesAccent && !palette.IsHighContrast}");
         settings?.UsePalette(palette: palette);
         Refresh();
     }
@@ -426,15 +427,18 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    /// The bar's colors with `palette`: on the accent color while the taskbar shows it, which High Contrast doesn't.
+    /// The bar's colors with `palette`: worked out against its background behind an item that's open and pointed at,
+    /// the accent color while the taskbar shows it; Windows' own in High Contrast.
     ThemePalette BarPaletteFor(ThemePalette palette) =>
-        Look.UsesAccent && !palette.IsHighContrast
-            ? ThemePalette.For(
+        palette.IsHighContrast
+            ? palette
+            : ThemePalette.For(
                 theme: palette.IsDark ? ElementTheme.Dark : ElementTheme.Light,
                 isHighContrast: false,
                 settings: uiSettings,
-                background: ThemePalette.ArgbOf(color: Accent))
-            : palette;
+                background: StatePalette.BarBackground(
+                    accent: Look.UsesAccent ? ThemePalette.ArgbOf(color: Accent) : null,
+                    dark: palette.IsDark));
 
     /// Whether the apps' mode is dark, as `UISettings` says it now.
     bool AppsAreDark() => uiSettings.GetColorValue(desiredColor: UIColorType.Background).R < 128;

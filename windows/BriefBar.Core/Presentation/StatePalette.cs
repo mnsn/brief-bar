@@ -20,6 +20,11 @@ public static class StatePalette
     const uint DarkAcrylic = 0xFF2C2C2Cu;
     const uint DarkFlat = 0xFF1C1C1Cu;
 
+    /// What Windows draws behind a bar item that's open, and again behind one that's pointed at:
+    /// `SubtleFillColorSecondary`.
+    const uint LightHighlight = 0x09000000u;
+    const uint DarkHighlight = 0x0FFFFFFFu;
+
     public static uint Fill(ItemState state, bool dark) => state switch
     {
         ItemState.NeedsYou => dark ? 0xFFFF8C3Au : 0xFFD85F0Bu,
@@ -55,6 +60,18 @@ public static class StatePalette
     /// The colors the bar and the panel can have: their acrylic's usual color, and the flat one Windows shows in its
     /// place.
     public static IReadOnlyList<uint> Backgrounds(bool dark) => dark ? [DarkAcrylic, DarkFlat] : [LightAcrylic, LightFlat];
+
+    /// What the bar's colors are worked out against (`Readable`): the taskbar's `accent` color while the bar shows it,
+    /// or else the bar's own background they stand out least on, behind an item that's open and pointed at.
+    public static uint BarBackground(uint? accent, bool dark) => UnderBarItem(background: accent ?? Background(dark: dark), dark: dark);
+
+    /// `background` behind a bar item that's open and pointed at, under both of Windows' highlights: the most of them a
+    /// bar item has, which its colors stand out least against.
+    public static uint UnderBarItem(uint background, bool dark)
+    {
+        var highlight = dark ? DarkHighlight : LightHighlight;
+        return Over(argb: highlight, background: Over(argb: highlight, background: background));
+    }
 
     /// Words and glyphs with nothing to count, such as a chat's preview or the heading of a group that isn't counted:
     /// quiet, but still 4.5 to 1.

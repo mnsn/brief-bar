@@ -113,19 +113,75 @@ public sealed class StatePaletteTests
     /// `AccentDark2`, as measured on the taskbar, and made-up shades of other hues.
     public static TheoryData<uint> AccentShades => [0xFF003E92u, 0xFF8E1B1Bu, 0xFF0B5A2Au, 0xFF4B1F7Au, 0xFF7A3B00u, 0xFF6B5300u, 0xFF7A0F44u, 0xFF3D3D3Du];
 
-    [Theory]
-    [MemberData(memberName: nameof(AccentShades))]
-    public void StatesStandOutOnTheTaskbarsAccent(uint accent)
+    /// What the bar shows behind its words: its own backgrounds in light and dark, with no accent, and each of the
+    /// accent's shades in dark.
+    public static TheoryData<bool, uint, uint?> BarBackgrounds
     {
-        foreach (var state in StateCounts.AllStates)
+        get
         {
-            var fill = StatePalette.Readable(color: StatePalette.Fill(state: state, dark: true), background: accent, dark: true, least: Wcag.GraphicsContrast);
-            AssertContrast(foreground: fill, background: accent, least: Wcag.GraphicsContrast);
-            var text = StatePalette.Readable(color: StatePalette.Text(state: state, dark: true), background: accent, dark: true, least: Wcag.TextContrast);
-            AssertContrast(foreground: text, background: accent, least: Wcag.TextContrast);
+            var data = new TheoryData<bool, uint, uint?>();
+            foreach (var dark in new[] { false, true })
+            {
+                foreach (var background in StatePalette.Backgrounds(dark: dark))
+                {
+                    data.Add(p1: dark, p2: background, p3: null);
+                }
+            }
+            foreach (var accent in AccentShades)
+            {
+                data.Add(p1: true, p2: accent, p3: accent);
+            }
+            return data;
         }
-        var quiet = StatePalette.Readable(color: StatePalette.Quiet(dark: true), background: accent, dark: true, least: Wcag.TextContrast);
-        AssertContrast(foreground: quiet, background: accent, least: Wcag.TextContrast);
+    }
+
+    /// The bar's colors, worked out against `BarBackground`, stand out wherever its items are: at rest, and behind an
+    /// item that's open and pointed at, where both of Windows' highlights lie under them.
+    [Theory]
+    [MemberData(memberName: nameof(BarBackgrounds))]
+    public void TheBarsColorsStandOutBehindAnOpenItemPointedAt(bool dark, uint background, uint? accent)
+    {
+        var workedOutAgainst = StatePalette.BarBackground(accent: accent, dark: dark);
+        uint Readable(uint color, double least) =>
+            StatePalette.Readable(color: color, background: workedOutAgainst, dark: dark, least: least);
+        foreach (var shown in new[] { background, StatePalette.UnderBarItem(background: background, dark: dark) })
+        {
+            foreach (var state in StateCounts.AllStates)
+            {
+                AssertContrast(
+                    foreground: Readable(color: StatePalette.Fill(state: state, dark: dark), least: Wcag.GraphicsContrast),
+                    background: shown,
+                    least: Wcag.GraphicsContrast);
+                AssertContrast(
+                    foreground: Readable(color: StatePalette.Text(state: state, dark: dark), least: Wcag.TextContrast),
+                    background: shown,
+                    least: Wcag.TextContrast);
+            }
+            AssertContrast(foreground: Readable(color: StatePalette.Caution(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
+            AssertContrast(foreground: Readable(color: StatePalette.Quiet(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
+            foreach (var section in Sections.InBarOrder)
+            {
+                AssertContrast(
+                    foreground: Readable(color: StatePalette.Glyph(tint: section.Tint, dark: dark), least: Wcag.GraphicsContrast),
+                    background: shown,
+                    least: Wcag.GraphicsContrast);
+            }
+        }
+    }
+
+    [Fact]
+    public void WorksTheBarsColorsOutBehindAnItemWithBothHighlights()
+    {
+        // Windows' highlight, 9 of 255 black in light and 15 of 255 white in dark, twice: open, and pointed at.
+        Assert.Equal(expected: 0xFFDEDEDEu, actual: StatePalette.BarBackground(accent: null, dark: false));
+        Assert.Equal(expected: 0xFF444444u, actual: StatePalette.BarBackground(accent: null, dark: true));
+        Assert.Equal(expected: StatePalette.UnderBarItem(background: 0xFF003E92u, dark: true), actual: StatePalette.BarBackground(accent: 0xFF003E92u, dark: true));
+        // Needs you's orange stands 2.81 to 1 there in light, so the bar's is darker than the panel's.
+        var orange = StatePalette.Fill(state: ItemState.NeedsYou, dark: false);
+        Assert.True(condition: Wcag.Contrast(first: orange, second: 0xFFDEDEDEu) < Wcag.GraphicsContrast, userMessage: "Under 3 to 1 as it is.");
+        Assert.NotEqual(
+            expected: orange,
+            actual: StatePalette.Readable(color: orange, background: StatePalette.BarBackground(accent: null, dark: false), dark: false, least: Wcag.GraphicsContrast));
     }
 
     [Fact]

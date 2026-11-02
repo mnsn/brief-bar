@@ -157,8 +157,9 @@ section names and the like, so nothing you see can reach it: a line with a strin
   show the flat color Windows shows in its place, `#EEEEEE` in light and `#1C1C1C` in dark, as the taskbar does there.
   It follows light, dark, the accent and High Contrast as Windows changes, the panel's and Settings' window frames
   included, with Windows' own colors in a contrast theme. Its state colors meet WCAG AA in light and dark (text 4.5:1,
-  icons 3:1) on the acrylic and on that flat color alike, and on the accent, which tests check. States never rely on
-  color alone: each has its own icon and words.
+  icons 3:1) on the acrylic and on that flat color alike, and on the accent, and the bar's behind an item that's open
+  and pointed at too, where Windows' highlight lies under them twice, which tests check. States never rely on color
+  alone: each has its own icon and words.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
