@@ -13,7 +13,8 @@ public sealed class SettingsViewModel
 
     /// - `findOrganizations` asks Azure DevOps to look for your organizations again.
     /// - `addOrganization` asks Azure DevOps to check whether your sign-in can read an organization you add, and watch it
-    ///   if it should, then hands what it found to its second argument, on any thread; false when Azure DevOps isn't reading.
+    ///   if it should, then hands what it found to its second argument, on any thread, once, or null when the check ended
+    ///   without anything to act on; false when Azure DevOps isn't reading.
     /// - `signIn` signs in to the Azure CLI in a directory, an organization's.
     public SettingsViewModel(
         SourceSwitch sources,
@@ -24,7 +25,7 @@ public sealed class SettingsViewModel
         AppearanceSettingsViewModel appearance,
         ThemePalette palette,
         Action findOrganizations,
-        Func<string, Action<OrganizationAccess>, bool> addOrganization,
+        Func<string, Action<OrganizationAccess?>, bool> addOrganization,
         Action<string> signIn)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);

@@ -302,11 +302,11 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     }
 
     /// Watches `name`, an organization you add, once a check of whether your sign-in can read it finds it should (in another
-    /// directory, or not checked for now, too), and hands `found` what the check found, on the thread pool. Adding it again
-    /// checks again, and the earlier check changes nothing. Returns false when Azure DevOps isn't reading now, and checks
-    /// nothing; stopping it, or turning it off, ends a check under way, which then adds nothing and tells nothing. The Mac's
-    /// `PRStore.add(organization:found:)`.
-    public bool AddOrganization(string name, Action<OrganizationAccess> found)
+    /// directory, or not checked for now, too), and hands `found` what the check found, on the thread pool, once: or null
+    /// when the check ended without anything to act on, as when Azure DevOps stopped, or was turned off, meanwhile, which
+    /// adds nothing, or you added it again since, whose own check says. Returns false when Azure DevOps isn't reading now,
+    /// and checks nothing. The Mac's `PRStore.add(organization:found:)`.
+    public bool AddOrganization(string name, Action<OrganizationAccess?> found)
     {
         ArgumentNullException.ThrowIfNull(argument: name);
         ArgumentNullException.ThrowIfNull(argument: found);
@@ -537,9 +537,25 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
     }
 
-    /// Checks whether your sign-in can read `name`, as you add it: unless Azure DevOps stopped meanwhile, or you added it
-    /// again since (`check` isn't the latest), it watches it if it should, and tells `found` what it found.
-    async Task CheckAccessAsync(string name, int check, int fromGeneration, Action<OrganizationAccess> found, CancellationToken cancellationToken)
+    /// Checks whether your sign-in can read `name`, as you add it, and tells `found` what it found, or null when it found
+    /// nothing to act on (`AccessToActOnAsync`), whatever happens.
+    async Task CheckAccessAsync(string name, int check, int fromGeneration, Action<OrganizationAccess?> found, CancellationToken cancellationToken)
+    {
+        OrganizationAccess? access = null;
+        try
+        {
+            access = await AccessToActOnAsync(name: name, check: check, fromGeneration: fromGeneration, cancellationToken: cancellationToken)
+                .ConfigureAwait(continueOnCapturedContext: false);
+        }
+        finally
+        {
+            found(obj: access);
+        }
+    }
+
+    /// What the check of `name` found, once it has watched it if it should; null, adding nothing, when Azure DevOps stopped
+    /// or was turned off meanwhile, or you added it again since (`check` isn't the latest).
+    async Task<OrganizationAccess?> AccessToActOnAsync(string name, int check, int fromGeneration, CancellationToken cancellationToken)
     {
         OrganizationAccess access;
         try
@@ -548,13 +564,14 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return;
+            // Azure DevOps stopped, as when it's turned off: nothing was found to act on.
+            return null;
         }
         lock (gate)
         {
             if (fromGeneration != generation || !accessChecks.TryGetValue(key: name, value: out var latest) || latest != check)
             {
-                return;
+                return null;
             }
             accessChecks.Remove(key: name);
             if (access.Watches && !settings.IsWatching(name: name))
@@ -563,7 +580,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             }
         }
         Log.Write(line: $"azureDevOps: checked an organization you added: {access.Kind}");
-        found(obj: access);
+        return access;
     }
 
     /// Times move on: what's new, done or idle may have changed, and how long ago each pull request was created, which

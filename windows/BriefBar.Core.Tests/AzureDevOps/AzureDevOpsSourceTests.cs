@@ -193,8 +193,9 @@ public sealed class AzureDevOpsSourceTests
     }
 
     /// An organization you add is checked first: one your sign-in reads, or one in another directory, is watched, and one
-    /// that isn't yours isn't; each says what the check found. Added again, by any spelling, only the last check counts;
-    /// turned off meanwhile, nothing is added or told; and while it isn't reading, nothing is checked.
+    /// that isn't yours isn't; each says what the check found. Added again, by any spelling, only the last check counts,
+    /// and the earlier one ends without a word; turned off meanwhile, nothing is added, and the check ends without a word;
+    /// and while it isn't reading, nothing is checked.
     [Fact]
     public async Task ChecksAnOrganizationAsYouAddIt()
     {
@@ -219,21 +220,33 @@ public sealed class AzureDevOpsSourceTests
         Assert.Equal(expected: OrganizationAccess.NotYours, actual: await AddedAsync(source: source, name: "shop"));
         Assert.False(condition: made.Settings.IsWatching(name: "shop"));
 
-        var superseded = 0;
-        Assert.True(condition: source.AddOrganization(name: "slow", found: _ => Interlocked.Increment(location: ref superseded)));
+        var superseded = Told(source: source, name: "slow");
         var adding = AddedAsync(source: source, name: "SLOW");
         slow.SetResult(result: OrganizationAccess.NotYours);
         Assert.Equal(expected: OrganizationAccess.NotYours, actual: await adding);
+        Assert.Null(@object: await superseded.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
         Assert.False(condition: made.Settings.IsWatching(name: "slow"));
 
-        var told = 0;
-        Assert.True(condition: source.AddOrganization(name: "late", found: _ => Interlocked.Increment(location: ref told)));
+        var turnedOff = Told(source: source, name: "late");
         source.DeleteSavedData();
         late.SetResult(result: OrganizationAccess.Readable);
-        await Task.Delay(millisecondsDelay: 200, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(@object: await turnedOff.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
         Assert.False(condition: made.Settings.IsWatching(name: "late"));
-        Assert.Equal(expected: (0, 0), actual: (Volatile.Read(location: ref superseded), Volatile.Read(location: ref told)));
         Assert.False(condition: source.AddOrganization(name: "after", found: _ => { }));
+    }
+
+    /// Stopped while it checks an organization you add, it adds nothing, and the check ends without a word.
+    [Fact]
+    public async Task StoppingEndsACheckWithoutAWord()
+    {
+        var never = new TaskCompletionSource<OrganizationAccess>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var made = Make(check: (_, cancellationToken) => never.Task.WaitAsync(cancellationToken: cancellationToken));
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var told = Told(source: source, name: "adatum");
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(@object: await told.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(condition: made.Settings.IsWatching(name: "adatum"));
     }
 
     /// Sign in can't start `az login` when `az.cmd` was removed since BriefBar found it, or is at a path with a percent
@@ -503,11 +516,15 @@ public sealed class AzureDevOpsSourceTests
     }
 
     /// Adds the organization `name` with `source`, and waits for what its check found.
-    static async Task<OrganizationAccess> AddedAsync(AzureDevOpsSource source, string name)
+    static async Task<OrganizationAccess> AddedAsync(AzureDevOpsSource source, string name) =>
+        Assert.IsType<OrganizationAccess>(@object: await Told(source: source, name: name).WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+
+    /// Adds the organization `name` with `source`: what its check finds, or null when it ends without anything to act on.
+    static Task<OrganizationAccess?> Told(AzureDevOpsSource source, string name)
     {
-        var found = new TaskCompletionSource<OrganizationAccess>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var found = new TaskCompletionSource<OrganizationAccess?>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
         Assert.True(condition: source.AddOrganization(name: name, found: access => found.TrySetResult(result: access)));
-        return await found.Task.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+        return found.Task;
     }
 
     static CommandRequest Request(string command, string rowId) => new(Section: SectionId.AzureDevOpsPullRequests, Command: command, RowId: rowId);

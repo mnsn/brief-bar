@@ -16,21 +16,24 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
 {
     readonly AzureDevOpsSettings settings;
     readonly Action findOrganizations;
-    readonly Func<string, Action<OrganizationAccess>, bool> addOrganization;
+    readonly Func<string, Action<OrganizationAccess?>, bool> addOrganization;
     readonly Action<string> signIn;
     readonly DispatcherQueue queue;
-    /// The organizations you added whose checks haven't said yet, by name.
-    readonly HashSet<string> checking = new(comparer: StringComparer.OrdinalIgnoreCase);
+    /// The organizations you added whose latest check hasn't ended yet: by name, that add's number, as you may add one
+    /// again meanwhile, which replaces the earlier check.
+    readonly Dictionary<string, int> checking = new(comparer: StringComparer.OrdinalIgnoreCase);
     /// The directory the note under the box offers to sign in to.
     string? noteSignInTenant;
+    int addsMade;
     int updateQueued;
 
     /// - `findOrganizations` asks Azure DevOps to look for your organizations again.
     /// - `addOrganization` asks Azure DevOps to check whether your sign-in can read an organization you add, and watch it
-    ///   if it should, then hands what it found to its second argument, on any thread; false when Azure DevOps isn't reading.
+    ///   if it should, then hands what it found to its second argument, on any thread, once, or null when the check ended
+    ///   without anything to act on; false when Azure DevOps isn't reading.
     /// - `signIn` signs in to the Azure CLI in a directory, an organization's.
     public AzureDevOpsSettingsViewModel(
-        AzureDevOpsSettings settings, Action findOrganizations, Func<string, Action<OrganizationAccess>, bool> addOrganization, Action<string> signIn)
+        AzureDevOpsSettings settings, Action findOrganizations, Func<string, Action<OrganizationAccess?>, bool> addOrganization, Action<string> signIn)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         ArgumentNullException.ThrowIfNull(argument: findOrganizations);
@@ -159,12 +162,13 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
         {
             return;
         }
-        if (!addOrganization(arg1: name, arg2: access => queue.TryEnqueue(callback: () => ShowAccess(name: name, access: access))))
+        var add = ++addsMade;
+        if (!addOrganization(arg1: name, arg2: access => queue.TryEnqueue(callback: () => ShowAccess(name: name, add: add, access: access))))
         {
             settings.ToggleOrganization(name: name);
             return;
         }
-        checking.Add(item: name);
+        checking[name] = add;
         ShowChecking();
     }
 
@@ -262,17 +266,23 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
     void ShowChecking()
     {
         IsChecking = checking.Count > 0;
-        Checking = IsChecking ? "Checking whether your sign-in can read " + ListWords.Join(names: [.. checking.Order(comparer: OrganizationDiscovery.NameOrder)]) + "…" : string.Empty;
+        Checking = IsChecking ? "Checking whether your sign-in can read " + ListWords.Join(names: [.. checking.Keys.Order(comparer: OrganizationDiscovery.NameOrder)]) + "…" : string.Empty;
     }
 
-    /// What the check of `name` found: nothing to say when your sign-in reads it, or it couldn't be checked for now, as its
-    /// list says what's wrong then; otherwise what's wrong and what to do, with Sign in for an organization in another
-    /// directory. The latest check's note shows.
-    void ShowAccess(string name, OrganizationAccess access)
+    /// The check that the add numbered `add` asked for of `name` ended, finding `access`: nothing to say when your sign-in
+    /// reads it, or it couldn't be checked for now, as its list says what's wrong then, or the check ended without anything
+    /// to act on (null), as when Azure DevOps stopped; otherwise what's wrong and what to do, with Sign in for an
+    /// organization in another directory. An earlier add's check, which a later add of the same name replaced, says nothing
+    /// whenever it ends: the later one does.
+    void ShowAccess(string name, int add, OrganizationAccess? access)
     {
-        checking.Remove(item: name);
+        if (!checking.TryGetValue(key: name, value: out var latest) || latest != add)
+        {
+            return;
+        }
+        checking.Remove(key: name);
         ShowChecking();
-        if (access.Explanation(organization: name) is not { } explanation)
+        if (access?.Explanation(organization: name) is not { } explanation)
         {
             return;
         }
