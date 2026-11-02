@@ -67,6 +67,31 @@ import Testing
                 .detail == "Copilot ended before it started working.")
     }
 
+    /// Going on with a session, or forking one, the log has that session's history too: how it stood before this run
+    /// started isn't how this run went.
+    @Test func readsNothingTheLogSaidBeforeItStarted() {
+        let startedAt = Date(timeIntervalSince1970: 1_792_000_000 + 60)
+        let done = log([Line.userMessage(), Line.taskComplete("Capped the retries", at: 30)])
+        // Gone before it wrote anything, as when the CLI refuses its options.
+        let refused = RunStatus.derive(
+            log: done, startedAt: startedAt, isRunning: false, exitStatus: 1, stoppedByYou: false,
+            output: "error: unknown option '--autopilot'\n"
+        )
+        #expect(refused == RunStatus(phase: .failed, detail: "error: unknown option '--autopilot'"))
+        // While it runs, the session's step from before isn't its own.
+        #expect(RunStatus.derive(log: working, startedAt: startedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil)
+                == RunStatus(phase: .working))
+        // What it wrote itself counts.
+        let goneOn = log([
+            Line.userMessage(), Line.taskComplete("Capped the retries", at: 30), Line.event("session.resume", at: 61),
+            Line.userMessage("Try it with a cap", at: 62), Line.taskComplete("Tried it", at: 90),
+        ])
+        let finished = RunStatus.derive(log: goneOn, startedAt: startedAt, isRunning: false, exitStatus: 0, stoppedByYou: false, output: nil)
+        #expect(finished.phase == .finished && finished.detail == "Tried it")
+        // With no start to go by, the whole log counts.
+        #expect(RunStatus.derive(log: done, isRunning: false, exitStatus: 1, stoppedByYou: false, output: nil).phase == .finished)
+    }
+
     /// The CLI follows an option it refuses with its usage and a hint, which say nothing of why.
     @Test func saysTheCLIsErrorRatherThanItsHint() {
         let output = """

@@ -519,7 +519,10 @@ final class CopilotTasksStore: ObservableObject {
                 if DetachedProgram.isRunning(run.process) || awaitsExit(of: run) {
                     // Working, whatever its log says for now; the log gives its current step.
                     let log = await monitor.log(id: run.id, events: events)
-                    results.append((run, RunStatus.derive(log: log, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil), nil))
+                    let status = RunStatus.derive(
+                        log: log, startedAt: run.launchedAt, isRunning: true, exitStatus: nil, stoppedByYou: false, output: nil
+                    )
+                    results.append((run, status, nil))
                     continue
                 }
                 let log = await monitor.log(id: run.id, events: events)
@@ -530,8 +533,8 @@ final class CopilotTasksStore: ObservableObject {
                     return (printed, needsLink ? RunTranscript.openedPullRequest(events: events, printed: printed) : nil)
                 }.value
                 let status = RunStatus.derive(
-                    log: log, isRunning: false, exitStatus: exitStatuses[run.id], stoppedByYou: wasStoppedByYou(run.id),
-                    output: found.0
+                    log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatuses[run.id],
+                    stoppedByYou: wasStoppedByYou(run.id), output: found.0
                 )
                 results.append((run, status, found.1))
             }

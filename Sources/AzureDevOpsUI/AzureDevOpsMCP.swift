@@ -282,7 +282,8 @@ actor AzureDevOpsReader {
             let log = await monitor.log(id: run.id, events: run.events(in: home))
             let isRunning = run.ended == nil && DetachedProgram.isRunning(run.process)
             var status = RunStatus.derive(
-                log: log, isRunning: isRunning, exitStatus: nil, stoppedByYou: run.stoppedByYou == true, output: nil
+                log: log, startedAt: run.launchedAt, isRunning: isRunning, exitStatus: nil,
+                stoppedByYou: run.stoppedByYou == true, output: nil
             )
             if let ended = run.ended { status.phase = ended }
             entries.append(CopilotTaskEntry(

@@ -492,6 +492,40 @@ import Testing
         #expect(arguments.contains("shell(git push)"))
     }
 
+    /// The fork has the session's whole log, which ends with its task done. If Copilot then stops before it writes
+    /// anything, as when the CLI refuses its options, the task failed: it didn't finish as the session had.
+    @Test(.timeLimit(.minutes(1)))
+    func aForkWhoseCopilotStopsAtOnceFailedThoughTheSessionHadFinished() async throws {
+        let repository = try await RepositoryFixture()
+        defer { repository.remove() }
+        let fixture = try FakeCopilot.Fixture(in: repository.folder, base: repository.environment, ["FAKE_RUN": "fails"])
+        let history = try FileHandle(forWritingTo: fixture.sessionLog)
+        try history.seekToEnd()
+        try history.write(contentsOf: Data((Line.taskComplete("Capped the retries", at: 20) + "\n").utf8))
+        try history.close()
+        let request = CopilotLauncher.Request(
+            subject: .workItem(sampleItem), prompt: "Try it with a cap", options: CopilotModel.quick, repository: repository.checkout,
+            worktreesFolder: nil, forking: session(in: repository.checkout, repository: repository.checkout)
+        )
+        let (exits, sink) = AsyncStream.makeStream(of: Int32.self)
+        let run = try await launcher(fixture).launch(request) { status in
+            sink.yield(status)
+            sink.finish()
+        }
+        var iterator = exits.makeAsyncIterator()
+        let exitStatus = await iterator.next()
+        #expect(exitStatus == 1)
+        // The fork's log is the session's, as the CLI copied it: it says the task is done.
+        let log = try #require(await RunMonitor().log(id: run.id, events: run.events(in: fixture.home)))
+        #expect(log.phase == .finished)
+        #expect(try Data(contentsOf: run.events(in: fixture.home)) == Data(contentsOf: fixture.sessionLog))
+        let printed = try String(contentsOf: run.output(in: fixture.folder.appendingPathComponent("output")), encoding: .utf8)
+        let status = RunStatus.derive(
+            log: log, startedAt: run.launchedAt, isRunning: false, exitStatus: exitStatus, stoppedByYou: false, output: printed
+        )
+        #expect(status == RunStatus(phase: .failed, detail: "error: unknown option '--autopilot'"))
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func aCopilotCLIThatCantForkSafelyLeavesNothingBehind() async throws {
         for (settings, reason) in [

@@ -94,6 +94,13 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         onPullRequest != nil && workItem == nil && isAppSession != true
     }
 
+    /// When Copilot started on it: when its process started, as macOS records it, or else when BriefBar started it. Going on
+    /// with a session, or forking one, its log has that session's history too: what the log says from before then, this run
+    /// didn't (`RunStatus.derive`).
+    public var launchedAt: Date {
+        process.startedAt ?? startedAt
+    }
+
     /// Copilot's log of the session, in the Copilot CLI's folder (`CopilotCLI.home`).
     public func events(in copilotHome: URL) -> URL {
         copilotHome.appendingPathComponent("session-state", isDirectory: true)
@@ -125,12 +132,18 @@ public struct RunStatus: Sendable, Equatable {
     /// and after an error. Its log and output are complete only once it's gone, so read them after finding it gone.
     /// - Parameters:
     ///   - log: nil until Copilot has written one.
+    ///   - startedAt: when Copilot started on it (`CopilotRun.launchedAt`). A phase its log entered before then is the
+    ///     history of a session it went on with, or forked, not how this run went, and counts as nothing written yet.
     ///   - exitStatus: how its process ended, when BriefBar saw it end.
     ///   - stoppedByYou: you stopped it.
     ///   - output: what it printed, which says why when it couldn't start.
     public static func derive(
-        log: SessionLogState?, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
+        log: SessionLogState?, startedAt: Date? = nil, isRunning: Bool, exitStatus: Int32?, stoppedByYou: Bool, output: String?
     ) -> RunStatus {
+        let log = log.flatMap { log -> SessionLogState? in
+            guard let startedAt, let since = log.phaseSince, since < startedAt else { return log }
+            return nil
+        }
         if isRunning {
             return RunStatus(phase: .working, detail: log?.phase == .running ? log?.currentStep : nil)
         }

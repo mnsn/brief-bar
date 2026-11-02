@@ -5,16 +5,21 @@ import Foundation
 /// it answers BriefBar's JSON-RPC requests, each after a `Content-Length` header, as the CLI's server does: connect,
 /// sessions.fork, session.resume, session.ui.ephemeralQuery and session.delete, and nothing else; while it answers a
 /// question, it says something unasked and asks something of its own, as the server does. Each message it gets goes to
-/// `$FAKE_SERVER_LOG`, one a line. A fork's folder is made in `$COPILOT_HOME/session-state`, and a deleted session's
-/// removed, unless the file `$FAKE_DELETE_FAILS` names is there. What it answers follows `FAKE_VERSION`, `FAKE_FORK`
-/// (`unsupported`, `fails`, `hang`, or `late`, a second late),
+/// `$FAKE_SERVER_LOG`, one a line. A fork's folder is made in `$COPILOT_HOME/session-state`, with a copy of the session's
+/// log, as the CLI copies it, and a deleted session's removed, unless the file `$FAKE_DELETE_FAILS` names is there. What it
+/// answers follows `FAKE_VERSION`, `FAKE_FORK` (`unsupported`, `fails`, `hang`, or `late`, a second late),
 /// `FAKE_FORK_ID` and `FAKE_ANSWER` (`hang`, `exit`, `signed-out`, or the answer). As `copilot -p`, it writes its
-/// arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task done, as `CopilotLauncherTests`' does.
+/// arguments to `$FAKE_COPILOT_ARGUMENTS` and a session log ending with the task done, as `CopilotLauncherTests`' does; or,
+/// with `FAKE_RUN=fails`, refuses its options, as the CLI does, before it writes anything to the log.
 enum FakeCopilot {
     static let script = #"""
         #!/bin/sh
         if [ "$1" != "--headless" ]; then
           printf '%s\n' "$@" > "$FAKE_COPILOT_ARGUMENTS"
+          if [ "$FAKE_RUN" = fails ]; then
+            echo "error: unknown option '--autopilot'" >&2
+            exit 1
+          fi
           while [ $# -gt 0 ]; do
             case "$1" in
               --session-id) id="$2"; shift 2 ;;
@@ -34,6 +39,13 @@ enum FakeCopilot {
         }
         refuse() {
           send "{\"jsonrpc\":\"2.0\",\"id\":$1,\"error\":{\"code\":$2,\"message\":\"$3\"}}"
+        }
+        makefork() {
+          from=$(printf '%s' "$1" | sed -n 's/.*"sessionId":"\([0-9a-f-]\{36\}\)".*/\1/p')
+          mkdir -p "$COPILOT_HOME/session-state/$FAKE_FORK_ID"
+          if [ -n "$from" ] && [ -f "$COPILOT_HOME/session-state/$from/events.jsonl" ]; then
+            cp "$COPILOT_HOME/session-state/$from/events.jsonl" "$COPILOT_HOME/session-state/$FAKE_FORK_ID/events.jsonl"
+          fi
         }
         while :; do
           length=
@@ -57,8 +69,8 @@ enum FakeCopilot {
                 unsupported) refuse "$id" -32601 "Unhandled method sessions.fork" ;;
                 fails) refuse "$id" -32603 "Request sessions.fork failed with message: Cannot fork session: no persisted or in-memory events found" ;;
                 hang) ;;
-                late) sleep 1; mkdir -p "$COPILOT_HOME/session-state/$FAKE_FORK_ID"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
-                *) mkdir -p "$COPILOT_HOME/session-state/$FAKE_FORK_ID"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                late) sleep 1; makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
+                *) makefork "$body"; answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"name\":\"fork\"}" ;;
               esac ;;
             session.resume) answer "$id" "{\"sessionId\":\"$FAKE_FORK_ID\",\"isRemote\":false}" ;;
             session.ui.ephemeralQuery)
