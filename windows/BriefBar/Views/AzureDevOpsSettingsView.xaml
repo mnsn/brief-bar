@@ -137,10 +137,12 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <StackPanel Grid.ColumnSpan="2">
                 <TextBlock Style="{StaticResource SettingsCardTitleStyle}" Text="Add an organization" />
-                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Its name, or a link from it, such as dev.azure.com/contoso or contoso.visualstudio.com." />
+                <TextBlock Style="{StaticResource SettingsCardDescriptionStyle}" Text="Its name, or a link from it, such as dev.azure.com/contoso or contoso.visualstudio.com. BriefBar checks that your sign-in can read it first." />
             </StackPanel>
             <TextBox
                 x:Name="OrganizationBox"
@@ -166,6 +168,33 @@
                 Text="{x:Bind ViewModel.OrganizationError, Mode=OneWay}"
                 TextWrapping="Wrap"
                 Visibility="{x:Bind ViewModel.HasOrganizationError, Mode=OneWay}" />
+            <!-- While an organization you added is checked; Narrator says it as it changes. -->
+            <TextBlock
+                Grid.Row="3"
+                Grid.ColumnSpan="2"
+                Margin="0,6,0,0"
+                AutomationProperties.LiveSetting="Polite"
+                Style="{StaticResource SettingsCardDescriptionStyle}"
+                Text="{x:Bind ViewModel.Checking, Mode=OneWay}"
+                TextWrapping="Wrap"
+                Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
+            <!-- What the check found, when your sign-in can't read it: as the Mac's alert says it. -->
+            <InfoBar
+                Grid.Row="4"
+                Grid.ColumnSpan="2"
+                Margin="0,8,0,0"
+                IsOpen="{x:Bind ViewModel.HasNote, Mode=TwoWay}"
+                Message="{x:Bind ViewModel.NoteDetail, Mode=OneWay}"
+                Severity="{x:Bind ViewModel.NoteSeverity, Mode=OneWay}"
+                Title="{x:Bind ViewModel.NoteTitle, Mode=OneWay}">
+                <InfoBar.ActionButton>
+                    <Button
+                        Click="OnNoteSignInClick"
+                        Content="Sign in…"
+                        ToolTipService.ToolTip="Runs az login in a console window, in the directory it needs: it opens your browser, or Windows' sign-in"
+                        Visibility="{x:Bind ViewModel.NoteOffersSignIn, Mode=OneWay}" />
+                </InfoBar.ActionButton>
+            </InfoBar>
         </Grid>
         <Grid Style="{StaticResource SettingsCardStyle}">
             <Grid.ColumnDefinitions>

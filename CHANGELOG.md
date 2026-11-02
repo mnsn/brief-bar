@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
 - **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, a line break
   (`<br>`) breaks the line, an HTML comment shows nothing, and tags such as `<b>` or `<details>` keep only
   their text, rather than showing as they were written.

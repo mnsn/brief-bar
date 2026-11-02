@@ -398,7 +398,7 @@ public sealed class ClientTests
     }
 
     /// GitHub's source says it connects to api.github.com only: sent elsewhere, as by a proxy's sign-in page, it sends
-    /// nothing there, and says where it was sent.
+    /// nothing there, and says so without naming the host, as the Mac's does.
     [Theory]
     [InlineData(302)]
     [InlineData(307)]
@@ -409,9 +409,9 @@ public sealed class ClientTests
         using var client = server.Client();
 
         var error = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Equal(expected: GitHubError.Network(message: "GitHub redirected BriefBar to another host, sso.example.org, which it doesn't connect to."), actual: error.Error);
+        Assert.Equal(expected: GitHubError.Network(message: "GitHub redirected BriefBar to another host, which it doesn't connect to."), actual: error.Error);
         Assert.Equal(
-            expected: "GitHub redirected BriefBar to another host, sso.example.org, which it doesn't connect to. The list may be out of date.",
+            expected: "GitHub redirected BriefBar to another host, which it doesn't connect to. The list may be out of date.",
             actual: GitHubProblem.From(error: error.Error, now: TestTimes.Reference).Message);
         var request = Assert.Single(collection: server.Requests);
         Assert.Equal(expected: GitHubClient.Endpoint, actual: request.Url);
