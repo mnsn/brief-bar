@@ -77,7 +77,9 @@ public struct RichText: Sendable, Equatable {
     }
 
     /// From Markdown: the blocks work items use (headings, lists and task lists, quotes, code, tables and rules), and
-    /// inline formatting, links and images.
+    /// inline formatting, links and images. Outside code, the HTML that comments on pull requests have in their Markdown
+    /// shows as Azure DevOps shows it: an HTML comment shows nothing, a line break breaks the line, an image is an image,
+    /// and the other tags it formats text with keep their text.
     public init(markdown: String) {
         self.init(blocks: MarkdownReader.read(markdown))
     }
@@ -761,8 +763,8 @@ private enum MarkdownReader {
     private static let quoteDepth = 8
 
     static func read(_ markdown: String, depth: Int = 0) -> [RichText.Block] {
-        let raw = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let raw = droppingHTMLComments(markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
         // Each line with its indentation in spaces, tabs going to the next multiple of four columns, for the blocks'
         // structure. What's after the indentation, and code, keep their tabs.
         let lines = raw.map(Self.expandingIndentation)
@@ -1080,8 +1082,139 @@ private enum MarkdownReader {
         lines.joined(separator: "\n")
     }
 
+    // MARK: HTML in Markdown
+
+    /// The lines without the HTML comments that start a line and end on a later one, which show nothing, as bots leave
+    /// them in their comments; what follows the end of one stays. Code keeps them, and a comment that ends on the line it
+    /// starts goes with the rest of the line's inline HTML.
+    static func droppingHTMLComments(_ lines: [String]) -> [String] {
+        var kept: [String] = []
+        var fence: String?
+        var index = 0
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            index += 1
+            if let open = fence {
+                if trimmed.count >= open.count, trimmed.allSatisfy({ $0 == open.first }) { fence = nil }
+                kept.append(line)
+            } else if let mark = Self.fence(trimmed) {
+                fence = mark
+                kept.append(line)
+            } else if trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->"), line.prefix(while: { $0 == " " }).count < 4 {
+                while index < lines.count, !lines[index].contains("-->") { index += 1 }
+                if index < lines.count, let end = lines[index].range(of: "-->") {
+                    let rest = String(lines[index][end.upperBound...])
+                    if !rest.allSatisfy(\.isWhitespace) { kept.append(rest) }
+                    index += 1
+                }
+            } else {
+                kept.append(line)
+            }
+        }
+        return kept
+    }
+
+    /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
+    /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment goes on to its
+    /// end, whatever looks like code in it. Without a run to end it, or after a backslash, backticks are just backticks.
+    static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
+        guard text.contains("<") else { return text }
+        // The runs of backticks, outside backslashes' escapes, in order.
+        var runs: [(range: Range<String.Index>, length: Int)] = []
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "\\" {
+                index = text.index(after: index)
+                if index < text.endIndex { index = text.index(after: index) }
+            } else if text[index] == "`" {
+                let start = index
+                var length = 0
+                while index < text.endIndex, text[index] == "`" {
+                    index = text.index(after: index)
+                    length += 1
+                }
+                runs.append((start..<index, length))
+            } else {
+                index = text.index(after: index)
+            }
+        }
+        // By length, where the runs are among them, the first last, to find the next of as many in one pass.
+        var later: [Int: [Int]] = [:]
+        for (position, run) in runs.enumerated().reversed() { later[run.length, default: []].append(position) }
+        var result = ""
+        var plain = text.startIndex
+        var next = 0
+        index = text.startIndex
+        while index < text.endIndex {
+            while next < runs.count, runs[next].range.lowerBound < index { next += 1 }
+            if next < runs.count, runs[next].range.lowerBound == index {
+                let run = runs[next]
+                while let after = later[run.length]?.last, after <= next { later[run.length]?.removeLast() }
+                if let closing = later[run.length]?.last {
+                    result += transform(text[plain..<index])
+                    result += text[index..<runs[closing].range.upperBound]
+                    index = runs[closing].range.upperBound
+                    plain = index
+                } else {
+                    index = run.range.upperBound
+                }
+            } else if text[index] == "\\" {
+                index = text.index(after: index)
+                if index < text.endIndex { index = text.index(after: index) }
+            } else if text[index...].hasPrefix("<!--") {
+                let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex)
+                index = end?.upperBound ?? text.endIndex
+            } else {
+                index = text.index(after: index)
+            }
+        }
+        return result + transform(text[plain...])
+    }
+
+    /// The HTML tags that format text, which keep their text: those ending a line or a block break the line there.
+    nonisolated(unsafe) private static let htmlTag = #/
+        <(\/?)(a|abbr|b|bdi|bdo|big|blockquote|br|center|cite|code|dd|del|details|dfn|div|dl|dt|em|font|h[1-6]|hr|i|ins|
+        kbd|li|mark|ol|p|pre|q|s|samp|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|u|ul|
+        var|wbr)(?:\s[^<>]*)?\/?>
+        /#.ignoresCase()
+
+    /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, line breaks and the
+    /// ends of blocks such as paragraphs break the line, a table's cells are apart, an image is Markdown's, and the other
+    /// tags that format text keep their text. What isn't one of those stays, such as the `<T>` of `List<T>`.
+    static func withoutHTML(_ text: Substring) -> String {
+        guard text.contains("<") else { return String(text) }
+        var text = String(text)
+        text = text.replacing(/<!--[\s\S]*?(?:-->|\z)/, with: "")
+        text = text.replacing(/<img\b[^<>]*>/.ignoresCase()) { image(String($0.output)) }
+        return text.replacing(htmlTag) { tag in
+            let closes = !tag.output.1.isEmpty
+            switch tag.output.2.lowercased() {
+            case "br", "hr": return "\n"
+            case "p", "div", "li", "tr", "summary", "details", "blockquote", "pre", "table", "dt", "dd", "h1", "h2", "h3", "h4",
+                 "h5", "h6":
+                return closes ? "\n" : ""
+            case "td", "th": return closes ? " " : ""
+            default: return ""
+            }
+        }
+    }
+
+    /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.
+    private static func image(_ tag: String) -> String {
+        var attributes: [String: String] = [:]
+        // Each name after a space or a slash, so that a long word that isn't one is read once.
+        for match in tag.matches(of: /[\s\/]([A-Za-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/) {
+            attributes[match.output.1.lowercased()] = String(match.output.2 ?? match.output.3 ?? match.output.4 ?? "")
+        }
+        let alt = (attributes["alt"] ?? "").filter { !"[]".contains($0) }
+        guard let url = RichText.webLink(attributes["src"]) else { return alt }
+        return "![\(alt)](<\(url.absoluteString)>)"
+    }
+
     /// Inline Markdown: emphasis, code, strikethrough, links and images, which link to where they are.
     private static func inline(_ text: String) -> [RichText.Run] {
+        let text = outsideCode(text, withoutHTML)
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible
         )

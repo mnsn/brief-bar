@@ -1,0 +1,89 @@
+import Foundation
+import Testing
+@testable import AzureDevOpsCore
+
+/// What comments on pull requests have in their Markdown beyond what work items' does: HTML, from bots most of all.
+@Suite struct CommentMarkdownTests {
+    private func plain(_ markdown: String) -> String {
+        RichText(markdown: markdown).plainText
+    }
+
+    @Test func showsNothingOfHTMLComments() {
+        #expect(RichText(markdown: "<!-- bot: 42 -->\nThe build **failed**.").blocks == [
+            .paragraph([RichText.Run("The build "), RichText.Run("failed", style: .bold), RichText.Run(".")]),
+        ])
+        #expect(plain("Before<!-- hidden --> after") == "Before after")
+        // Over several lines, blank ones among them, and whatever they look like.
+        #expect(plain("<!--\nmarker: 7\n\n- not a list\n# not a heading\n-->\nShown") == "Shown")
+        #expect(plain("Shown\n\n<!-- an end it never gets\n\n- hidden") == "Shown")
+        #expect(plain("<!--\nhidden\n--> and what follows") == "and what follows")
+        // What looks like code in one is the comment's; code that starts first is code.
+        #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
+        #expect(plain("<!-- template: describe `why`, not what --> Real text") == "Real text")
+        #expect(RichText(markdown: "`a <!-- b` c").blocks == [.paragraph([RichText.Run("a <!-- b", style: .code), RichText.Run(" c")])])
+    }
+
+    @Test func breaksLinesAndBlocksAsHTMLDoes() {
+        #expect(plain("Line one<br>Line two<br/>Line three<BR />Line four") == "Line one\nLine two\nLine three\nLine four")
+        #expect(RichText(markdown: "<details><summary>2 warnings</summary>\n\nUnused variable `delay`.\n\n</details>").blocks == [
+            .paragraph([RichText.Run("2 warnings")]),
+            .paragraph([RichText.Run("Unused variable "), RichText.Run("delay", style: .code), RichText.Run(".")]),
+        ])
+        #expect(plain("<p>First</p><p>Second</p>") == "First\nSecond")
+        #expect(plain("<table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>") == "File Issues\na.cs 2")
+    }
+
+    @Test func formattingTagsKeepTheirText() {
+        #expect(plain("Use <b>bold</b>, <i>italics</i>, <sub>small</sub> and <span style=\"color:red\">red</span>.")
+            == "Use bold, italics, small and red.")
+        #expect(plain("<a href=\"https://example.invalid/rules\">The rule</a> says so") == "The rule says so")
+    }
+
+    @Test func readsImagesInHTMLAsImages() {
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
+            .paragraph([RichText.Run("Quality gate: passed", link: URL(string: "https://example.invalid/badge.png"))]),
+        ])
+        // Only of a web page, and otherwise its description.
+        #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
+        #expect(plain("<img src=data:image/png;base64,AAAA>") == "")
+    }
+
+    @Test func leavesCodeAsItIs() {
+        #expect(RichText(markdown: "Use `<br/>` and ``a `<b>` b``, not <br>.").blocks == [
+            .paragraph([
+                RichText.Run("Use "), RichText.Run("<br/>", style: .code), RichText.Run(" and "), RichText.Run("a `<b>` b", style: .code),
+                RichText.Run(", not\n."),
+            ]),
+        ])
+        #expect(RichText(markdown: "```html\n<!-- kept -->\n<p>Kept</p>\n```").blocks == [.code("<!-- kept -->\n<p>Kept</p>")])
+        // A backtick that nothing closes isn't code.
+        #expect(plain("A lone ` and <b>bold</b>") == "A lone ` and bold")
+    }
+
+    @Test func keepsWhatOnlyLooksLikeATag() {
+        #expect(plain("Return a List<T> or Dictionary<string, int> when a < b") == "Return a List<T> or Dictionary<string, int> when a < b")
+        #expect(plain("Escaped: &lt;b&gt;bold&lt;/b&gt;") == "Escaped: <b>bold</b>")
+        #expect(RichText(markdown: "See <https://example.invalid/docs>").blocks == [
+            .paragraph([RichText.Run("See "), RichText.Run("https://example.invalid/docs", link: URL(string: "https://example.invalid/docs"))]),
+        ])
+    }
+
+    @Test func showsAReviewersSuggestionAsCode() {
+        #expect(RichText(markdown: "Cap it:\n```suggestion\ndelay = Min(delay * 2, MaxDelay);\n```").blocks == [
+            .paragraph([RichText.Run("Cap it:")]), .code("delay = Min(delay * 2, MaxDelay);"),
+        ])
+    }
+
+    @Test func readsAManyTaggedCommentInLinearTime() {
+        for long in [
+            String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 20_000),
+            "<img " + String(repeating: "a", count: 100_000) + ">",
+            "<img src=" + String(repeating: "a-b ", count: 25_000) + ">",
+            String(repeating: "` <!-- ``", count: 20_000),
+        ] {
+            let start = ContinuousClock.now
+            _ = RichText(markdown: long)
+            #expect(ContinuousClock.now - start < .seconds(5))
+        }
+    }
+}
