@@ -250,8 +250,7 @@ import Testing
         started.end(grace: 0.3)
         var exits = recorder.exits.makeAsyncIterator()
         #expect(await exits.next() == program.status)
-        // It has quit; what it started hasn't yet.
-        #expect(kill(child, 0) == 0)
+        // What it started is made to stop too, though it ignores being asked to and its program has quit.
         for _ in 0..<2000 where kill(child, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }

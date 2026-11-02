@@ -344,9 +344,10 @@ import Testing
         for _ in 0..<2000 where !FileManager.default.fileExists(atPath: ready.path) {
             try await Task.sleep(for: .milliseconds(10))
         }
-        let started = Date()
+        let clock = ContinuousClock()
+        let started = clock.now
         await #expect(throws: CopilotServer.Failure.timedOut) { try await server.fork(FakeCopilot.session, name: nil, timeout: 0.3) }
-        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(clock.now - started < .seconds(10))
         #expect(await server.close() == SIGKILL)
     }
 
