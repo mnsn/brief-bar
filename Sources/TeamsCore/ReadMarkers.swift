@@ -24,6 +24,15 @@ public struct ReadMarker: Sendable, Equatable, Hashable {
         readAt = parts.dropFirst().first.flatMap { Int64($0) }.flatMap { $0 > 0 ? Date(milliseconds: $0) : nil }
     }
 
+    /// Whether `text` is a `consumptionhorizon` in the form Teams writes for every chat, read or not: a message ID, or 0
+    /// for a chat never read, then the rest. A conversation without one in that form says nothing of whether it was read.
+    public static func isHorizon(_ text: String?) -> Bool {
+        guard let first = text?.split(separator: ";", omittingEmptySubsequences: false).first, !first.isEmpty,
+              first.allSatisfy(\.isASCIIDigit)
+        else { return false }
+        return Int64(first) != nil
+    }
+
     /// When the newest message read arrived.
     public var messageDate: Date { Date(milliseconds: messageID) }
 
@@ -106,6 +115,8 @@ public struct ReadMarkerReport: Sendable, Equatable {
     public var conversations = 0
     /// Chats with a read marker.
     public var withMarker = 0
+    /// Conversations whose read marker field is in its form, read or not: a chat never read has it as `0;…`.
+    public var withHorizon = 0
     /// Values read, by format.
     public var formats: [String: Int] = [:]
     /// Values that couldn't be read, by why.
@@ -134,6 +145,7 @@ public struct ReadMarkerReport: Sendable, Equatable {
         stores += other.stores
         conversations += other.conversations
         withMarker += other.withMarker
+        withHorizon += other.withHorizon
         formats.merge(other.formats, uniquingKeysWith: +)
         unreadable.merge(other.unreadable, uniquingKeysWith: +)
         unreadableFiles += other.unreadableFiles
@@ -152,6 +164,8 @@ struct TeamsCacheFolder {
         var marker: ReadMarker?
         var format: String?
         var unreadable: String?
+        /// Whether its read marker field is in its form, read or not.
+        var hasHorizon = false
     }
 
     let folder: IndexedDBFolder
@@ -294,6 +308,9 @@ struct TeamsCacheFolder {
             if conversation.marker != nil, conversation.id.map(Self.isChat) == true {
                 report.withMarker += 1
             }
+            if conversation.hasHorizon {
+                report.withHorizon += 1
+            }
             if let format = conversation.format {
                 report.formats[format, default: 0] += 1
             }
@@ -315,9 +332,11 @@ struct TeamsCacheFolder {
         do {
             let value = try folder.value(of: raw, key: key, externalObjects: externalObjects[key])
             let id = value.value["id"]?.string ?? key.key.string
-            let marker = value.value["properties"]?["consumptionhorizon"]?.string.flatMap(ReadMarker.init(consumptionHorizon:))
+            let horizon = value.value["properties"]?["consumptionhorizon"]?.string
+            let marker = horizon.flatMap(ReadMarker.init(consumptionHorizon:))
             let format = value.format.description + (value.fromBlobFile ? ", from a blob file" : "")
-            return Conversation(id: id.flatMap { ConversationID.isValid($0) ? $0 : nil }, marker: marker, format: format)
+            return Conversation(id: id.flatMap { ConversationID.isValid($0) ? $0 : nil }, marker: marker, format: format,
+                                hasHorizon: ReadMarker.isHorizon(horizon))
         } catch let error as FormatError {
             return Conversation(unreadable: error.description)
         } catch {

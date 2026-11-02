@@ -98,6 +98,15 @@ final class MarkerCollector: Sendable {
         for never in ["0;0;0", "", "0;900;7", "-5;1;1", "abc;1;1", ";1792317605000;1"] {
             #expect(ReadMarker(consumptionHorizon: never) == nil, "\(never)")
         }
+        // Every chat has the field, read or not: a chat never read has it as `0;…`. Teams' client message ID, its third
+        // part, can be longer than a number holds.
+        for horizon in ["1792317605000;1792317605900;1792317605007", "1792317605000", "0;0;0", "0;900;7",
+                        "1792317605000;1792317605900;98765432109876543210"] {
+            #expect(ReadMarker.isHorizon(horizon), "\(horizon)")
+        }
+        for other in ["", "-5;1;1", "abc;1;1", ";1792317605000;1", "{\"id\":1}", nil] {
+            #expect(!ReadMarker.isHorizon(other), "\(other ?? "nil")")
+        }
     }
 
     @Test func coversMessagesByIDOrElseByWhenTheyArrived() {
@@ -164,6 +173,8 @@ final class MarkerCollector: Sendable {
             let report = snapshot.report
             #expect(report.folders == 1 && report.stores == 1)
             #expect(report.conversations == 7 && report.withMarker == 5)
+            // Teams' own notes and the meeting chat nobody opened have the field too.
+            #expect(report.withHorizon == 7)
             #expect(report.formats == [
                 "Blink 21, V8 16": 5, "Blink 21, V8 16, compressed": 1, "Blink 21, V8 16, from a blob file": 1,
             ])
