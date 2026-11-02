@@ -30,7 +30,13 @@ import Testing
         #expect(plain("- <!--\n  hidden\n  --> kept\n- shown") == "• kept\n• shown")
         // An item that's only a comment has no paragraph for indented code after it to go on with.
         #expect(RichText(markdown: "- <!--\n  hidden\n  -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
+        // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
+        #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
+        #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
+        // One in a quote that doesn't end there goes on past it, to its end or the end of the text, as HTML reads it.
+        #expect(plain("> <!--\n> hidden\n\nAlso hidden") == "")
+        #expect(plain("> Shown\n> <!--\nhidden\n-->\nAfter") == "Shown\nAfter")
         // What looks like code in one is the comment's; code that starts first is code.
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
         #expect(plain("<!-- template: describe `why`, not what --> Real text") == "Real text")
@@ -85,6 +91,13 @@ import Testing
         // Its description as it's written, which isn't Markdown, but for its character references.
         #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Build [Linux] **failed** &amp; _x_\">").blocks == [
             .paragraph([RichText.Run("Build [Linux] **failed** & _x_", link: URL(string: "https://example.invalid/b.png"))]),
+        ])
+        // And its source, read once.
+        #expect(RichText(markdown: "<img src=\"https&#58;//example.invalid/b.svg?style=flat&amp;label=a%20b\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?style=flat&label=a%20b"))]),
+        ])
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.svg?q=&amp;lt;\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?q=&lt;"))]),
         ])
         // Only of a web page, and otherwise its description.
         #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
@@ -155,6 +168,8 @@ import Testing
             String(repeating: "<!-- `x` ", count: 10_000),
             String(repeating: "<a title=\"<!--\"> ", count: 3_000),
             String(repeating: "<!-- --> ", count: 5_000) + "<!--\n-->\nShown",
+            String(repeating: "> <!--\nx\n-->\n", count: 3_000),
+            "- " + String(repeating: "<!-- a --> ", count: 6_000) + "text",
         ] {
             let start = ContinuousClock.now
             _ = RichText(markdown: long)
