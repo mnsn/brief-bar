@@ -1301,10 +1301,12 @@ Your Merges** card, the run its merge's pipelines name, while the list still has
 
 On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
 one over another pull request's, is the same view as its details (`LinkedItemPage`, `PullRequestDetailsContent`),
-in a store of its own that follows the list and sees it as it shows, keeping what was new in its threads new, as
-the details do; it says how it's linked to what it opened from, leaves that out of **Also Linked**, and the header's
-way there carries on, `Bug 5110 › !4091 › …`, with ↗ and the details' menu above it. A pull request your lists
-don't have, such as a teammate's, keeps the page Show Links tells (`ItemPageView`).
+in a store the details keep for their pages, which follows the list and sees it as it shows, keeping what was new in its
+threads new, as the details do, and keeps it while the page shows once the list doesn't have it, such as one under Done
+that showing it sees, or a review that merges, until you go elsewhere; it says how it's linked to what it opened from,
+leaves that out of **Also Linked**, and the header's way there carries on, `Bug 5110 › !4091 › …`, with ↗ and the
+details' menu above it, for the pull request the page shows. A pull request your lists don't have, such as a teammate's,
+keeps the page Show Links tells (`ItemPageView`).
 
 They show what the list read already, so nothing more is read for them, and they follow the list as it
 refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,

@@ -61,17 +61,19 @@ struct PullRequestDetailsMenuItems: View {
     }
 }
 
-/// The menu of a page over a work item's details or a pull request's, ⋯ above it: for a pull request the list has, its
-/// details' menu; for anything else, opening it, copying it, and linking it to more.
+/// The menu of a page over a work item's details or a pull request's, ⋯ above it: for one of your pull requests, its
+/// details' menu, as the page shows it; for anything else, opening it, copying it, and linking it to more.
 struct PageMenuItems: View {
     let ref: ItemRef
+    /// The details' store for the pull request their page shows, which keeps it once the list doesn't have it.
+    @ObservedObject var details: PullRequestDetailsStore
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var services: AppServices
 
     var body: some View {
-        if let item = LinkedItemPage.pullRequest(ref, in: store.items) {
-            PullRequestDetailsMenuItems(item: item, isListed: true)
+        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details) {
+            PullRequestDetailsMenuItems(item: item, isListed: details.selected?.key.linkRef == ref ? details.isListed : true)
         } else {
             let item = services.links.describe(ref)
             if let menu = item.menu {

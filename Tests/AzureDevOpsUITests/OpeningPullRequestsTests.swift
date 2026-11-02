@@ -182,6 +182,42 @@ import Testing
         #expect(LinkedItemPage.pullRequest(ItemRef.session("1d6b2c7e-4f0a-4b8e-9c31-5a2e7d8f6b01")!, in: items) == nil)
     }
 
+    /// One under Done that you hadn't seen leaves the list once its page sees it: the page keeps it, with what was read of
+    /// it, until you go elsewhere, rather than turning into what Show Links knows of it.
+    @Test func aPagesPullRequestStaysOnceItLeavesTheList() async throws {
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        // What `loadOnce` makes the demo up as of.
+        let now = store.now
+        await store.loadOnce()
+        // You completed it a minute ago in Azure DevOps: the list doesn't read a closed one's threads and policies.
+        var snapshot = DemoData.snapshot(now: now)
+        let index = try #require(snapshot.records.firstIndex { $0.id.number == 4091 })
+        snapshot.records[index].pullRequest.status = .completed
+        snapshot.records[index].pullRequest.closedAt = Date().addingTimeInterval(-60)
+        snapshot.records[index].details = nil
+        store.receive(snapshot)
+        let done = try #require(store.items.first { $0.key.number == 4091 })
+        #expect(done.group == .done)
+        let ref = done.key.linkRef
+        let page = PullRequestDetailsStore()
+        #expect(LinkedItemPage.pullRequest(ref, in: store.items, kept: page) == done)
+
+        page.use(store)
+        page.show(done)
+        // The next refresh: seen, Done lets it go.
+        store.receive(snapshot)
+        #expect(!store.items.contains { $0.key == done.key })
+        #expect(!page.isListed)
+        #expect(LinkedItemPage.pullRequest(ref, in: store.items, kept: page) == done)
+        #expect(page.record?.id == done.key)
+        // Another pull request's page: the list's.
+        let other = ItemRef.pullRequest(organization: DemoData.organization, number: 4102)
+        #expect(LinkedItemPage.pullRequest(other, in: store.items, kept: page)?.key.number == 4102)
+        // Gone elsewhere: the page lets it go too.
+        page.close()
+        #expect(LinkedItemPage.pullRequest(ref, in: store.items, kept: page) == nil)
+    }
+
     /// Azure DevOps' own: a notification, from the window's Notifications page whatever you chose, and from Notification
     /// Center once you chose so, and the brief across sources, from the window's Overview, show the pull request in the
     /// window. Nothing here takes a path that would open Azure DevOps.

@@ -16,6 +16,9 @@ struct PullRequestDetailsPanel: View {
 
     /// What you went back from, to show its row again where you return.
     @LocalState private var returnTo: ItemRef?
+    /// The pull request a page over the details shows, which the page, ↗ and ⋯ share, and which keeps it while the page
+    /// shows, once the list doesn't have it.
+    @LocalState private var pageDetails = PullRequestDetailsStore()
 
     var body: some View {
         if let item = details.selected {
@@ -27,7 +30,7 @@ struct PullRequestDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                LinkedItemPage(ref: page, scroll: proxy)
+                                LinkedItemPage(ref: page, scroll: proxy, details: pageDetails)
                             } else {
                                 PullRequestDetailsContent(details: details, item: item, scroll: proxy)
                             }
@@ -142,7 +145,7 @@ struct PullRequestDetailsPanel: View {
             openButton(item)
             Menu {
                 if let page = details.pages.last {
-                    PageMenuItems(ref: page)
+                    PageMenuItems(ref: page, details: pageDetails)
                 } else {
                     PullRequestDetailsMenuItems(item: item, isListed: details.isListed)
                 }
@@ -183,29 +186,15 @@ struct PullRequestDetailsPanel: View {
         }
     }
 
-    /// ↗: the pull request in Azure DevOps, at the comment that needs you, as its row opens it.
+    /// ↗: the pull request in Azure DevOps, at the comment that needs you, as its row opens it; on a pull request's page,
+    /// that one. A page of anything else has its own, beside its title.
     @ViewBuilder
     private func openButton(_ item: PRSnapshot) -> some View {
-        if let opener = opener(item) {
-            Button(action: opener.open) {
-                Image(systemName: "arrow.up.forward.app")
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(opener.help)
-            .accessibilityLabel(opener.title)
+        if let page = details.pages.last {
+            PullRequestPageOpener(ref: page, details: pageDetails)
+        } else {
+            PullRequestOpenButton(item: item)
         }
-    }
-
-    /// The pull request's, while its details show, or the one a page shows: a page of anything else has its own, beside its
-    /// title.
-    private func opener(_ item: PRSnapshot) -> (title: String, help: String, open: () -> Void)? {
-        guard let page = details.pages.last else {
-            return ("Open in Azure DevOps", Self.openHelp(item), { store.open(item) })
-        }
-        guard let shown = LinkedItemPage.pullRequest(page, in: store.items) else { return nil }
-        return ("Open in Azure DevOps", Self.openHelp(shown), { store.open(shown) })
     }
 
     /// What ↗ opens: the pull request, or, as its row opens it, the comment that needs you or that you answered, or the

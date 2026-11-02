@@ -102,46 +102,80 @@ struct PullRequestDetailsContent: View {
     }
 }
 
-/// The page of something linked to a work item or a pull request, over its details: for a pull request your list has, the
-/// same as its own details beside the list on the window's Pull Requests page, which sees it, as showing those does; for
-/// anything else, what Show Links knows of it (`ItemPageView`).
+/// The page of something linked to a work item or a pull request, over its details: for one of your pull requests, the same
+/// as its own details beside the list on the window's Pull Requests page, which sees it, as showing those does, in a store
+/// the details keep for their pages (`details`), which follows the list as the panel's does and keeps the pull request
+/// while the page shows, once the list doesn't have it, such as one under Done that you've now seen; for anything else,
+/// what Show Links knows of it (`ItemPageView`).
 struct LinkedItemPage: View {
     let ref: ItemRef
     /// Scrolls the details it's over, which hold it.
     let scroll: ScrollViewProxy
+    /// The details' store for the pull request their page shows, which their header's ↗ and ⋯ read too.
+    @ObservedObject var details: PullRequestDetailsStore
 
     @EnvironmentObject private var store: PRStore
 
     var body: some View {
-        if let item = Self.pullRequest(ref, in: store.items) {
-            PullRequestPage(item: item, scroll: scroll)
+        if let item = Self.pullRequest(ref, in: store.items, kept: details) {
+            PullRequestDetailsContent(details: details, item: item, scroll: scroll)
+                .onAppear { show(item) }
+                // Gone, as you navigate elsewhere: unless another page of a pull request took the store over already.
+                .onDisappear {
+                    if details.selected?.key.linkRef == ref { details.close() }
+                }
         } else {
             ItemPageView(ref: ref)
         }
     }
 
-    /// The pull request a page is of, as the list has it; nil for anything else.
-    static func pullRequest(_ ref: ItemRef, in items: [PRSnapshot]) -> PRSnapshot? {
+    /// Shows the pull request in the store, which sees it, unless it shows already.
+    private func show(_ item: PRSnapshot) {
+        guard details.selected?.key.linkRef != ref else { return }
+        details.use(store)
+        details.show(item)
+    }
+
+    /// The pull request a page is of: as `kept` keeps it while its page shows, or as the list has it; nil for anything else.
+    static func pullRequest(_ ref: ItemRef, in items: [PRSnapshot], kept: PullRequestDetailsStore? = nil) -> PRSnapshot? {
         guard ref.kind == .pullRequest else { return nil }
+        if let selected = kept?.selected, selected.key.linkRef == ref { return selected }
         return items.first { $0.key.linkRef == ref }
     }
 }
 
-/// A pull request's page: its details, in a store of its own, which follows the list as the panel's does, and sees it as it
-/// shows, keeping what was new in its threads new while it does.
-private struct PullRequestPage: View {
-    let item: PRSnapshot
-    let scroll: ScrollViewProxy
+/// ↗ above a pull request's page, as above its own details: it in Azure DevOps, as its row opens it. A page of anything else
+/// has its own, beside its title.
+struct PullRequestPageOpener: View {
+    let ref: ItemRef
+    /// The details' store for the pull request their page shows.
+    @ObservedObject var details: PullRequestDetailsStore
 
     @EnvironmentObject private var store: PRStore
-    @LocalState private var details = PullRequestDetailsStore()
 
     var body: some View {
-        PullRequestDetailsContent(details: details, item: item, scroll: scroll)
-            .onAppear {
-                details.use(store)
-                details.show(item)
-            }
-            .onChange(of: item.key) { details.show(item) }
+        if let item = LinkedItemPage.pullRequest(ref, in: store.items, kept: details) {
+            PullRequestOpenButton(item: item)
+        }
+    }
+}
+
+/// ↗: a pull request in Azure DevOps, at the comment that needs you, as its row opens it.
+struct PullRequestOpenButton: View {
+    let item: PRSnapshot
+
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        Button {
+            store.open(item)
+        } label: {
+            Image(systemName: "arrow.up.forward.app")
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(PullRequestDetailsPanel.openHelp(item))
+        .accessibilityLabel("Open in Azure DevOps")
     }
 }

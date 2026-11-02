@@ -17,6 +17,9 @@ struct WorkItemDetailsPanel: View {
 
     /// What you went back from, to show its row again where you return.
     @LocalState private var returnTo: ItemRef?
+    /// The pull request a page over the details shows, which the page, ↗ and ⋯ share, and which keeps it while the page
+    /// shows, once the list doesn't have it.
+    @LocalState private var pageDetails = PullRequestDetailsStore()
 
     var body: some View {
         if let item = details.selected {
@@ -28,7 +31,7 @@ struct WorkItemDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                LinkedItemPage(ref: page, scroll: proxy)
+                                LinkedItemPage(ref: page, scroll: proxy, details: pageDetails)
                             } else {
                                 content(item)
                             }
@@ -160,10 +163,12 @@ struct WorkItemDetailsPanel: View {
                 .buttonStyle(.borderless)
                 .help("Read it again")
             }
-            pullRequestOpener
+            if let page = details.pages.last {
+                PullRequestPageOpener(ref: page, details: pageDetails)
+            }
             Menu {
                 if let page = details.pages.last {
-                    PageMenuItems(ref: page)
+                    PageMenuItems(ref: page, details: pageDetails)
                 } else {
                     menuItems(item)
                 }
@@ -256,24 +261,6 @@ struct WorkItemDetailsPanel: View {
                 }
             }
             .font(size: 12, weight: .medium).monospacedDigit()
-        }
-    }
-
-    /// ↗ on a pull request's page, as above its own details: it in Azure DevOps, as its row opens it. A page of anything else
-    /// has its own, beside its title.
-    @ViewBuilder
-    private var pullRequestOpener: some View {
-        if let page = details.pages.last, let shown = LinkedItemPage.pullRequest(page, in: store.items) {
-            Button {
-                store.open(shown)
-            } label: {
-                Image(systemName: "arrow.up.forward.app")
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(PullRequestDetailsPanel.openHelp(shown))
-            .accessibilityLabel("Open in Azure DevOps")
         }
     }
 
