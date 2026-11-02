@@ -683,6 +683,16 @@ and nothing is copied. It gives agents nothing BriefBar didn't already: it uses 
 so add BriefBar to the Copilot CLI too. BriefBar changes only its own plugin marketplace, by the
 bundle identifier of the app it's in, and leaves any other named `briefbar`, with its plugins.
 
+**Send Prompts to Copilot Sessions**, on the same page, is off until you turn it on. Then BriefBar
+installs its other plugin, an extension that runs in each of the app's sessions, so that BriefBar's Send
+to Copilot window can send a prompt to a session itself, with **Send to Session**, or fork the session and
+send the prompt to the fork, with **Send to a Fork**, rather than copy it for you to paste. The extension
+does nothing else: it acts only on what BriefBar asks of its own session, never logs a prompt, and runs
+as a process of about 46 MB in each session the app has open.
+Sessions that are already open get it once they start again. Turning it off, or turning agents off,
+removes it, and BriefBar stops sending prompts to sessions at once, though the sessions that are open
+keep the extension until they start again.
+
 ## Install
 
 BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
@@ -826,8 +836,8 @@ or 3 days (see [Notifications](#notifications)).
 | | Show Context Usage | off by default: how full each session's context window is |
 | GitHub | Refresh Every | 1, 2 (default), 5 or 15 minutes: one request each time |
 
-**Settings › Agents** lets agents use BriefBar, off by default, and installs its Copilot plugin only
-when you ask (see [Agents](#agents)).
+**Settings › Agents** lets agents use BriefBar, off by default, and installs its Copilot plugin, and
+its extension for the Copilot app's sessions, only when you ask (see [Agents](#agents)).
 
 In **Settings › Menu Bar**, **Widgets** and **Windows**, each item is a card with a chip for each
 section it shows. Drag a chip onto another card to put them together, onto **New Item** (or **New

@@ -1,28 +1,40 @@
 import BriefBarCore
 import Foundation
 
-/// BriefBar's plugin among the Copilot CLI's plugins, which the GitHub Copilot app's sessions load too. It gives them
-/// BriefBar's skill, `/briefbar`, which uses BriefBar's MCP server (`CopilotMCPRegistration`). The plugin comes with
-/// BriefBar.app, in a marketplace of its own on this Mac (`Contents/Resources/CopilotPlugin`), which the CLI loads in
-/// place: nothing is copied, and it updates with BriefBar. BriefBar asks the CLI itself (`copilot plugin marketplace
-/// list`, `add` and `remove`, and `copilot plugin list`, `install` and `uninstall`), and never reads or writes its
-/// files, where other plugins' and marketplaces' settings are. It changes a marketplace by its name only once it knows
-/// it's BriefBar's: this copy's, or one in another copy of BriefBar.app, by that app's bundle identifier. It never
-/// passes `--force`, which would uninstall whatever else a marketplace has.
+/// BriefBar's plugins among the Copilot CLI's plugins, which the GitHub Copilot app's sessions load too: `/briefbar`, its
+/// skill, which uses BriefBar's MCP server (`CopilotMCPRegistration`), and its extension for the app's sessions, which
+/// Send Prompts to Copilot Sessions turns on (`CopilotSessionPrompts`). They come with BriefBar.app, in a marketplace of
+/// its own on this Mac (`Contents/Resources/CopilotPlugin`), which the CLI loads in place: nothing is copied, and they
+/// update with BriefBar. Each registration installs and removes one of them, and their marketplace stays while either
+/// is installed. BriefBar asks the CLI itself (`copilot plugin marketplace list`, `add` and `remove`, and `copilot
+/// plugin list`, `install` and `uninstall`), and never reads or writes its files, where other plugins' and
+/// marketplaces' settings are. It changes a marketplace by its name only once it knows it's BriefBar's: this copy's,
+/// or one in another copy of BriefBar.app, by that app's bundle identifier. It never passes `--force`, which would
+/// uninstall whatever else a marketplace has.
 public struct CopilotPluginRegistration: Sendable {
-    /// The name of BriefBar's marketplace, and of its plugin.
+    /// BriefBar's plugins, in its marketplace.
+    public enum Plugin: String, Sendable, CaseIterable {
+        /// `/briefbar`.
+        case skill = "briefbar"
+        /// The extension that sends prompts to the app's sessions, and forks them, when BriefBar asks.
+        case sessions = "briefbar-sessions"
+    }
+
+    /// The name of BriefBar's marketplace, and of its first plugin, the skill.
     public static let name = "briefbar"
-    /// The plugin, as the CLI names it: plugin@marketplace.
-    static let plugin = "\(name)@\(name)"
     /// The folder in BriefBar.app's resources that holds the marketplace.
     public static let folderName = "CopilotPlugin"
     /// BriefBar's bundle identifier, which another copy of BriefBar.app has too.
     public static let bundleIdentifier = "com.asaf.BriefBar"
 
+    /// A plugin, as the CLI names it: plugin@marketplace.
+    static func id(_ plugin: Plugin) -> String { "\(plugin.rawValue)@\(name)" }
+
     public enum Status: Sendable, Equatable {
         /// There's no Copilot CLI.
         case noCLI
-        /// The CLI doesn't have BriefBar's plugin.
+        /// The CLI doesn't have the plugin, or it's there but turned off while another of BriefBar's plugins is on,
+        /// as the CLI lists every plugin of a marketplace on this Mac.
         case absent
         /// It loads this BriefBar's plugin, unless it's turned off there (`copilot plugin disable`, or the app's
         /// Customize).
@@ -42,29 +54,32 @@ public struct CopilotPluginRegistration: Sendable {
     let environment: [String: String]
     /// The marketplace in this copy of BriefBar, or nil for a build without one, which can only remove another copy's.
     let marketplace: URL?
+    /// The plugin it installs and removes.
+    let plugin: Plugin
     /// The bundle identifier of the apps whose marketplaces are BriefBar's.
     let bundleIdentifier: String
     let runner: any ProcessRunning
 
     public init(
-        cli: URL, environment: [String: String], marketplace: URL?,
+        cli: URL, environment: [String: String], marketplace: URL?, plugin: Plugin = .skill,
         bundleIdentifier: String = CopilotPluginRegistration.bundleIdentifier,
         runner: any ProcessRunning = ProcessRunner()
     ) {
         self.cli = cli
         self.environment = environment
         self.marketplace = marketplace
+        self.plugin = plugin
         self.bundleIdentifier = bundleIdentifier
         self.runner = runner
     }
 
     /// With the Copilot CLI, and your login shell's environment, that `registration` found.
     public init(
-        cli registration: CopilotMCPRegistration, marketplace: URL?,
+        cli registration: CopilotMCPRegistration, marketplace: URL?, plugin: Plugin = .skill,
         bundleIdentifier: String = CopilotPluginRegistration.bundleIdentifier
     ) {
         self.init(
-            cli: registration.cli, environment: registration.environment, marketplace: marketplace,
+            cli: registration.cli, environment: registration.environment, marketplace: marketplace, plugin: plugin,
             bundleIdentifier: bundleIdentifier, runner: registration.runner
         )
     }
@@ -93,28 +108,42 @@ public struct CopilotPluginRegistration: Sendable {
         }
 
         var marketplace: Marketplace
-        /// Whether the plugin is turned on there, or nil when the CLI doesn't list it.
-        var plugin: Bool?
+        /// Which of BriefBar's plugins the CLI lists there, and whether each is turned on. It lists every plugin of a
+        /// marketplace on this Mac, installed or not.
+        var plugins: [Plugin: Bool] = [:]
 
-        var status: Status {
+        /// Another of BriefBar's plugins is on, so their marketplace stays for it.
+        func isAnotherOn(than plugin: Plugin) -> Bool {
+            plugins.contains { $0.key != plugin && $0.value }
+        }
+
+        func status(of plugin: Plugin) -> Status {
             switch marketplace {
             case .none: return .absent
             case .other: return .taken
-            case .this: return plugin.map { .installed(enabled: $0) } ?? .absent
-            case .elsewhere(let folder): return plugin == nil ? .absent : .installedElsewhere(folder)
+            case .this, .elsewhere:
+                guard let enabled = plugins[plugin] else { return .absent }
+                if enabled {
+                    if case .elsewhere(let folder) = marketplace { return .installedElsewhere(folder) }
+                    return .installed(enabled: true)
+                }
+                // Off, as it is when it was never installed, while the other keeps the marketplace there.
+                if isAnotherOn(than: plugin) { return .absent }
+                if case .elsewhere = marketplace { return .absent }
+                return .installed(enabled: false)
             }
         }
     }
 
     public func status() async -> Status {
         switch await find() {
-        case .success(let found): return found.status
+        case .success(let found): return found.status(of: plugin)
         case .failure(let failure): return failure.status
         }
     }
 
-    /// Installs this BriefBar's plugin, or turns it back on, in place of another copy's. A marketplace by its name that
-    /// isn't BriefBar's stays.
+    /// Installs this BriefBar's plugin, or turns it back on, in place of another copy's: its marketplace, with whatever
+    /// of BriefBar's was on there. A marketplace by its name that isn't BriefBar's stays.
     public func install() async -> Status {
         guard let marketplace else { return .failed("This copy of BriefBar has no plugin to install.") }
         // The CLI loads the plugin from where it is, so it has to stay there.
@@ -133,19 +162,19 @@ public struct CopilotPluginRegistration: Sendable {
         case .other:
             return .taken
         case .elsewhere:
-            if let failure = await removeFound(found) { return failure }
+            if let failure = await removeFound(found, replacing: true) { return failure }
             fallthrough
         case .none:
             if let failure = await change(["plugin", "marketplace", "add", marketplace.path]) { return failure }
         case .this:
             break
         }
-        if let failure = await change(["plugin", "install", Self.plugin]) { return failure }
+        if let failure = await change(["plugin", "install", Self.id(plugin)]) { return failure }
         return await status()
     }
 
-    /// Removes BriefBar's plugin and its marketplace, whichever copy's they are. One by its name that isn't BriefBar's
-    /// stays.
+    /// Removes BriefBar's plugin, whichever copy's it is, and their marketplace unless another of BriefBar's plugins is
+    /// on there. One by its name that isn't BriefBar's stays.
     public func remove() async -> Status {
         switch await find() {
         case .success(let found):
@@ -159,9 +188,14 @@ public struct CopilotPluginRegistration: Sendable {
     }
 
     /// Turns the plugin off, so that it stays off if its marketplace comes back, then removes the marketplace: without
-    /// `--force`, so that the CLI refuses rather than uninstall anything else it has from it.
-    private func removeFound(_ found: Found) async -> Status? {
-        if found.plugin != nil, let failure = await change(["plugin", "uninstall", Self.plugin]) { return failure }
+    /// `--force`, so that the CLI refuses rather than uninstall anything else it has from it. While another of BriefBar's
+    /// plugins is on, the marketplace stays for it, unless it's `replacing` another copy's with this one, which keeps
+    /// that one on.
+    private func removeFound(_ found: Found, replacing: Bool = false) async -> Status? {
+        if found.plugins[plugin] == true, let failure = await change(["plugin", "uninstall", Self.id(plugin)]) {
+            return failure
+        }
+        if !replacing, found.isAnotherOn(than: plugin) { return nil }
         return await change(["plugin", "marketplace", "remove", Self.name])
     }
 
@@ -182,18 +216,22 @@ public struct CopilotPluginRegistration: Sendable {
         guard let row = marketplaces.first(where: { $0["name"] as? String == Self.name }) else {
             return .success(Found(marketplace: .none))
         }
-        let plugins: [[String: Any]]
+        let rows: [[String: Any]]
         switch await list(["plugin", "list", "--json"]) {
-        case .success(let rows): plugins = rows
+        case .success(let value): rows = value
         case .failure(let failure): return .failure(failure)
         }
-        let plugin = plugins.first { $0["name"] as? String == Self.name && $0["marketplace"] as? String == Self.name }
-        // Where the CLI loads the plugin from, or else where the marketplace is.
-        let folder = (plugin?["installedFrom"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            ?? (row["source"] as? String).flatMap(Self.localFolder)
-        let enabled = plugin.map { $0["enabled"] as? Bool ?? true }
+        var plugins: [Plugin: Bool] = [:]
+        // Where the CLI loads BriefBar's plugins from, or else where the marketplace is.
+        var loadedFrom: String?
+        for entry in rows where entry["marketplace"] as? String == Self.name {
+            guard let listed = (entry["name"] as? String).flatMap(Plugin.init(rawValue:)) else { continue }
+            plugins[listed] = entry["enabled"] as? Bool ?? true
+            if loadedFrom == nil, let folder = entry["installedFrom"] as? String, !folder.isEmpty { loadedFrom = folder }
+        }
+        let folder = loadedFrom ?? (row["source"] as? String).flatMap(Self.localFolder)
         let whose = Self.marketplace(folder, this: marketplace, bundleIdentifier: bundleIdentifier)
-        return .success(Found(marketplace: whose, plugin: enabled))
+        return .success(Found(marketplace: whose, plugins: plugins))
     }
 
     private func list(_ arguments: [String]) async -> Result<[[String: Any]], Failure> {
