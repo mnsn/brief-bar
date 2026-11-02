@@ -264,7 +264,7 @@ public enum BuildInvestigationReader {
         }
         async let logs = attempt {
             try await client.get(ADOEndpoint.buildLogs(organization: organization, projectId: projectId, buildId: buildId),
-                                 as: ADOList<ADOBuildLog>.self).value
+                                 as: ADOList<ADOBuildLog>.self)
         }
         async let testRuns = attempt {
             try await readTestRuns(client: client, organization: organization, projectId: projectId, buildId: buildId)
@@ -323,18 +323,22 @@ public enum BuildInvestigationReader {
         return Read(investigation: investigation, build: build)
     }
 
-    /// The end of the failed step's log, from its line count in the run's logs: nil when it has no log.
+    /// The end of the failed step's log, from its line count in the run's logs: nil when it has no log. When the run's logs
+    /// don't have it, but some of them couldn't be read, it may be one of those: that's an error, not a missing log.
     static func readLog(
         client: ADOClient, organization: String, projectId: String, buildId: Int, step: ADOTimeline.Record?,
-        logs: Result<[ADOBuildLog], ADOError>
+        logs: Result<ADOList<ADOBuildLog>, ADOError>
     ) async -> (log: BuildLog?, error: ADOError?) {
         guard let step, let logId = step.log?.id else { return (nil, nil) }
-        let list: [ADOBuildLog]
+        let list: ADOList<ADOBuildLog>
         switch logs {
         case .success(let value): list = value
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
-        guard let lineCount = list.first(where: { $0.id == logId })?.lineCount, lineCount >= 0 else { return (nil, nil) }
+        guard let entry = list.value.first(where: { $0.id == logId }) else {
+            return (nil, list.skipped > 0 ? .decoding("a log that couldn't be read") : nil)
+        }
+        guard let lineCount = entry.lineCount, lineCount >= 0 else { return (nil, nil) }
         guard lineCount > 0 else { return (BuildLog(stepId: step.id, logId: logId, lines: [], lineCount: 0), nil) }
         let first = max(1, lineCount - logLines + 1)
         let lines = await attempt {
@@ -377,7 +381,8 @@ public enum BuildInvestigationReader {
         case .success(let value): (runs, all) = (value.runs, value.all)
         case .failure(let error): return (nil, isMissing(error) ? nil : error)
         }
-        guard !runs.isEmpty else { return (nil, nil) }
+        // None at all is no tests; none that could be read is an error.
+        guard !runs.isEmpty else { return (nil, all ? nil : .decoding("test runs that couldn't be read")) }
         // The test runs with failures, and then those that don't say how many failed.
         let failing = Array(runs
             .filter { (BuildTests.failed(in: $0) ?? 1) > 0 }
@@ -509,11 +514,12 @@ public actor BuildInvestigator {
     /// - Parameter refresh: read it again even when it's kept, as when you ask to.
     public func investigation(buildId: Int, of pullRequest: PullRequest, refresh: Bool = false) async throws -> BuildInvestigation {
         let key = Key(pullRequest.key.organization, buildId)
-        if !refresh, let read = await stillKept(key, buildId: buildId, pullRequest: pullRequest) {
+        // A read under way is newer than what's kept: wait for it rather than look at the run.
+        if !refresh, underWay(key, for: pullRequest) == nil,
+           let read = await stillKept(key, buildId: buildId, pullRequest: pullRequest) {
             return read.revised(for: pullRequest)
         }
-        let current = reading[key].flatMap { $0.targetBranch == pullRequest.targetBranch ? $0 : nil }
-            ?? start(key, buildId: buildId, pullRequest: pullRequest)
+        let current = underWay(key, for: pullRequest) ?? start(key, buildId: buildId, pullRequest: pullRequest)
         waiting += 1
         defer { waiting -= 1 }
         do {
@@ -556,6 +562,11 @@ public actor BuildInvestigator {
         guard generation == self.generation, let kept = kept[key], isFresh(kept.investigation, for: pullRequest) else { return nil }
         guard let run else { return kept }
         return BuildInvestigationReader.isSameRun(run, kept.build) ? kept : nil
+    }
+
+    /// The read under way of the run, to compare it with the pull request's target branch.
+    private func underWay(_ key: Key, for pullRequest: PullRequest) -> Reading? {
+        reading[key].flatMap { $0.targetBranch == pullRequest.targetBranch ? $0 : nil }
     }
 
     private func isFresh(_ investigation: BuildInvestigation, for pullRequest: PullRequest) -> Bool {

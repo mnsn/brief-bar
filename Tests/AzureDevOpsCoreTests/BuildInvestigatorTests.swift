@@ -327,6 +327,22 @@ private final class TestClock: Sendable {
         #expect(!tests.isComplete)
     }
 
+    @Test func whatCantBeReadIsntTakenForNone() async throws {
+        // Test runs, none of which can be read, aren't no tests.
+        let server = StubServer()
+        FailedRun.serve(server, replies: ["testRuns": .json(Fixture.list([["name": "Without an ID"], ["name": "Nor this"]]))])
+        let unreadable = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(unreadable.tests == nil)
+        #expect(unreadable.unread[.tests].map { if case .decoding = $0 { true } else { false } } == true)
+        // Nor is a log missing from the run's logs, when some of them can't be read.
+        let logs = StubServer()
+        FailedRun.serve(logs, replies: ["logs": .json(Fixture.list([["id": 4, "lineCount": 12], ["lineCount": 6]]))])
+        let unlisted = try await BuildInvestigationReader.read(client: logs.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(unlisted.log == nil)
+        #expect(unlisted.unread[.log].map { if case .decoding = $0 { true } else { false } } == true)
+        #expect(requests(logs, to: "/logs/9").isEmpty)
+    }
+
     @Test func aRunWithoutALogOrTestsHasNone() async throws {
         let server = StubServer()
         FailedRun.serve(server, replies: [
@@ -535,6 +551,27 @@ private final class TestClock: Sendable {
         #expect(try await two.value == first)
         #expect(requests(server, to: "/_apis/build/builds/77").count == 2)
         #expect(requests(server, to: "/timeline").count == 1)
+    }
+
+    @Test func aReadUnderWayIsWaitedForRatherThanLookingAtTheRun() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        // The first read's eight requests, then the second read's first.
+        let tokens = HeldTokens(server.id, holdAt: 9)
+        let clock = TestClock(t(0))
+        let investigator = BuildInvestigator(client: server.client(tokens: tokens), now: { clock.now })
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        clock.advance(10)
+        let refreshed = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest, refresh: true) }
+        try await waitUntilHeld(tokens)
+        let asked = Task { try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest) }
+        let bothWait = (try? await waitUntil("both to wait for the read") { await investigator.waiting == 2 }) != nil
+        await tokens.release()
+        #expect(bothWait)
+        #expect(try await asked.value.readAt == t(10))
+        #expect(try await refreshed.value.readAt == t(10))
+        // The run was read twice, by the two reads, and never only to look at it.
+        #expect(requests(server, to: "/_apis/build/builds/77").count == 2)
     }
 
     @Test func aReadForAnotherTargetBranchIsntShared() async throws {
