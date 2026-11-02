@@ -268,6 +268,9 @@ SDK ships inside the app.
 - **Measuring a list without a height limit puts every row on screen**, and scrolling or focusing it before it's
   laid out leaves it scrolled to its end: the panel measures itself at its tallest, and focuses its first row
   once it's laid out.
+- **A grouped list keeps a row it still has in view as its groups change**: sorting the pull requests by date
+  replaces every group but Done's and Idle's, so the list was left at Done, far down. Once the order changes, the
+  panel scrolls back to its top after the list is laid out (`PanelViewModel.Resorted`).
 - **`x:Bind` connects only once a view is on screen**, so the panel calls `Bindings.Update()` before it first
   measures itself, and one-time bindings (`x:Bind`'s default) never update: anything that changes is `OneWay`.
 - **A remote session whose monitors change doesn't always send `WM_DISPLAYCHANGE`**; it moves the bars' space.
