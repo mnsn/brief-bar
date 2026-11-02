@@ -47,8 +47,8 @@ final class CopilotComposer: NSObject, NSWindowDelegate {
                 self?.sending = sending
             }
         ) { [weak self] in
-            guard let self, shown == task else { return }
-            window?.close()
+            guard let self, self.shown == task else { return }
+            self.window?.close()
         }
         .environmentObject(store)
         .environmentObject(store.settings)
