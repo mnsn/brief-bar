@@ -508,6 +508,9 @@ commit only if that's safe, and to ask you first otherwise; a work item's is Bri
 the same way before it branches, rather than the one in Settings, which is for a new worktree. Once you
 choose a session or change the prompt, BriefBar doesn't change where it goes. A prompt you changed stays
 as you wrote it when you choose another session, and **Reset** goes back to the one for that session.
+**Copy**, above the prompt, puts it on the clipboard as it stands, with your changes, whatever you chose
+under **Where It Goes**, to paste where you like. It sends nothing, so the comments it quotes stay on
+**Needs You**.
 
 ### GitHub Copilot
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
+  clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
+  you like. It sends nothing, so the comments it quotes stay on **Needs You**.
 - **With Nest Sessions Under Their Parents, a finished parent stays in Running or Needs You while its child sessions do.**
   Its row says it's waiting for child sessions and how many need you or are running.
 - **GitHub's list says All quiet only once it has read all your pull requests.** It said so under a note
