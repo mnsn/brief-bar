@@ -1,6 +1,6 @@
 ---
 name: briefbar
-description: What needs the user, from BriefBar, their macOS menu-bar app. Azure DevOps pull requests that need them, fail or are ready to complete, pinned pipelines that failed, and GitHub Copilot sessions waiting for them. Use it for /briefbar, "what needs me?" or "what's next?", "what's going on with 5101?", and to fix a pull request's comments, build or conflicts, review it, or push and reply. In the GitHub Copilot app, that work goes to a session the user can follow: the pull request's own, a fork of it, or a new one.
+description: What needs the user, from BriefBar, their macOS menu-bar app. Azure DevOps pull requests that need them, fail or are ready to complete, pinned pipelines that failed, and GitHub Copilot sessions waiting for them. Use it for /briefbar, "what needs me?" or "what's next?", "what's going on with 5101?", and to fix a pull request's comments, build or conflicts, review it, or push and reply. In the GitHub Copilot app, that work goes to the pull request's own session, a fork of it or a new one, which the user can follow.
 ---
 
 # BriefBar

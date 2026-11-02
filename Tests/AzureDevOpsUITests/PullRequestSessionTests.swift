@@ -4,6 +4,7 @@ import BriefBarUI
 import CopilotTasks
 import Foundation
 import SQLite3
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -125,16 +126,17 @@ import Testing
         ])
         let record = try await pullRequest()
 
-        let choice = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
-        #expect(choice.id == onBranch)
-        #expect(choice.reasons == [.onItsBranch])
-        #expect(AgentText.session(choice, now: now) == """
+        let session = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        #expect(session.choice.id == onBranch)
+        #expect(session.choice.reasons == [.onItsBranch])
+        #expect(session.isInApp)
+        #expect(AgentText.session(session, now: now) == """
             Its session, where BriefBar sends its work unless you choose another: “Delivery estimates”, in the Copilot app, \
             on its branch.
               shop-web · delivery-estimates · working now · active 5m ago · session \(onBranch)
             """)
         // In the pull request's details, under Copilot, before the tasks sent for it.
-        let details = AgentText.details(record, item: nil, actions: [.fixBuild], tasks: [], session: choice, now: now)
+        let details = AgentText.details(record, item: nil, actions: [.fixBuild], tasks: [], session: session, now: now)
         let copilot = try #require(details.components(separatedBy: "\n## Copilot\n").last)
         #expect(copilot.hasPrefix("pull_request_prompt has the prompt to: fix_build."))
         #expect(copilot.contains("\nIts session, where BriefBar sends its work unless you choose another: “Delivery estimates”"))
@@ -150,10 +152,11 @@ import Testing
 
         // Its log says it finished, though the app hasn't heard yet.
         let finished = try sent(.finished, worktree: worktree)
-        let choice = try #require(await reader(home: home).session(for: record, tasks: [finished], now: now))
-        #expect(choice.id == task)
-        #expect(choice.reasons == [.earlierTask])
-        #expect(AgentText.session(choice, now: now) == """
+        let session = try #require(await reader(home: home).session(for: record, tasks: [finished], now: now))
+        #expect(session.choice.id == task)
+        #expect(session.choice.reasons == [.earlierTask])
+        #expect(!session.isInApp)
+        #expect(AgentText.session(session, now: now) == """
             Its session, where BriefBar sends its work unless you choose another: “Fix the Build: !4088 Show delivery \
             estimates on the product page”, the session of its last task, which BriefBar runs with the Copilot CLI and the \
             Copilot app doesn't have.
@@ -162,7 +165,22 @@ import Testing
 
         // Copilot still works in it: the app's session on its branch, then.
         let working = try sent(.working, worktree: worktree)
-        #expect(await reader(home: home).session(for: record, tasks: [working], now: now)?.id == onBranch)
+        #expect(await reader(home: home).session(for: record, tasks: [working], now: now)?.choice.id == onBranch)
+    }
+
+    /// A task's session that you opened in the Copilot app is in its database: an agent there can send it a message,
+    /// though the app doesn't have it open now.
+    @Test func saysTheAppHasATasksSessionYouOpenedThere() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home, [Session(id: task, title: "Fix the Build", project: "shop", branch: "pr-4088")])
+        let record = try await pullRequest()
+        let worktree = home.appendingPathComponent("copilot-worktrees/shop-web/pr-4088", isDirectory: true)
+
+        let session = try #require(await reader(home: home).session(for: record, tasks: [try sent(.finished, worktree: worktree)], now: now))
+        #expect(session.choice.id == task && session.choice.run != nil)
+        #expect(session.isInApp)
+        #expect(AgentText.session(session, now: now).contains("estimates on the product page”, the session of its last task, in the Copilot app.\n"))
     }
 
     @Test func namesTheSessionYouLinkedWhileShowLinksIsOn() async throws {
@@ -175,10 +193,10 @@ import Testing
 
         // Not while Show Links is off.
         #expect(await reader(home: home).session(for: record, tasks: [], now: now) == nil)
-        let choice = try #require(await reader(home: home, links: edits).session(for: record, tasks: [], now: now))
-        #expect(choice.id == linked)
-        #expect(choice.reasons == [.linkedByYou])
-        #expect(AgentText.session(choice, now: now).hasSuffix("“Plan the estimates”, in the Copilot app, linked by you.\n  a chat · active 5m ago · session \(linked)"))
+        let session = try #require(await reader(home: home, links: edits).session(for: record, tasks: [], now: now))
+        #expect(session.choice.id == linked)
+        #expect(session.choice.reasons == [.linkedByYou])
+        #expect(AgentText.session(session, now: now).hasSuffix("“Plan the estimates”, in the Copilot app, linked by you.\n  a chat · active 5m ago · session \(linked)"))
     }
 
     @Test func lastNamesTheOneThatMentionsItAndWasThereBefore() async throws {
@@ -192,10 +210,10 @@ import Testing
         try Data(link.utf8).write(to: state.appendingPathComponent("events.jsonl"))
         let record = try await pullRequest()
 
-        let choice = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
-        #expect(choice.id == opener)
-        #expect(choice.reasons == [.mentionsIt])
-        #expect(AgentText.session(choice, now: now).contains(
+        let session = try #require(await reader(home: home).session(for: record, tasks: [], now: now))
+        #expect(session.choice.id == opener)
+        #expect(session.choice.reasons == [.mentionsIt])
+        #expect(AgentText.session(session, now: now).contains(
             "“Estimate delivery dates”, in the Copilot app, which has a link to it and was there before it was created: it likely opened it."
         ))
     }
@@ -208,7 +226,7 @@ import Testing
             Session(id: elsewhere, title: "Docs", project: "docs", branch: "main"),
         ])
         let record = try await pullRequest()
-        #expect(await reader(home: home).session(for: record, tasks: [], now: now)?.id == onBranch)
+        #expect(await reader(home: home).session(for: record, tasks: [], now: now)?.choice.id == onBranch)
 
         // The window reads no sessions while Send Work to Copilot is off, nor in the demo.
         #expect(await reader(home: home, sending: false).session(for: record, tasks: [], now: now) == nil)
@@ -216,6 +234,9 @@ import Testing
         defaults.set(true, forKey: SettingsKey.copilotEnabled)
         let demo = AzureDevOpsReader(demo: true, organizations: [], defaults: defaults, appHome: home)
         #expect(await demo.session(for: record, tasks: [], now: now) == nil)
+        // Turned off in the app while it looks: it names none.
+        let turnedOff = AzureDevOpsReader(demo: false, organizations: ["contoso"], defaults: TurnedOffOnceRead(), appHome: home)
+        #expect(await turnedOff.session(for: record, tasks: [], now: now) == nil)
         // Nothing goes to Copilot for a pull request that's closed.
         #expect(await reader(home: home).session(for: try await pullRequest(4085), tasks: [], now: now) == nil)
 
@@ -224,4 +245,25 @@ import Testing
         try database(at: none, [Session(id: elsewhere, title: "Docs", project: "docs", branch: "main")])
         #expect(await reader(home: none).session(for: record, tasks: [], now: now) == nil)
     }
+}
+
+/// The app's settings, in memory, where Send Work to Copilot is on when first read, then turned off.
+private final class TurnedOffOnceRead: UserDefaults, @unchecked Sendable {
+    private let reads = Mutex(0)
+
+    init() {
+        super.init(suiteName: nil)!
+    }
+
+    override func object(forKey defaultName: String) -> Any? {
+        guard defaultName == SettingsKey.copilotEnabled else { return nil }
+        return reads.withLock { count in
+            count += 1
+            return count == 1
+        }
+    }
+
+    override func set(_ value: Any?, forKey defaultName: String) {}
+
+    override func removeObject(forKey defaultName: String) {}
 }

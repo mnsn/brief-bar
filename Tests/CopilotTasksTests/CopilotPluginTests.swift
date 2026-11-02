@@ -66,6 +66,11 @@ import Testing
         #expect(fields["name"] == "briefbar")
         let description = try #require(fields["description"])
         #expect(!description.isEmpty && description.count <= 1024)
+        // Plain YAML scalars: a colon followed by a space, or a space followed by #, would end them, and the skill
+        // wouldn't load.
+        for (field, value) in fields {
+            #expect(!value.contains(": ") && !value.contains(" #"), "The skill's \(field) isn't a plain YAML scalar")
+        }
     }
 
     /// The skill's points, each a line starting with "- " and the indented lines right after it.
