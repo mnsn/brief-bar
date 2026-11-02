@@ -34,7 +34,11 @@ public enum IconKey
     More,
     Open,
     PauseCircle,
+    /// Outlined, as the other sources' glyphs are.
     People,
+    /// Filled, as the other icons on a row's badge are.
+    PeopleFilled,
+    /// Outlined, as the other sources' glyphs are.
     Person,
     PersonDelete,
     Power,
