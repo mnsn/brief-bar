@@ -648,12 +648,17 @@ public actor BuildInvestigator {
     }
 
     /// Keeps what a read found, unless something couldn't be read, it was read before `forget()`, or something newer is
-    /// kept already; then lets go of the oldest beyond `capacity`.
+    /// kept already; then lets go of the oldest beyond `capacity`. A read that isn't kept still lets go of what's kept of
+    /// the run when the run was run again since, so that it doesn't show when the run can't be looked at.
     private func finish(_ readKey: ReadKey, _ current: Reading, read: BuildInvestigationReader.Read?) {
         if reading[readKey]?.id == current.id { reading[readKey] = nil }
-        guard let read, current.generation == generation, read.investigation.unread.isEmpty else { return }
+        guard let read, current.generation == generation else { return }
         let key = readKey.run
         if let known = kept[key], known.investigation.readAt > read.investigation.readAt { return }
+        guard read.investigation.unread.isEmpty else {
+            if let known = kept[key], !BuildInvestigationReader.isSameRun(known.build, read.build) { kept[key] = nil }
+            return
+        }
         kept[key] = read
         while kept.count > Self.capacity,
               let oldest = kept.min(by: { $0.value.investigation.readAt < $1.value.investigation.readAt })?.key {

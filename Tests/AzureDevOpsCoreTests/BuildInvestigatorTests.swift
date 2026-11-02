@@ -627,6 +627,38 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(reads() == 3)
     }
 
+    @Test func aRunRunAgainThatCantAllBeReadLetsGoOfWhatsKept() async throws {
+        let server = StubServer()
+        FailedRun.serve(server)
+        let investigator = BuildInvestigator(client: server.client())
+        let pr = FailedRun.pullRequest
+        _ = try await investigator.investigation(buildId: 77, of: pr)
+        #expect(await investigator.keptBuilds == [77])
+        // Run again, it passed, but its steps can't be read now: that isn't kept, and the failure kept before goes.
+        var passed = FailedRun.build(result: "succeeded")
+        passed["finishTime"] = iso(t(-minute))
+        server.on("/_apis/build/builds/77", json: passed)
+        server.on("/_apis/build/builds/77/timeline") { _ in .status(500) }
+        server.on("/_apis/build/builds/77/logs", json: Fixture.list([]))
+        let rerun = try await investigator.investigation(buildId: 77, of: pr)
+        #expect(rerun.run.status == .succeeded)
+        #expect(rerun.unread[.steps] == .http(500))
+        #expect(await investigator.keptBuilds.isEmpty)
+        // So when the run can't be read, the failure doesn't show.
+        server.on("/_apis/build/builds/77") { _ in .failure(.notConnectedToInternet) }
+        await #expect(throws: ADOError.offline) { try await investigator.investigation(buildId: 77, of: pr) }
+
+        // Read again when it's the same run, what couldn't be read leaves what's kept.
+        let same = StubServer()
+        FailedRun.serve(same)
+        let keeping = BuildInvestigator(client: same.client())
+        let first = try await keeping.investigation(buildId: 77, of: pr)
+        same.on("/_apis/build/builds/77/timeline") { _ in .status(500) }
+        #expect(try await keeping.investigation(buildId: 77, of: pr, refresh: true).unread[.steps] == .http(500))
+        #expect(await keeping.keptBuilds == [77])
+        #expect(try await keeping.investigation(buildId: 77, of: pr) == first)
+    }
+
     @Test func keepsARunningBuildBrieflyAndNotWhatCouldntBeRead() async throws {
         let server = StubServer()
         FailedRun.serve(server, build: FailedRun.build(status: "inProgress", result: nil))
