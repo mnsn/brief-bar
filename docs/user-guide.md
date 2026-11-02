@@ -308,19 +308,36 @@ to follow many at once. By date, every open pull request is in one list, each st
 what it waits for and what's left, and its time says how long ago it was created; Idle's, folded below
 it, are in the same order, and Done's stay apart, the latest first. BriefBar keeps your choice.
 
-**Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, or
-**Mark as Seen**, sees it: what's new moves on until something new happens, but a comment that waits on
-you, such as a reply to you, a mention or a comment on your pull request, stays there and in the menu
-bar's count, no longer marked new. It leaves once you reply in its thread or the thread is resolved,
-once you send the comments to Copilot with **Fix Comments** or **Push & Reply**, or when you choose
-**Remove from Needs You** in its menu (right-click it, or **Actions** in the window); anything after
-that needs you again. A pull request without activity for two weeks goes to Idle, as before. The first
-time, only the last three days count as new, and each account you sign in to the Azure CLI with has its
-own. Notifications announce new replies, mentions, comments, review requests, votes, new commits, failed
-builds, pull requests that become ready or complete, and, after you merge one, a pipeline that fails or
-waits for an approval, all of them passing, or one canceled. Clicking one opens the comment, or the run,
-it's about. The first time, BriefBar finds the organizations where you have pull requests;
-**Organizations** in its settings changes them.
+**Click a pull request on the window's page** to see its details beside the list, without leaving
+BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
+it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
+turn**, and taking you to its comments, builds or reviewers; its comment threads, with where each is and
+what everyone said, the ones that wait on you first and the resolved ones behind **Show Resolved**; its
+builds and checks, what failed first, with where a build failed and its first error; who reviews it,
+which reviewers it requires and how each voted; and, with [Show Links](#links) on, the work items and
+Copilot sessions linked to it, which open in the details too, **‹**, **⌘[** or **Esc** going back. **↗**
+opens the pull request in Azure DevOps, at the comment that needs you, as a click in the menu bar's list
+does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
+Send Work to Copilot is on. The details show what BriefBar already read, so they read nothing more, and
+showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
+new, and where it was, rather than folding away as you read it, until you remove it from Needs You. Drag their
+left edge to make them wider or narrower: BriefBar keeps the width, separately from the Sprint page's details,
+and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
+widgets, a click still opens the pull request in Azure DevOps.
+
+**Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
+details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
+a comment that waits on you, such as a reply to you, a mention or a comment on your pull request, stays
+there and in the menu bar's count, no longer marked new. It leaves once you reply in its thread or the
+thread is resolved, once you send the comments to Copilot with **Fix Comments** or **Push & Reply**, or
+when you choose **Remove from Needs You** in its menu (right-click it, or **Actions** in the window);
+anything after that needs you again. A pull request without activity for two weeks goes to Idle, as
+before. The first time, only the last three days count as new, and each account you sign in to the Azure
+CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
+commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
+that fails or waits for an approval, all of them passing, or one canceled. Clicking one opens the
+comment, or the run, it's about. The first time, BriefBar finds the organizations where you have pull
+requests; **Organizations** in its settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
 was asked to review, by its link: it's listed as if you reviewed it, under **To Review** as
@@ -959,8 +976,8 @@ lists only the review requests made to you by name too, and can't watch a team's
 Azure DevOps doesn't include a build's errors with a pull request's policies, so BriefBar reads the
 build's timeline once, as it does for a pinned pipeline, and shows where it failed and the first
 error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." The
-rest is in the build's log: click the pull request to see it. Until the timeline has been read, or
-when it can't be, the list names the build that failed.
+rest is in the build's log: ↗ beside the build in the pull request's details, in BriefBar's window, opens
+its run. Until the timeline has been read, or when it can't be, the list names the build that failed.
 
 ### How does it pick my team's sprint?
 

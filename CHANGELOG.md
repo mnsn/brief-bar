@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
+  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
+  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
+  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
+  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
+
+## 0.11.0 - 2026-11-02
+
+- **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
+  click a pull request to see it beside the list, or over it in a narrow window: where it stands,
+  **What's Left** before you can complete it, each item saying when it's your turn and taking you to
+  what it's about, its comment threads with the ones that wait on you first, its builds and checks with
+  where one failed and its first error, who reviews it and how each voted, and the work items and
+  Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
+  has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
+  menu-bar list and widgets still open pull requests in Azure DevOps.
 - **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
   clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
   you like. It sends nothing, so the comments it quotes stay on **Needs You**.
@@ -45,11 +61,6 @@
 - **A damaged record in Teams' data says some read markers couldn't be read.** A record whose checksum
   doesn't match may have held any chat's read marker, and the lists said nothing of it, so a chat you'd
   read in Teams could stay unread here without a word.
-- **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
-  extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
-  itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
-  off until you turn it on, since each session the app has open runs it, at about 46 MB, and sessions
-  that are already open get it once they start again. Turning it off, or turning agents off, removes it.
 
 ## 0.10.2 - 2026-11-01
 
