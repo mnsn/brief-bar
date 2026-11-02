@@ -1,11 +1,11 @@
 # Checks that THIRD-PARTY-NOTICES.md names every file in BriefBar for Windows' build that BriefBar doesn't build itself,
 # in the table of the package it comes from: a row like "| `Package.Id` | 1.2.3 | `File.dll`, `Other.dll` |", with the
 # version the build restored (obj\project.assets.json). A file comes from the packages that have the same bytes under
-# its name, among those the build restored and those the .NET SDK downloaded for it. It also fails on a file a table
-# names that no build here has, as when a package stops shipping it, and on a build whose copy of the notices isn't the
-# current one. Packages that the .NET SDK picks itself, such as the Windows SDK's projection, follow whichever SDK
-# builds, so their versions aren't checked. CI runs it on the Release builds for x64 and Arm64; run it after you build,
-# and whenever you add, update or remove a package. Build first.
+# its name, among those the build restored and those the .NET SDK downloaded for it. It also fails on a file that a
+# table names but that no build here has from that table's package, as when the package stops shipping it, and on a
+# build whose copy of the notices isn't the current one. Packages that the .NET SDK picks itself, such as the Windows
+# SDK's projection, follow whichever SDK builds, so their versions aren't checked. CI runs it on the Release builds for
+# x64 and Arm64; run it after you build, and whenever you add, update or remove a package. Build first.
 #   scripts\check-notices.ps1 [-Output <folder>[, <folder>...]]   (the Debug build for x64 by default)
 param(
     [string[]] $Output = @(Join-Path -Path $PSScriptRoot -ChildPath '..\BriefBar\bin\Debug\net10.0-windows10.0.26100.0\win-x64')
@@ -131,6 +131,9 @@ foreach ($folder in $Output) {
     }
 }
 $shipped = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+# Each file name in the builds with each package it comes from, "Package.Id|File.dll", and the names already reported.
+$shippedFrom = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$reported = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($folder in $Output) {
     $root = (Resolve-Path -LiteralPath $folder).Path.TrimEnd('\')
     foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File) {
@@ -138,6 +141,8 @@ foreach ($folder in $Output) {
         [void]$shipped.Add($file.Name)
         if ($own.Contains($relative)) { continue }
         $from = Find-Packages $file
+        foreach ($source in $from) { [void]$shippedFrom.Add("$($source.Id)|$($file.Name)") }
+        if ($from.Count -eq 0) { [void]$reported.Add($file.Name) }
         $where = 'it comes from ' + (($from | ForEach-Object { $_.Package } | Sort-Object) -join ' or ')
         if (-not $named.ContainsKey($file.Name)) {
             if ($from.Count -eq 0) { $where = 'find where it comes from' }
@@ -145,6 +150,7 @@ foreach ($folder in $Output) {
         } elseif ($from.Count -eq 0) {
             Fail "$relative, in $root, is in no package the build restored, though THIRD-PARTY-NOTICES.md names it under $($named[$file.Name] -join ' and '): find where it comes from"
         } elseif (-not ($from | Where-Object { $named[$file.Name] -contains $_.Id })) {
+            [void]$reported.Add($file.Name)
             Fail "THIRD-PARTY-NOTICES.md names $relative under $($named[$file.Name] -join ' and '), but $where, in $($root): move it to that package's table, with the package's license and notices"
         }
     }
@@ -155,10 +161,16 @@ foreach ($folder in $Output) {
         Fail "THIRD-PARTY-NOTICES.md in $root isn't the current one: build again"
     }
 }
+# And the other way: each file a table names must be in a build, from that table's package.
 foreach ($name in $named.Keys) {
-    if (-not $shipped.Contains($name)) {
-        $tables = if ($named[$name].Count -gt 1) { 'those tables' } else { 'that table' }
-        Fail "THIRD-PARTY-NOTICES.md names $name under $($named[$name] -join ' and '), but the build doesn't have it: take it out of $tables"
+    if ($reported.Contains($name)) { continue }
+    foreach ($id in $named[$name]) {
+        if ($shippedFrom.Contains("$id|$name")) { continue }
+        if ($shipped.Contains($name)) {
+            Fail "THIRD-PARTY-NOTICES.md names $name under $id, but the build's $name doesn't come from $($id): take it out of that table"
+        } else {
+            Fail "THIRD-PARTY-NOTICES.md names $name under $id, but the build doesn't have it: take it out of that table"
+        }
     }
 }
 

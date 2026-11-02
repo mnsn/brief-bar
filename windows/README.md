@@ -420,11 +420,11 @@ Windows builds as pre-releases until each release ships both apps.
 whose files are in the app, a table of those files with the version built, and the package's license and notices, in
 full. `scripts\check-notices.ps1` keeps it complete. It compares each file in the build that BriefBar doesn't build
 itself with the files of the packages the build restored, and fails when the file isn't in the table of the package it
-comes from, saying which that is; when a table's version isn't the one built; when a table names a file or a package
-that the build no longer has; and when the build's copy of the notices isn't the current one. CI runs it on the
-Release builds for x64 and Arm64, so a pull request that adds, updates or removes a package can't pass until the
-notices say so. The Windows SDK's projection is the one version it doesn't check: the .NET SDK picks it, so it follows
-whichever SDK builds.
+comes from, saying which that is; when a table's version isn't the one built; when a table names a file that its
+package doesn't put in the build, or a package the build doesn't use; and when the build's copy of the notices isn't
+the current one. CI runs it on the Release builds for x64 and Arm64, so a pull request that adds, updates or removes a
+package can't pass until the notices say so. The Windows SDK's projection is the one version it doesn't check: the
+.NET SDK picks it, so it follows whichever SDK builds.
 
 ## License
 
