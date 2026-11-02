@@ -285,17 +285,17 @@ import Testing
     }
 
     /// The token goes to api.github.com only: no redirect is followed, and one to another host fails with an error that
-    /// names it.
+    /// says so.
     @Test(.timeLimit(.minutes(1)))
     func refusesARedirectToAnotherHost() async {
         let server = StubServer()
         server.reply(.redirect(to: "https://elsewhere.example/graphql"))
         server.always(.json(answer))
 
-        await #expect(throws: GitHubError.redirected("elsewhere.example")) { try await server.client().pullRequests() }
+        await #expect(throws: GitHubError.redirected) { try await server.client().pullRequests() }
         #expect(server.received.map(\.request.url) == [GitHubClient.endpoint])
-        #expect(GitHubError.redirected("elsewhere.example").description
-            == "GitHub redirected BriefBar to another host, elsewhere.example, which it doesn't connect to.")
+        // Problem messages go to the log, so it doesn't say which host.
+        #expect(GitHubError.redirected.description == "GitHub redirected BriefBar to another host, which it doesn't connect to.")
     }
 
     /// GitHub answers the query where it's sent, so a redirect on api.github.com isn't followed either.
@@ -309,18 +309,18 @@ import Testing
         #expect(server.received.map(\.request.url) == [GitHubClient.endpoint])
     }
 
-    @Test func namesTheOtherHostARedirectPointsTo() {
+    @Test func tellsARedirectToAnotherHostFromOneOnTheSameHost() {
         let endpoint = GitHubClient.endpoint
-        #expect(RedirectGuard.otherHost(URL(string: "https://elsewhere.example/graphql"), from: endpoint) == "elsewhere.example")
-        #expect(RedirectGuard.otherHost(URL(string: "https://api.github.com.elsewhere.example/graphql"), from: endpoint)
-            == "api.github.com.elsewhere.example")
+        for target in ["https://elsewhere.example/graphql", "https://api.github.com.elsewhere.example/graphql"] {
+            #expect(RedirectGuard.isAnotherHost(URL(string: target), than: endpoint), "\(target)")
+        }
         for target in [
             "https://api.github.com/graphql?again", "https://API.GitHub.com/graphql", "http://api.github.com/graphql",
             "https://api.github.com:8443/graphql",
         ] {
-            #expect(RedirectGuard.otherHost(URL(string: target), from: endpoint) == nil, "\(target)")
+            #expect(!RedirectGuard.isAnotherHost(URL(string: target), than: endpoint), "\(target)")
         }
-        #expect(RedirectGuard.otherHost(nil, from: endpoint) == nil)
+        #expect(!RedirectGuard.isAnotherHost(nil, than: endpoint))
     }
 
     /// A read that gives up as its token comes, as when GitHub is turned off just then, sends nothing with it.

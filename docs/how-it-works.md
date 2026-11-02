@@ -1085,8 +1085,9 @@ When nothing can be read (offline, for example), refreshes back off up to ten mi
 back online refreshes right away.
 
 Each request goes only where it's sent, with the Azure CLI's token: no redirect is followed (`RedirectGuard`). One to
-another host fails with an error that names it (`ADOError.redirected`), and one on the same host is an HTTP error like
-any other, as Azure DevOps answers each request where it's sent.
+another host fails with an error that says so (`ADOError.redirected`), and one on the same host is an HTTP error like
+any other, as Azure DevOps answers each request where it's sent. The error doesn't name the host, which can carry an
+organization's name, as it goes to the log.
 
 Azure DevOps can't push updates to a personal app: service hooks need a project administrator and a
 server reachable from the internet. Pull requests and builds take minutes to hours, so a refresh a
@@ -1896,8 +1897,9 @@ draft, whether it can merge
 (`mergeable`), the review decision, the latest review from each reviewer, and the state of its latest
 commit's checks (`statusCheckRollup`). The client sends no cookies and keeps no cache
 (`GitHubClient.makeSession`). It connects to api.github.com only, and follows no redirect (`RedirectGuard`), so the
-token goes nowhere else: one to another host fails with an error that names it (`GitHubError.redirected`), and one on
-api.github.com is an HTTP error like any other, as GitHub answers the query where it's sent.
+token goes nowhere else: one to another host fails with an error that says so, without naming the host
+(`GitHubError.redirected`), and one on api.github.com is an HTTP error like any other, as GitHub answers the query where
+it's sent.
 
 It refreshes every 2 minutes by default (**Refresh Every** in its settings), when a list opens if the
 last read is more than 10 seconds old, and every minute while you need to sign in or are offline, so a

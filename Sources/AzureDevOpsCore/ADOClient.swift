@@ -15,8 +15,9 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
     case http(Int)
     case network(String)
     case decoding(String)
-    /// Azure DevOps redirected the request to another host, this one, where BriefBar doesn't go (`RedirectGuard`).
-    case redirected(String)
+    /// Azure DevOps redirected the request to another host, where BriefBar doesn't go (`RedirectGuard`). Which host isn't
+    /// said: problem messages go to the log, and a host can carry an organization's name.
+    case redirected
 
     public var description: String {
         switch self {
@@ -29,7 +30,7 @@ public enum ADOError: Error, Sendable, Equatable, CustomStringConvertible {
         case .http(let status): return "Azure DevOps answered with HTTP \(status)."
         case .network(let message): return message
         case .decoding(let message): return "Unexpected response from Azure DevOps (\(message))."
-        case .redirected(let host): return "Azure DevOps redirected BriefBar to another host, \(host), which it doesn't connect to."
+        case .redirected: return "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."
         }
     }
 }
@@ -172,9 +173,9 @@ public struct ADOClient: Sendable {
         }
     }
 
-    /// A redirect to another host says where it pointed; one on the same host is an HTTP error like any other.
+    /// A redirect to another host says so; one on the same host is an HTTP error like any other.
     static func error(refusing redirect: RedirectGuard.Refusal) -> ADOError {
-        redirect.otherHost.map(ADOError.redirected) ?? .http(redirect.status)
+        redirect.toAnotherHost ? .redirected : .http(redirect.status)
     }
 
     private static func describe(_ error: Error) -> String {
@@ -205,12 +206,12 @@ actor RateLimitGate {
 }
 
 /// Follows no redirect, so each request goes only where it's sent, with the Azure CLI's token: Azure DevOps answers it
-/// there. One for each request, which keeps the redirect it refused, for the client to say where it pointed.
+/// there. One for each request, which keeps the redirect it refused, for the client to say so.
 final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
-    /// A redirect it refused: its status, and the host it pointed to when that's another.
+    /// A redirect it refused: its status, and whether it pointed to another host.
     struct Refusal: Sendable, Equatable {
         var status: Int
-        var otherHost: String?
+        var toAnotherHost: Bool
     }
 
     private let refusal = Mutex<Refusal?>(nil)
@@ -222,16 +223,16 @@ final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest
     ) async -> URLRequest? {
-        let refused = Refusal(status: response.statusCode, otherHost: Self.otherHost(request.url, from: response.url))
+        let refused = Refusal(status: response.statusCode, toAnotherHost: Self.isAnotherHost(request.url, than: response.url))
         refusal.withLock { $0 = refused }
         return nil
     }
 
-    /// The host `target` is on, percent-encoded, so it's in ASCII, when it's another than `source`'s: nil when it stays
-    /// on `source`'s, whatever its scheme, port or path, or has none.
-    static func otherHost(_ target: URL?, from source: URL?) -> String? {
-        guard let host = target?.host(percentEncoded: true), !host.isEmpty else { return nil }
-        return host.lowercased() == source?.host(percentEncoded: true)?.lowercased() ? nil : host
+    /// Whether `target` is on another host than `source`: not when it stays on `source`'s, whatever its scheme, port or
+    /// path, or has none.
+    static func isAnotherHost(_ target: URL?, than source: URL?) -> Bool {
+        guard let host = target?.host(percentEncoded: true)?.lowercased(), !host.isEmpty else { return false }
+        return host != source?.host(percentEncoded: true)?.lowercased()
     }
 }
 

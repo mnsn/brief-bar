@@ -352,7 +352,7 @@ extension Locked where Value == Int {
     }
 
     /// Each request's token goes only where it's sent: no redirect is followed, and one to another host fails with an
-    /// error that names it.
+    /// error that says so.
     @Test(.timeLimit(.minutes(1)))
     func refusesARedirectToAnotherHost() async {
         let server = StubServer()
@@ -362,10 +362,10 @@ extension Locked where Value == Int {
         }
         let url = ADOEndpoint.connectionData(organization: "contoso")
 
-        await #expect(throws: ADOError.redirected("elsewhere.example")) { try await server.client().get(url, as: ADOConnectionData.self) }
+        await #expect(throws: ADOError.redirected) { try await server.client().get(url, as: ADOConnectionData.self) }
         #expect(server.requests.map(\.url) == [url])
-        #expect(ADOError.redirected("elsewhere.example").description
-            == "Azure DevOps redirected BriefBar to another host, elsewhere.example, which it doesn't connect to.")
+        // Problem messages go to the log, and a host can carry an organization's name, so it doesn't say which.
+        #expect(ADOError.redirected.description == "Azure DevOps redirected BriefBar to another host, which it doesn't connect to.")
     }
 
     /// Azure DevOps answers each request where it's sent, so a redirect on the same host isn't followed either.
@@ -382,20 +382,19 @@ extension Locked where Value == Int {
         #expect(server.requests.map(\.url) == [url])
     }
 
-    @Test func namesTheOtherHostARedirectPointsTo() {
+    @Test func tellsARedirectToAnotherHostFromOneOnTheSameHost() {
         let source = ADOEndpoint.connectionData(organization: "contoso")
-        #expect(RedirectGuard.otherHost(URL(string: "https://elsewhere.example/contoso/_apis/connectionData"), from: source)
-            == "elsewhere.example")
-        #expect(RedirectGuard.otherHost(URL(string: "https://contoso.visualstudio.com/_apis/connectionData"), from: source)
-            == "contoso.visualstudio.com")
-        #expect(RedirectGuard.otherHost(source, from: ADOEndpoint.profile) == "dev.azure.com")
+        for target in ["https://elsewhere.example/contoso/_apis/connectionData", "https://contoso.visualstudio.com/_apis/connectionData"] {
+            #expect(RedirectGuard.isAnotherHost(URL(string: target), than: source), "\(target)")
+        }
+        #expect(RedirectGuard.isAnotherHost(source, than: ADOEndpoint.profile))
         for target in [
             "https://dev.azure.com/contoso/_apis/connectionData?again", "http://dev.azure.com/contoso/_apis/connectionData",
             "https://DEV.azure.com:8443/contoso/_apis/connectionData",
         ] {
-            #expect(RedirectGuard.otherHost(URL(string: target), from: source) == nil, "\(target)")
+            #expect(!RedirectGuard.isAnotherHost(URL(string: target), than: source), "\(target)")
         }
-        #expect(RedirectGuard.otherHost(nil, from: source) == nil)
+        #expect(!RedirectGuard.isAnotherHost(nil, than: source))
     }
 
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then, so
