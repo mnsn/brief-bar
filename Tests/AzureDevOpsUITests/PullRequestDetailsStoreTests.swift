@@ -54,17 +54,24 @@ import Testing
         #expect(store.selected == nil && store.place == nil)
     }
 
+    /// A made-up pull request on which Jordan answered you in a resolved thread ten minutes ago: only a new comment in one
+    /// waits on you.
+    private func answeredInAResolvedThread(as role: PRRole = .author, now: Date) throws -> PRRecord {
+        var record = try #require(DemoData.records(now: now).first { $0.id.number == 4102 })
+        record.role = role
+        record.details?.threads.append(ReviewThread(id: 90, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 60, comments: [
+            ReviewComment(id: 1, author: Person(id: record.me, name: "You"), text: "Fixed.", publishedAt: now.addingTimeInterval(-3 * 3_600)),
+            ReviewComment(id: 2, author: Person(id: "jordan", name: "Jordan Lee"), text: "Not quite.", publishedAt: now.addingTimeInterval(-600)),
+        ]))
+        return record
+    }
+
     /// Seeing a pull request in its details doesn't fold a resolved thread whose comment was new, or make what was new old,
     /// while they show it. Removing it from Needs You does, and so does another look at it.
     @Test func whatNeedsYouStaysAsWhenItShowed() throws {
         let now = Date()
-        var read = try #require(DemoData.records(now: now).first { $0.id.number == 4102 })
-        // Jordan answered in a resolved thread after you last looked: only a new comment in one waits on you.
-        read.details?.threads.append(ReviewThread(id: 90, status: "fixed", filePath: "/src/PaymentsClient.cs", line: 60, comments: [
-            ReviewComment(id: 1, author: Person(id: read.me, name: "You"), text: "Fixed.", publishedAt: now.addingTimeInterval(-3 * 3_600)),
-            ReviewComment(id: 2, author: Person(id: "jordan", name: "Jordan Lee"), text: "Not quite.", publishedAt: now.addingTimeInterval(-600)),
-        ]))
-        let record = read
+        // You last looked an hour ago.
+        let record = try answeredInAResolvedThread(now: now)
         var seen = now.addingTimeInterval(-3_600)
         var dismissed = Date.distantPast
         func row() throws -> PRSnapshot {
@@ -100,6 +107,29 @@ import Testing
         // Another pull request's, as its row has it.
         let other = try item(4088)
         #expect(store.pendingEvents(of: other, record: nil) == other.pendingEvents)
+    }
+
+    /// One sent in a chat leaves the list once you've removed what waited on you there from Needs You. Its details stay as
+    /// they were, but nothing in it waits on you anymore.
+    @Test func nothingWaitsOnYouInOneThatLeftTheList() throws {
+        let now = Date()
+        let record = try answeredInAResolvedThread(as: .linked, now: now)
+        let before = now.addingTimeInterval(-3_600)
+        var dismissed = Date.distantPast
+        let store = PullRequestDetailsStore()
+        store.readRecord = { _ in record }
+        store.seenCutoff = { _ in before }
+        store.classify = { record, seen in PRClassifier.snapshot(for: record, seenCutoff: seen, dismissedCutoff: dismissed, now: now) }
+        let row = try #require(PRClassifier.snapshot(for: record, seenCutoff: before, dismissedCutoff: dismissed, now: now))
+        store.itemsChanged([row])
+        store.show(row)
+        #expect(store.pendingEvents(of: row, record: record).contains { $0.threadId == 90 })
+        dismissed = now
+        #expect(PRClassifier.snapshot(for: record, seenCutoff: before, dismissedCutoff: dismissed, now: now) == nil)
+        store.itemsChanged([])
+        #expect(!store.isListed && store.selected == row)
+        #expect(store.pendingEvents(of: row, record: record).isEmpty)
+        #expect(PullRequestPanel(row, record: record, events: store.pendingEvents(of: row, record: record)).threads.waitingOnYou.isEmpty)
     }
 
     @Test func pagesOpenOverTheDetailsAndGoBack() throws {

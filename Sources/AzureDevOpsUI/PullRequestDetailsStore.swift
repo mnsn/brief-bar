@@ -108,10 +108,10 @@ final class PullRequestDetailsStore: ObservableObject {
     /// there doesn't fold a resolved thread whose comment was new then, or make what was new old, while they show it.
     /// Answering it, removing it from Needs You or sending it to Copilot does. Any other's, as its row has it.
     func pendingEvents(of item: PRSnapshot, record: PRRecord?) -> [PREvent] {
-        guard item.key == selected?.key, let seenBefore, let record, let shown = classify(record, seenBefore) else {
-            return item.pendingEvents
-        }
-        return shown.pendingEvents
+        guard item.key == selected?.key, let seenBefore, let record else { return item.pendingEvents }
+        // One the list wouldn't have even then has nothing that needs you, such as one sent in a chat once you've removed
+        // it from Needs You: its row, kept as it was last, still says what did.
+        return classify(record, seenBefore)?.pendingEvents ?? []
     }
 
     /// Takes the details to a place in them, from the pages over them too.
