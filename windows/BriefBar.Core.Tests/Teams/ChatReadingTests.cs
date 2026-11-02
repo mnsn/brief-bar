@@ -172,8 +172,8 @@ public sealed class ChatReadingTests
         Assert.Equal(expected: ["Can you call me?"], actual: Texts(chat: chat, messages: messages));
     }
 
-    /// Only Teams' message cache says a message was deleted: the chat's newest message, as the chat's record names it,
-    /// doesn't count once the cache has it deleted.
+    /// Teams' message cache says a message was deleted before the chat's record does: the chat's newest message, as the
+    /// chat's record names it, doesn't count once the cache has it deleted.
     [Fact]
     public void CountsNoDeletedMessage()
     {
@@ -182,6 +182,22 @@ public sealed class ChatReadingTests
 
         Assert.Equal(expected: ["Oops, wrong chat"], actual: Texts(chat: chat, messages: []));
         Assert.Empty(collection: Texts(chat: chat, messages: [newest with { Text = string.Empty, IsDeleted = true }]));
+    }
+
+    /// The chat's record and Teams' message cache each say a message was deleted, on their own: the chat's newest message
+    /// doesn't count once either has it deleted, whichever says so first.
+    [Fact]
+    public void CountsNoMessageEitherCopySaysWasDeleted()
+    {
+        var newest = Message(seconds: 30, text: "Oops, wrong chat");
+        var deleted = newest with { Text = string.Empty, IsDeleted = true };
+        var earlier = Message(seconds: 20, text: "Lunch?");
+
+        Assert.Equal(expected: ["Lunch?", "Oops, wrong chat"], actual: Texts(chat: Chat(newest: newest, readUpTo: TeamsData.Id(seconds: 10)), messages: [earlier, newest]));
+        // The cache has it deleted, the chat's record not yet.
+        Assert.Equal(expected: ["Lunch?"], actual: Texts(chat: Chat(newest: newest, readUpTo: TeamsData.Id(seconds: 10)), messages: [earlier, deleted]));
+        // The chat's record has it deleted, the cache not yet.
+        Assert.Equal(expected: ["Lunch?"], actual: Texts(chat: Chat(newest: deleted, readUpTo: TeamsData.Id(seconds: 10)), messages: [earlier, newest]));
     }
 
     static List<string> Texts(TeamsChat chat, IReadOnlyList<TeamsMessage> messages, long? markedUpTo = null, TimeSpan? keepUnreadFor = null) =>
