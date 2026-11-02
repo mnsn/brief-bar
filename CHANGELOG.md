@@ -21,6 +21,12 @@
   give a date rather than a number of seconds, and BriefBar waited a minute instead.
 - **The Copilot app's sessions are read all at once.** When the app saved a change as BriefBar read its
   database, a session's status and its latest activity could come from either side of it.
+- **Agents can send a pull request's work to its own Copilot session.** With Send Work to Copilot on,
+  BriefBar's `pull_request` tool names the session BriefBar sends a pull request's work to, such as the
+  one on its branch or the one that opened it, and why. In the GitHub Copilot app, **/briefbar** then
+  offers to send the work there, rather than always starting a new session, and asks which you want
+  unless you've said; asked in that very session, it can also fork it, so the work goes another way while
+  the session stays as it is. Since agents get more, they wait until you've seen what they get now.
 
 ## 0.10.2 - 2026-11-01
 
