@@ -380,20 +380,71 @@ public sealed class ClientTests
         Assert.Null(@object: GitHubClient.ResetWait(response: none, now: now));
     }
 
-    /// Its requests keep no cookies, send no Windows credentials, and say they're BriefBar's. `HttpClient` keeps no cache,
-    /// which the Mac has to turn off.
+    /// Its requests keep no cookies, send no Windows credentials, follow no redirect, and say they're BriefBar's.
+    /// `HttpClient` keeps no cache, which the Mac has to turn off.
     [Fact]
     public async Task RequestsCarryNoCookiesOrCache()
     {
         using var handler = GitHubClient.MakeHandler();
         Assert.False(condition: handler.UseCookies);
         Assert.Null(@object: handler.Credentials);
+        Assert.False(condition: handler.AllowAutoRedirect);
 
         var server = new GitHubStubServer();
         server.Reply(StubReply.Json(body: Answer));
         using var client = server.Client();
         await client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected: "BriefBar", actual: Assert.Single(collection: server.Requests).UserAgent);
+    }
+
+    /// GitHub's source says it connects to api.github.com only: sent elsewhere, as by a proxy's sign-in page, it sends
+    /// nothing there, and says where it was sent.
+    [Theory]
+    [InlineData(302)]
+    [InlineData(307)]
+    public async Task RefusesARedirectToAnotherHost(int status)
+    {
+        var server = new GitHubStubServer();
+        server.Reply(GitHubStubServer.Text(text: string.Empty, status: status, headers: Headers(("Location", "https://sso.example.org/login"))));
+        using var client = server.Client();
+
+        var error = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: GitHubError.Network(message: "GitHub redirected BriefBar to another host, sso.example.org, which it doesn't connect to."), actual: error.Error);
+        Assert.Equal(
+            expected: "GitHub redirected BriefBar to another host, sso.example.org, which it doesn't connect to. The list may be out of date.",
+            actual: GitHubProblem.From(error: error.Error, now: TestTimes.Reference).Message);
+        var request = Assert.Single(collection: server.Requests);
+        Assert.Equal(expected: GitHubClient.Endpoint, actual: request.Url);
+    }
+
+    /// GitHub answers the query where it's sent, so a redirect that stays on api.github.com isn't followed either: it's an
+    /// answer BriefBar doesn't expect, like any other.
+    [Fact]
+    public async Task ARedirectOnGitHubIsAnHTTPError()
+    {
+        var server = new GitHubStubServer();
+        server.Reply(GitHubStubServer.Text(text: string.Empty, status: 308, headers: Headers(("Location", "https://api.github.com/graphql/v2"))));
+        using var client = server.Client();
+
+        var error = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: GitHubError.Http(status: 308), actual: error.Error);
+        Assert.Single(collection: server.Requests);
+    }
+
+    /// One that doesn't say where, as `//` or `about:blank`, is an HTTP error too, which the panel shows, not a failure that
+    /// stops BriefBar reading GitHub.
+    [Theory]
+    [InlineData("//")]
+    [InlineData("http:")]
+    [InlineData("about:blank")]
+    public async Task ARedirectThatDoesntSayWhereIsAnHTTPError(string location)
+    {
+        var server = new GitHubStubServer();
+        server.Reply(GitHubStubServer.Text(text: string.Empty, status: 302, headers: Headers(("Location", location))));
+        using var client = server.Client();
+
+        var error = await Assert.ThrowsAsync<GitHubException>(testCode: () => client.PullRequestsAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: GitHubError.Http(status: 302), actual: error.Error);
     }
 
     /// `Retry-After` may be a date, as RFC 9110 allows: nothing goes out until then, by the client's clock.

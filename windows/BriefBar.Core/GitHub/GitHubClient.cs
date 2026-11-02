@@ -9,8 +9,9 @@ namespace BriefBar.Core.GitHub;
 
 /// Reads your pull requests from GitHub. It sends one request, always the same query (`PullRequestQuery`), so it can only
 /// read: GitHub's GraphQL API takes queries as POST requests, and BriefBar never sends a mutation. Each request carries a
-/// token from the GitHub CLI's sign-in, through the system's proxy, with no cookies and no cache; a rejected token is
-/// replaced once; when GitHub asks it to slow down, nothing goes out until the time GitHub gave. The Mac's `GitHubClient`.
+/// token from the GitHub CLI's sign-in, through the system's proxy, with no cookies and no cache, to api.github.com only:
+/// it follows no redirect (`Redirects`). A rejected token is replaced once; when GitHub asks it to slow down, nothing goes
+/// out until the time GitHub gave. The Mac's `GitHubClient`.
 public sealed class GitHubClient : IDisposable
 {
     /// How long it waits when GitHub says to slow down only in words.
@@ -133,18 +134,22 @@ public sealed class GitHubClient : IDisposable
                         throw new GitHubException(error: GitHubError.Throttled(retryAfter: limited));
                     }
                     throw new GitHubException(error: GitHubError.Forbidden);
+                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: Endpoint) is { } host:
+                    throw new GitHubException(error: GitHubError.Network(message: "GitHub redirected BriefBar to another host, " + host + ", which it doesn't connect to."));
                 default:
+                    // A redirect that stays on api.github.com too: GitHub answers the query where it's sent.
                     throw new GitHubException(error: GitHubError.Http(status: status));
             }
         }
         throw new GitHubException(error: GitHubError.Unauthorized);
     }
 
-    /// No cookies or credentials kept, and connections that give up after half a minute.
+    /// No cookies or credentials kept, no redirect followed, and connections that give up after half a minute.
     internal static SocketsHttpHandler MakeHandler() => new()
     {
         UseCookies = false,
         Credentials = null,
+        AllowAutoRedirect = false,
         ConnectTimeout = TimeSpan.FromSeconds(value: 30),
         AutomaticDecompression = DecompressionMethods.All,
     };

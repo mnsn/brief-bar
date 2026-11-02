@@ -8,8 +8,9 @@ namespace BriefBar.Core.AzureDevOps;
 
 /// Reads from Azure DevOps. It only ever sends GET requests, each with a bearer token from the Azure CLI's sign-in:
 /// BriefBar never changes anything there. No cookies and no cache: every request carries its own token, through the
-/// system's proxy. A rejected token is replaced once. Asked to slow down, it sends nothing until the time Azure DevOps
-/// gave (`Retry-After`, in seconds or as a date), or for a minute when it doesn't say. The Mac's `ADOClient`.
+/// system's proxy, to where it's sent only: it follows no redirect (`Redirects`). A rejected token is replaced once. Asked
+/// to slow down, it sends nothing until the time Azure DevOps gave (`Retry-After`, in seconds or as a date), or for a
+/// minute when it doesn't say. The Mac's `ADOClient`.
 public sealed class ADOClient : IDisposable
 {
     /// How long to wait when Azure DevOps asks to slow down without saying for how long.
@@ -102,18 +103,22 @@ public sealed class ADOClient : IDisposable
                     var slowDown = retryAfter ?? RetryAfterUnsaid;
                     gate.Hold(wait: slowDown);
                     throw new ADOException(error: ADOError.Throttled(retryAfter: slowDown));
+                case >= 300 and < 400 when Redirects.OtherHost(location: response.Headers.Location, requested: url) is { } host:
+                    throw new ADOException(error: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, " + host + ", which it doesn't connect to."));
                 default:
+                    // A redirect that stays on the same host too: Azure DevOps answers each request where it's sent.
                     throw new ADOException(error: ADOError.Http(status: status));
             }
         }
         throw new ADOException(error: ADOError.Unauthorized);
     }
 
-    /// No cookies or credentials kept, and connections that give up after half a minute.
-    static SocketsHttpHandler MakeHandler() => new()
+    /// No cookies or credentials kept, no redirect followed, and connections that give up after half a minute.
+    internal static SocketsHttpHandler MakeHandler() => new()
     {
         UseCookies = false,
         Credentials = null,
+        AllowAutoRedirect = false,
         ConnectTimeout = TimeSpan.FromSeconds(value: 30),
         AutomaticDecompression = DecompressionMethods.All,
     };
