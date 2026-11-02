@@ -27,9 +27,11 @@ public final class RunningProgram: @unchecked Sendable {
     private var status: Int32?
     /// It was reaped: from then on, its process group's number can be another's, so nothing is sent to it.
     private var reaped = false
-    /// It's being stopped, with whatever it started (`stop(grace:)`): it isn't reaped until they've been made to, so that
+    /// It's being ended, with whatever it started (`end(grace:)`): it isn't reaped until they've been made to stop, so that
     /// its group's number stays its own.
-    private var stopping = false
+    private var ending = false
+    /// Its process group was asked to stop, as it's ended.
+    private var askedGroup = false
     private var finished = false
 
     /// How what it writes reaches BriefBar.
@@ -230,19 +232,32 @@ public final class RunningProgram: @unchecked Sendable {
         }
     }
 
-    /// Asks it, and whatever it started in its process group, to stop, and makes them `grace` seconds later, even once it
-    /// has exited, since something it started may ignore being asked. It isn't reaped until then, so its group's number
-    /// stays its own; its exit is heard as it happens all the same.
-    public func stop(grace: TimeInterval) {
+    /// Ends it, with whatever it started in its process group: ends its input, which tells it to quit; once it has, or
+    /// `grace` seconds from now if it hasn't, asks the whole group to stop, and two seconds later makes it, since what it
+    /// started may outlive it, or ignore being asked. It isn't reaped until then, even once it has quit, so that its group's
+    /// number stays its own; its exit is heard as it happens all the same.
+    public func end(grace: TimeInterval) {
         queue.async { [self] in
-            guard !reaped, !stopping else { return }
-            stopping = true
-            killpg(pid, SIGTERM)
-            queue.asyncAfter(deadline: .now() + grace) { [self] in
-                killpg(pid, SIGKILL)
-                stopping = false
-                reapIfDone()
+            guard !reaped, !ending else { return }
+            ending = true
+            closeInput()
+            if status != nil {
+                stopGroup()
+            } else {
+                queue.asyncAfter(deadline: .now() + grace) { [self] in stopGroup() }
             }
+        }
+    }
+
+    /// Asks its process group to stop, as it's ended, and two seconds later makes it, then reaps it.
+    private func stopGroup() {
+        guard ending, !askedGroup else { return }
+        askedGroup = true
+        killpg(pid, SIGTERM)
+        queue.asyncAfter(deadline: .now() + 2) { [self] in
+            killpg(pid, SIGKILL)
+            ending = false
+            reapIfDone()
         }
     }
 
@@ -306,7 +321,7 @@ public final class RunningProgram: @unchecked Sendable {
         }
     }
 
-    /// Reads its exit status once it has exited, without reaping it, then reaps it unless it's being stopped
+    /// Reads its exit status once it has exited, without reaping it, then reaps it unless it's being ended
     /// (`reapIfDone`). It waits for that: the exit can be reported a moment before the status can be read, and isn't
     /// reported again.
     private func noteExit() {
@@ -320,6 +335,8 @@ public final class RunningProgram: @unchecked Sendable {
         exitWatch?.cancel()
         // Exited normally: its exit code. Ended by a signal: the signal.
         status = info.si_code == CLD_EXITED ? info.si_status & 0xff : info.si_status & 0x7f
+        // Being ended, what it started is asked to stop now that it has quit.
+        if ending { stopGroup() }
         reapIfDone()
         closeInput()
         // Output that something it started still holds open isn't waited for long.
@@ -330,9 +347,9 @@ public final class RunningProgram: @unchecked Sendable {
         finishIfDone()
     }
 
-    /// Reaps it once it has exited, unless it's being stopped, which reaps it once it's done.
+    /// Reaps it once it has exited, unless it's being ended, which reaps it once its group has been made to stop.
     private func reapIfDone() {
-        guard status != nil, !reaped, !stopping else { return }
+        guard status != nil, !reaped, !ending else { return }
         var raw: Int32 = 0
         while waitpid(pid, &raw, 0) == -1 && errno == EINTR {}
         reaped = true

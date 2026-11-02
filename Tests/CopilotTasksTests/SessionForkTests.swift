@@ -244,18 +244,24 @@ import Testing
         #expect(await server.close() == SIGTERM)
     }
 
-    /// What it started that ignores being asked to stop is made to, even once the server itself has quit.
-    @Test(.timeLimit(.minutes(1)))
-    func stopsWhatTheServerStartedEvenOnceItHasQuit() async throws {
+    /// What it started that ignores being asked to stop is made to, once the server itself has quit when its input
+    /// ended, or when it was asked to stop.
+    @Test(.timeLimit(.minutes(1)), arguments: [
+        // It quits when its input ends.
+        (quits: "read line; exit 0", status: Int32(0)),
+        // It doesn't, and is asked to stop.
+        (quits: "while :; do sleep 1; done", status: SIGTERM),
+    ])
+    func endsWhatTheServerStartedEvenOnceItHasQuit(_ server: (quits: String, status: Int32)) async throws {
         let folder = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let server = folder.appendingPathComponent("copilot")
+        let copilot = folder.appendingPathComponent("copilot")
         let childFile = folder.appendingPathComponent("child")
         // What it starts says who it is once it ignores being asked to stop.
-        try "#!/bin/sh\n/bin/sh -c 'trap \"\" TERM; echo $$ > \"$CHILD\"; while :; do sleep 1; done' &\nwhile :; do sleep 1; done\n"
-            .write(to: server, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: server.path)
-        let started = try CopilotServer.start(server, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
+        try "#!/bin/sh\n/bin/sh -c 'trap \"\" TERM; echo $$ > \"$CHILD\"; exec > /dev/null; while :; do sleep 1; done' &\n\(server.quits)\n"
+            .write(to: copilot, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copilot.path)
+        let started = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
         var child: pid_t?
         for _ in 0..<400 {
             child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
@@ -263,7 +269,7 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         let pid = try #require(child)
-        #expect(await started.close() == SIGTERM)
+        #expect(await started.close() == server.status)
         for _ in 0..<400 where kill(pid, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -305,12 +311,12 @@ import Testing
         sourceBranch: "users/robin/fix-total", targetBranch: "main"
     )
 
-    private func launcher(_ fixture: FakeCopilot.Fixture) -> CopilotLauncher {
+    private func launcher(_ fixture: FakeCopilot.Fixture, leftovers: (any LeftoverForks)? = nil) -> CopilotLauncher {
         let environment = fixture.environment
         let copilot = fixture.copilot
         return CopilotLauncher(
             outputFolder: fixture.folder.appendingPathComponent("output"), environment: { environment }, locate: { _ in copilot },
-            appHome: fixture.home
+            appHome: fixture.home, leftovers: leftovers
         )
     }
 
@@ -360,7 +366,11 @@ import Testing
             subject: .workItem(sampleItem), prompt: "Try it with a cap", options: CopilotModel.quick, repository: repository.checkout,
             worktreesFolder: nil, forking: session(in: checkout, repository: repository.checkout)
         )
-        let (run, forked) = try await launch(launcher(fixture), request)
+        let kept = RecordingLeftoverForks()
+        let (run, forked) = try await launch(launcher(fixture, leftovers: kept), request)
+        // Kept to delete from the moment it's made, should BriefBar quit first; no longer once the task has taken it on.
+        #expect(await kept.calls == ["keep \(FakeCopilot.fork)", "drop \(FakeCopilot.fork)"])
+        #expect(await kept.forks.isEmpty)
 
         // The run is the fork's, which the CLI named, and says what it forked.
         #expect(run.id == FakeCopilot.fork)
@@ -512,10 +522,12 @@ import Testing
             subject: .pullRequest(pullRequest, .fixComments), prompt: "Fix it", options: CopilotModel.quick,
             repository: repository.checkout, worktreesFolder: nil, forking: session(in: elsewhere, repository: elsewhere)
         )
-        await #expect(throws: LaunchError.self) { try await launcher(fixture).launch(request) { _ in } }
+        let kept = RecordingLeftoverForks()
+        await #expect(throws: LaunchError.self) { try await launcher(fixture, leftovers: kept).launch(request) { _ in } }
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
         #expect(!FileManager.default.fileExists(atPath: fixture.arguments.path))
+        #expect(await kept.calls == ["keep \(FakeCopilot.fork)", "drop \(FakeCopilot.fork)"])
     }
 
     /// A fork that's no use and can't be deleted now is kept where BriefBar keeps its runs, and deleted before the next task,
@@ -663,11 +675,14 @@ import Testing
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
         let log = try Data(contentsOf: fixture.sessionLog)
-        let answer = await questions(fixture).ask(
+        let kept = RecordingLeftoverForks()
+        let answer = await questions(fixture, leftovers: kept).ask(
             "Why did Sam ask for a cap on the retries?", session: FakeCopilot.session,
             options: CopilotRunOptions(model: "claude-haiku-5.5", effort: "low")
         )
         #expect(answer == .success("Sam wants the retries capped."))
+        // Kept to delete from the moment it's made, should BriefBar quit first, and no longer once it's gone.
+        #expect(await kept.calls == ["keep \(FakeCopilot.fork)", "drop \(FakeCopilot.fork)"])
         #expect(fixture.methods == ["connect", "sessions.fork", "session.resume", "session.ui.ephemeralQuery", "session.delete"])
         #expect(fixture.parameters(of: "sessions.fork") as? [String: String] == ["sessionId": FakeCopilot.session, "name": "BriefBar question"])
         let resume = try #require(fixture.parameters(of: "session.resume"))
@@ -800,6 +815,31 @@ import Testing
         ])
         #expect(!FileManager.default.fileExists(atPath: fixture.forkFolder.path))
         #expect(await kept.leftoverForks().isEmpty)
+    }
+
+    /// A question's fork is kept to delete from the moment it's made, should BriefBar quit before it's deleted; while the
+    /// question still uses it, no other question or task deletes it as left over.
+    @Test(.timeLimit(.minutes(1)))
+    func keepsTheForkItAsksToDeleteButNotWhileItAsks() async throws {
+        let fixture = try FakeCopilot.Fixture(["FAKE_ANSWER": "hang"])
+        defer { fixture.remove() }
+        let kept = InMemoryLeftoverForks()
+        let questions = questions(fixture, leftovers: kept)
+        let asking = Task { await questions.ask("Why?", session: FakeCopilot.session) }
+        for _ in 0..<400 where !fixture.methods.contains("session.ui.ephemeralQuery") {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let fork = LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)
+        #expect(await kept.leftoverForks() == [fork])
+        await SessionForker(copilot: fixture.copilot, environment: fixture.environment, timeout: 20, leftovers: kept).deleteLeftovers()
+        #expect(!fixture.methods.contains("session.delete"))
+        #expect(await kept.leftoverForks() == [fork])
+
+        asking.cancel()
+        #expect(await asking.value == .failure(.cancelled))
+        #expect(fixture.methods.last == "session.delete")
+        #expect(await kept.leftoverForks().isEmpty)
+        #expect(!ForksInFlight.contains(fork))
     }
 
     @Test(.timeLimit(.minutes(1)))

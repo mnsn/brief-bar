@@ -153,3 +153,23 @@ enum FakeCopilot {
         }
     }
 }
+
+/// Leftover forks in memory, with what was asked of them, in order: `keep <id>` and `drop <id>`.
+actor RecordingLeftoverForks: LeftoverForks {
+    private(set) var forks: [LeftoverFork] = []
+    private(set) var calls: [String] = []
+
+    func leftoverForks() -> [LeftoverFork] {
+        forks
+    }
+
+    func keepLeftoverFork(_ fork: LeftoverFork) {
+        calls.append("keep \(fork.id)")
+        if !forks.contains(fork) { forks.append(fork) }
+    }
+
+    func dropLeftoverFork(_ fork: LeftoverFork) {
+        calls.append("drop \(fork.id)")
+        forks.removeAll { $0 == fork }
+    }
+}

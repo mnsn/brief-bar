@@ -218,16 +218,13 @@ final class CopilotServer: Sendable {
         }
     }
 
-    /// Ends its input, which tells it to quit, and waits up to `grace` seconds for it to; then asks it, with whatever it
-    /// started, to stop, and two seconds later makes them, even once it has exited (`RunningProgram.stop(grace:)`). Its
+    /// Ends it, with whatever it started: ends its input, which tells it to quit; once it has, or `grace` seconds later,
+    /// asks what's left of its process group to stop, and two seconds later makes it (`RunningProgram.end(grace:)`). Its
     /// exit status, once it exited.
     @discardableResult
     func close() async -> Int32? {
-        let program = program.withLock { $0 }
-        program?.closeInput()
-        if let status = await exitStatus(within: grace) { return status }
-        program?.stop(grace: 2)
-        return await exitStatus(within: 3)
+        program.withLock { $0 }?.end(grace: grace)
+        return await exitStatus(within: grace + 3)
     }
 
     /// Its exit status, once it exits within `timeout` seconds; nil if it doesn't.
@@ -258,7 +255,7 @@ final class CopilotServer: Sendable {
             messages.forEach(handle)
         case .failure:
             end(with: .unreadable)
-            program.withLock { $0 }?.stop(grace: 2)
+            program.withLock { $0 }?.end(grace: 0)
         }
     }
 
@@ -292,19 +289,15 @@ final class CopilotServer: Sendable {
         }
     }
 
-    /// Ends its input, so that it finishes what it's at, which may answer a patient call, and quits. If it hasn't after
-    /// `grace` seconds, it's asked to stop, with whatever it started, and two seconds later made to, and nothing waits for
-    /// it any longer. From now on, what's asked of it fails, and so does what it hasn't answered by then: `timedOut`.
+    /// Ends it (`RunningProgram.end(grace:)`): it finishes what it's at, which may answer a patient call, and quits, or is
+    /// made to stop, with whatever it started; and once it would have been, nothing waits for it any longer. From now on,
+    /// what's asked of it fails, and so does what it hasn't answered by then: `timedOut`.
     private func giveUp() {
         state.withLock { state in
             if state.ended == nil { state.ended = .timedOut }
         }
-        let program = program.withLock { $0 }
-        program?.closeInput()
-        queue.asyncAfter(deadline: .now() + grace) { [weak self] in
-            program?.stop(grace: 2)
-            self?.queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.end(with: .timedOut) }
-        }
+        program.withLock { $0 }?.end(grace: grace)
+        queue.asyncAfter(deadline: .now() + grace + 2) { [weak self] in self?.end(with: .timedOut) }
     }
 
     private func fail(_ id: Int, with failure: Failure) {

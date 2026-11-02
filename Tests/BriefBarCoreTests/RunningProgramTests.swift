@@ -227,24 +227,30 @@ import Testing
         #expect(await exits.next() == SIGTERM)
     }
 
-    /// What it started that ignores being asked to stop is made to, even once the program itself has quit.
-    @Test(.timeLimit(.minutes(1)))
-    func stopsWhatItStartedEvenOnceItHasQuit() async throws {
+    /// What it started that ignores being asked to stop is made to, once the program itself has quit when its input
+    /// ended, or when it was asked to stop.
+    @Test(.timeLimit(.minutes(1)), arguments: [
+        // It quits when its input ends.
+        (quits: "read line; exit 0", status: Int32(0)),
+        // It doesn't, and is asked to stop.
+        (quits: "wait", status: SIGTERM),
+    ])
+    func endsWhatItStartedEvenOnceItHasQuit(_ program: (quits: String, status: Int32)) async throws {
         let recorder = Recorder()
         // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open, so the
         // program's own exit is heard at once.
-        let program = try recorder.start(
-            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & wait"]
+        let started = try recorder.start(
+            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & \(program.quits)"]
         )
         var lines = recorder.lines.makeAsyncIterator()
         let child = try #require(await lines.next().flatMap { pid_t($0) })
         #expect(kill(child, 0) == 0)
-        program.stop(grace: 0.3)
+        started.end(grace: 0.3)
         var exits = recorder.exits.makeAsyncIterator()
-        // It quits when asked; what it started doesn't, until it's made to.
-        #expect(await exits.next() == SIGTERM)
+        #expect(await exits.next() == program.status)
+        // It has quit; what it started hasn't yet.
         #expect(kill(child, 0) == 0)
-        for _ in 0..<300 where kill(child, 0) == 0 {
+        for _ in 0..<400 where kill(child, 0) == 0 {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(child, 0) == -1 && errno == ESRCH)

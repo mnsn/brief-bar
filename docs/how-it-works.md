@@ -1610,8 +1610,8 @@ terminal: with `-p`, tried with 1.0.105, they're words sent to the model, and jo
 asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts `copilot --headless --stdio` with your
 shell's environment, responsible for itself (`RunningProgram`), and sends it JSON-RPC requests, each after a
 `Content-Length` header. It refuses whatever the server asks of it, ignores what it says unasked, and ends its input
-once it's done, which ends it; one that hasn't quit five seconds later is asked to stop, and two seconds after that made
-to.
+once it's done, which ends it; once it has quit, or five seconds later if it hasn't, its whole process group is asked to
+stop, and two seconds later made to, so nothing it started stays behind (`RunningProgram.end(grace:)`).
 
 - **A fork** (`sessions.fork`) is a new session with the session's whole history, as the CLI saved it: it takes a
   moment, and no request to the model. The session itself stays as it was, even while it works or the Copilot app has
@@ -1632,13 +1632,15 @@ to.
   ended, another one does, or else BriefBar again later (below). The session's log and `workspace.yaml` stay as they
   were, byte for byte, and it can be asked while it works, or while the Copilot app has it open.
 
-A fork that neither the server that made it nor another could delete, for a task or a question, is kept with the runs,
-by its session's ID and the CLI's folder it's in, nothing else (`ado.copilot.forksToDelete`, `LeftoverForks`), and
-deleted before the next question, fork or task, even once BriefBar has started again; one that something has open then
-is left for later, and each is forgotten once its folder is gone. Should your shell's `COPILOT_HOME` change, one in
-the other folder waits until that's the CLI's folder again: the folder kept only tells which are the CLI's, and is
-never where BriefBar deletes anything. Any program running as you can change the preferences, so one that isn't a
-session's is never used.
+Each fork is kept with the runs from the moment it's made, by its session's ID and the CLI's folder it's in, nothing
+else (`ado.copilot.forksToDelete`, `LeftoverForks`), until it's deleted or a task has taken it on, so none is left
+behind, with a copy of a conversation, if BriefBar quits meanwhile. One that neither the server that made it nor
+another could delete stays kept, and is deleted before the next question, fork or task, even once BriefBar has started
+again; one that something has open then is left for later, and so is one this BriefBar still uses, for a question or a
+task that's starting (`ForksInFlight`). Each is forgotten once its folder is gone. Should your shell's `COPILOT_HOME`
+change, one in the other folder waits until that's the CLI's folder again: the folder kept only tells which are the
+CLI's, and is never where BriefBar deletes anything. Any program running as you can change the preferences, so one
+that isn't a session's is never used.
 
 Forking with an older CLI can change the session it forks: tried on a session that 1.0.105 wrote, 1.0.78 added a line
 to its log, and 1.0.87 replaced the whole log with that line. 1.0.95, 1.0.99, 1.0.102, 1.0.103 and 1.0.105 left it as it
@@ -1671,7 +1673,7 @@ Neither source reads anything more for it.
 repository and worktree, whether you stopped it, whether it went on with one of the Copilot app's sessions,
 and the pull request's link go to the preferences (`ado.copilot.runs`),
 without their titles; and so
-do your choices and the repository of each project, and the forks BriefBar couldn't delete yet, by their sessions' IDs
+do your choices and the repository of each project, and the forks BriefBar hasn't deleted yet, by their sessions' IDs
 and their CLI's folder (`ado.copilot.forksToDelete`), which turning Azure DevOps off keeps, to delete them once it's on
 again. Any program running as you can change the
 preferences, and BriefBar may have Full Disk Access, so the files it reads for a task aren't kept

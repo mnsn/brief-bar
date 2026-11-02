@@ -250,12 +250,14 @@ public struct CopilotLauncher: Sendable {
             run.process = try DetachedProgram.start(
                 copilot, arguments: arguments, environment: environment, output: run.output(in: outputFolder), onExit: onExit
             )
-            return run
         } catch {
             try? FileManager.default.removeItem(at: run.output(in: outputFolder))
             if made { try? await git.removeWorktree(at: worktree, of: repository.root, force: true) }
             if let fork { await forker.discard(fork) }
             throw LaunchError.couldntStart(String(describing: error))
         }
+        // The fork is the task's session now, no longer one to delete.
+        if let fork { await forker.forget(fork) }
+        return run
     }
 }
