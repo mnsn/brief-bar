@@ -102,24 +102,32 @@ import Testing
         #expect(settings.copilotOptions == CopilotModel.quick)
     }
 
-    /// The forks BriefBar couldn't delete yet are kept with its runs, by their session IDs only, until they're gone. Any
-    /// program running as you can write the preferences: what isn't a session's ID is left out.
+    /// The forks BriefBar couldn't delete yet are kept with its runs, by their sessions' IDs and their CLI's folder only,
+    /// until they're gone. Any program running as you can write the preferences: what isn't a session's is left out.
     @Test func keepsTheForksStillToDeleteByTheirIDsOnly() async {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)
-        await settings.keepLeftoverFork(first)
-        await settings.keepLeftoverFork(first)
-        await settings.keepLeftoverFork("../../Library/Messages")
-        await settings.keepLeftoverFork(second)
-        #expect(await settings.leftoverForks() == [first, second])
+        let home = "/Users/robin/.copilot"
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: first))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: first))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: "../../Library/Messages"))
+        await settings.keepLeftoverFork(LeftoverFork(home: "copilot", id: second))
+        await settings.keepLeftoverFork(LeftoverFork(home: home, id: second))
+        let kept = [LeftoverFork(home: home, id: first), LeftoverFork(home: home, id: second)]
+        #expect(await settings.leftoverForks() == kept)
         // Turning Azure DevOps off doesn't forget them: they're BriefBar's own to delete, once it's on again.
         settings.forgetCopilotRuns()
-        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [first, second])
-        await settings.dropLeftoverFork(first)
-        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [second])
-        #expect(readable(defaults).contains("ado.copilot.forksToDelete"))
-        defaults.set([second, "../../Library/Messages", "NOT-A-UUID"], forKey: SettingsKey.copilotForksToDelete)
-        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [second])
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == kept)
+        await settings.dropLeftoverFork(LeftoverFork(home: home, id: first))
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [LeftoverFork(home: home, id: second)])
+        let text = readable(defaults)
+        #expect(text.contains("ado.copilot.forksToDelete") && text.contains(second) && !text.contains(first))
+        // What another program wrote there that isn't a session's isn't used.
+        let written = try? JSONEncoder().encode([
+            LeftoverFork(home: home, id: second), LeftoverFork(home: home, id: "NOT-A-UUID"), LeftoverFork(home: "~/x", id: third),
+        ])
+        defaults.set(written, forKey: SettingsKey.copilotForksToDelete)
+        #expect(AppSettings(defaults: defaults).copilotForksToDelete == [LeftoverFork(home: home, id: second)])
     }
 
     /// A work item's row shows its latest send, whatever case its organization is written in.

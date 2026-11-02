@@ -131,10 +131,10 @@ final class AppSettings: ObservableObject {
     @Published var copilotRuns: [CopilotRun] {
         didSet { Self.store(copilotRuns, in: defaults, forKey: Key.copilotRuns) }
     }
-    /// The forks of Copilot sessions that BriefBar made and couldn't delete yet, by their session IDs, nothing else: each
-    /// is deleted before the next question, fork or task (`LeftoverForks`).
-    private(set) var copilotForksToDelete: [String] {
-        didSet { defaults.set(copilotForksToDelete, forKey: Key.copilotForksToDelete) }
+    /// The forks of Copilot sessions that BriefBar made and couldn't delete yet, by their sessions' IDs and their CLI's
+    /// folder, nothing else: each is deleted before the next question, fork or task (`LeftoverForks`).
+    private(set) var copilotForksToDelete: [LeftoverFork] {
+        didSet { Self.store(copilotForksToDelete, in: defaults, forKey: Key.copilotForksToDelete) }
     }
     /// What the account signed in now has seen.
     @Published private(set) var seen: SeenState
@@ -174,7 +174,7 @@ final class AppSettings: ObservableObject {
         // Any program running as you can write the preferences: a run whose ID isn't a session's is left out, and so is a
         // fork's.
         copilotRuns = (Self.load([CopilotRun].self, from: defaults, forKey: Key.copilotRuns) ?? []).filter(\.isValid)
-        copilotForksToDelete = (defaults.stringArray(forKey: Key.copilotForksToDelete) ?? []).filter(AppSessions.isSessionID)
+        copilotForksToDelete = (Self.load([LeftoverFork].self, from: defaults, forKey: Key.copilotForksToDelete) ?? []).filter(\.isValid)
         chatLinks = ChatLinkState()
         // Where earlier builds kept the links, which any program running as you could read: gone, whatever the setting.
         defaults.removeObject(forKey: Key.chatLinks)
@@ -492,17 +492,17 @@ enum SettingsKey {
 
 /// The forks BriefBar couldn't delete yet are kept with its runs, so that none is left behind when it quits first.
 extension AppSettings: LeftoverForks {
-    func leftoverForks() async -> [String] {
+    func leftoverForks() async -> [LeftoverFork] {
         copilotForksToDelete
     }
 
-    func keepLeftoverFork(_ id: String) async {
-        guard AppSessions.isSessionID(id), !copilotForksToDelete.contains(id) else { return }
-        copilotForksToDelete.append(id)
+    func keepLeftoverFork(_ fork: LeftoverFork) async {
+        guard fork.isValid, !copilotForksToDelete.contains(fork) else { return }
+        copilotForksToDelete.append(fork)
     }
 
-    func dropLeftoverFork(_ id: String) async {
-        copilotForksToDelete.removeAll { $0 == id }
+    func dropLeftoverFork(_ fork: LeftoverFork) async {
+        copilotForksToDelete.removeAll { $0 == fork }
     }
 }
 

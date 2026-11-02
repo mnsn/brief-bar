@@ -549,7 +549,7 @@ import Testing
         )
         await #expect(throws: LaunchError.self) { try await launcher().launch(forking) { _ in } }
         #expect(fixture.methods == ["connect", "sessions.fork", "session.delete"])
-        #expect(await kept.leftoverForks() == [FakeCopilot.fork])
+        #expect(await kept.leftoverForks() == [LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)])
         #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
 
         // The next task, of any kind, deletes it first.
@@ -563,12 +563,14 @@ import Testing
         #expect(await kept.leftoverForks().isEmpty)
     }
 
-    /// What's kept is checked first: an ID that isn't a session's, or whose folder is gone, is dropped without asking the
-    /// CLI; one that something has open now is left for later; and a fork is asked for only once the others are deleted.
+    /// What's kept is checked first: one that isn't a session's, or whose folder is gone, is dropped without asking the
+    /// CLI; one that something has open now is left for later, and so is one in another CLI's folder, should your shell's
+    /// `COPILOT_HOME` have changed, until that's the CLI's folder again.
     @Test(.timeLimit(.minutes(1)))
     func deletesWhatsLeftOverOnlyOnceItsCheckedFirst() async throws {
         let fixture = try FakeCopilot.Fixture()
         defer { fixture.remove() }
+        let home = AppSessions.folderKey(fixture.home)
         let gone = "3a4b5c6d-7e8f-4a0b-9c1d-2e3f4a5b6c7d"
         let open = "4b5c6d7e-8f9a-4b1c-8d2e-3f4a5b6c7d8e"
         let openFolder = fixture.home.appendingPathComponent("session-state/\(open)")
@@ -576,19 +578,36 @@ import Testing
         // As a running program, this one, keeps it while it has the session open.
         try Data().write(to: openFolder.appendingPathComponent("inuse.\(getpid()).lock"))
         try FileManager.default.createDirectory(at: fixture.forkFolder, withIntermediateDirectories: true)
-        let kept = InMemoryLeftoverForks(["../../Library/Messages", gone, open, FakeCopilot.fork])
+        let otherHome = fixture.folder.appendingPathComponent("other-copilot-home")
+        let elsewhere = "5c6d7e8f-9a0b-4c2d-9e3f-4a5b6c7d8e9f"
+        try FileManager.default.createDirectory(at: otherHome.appendingPathComponent("session-state/\(elsewhere)"), withIntermediateDirectories: true)
+        let other = LeftoverFork(home: AppSessions.folderKey(otherHome), id: elsewhere)
+        let kept = InMemoryLeftoverForks([
+            LeftoverFork(home: home, id: "../../Library/Messages"), LeftoverFork(home: "copilot-home", id: gone),
+            LeftoverFork(home: home, id: gone), LeftoverFork(home: home, id: open), other,
+            LeftoverFork(home: home, id: FakeCopilot.fork),
+        ])
         let forker = SessionForker(copilot: fixture.copilot, environment: fixture.environment, timeout: 20, leftovers: kept)
 
         await forker.deleteLeftovers()
         #expect(fixture.methods == ["session.delete"])
         #expect(fixture.parameters(of: "session.delete") as? [String: String] == ["sessionId": FakeCopilot.fork])
-        #expect(await kept.leftoverForks() == [open])
+        #expect(await kept.leftoverForks() == [LeftoverFork(home: home, id: open), other])
         #expect(FileManager.default.fileExists(atPath: openFolder.path))
+        #expect(FileManager.default.fileExists(atPath: otherHome.appendingPathComponent("session-state/\(elsewhere)").path))
 
-        // With nothing to delete, nothing starts.
+        // With nothing to delete in its folder, nothing starts.
         try FileManager.default.removeItem(at: openFolder)
         await forker.deleteLeftovers()
         #expect(fixture.methods == ["session.delete"])
+        #expect(await kept.leftoverForks() == [other])
+
+        // Once the other folder is the CLI's again, its fork goes.
+        var environment = fixture.environment
+        environment["COPILOT_HOME"] = otherHome.path
+        await SessionForker(copilot: fixture.copilot, environment: environment, timeout: 20, leftovers: kept).deleteLeftovers()
+        #expect(fixture.methods == ["session.delete", "session.delete"])
+        #expect(!FileManager.default.fileExists(atPath: otherHome.appendingPathComponent("session-state/\(elsewhere)").path))
         #expect(await kept.leftoverForks().isEmpty)
     }
 
@@ -770,7 +789,7 @@ import Testing
         // Through its own server, then another.
         #expect(fixture.methods.suffix(2) == ["session.delete", "session.delete"])
         #expect(FileManager.default.fileExists(atPath: fixture.forkFolder.path))
-        #expect(await kept.leftoverForks() == [FakeCopilot.fork])
+        #expect(await kept.leftoverForks() == [LeftoverFork(home: AppSessions.folderKey(fixture.home), id: FakeCopilot.fork)])
 
         // BriefBar starts again: what it kept is still there.
         try FileManager.default.removeItem(at: busy)

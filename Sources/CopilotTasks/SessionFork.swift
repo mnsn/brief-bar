@@ -97,37 +97,56 @@ extension CopilotServer {
     }
 }
 
-/// Where BriefBar keeps the forks it made and couldn't delete yet, by their session IDs only: with its runs, in the app
-/// (`AppSettings`), so that none is left behind, with a copy of a conversation, when BriefBar quits first. Each is deleted
-/// before the next question, fork or task (`SessionForker.deleteLeftovers(through:)`). Any program running as you can
-/// change what's kept, so an ID is used only once it's checked to be a session's.
+/// A fork BriefBar made and couldn't delete yet: its session's ID, and the Copilot CLI's folder it's in
+/// (`CopilotCLI.home`), as `AppSessions.folderKey` writes it. The folder only tells which forks are the CLI's that BriefBar
+/// runs now, should your shell's `COPILOT_HOME` change: it's never a place to delete anything from.
+public struct LeftoverFork: Codable, Hashable, Sendable {
+    public var home: String
+    public var id: String
+
+    public init(home: String, id: String) {
+        self.home = home
+        self.id = id
+    }
+
+    /// Its ID is a session's, and its folder a path: what's kept can be used.
+    public var isValid: Bool {
+        AppSessions.isSessionID(id) && home.hasPrefix("/")
+    }
+}
+
+/// Where BriefBar keeps the forks it made and couldn't delete yet, by their sessions' IDs and their CLI's folder, nothing
+/// else: with its runs, in the app (`AppSettings`), so that none is left behind, with a copy of a conversation, when
+/// BriefBar quits first. Each is deleted before the next question, fork or task, with the CLI whose folder it's in
+/// (`SessionForker.deleteLeftovers(through:)`). Any program running as you can change what's kept, so a fork is used
+/// only once it's checked to be a session's.
 public protocol LeftoverForks: Sendable {
-    /// The forks still to delete, by their session IDs.
-    func leftoverForks() async -> [String]
+    /// The forks still to delete.
+    func leftoverForks() async -> [LeftoverFork]
     /// Keeps a fork to delete later.
-    func keepLeftoverFork(_ id: String) async
+    func keepLeftoverFork(_ fork: LeftoverFork) async
     /// Forgets a fork that's gone, or that isn't a session's.
-    func dropLeftoverFork(_ id: String) async
+    func dropLeftoverFork(_ fork: LeftoverFork) async
 }
 
 /// Leftover forks kept in memory only, until BriefBar quits: for tests.
 public actor InMemoryLeftoverForks: LeftoverForks {
-    private var forks: [String]
+    private var forks: [LeftoverFork]
 
-    public init(_ forks: [String] = []) {
+    public init(_ forks: [LeftoverFork] = []) {
         self.forks = forks
     }
 
-    public func leftoverForks() -> [String] {
+    public func leftoverForks() -> [LeftoverFork] {
         forks
     }
 
-    public func keepLeftoverFork(_ id: String) {
-        if !forks.contains(id) { forks.append(id) }
+    public func keepLeftoverFork(_ fork: LeftoverFork) {
+        if !forks.contains(fork) { forks.append(fork) }
     }
 
-    public func dropLeftoverFork(_ id: String) {
-        forks.removeAll { $0 == id }
+    public func dropLeftoverFork(_ fork: LeftoverFork) {
+        forks.removeAll { $0 == fork }
     }
 }
 
@@ -177,22 +196,27 @@ struct SessionForker: Sendable {
                 await server.close()
             }
             guard !forker.isGone(fork) else { return true }
-            await forker.leftovers?.keepLeftoverFork(fork)
+            await forker.leftovers?.keepLeftoverFork(LeftoverFork(home: forker.home, id: fork))
             return false
         }.value
     }
 
-    /// Deletes the forks left over from before (`leftovers`), through `server`, or else one of its own, started only when
-    /// there's one to delete. Each is dropped once its folder is gone, or if its ID isn't a session's; one that's open now,
-    /// as if you'd opened it, is left for later.
+    /// Deletes the forks left over from before (`leftovers`) that are in the CLI's folder, through `server`, or else one of
+    /// its own, started only when there's one to delete. Each is dropped once its folder is gone, or if it isn't a
+    /// session's; one that's open now, as if you'd opened it, is left for later, and so is one in another CLI's folder,
+    /// until that's the CLI's again.
     func deleteLeftovers(through server: CopilotServer? = nil) async {
         guard let leftovers else { return }
-        let home = CopilotCLI.home(environment: environment)
-        var due: [String] = []
+        let home = home
+        var due: [LeftoverFork] = []
         for fork in await leftovers.leftoverForks() {
-            if !AppSessions.isSessionID(fork) || isGone(fork) {
+            if !fork.isValid {
                 await leftovers.dropLeftoverFork(fork)
-            } else if !AppSessions.isOpen(fork, home: home) {
+            } else if fork.home != home {
+                continue
+            } else if isGone(fork.id) {
+                await leftovers.dropLeftoverFork(fork)
+            } else if !AppSessions.isOpen(fork.id, home: CopilotCLI.home(environment: environment)) {
                 due.append(fork)
             }
         }
@@ -200,10 +224,15 @@ struct SessionForker: Sendable {
         let own = server == nil ? try? CopilotServer.start(copilot, environment: environment) : nil
         guard let deleter = server ?? own else { return }
         for fork in due {
-            _ = try? await deleter.delete(fork, timeout: timeout)
-            if isGone(fork) { await leftovers.dropLeftoverFork(fork) }
+            _ = try? await deleter.delete(fork.id, timeout: timeout)
+            if isGone(fork.id) { await leftovers.dropLeftoverFork(fork) }
         }
         await own?.close()
+    }
+
+    /// The CLI's folder, as a leftover fork keeps it (`LeftoverFork.home`).
+    var home: String {
+        AppSessions.folderKey(CopilotCLI.home(environment: environment))
     }
 
     /// Whether a session's folder is gone from the CLI's folder.
