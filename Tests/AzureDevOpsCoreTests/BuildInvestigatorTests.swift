@@ -290,15 +290,41 @@ private final class TestClock: Sendable {
             ["id": 602, "name": "Known", "totalTests": 4, "passedTests": 3,
              "runStatistics": [["outcome": "Passed", "count": 3], ["outcome": "Failed", "count": 1]]],
         ]))])
+        // One of them can't be read, but it came back, so it counts.
         server.on("/\(Fixture.org)/p1/_apis/test/Runs/601/results", json: Fixture.list([
             ["id": 1, "outcome": "Failed", "testCaseTitle": "AddsTax"], ["id": 2, "outcome": "Failed", "testCaseTitle": "RoundsTotal"],
+            ["outcome": "Failed", "testCaseTitle": "Without an ID"],
         ]))
         server.on("/\(Fixture.org)/p1/_apis/test/Runs/602/results", json: Fixture.list([["id": 3, "outcome": "Failed", "testCaseTitle": "Ships"]]))
         let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
-        #expect(tests.failed == 3)
+        #expect(tests.failed == 4)
         #expect(tests.isComplete)
         // The test run whose failures are known comes first.
         #expect(tests.failures.map(\.name) == ["Ships", "AddsTax", "RoundsTotal"])
+
+        // As many as a read lists, though one can't be read, are only some of them.
+        let full = StubServer()
+        FailedRun.serve(full, replies: ["testRuns": .json(Fixture.list([
+            ["id": 601, "name": "Analyzed", "totalTests": 40, "passedTests": 10, "unanalyzedTests": 0],
+        ]))])
+        full.on("/\(Fixture.org)/p1/_apis/test/Runs/601/results", json: Fixture.list(
+            (1..<BuildInvestigationReader.failedTestsListed).map { ["id": $0, "outcome": "Failed"] } + [["outcome": "Failed"]]
+        ))
+        let some = try #require(try await BuildInvestigationReader.read(client: full.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        #expect(some.failed == BuildInvestigationReader.failedTestsListed)
+        #expect(some.failures.count == BuildInvestigationReader.failedTestsListed - 1)
+        #expect(!some.isComplete)
+    }
+
+    @Test func aTestRunThatCantBeReadLeavesTheTotalsPartial() async throws {
+        let server = StubServer()
+        FailedRun.serve(server, replies: ["testRuns": .json(Fixture.list([
+            ["id": 701, "name": "Unit", "totalTests": 3, "passedTests": 3], ["name": "Without an ID", "totalTests": 9, "passedTests": 9],
+        ]))])
+        let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        #expect(tests.runs == 1)
+        #expect(tests.total == 3)
+        #expect(!tests.isComplete)
     }
 
     @Test func aRunWithoutALogOrTestsHasNone() async throws {

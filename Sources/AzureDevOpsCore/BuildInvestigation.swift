@@ -565,20 +565,20 @@ public struct BuildTests: Sendable, Equatable {
     /// Outcomes that count as failed.
     static let failedOutcomes = ["Failed", "Error", "Timeout", "Aborted"]
 
-    /// The tests of `runs`, added up, with the failed results read of some of them, by test run ID, each read listing at
-    /// most `listed`. A test run that doesn't say how many of its tests failed counts the failed results read of it, when
-    /// they were read whole; otherwise its failures nobody looked into, and the totals aren't complete.
+    /// The tests of `runs`, added up, with how many failed results came back for some of them, by test run ID, each read
+    /// listing at most `listed`. A test run that doesn't say how many of its tests failed counts the failed results that
+    /// came back for it, when they all did; otherwise its failures nobody looked into, and the totals aren't complete.
     /// - Parameter countsAllRuns: `runs` are all its test runs.
-    init(runs: [ADOTestRun], results: [Int: [ADOTestResult]], listed: Int, failures: [FailedTest], countsAllRuns: Bool) {
+    init(runs: [ADOTestRun], results: [Int: Int], listed: Int, failures: [FailedTest], countsAllRuns: Bool) {
         var failed = 0
         var isComplete = countsAllRuns
         for run in runs {
             if let known = Self.failed(in: run) {
                 failed += known
-            } else if let read = results[run.id], read.count < listed {
-                failed += read.count
+            } else if let came = results[run.id], came < listed {
+                failed += came
             } else {
-                failed += max(max(0, run.unanalyzedTests ?? 0), results[run.id]?.count ?? 0)
+                failed += max(max(0, run.unanalyzedTests ?? 0), results[run.id] ?? 0)
                 isComplete = false
             }
         }
@@ -589,16 +589,22 @@ public struct BuildTests: Sendable, Equatable {
     }
 
     /// The tests that failed in a test run, when it says: its count by outcome, or none when every test passed. Nil when it
-    /// doesn't: its failures nobody looked into, `unanalyzedTests`, are only some of them.
+    /// doesn't: its failures nobody looked into, `unanalyzedTests`, are only some of them. A count by outcome that can't be
+    /// read, or doesn't say its outcome, or a failing outcome's count, doesn't say either.
     static func failed(in run: ADOTestRun) -> Int? {
-        let statistics = run.runStatistics?.elements ?? []
-        guard !statistics.isEmpty else {
+        guard let statistics = run.runStatistics, !statistics.elements.isEmpty || statistics.skipped > 0 else {
             if let total = run.totalTests, let passed = run.passedTests, total <= passed { return 0 }
             return nil
         }
-        return statistics
-            .filter { statistic in failedOutcomes.contains { $0.caseInsensitiveCompare(statistic.outcome ?? "") == .orderedSame } }
-            .reduce(0) { $0 + max(0, $1.count ?? 0) }
+        guard statistics.skipped == 0 else { return nil }
+        var failed = 0
+        for statistic in statistics.elements {
+            guard let outcome = statistic.outcome else { return nil }
+            guard failedOutcomes.contains(where: { $0.caseInsensitiveCompare(outcome) == .orderedSame }) else { continue }
+            guard let count = statistic.count else { return nil }
+            failed += max(0, count)
+        }
+        return failed
     }
 }
 

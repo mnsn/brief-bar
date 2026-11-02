@@ -109,12 +109,15 @@ public struct ADOTestResult: Decodable, Sendable {
         public var build: Build?
 
         public struct Build: Decodable, Sendable {
+            /// A number, or a string of one.
             public var id: Int?
 
             private enum CodingKeys: String, CodingKey { case id }
 
             public init(from decoder: Decoder) throws {
-                id = try decoder.container(keyedBy: CodingKeys.self).lenient(Int.self, forKey: .id)
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                id = container.lenient(Int.self, forKey: .id)
+                    ?? container.lenient(String.self, forKey: .id).flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             }
         }
 
@@ -341,17 +344,19 @@ public enum BuildInvestigationReader {
     }
 
     /// The test runs a run published, a hundred a request, up to `testRunsCounted`, each once, and whether that's all of
-    /// them.
+    /// them: not when there are more, or one of them couldn't be read.
     static func readTestRuns(client: ADOClient, organization: String, projectId: String, buildId: Int) async throws
         -> (runs: [ADOTestRun], all: Bool) {
         var runs: [ADOTestRun] = []
         var seen: Set<Int> = []
+        var unreadable = false
         for skip in stride(from: 0, to: testRunsCounted, by: testRunsPerRequest) {
             let page = try await client.get(ADOEndpoint.testRuns(
                 organization: organization, projectId: projectId, buildId: buildId, skip: skip, top: testRunsPerRequest
             ), as: ADOList<ADOTestRun>.self)
             runs += page.value.filter { seen.insert($0.id).inserted }
-            if page.value.count + page.skipped < testRunsPerRequest { return (runs, true) }
+            unreadable = unreadable || page.skipped > 0
+            if page.value.count + page.skipped < testRunsPerRequest { return (runs, !unreadable) }
         }
         return (runs, false)
     }
@@ -373,29 +378,30 @@ public enum BuildInvestigationReader {
             .filter { (BuildTests.failed(in: $0) ?? 1) > 0 }
             .sorted { (BuildTests.failed(in: $0) == nil ? 1 : 0, $0.id) < (BuildTests.failed(in: $1) == nil ? 1 : 0, $1.id) }
             .prefix(testRunsRead))
-        let answers = await withTaskGroup(of: (Int, Result<[ADOTestResult], ADOError>).self) { group in
+        let answers = await withTaskGroup(of: (Int, Result<ADOList<ADOTestResult>, ADOError>).self) { group in
             for run in failing {
                 group.addTask {
                     (run.id, await attempt {
                         try await client.get(ADOEndpoint.testResults(
                             organization: organization, projectId: projectId, runId: run.id, outcomes: BuildTests.failedOutcomes,
                             top: failedTestsListed
-                        ), as: ADOList<ADOTestResult>.self).value
+                        ), as: ADOList<ADOTestResult>.self)
                     })
                 }
             }
-            var answers: [Int: Result<[ADOTestResult], ADOError>] = [:]
+            var answers: [Int: Result<ADOList<ADOTestResult>, ADOError>] = [:]
             for await (id, result) in group { answers[id] = result }
             return answers
         }
-        var results: [Int: [ADOTestResult]] = [:]
+        // How many failed results came back for each, whether or not they could be read.
+        var results: [Int: Int] = [:]
         var failures: [FailedTest] = []
         var problem: ADOError?
         for run in failing {
             switch answers[run.id] {
             case .success(let list)?:
-                results[run.id] = list
-                failures += list.map { FailedTest($0, run: run) }
+                results[run.id] = list.value.count + list.skipped
+                failures += list.value.map { FailedTest($0, run: run) }
             case .failure(let error)? where !isMissing(error): problem = problem ?? error
             default: break
             }

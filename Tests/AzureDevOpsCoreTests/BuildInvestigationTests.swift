@@ -319,34 +319,35 @@ enum InvestigationFixture {
         let runs = try Fixture.decode([ADOTestRun].self, [
             ["id": 1, "name": "Unit", "totalTests": 120, "passedTests": 110, "unanalyzedTests": 99, "runStatistics": [
                 ["state": "Completed", "outcome": "Passed", "count": 110], ["state": "Completed", "outcome": "Failed", "count": 7],
-                ["state": "Completed", "outcome": "Timeout", "count": 1], ["state": "Completed", "outcome": "NotExecuted", "count": 2],
-                ["state": "Completed", "outcome": "failed"], "not a statistic",
+                ["state": "Completed", "outcome": "Timeout", "count": 1], ["state": "Completed", "outcome": "NotExecuted", "count": 1],
+                ["state": "Completed", "outcome": "error", "count": 1],
             ]],
             // Without counts by outcome, the failures nobody looked into are only some of them: one of two here.
             ["id": 2, "name": "Integration", "totalTests": 30, "passedTests": 28, "unanalyzedTests": 1],
             // Every test passed: none failed.
             ["id": 3, "name": "Lint", "totalTests": 5, "passedTests": 5],
             ["id": 4, "totalTests": "many"],
+            // Counts by outcome that don't say how many failed.
+            ["id": 5, "totalTests": 10, "passedTests": 9, "runStatistics": [["outcome": "Passed", "count": 9], ["outcome": "Failed"]]],
+            ["id": 6, "totalTests": 10, "passedTests": 9, "runStatistics": [["outcome": "Passed", "count": 9], ["count": 1]]],
+            ["id": 7, "totalTests": 10, "passedTests": 9, "runStatistics": [["outcome": "Passed", "count": 9], "not a count"]],
         ])
-        #expect(runs.map { BuildTests.failed(in: $0) } == [8, nil, 0, nil])
-        func result(_ id: Int) throws -> ADOTestResult {
-            try Fixture.decode(ADOTestResult.self, ["id": id, "outcome": "Failed"])
-        }
+        #expect(runs.map { BuildTests.failed(in: $0) } == [9, nil, 0, nil, nil, nil, nil])
         let read = BuildTests(runs: runs, results: [:], listed: 20, failures: [], countsAllRuns: true)
-        #expect(read.total == 155)
-        #expect(read.passed == 143)
-        #expect(read.failed == 9)
-        #expect(read.other == 3)
-        #expect(read.runs == 4)
-        #expect(read.unlisted == 9)
+        #expect(read.total == 185)
+        #expect(read.passed == 170)
+        #expect(read.failed == 10)
+        #expect(read.other == 5)
+        #expect(read.runs == 7)
+        #expect(read.unlisted == 10)
         #expect(!read.isComplete)
-        // Their failed results, read whole, say how many failed.
-        let whole = BuildTests(runs: runs, results: [2: [try result(1), try result(2)], 4: []], listed: 20, failures: [], countsAllRuns: true)
-        #expect(whole.failed == 10)
+        // The failed results that came back for them, when they all did, say how many failed.
+        let whole = BuildTests(runs: runs, results: [2: 2, 4: 0, 5: 1, 6: 1, 7: 1], listed: 20, failures: [], countsAllRuns: true)
+        #expect(whole.failed == 14)
         #expect(whole.isComplete)
-        // Read as far as a read lists, they're some of them.
-        let cut = BuildTests(runs: runs, results: [2: try (1...3).map(result), 4: []], listed: 3, failures: [], countsAllRuns: true)
-        #expect(cut.failed == 11)
+        // As many as a read lists are some of them.
+        let cut = BuildTests(runs: runs, results: [2: 3, 4: 0, 5: 1, 6: 1, 7: 1], listed: 3, failures: [], countsAllRuns: true)
+        #expect(cut.failed == 15)
         #expect(!cut.isComplete)
         #expect(!BuildTests(runs: [runs[0]], results: [:], listed: 20, failures: [], countsAllRuns: false).isComplete)
         #expect(BuildTests(runs: [runs[0], runs[2]], results: [:], listed: 20, failures: [], countsAllRuns: true).isComplete)
@@ -380,7 +381,7 @@ enum InvestigationFixture {
         // A title is its name; without anything, it still has one.
         #expect(try test(["id": 2, "testCaseTitle": "Adds tax", "automatedTestName": "Shop.Tests.CartTests.AddsTax"]).name == "Adds tax")
         #expect(try test(["id": 3, "automatedTestName": "AddsTax"]).name == "AddsTax")
-        let bare = try test(["id": 4, "errorMessage": " \n ", "durationInMs": -1, "failingSince": ["build": ["id": "41"]]])
+        let bare = try test(["id": 4, "errorMessage": " \n ", "durationInMs": -1, "failingSince": ["build": ["id": "forty-one"]]])
         #expect(bare.name == "Test 4")
         #expect(bare.outcome == "Failed")
         #expect(bare.message == nil)
@@ -388,6 +389,8 @@ enum InvestigationFixture {
         #expect(bare.duration == nil)
         #expect(bare.failingSince == nil)
         #expect(bare.failingSinceBuildId == nil)
+        // A run's ID may come as a string of a number.
+        #expect(try test(["id": 7, "failingSince": ["build": ["id": "41"]]]).failingSinceBuildId == 41)
         // Too much is cut.
         #expect(try test(["id": 5, "errorMessage": String(repeating: "x", count: 5_000)]).message?.count == FailedTest.messageLimit)
         #expect(try test(["id": 6, "stackTrace": String(repeating: "x", count: 5_000)]).stackTrace?.count == FailedTest.stackTraceLimit)

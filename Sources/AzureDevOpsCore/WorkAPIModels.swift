@@ -7,6 +7,8 @@ import Foundation
 /// A JSON array that skips the elements it can't decode, like `ADOList` does inside its envelope.
 public struct LenientArray<Element: Decodable & Sendable>: Decodable, Sendable {
     public var elements: [Element]
+    /// Elements that couldn't be decoded and were left out.
+    public var skipped = 0
 
     public init(_ elements: [Element] = []) {
         self.elements = elements
@@ -24,6 +26,7 @@ public struct LenientArray<Element: Decodable & Sendable>: Decodable, Sendable {
                 elements.append(element)
             } else {
                 _ = try container.decode(Skip.self)
+                skipped += 1
             }
         }
         self.elements = elements
