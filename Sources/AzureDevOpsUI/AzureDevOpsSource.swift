@@ -161,6 +161,13 @@ package final class AzureDevOpsSource: BriefBarSource {
         let sessions = PullRequestSessions(copilot: copilot, links: services.links)
         sessions.record = { [weak store] key in store?.record(for: key) }
         pullRequestSessions = sessions
+        // A pull request that a task or a link names shows in its details, on the window's page, while the list has it.
+        copilot.canShowPullRequest = { [weak store, weak pullRequestDetails] key in
+            guard let store, let pullRequestDetails else { return false }
+            return pullRequestDetails.hasPage() && store.items.contains { $0.key == key }
+        }
+        copilot.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.reveal(key) ?? false }
+        workLinks?.showPullRequest = { [weak pullRequestDetails] key in pullRequestDetails?.reveal(key) ?? false }
         return store
     }
 

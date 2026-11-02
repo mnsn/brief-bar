@@ -37,6 +37,8 @@ final class WorkLinksStore {
         }
     }
     private var detailsRead: AnyCancellable?
+    /// Shows one of your pull requests in its details on the window's Pull Requests page: whether it could. The source's.
+    var showPullRequest: (PRKey) -> Bool = { _ in false }
     /// Who's signed in to the Azure CLI, as the pull requests' refresh last told.
     private var account: String?
     /// Whether it tells the details about its things: from `start` or `loadOnce`, until `stop`, whether Show Links is on
@@ -223,7 +225,8 @@ final class WorkLinksStore {
                     // As it is when you click it.
                     store?.open(store?.items.first { $0.key == item.key } ?? item)
                 },
-                url: item.url
+                url: item.url,
+                show: { [weak self] in self?.showPullRequest(item.key) ?? false }
             ))
         }
         for pullRequest in read.pullRequests.values {

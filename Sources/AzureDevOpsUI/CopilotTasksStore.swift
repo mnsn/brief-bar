@@ -30,6 +30,14 @@ struct CopilotTaskEntry: Identifiable, Equatable {
     func isOn(_ key: PRKey) -> Bool {
         onPullRequest?.matches(organization: key.organization, id: key.number) == true
     }
+
+    /// The Azure DevOps pull request it works on, or the one it opened.
+    var pullRequestKey: PRKey? {
+        if let onPullRequest { return PRKey(onPullRequest.organization, onPullRequest.id) }
+        guard let ref = pullRequest.flatMap({ ItemRef.from(link: $0.absoluteString) }), ref.kind == .pullRequest, let number = ref.number
+        else { return nil }
+        return PRKey(ref.scope, number)
+    }
 }
 
 extension CopilotTaskEntry {
@@ -99,6 +107,10 @@ final class CopilotTasksStore: ObservableObject {
     var handedOff: (CommentHandOff, _ prompt: String) -> Void = { _, _ in }
     /// The sessions Show Links links to a work item or a pull request, and why: nothing while it's off.
     var linkedSessions: (ItemRef) -> [LinkedSession] = { _ in [] }
+    /// Whether a pull request a task names can show in its details, on the window's Pull Requests page, and showing it
+    /// there: whether it could. The source's.
+    var canShowPullRequest: (PRKey) -> Bool = { _ in false }
+    var showPullRequest: (PRKey) -> Bool = { _ in false }
     /// Stands in for getting a task's worktree ready and starting Copilot, in tests, which start nothing.
     var launchForTests: ((CopilotLauncher.Request, _ id: String, _ now: Date) async throws -> CopilotRun)?
     /// Stands in for copying a prompt and opening a session in the Copilot app, in tests: whether it opened.

@@ -22,6 +22,9 @@
   for a task BriefBar runs, and **Use for This Pull Request** sends its work to another session, or to a
   new one, from then on. The Send to Copilot window and agents' `pull_request` go where the line says, so
   when the line asks, the window starts a new session unless you choose one, rather than guess.
+- **Show a task's or a link's pull request in BriefBar.** A Copilot task's menu has **Show Pull Request in
+  BriefBar**, and one of your pull requests in a row's links **Show in BriefBar**, for its details on the
+  window's Pull Requests page, beside opening it in Azure DevOps.
 
 ## 0.11.0 - 2026-11-02
 

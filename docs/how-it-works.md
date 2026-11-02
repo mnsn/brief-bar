@@ -391,7 +391,11 @@ requests.
 
 - Azure DevOps (`WorkLinksStore`): the work items linked to each of your pull requests, the pull requests linked to the
   sprint's work items, and the tasks you sent to Copilot: each one's session, with the work item or pull request it was
-  sent from, and with the pull request it opened, which goes with the work item too.
+  sent from, and with the pull request it opened, which goes with the work item too. One of your pull requests, which
+  the list has, also shows in BriefBar's window (`LinkedItem.show`): in a row's links, it has **Show in BriefBar**, for
+  its details on the Pull Requests page, beside **Open in Azure DevOps**, which a task's menu has too, as **Show Pull
+  Request in BriefBar**, for the pull request it works on or opened (`CopilotTaskEntry.pullRequestKey`). Where no window
+  has that page, it opens in Azure DevOps.
 - Copilot: the pull request each app session started from or opened, as the app records it in its database
   (`workspaces`' `source_pr_*` and `created_pr_*` columns, and `workspace_pull_request_links`): GitHub's, and any
   other service's whose link it records.

@@ -198,7 +198,8 @@ Links come from where they already are:
 
 A work item's sessions include its pull requests' sessions, and a session's work items its pull
 request's. Right-click a row, or click a capsule on a sprint card, to open what it's linked to, link
-more, or unlink. The window that links things suggests what's on the same branch, names the same
+more, or unlink: one of your pull requests there has **Show in BriefBar**, for its details on the
+window's Pull Requests page, and **Open in Azure DevOps**. The window that links things suggests what's on the same branch, names the same
 number or shares words with the title, and takes a pasted link to a pull request, a work item or a
 session.
 
@@ -480,8 +481,9 @@ every tool allowed and no questions. Nothing opens, so a notification says Copil
 it. The task shows Copilot working, then **PR** once it has opened a pull request, published and linked
 to the work item, which you'll find under Pull Requests as your own; a notification says when it's
 done, or why it stopped. While **GitHub Copilot** is on, each task you sent is listed with your Copilot
-sessions too, marked ✈︎ ([below](#github-copilot)). The badge's menu opens the pull request, goes on
-with the session in Terminal, shows the worktree, stops Copilot or removes the worktree, and the ✈︎
+sessions too, marked ✈︎ ([below](#github-copilot)). The badge's menu, and the task's there, show the pull
+request in BriefBar's window with **Show Pull Request in BriefBar**, or open it in Azure DevOps, go on
+with the session in Terminal, show the worktree, stop Copilot or remove the worktree, and the ✈︎
 menu at the top of the Sprint page lists every task you sent. Copilot keeps going if BriefBar quits.
 
 The standard prompt asks Copilot to read the work item with your Azure DevOps tools, branch the way the
