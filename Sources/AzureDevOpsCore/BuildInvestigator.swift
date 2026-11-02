@@ -418,6 +418,8 @@ public enum BuildInvestigationReader {
             case .success(let list)?:
                 results[run.id] = list.value.count + list.skipped
                 failures += list.value.map { FailedTest($0, run: run) }
+                // They count, but the ones that couldn't be read are read again next time.
+                if list.skipped > 0 { problem = problem ?? .decoding("failed tests that couldn't be read") }
             case .failure(let error)? where !isMissing(error): problem = problem ?? error
             default: break
             }

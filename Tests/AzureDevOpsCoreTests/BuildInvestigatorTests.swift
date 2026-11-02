@@ -335,11 +335,14 @@ private actor GatedTokens: AccessTokenProvider {
             ["outcome": "Failed", "testCaseTitle": "Without an ID"],
         ]))
         server.on("/\(Fixture.org)/p1/_apis/test/Runs/602/results", json: Fixture.list([["id": 3, "outcome": "Failed", "testCaseTitle": "Ships"]]))
-        let tests = try #require(try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest).tests)
+        let investigation = try await BuildInvestigationReader.read(client: server.client(), buildId: 77, of: FailedRun.pullRequest)
+        let tests = try #require(investigation.tests)
         #expect(tests.failed == 4)
         #expect(tests.isComplete)
         // The test run whose failures are known comes first.
         #expect(tests.failures.map(\.name) == ["Ships", "AddsTax", "RoundsTotal"])
+        // The one that can't be read is read again next time.
+        #expect(investigation.unread[.tests].map { if case .decoding = $0 { true } else { false } } == true)
 
         // As many as a read lists, though one can't be read, are only some of them.
         let full = StubServer()
@@ -353,6 +356,18 @@ private actor GatedTokens: AccessTokenProvider {
         #expect(some.failed == BuildInvestigationReader.failedTestsListed)
         #expect(some.failures.count == BuildInvestigationReader.failedTestsListed - 1)
         #expect(!some.isComplete)
+
+        // Failed results none of which can be read count, but list nothing, and are read again next time.
+        let none = StubServer()
+        FailedRun.serve(none, replies: ["results": .json(Fixture.list([["outcome": "Failed"], ["outcome": "Failed"]]))])
+        let unreadable = try await BuildInvestigationReader.read(client: none.client(), buildId: 77, of: FailedRun.pullRequest)
+        #expect(unreadable.tests?.failed == 2)
+        #expect(unreadable.tests?.failures.isEmpty == true)
+        #expect(unreadable.unread[.tests].map { if case .decoding = $0 { true } else { false } } == true)
+        // And an investigation with something unread isn't kept.
+        let investigator = BuildInvestigator(client: none.client())
+        _ = try await investigator.investigation(buildId: 77, of: FailedRun.pullRequest)
+        #expect(await investigator.keptBuilds.isEmpty)
     }
 
     @Test func aTestRunThatCantBeReadLeavesTheTotalsPartial() async throws {
@@ -810,8 +825,12 @@ private actor GatedTokens: AccessTokenProvider {
         }
         #expect(revisions.contains(.current))
         #expect(revisions.contains(.outdated))
-        // Nothing for another build, or another organization's.
+        // Nothing for another build, a run the Pipelines page doesn't show as failed, or another organization's.
         #expect(DemoData.buildInvestigation(buildId: 1, of: failing.pullRequest, now: now) == nil)
+        let cardless = try #require(authored.dropFirst(3).first)
+        #expect(DemoData.buildInvestigation(buildId: cardless.key.number * 1_000 + 31, of: cardless, now: now) == nil)
+        let carded = try #require(authored.first)
+        #expect(DemoData.buildInvestigation(buildId: carded.key.number * 1_000 + 32, of: carded, now: now) == nil)
         #expect(DemoData.buildInvestigation(buildId: buildId, of: records[0].pullRequest, now: now) == nil)
         var elsewhere = failing.pullRequest
         elsewhere.key = PRKey("fabrikam", 4088)

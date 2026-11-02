@@ -11,15 +11,18 @@ extension DemoData {
               let shopWeb = pipelines(now: now).first(where: { $0.pipeline.name == "shop-web CI" }),
               let onMain = shopWeb.latest, onMain.status == .failed
         else { return nil }
-        // The run the Pipelines page shows for the pull request, or the one its check failed with.
-        let isPipelinesRun = buildId == pullRequest.key.number * 1_000 + shopWeb.pipeline.definitionId
+        // The failed shop-web CI run the Pipelines page shows for the pull request, or the one its check failed with.
+        let card = pipelinesPullRequests(now: now).first { $0.pullRequest.key == pullRequest.key }
+        let isPipelinesRun = card?.pipelines.contains { status in
+            status.pipeline.id == shopWeb.pipeline.id && status.latest?.id == buildId && status.latest?.status == .failed
+        } == true
         let isCheckRun = records(now: now).first { $0.id == pullRequest.key }?.details?.checks
             .contains { $0.kind == .build && $0.state == .failed && $0.buildId == buildId } == true
         guard isPipelinesRun || isCheckRun else { return nil }
         func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
 
         // Whether it built the latest commit, as the Pipelines page says of its pull requests' runs.
-        let revision = pipelinesPullRequests(now: now).first { $0.pullRequest.key == pullRequest.key }?.revisions[buildId] ?? .current
+        let revision = card?.revisions[buildId] ?? .current
         var run = onMain
         run.id = buildId
         run.branch = "!\(pullRequest.key.number)"
