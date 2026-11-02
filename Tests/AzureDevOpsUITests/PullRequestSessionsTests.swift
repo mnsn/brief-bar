@@ -5,6 +5,7 @@ import CopilotTasks
 import Foundation
 import SQLite3
 import SwiftUI
+import Synchronization
 import Testing
 @testable import AzureDevOpsUI
 
@@ -102,9 +103,10 @@ import Testing
         return (item, record)
     }
 
-    /// Waits, a little at a time, until something is so, as the store reads and keeps up off the main thread.
+    /// Waits, a little at a time, until something is so, as the store reads and keeps up off the main thread: for as long
+    /// as a busy Mac may take, since it stops as soon as it is.
     private func until(_ condition: () -> Bool) async throws {
-        for _ in 0..<400 where !condition() {
+        for _ in 0..<2_400 where !condition() {
             try await Task.sleep(for: .milliseconds(25))
         }
     }
@@ -291,20 +293,24 @@ import Testing
 
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
         sessions.record = { $0 == item.key ? record : nil }
+        // Between reads, an hour: only stopping ends it.
+        sessions.refreshEvery = .seconds(3_600)
         store.mentionReadForTests = { id in
             read.append(id)
             sessions.stopAll()
         }
         let following = Task { await sessions.follow(item, record: record) }
-        // Should it not stop, the test ends all the same, and says so.
+        // Should it not stop, the test ends all the same, and says so, however slow the Mac.
+        let gaveUp = Mutex(false)
         let limit = Task {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(120))
+            guard !Task.isCancelled else { return }
+            gaveUp.withLock { $0 = true }
             following.cancel()
         }
-        let started = ContinuousClock.now
         await following.value
         limit.cancel()
-        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(!gaveUp.withLock { $0 })
         #expect(read.count == 1)
         #expect(sessions.session(for: item.key) == nil)
     }
