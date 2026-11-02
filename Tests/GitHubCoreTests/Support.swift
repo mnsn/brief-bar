@@ -306,17 +306,17 @@ final class FakeRunner: ProcessRunning, @unchecked Sendable {
     private var outcomes: [Outcome]
     private var fallback: Outcome
     private var log: [Call] = []
-    private var delays: [Duration]
     private var stops = 0
-    /// How long each run takes, after those in `delays`, so callers at the same time can overlap.
+    private var held: Bool
+    /// How long each run takes, so callers at the same time can overlap.
     let delay: Duration
 
-    /// `delays`: how long the first runs take, one each.
-    init(_ outcomes: [Outcome] = [], fallback: Outcome = .output("", status: 1), delay: Duration = .zero, delays: [Duration] = []) {
+    /// `held`: each run then goes on until `release()`, or until it's stopped, however slow the machine.
+    init(_ outcomes: [Outcome] = [], fallback: Outcome = .output("", status: 1), delay: Duration = .zero, held: Bool = false) {
         self.outcomes = outcomes
         self.fallback = fallback
         self.delay = delay
-        self.delays = delays
+        self.held = held
     }
 
     var calls: [Call] { lock.withLock { log } }
@@ -324,18 +324,22 @@ final class FakeRunner: ProcessRunning, @unchecked Sendable {
     /// How many runs were stopped, as `ProcessRunner` stops one whose task is cancelled.
     var stopped: Int { lock.withLock { stops } }
 
+    /// Lets held runs end: those under way, and those to come.
+    func release() {
+        lock.withLock { held = false }
+    }
+
     func run(_ executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessResult {
-        let (outcome, duration) = lock.withLock {
+        let outcome = lock.withLock {
             log.append(Call(executable: executable.path, arguments: arguments, environment: environment, timeout: timeout))
-            return (outcomes.isEmpty ? fallback : outcomes.removeFirst(), delays.isEmpty ? delay : delays.removeFirst())
+            return outcomes.isEmpty ? fallback : outcomes.removeFirst()
         }
-        if duration > .zero {
-            do {
-                try await Task.sleep(for: duration)
-            } catch {
-                lock.withLock { stops += 1 }
-                throw error
-            }
+        do {
+            if delay > .zero { try await Task.sleep(for: delay) }
+            while lock.withLock({ held }) { try await Task.sleep(for: .milliseconds(5)) }
+        } catch {
+            lock.withLock { stops += 1 }
+            throw error
         }
         switch outcome {
         case .result(let result): return result
