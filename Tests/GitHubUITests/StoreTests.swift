@@ -156,6 +156,20 @@ import Testing
         #expect(!store.isRefreshing)
     }
 
+    /// Turning GitHub off stops a run of `gh` that's under way, so what it would print reaches nothing.
+    @Test func stoppingStopsTheCLIRunUnderWay() async {
+        let runner = FakeRunner(ProcessResult(status: 1, stderr: Data(FakeCLI.signedOut.utf8)), delay: .seconds(30))
+        let store = liveStore({ FakeCLI.signedOut(runner) })
+        store.start()
+        await eventually { !runner.calls.isEmpty }
+        store.stop()
+
+        await eventually { runner.stopped == 1 }
+        #expect(runner.calls.count == 1)
+        #expect(runner.stopped == 1)
+        #expect(store.problem == nil)
+    }
+
     /// Signed out, or as someone else: the list was theirs.
     @Test func signingOutClearsTheList() {
         let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
@@ -193,6 +207,42 @@ import Testing
         store.fail(CancellationError())
         #expect(store.problem == nil)
         #expect(store.items.count == 8)
+    }
+
+    /// An empty list is "All quiet" only once a read has worked and read every pull request there is.
+    @Test func itsAllQuietOnlyWhenItReadThemAll() {
+        let store = GitHubStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let none = GitHubLoad(login: "robin", items: [])
+        #expect(!store.isAllQuiet)
+
+        // Before any read has worked.
+        store.fail(GitHubError.offline)
+        #expect(store.items.isEmpty)
+        #expect(!store.isAllQuiet)
+        store.receive(none)
+        #expect(store.isAllQuiet)
+
+        // Offline, GitHub out of reach or asking to slow down, or signed out: the list may not be empty.
+        let problems: [Error] = [
+            GitHubError.offline, GitHubError.http(502), GitHubError.throttled(retryAfter: 60), GitHubAuthError.signedOut("not logged in"),
+        ]
+        for error in problems {
+            store.fail(error)
+            #expect(store.items.isEmpty)
+            #expect(!store.isAllQuiet, "\(error)")
+            store.receive(none)
+        }
+
+        // Some pull requests couldn't be read, or more matched than it reads.
+        store.receive(GitHubLoad(login: "robin", items: [], notice: "Some pull requests couldn't be read: no access"))
+        #expect(!store.isAllQuiet)
+        store.receive(GitHubLoad(login: "robin", items: [], moreThanShown: true))
+        #expect(!store.isAllQuiet)
+
+        store.receive(none)
+        #expect(store.isAllQuiet)
+        store.receive(GitHubDemoData.load())
+        #expect(!store.isAllQuiet)
     }
 
     @Test func groupsTheList() {

@@ -104,6 +104,43 @@ import Testing
         #expect(runner.calls.count == 1)
     }
 
+    /// Turning GitHub off cancels the read waiting for a token: the run of `gh` under way stops, and what it would have
+    /// printed reaches nothing, not even the next read.
+    @Test func aCallerThatGivesUpStopsTheRunItWaitsFor() async throws {
+        let runner = FakeRunner([.output("gho_late"), .output("gho_next")], delays: [.seconds(30)])
+        let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        let reading = Task { try await provider.token() }
+        for _ in 0..<500 where runner.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        reading.cancel()
+
+        await #expect(throws: CancellationError.self) { try await reading.value }
+        #expect(runner.stopped == 1)
+        #expect(try await provider.token().value == "gho_next")
+        #expect(runner.calls.count == 2)
+    }
+
+    /// A caller that gives up gets no token, but the run goes on for another that still waits for it.
+    @Test func aRunGoesOnForTheCallersStillWaiting() async throws {
+        let runner = FakeRunner([.output("gho_shared")], delay: .milliseconds(300))
+        let provider = GitHubCLITokenProvider(locator: .fixed(gh), runner: runner, now: { referenceDate })
+
+        let staying = Task { try await provider.token() }
+        for _ in 0..<500 where runner.calls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let leaving = Task { try await provider.token() }
+        try await Task.sleep(for: .milliseconds(50))
+        leaving.cancel()
+
+        await #expect(throws: CancellationError.self) { try await leaving.value }
+        #expect(try await staying.value.value == "gho_shared")
+        #expect(runner.calls.count == 1)
+        #expect(runner.stopped == 0)
+    }
+
     @Test func noCLIRunsNothing() async {
         let runner = FakeRunner()
         let provider = GitHubCLITokenProvider(locator: .fixed(nil), runner: runner, now: { referenceDate })

@@ -319,6 +319,84 @@ extension Locked where Value == Int {
         #expect(server.requests.count == sent)
     }
 
+    /// `Retry-After` can give the date to wait until instead (RFC 9110).
+    @Test func honorsARetryAfterDate() async throws {
+        let server = StubServer()
+        let until = httpDate(Date().addingTimeInterval(600))
+        server.on("/_apis/connectionData") { _ in .status(429, headers: ["Retry-After": until]) }
+        let client = server.client()
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+        do {
+            _ = try await client.get(url, as: ADOConnectionData.self)
+            Issue.record("Expected to be throttled")
+        } catch ADOError.throttled(let wait) {
+            #expect(wait > 590 && wait <= 600)
+        }
+    }
+
+    @Test func readsRetryAfterInSecondsOrAsADate() {
+        func wait(_ value: String) -> TimeInterval? {
+            let response = HTTPURLResponse(
+                url: ADOEndpoint.connectionData(organization: "contoso"), statusCode: 429, httpVersion: "HTTP/1.1",
+                headerFields: ["Retry-After": value]
+            )
+            return response.flatMap { ADOClient.retryAfter($0, now: referenceDate) }
+        }
+        #expect(wait("30") == 30)
+        #expect(wait("Sun, 18 Oct 2026 10:02:00 GMT") == 120)
+        #expect(wait("Sunday, 18-Oct-26 10:02:00 GMT") == 120)
+        #expect(wait("Sun Oct 18 10:02:00 2026") == 120)
+        #expect(wait("Mon, 19 Oct 2026 10:00:00 GMT") == 3_600)
+        #expect(wait("Sun, 18 Oct 2026 09:59:00 GMT") == nil)
+        #expect(wait("soon") == nil)
+    }
+
+    /// Each request's token goes only where it's sent: no redirect is followed, and one to another host fails with an
+    /// error that says so.
+    @Test(.timeLimit(.minutes(1)))
+    func refusesARedirectToAnotherHost() async {
+        let server = StubServer()
+        server.on("/_apis/connectionData") { request in
+            request.url?.host == "dev.azure.com"
+                ? .redirect(to: "https://elsewhere.example/contoso/_apis/connectionData") : .json(["authenticatedUser": ["id": "ME"]])
+        }
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+
+        await #expect(throws: ADOError.redirected) { try await server.client().get(url, as: ADOConnectionData.self) }
+        #expect(server.requests.map(\.url) == [url])
+        // Problem messages go to the log, and a host can carry an organization's name, so it doesn't say which.
+        #expect(ADOError.redirected.description == "Azure DevOps redirected BriefBar to another host, which it doesn't connect to.")
+    }
+
+    /// Azure DevOps answers each request where it's sent, so a redirect on the same host isn't followed either.
+    @Test(.timeLimit(.minutes(1)))
+    func aRedirectOnTheSameHostIsAnHTTPError() async {
+        let server = StubServer()
+        server.on("/_apis/connectionData") { request in
+            request.url?.query?.contains("again") == true
+                ? .json(["authenticatedUser": ["id": "ME"]]) : .redirect(to: "https://dev.azure.com/contoso/_apis/connectionData?again")
+        }
+        let url = ADOEndpoint.connectionData(organization: "contoso")
+
+        await #expect(throws: ADOError.http(307)) { try await server.client().get(url, as: ADOConnectionData.self) }
+        #expect(server.requests.map(\.url) == [url])
+    }
+
+    @Test func tellsARedirectToAnotherHostFromOneOnTheSameHost() {
+        let source = ADOEndpoint.connectionData(organization: "contoso")
+        for target in ["https://elsewhere.example/contoso/_apis/connectionData", "https://contoso.visualstudio.com/_apis/connectionData"] {
+            #expect(RedirectGuard.isAnotherHost(URL(string: target), than: source), "\(target)")
+        }
+        #expect(RedirectGuard.isAnotherHost(source, than: ADOEndpoint.profile))
+        for target in [
+            "https://dev.azure.com/contoso/_apis/connectionData?again", "http://dev.azure.com/contoso/_apis/connectionData",
+            "https://DEV.azure.com:8443/contoso/_apis/connectionData",
+        ] {
+            #expect(!RedirectGuard.isAnotherHost(URL(string: target), than: source), "\(target)")
+        }
+        #expect(!RedirectGuard.isAnotherHost(nil, than: source))
+    }
+
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then, so
     /// a summary reading one pull request after another stops at the first.
     @Test func waitsAMinuteWhenToldToSlowDownWithoutHowLong() async throws {
@@ -436,4 +514,13 @@ extension Locked where Value == Int {
             // Discovery tries again a minute later.
         }
     }
+}
+
+/// `date` as an HTTP date, as `Retry-After` gives one: `Sun, 18 Oct 2026 10:02:00 GMT`.
+private func httpDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+    return formatter.string(from: date)
 }
