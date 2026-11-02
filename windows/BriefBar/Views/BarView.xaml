@@ -45,8 +45,8 @@
             ToolTipService.ToolTip="{x:Bind ViewModel.Overview.ToolTip, Mode=OneWay}">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <views:BriefBarMark
-                    Width="16"
-                    Height="16"
+                    Width="{x:Bind ViewModel.Overview.IconSize, Mode=OneWay}"
+                    Height="{x:Bind ViewModel.Overview.IconSize, Mode=OneWay}"
                     VerticalAlignment="Center"
                     DoneBrush="{x:Bind ViewModel.Overview.MarkDoneBrush, Mode=OneWay}"
                     LineBrush="{StaticResource BarWordsBrush}"
@@ -120,7 +120,7 @@
                                 VerticalAlignment="Center"
                                 Fill="{x:Bind GlyphBrush, Mode=OneWay}"
                                 Icon="{x:Bind Glyph, Mode=OneWay}"
-                                Size="16" />
+                                Size="{x:Bind IconSize, Mode=OneWay}" />
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontSize="13"
@@ -143,45 +143,23 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:CountChipViewModel">
-                                        <Grid VerticalAlignment="Center">
-                                            <Border
-                                                Height="20"
-                                                Padding="5,0,7,0"
-                                                Background="{x:Bind PillBrush, Mode=OneWay}"
-                                                CornerRadius="10"
-                                                Visibility="{x:Bind IsPill, Mode=OneWay}">
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                                    <views:FluentIcon
-                                                        VerticalAlignment="Center"
-                                                        Fill="{x:Bind PillTextBrush, Mode=OneWay}"
-                                                        Icon="{x:Bind Icon, Mode=OneWay}"
-                                                        Size="14" />
-                                                    <TextBlock
-                                                        VerticalAlignment="Center"
-                                                        FontSize="13"
-                                                        FontWeight="Bold"
-                                                        Foreground="{x:Bind PillTextBrush, Mode=OneWay}"
-                                                        Text="{x:Bind Count, Mode=OneWay}" />
-                                                </StackPanel>
-                                            </Border>
-                                            <StackPanel
+                                        <!-- Its state's icon, in its color, and the count, as on the Mac. -->
+                                        <StackPanel
+                                            VerticalAlignment="Center"
+                                            Orientation="Horizontal"
+                                            Spacing="3">
+                                            <views:FluentIcon
                                                 VerticalAlignment="Center"
-                                                Orientation="Horizontal"
-                                                Spacing="3"
-                                                Visibility="{x:Bind IsPlain, Mode=OneWay}">
-                                                <views:FluentIcon
-                                                    VerticalAlignment="Center"
-                                                    Fill="{x:Bind IconBrush, Mode=OneWay}"
-                                                    Icon="{x:Bind Icon, Mode=OneWay}"
-                                                    Size="14" />
-                                                <TextBlock
-                                                    VerticalAlignment="Center"
-                                                    FontSize="14"
-                                                    FontWeight="SemiBold"
-                                                    Foreground="{StaticResource BarWordsBrush}"
-                                                    Text="{x:Bind Count, Mode=OneWay}" />
-                                            </StackPanel>
-                                        </Grid>
+                                                Fill="{x:Bind IconBrush, Mode=OneWay}"
+                                                Icon="{x:Bind Icon, Mode=OneWay}"
+                                                Size="{x:Bind IconSize, Mode=OneWay}" />
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                FontSize="14"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource BarWordsBrush}"
+                                                Text="{x:Bind Count, Mode=OneWay}" />
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -194,7 +172,7 @@
                                     VerticalAlignment="Center"
                                     Fill="{x:Bind BadgeBrush, Mode=OneWay}"
                                     Icon="{x:Bind BadgeIcon, Mode=OneWay}"
-                                    Size="14" />
+                                    Size="{x:Bind IconSize, Mode=OneWay}" />
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     FontSize="13"

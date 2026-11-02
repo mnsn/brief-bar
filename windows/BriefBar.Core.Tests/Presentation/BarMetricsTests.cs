@@ -17,6 +17,22 @@ public sealed class BarMetricsTests
         Assert.Equal(expected: expected, actual: BarMetrics.HeightDip(textScale: textScale), precision: 6);
     }
 
+    /// Icons at the sizes Fluent draws them for: 16, and 20 once Windows' text is big enough that 16 would be nearer 20.
+    [Theory]
+    [InlineData(1.0, 16.0)]
+    [InlineData(1.1, 16.0)]
+    [InlineData(1.12, 16.0)]
+    [InlineData(1.125, 20.0)]
+    [InlineData(1.21, 20.0)]
+    [InlineData(2.25, 20.0)]
+    [InlineData(0.5, 16.0)]
+    [InlineData(0.0, 16.0)]
+    [InlineData(double.NaN, 16.0)]
+    public void GrowsItsIconsWithWindowsTextSizeInFluentsSizes(double textScale, double expected)
+    {
+        Assert.Equal(expected: expected, actual: BarMetrics.IconSize(textScale: textScale));
+    }
+
     [Theory]
     [InlineData(1.0, 1.0, 32)]
     [InlineData(1.0, 1.5, 48)]

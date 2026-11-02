@@ -32,7 +32,6 @@ public sealed class StatePaletteTests
             AssertContrast(foreground: StatePalette.Text(state: state, dark: dark), background: background, least: Wcag.TextContrast);
         }
         AssertContrast(foreground: StatePalette.Caution(dark: dark), background: background, least: Wcag.TextContrast);
-        AssertContrast(foreground: StatePalette.PillText(dark: dark), background: StatePalette.PillFill(dark: dark), least: Wcag.TextContrast);
         // Quiet is for words too: a chat's preview, or the heading of a group that isn't counted.
         AssertContrast(foreground: StatePalette.Quiet(dark: dark), background: background, least: Wcag.TextContrast);
     }
@@ -83,7 +82,6 @@ public sealed class StatePaletteTests
             AssertContrast(
                 foreground: StatePalette.OnFill(dark: dark), background: StatePalette.Fill(state: state, dark: dark), least: Wcag.GraphicsContrast);
         }
-        AssertContrast(foreground: StatePalette.PillFill(dark: dark), background: background, least: Wcag.GraphicsContrast);
         AssertContrast(foreground: StatePalette.Quiet(dark: dark), background: background, least: Wcag.GraphicsContrast);
     }
 
@@ -159,7 +157,7 @@ public sealed class StatePaletteTests
             }
             AssertContrast(foreground: Readable(color: StatePalette.Caution(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
             AssertContrast(foreground: Readable(color: StatePalette.Quiet(dark: dark), least: Wcag.TextContrast), background: shown, least: Wcag.TextContrast);
-            // Its words, labels and quietest words, which may be translucent, as they show.
+            // Its words, which its glyphs are in too, its labels and its quietest words, which may be translucent, as they show.
             foreach (var (words, least) in new[]
             {
                 (StatePalette.Words(dark: dark), Wcag.TextContrast),
@@ -170,10 +168,7 @@ public sealed class StatePaletteTests
                 var readable = StatePalette.ReadableWords(words: words, background: workedOutAgainst, dark: dark, least: least);
                 AssertContrast(foreground: StatePalette.Over(argb: readable, background: shown), background: shown, least: least);
             }
-            // Needs you's pill, and its words on it.
-            var pill = Readable(color: StatePalette.PillFill(dark: dark), least: Wcag.GraphicsContrast);
-            AssertContrast(foreground: pill, background: shown, least: Wcag.GraphicsContrast);
-            AssertContrast(foreground: StatePalette.PillText(dark: dark), background: pill, least: Wcag.TextContrast);
+
             foreach (var section in Sections.InBarOrder)
             {
                 AssertContrast(

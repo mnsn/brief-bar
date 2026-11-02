@@ -61,15 +61,9 @@ public sealed class ThemePalette
     public Brush OnFill =>
         IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.OnFill(dark: IsDark));
 
-    /// Needs you's pill on the bar, standing out on it as the bar's other colors do; its words, `PillText`, read on it
-    /// all the more, being black in dark and white in light.
-    public Brush PillFill =>
-        IsHighContrast
-            ? System(element: UIElementType.Highlight)
-            : Brush(argb: OnBackground(argb: StatePalette.PillFill(dark: IsDark), least: Wcag.GraphicsContrast));
-
-    public Brush PillText =>
-        IsHighContrast ? System(element: UIElementType.HighlightText) : Brush(argb: StatePalette.PillText(dark: IsDark));
+    /// A source's glyph on the bar, in the color of its words (`Words`), as the taskbar's icons are.
+    public Brush Ink =>
+        IsHighContrast ? System(element: UIElementType.WindowText) : Brush(argb: WordsArgb(argb: StatePalette.Words(dark: IsDark), least: Wcag.TextContrast));
 
     public Brush Caution =>
         IsHighContrast
@@ -151,9 +145,11 @@ public sealed class ThemePalette
     /// Words `argb`, or Windows' `element` in High Contrast, made to stand `least` to 1 apart from `Background` if
     /// there's one.
     Color WordsColor(uint argb, UIElementType element, double least) =>
-        IsHighContrast
-            ? systemColors[element]
-            : ColorOf(argb: Background is { } background ? StatePalette.ReadableWords(words: argb, background: background, dark: IsDark, least: least) : argb);
+        IsHighContrast ? systemColors[element] : ColorOf(argb: WordsArgb(argb: argb, least: least));
+
+    /// Words `argb`, made to stand `least` to 1 apart from `Background` if there's one.
+    uint WordsArgb(uint argb, double least) =>
+        Background is { } background ? StatePalette.ReadableWords(words: argb, background: background, dark: IsDark, least: least) : argb;
 
     /// `argb`, made to stand `least` to 1 apart from `Background` if there's one.
     uint OnBackground(uint argb, double least) =>
