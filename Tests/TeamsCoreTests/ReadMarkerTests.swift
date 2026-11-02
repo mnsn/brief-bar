@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
+@testable import ChromiumIndexedDB
 @testable import TeamsCore
 import BriefBarCore
 import NotificationCenterDB
@@ -44,6 +45,49 @@ enum TeamsData {
     /// The log's bytes after the first run's.
     static func secondRun() throws -> Data {
         try Data(contentsOf: fixture.appendingPathComponent(folderName).appendingPathComponent(logName)).dropFirst(firstRunLength)
+    }
+
+    /// Beside the copy's `log`, a table that can't be read, which a MANIFEST lists; returns it. A table LevelDB is still
+    /// writing isn't listed yet, but one read without the MANIFEST may be, so one counts only once it stays so.
+    @discardableResult
+    static func listBrokenTable(beside log: URL) throws -> URL {
+        let table = log.deletingLastPathComponent().appendingPathComponent("000010.ldb")
+        try Data(repeating: 7, count: 100).write(to: table)
+        try saveManifest(listing: [10], number: 11, beside: log)
+        return table
+    }
+
+    /// Writes MANIFEST-`number` beside the copy's `log`, as LevelDB does as it opens a database: one version edit, as
+    /// one record of a log, that lists the tables `tables` and keeps every log; then CURRENT, which names it, through a
+    /// file it renames. ChromiumIndexedDBTests' `ManifestWriter` writes any.
+    static func saveManifest(listing tables: [UInt64], number: UInt64, beside log: URL) throws {
+        func varint(_ value: UInt64) -> [UInt8] {
+            var value = value
+            var bytes: [UInt8] = []
+            while value >= 0x80 {
+                bytes.append(UInt8(value & 0x7F) | 0x80)
+                value >>= 7
+            }
+            return bytes + [UInt8(value)]
+        }
+        // A key with its sequence number and kind, as each table's smallest and largest are.
+        let key: [UInt8] = [0x61, 1, 0, 0, 0, 0, 0, 0, 0]
+        var edit = varint(2) + varint(0) + varint(3) + varint(number + 1) + varint(4) + varint(0)
+        for table in tables {
+            edit += varint(7) + varint(0) + varint(table) + varint(1_000)
+            edit += varint(UInt64(key.count)) + key + varint(UInt64(key.count)) + key
+        }
+        let checksum = CRC32C.mask(CRC32C.checksum(edit, extending: CRC32C.checksum([UInt8(1)])))
+        var record = (0..<4).map { UInt8(truncatingIfNeeded: checksum >> (8 * $0)) }
+        record += [UInt8(edit.count & 0xFF), UInt8(edit.count >> 8), 1] + edit
+        let folder = log.deletingLastPathComponent()
+        let name = String(format: "MANIFEST-%06llu", number)
+        try Data(record).write(to: folder.appendingPathComponent(name))
+        let temporary = folder.appendingPathComponent(String(format: "%06llu.dbtmp", number))
+        try Data((name + "\n").utf8).write(to: temporary)
+        guard rename(temporary.path, folder.appendingPathComponent("CURRENT").path) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
     }
 }
 
@@ -97,6 +141,15 @@ final class MarkerCollector: Sendable {
         #expect(ReadMarker(consumptionHorizon: "1792317605000")?.readAt == nil)
         for never in ["0;0;0", "", "0;900;7", "-5;1;1", "abc;1;1", ";1792317605000;1"] {
             #expect(ReadMarker(consumptionHorizon: never) == nil, "\(never)")
+        }
+        // Every chat has the field, read or not: a chat never read has it as `0;…`. Teams' client message ID, its third
+        // part, can be longer than a number holds.
+        for horizon in ["1792317605000;1792317605900;1792317605007", "1792317605000", "0;0;0", "0;900;7",
+                        "1792317605000;1792317605900;98765432109876543210"] {
+            #expect(ReadMarker.isHorizon(horizon), "\(horizon)")
+        }
+        for other in ["", "-5;1;1", "abc;1;1", ";1792317605000;1", "{\"id\":1}", nil] {
+            #expect(!ReadMarker.isHorizon(other), "\(other ?? "nil")")
         }
     }
 
@@ -164,6 +217,8 @@ final class MarkerCollector: Sendable {
             let report = snapshot.report
             #expect(report.folders == 1 && report.stores == 1)
             #expect(report.conversations == 7 && report.withMarker == 5)
+            // Teams' own notes and the meeting chat nobody opened have the field too.
+            #expect(report.withHorizon == 7)
             #expect(report.formats == [
                 "Blink 21, V8 16": 5, "Blink 21, V8 16, compressed": 1, "Blink 21, V8 16, from a blob file": 1,
             ])
@@ -190,7 +245,7 @@ final class MarkerCollector: Sendable {
         report.stores = 1
         report.conversations = 10
         #expect(report.problem == .readMarkersChanged)
-        report.withMarker = 8
+        report.withHorizon = 10
         #expect(report.problem == nil)
         report.unreadable = ["corrupt property count": 1]
         #expect(report.problem == nil)
@@ -198,6 +253,34 @@ final class MarkerCollector: Sendable {
         #expect(report.problem == .readMarkersPartlyUnreadable)
         #expect(ReadMarkerSnapshot(access: .denied, report: report).problem == nil)
         #expect(PulseProblem.readMarkersChanged.isBlocking == false)
+    }
+
+    /// On an account whose chats were never opened, as a new one, no chat has a read marker, but each has the field that
+    /// holds one: Teams' data is understood. Without the field in its form anywhere, as after an update to Teams that
+    /// renames it, it isn't.
+    @Test func understandsChatsNeverOpened() {
+        var report = ReadMarkerReport()
+        report.folders = 1
+        report.stores = 1
+        report.conversations = 10
+        report.withHorizon = 10
+        #expect(report.withMarker == 0)
+        #expect(report.problem == nil)
+        report.withHorizon = 0
+        #expect(report.problem == .readMarkersChanged)
+    }
+
+    /// A log record whose checksum says it's damaged, before others, may have held any read marker: some couldn't be read.
+    @Test func saysWhenALogRecordIsDamaged() {
+        var report = ReadMarkerReport()
+        report.folders = 1
+        report.stores = 1
+        report.conversations = 10
+        report.withMarker = 8
+        report.withHorizon = 10
+        #expect(report.problem == nil)
+        report.corruptLogRecords = 1
+        #expect(report.problem == .readMarkersPartlyUnreadable)
     }
 
     @Test func followsTheLogAsTeamsWritesIt() async throws {
@@ -304,12 +387,31 @@ final class MarkerCollector: Sendable {
         }
     }
 
+    /// LevelDB appends to its MANIFEST as it flushes and compacts, which doesn't make one that can't be read readable:
+    /// unlike a table being written, it counts once it has stayed unreadable for the full interval, though it grows.
+    @Test func confirmsAManifestThatCantBeReadThoughItKeepsGrowing() throws {
+        try withTemporaryDirectory { directory in
+            let manifest = directory.appendingPathComponent("MANIFEST-000011")
+            try Data(repeating: 7, count: 100).write(to: manifest)
+            let file = try #require(FileInfo(path: manifest.path))
+            let start = ContinuousClock.now
+            var tracker = UnreadableTableTracker(confirmation: 5)
+            #expect(tracker.update([manifest.path: file], at: start) == 0)
+
+            try Data(repeating: 7, count: 200).write(to: manifest)
+            let grown = try #require(FileInfo(path: manifest.path))
+            #expect(tracker.filesChanged)
+            #expect(tracker.update([manifest.path: grown], at: start.advanced(by: .seconds(3))) == 0)
+            #expect(!tracker.filesChanged)
+            #expect(tracker.update([manifest.path: grown], at: start.advanced(by: .seconds(5))) == 1)
+        }
+    }
+
     @Test func countsATableAsUnreadableOnlyWhenItStaysSo() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let (location, log) = try TeamsData.copy(to: directory)
-        // As LevelDB writes a table: where it'll stay, footer last.
-        try Data(repeating: 7, count: 100).write(to: log.deletingLastPathComponent().appendingPathComponent("000010.ldb"))
+        try TeamsData.listBrokenTable(beside: log)
         let collector = MarkerCollector()
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.3) { collector.add($0) }
         engine.start()
@@ -326,13 +428,14 @@ final class MarkerCollector: Sendable {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let (location, log) = try TeamsData.copy(to: directory)
-        let table = log.deletingLastPathComponent().appendingPathComponent("000010.ldb")
-        try Data(repeating: 7, count: 100).write(to: table)
+        let table = try TeamsData.listBrokenTable(beside: log)
         let collector = MarkerCollector()
         let engine = ReadMarkerEngine(location: location, reloadDelay: 0.05, confirmationDelay: 0.5) { collector.add($0) }
         engine.start()
         defer { engine.stop() }
         let unreadable = try await collector.wait("the confirmed warning") { $0.report.unreadableFiles == 1 }
+        // As compaction does: the MANIFEST stops listing the table, then LevelDB removes it.
+        try TeamsData.saveManifest(listing: [], number: 12, beside: log)
         try FileManager.default.removeItem(at: table)
         let readable = try await collector.wait("the removed table") { $0.report.unreadableFiles == 0 }
         #expect(readable.problem == nil)
@@ -367,7 +470,8 @@ final class MarkerCollector: Sendable {
         let report = await Diagnostics.report(paths: paths, cache: location, followsReadsInTeams: true, appVersion: "0.1.0")
         #expect(report.contains("Teams' read markers: overridden by BRIEFBAR_TEAMS_CACHE, access granted"))
         #expect(report.contains("Folders: WV2Profile_tfw/http_teams.localhost_8766.indexeddb.leveldb"))
-        #expect(report.contains("Conversation stores: 1, conversations: 7, chats with a read marker: 5"))
+        #expect(report.contains("Conversation stores: 1, conversations: 7, chats with a read marker: 5, "
+            + "conversations with a read marker field: 7"))
         #expect(report.contains("1 x Blink 21, V8 16, from a blob file"))
         #expect(report.contains("Verdict: OK"))
         #expect(report.contains("Chats in Notification Center: 3, with a read marker: 2, read in Teams up to their newest notification: 1"))

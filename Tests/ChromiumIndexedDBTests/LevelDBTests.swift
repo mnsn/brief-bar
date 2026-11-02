@@ -78,6 +78,50 @@ import Testing
         #expect(LevelDBLog.parse(log.bytes + [UInt8](repeating: 0, count: 100)).end == log.bytes.count)
     }
 
+    /// A record at the end whose checksum doesn't match may be one LevelDB is still writing: a log stops before it,
+    /// counting nothing, and reading on from there tries it again.
+    @Test func stopsBeforeADamagedRecordAtTheEnd() {
+        var log = LogWriter()
+        log.add(LogWriter.batch(sequence: 1, [(key, Array("first".utf8))]))
+        let firstEnd = log.bytes.count
+        log.add(LogWriter.batch(sequence: 2, [(key, Array("second".utf8))]))
+        var bytes = log.bytes
+        bytes[bytes.count - 1] ^= 0xFF
+        let parsed = LevelDBLog.parse(bytes)
+        #expect(parsed.entries.map(\.sequence) == [1])
+        #expect(parsed.end == firstEnd)
+        #expect(parsed.corrupt == 0)
+    }
+
+    /// LevelDB skips the rest of a block that reads as zeros, as space it never wrote, and reads on, counting nothing
+    /// unless that breaks off a batch. Zeros that run to the end may be space it hasn't written yet: a log stops before
+    /// them, as before what isn't all there, and counts nothing.
+    @Test func skipsTheRestOfABlockLevelDBNeverWrote() {
+        var first = LogWriter()
+        first.add(LogWriter.batch(sequence: 1, [(key, Array("before".utf8))]))
+        var second = LogWriter()
+        second.add(LogWriter.batch(sequence: 2, [(key, Array("after".utf8))]))
+        var bytes = first.bytes
+        bytes += [UInt8](repeating: 0, count: LevelDBLog.blockSize - first.bytes.count)
+        bytes += second.bytes
+        let parsed = LevelDBLog.parse(bytes)
+        #expect(parsed.entries.map(\.sequence) == [1, 2])
+        #expect(parsed.end == bytes.count)
+        #expect(parsed.corrupt == 0)
+
+        // A batch split across blocks, whose second block reads as zeros to the end.
+        var split = LogWriter()
+        split.add(LogWriter.batch(sequence: 1, [(key, Array("before".utf8))]))
+        let firstEnd = split.bytes.count
+        split.add(LogWriter.batch(sequence: 2, [(key, [UInt8](repeating: 0, count: 40_000))]))
+        var cut = Array(split.bytes.prefix(LevelDBLog.blockSize))
+        cut += [UInt8](repeating: 0, count: 100)
+        let unwritten = LevelDBLog.parse(cut)
+        #expect(unwritten.entries.map(\.sequence) == [1])
+        #expect(unwritten.end == firstEnd)
+        #expect(unwritten.corrupt == 0)
+    }
+
     @Test func skipsABlockWithABadChecksum() {
         var log = LogWriter()
         log.add(LogWriter.batch(sequence: 1, [(key, Array("lost".utf8))]))
@@ -218,5 +262,113 @@ import Testing
             #expect(read.unreadable == ["000004.ldb": .corrupt("table footer")])
             #expect(read.values == [[1]: [2]])
         }
+    }
+
+    /// Of the tables and logs in the folder, the database's are those its MANIFEST lists. LevelDB removes the others once
+    /// it no longer needs them, but one it couldn't remove yet holds writes that compaction has since dropped, deletions
+    /// included: read, it would bring back a key that was deleted.
+    @Test func readsOnlyTheTablesAndLogsTheManifestLists() throws {
+        try withTemporaryDirectory { directory in
+            // Log 3 wrote "a", "b" and "x", and a flush put them in table 5; log 6 then deleted "a" and "x" and wrote "c",
+            // and a flush put that in table 7. Compaction merged tables 5 and 7 into table 9 and, at the last level,
+            // dropped the deleted keys. Log 3 and table 5 are left behind; log 8 is the one LevelDB writes to now.
+            var flushed = LogWriter()
+            flushed.add(LogWriter.batch(sequence: 1, [
+                (Array("a".utf8), Array("a1".utf8)), (Array("b".utf8), Array("b1".utf8)), (Array("x".utf8), Array("x1".utf8)),
+            ]))
+            try write(flushed.bytes, to: directory.appendingPathComponent("000003.log"))
+            try write(TableWriter.table(Self.entries(("a", 1), ("b", 2), ("x", 3))), to: directory.appendingPathComponent("000005.ldb"))
+            try write(TableWriter.table(Self.entries(("b", 2), ("c", 6))), to: directory.appendingPathComponent("000009.ldb"))
+            var current = LogWriter()
+            current.add(LogWriter.batch(sequence: 7, [(Array("d".utf8), Array("d1".utf8))]))
+            try write(current.bytes, to: directory.appendingPathComponent("000008.log"))
+            try ManifestWriter.save([
+                ManifestWriter.edit(comparator: "idb_cmp1", logNumber: 3, nextFile: 4, lastSequence: 0),
+                ManifestWriter.edit(logNumber: 6, nextFile: 7, lastSequence: 3, added: [5]),
+                ManifestWriter.edit(logNumber: 8, nextFile: 9, lastSequence: 6, added: [7]),
+                ManifestWriter.edit(logNumber: 8, nextFile: 10, lastSequence: 7, deleted: [5, 7], added: [9]),
+            ], number: 2, in: directory)
+
+            let read = try LevelDBFolder(url: directory).read()
+            #expect(Self.texts(read) == ["b": "b1", "c": "c1", "d": "d1"])
+            #expect(read.tables == 1 && read.logs == 1)
+            #expect(read.unlisted == 2)
+            #expect(read.log?.url.lastPathComponent == "000008.log")
+            #expect(read.unreadable.isEmpty)
+        }
+    }
+
+    /// LevelDB writes a table, then lists it: one it's still writing reads as broken, but isn't the database's yet.
+    @Test func leavesOutATableLevelDBIsStillWriting() throws {
+        try withTemporaryDirectory { directory in
+            try write(TableWriter.table(Self.entries(("a", 1))), to: directory.appendingPathComponent("000005.ldb"))
+            try write([UInt8](repeating: 7, count: 100), to: directory.appendingPathComponent("000007.ldb"))
+            try ManifestWriter.save([ManifestWriter.edit(logNumber: 6, nextFile: 8, lastSequence: 1, added: [5])],
+                                    number: 2, in: directory)
+
+            let read = try LevelDBFolder(url: directory).read()
+            #expect(Self.texts(read) == ["a": "a1"])
+            #expect(read.tables == 1 && read.unlisted == 1)
+            #expect(read.unreadable.isEmpty)
+        }
+    }
+
+    /// A table the MANIFEST lists, missing as the folder is read, as when compaction writes it and removes others
+    /// meanwhile, makes it start over. Still missing at the last attempt, the MANIFEST is one LevelDB would refuse: it
+    /// counts as unreadable, and every file is read.
+    @Test func saysWhenATableTheManifestListsIsMissing() throws {
+        try withTemporaryDirectory { directory in
+            try write(TableWriter.table(Self.entries(("a", 1))), to: directory.appendingPathComponent("000005.ldb"))
+            try write(TableWriter.table(Self.entries(("b", 2))), to: directory.appendingPathComponent("000007.ldb"))
+            let name = try ManifestWriter.save([ManifestWriter.edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [5, 9])],
+                                               number: 2, in: directory)
+
+            let read = try LevelDBFolder(url: directory).read()
+            #expect(read.unreadable == [name: .corrupt("manifest")])
+            #expect(Self.texts(read) == ["a": "a1", "b": "b1"])
+            #expect(read.tables == 2 && read.unlisted == 0)
+        }
+    }
+
+    /// Without the MANIFEST, it can't tell which files are the database's: it reads them all, and says the MANIFEST
+    /// couldn't be read, or that CURRENT named one that isn't there.
+    @Test func readsEveryFileWhenTheManifestCantBeRead() throws {
+        try withTemporaryDirectory { directory in
+            try write(TableWriter.table(Self.entries(("a", 1))), to: directory.appendingPathComponent("000005.ldb"))
+            try write(TableWriter.table(Self.entries(("b", 2))), to: directory.appendingPathComponent("000009.ldb"))
+            // An edit LevelDB doesn't know, as a large value reference, which it no longer has.
+            let name = try ManifestWriter.save([
+                ManifestWriter.edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [9]), varint(8) + varint(1),
+            ], number: 2, in: directory)
+            let everything = ["a": "a1", "b": "b1"]
+
+            let unknown = try LevelDBFolder(url: directory).read()
+            #expect(unknown.unreadable == [name: .corrupt("version edit")])
+            #expect(Self.texts(unknown) == everything)
+            #expect(unknown.unlisted == 0)
+
+            try write(Array("../\(name)\n".utf8), to: directory.appendingPathComponent("CURRENT"))
+            let elsewhere = try LevelDBFolder(url: directory).read()
+            #expect(elsewhere.unreadable == ["CURRENT": .corrupt("CURRENT")])
+            #expect(Self.texts(elsewhere) == everything)
+
+            // A MANIFEST that's gone, as one LevelDB replaced as the folder was read, makes it start over; still gone at
+            // the last attempt, CURRENT names one that isn't there, which LevelDB refuses.
+            try write(Array("MANIFEST-000003\n".utf8), to: directory.appendingPathComponent("CURRENT"))
+            let gone = try LevelDBFolder(url: directory).read()
+            #expect(gone.unreadable == ["CURRENT": .corrupt("CURRENT")])
+            #expect(Self.texts(gone) == everything)
+        }
+    }
+
+    /// Made-up writes, each key's value its name and "1".
+    private static func entries(_ writes: (String, UInt64)...) -> [TableWriter.Entry] {
+        writes.map { TableWriter.Entry(key: Array($0.0.utf8), sequence: $0.1, value: Array(($0.0 + "1").utf8)) }
+    }
+
+    private static func texts(_ read: LevelDBFolder.Read) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: read.values.map {
+            (String(decoding: $0.key, as: UTF8.self), String(decoding: $0.value, as: UTF8.self))
+        })
     }
 }
