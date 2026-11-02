@@ -144,22 +144,26 @@ public sealed class LevelDBFolderTests
     }
 
     /// A table the MANIFEST lists, missing as the folder is read, as when compaction writes it and removes others
-    /// meanwhile, makes it start over; still missing, the read says what it holds may be missing.
+    /// meanwhile, makes it start over. Still missing at the last attempt, the MANIFEST is one LevelDB would refuse: it
+    /// counts as unreadable, and every file is read.
     [Fact]
     public void SaysWhenATableTheManifestListsIsMissing()
     {
         using var folder = new TemporaryFolder();
         File.WriteAllBytes(path: folder.Combine("000005.ldb"), bytes: TableWriter.Table(entries: Entries(("a", 1))));
-        ManifestWriter.Save(folder: folder.Path, number: 2, ManifestWriter.Edit(logNumber: 6, nextFile: 10, lastSequence: 1, added: [5, 9]));
+        File.WriteAllBytes(path: folder.Combine("000007.ldb"), bytes: TableWriter.Table(entries: Entries(("b", 2))));
+        var name = ManifestWriter.Save(folder: folder.Path, number: 2, ManifestWriter.Edit(logNumber: 6, nextFile: 10, lastSequence: 2, added: [5, 9]));
 
         var read = new LevelDBFolder(path: folder.Path).Read();
 
-        Assert.True(condition: read.Vanished);
-        Assert.Equal(expected: new Dictionary<string, string> { ["a"] = "a1" }, actual: Texts(read: read));
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [name] = FormatError.Corrupt(what: "manifest") }, actual: read.Unreadable);
+        Assert.Equal(expected: new Dictionary<string, string> { ["a"] = "a1", ["b"] = "b1" }, actual: Texts(read: read));
+        Assert.Equal(expected: (2, 0), actual: (read.Tables, read.Unlisted));
+        Assert.False(condition: read.Vanished);
     }
 
     /// Without the MANIFEST, it can't tell which files are the database's: it reads them all, and says the MANIFEST
-    /// couldn't be read, or that it vanished.
+    /// couldn't be read, or that CURRENT named one that isn't there.
     [Fact]
     public void ReadsEveryFileWhenTheManifestCantBeRead()
     {
@@ -183,11 +187,13 @@ public sealed class LevelDBFolderTests
         Assert.Equal(expected: new Dictionary<string, FormatError> { [LevelDBManifest.CurrentFile] = FormatError.Corrupt(what: "CURRENT") }, actual: elsewhere.Unreadable);
         Assert.Equal(expected: everything, actual: Texts(read: elsewhere));
 
+        // A MANIFEST that's gone, as one LevelDB replaced as the folder was read, makes it start over; still gone at the
+        // last attempt, CURRENT names one that isn't there, which LevelDB refuses.
         File.WriteAllBytes(path: folder.Combine(LevelDBManifest.CurrentFile), bytes: Encodings.Utf8(text: "MANIFEST-000003\n"));
-        var vanished = new LevelDBFolder(path: folder.Path).Read();
-        Assert.True(condition: vanished.Vanished);
-        Assert.Empty(collection: vanished.Unreadable);
-        Assert.Equal(expected: everything, actual: Texts(read: vanished));
+        var gone = new LevelDBFolder(path: folder.Path).Read();
+        Assert.Equal(expected: new Dictionary<string, FormatError> { [LevelDBManifest.CurrentFile] = FormatError.Corrupt(what: "CURRENT") }, actual: gone.Unreadable);
+        Assert.Equal(expected: everything, actual: Texts(read: gone));
+        Assert.False(condition: gone.Vanished);
     }
 
     /// Made-up writes, each key's value its name and "1".

@@ -8,22 +8,26 @@ namespace BriefBar.Core.ChromiumIndexedDB;
 /// written, nothing copied, and no file stays open once it's read. The Mac's `LevelDBFolder`.
 public sealed class LevelDBFolder(string path)
 {
+    /// How many times a read starts over when files vanish as it reads them.
+    const int Attempts = 3;
+
     public string Path { get; } = path;
 
     /// Reads the folder's tables and logs, keeping the writes to keys that `keep` accepts, from the table blocks that
     /// `mayHold` doesn't rule out (see `LevelDBTable.Read`). A table that compaction removes while it's read, or adds,
     /// makes it start over, since its keys are in another table then, up to three times; after that, the read says files
     /// vanished (`LevelDBFolderRead.Vanished`). Where there's no CURRENT, as in made-up data, it reads every table and
-    /// log; so it does when the MANIFEST can't be read, which it says. Throws `IOException` when the folder can't be
-    /// listed, as when it's gone.
+    /// log; so it does when the MANIFEST can't be read, or LevelDB would refuse it, which it says: as when, at the last
+    /// attempt, CURRENT still names a MANIFEST that isn't there, or the MANIFEST a table that isn't. Throws
+    /// `IOException` when the folder can't be listed, as when it's gone.
     public LevelDBFolderRead Read(Func<byte[]?, byte[], bool>? mayHold = null, Func<ArraySegment<byte>, bool>? keep = null)
     {
         mayHold ??= (_, _) => true;
         keep ??= _ => true;
         var read = new LevelDBFolderRead();
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 1; attempt <= Attempts; attempt++)
         {
-            (read, var vanished) = Attempt(mayHold: mayHold, keep: keep);
+            (read, var vanished) = Attempt(mayHold: mayHold, keep: keep, isLastAttempt: attempt == Attempts);
             read.Vanished = vanished;
             if (!vanished)
             {
@@ -62,11 +66,11 @@ public sealed class LevelDBFolder(string path)
     /// The log LevelDB writes to now: the one with the highest number.
     public static string? NewestLog(string folder) => Logs(names: Names(folder: folder)).LastOrDefault().Name;
 
-    (LevelDBFolderRead Read, bool Vanished) Attempt(Func<byte[]?, byte[], bool> mayHold, Func<ArraySegment<byte>, bool> keep)
+    (LevelDBFolderRead Read, bool Vanished) Attempt(Func<byte[]?, byte[], bool> mayHold, Func<ArraySegment<byte>, bool> keep, bool isLastAttempt)
     {
         var names = Names(folder: Path);
         var read = new LevelDBFolderRead();
-        var (version, vanished) = Version(names: names, read: read);
+        var (version, vanished) = Version(names: names, read: read, isLastAttempt: isLastAttempt);
         var tables = new Dictionary<string, LevelDBTableRead>(comparer: StringComparer.Ordinal);
 
         void ReadTable(string name, bool skipping)
@@ -104,8 +108,6 @@ public sealed class LevelDBFolder(string path)
         var logs = Logs(names: names);
         if (version is not null)
         {
-            // A table the MANIFEST lists that the folder didn't have as it was listed was written since: start over.
-            vanished |= !version.Tables.IsSubsetOf(other: tableNames.Select(selector: Number).OfType<ulong>());
             var liveTables = tableNames.Where(predicate: name => Number(name: name) is { } number && version.Tables.Contains(item: number)).ToList();
             var liveLogs = logs.Where(predicate: log => version.IsLiveLog(number: log.Number)).ToList();
             read.Unlisted = tableNames.Count - liveTables.Count + logs.Count - liveLogs.Count;
@@ -165,9 +167,12 @@ public sealed class LevelDBFolder(string path)
         return (read, vanished);
     }
 
-    /// What the folder's MANIFEST says the database is, and whether it vanished as it was read. Null, to read every table
-    /// and log, when the folder has no CURRENT, or when the MANIFEST vanished or can't be read, which `read` says.
-    (LevelDBVersion? Version, bool Vanished) Version(List<string> names, LevelDBFolderRead read)
+    /// What the folder's MANIFEST says the database is, and whether files vanished as it was read: the MANIFEST that
+    /// CURRENT names, as when LevelDB replaced it, or a table it lists that the folder didn't have as it was listed, as
+    /// when LevelDB wrote one since. Null, to read every table and log, when the folder has no CURRENT, or when the
+    /// MANIFEST can't be read or LevelDB would refuse it, which `read` says: as when, at the last attempt, either is still
+    /// missing, since LevelDB refuses a database with files missing.
+    (LevelDBVersion? Version, bool Vanished) Version(List<string> names, LevelDBFolderRead read, bool isLastAttempt)
     {
         if (!names.Contains(item: LevelDBManifest.CurrentFile))
         {
@@ -179,19 +184,28 @@ public sealed class LevelDBFolder(string path)
             var (current, _) = Contents(path: System.IO.Path.Combine(path1: Path, path2: file));
             file = LevelDBManifest.Name(current: current);
             var (manifest, _) = Contents(path: System.IO.Path.Combine(path1: Path, path2: file));
-            return (LevelDBManifest.Parse(bytes: manifest), false);
+            var version = LevelDBManifest.Parse(bytes: manifest);
+            if (version.Tables.IsSubsetOf(other: names.Where(predicate: IsTable).Select(selector: Number).OfType<ulong>()))
+            {
+                return (version, false);
+            }
+            if (!isLastAttempt)
+            {
+                return (version, true);
+            }
+            read.Unreadable[file] = FormatError.Corrupt(what: "manifest");
         }
         catch (FormatErrorException error)
         {
             read.Unreadable[file] = error.Error;
         }
-        catch (FileNotFoundException)
+        catch (IOException error) when (error is FileNotFoundException or DirectoryNotFoundException)
         {
-            return (null, true);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return (null, true);
+            if (!isLastAttempt)
+            {
+                return (null, true);
+            }
+            read.Unreadable[LevelDBManifest.CurrentFile] = FormatError.Corrupt(what: LevelDBManifest.CurrentFile);
         }
         catch (IOException)
         {

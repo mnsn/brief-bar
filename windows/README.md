@@ -504,12 +504,13 @@ SDK ships inside the app.
   compaction has since dropped, deletions included: read, a chat or a message that was deleted would come back. So
   BriefBar reads only the tables and logs that LevelDB's MANIFEST lists, as LevelDB does as it opens the database (its
   version edits, applied in order: the tables that are left, and the logs from its log number on). A table it lists
-  that's missing makes BriefBar start over, as when compaction replaces tables meanwhile, and say files vanished if it
-  stays missing; a MANIFEST it can't read, or that LevelDB would refuse, makes it read every file and say some of
-  Teams' data couldn't be read. That includes a last record that's all there but damaged, which LevelDB refuses too,
-  though a log's may be one still being written: going by the version before it would read tables that edit removed.
-  Checked on this PC: Teams' MANIFEST lists all 18 tables there, and its one log is live, so the chats read are the
-  same.
+  that's missing makes BriefBar start over, as when compaction replaces tables meanwhile, and so does a MANIFEST that
+  CURRENT names but that's gone, as when LevelDB replaces it. A MANIFEST it can't read, or that LevelDB would refuse,
+  makes it read every file and say some of Teams' data couldn't be read, once that stays so. LevelDB refuses one with a
+  damaged record, even the last, though a log's last may be one still being written: going by the version before it
+  would read tables that edit removed. It refuses files that are still missing too, so after three tries, BriefBar
+  counts them against the MANIFEST, or against CURRENT. Checked on this PC: Teams' MANIFEST lists all 18 tables there,
+  and its one log is live, so the chats read are the same.
 - **Teams' Mark as unread leaves its read marker and `isRead` as they were**: it sets
   `properties.consumptionHorizonBookmark`, in the read marker's form (`<message ID>;<when>;0`), to a message before
   the newest, which Teams' list then shows as unread, and opening the chat sets it back to `0;<when>;0` (checked on
