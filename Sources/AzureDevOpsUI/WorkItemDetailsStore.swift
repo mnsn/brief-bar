@@ -426,6 +426,7 @@ final class WorkItemDetailsStore: ObservableObject {
         switch error {
         case .notFound: return "Azure DevOps can't find this work item. It may have been deleted, or moved where you can't see it."
         case .forbidden: return "You don't have access to this work item."
+        case .otherDirectory(let organization, _): return "\(organization) is in a directory your Azure CLI isn't signed in to."
         case .offline: return "You're offline."
         case .throttled: return "Azure DevOps asked BriefBar to slow down. Try again in a minute."
         default: return error.description
