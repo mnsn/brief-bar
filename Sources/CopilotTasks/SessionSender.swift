@@ -25,6 +25,9 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
     case turnedOff
     /// BriefBar is sending the session another prompt.
     case busy
+    /// Copilot works in the session's checkout for a task BriefBar sent, or BriefBar sends another session that works there
+    /// a prompt.
+    case checkoutBusy
 
     public var description: String {
         switch self {
@@ -49,6 +52,7 @@ public enum SendFailure: Error, Sendable, Equatable, CustomStringConvertible {
         case .cancelled: return "BriefBar stopped sending it."
         case .turnedOff: return "BriefBar can't send anything now."
         case .busy: return "BriefBar is sending it a prompt already."
+        case .checkoutBusy: return "Copilot is working in its checkout for another task BriefBar sent."
         }
     }
 }
@@ -105,9 +109,10 @@ public struct SessionSender: Sendable {
         /// Whether BriefBar may still send, as you turned it on: asked before each request, and while one waits for an
         /// extension to take it.
         public var mayGoOn: @Sendable () async -> Bool
-        /// Takes the fork for this send, before its prompt is written, so that no other prompt goes to it meanwhile: false
-        /// when BriefBar sends it another already.
-        public var reserve: @Sendable (String) async -> Bool
+        /// Takes the fork for this send, and the checkout it works in, before its prompt is written, so that no other prompt
+        /// goes to it or to its checkout meanwhile: nil once it's taken; why not when BriefBar sends it another prompt
+        /// already (`busy`), or Copilot works in its checkout (`checkoutBusy`).
+        public var reserve: @Sendable (String) async -> SendFailure?
         public var now: @Sendable () -> Date
 
         public init(
@@ -116,7 +121,8 @@ public struct SessionSender: Sendable {
             forks: @escaping @Sendable (_ original: String, _ since: Date) -> [String]? = { _, _ in nil },
             isLive: @escaping @Sendable (OutboxListener) -> Bool = { CopilotOutbox.isLive($0) },
             mayGoOn: @escaping @Sendable () async -> Bool = { true },
-            reserve: @escaping @Sendable (String) async -> Bool = { _ in true }, now: @escaping @Sendable () -> Date = { Date() }
+            reserve: @escaping @Sendable (String) async -> SendFailure? = { _ in nil },
+            now: @escaping @Sendable () -> Date = { Date() }
         ) {
             self.open = open
             self.isHeld = isHeld
@@ -200,9 +206,9 @@ public struct SessionSender: Sendable {
         }
     }
 
-    /// Sends the fork the prompt, once no other is on its way to it.
+    /// Sends the fork the prompt, once no other is on its way to it, or to its checkout.
     private func sendFork(_ prompt: String, to fork: String) async -> SendOutcome {
-        guard await effects.reserve(fork) else { return .forkedNotSent(fork: fork, .busy) }
+        if let busy = await effects.reserve(fork) { return .forkedNotSent(fork: fork, busy) }
         // The fork's extension listens by the time the fork is made: its request goes first, then the fork opens.
         switch await request(.send(prompt, to: fork, now: effects.now()), opens: true) {
         case .success: return .forkedAndSent(fork: fork)

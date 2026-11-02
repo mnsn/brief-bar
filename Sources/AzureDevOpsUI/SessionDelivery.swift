@@ -120,6 +120,7 @@ extension SendFailure {
         case .cancelled: return "cancelled"
         case .turnedOff: return "turned off"
         case .busy: return "a prompt is on its way to it already"
+        case .checkoutBusy: return "Copilot works in its checkout"
         }
     }
 }
@@ -141,7 +142,20 @@ extension CopilotTasksStore {
     /// it itself, unless the window said so already; where to paste it; and, when the session may have it already, to look
     /// first.
     static func cantBringUp(_ fallback: SessionFallback) -> String {
-        var parts = [fallback.forksFirst ? cantBringUpToFork : cantBringUp]
+        explaining(fallback.forksFirst ? cantBringUpToFork : cantBringUp, fallback)
+    }
+
+    /// Why a session didn't open in the Copilot app, once BriefBar couldn't send it the prompt itself: why it couldn't,
+    /// unless the window said so already; that nothing opens the app's sessions; and, when the session may have it already,
+    /// to look first, rather than send it again, with the CLI or otherwise.
+    static func cantOpenInApp(_ fallback: SessionFallback) -> String {
+        explaining(cantOpenInApp, fallback)
+    }
+
+    /// What BriefBar says when a session didn't show for a prompt it couldn't send itself: why it couldn't, unless the
+    /// window said so already; `what` happened then; and, when the session may have it already, to look first.
+    private static func explaining(_ what: String, _ fallback: SessionFallback) -> String {
+        var parts = [what]
         if !fallback.wasForeseen {
             var reason = fallback.reason
             if let last = reason.last, !".!?".contains(last) { reason += "." }
@@ -237,7 +251,10 @@ extension CopilotTasksStore {
 
         let opened = SessionIDs()
         let reserved = SessionIDs()
-        defer { delivering.subtract(reserved.ids) }
+        defer {
+            for fork in reserved.ids { deliveringFolders[fork] = nil }
+            delivering.subtract(reserved.ids)
+        }
         let homes = await sessionHomes()
         let appHome = appHome
         let effects = SessionSender.Effects(
@@ -258,11 +275,19 @@ extension CopilotTasksStore {
                 await MainActor.run { self?.maySendToSessions ?? false }
             },
             reserve: { [weak self] fork in
-                await MainActor.run {
-                    guard let self, !self.delivering.contains(fork) else { return false }
+                // The checkout the fork works in, as its own state says, which another session may work in too: it has to
+                // be free, unless it's this send's own, as when the fork works where the session does; and it stays as it
+                // is, as the session's does, until the fork's prompt has gone, or been taken back.
+                let folder = AppSessions.folder(of: fork, home: appHome)
+                let key = folder.map(Self.checkoutKey)
+                let isOwn = key != nil && key == checkout.map(Self.checkoutKey)
+                return await MainActor.run { () -> SendFailure? in
+                    guard let self, !self.delivering.contains(fork) else { return .busy }
+                    if let folder, !isOwn, self.isWorking(inFolder: folder) { return .checkoutBusy }
+                    if let folder { self.deliveringFolders[fork] = folder }
                     self.delivering.insert(fork)
                     reserved.ids.insert(fork)
-                    return true
+                    return nil
                 }
             }
         )
@@ -327,12 +352,9 @@ extension CopilotTasksStore {
         // A fallback that the window said it would do goes on whether or not Send Prompts to Copilot Sessions is on; one
         // from a send that BriefBar tried, only while it is.
         guard canSend, isOn, !hasStopped, foreseen || sessionPromptsAreOn else { return .notSent(Self.cantSendNow) }
-        guard let way else {
-            Log.app.error("Couldn't open a session in the Copilot app")
-            return .notSent(Self.cantOpenInApp)
-        }
+        // Where it shows: in the terminal of a CLI that has it open; otherwise in the app, if anything opens its sessions.
         let place: SessionFallback.Place
-        if case .terminal = way { place = .terminal } else { place = .app }
+        if case .terminal? = way { place = .terminal } else { place = .app }
         // The app's own /fork takes a prompt, and sends it to the fork; the CLI's takes a name for the fork, so in its
         // terminal you fork the session first, then paste the prompt.
         let forksHere = forking && fork == nil
@@ -341,13 +363,19 @@ extension CopilotTasksStore {
             reason: reason, wasForeseen: foreseen, pastesFork: pastesFork, forksFirst: forksHere && place == .terminal,
             mayHaveSent: mayHaveSent, place: place, session: session, fork: fork
         )
+        // Not only that the app doesn't open its sessions, which would have you run it with the CLI: why BriefBar didn't
+        // send it, and when the session may have it already, to look first.
+        guard let way else {
+            Log.app.error("Couldn't open a session in the Copilot app")
+            return .notSent(Self.cantOpenInApp(fallback))
+        }
         guard copyAndShow(pastesFork ? "/fork \(prompt)" : prompt, in: session, way) else {
             if case .terminal = way {
                 Log.app.error("Couldn't bring up the terminal of the Copilot CLI that has a session open")
                 return .notSent(Self.cantBringUp(fallback))
             }
             Log.app.error("Couldn't open a session in the Copilot app")
-            return .notSent(Self.cantOpenInApp)
+            return .notSent(Self.cantOpenInApp(fallback))
         }
         Log.app.info("Copied a prompt for a session in the Copilot app, and showed the session")
         if let handOff { handedOff(handOff, prompt) }

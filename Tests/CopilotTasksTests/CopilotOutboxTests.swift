@@ -295,7 +295,7 @@ import Testing
                     if stopsWhenAsked.withLock({ $0 }) { withUnsafeCurrentTask { $0?.cancel() } }
                     return allowed.withLock { $0 }
                 },
-                reserve: { [self] _ in reservable.withLock { $0 } },
+                reserve: { [self] _ in reservable.withLock { $0 } ? nil : .busy },
                 now: { [self] in Date().addingTimeInterval(ahead.withLock { $0 }) }
             )
         }

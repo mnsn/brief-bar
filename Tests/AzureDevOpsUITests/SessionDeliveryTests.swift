@@ -142,6 +142,13 @@ private final class ExtensionStandIn: Sendable {
         try Data().write(to: folder.appendingPathComponent("inuse.\(getpid()).lock"))
     }
 
+    /// The session works in the folder, as its `workspace.yaml` says.
+    private func work(_ id: String, in folder: URL, home: URL) throws {
+        let state = home.appendingPathComponent("session-state/\(id)", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("cwd: \(folder.path)\n".utf8).write(to: state.appendingPathComponent("workspace.yaml"))
+    }
+
     /// The app's database, with the session and its fork, which it records as forked from `forkedFrom`.
     private func database(at home: URL, forkedFrom: String) throws {
         try database(at: home, forks: [(fork, forkedFrom, afterTheRequest())])
@@ -649,6 +656,78 @@ private final class ExtensionStandIn: Sendable {
         #expect(store.delivering == [fork])
     }
 
+    /// While a prompt is on its way to a fork, the checkout the fork works in stays as it is too, as the session's does: no
+    /// prompt goes to another session that works there, and git removes no worktree there, until the fork's prompt has gone.
+    /// A fork whose checkout Copilot works in already, for another task, isn't sent it: BriefBar copies it for the fork
+    /// instead, and gives back only what it took. One that works where the session does is sent it: that checkout is this
+    /// send's own.
+    @Test func keepsTheForksCheckoutWhileItsPromptIsOnItsWay() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        // The app has the session and the fork open.
+        store.appHoldsForTests = { $0 == getpid() }
+        try database(at: home, forkedFrom: session)
+        var copied: [String] = []
+        store.showForTests = { _ in true }
+        store.openForTests = { id, text in copied.append("\(id) \(text)"); return true }
+        // The fork works in a worktree, and so does another of the app's sessions.
+        let worktree = home.appendingPathComponent("checkouts/fork", isDirectory: true)
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        let other = "c6666666-6666-4666-8666-66666666666d"
+        try work(fork, in: worktree, home: home)
+        try work(other, in: worktree, home: home)
+        let outbox = home.appendingPathComponent("Outbox")
+        let original = ExtensionStandIn(outbox: outbox, sessionId: session)
+        let forked = ExtensionStandIn(outbox: outbox, sessionId: fork)
+        try original.listen()
+        try forked.listen()
+        original.start { [fork] _ in ["ok": true, "forkSessionId": fork] }
+        defer {
+            original.stop()
+            forked.stop()
+        }
+        try hold(session, home: home)
+        try hold(fork, home: home)
+
+        // The fork's extension takes its prompt only a moment later, however long other tests keep the main actor.
+        let sending = Task { await store.deliver("Try it", to: choice(session), forking: true) }
+        for _ in 0..<2_000 where !requests(home).contains(where: { $0.hasPrefix("\(fork).") }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(store.isWorking(inFolder: worktree))
+        let busy = try #require(store.busyReason(for: choice(other), in: worktree))
+        #expect(await store.deliver("Fix the comments", to: choice(other)) == .notSent(busy))
+        #expect(!requests(home).contains { $0.hasPrefix("\(other).") })
+        let run = CopilotRun(
+            id: other, workItem: nil, options: CopilotModel.standard, repository: home, worktree: worktree, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished
+        )
+        #expect(await store.worktreeInUse(run) == "BriefBar is sending a prompt to a session that works in it. Remove it once that's done.")
+        forked.start()
+        #expect(await sending.value == .forkedAndSent(fork: fork))
+        #expect(forked.received == ["Try it"])
+        #expect(!store.isWorking(inFolder: worktree))
+        #expect(store.deliveringFolders.isEmpty)
+        #expect(store.delivering.isEmpty)
+
+        // A prompt is on its way to the other session there: the fork isn't sent this one.
+        store.deliveringFolders[other] = worktree
+        let refused = await store.deliver("Try it again", to: choice(session), forking: true)
+        #expect(refused == .fellBack(SessionFallback(reason: SendFailure.checkoutBusy.description, session: fork, fork: fork)))
+        #expect(forked.received == ["Try it"])
+        #expect(copied == ["\(fork) Try it again"])
+        #expect(store.deliveringFolders == [other: worktree])
+        #expect(store.delivering.isEmpty)
+
+        // The session works there too: that checkout is this send's own, so the fork is sent it.
+        store.deliveringFolders[other] = nil
+        try work(session, in: worktree, home: home)
+        #expect(await store.deliver("Try it a third way", to: choice(session), forking: true) == .forkedAndSent(fork: fork))
+        #expect(forked.received == ["Try it", "Try it a third way"])
+        #expect(store.deliveringFolders.isEmpty)
+        #expect(store.delivering.isEmpty)
+    }
+
     /// While a prompt is on its way to one of the app's sessions, the checkout it works in now stays as it is, rather than
     /// the one it worked in as the window found it, when it moved since.
     @Test func keepsTheCheckoutTheSessionWorksInNow() async throws {
@@ -787,6 +866,42 @@ private final class ExtensionStandIn: Sendable {
         #expect(forked.hasSuffix("If the session forked already, don't."))
         #expect(copied.last == "Try it")
         #expect(ext.received == ["Fix the comments", "fork"])
+    }
+
+    /// When the Copilot app doesn't open the session, after its extension took the prompt and said it failed, which it also
+    /// says once it stops waiting, the window says why BriefBar didn't send it, and to look first, rather than only that
+    /// the app doesn't open its sessions, which would have you run it with the CLI: the session may have it already, or may
+    /// have forked. So it does when nothing opens the app's sessions at all, and BriefBar copies nothing.
+    @Test func saysToLookFirstWhenTheAppDoesntOpenASessionThatMayHaveIt() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        var copied: [String] = []
+        store.openForTests = { _, text in copied.append(text); return false }
+        // The app has the session open, so it would show there rather than in a terminal.
+        store.appHoldsForTests = { $0 == getpid() }
+        store.opensLinksForTests = true
+        store.deliveryTimingForTests?.confirm = 0.3
+        try hold(session, home: home)
+        try database(at: home, forks: [])
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        ext.start { kind in ["ok": false, "error": ["code": kind == "fork" ? "fork_failed" : "send_failed", "message": "Timed out"]] }
+        defer { ext.stop() }
+        let sent = "The session didn't take the prompt: Timed out. \(CopilotTasksStore.cantOpenInApp) If the session has it already, don't."
+
+        #expect(await store.deliver("Fix the comments", to: choice(session)) == .notSent(sent))
+        #expect(copied == ["Fix the comments"])
+
+        let forked = "The Copilot app didn't fork the session: Timed out. \(CopilotTasksStore.cantOpenInApp) If the session forked already, don't."
+        #expect(await store.deliver("Try it", to: choice(session), forking: true) == .notSent(forked))
+        #expect(copied.last == "/fork Try it")
+
+        // Nothing opens the app's sessions: nothing's copied, and the window still says why, and to look first.
+        store.openForTests = nil
+        store.opensLinksForTests = false
+        #expect(await store.deliver("Fix them again", to: choice(session)) == .notSent(sent))
+        #expect(copied.count == 2)
+        #expect(ext.received == ["Fix the comments", "fork", "Fix them again"])
     }
 
     /// One prompt at a time for each session: a second one while the first is on its way isn't sent.

@@ -1814,7 +1814,10 @@ took about 22 seconds. To fork, the session's extension runs the app's own `fork
 the fork's session ID, beside the session's name, which you or an agent chose. BriefBar sends the fork the
 prompt only once the app's database records it as a fork of the session made since the request
 (`forked_from_session_id` and `created_at`, read-only), and the fork's own extension, which listens by the
-time the fork is made, takes it. When the extension couldn't name the fork it made, named a session the
+time the fork is made, takes it. Like the session's, the checkout the fork works in has to be free, unless
+it's the session's own, and stays as it is until the fork's prompt has gone or been taken back; when Copilot
+works there for another task BriefBar sent, BriefBar copies the prompt for the fork instead. When the
+extension couldn't name the fork it made, named a session the
 database doesn't record so, as a name that holds another session's ID could have it do, or didn't say how
 the fork went, the fork is the one the database records of the session since the request, if there's just
 one; with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
@@ -1836,7 +1839,8 @@ window didn't say beforehand that it would, it stays open to say why; and when t
 request but didn't say how it went, or said it failed, which it also says once it stops waiting for the
 session, it says the session may have it already. What the prompt quotes is handed off
 once it's sent, or once the session shows with the prompt copied; without the Copilot app, nothing shows,
-nothing's copied, and the window says why.
+nothing's copied, and the window says why, along with why BriefBar didn't send it, and, when the session
+may have it already, to look first, rather than send it again with the CLI.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). The CLI gives a worktree of a repository you trust the same trust by itself, and no
@@ -1932,7 +1936,8 @@ task BriefBar sent in another session, or in one of the app's sessions running a
 own too once you went on with it in the app, or that a session BriefBar is sending a prompt to works in,
 as it looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`); from that
 look until git is done, its checkout is busy, so no task of BriefBar's starts there meanwhile, as a
-session's is while BriefBar sends it a prompt, until the prompt has gone or been taken back
+session's is while BriefBar sends it a prompt, and a fork's while BriefBar sends the fork one, until the
+prompt has gone or been taken back
 (`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
 session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
