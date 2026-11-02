@@ -1050,7 +1050,7 @@ private enum MarkdownReader {
                     text = raw[end][close.upperBound...].drop { $0 == " " || $0 == "\t" }
                     index = end
                 }
-                if startsWithComment { content = text.trimmingCharacters(in: .whitespaces) }
+                if startsWithComment { content = String(text) }
                 let hasText = !(startsWithComment && content.isEmpty)
                 pendingKind = .listItem(marker, depth: depth)
                 pending = hasText ? [content] : []
@@ -1369,19 +1369,16 @@ private enum MarkdownReader {
 
     /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.
     private static func image(_ tag: String) -> String {
-        var attributes: [String: String] = [:]
-        // Each name after a space or a slash, so that a long word that isn't one is read once.
-        for match in tag.matches(of: /[\s\/]([A-Za-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/) {
-            attributes[match.output.1.lowercased()] = String(match.output.2 ?? match.output.3 ?? match.output.4 ?? "")
-        }
-        // Its description is text, with HTML's character references, which the inline reader is to show as it is: each
-        // mark it would read is escaped.
-        let alt = HTMLEntities.decode(attributes["alt"] ?? "").reduce(into: "") { escaped, character in
+        // Its attributes, each read whole, so that what another's quoted value says isn't one, with their character
+        // references read once.
+        let attributes = Tag.parse(tag, at: tag.startIndex)?.attributes ?? [:]
+        // Its description is text, which the inline reader is to show as it is: each mark it would read is escaped.
+        let alt = (attributes["alt"] ?? "").reduce(into: "") { escaped, character in
             if character.isASCII, character.isPunctuation || character.isSymbol { escaped.append("\\") }
             escaped.append(character)
         }
-        // Its source is HTML's too, as `&amp;` between a query's parameters: read once, and kept from being read again.
-        guard let url = RichText.webLink(attributes["src"].map { HTMLEntities.decode($0) }) else { return alt }
+        // Its source, kept from being read again: an ampersand in it is written as a reference to one.
+        guard let url = RichText.webLink(attributes["src"]) else { return alt }
         return "![\(alt)](<\(url.absoluteString.replacingOccurrences(of: "&", with: "&amp;"))>)"
     }
 

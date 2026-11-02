@@ -35,6 +35,8 @@ import Testing
         // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
         #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
+        // What follows them is the item's text as written, with the spaces that end it: a backslash before one stays.
+        #expect(plain("- <!-- x --> a\\ \n  more") == "• a\\\nmore")
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
         // One in a quote that doesn't end there goes on past it, to its end or the end of the text, as HTML reads it.
         #expect(plain("> <!--\n> hidden\n\nAlso hidden") == "")
@@ -130,6 +132,11 @@ import Testing
             .paragraph([RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
         ])
         #expect(plain("<img alt='Use &lt;span class=\"x\"&gt; here'>") == "Use <span class=\"x\"> here")
+        // Its own source and description, whatever another attribute's quoted value says.
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/real.png\" alt=\"Real\" "
+            + "data-v2=\" src='https://example.invalid/other.svg' alt='Other'\">").blocks == [
+            .paragraph([RichText.Run("Real", link: URL(string: "https://example.invalid/real.png"))]),
+        ])
     }
 
     @Test func leavesCodeAsItIs() {
