@@ -390,7 +390,13 @@ public actor PipelinesEngine {
                     < (lastTouched(rhs.key), rhs.run.status.isFinished ? 1 : 0, rhs.key.organization, rhs.run.id)
             }
             .prefix(Self.timelinesPerRefresh)
-        for item in due where throttled == nil && !waiting.contains(item.key.organization.lowercased()) {
+        for item in due where throttled == nil {
+            // Its organization was found waiting on a sign-in this refresh: it waits too, and its turn comes round again
+            // behind the others'.
+            guard !waiting.contains(item.key.organization.lowercased()) else {
+                attempts[item.key] = Attempts(last: startedAt, failures: attempts[item.key]?.failures ?? 0)
+                continue
+            }
             let state = RunState(item.run)
             do {
                 let timeline = try await get(
@@ -415,11 +421,12 @@ public actor PipelinesEngine {
                 throttled = .throttled(retryAfter: seconds)
             } catch ADOError.otherDirectory(let organization, let tenant) {
                 // Its stages stay as they were, and wait on a sign-in to its directory, which is said: not a timeline that
-                // keeps failing, it's tried again at the next refresh, so signing in there reads it then.
+                // keeps failing, it's tried again at the next refresh, behind the others, so signing in there reads it then.
                 waiting.insert(item.key.organization.lowercased())
                 stagesElsewhere.append((
                     organization: item.key.organization, error: .otherDirectory(organization: organization, tenant: tenant)
                 ))
+                attempts[item.key] = Attempts(last: startedAt, failures: 0)
             } catch is ADOError {
                 // Its stages stay as they were, and are tried again later.
                 let failures = (attempts[item.key]?.failures ?? 0) + 1

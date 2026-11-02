@@ -304,14 +304,18 @@ public actor SprintEngine {
                 if allTeams.isEmpty, !teamsElsewhere.isEmpty, let teamsProblem { throw TeamsUnread(problem: teamsProblem) }
                 return teamsProblem
             }
+            // Another team's board, such as one just set aside, isn't shown in its stead if this one's can't be read.
+            if board?.team.id != team.id { board = nil }
             do {
                 try await readBoard(of: team, at: date)
                 return teamsProblem
             } catch let error as ADOError where configuration.team == nil && PulseProblem.isOtherDirectory(error) {
                 // The team found for you is in a directory to sign in to now: its organization waits on that sign-in, and
-                // another of yours is looked for, rather than this one shown, or kept as your choice, meanwhile.
+                // another of yours is looked for, rather than this one shown, or kept as your choice, meanwhile. Its board
+                // goes, even if the next one can't be read.
                 waitForSignIn(to: team.organization, error)
                 foundTeam = nil
+                board = nil
             } catch let error as ADOError where !teamsElsewhere.isEmpty {
                 // The team's sprint couldn't be read: said with the organizations whose teams wait on a sign-in, rather than
                 // in their stead, unless Azure DevOps asked to slow down, which comes first.
