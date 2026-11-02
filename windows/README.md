@@ -137,15 +137,17 @@ section names and the like, so nothing you see can reach it: a line with a strin
   (with Watch a pull request, by its link).
 - **GitHub pull requests**, as on the Mac ([How it works](../docs/how-it-works.md#github)): the open pull requests on
   github.com that ask for your review by name, and your own, read with the GitHub CLI's sign-in (`gh auth token
-  --hostname github.com`, its token kept in memory only, for half an hour) and one GraphQL query that only reads, every
-  2 minutes, and as you open the list, unless it read in the last 10 seconds. Its groups are the Mac's: To review,
-  Changes requested, Failing, Ready to merge and Waiting; the bar counts all but Waiting. A row says why it's there and
-  who ("Changes requested · By sam"), and which pull request it is (`owner/repo#123`); it opens the pull request on
-  GitHub. Notes beside the list say what GitHub couldn't read, as for an organization that needs single sign-on, and
-  when there are more than the 50 it reads of each kind, with **More on GitHub**. Its foot has **Open GitHub**, the
-  account the GitHub CLI is signed in to, and an icon beside Settings that refreshes now. Signed out, it offers to sign
-  in, which runs `gh auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one
-  it can't start, it links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
+  --hostname github.com`, its token kept in memory only, for half an hour, and forgotten as GitHub is turned off, which
+  ends a run of `gh` under way) and one GraphQL query that only reads, every 2 minutes, and as you open the list,
+  unless it read in the last 10 seconds. Its groups are the Mac's: To review, Changes requested, Failing, Ready to merge
+  and Waiting; the bar counts all but Waiting. Where GitHub gives no review decision, as for a repository that doesn't
+  require reviews, the latest reviews decide, a deleted account's too. A row says why it's there and who ("Changes
+  requested · By sam"), and which pull request it is (`owner/repo#123`); it opens the pull request on GitHub. Notes
+  beside the list say what GitHub couldn't read, as for an organization that needs single sign-on, and when there are
+  more than the 50 it reads of each kind, with **More on GitHub**. Its foot has **Open GitHub**, the account the GitHub
+  CLI is signed in to, and an icon beside Settings that refreshes now. Signed out, it offers to sign in, which runs `gh
+  auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
+  links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
   Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
   Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
@@ -194,7 +196,7 @@ Where Windows differs, these were decided:
 
 | Folder | What it holds |
 |---|---|
-| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`) and waiting as long as they ask (`RateLimitGate`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
+| `BriefBar.Core/` | No UI and no Windows APIs, so its tests run anywhere. The states and counts (`ItemState`, `StateCounts`), the sections in the Mac's order (`Sections`), the brief (`Briefing`), what a source gives the app (`ISectionSource`), the sources Windows has (`SourceCatalog`), turning them on and off with your consent (`SourceSwitch`, `SourceChoices`, `PausedSource`), reading other apps' files and databases without holding them open (`SharedFile`, `SQLiteConnection`), reading what Azure DevOps and GitHub answer leniently (`LenientJson`), waiting as long as they ask (`RetryAfter`, `RateLimitGate`) and refusing to be sent elsewhere (`Redirects`), and the one place that starts programs or looks into running ones (`ProcessRunner`), with finding them as a terminal would (`ProgramLocator`) |
 | `BriefBar.Core/AzureDevOps/` | Azure DevOps pull requests, ported from `Sources/AzureDevOpsCore` with the Swift names (`ADOClient`, `AzureCLITokenProvider`, `PulseEngine`, `PRClassifier`, `SeenState`, `MergeFollower`…), the store and settings from `AzureDevOpsUI` (`PRStore`, `AzureDevOpsSettings`), and the source (`AzureDevOpsSource`, `AzureDevOpsRows`). Only this folder and `GitHub/` may use the network (`BoundaryTests`) |
 | `BriefBar.Core/Copilot/` | GitHub Copilot sessions, ported from `Sources/CopilotCore` with the Swift names (`SessionEngine`, `AppDatabase`, `EventLogReader`, `StatusResolver`…), the store from `CopilotUI` (`SessionStore`, `CopilotSettings`), opening a session with the Copilot CLI (`CLISession`, `SessionLock`), and the source (`CopilotSource`, `CopilotRows`) |
 | `BriefBar.Core/GitHub/` | GitHub pull requests, ported from `Sources/GitHubCore` with the Swift names (`PullRequestQuery`, `GitHubClient`, `GitHubCLITokenProvider`, `GitHubClassifier`, `GitHubReader`…), the store and settings from `GitHubUI` (`GitHubStore`, `GitHubSettings`), and the source (`GitHubSource`, `GitHubRows`) |
@@ -350,12 +352,17 @@ SDK ships inside the app.
   most 8 are read a refresh, changed ones first, then those due longest, so pull requests whose builds run can't keep
   the others waiting.
 - **Azure DevOps can ask BriefBar to slow down** (429 or 503): as on the Mac, nothing is sent until the time it gave
-  (`Retry-After`), or for a minute when it doesn't say, whichever reader asks next. The readers of the pull requests
-  you watch, of those that left your lists, of failed builds and of merges stop, and count nothing as failed: a pull
-  request you watch is read once BriefBar may send again, not an hour later. The reader of threads and policies
-  stops too: a pull request it was reading then waits its usual interval, and the rest keep their turn. Finding
-  your organizations saves nothing then, rather than only the ones it had checked, and the first time, it tries
-  again a minute later.
+  (`Retry-After`, a number of seconds or, as RFC 9110 allows, a date, which GitHub's client reads the same way), or for
+  a minute when it doesn't say, whichever reader asks next. The readers of the pull requests you watch, of those that
+  left your lists, of failed builds and of merges stop, and count nothing as failed: a pull request you watch is read
+  once BriefBar may send again, not an hour later. The reader of threads and policies stops too: a pull request it was
+  reading then waits its usual interval, and the rest keep their turn. Finding your organizations saves nothing then,
+  rather than only the ones it had checked, and the first time, it tries again a minute later.
+- **`HttpClient` follows a redirect to any host** by default, and sends the request there, with its body for a 307 or
+  a 308: a proxy's sign-in page could send BriefBar's requests to a host its sources' descriptions don't name. Neither
+  client follows one (`Redirects`): one to another host is refused in words that name it, and one that stays on the
+  same host is an HTTP error like any other. Neither source needs one: checked with real data, none of about 200
+  answers from api.github.com, dev.azure.com and app.vssps.visualstudio.com, to the requests a refresh sends, was one.
 - **UI Automation sees only the rows on screen**: the panel's list is virtualized, so `smoke.ps1` scrolls through
   it to see every group.
 

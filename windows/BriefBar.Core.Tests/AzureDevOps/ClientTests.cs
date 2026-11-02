@@ -133,6 +133,84 @@ public sealed class ClientTests
         Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
     }
 
+    /// `Retry-After` may be a date, as RFC 9110 allows: nothing goes out until then, by the client's own clock.
+    [Fact]
+    public async Task HonorsRetryAfterAsADate()
+    {
+        var server = new StubServer();
+        var until = TestTimes.T(seconds: 90).ToString(format: "r", formatProvider: System.Globalization.CultureInfo.InvariantCulture);
+        server.On(path: "/_apis/connectionData", reply: _ => StubReply.Code(status: 429, headers: new Dictionary<string, string> { ["Retry-After"] = until }));
+        var clock = new TestClock(start: TestTimes.T(seconds: 0));
+        using var client = server.Client(time: clock);
+        var url = ADOEndpoint.ConnectionData(organization: "contoso");
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 90)), actual: error.Error);
+
+        // Until then, nothing is sent.
+        server.On(path: "/_apis/connectionData", json: Me);
+        var sent = server.Requests.Count;
+        clock.Set(time: TestTimes.T(seconds: 60));
+        var held = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken));
+        Assert.Equal(expected: ADOError.Throttled(retryAfter: TimeSpan.FromSeconds(value: 30)), actual: held.Error);
+        Assert.Equal(expected: sent, actual: server.Requests.Count);
+
+        // Then it is.
+        clock.Set(time: TestTimes.T(seconds: 90));
+        var me = await client.GetAsync(url: url, read: ADOConnectionData.Read, cancellationToken: cancellationToken);
+        Assert.Equal(expected: "ME", actual: me.AuthenticatedUser.Id);
+        Assert.Equal(expected: sent + 1, actual: server.Requests.Count);
+    }
+
+    /// Azure DevOps' source says it connects to dev.azure.com and app.vssps.visualstudio.com only: sent elsewhere, as by a
+    /// proxy's sign-in page, it sends nothing there, and says where it was sent. Its handler follows no redirect, which
+    /// `HttpClient`'s handlers do by default, to any host, and keeps no cookies or credentials.
+    [Theory]
+    [InlineData(302)]
+    [InlineData(307)]
+    public async Task RefusesARedirectToAnotherHost(int status)
+    {
+        using (var handler = ADOClient.MakeHandler())
+        {
+            Assert.False(condition: handler.AllowAutoRedirect);
+            Assert.False(condition: handler.UseCookies);
+            Assert.Null(@object: handler.Credentials);
+        }
+        var server = new StubServer();
+        server.On(path: "/_apis/connectionData", reply: _ => StubReply.Code(status: status, headers: new Dictionary<string, string> { ["Location"] = "https://sso.example.org/login" }));
+        var tokens = new FakeTokens(value: "made-up-token");
+        using var client = server.Client(tokens: tokens);
+
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(
+            url: ADOEndpoint.ConnectionData(organization: "contoso"), read: ADOConnectionData.Read, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, sso.example.org, which it doesn't connect to."), actual: error.Error);
+        Assert.Equal(
+            expected: "Can't read contoso: Azure DevOps redirected BriefBar to another host, sso.example.org, which it doesn't connect to. The list may be out of date.",
+            actual: PulseProblem.From(error: error.Error, now: TestTimes.Reference, organization: "contoso").Message);
+        Assert.Single(collection: server.Requests);
+        Assert.Equal(expected: 0, actual: tokens.Invalidations);
+    }
+
+    /// Azure DevOps answers each request where it's sent, so a redirect that stays on its host isn't followed either: it's
+    /// an answer BriefBar doesn't expect, like any other. So is one that doesn't say where, as `//` or `about:blank`, rather
+    /// than a failure that stops BriefBar reading Azure DevOps.
+    [Theory]
+    [InlineData(301, "/contoso/_apis/connectionData/")]
+    [InlineData(302, "//")]
+    [InlineData(302, "http:")]
+    [InlineData(302, "about:blank")]
+    public async Task ARedirectOnAzureDevOpsIsAnHTTPError(int status, string location)
+    {
+        var server = new StubServer();
+        server.On(path: "/_apis/connectionData", reply: _ => StubReply.Code(status: status, headers: new Dictionary<string, string> { ["Location"] = location }));
+        using var client = server.Client();
+
+        var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(
+            url: ADOEndpoint.ConnectionData(organization: "contoso"), read: ADOConnectionData.Read, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(expected: ADOError.Http(status: status), actual: error.Error);
+        Assert.Single(collection: server.Requests);
+    }
+
     /// Asked to slow down without being told for how long, it waits a minute all the same: nothing is sent until then,
     /// whichever engine asks next, as for another organization.
     [Theory]

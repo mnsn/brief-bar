@@ -306,6 +306,38 @@ public sealed class GitHubSourceTests
         await blocking.DisposeAsync();
     }
 
+    /// Turning GitHub off while `gh auth token` runs, with the live reading, tells the run to end; should `gh` finish all the
+    /// same, nothing it got outlasts the source: the stop waits for the run, and the token is kept by nothing.
+    [Fact]
+    public async Task TurningOffEndsARunOfTheCLIAndKeepsNothingItGets()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var finish = new TaskCompletionSource(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var cli = new FakeProcessRunner(
+            answer: run => new ProcessResult(ExitCode: 0, Output: run == 1 ? "gho_dropped" : "gho_fresh", Error: string.Empty),
+            hold: run => run == 1 ? finish.Task : Task.CompletedTask);
+        var locator = new GitHubCLILocator(environment: new Dictionary<string, string?> { [GitHubCLILocator.OverrideVariable] = Cli }, exists: path => path == Cli);
+        var tokens = new GitHubCLITokenProvider(locator: locator, runner: cli, time: new TestClock(start: now));
+        using var source = new GitHubSource(
+            settings: new GitHubSettings(settings: new MemorySettings()),
+            reading: GitHubReading.Live(tokens: tokens, locator: locator),
+            access: new GitHubAccess(OpenLink: _ => { }),
+            processes: new FakeProcessRunner(),
+            time: new TestClock(start: now));
+        await source.StartAsync(cancellationToken: cancellationToken);
+        await Waiting.Until(condition: () => cli.Runs.Count == 1);
+
+        var stopping = source.StopAsync();
+        Assert.True(condition: cli.Runs[0].CancellationToken.IsCancellationRequested);
+        await Task.Delay(millisecondsDelay: 100, cancellationToken: cancellationToken);
+        Assert.False(condition: stopping.IsCompleted);
+        finish.SetResult();
+        await stopping.WaitAsync(timeout: Waiting.Limit, cancellationToken: cancellationToken);
+
+        Assert.Equal(expected: "gho_fresh", actual: (await tokens.TokenAsync(cancellationToken: cancellationToken)).Value);
+        Assert.Equal(expected: 2, actual: cli.Runs.Count);
+    }
+
     /// Reading fails in a way it doesn't expect: it says so, rather than going on as if it read, and reads no more.
     [Fact]
     public async Task SaysSoWhenItCantGoOnReading()
