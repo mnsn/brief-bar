@@ -4,13 +4,15 @@ import BriefBarUI
 import SwiftUI
 
 /// The Pull Requests section's page in a window: the popover's groups, each in a card, with room for every detail; or, by
-/// date, every open pull request in one.
+/// date, every open pull request in one. A click on one shows its details beside the list, as wide as you drag them, or
+/// over it when the window is narrow.
 struct PullRequestsPage: View {
     /// The order to list them in, for pictures; nil for the one you chose.
     var order: PROrder? = nil
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var details: PullRequestDetailsStore
     @Environment(\.interfaceOptions) private var options
 
     @LocalState private var showIdle = false
@@ -34,31 +36,48 @@ struct PullRequestsPage: View {
                 }
                 .glassButtonStyle()
             }
-            PageScroll {
-                VStack(alignment: .leading, spacing: 18) {
-                    notices
-                    if store.showsBrief, !options.compactBriefs {
-                        BriefView()
-                            .padding(.horizontal, -4)
-                    }
-                    if shownOrder.isByDate {
-                        byDate
-                    } else {
-                        ForEach(Self.shownGroups, id: \.self) { group in
-                            let items = store.items(in: group)
-                            if !items.isEmpty {
-                                section(group, items)
-                                if options.compactBriefs, store.showsBrief,
-                                   group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
-                                    BriefView().padding(.horizontal, -4)
-                                }
+            DetailsSplit(showsDetails: details.selected != nil, preferredWidth: $settings.pullRequestDetailsWidth) {
+                list
+            } details: {
+                PullRequestDetailsPanel()
+            }
+        }
+    }
+
+    private var list: some View {
+        PageScroll {
+            VStack(alignment: .leading, spacing: 18) {
+                notices
+                if store.showsBrief, !options.compactBriefs {
+                    BriefView()
+                        .padding(.horizontal, -4)
+                }
+                if shownOrder.isByDate {
+                    byDate
+                } else {
+                    ForEach(Self.shownGroups, id: \.self) { group in
+                        let items = store.items(in: group)
+                        if !items.isEmpty {
+                            section(group, items)
+                            if options.compactBriefs, store.showsBrief,
+                               group == Self.shownGroups.first(where: { !store.items(in: $0).isEmpty }) {
+                                BriefView().padding(.horizontal, -4)
                             }
                         }
                     }
-                    idle
                 }
+                idle
             }
         }
+    }
+
+    /// Shows a pull request's details, which sees it, as opening it does.
+    private func select(_ item: PRSnapshot) {
+        withAnimation(.easeOut(duration: 0.2)) { details.show(item) }
+    }
+
+    private func isSelected(_ item: PRSnapshot) -> Bool {
+        details.selected?.key == item.key
     }
 
     private var subtitle: String {
@@ -159,8 +178,8 @@ struct PullRequestsPage: View {
                     Divider().padding(.leading, 44).padding(.trailing, 12)
                 }
                 PRRowView(
-                    item: item, now: store.now, showsActions: true, showsCreated: showsCreated, openSource: source(item),
-                    stopWatching: watching(item), dismiss: dismissing(item)
+                    item: item, now: store.now, showsActions: true, showsCreated: showsCreated, isSelected: isSelected(item),
+                    openSource: source(item), stopWatching: watching(item), dismiss: dismissing(item), showDetails: { select(item) }
                 ) { store.open(item) }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
@@ -196,7 +215,8 @@ struct PullRequestsPage: View {
                     VStack(spacing: 0) {
                         ForEach(idle) { item in
                             PRRowView(item: item, now: store.now, compact: true, showsActions: true, showsCreated: shownOrder.isByDate,
-                                      openSource: source(item), stopWatching: watching(item)) { store.open(item) }
+                                      isSelected: isSelected(item), openSource: source(item), stopWatching: watching(item),
+                                      showDetails: { select(item) }) { store.open(item) }
                                 .padding(.horizontal, 6)
                         }
                     }

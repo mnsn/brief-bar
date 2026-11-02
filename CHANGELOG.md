@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
+  click a pull request to see it beside the list, or over it in a narrow window: where it stands,
+  **What's Left** before you can complete it, each item saying when it's your turn and taking you to
+  what it's about, its comment threads with the ones that wait on you first, its builds and checks with
+  where one failed and its first error, who reviews it and how each voted, and the work items and
+  Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
+  has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
+  menu-bar list and widgets still open pull requests in Azure DevOps.
+
 ## 0.10.2 - 2026-11-01
 
 - **A redesigned Send to Copilot window.** It looks like the rest of BriefBar now: translucent, with

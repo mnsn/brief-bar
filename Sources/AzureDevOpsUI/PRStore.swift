@@ -444,7 +444,8 @@ final class PRStore: ObservableObject {
         AzureDevOps.open(url)
     }
 
-    private func markSeen(_ item: PRSnapshot) {
+    /// Sees a pull request, as opening it does: what needs you there now is no longer new.
+    func markSeen(_ item: PRSnapshot) {
         settings.markSeen([item.key], at: max(Date(), item.events.map(\.at).max() ?? .distantPast), sentInChats: sentInChats([item.key]))
     }
 

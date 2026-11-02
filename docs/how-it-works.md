@@ -1168,14 +1168,47 @@ Idle's is in one list, by when it was created, the newest or the oldest first, a
 its age. Idle's, folded below it, are in the same order; Done's, closed already, stay the latest first.
 Counts, the brief, notifications, widgets and lists by state stay by status.
 
+### A pull request's details
+
+A click on a pull request on the window's page shows its details beside the list, or over it when the page
+is narrower than 700 points (`PullRequestDetailsStore`, `PullRequestDetailsPanel`), as a work item's details
+show beside the sprint: the two pages share how they lay them out (`DetailsSplit`, `DetailsLayout`), and this
+one keeps its own width (`ado.pullRequestDetailsWidth`). The row shows as selected, and the click sees the pull
+request, as opening it does. In a menu-bar list or a widget, a click still opens it in Azure DevOps.
+
+They show what the list read already, so nothing more is read for them, and they follow the list as it
+refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,
+its row's sentence, its opening words in its state's color, and since when; its branch and who wrote it; ✨
+**Summarize** and its summary, as a pull request's page has them; then **What's Left**, its `PRReadiness` items,
+what's left first, each saying **Your turn** when it waits on you or failed, and those about its comments, its
+builds and checks or its reviewers taking you there; its comment threads, those with a comment that waits on
+you first (as its row's events say), then the other open ones, the latest first, the resolved ones folded
+behind **Show Resolved**, each with its file and line, its status unless it's active, and what each person
+said, in plain text; its builds and status checks, as its page's pipelines say them (`PullRequestStory.run`),
+what failed first, the required one first, with where a build failed, its first error and its run, or, once
+it merged, the pipelines that ran after; who reviews it, the ones it requires first, with how each voted; and
+**Also Linked**, as on a page, whose work items, sessions and pull requests open as pages over the details,
+**‹**, **⌘[** or Esc going back, and the header saying the way there, `‹ !4102 › 5160`. A pull request's
+description isn't there: BriefBar reads it only for a summary. **↗** opens the pull request where its row
+does: at the comment that needs you or that you answered, or a merge's run; ↗ on a thread or a build opens
+that, and **⋯** has the row's menu, its Copilot actions among them while Send Work to Copilot is on.
+
+Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a
+thread, which unfolds the resolved ones when it's one of them, a run, or a part, such as its comments, which
+What's Left does. They scroll there once it shows, and point a thread or a run out for a moment.
+`reveal(_:at:)` shows them on the window's page and opens it there, unless no window has that page. A pull
+request the list doesn't have anymore, such as a review that merged, stays as it was last, with what the list
+had read of it, until you close it: it says so, and its menu loses the row's actions. Someone else signing in
+to the Azure CLI closes it.
+
 ### What counts as new
 
 Azure DevOps has no read or unread state for pull requests, so BriefBar keeps its own
 (`SeenState`): activity up to a pull request's cutoff counts as seen. The cutoff is when you last
-opened the pull request from BriefBar (or clicked **Mark as Seen**), or, if that's earlier, three
-days before BriefBar first ran. Each account you sign in to the Azure CLI with has its own, since
-two accounts can see the same pull request: switching back to an account picks up where it left off,
-and nothing from the other account is announced.
+opened the pull request from BriefBar, or showed its details in the window (or clicked **Mark as
+Seen**), or, if that's earlier, three days before BriefBar first ran. Each account you sign in to the
+Azure CLI with has its own, since two accounts can see the same pull request: switching back to an
+account picks up where it left off, and nothing from the other account is announced.
 
 After the cutoff, these need you:
 
@@ -1396,7 +1429,7 @@ widget and the menu bar, is your tasks, and your stories and bugs without tasks,
 it when the page is narrower than 700 points (`WorkItemDetailsStore`, `WorkItemDetailsPanel`): what
 the sprint knows of it at once, then what's read of it (`WorkItemDetailsReader`). Beside the board,
 they're 40% of the page, from 330 to 480 points, until you drag their left edge
-(`SprintPage.DetailsLayout`): then they're as wide as you made them, from 330 points to as wide as
+(`DetailsLayout`): then they're as wide as you made them, from 330 points to as wide as
 leaves the board the room it has on a 700-point page, and the width is kept in the preferences
 (`ado.sprintDetailsWidth`) until a double-click on the edge brings back the usual one. The work item
 comes with all its fields and its links, and its comments at the same time, through its project: when the

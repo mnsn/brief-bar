@@ -1,0 +1,172 @@
+import AzureDevOpsCore
+import BriefBarCore
+import Foundation
+
+/// The pull request whose details show beside the list on the Pull Requests page of BriefBar's window, the pages opened
+/// over them, and where in them to take you. What they show is what the list read already, so they follow it as it
+/// refreshes: nothing more is read for them.
+@MainActor
+final class PullRequestDetailsStore: ObservableObject {
+    /// Somewhere in a pull request's details: one of its comment threads, one of its builds or checks, or one of their
+    /// parts.
+    enum Place: Hashable {
+        /// A comment thread, by its ID.
+        case thread(Int)
+        /// A build that validates it, or a run after its merge, by its ID, as the Pipelines page knows it.
+        case run(Int)
+        /// A check without a run, such as a status another service posts, by its name.
+        case check(String)
+        case section(PullRequestPanel.Section)
+
+        /// Where a build or a check is: its run, or else its name.
+        static func of(_ line: PullRequestPanel.CheckLine) -> Place {
+            line.buildId.map { .run($0) } ?? .check(line.run.name)
+        }
+    }
+
+    /// The pull request that shows, as the list has it now, or had it last once it's not listed; nil while none does.
+    @Published private(set) var selected: PRSnapshot?
+    /// What the list read of it, its threads, policies and reviewers, as it is now, or was last once it's not listed.
+    @Published private(set) var record: PRRecord?
+    /// Whether the list still has it.
+    @Published private(set) var isListed = false
+    /// The pages of work items, pull requests and Copilot sessions opened over its details from what's linked to it, the
+    /// latest last: ‹ goes back through them.
+    @Published private(set) var pages: [ItemRef] = []
+    /// Where its details take you once they show, until they have.
+    @Published private(set) var place: Place?
+
+    /// Sees a pull request, as opening it from the list does: the source's.
+    var markSeen: (PRSnapshot) -> Void = { _ in }
+    /// What the list read of a pull request it has: the source's.
+    var readRecord: (PRKey) -> PRRecord? = { _ in nil }
+    /// Whether a window shows the Pull Requests page, and opening it there: the source's.
+    var hasPage: () -> Bool = { false }
+    var openPage: () -> Void = {}
+
+    /// The list, as it was last.
+    private var listed: [PRSnapshot] = []
+    /// Who's signed in to the Azure CLI, as the list last told.
+    private var account: String?
+
+    /// Shows a pull request's details, from their top or at a place in them, without what was open over another's. It's
+    /// seen, as opening it is.
+    func show(_ item: PRSnapshot, at place: Place? = nil) {
+        pages = []
+        selected = item
+        record = readRecord(item.key)
+        isListed = listed.contains { $0.key == item.key }
+        self.place = place
+        markSeen(item)
+    }
+
+    /// From anywhere: shows a pull request's details on the Pull Requests page, in BriefBar's window. False, showing
+    /// nothing, when no window shows that page, for the caller to open it in Azure DevOps instead.
+    @discardableResult
+    func reveal(_ item: PRSnapshot, at place: Place? = nil) -> Bool {
+        guard hasPage() else { return false }
+        show(item, at: place)
+        openPage()
+        return true
+    }
+
+    /// The same, for a pull request the list has: false when it hasn't, too.
+    @discardableResult
+    func reveal(_ key: PRKey, at place: Place? = nil) -> Bool {
+        guard let item = listed.first(where: { $0.key == key }) else { return false }
+        return reveal(item, at: place)
+    }
+
+    /// Takes the details to a place in them, from the pages over them too.
+    func go(to place: Place) {
+        guard selected != nil else { return }
+        pages = []
+        self.place = place
+    }
+
+    /// The details went where they were asked to.
+    func reached(_ place: Place) {
+        if self.place == place { self.place = nil }
+    }
+
+    /// Shows the page of something linked to the pull request over its details, to come back from: one that shows
+    /// already, under the one on top, by going back to it; the pull request itself, by going back to its details.
+    func open(page ref: ItemRef) {
+        guard let selected else { return }
+        if ref == selected.key.linkRef {
+            pages = []
+        } else if let index = pages.firstIndex(of: ref) {
+            pages = Array(pages.prefix(through: index))
+        } else {
+            pages.append(ref)
+        }
+    }
+
+    /// Back from the page on top, to the one under it or to the details.
+    func back() {
+        guard !pages.isEmpty else { return }
+        pages.removeLast()
+    }
+
+    /// Back to one of the pages that show, or, for nil, to the pull request's details under them.
+    func back(toPage index: Int?) {
+        guard let index else {
+            pages = []
+            return
+        }
+        guard pages.indices.contains(index) else { return }
+        pages = Array(pages.prefix(through: index))
+    }
+
+    /// Takes the pages away: when Show Links goes off, which they come from.
+    func closePages() {
+        pages = []
+    }
+
+    /// Whether ‹ goes anywhere.
+    var canGoBack: Bool { !pages.isEmpty }
+
+    func close() {
+        selected = nil
+        record = nil
+        isListed = false
+        pages = []
+        place = nil
+    }
+
+    /// The list refreshed: the details follow the pull request as it is now. One the list doesn't have anymore, such as
+    /// one done a while ago, stays as it was last, until you close it.
+    func itemsChanged(_ items: [PRSnapshot]) {
+        listed = items
+        guard let selected else { return }
+        let fresh = items.first { $0.key == selected.key }
+        if (fresh != nil) != isListed { isListed = fresh != nil }
+        guard let fresh else { return }
+        if fresh != selected { self.selected = fresh }
+        recordsChanged()
+    }
+
+    /// The list read its pull requests again, which may change what it read of the one that shows without changing its
+    /// row, such as an optional build: what's kept of it follows, for once the list doesn't have it anymore.
+    func recordsChanged() {
+        guard let selected, let read = readRecord(selected.key), read != record else { return }
+        record = read
+    }
+
+    /// Someone signed in to the Azure CLI, as the list tells. When it's someone else than before, what shows was read as
+    /// the last one: it closes.
+    func accountChanged(_ account: String?) {
+        guard let account else { return }
+        defer { self.account = account }
+        guard let known = self.account, known != account else { return }
+        close()
+        listed = []
+    }
+
+    /// Stops for good, when Azure DevOps is turned off.
+    func stop() {
+        close()
+        listed = []
+        account = nil
+    }
+}
