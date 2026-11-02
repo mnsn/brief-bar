@@ -32,3 +32,63 @@ struct PullRequestMenuItems: View {
         }
     }
 }
+
+/// The menu of a pull request's details, ⋯ above them, and of its page over a work item's or another pull request's:
+/// opening it, copying it, and what its row's menu has while the list has it, Copilot's actions among them while Send Work
+/// to Copilot is on; or else its links.
+struct PullRequestDetailsMenuItems: View {
+    let item: PRSnapshot
+    /// The list still has it, and its row.
+    let isListed: Bool
+
+    @EnvironmentObject private var store: PRStore
+
+    var body: some View {
+        Button("Open in Azure DevOps") { store.open(item) }
+        Button("Copy Link") { PullRequestDetailsPanel.copy(item.pageURL().absoluteString) }
+        Button("Copy Number and Title") { PullRequestDetailsPanel.copy("!\(item.key.number) \(item.title)") }
+        // The row's own, while there's a row.
+        if isListed {
+            PullRequestMenuItems(
+                item: item,
+                openSource: item.chatSource == nil ? nil : { store.openSource(item) },
+                dismiss: item.group == .needsYou ? { store.dismiss(item) } : nil,
+                stopWatching: item.isWatched ? { store.stopWatching(item) } : nil
+            )
+        } else {
+            LinkMenuItems(item.key.linkRef)
+        }
+    }
+}
+
+/// The menu of a page over a work item's details or a pull request's, ⋯ above it: for a pull request the list has, its
+/// details' menu; for anything else, opening it, copying it, and linking it to more.
+struct PageMenuItems: View {
+    let ref: ItemRef
+
+    @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var services: AppServices
+
+    var body: some View {
+        if let item = LinkedItemPage.pullRequest(ref, in: store.items) {
+            PullRequestDetailsMenuItems(item: item, isListed: true)
+        } else {
+            let item = services.links.describe(ref)
+            if let menu = item.menu {
+                menu()
+                Divider()
+            } else if let open = item.open {
+                Button(ref.kind.openTitle, action: open)
+            }
+            if let link = item.link {
+                Button("Copy Link") { PullRequestDetailsPanel.copy(link.absoluteString) }
+            }
+            if ref.kind == .session {
+                Button("Copy Name") { PullRequestDetailsPanel.copy(item.label) }
+            } else {
+                Button("Copy Number and Title") { PullRequestDetailsPanel.copy("\(item.label) \(item.title)") }
+            }
+            LinkMenuItems(ref)
+        }
+    }
+}

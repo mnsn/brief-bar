@@ -98,10 +98,16 @@ struct PipelinesPage: View {
     }
 }
 
+/// One of your active pull requests, with the latest run of each pipeline that validates it. Its title shows its details on
+/// the Pull Requests page, at the first run that failed, or else at its builds and checks; a run shows them at that run.
+/// Without a window that has that page, they open in Azure DevOps.
 private struct PullRequestPipelinesCard: View {
     let pullRequest: PullRequestPipelines
     let now: Date
 
+    @EnvironmentObject private var details: PullRequestDetailsStore
+    @EnvironmentObject private var pipelines: PipelinesStore
+    @EnvironmentObject private var store: PRStore
     @LocalState private var isExpanded = false
     @LocalState private var isHovered = false
 
@@ -125,7 +131,7 @@ private struct PullRequestPipelinesCard: View {
                         case .current:
                             EmptyView()
                         }
-                        MergeRunRow(status: status, now: now)
+                        MergeRunRow(status: status, now: now, opensDetails: status.latest.map { run in { show(at: .run(run.id)) } })
                         if !status.stages.isEmpty {
                             StageFlow(stages: status.stages, now: now)
                         }
@@ -137,14 +143,14 @@ private struct PullRequestPipelinesCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Button {
-                    AzureDevOps.open(pullRequest.url)
+                    show(at: firstFailure.map { .run($0.id) } ?? .section(.checks))
                 } label: {
                     Text(pullRequest.pullRequest.title)
                         .font(size: 14, weight: .semibold)
                         .lineLimit(1)
                 }
                 .buttonStyle(.plain)
-                .help("Open pull request in Azure DevOps")
+                .help(canShow ? "Show its details, at its builds and checks" : "Open the pull request in Azure DevOps")
                 Text("\(pullRequest.pullRequest.repositoryName) · !\(pullRequest.id.number) · \(pullRequest.headline)")
                     .font(size: 11)
                     .foregroundStyle(.secondary)
@@ -155,8 +161,32 @@ private struct PullRequestPipelinesCard: View {
         .background(GlassCard(cornerRadius: 20, isHovered: isHovered))
         .onHover { isHovered = $0 }
         .contextMenu {
-            Button("Open Pull Request") { AzureDevOps.open(pullRequest.url) }
+            if canShow {
+                Button("Show Details") { show(at: firstFailure.map { .run($0.id) } ?? .section(.checks)) }
+            }
+            Button("Open in Azure DevOps") { AzureDevOps.open(pullRequest.url) }
+            if let run = firstFailure {
+                Button("Open Run \(run.number) in Azure DevOps") { pipelines.open(run) }
+            }
         }
+    }
+
+    /// Whether its details can show, on the Pull Requests page: while the list has it, which it does while it's open.
+    private var canShow: Bool {
+        details.hasPage() && store.items.contains { $0.key == pullRequest.id }
+    }
+
+    /// The latest run that failed, of a pipeline that built its latest commit, or of any.
+    private var firstFailure: PipelineRun? {
+        let failed = pullRequest.pipelines.compactMap(\.latest).filter { $0.status == .failed }
+        return failed.first { run in pullRequest.revisions[run.id] == .current } ?? failed.first
+    }
+
+    /// Its details on the Pull Requests page, at a place in them, which sees it; Azure DevOps, which does too, when they
+    /// can't show there.
+    private func show(at place: PullRequestDetailsStore.Place) {
+        if details.reveal(pullRequest.id, at: place) { return }
+        AzureDevOps.open(pullRequest.url)
     }
 }
 
@@ -184,12 +214,15 @@ private struct PipelinesTitle: View {
 }
 
 /// The pipelines that ran after you merged a pull request: the pull request, then each pipeline's latest run, with
-/// where it failed or what it waits for.
+/// where it failed or what it waits for. The pull request shows its details on the Pull Requests page, at the run that
+/// failed or waits, while the list has it; each run opens in Azure DevOps.
 private struct MergeCard: View {
     let merge: MergePipelines
     let now: Date
 
     @EnvironmentObject private var pipelines: PipelinesStore
+    @EnvironmentObject private var details: PullRequestDetailsStore
+    @EnvironmentObject private var store: PRStore
     @LocalState private var isHovered = false
 
     var body: some View {
@@ -218,8 +251,8 @@ private struct MergeCard: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture { AzureDevOps.open(merge.url) }
-            .help("Click to open the pull request in Azure DevOps")
+            .onTapGesture(perform: show)
+            .help(canShow ? "Click to see the pull request's details" : "Click to open the pull request in Azure DevOps")
             VStack(spacing: 6) {
                 ForEach(merge.pipelines) { status in
                     MergeRunRow(status: status, now: now)
@@ -230,13 +263,27 @@ private struct MergeCard: View {
         .background(GlassCard(cornerRadius: 20, isHovered: isHovered))
         .onHover { isHovered = $0 }
         .contextMenu {
-            Button("Open Pull Request") { AzureDevOps.open(merge.url) }
+            if canShow {
+                Button("Show Details", action: show)
+            }
+            Button("Open in Azure DevOps") { AzureDevOps.open(merge.url) }
             ForEach(merge.pipelines) { status in
                 if let run = status.latest {
                     Button("Open \(status.pipeline.name) \(run.number)") { pipelines.open(run) }
                 }
             }
         }
+    }
+
+    /// Whether its details can show, on the Pull Requests page: while the list has it, which Done does for a while.
+    private var canShow: Bool {
+        details.hasPage() && store.items.contains { $0.key == merge.pullRequest }
+    }
+
+    /// Its details, at the run that failed, waits or was canceled, or else at their top; Azure DevOps when they can't show.
+    private func show() {
+        if details.reveal(merge.pullRequest, at: merge.summary?.runId.map { .run($0) }) { return }
+        AzureDevOps.open(merge.url)
     }
 
     /// "Merged into main · 25m ago · 2 of 3 passed"
@@ -267,10 +314,14 @@ private struct MergeCard: View {
     }
 }
 
-/// One pipeline that ran after a merge: its latest run's result, what it's doing or how it ended, and where it failed.
+/// One pipeline that ran after a merge, or that validates a pull request: its latest run's result, what it's doing or how
+/// it ended, and where it failed. A click opens the run in Azure DevOps, or, for a pull request's, shows that run in its
+/// details.
 private struct MergeRunRow: View {
     let status: PipelineStatus
     let now: Date
+    /// Shows the run in its pull request's details, which a click does then; nil where a click opens it in Azure DevOps.
+    var opensDetails: (() -> Void)? = nil
 
     @EnvironmentObject private var pipelines: PipelinesStore
     @LocalState private var isHovered = false
@@ -310,14 +361,24 @@ private struct MergeRunRow: View {
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .onTapGesture {
-            if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
-        }
-        .help("Click to open the run in Azure DevOps")
+        .onTapGesture(perform: opensDetails ?? openRun)
+        .help(opensDetails == nil ? "Click to open the run in Azure DevOps" : "Click to see the run in the pull request's details")
         .accessibilityElement(children: .combine)
-        .rowActions(for: status.pipeline.name, openTitle: "Open in Azure DevOps", open: {
-            if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
-        }) { EmptyView() }
+        .accessibilityActions {
+            if opensDetails != nil {
+                Button("Open in Azure DevOps", action: openRun)
+            }
+        }
+        .rowActions(for: status.pipeline.name, openTitle: opensDetails == nil ? "Open in Azure DevOps" : "Show Details",
+                    open: opensDetails ?? openRun) {
+            if opensDetails != nil {
+                Button("Open in Azure DevOps", action: openRun)
+            }
+        }
+    }
+
+    private func openRun() {
+        if let run = status.latest { pipelines.open(run) } else { pipelines.open(status.pipeline) }
     }
 }
 

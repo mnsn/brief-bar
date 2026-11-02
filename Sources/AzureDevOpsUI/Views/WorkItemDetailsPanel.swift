@@ -28,7 +28,7 @@ struct WorkItemDetailsPanel: View {
                     ScrollView {
                         Group {
                             if let page = details.pages.last {
-                                ItemPageView(ref: page)
+                                LinkedItemPage(ref: page)
                             } else {
                                 content(item)
                             }
@@ -160,9 +160,10 @@ struct WorkItemDetailsPanel: View {
                 .buttonStyle(.borderless)
                 .help("Read it again")
             }
+            pullRequestOpener
             Menu {
                 if let page = details.pages.last {
-                    pageMenuItems(page)
+                    PageMenuItems(ref: page)
                 } else {
                     menuItems(item)
                 }
@@ -258,25 +259,22 @@ struct WorkItemDetailsPanel: View {
         }
     }
 
-    /// The page's own: opening it, copying it, and linking it to more.
+    /// ↗ on a pull request's page, as above its own details: it in Azure DevOps, as its row opens it. A page of anything else
+    /// has its own, beside its title.
     @ViewBuilder
-    private func pageMenuItems(_ ref: ItemRef) -> some View {
-        let item = services.links.describe(ref)
-        if let menu = item.menu {
-            menu()
-            Divider()
-        } else if let open = item.open {
-            Button(ref.kind.openTitle, action: open)
+    private var pullRequestOpener: some View {
+        if let page = details.pages.last, let shown = LinkedItemPage.pullRequest(page, in: store.items) {
+            Button {
+                store.open(shown)
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(PullRequestDetailsPanel.openHelp(shown))
+            .accessibilityLabel("Open in Azure DevOps")
         }
-        if let link = item.link {
-            Button("Copy Link") { Self.copy(link.absoluteString) }
-        }
-        if ref.kind == .session {
-            Button("Copy Name") { Self.copy(item.label) }
-        } else {
-            Button("Copy Number and Title") { Self.copy("\(item.label) \(item.title)") }
-        }
-        LinkMenuItems(ref)
     }
 
     @ViewBuilder

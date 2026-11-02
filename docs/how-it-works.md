@@ -1185,7 +1185,31 @@ they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(
 a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
 stays new. Answering it still counts, and removing the pull request from Needs You or sending its comments to
 Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there too.
-In a menu-bar list or a widget, a click still opens it in Azure DevOps.
+
+A pull request opens there from anywhere else in BriefBar too, as the one place it opens
+(`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
+the Notifications page (`openNotificationInWindow`) and the Pipelines page's cards, always; from the menu bar's
+list, a list by state in a popover, widgets, the Overview widget's brief and Notification Center, only with
+**Open Pull Requests in BriefBar** (`ado.opensPullRequestsInBriefBar`, off by default: `open(_:)`), and otherwise
+in Azure DevOps, as before. A row knows which by where it shows: a window's page sets `panelStyle` to `.page`, the
+Overview's rows too. Without a window that has the Pull Requests page, it opens in Azure DevOps all the same, and
+its menu offers only that; otherwise its menu has both, what a click does first: **Show in BriefBar** from the
+menu bar and widgets, **Show Details** in the window, and **Open in Azure DevOps**. Showing it there sees it, as
+opening it in Azure DevOps does. It shows at what its row is about (`Place.about`): where its link leads
+(`PRSnapshot.place`, `PullRequestPlace` in `Sources/AzureDevOpsCore`), the thread of the comment that needs you
+or that you answered, or the run after its merge that failed or waits; else, for one that's failing, the first of
+its builds and checks that failed; else their top, which starts with what's left. A notification shows its own
+thread or run instead, which its link names, or else what its row is about (`reveal(notification:link:)`, by the
+pull request's key the notification keeps, `PRKey(description:)`). A **Your Pull Requests** card on the Pipelines
+page shows the run you click, or for its title the first that failed, else the builds and checks; an **After
+Your Merges** card, the run its merge's pipelines name, while the list still has the pull request.
+
+On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
+one over another pull request's, is the same view as its details (`LinkedItemPage`, `PullRequestDetailsContent`),
+in a store of its own that follows the list and sees it as it shows, keeping what was new in its threads new, as
+the details do; it says how it's linked to what it opened from, leaves that out of **Also Linked**, and the header's
+way there carries on, `Bug 5110 › !4091 › …`, with ↗ and the details' menu above it. A pull request your lists
+don't have, such as a teammate's, keeps the page Show Links tells (`ItemPageView`).
 
 They show what the list read already, so nothing more is read for them, and they follow the list as it
 refreshes (`PullRequestPanel` in `Sources/AzureDevOpsCore` puts it in order): what it is and where, its title,
@@ -1207,7 +1231,9 @@ that, and **⋯** has the row's menu, its Copilot actions among them while Send 
 Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a
 thread, which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the
 first of that name), or a part, such as its comments, which What's Left does. They scroll there once it shows,
-and point a thread, a build or a check out for a moment.
+and point a thread, a build or a check out for a moment; for a thread they don't have, they scroll to their
+comments, and for a run or a check they don't have, such as a run that isn't the one a policy queued last, to
+their builds and checks (`Place.anchor(in:)`).
 `reveal(_:at:)` shows them on the window's page and opens it there, unless no window has that page. A pull
 request the list doesn't have anymore, such as a review that merged, stays as it was last, with what the list
 had read of it, until you close it: it says so, and its menu loses the row's actions. The list reads a pull
@@ -1488,7 +1514,10 @@ run of that shared pipeline on another PR. Results from older commits are marked
 excluded from the current pass/fail summary. If Azure DevOps doesn't provide enough commit information,
 the result says **Commit not verified**, rather than assuming it validates your latest changes.
 Cards disappear when the PR is merged or abandoned. This does not pin those pipelines, change pinned
-pipeline counts or widgets, or affect **After Your Merges**.
+pipeline counts or widgets, or affect **After Your Merges**. A card's title shows the pull request's details on
+the Pull Requests page, at the first run that failed, or else at its builds and checks, and each of its runs
+shows them at that run ([A pull request's details](#a-pull-requests-details)); right-click it to open it in Azure
+DevOps instead.
 The authored PR list carries the account that supplied it. When the pipeline reader detects another
 sign-in, it clears the old runs and suspends PR cards and validation requests until the pull request
 reader supplies a list for that account, even when both accounts can read the same repository.
@@ -1694,7 +1723,8 @@ become ready or complete, and what the pipelines after your merges do. What you'
 announced, even while it still waits on you. Events from before BriefBar started aren't announced: they're in the
 panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
 Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
-about, and marks the pull request seen.
+about, in Azure DevOps, or in the pull request's details with **Open Pull Requests in BriefBar** on, and marks the
+pull request seen.
 
 ### The brief
 
