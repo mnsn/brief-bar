@@ -1,18 +1,33 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace BriefBar.Core.AzureDevOps;
 
 /// Gets tokens from the Azure CLI's sign-in (`az login`), silently, as `az` itself does:
-/// `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json`. Always those arguments,
-/// since `az` is a batch file, which reads its command line as commands (`ProcessRunner`), and each run is limited to a
-/// minute. A token is reused until five minutes before it expires, and callers asking at the same time share one run.
-/// Tokens stay in memory. The Mac's `AzureCLITokenProvider`.
-public sealed class AzureCLITokenProvider : IAccessTokenProvider
+/// `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --output json`, for your sign-in's
+/// directory, and with `--tenant` and a directory's ID for each other directory an organization is in. Always those
+/// arguments, since `az` is a batch file, which reads its command line as commands (`ProcessRunner`), and each run is
+/// limited to a minute. A token is reused until five minutes before it expires, and callers asking for the same directory
+/// at the same time share one run. Tokens stay in memory. The Mac's `AzureCLITokenProvider`.
+///
+/// Your sign-in's directory, once known, is asked for with `--tenant` too, rather than in the Azure CLI's default
+/// directory, which `az login --tenant` changes: so who BriefBar reads as stays the same, and so do the organizations it
+/// reads in your directory. It follows the default directory only when that's someone else's. Tokens kept for other
+/// directories are your account's: when someone else signs in, they go, and so does any token that was on its way then,
+/// whichever directory it's for (`accounts`).
+public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
 {
     /// Azure DevOps' application ID, the resource tokens are for.
     public const string AzureDevOpsResource = "499b84ac-1321-427f-aa17-267ca6975798";
+
+    /// What a token for a directory that isn't your account's own says when someone else has signed in, or one that was on
+    /// its way when that happened: nobody gets it.
+    const string SomeoneElse = "Someone else signed in to the Azure CLI.";
+
+    /// Where your sign-in's directory's token is kept, and its run shared: any other directory is kept by its ID.
+    const string Home = "";
 
     /// How long a run of `az` may take.
     static readonly TimeSpan runLimit = TimeSpan.FromMinutes(value: 1);
@@ -29,19 +44,40 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
     readonly AzureCLILocator locator;
     readonly IProcessRunner runner;
     readonly TimeProvider time;
+    /// By directory, `Home` for your sign-in's.
+    readonly Dictionary<string, AccessToken> cached = new(comparer: StringComparer.Ordinal);
+    /// The `az` run under way for each directory, which everyone asking for it then shares, with the account it was kept
+    /// for.
+    readonly Dictionary<string, Task<(AccessToken Token, int Account)>> pending = new(comparer: StringComparer.Ordinal);
     string? program;
-    AccessToken? cached;
-    Task<AccessToken>? pending;
+    /// Your sign-in's directory, once known.
+    string? homeTenant;
+    /// Whom the last token for your directory was for, and the directory that account is from, which its tokens from other
+    /// directories name too: they tell your account from someone else's.
+    (string? Account, string? Tenant)? homeAccount;
+    /// How many times the account your tokens are for has changed: a token fetched across a change is the last account's.
+    int accounts;
 
-    public AzureCLITokenProvider(AzureCLILocator locator, IProcessRunner? runner = null, TimeProvider? time = null)
+    /// - `homeTenant`: your sign-in's directory, when it's known from before: the one BriefBar last read your pull requests
+    ///   with.
+    /// - `homeAccountTenant`: where that account is from (`AccessToken.AccountTenant`), so that after a restart a sign-in
+    ///   your directory wants again, while the Azure CLI's default is another directory you're a guest in, isn't taken for
+    ///   someone else's.
+    public AzureCLITokenProvider(
+        AzureCLILocator locator, IProcessRunner? runner = null, TimeProvider? time = null, string? homeTenant = null, string? homeAccountTenant = null)
     {
         ArgumentNullException.ThrowIfNull(argument: locator);
         this.locator = locator;
         this.runner = runner ?? new ProcessRunner();
         this.time = time ?? TimeProvider.System;
+        this.homeTenant = TenantId.From(text: homeTenant);
+        if (Origin(text: homeAccountTenant) is { } origin)
+        {
+            homeAccount = (Account: null, Tenant: origin);
+        }
     }
 
-    /// `az get-access-token`'s fixed arguments.
+    /// `az get-access-token`'s fixed arguments, for your sign-in's directory before it's known.
     public static IReadOnlyList<string> Arguments { get; } = ["account", "get-access-token", "--resource", AzureDevOpsResource, "--output", "json"];
 
     /// The variables its runs set.
@@ -59,31 +95,63 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
         }
     }
 
-    public async Task<AccessToken> TokenAsync(CancellationToken cancellationToken)
+    public async Task<AccessToken> TokenAsync(string? tenant, CancellationToken cancellationToken)
     {
-        Task<AccessToken> fetching;
+        var directory = Directory(tenant: tenant);
+        Task<(AccessToken Token, int Account)>? fetching;
         lock (gate)
         {
-            if (cached is { } token && token.IsValid(at: time.GetUtcNow()))
+            if (cached.TryGetValue(key: directory ?? Home, value: out var kept) && kept.IsValid(at: time.GetUtcNow()))
             {
-                return token;
+                return kept;
             }
-            // On the thread pool, so that it never finishes before it's noted as pending.
-            fetching = pending ??= Task.Run(function: FetchAndKeepAsync, cancellationToken: CancellationToken.None);
+            if (!pending.TryGetValue(key: directory ?? Home, value: out fetching))
+            {
+                // On the thread pool, so that it never finishes before it's noted as pending.
+                fetching = Task.Run(function: () => FetchAndKeepAsync(directory: directory), cancellationToken: CancellationToken.None);
+                pending[directory ?? Home] = fetching;
+            }
         }
-        return await fetching.WaitAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var fetched = await fetching.WaitAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        lock (gate)
+        {
+            // Someone else signed in to the Azure CLI since it was kept: it's the last account's, and nobody waiting gets it.
+            if (fetched.Account != accounts)
+            {
+                throw new AuthException(error: AuthError.Failed(message: SomeoneElse));
+            }
+        }
+        return fetched.Token;
     }
 
-    public void Invalidate()
+    public void Invalidate(string? tenant)
     {
+        var directory = Directory(tenant: tenant);
         lock (gate)
         {
-            cached = null;
+            cached.Remove(key: directory ?? Home);
         }
     }
+
+    /// Where `account` (`AccessToken.Account`) is from, while your sign-in's tokens are its: for the app to keep, and give
+    /// back after a restart. For an account they aren't, or no longer are, nothing, so that one account's is never kept for
+    /// another.
+    public string? AccountTenantOf(string account)
+    {
+        ArgumentNullException.ThrowIfNull(argument: account);
+        lock (gate)
+        {
+            return homeAccount is { } home && home.Account == account ? home.Tenant : null;
+        }
+    }
+
+    /// `az get-access-token`'s fixed arguments for `tenant`'s directory, a `TenantId`, or for the Azure CLI's default
+    /// directory without one.
+    public static IReadOnlyList<string> ArgumentsFor(string? tenant) => tenant is null ? Arguments : [.. Arguments, "--tenant", tenant];
 
     /// The token in `output`, `az account get-access-token --output json`'s: until `expires_on`, seconds since 1970, in
-    /// newer CLIs; or `expiresOn`, local time, in older ones; or half an hour from `now`.
+    /// newer CLIs; or `expiresOn`, local time, in older ones; or half an hour from `now`. The directory it's for is what the
+    /// token says, over what the CLI says it asked for (`tenant`).
     public static AccessToken ParseToken(string output, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(argument: output);
@@ -98,7 +166,12 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
             var expiry = LenientJson.Member(element: root, name: "expires_on") is { ValueKind: JsonValueKind.Number } seconds && seconds.TryGetDouble(value: out var epoch)
                 ? DateTimeOffset.UnixEpoch.AddTicks(ticks: (long)Math.Round(a: epoch * TimeSpan.TicksPerSecond))
                 : (LenientJson.Text(element: root, name: "expiresOn") is { } local ? ParseLocalTime(text: local) : null) ?? now.AddMinutes(minutes: 30);
-            return new AccessToken(Value: value, ExpiresOn: expiry, Account: AccessToken.AccountInJwt(token: value));
+            return new AccessToken(
+                Value: value,
+                ExpiresOn: expiry,
+                Account: AccessToken.AccountInJwt(token: value),
+                Tenant: AccessToken.TenantInJwt(token: value) ?? TenantId.From(text: LenientJson.Text(element: root, name: "tenant")),
+                AccountTenant: AccessToken.AccountTenantInJwt(token: value));
         }
         catch (JsonException error)
         {
@@ -119,13 +192,14 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
     }
 
     /// Tells a missing or expired sign-in, which `az login` fixes, from other failures, by what the CLI printed: its first
-    /// `ERROR:` line, or its first line, without the prefix, at most 300 characters.
+    /// `ERROR:` line, or its first line, without the prefix, without IDs, email addresses or the names of directories it
+    /// quotes (`Redacted`), at most 300 characters.
     public static AuthError ErrorFromOutput(string output)
     {
         ArgumentNullException.ThrowIfNull(argument: output);
         var lines = output.Split(separator: ['\r', '\n'], options: StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var message = (Array.Find(array: lines, match: line => line.StartsWith(value: "ERROR:", comparisonType: StringComparison.Ordinal)) ?? lines.FirstOrDefault() ?? "The Azure CLI failed.")
-            .Replace(oldValue: "ERROR: ", newValue: string.Empty, comparisonType: StringComparison.Ordinal);
+        var message = Redacted(message: (Array.Find(array: lines, match: line => line.StartsWith(value: "ERROR:", comparisonType: StringComparison.Ordinal)) ?? lines.FirstOrDefault() ?? "The Azure CLI failed.")
+            .Replace(oldValue: "ERROR: ", newValue: string.Empty, comparisonType: StringComparison.Ordinal));
         if (message.Length > 300)
         {
             message = message[..300];
@@ -141,27 +215,154 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
             : AuthError.Failed(message: message);
     }
 
-    async Task<AccessToken> FetchAndKeepAsync()
+    /// What the Azure CLI says, without IDs (a directory's, a request's), email addresses, or the name of a tenant or
+    /// directory it quotes: before it's cut short, so that no part of one is left. The panel shows it, and it could reach the
+    /// log, which never holds IDs, as on the Mac.
+    internal static string Redacted(string message)
+    {
+        ArgumentNullException.ThrowIfNull(argument: message);
+        var withoutIds = IdPattern().Replace(input: message, replacement: "<id>");
+        var withoutAccounts = AccountPattern().Replace(input: withoutIds, replacement: "<account>");
+        return QuotedDirectoryPattern().Replace(input: withoutAccounts, replacement: "$1 '<name>'");
+    }
+
+    /// A directory as tokens are kept by: its ID (`TenantId`); null for none, which is your sign-in's. Anything else isn't
+    /// a directory BriefBar asks the Azure CLI for.
+    static string? Directory(string? tenant)
+    {
+        if (tenant is null)
+        {
+            return null;
+        }
+        return TenantId.From(text: tenant) ?? throw new ArgumentException(message: "Not a directory's ID.", paramName: nameof(tenant));
+    }
+
+    /// Where an account is from, as kept: a directory's ID, or an identity provider such as `live.com`, lowercased.
+    static string? Origin(string? text) => string.IsNullOrWhiteSpace(value: text) ? null : TenantId.From(text: text) ?? text.Trim().ToLowerInvariant();
+
+    [GeneratedRegex(pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", options: RegexOptions.CultureInvariant)]
+    private static partial Regex IdPattern();
+
+    [GeneratedRegex(pattern: @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
+    private static partial Regex AccountPattern();
+
+    [GeneratedRegex(pattern: @"\b(tenant|directory) '[^']*'", options: RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex QuotedDirectoryPattern();
+
+    /// A token for `directory`, kept, with the account it was kept for. One that comes back after someone else signed in
+    /// may be the last account's, whichever directory it's for, and one from another directory for an account from
+    /// elsewhere than yours means someone else has: nobody gets either, and neither is kept.
+    async Task<(AccessToken Token, int Account)> FetchAndKeepAsync(string? directory)
     {
         try
         {
-            var token = await FetchAsync().ConfigureAwait(continueOnCapturedContext: false);
+            int account;
             lock (gate)
             {
-                cached = token;
+                account = accounts;
             }
-            return token;
+            var token = await FetchAsync(directory: directory).ConfigureAwait(continueOnCapturedContext: false);
+            lock (gate)
+            {
+                if (accounts != account)
+                {
+                    throw new AuthException(error: AuthError.Failed(message: SomeoneElse));
+                }
+                // Every token kept goes, the last account's, with any on its way: the next one for yours tells who's
+                // signed in, and what's read as them starts over.
+                if (directory is not null && homeAccount?.Tenant is { } yours && token.AccountTenant is { } theirs && yours != theirs)
+                {
+                    cached.Clear();
+                    accounts++;
+                    throw new AuthException(error: AuthError.Failed(message: SomeoneElse));
+                }
+                Keep(token: token, directory: directory);
+                return (token, accounts);
+            }
         }
         finally
         {
             lock (gate)
             {
-                pending = null;
+                pending.Remove(key: directory ?? Home);
             }
         }
     }
 
-    async Task<AccessToken> FetchAsync()
+    /// Keeps a token until it nears its expiry. One for your directory that's another account's means someone else signed
+    /// in to the Azure CLI: the other directories' tokens, the last account's, go, and so do those on their way. Under the
+    /// lock.
+    void Keep(AccessToken token, string? directory)
+    {
+        if (directory is null)
+        {
+            if (homeAccount is { } last && last.Account != token.Account)
+            {
+                cached.Clear();
+                if (last.Account is not null)
+                {
+                    accounts++;
+                }
+            }
+            homeAccount = (Account: token.Account, Tenant: token.AccountTenant);
+        }
+        cached[directory ?? Home] = token;
+    }
+
+    /// A token for `directory`, or for yours: in the directory BriefBar knows as yours. When the Azure CLI can't give one
+    /// there, it's someone else's sign-in, if the CLI's default directory has another account: then that directory becomes
+    /// yours. If it's your account there, as a guest, your directory only needs you to sign in again, there: a plain
+    /// `az login` may sign in to another one without what yours asks for, such as multi-factor authentication.
+    async Task<AccessToken> FetchAsync(string? directory)
+    {
+        if (directory is not null)
+        {
+            return await RunAsync(tenant: directory).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        string? home;
+        lock (gate)
+        {
+            home = homeTenant;
+        }
+        if (home is null)
+        {
+            var first = await RunAsync(tenant: null).ConfigureAwait(continueOnCapturedContext: false);
+            lock (gate)
+            {
+                homeTenant = first.Tenant;
+            }
+            return first;
+        }
+        try
+        {
+            return await RunAsync(tenant: home).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        catch (AuthException error) when (error.Error.Kind == AuthErrorKind.SignedOut)
+        {
+            var current = await RunAsync(tenant: null).ConfigureAwait(continueOnCapturedContext: false);
+            string? yours;
+            lock (gate)
+            {
+                // The directory your account is from, which a guest token names: the pinned one may be a guest's too.
+                yours = homeAccount?.Tenant ?? home;
+            }
+            if (current.Tenant != home && current.AccountTenant == yours)
+            {
+                throw new AuthException(error: AuthError.SignedOut(message: error.Error.Message, tenant: home), innerException: error);
+            }
+            if (current.Tenant is { } theirs)
+            {
+                lock (gate)
+                {
+                    homeTenant = theirs;
+                }
+            }
+            return current;
+        }
+    }
+
+    /// Runs `az get-access-token`, for `tenant`'s directory, or the Azure CLI's default.
+    async Task<AccessToken> RunAsync(string? tenant)
     {
         string? found;
         lock (gate)
@@ -175,7 +376,7 @@ public sealed class AzureCLITokenProvider : IAccessTokenProvider
         ProcessResult result;
         try
         {
-            result = await runner.RunAsync(program: found, arguments: Arguments, environment: quiet, timeout: runLimit, cancellationToken: CancellationToken.None)
+            result = await runner.RunAsync(program: found, arguments: ArgumentsFor(tenant: tenant), environment: quiet, timeout: runLimit, cancellationToken: CancellationToken.None)
                 .ConfigureAwait(continueOnCapturedContext: false);
         }
         catch (Exception error) when (error is Win32Exception or TimeoutException or IOException or InvalidOperationException or ArgumentException)

@@ -257,7 +257,9 @@ public sealed class PanelViewModel : Observable
             SectionCondition.Paused => snapshot!.Info.SourceName + " is paused",
             _ => string.Empty,
         };
-        ProblemMessage = HasProblem ? StatusWords.Of(status: snapshot!.Status, now: now) : string.Empty;
+        // What the section adds, for its own problem, such as what signing in does there.
+        var hint = condition is SectionCondition.Problem or SectionCondition.Stale ? snapshot!.ProblemHint : null;
+        ProblemMessage = HasProblem ? StatusWords.Of(status: snapshot!.Status, now: now) + (hint is null ? string.Empty : " " + hint) : string.Empty;
         ProblemSection = HasProblem ? snapshot!.Info.Id : null;
         ProblemCommand = condition switch
         {

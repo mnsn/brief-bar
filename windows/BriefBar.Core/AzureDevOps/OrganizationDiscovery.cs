@@ -71,6 +71,49 @@ public static class OrganizationDiscovery
         return new OrganizationProbe(WithPullRequests: organizations.Where(predicate: found.Contains).ToList(), Failures: failures);
     }
 
+    /// Checks that your sign-in can read `organization`, as you add it, with `_apis/connectionData`. When it can't, whether
+    /// it's one of your organizations: a project's name, entered as an organization's, can be another organization's, even
+    /// one in another directory. Membership is asked only then: one read in another directory is read as your guest account
+    /// there, which `_apis/accounts`, asked as you, may not list. Stopping, as Azure DevOps is turned off, throws.
+    public static async Task<OrganizationAccess> AccessAsync(string organization, ADOClient client, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(argument: organization);
+        ArgumentNullException.ThrowIfNull(argument: client);
+        try
+        {
+            await client.GetAsync(url: ADOEndpoint.ConnectionData(organization: organization), read: ADOConnectionData.Read, cancellationToken: cancellationToken)
+                .ConfigureAwait(continueOnCapturedContext: false);
+            return OrganizationAccess.Readable;
+        }
+        catch (ADOException error) when (error.Error is { Kind: ADOErrorKind.OtherDirectory, Tenant: { } tenant })
+        {
+            return OrganizationAccess.OtherDirectory(tenant: tenant);
+        }
+        catch (ADOException error) when (error.Error.Kind == ADOErrorKind.NotFound)
+        {
+            return OrganizationAccess.NotYours;
+        }
+        catch (ADOException error) when (error.Error.Kind is ADOErrorKind.Unauthorized or ADOErrorKind.Forbidden)
+        {
+            IReadOnlyList<string> yours;
+            try
+            {
+                yours = await MembershipsAsync(client: client, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            }
+            catch (ADOException membership)
+            {
+                // Whether it's yours can't be told now: it's watched, and its list says why it can't be read.
+                return OrganizationAccess.Unchecked(error: membership.Error);
+            }
+            var isYours = yours.Any(predicate: name => string.Equals(a: name, b: organization, comparisonType: StringComparison.OrdinalIgnoreCase));
+            return isYours ? OrganizationAccess.Unreadable(error: error.Error) : OrganizationAccess.NotYours;
+        }
+        catch (ADOException error)
+        {
+            return OrganizationAccess.Unchecked(error: error.Error);
+        }
+    }
+
     /// The union of two lists of organization names, which Azure DevOps compares ignoring case, spelled as `preferred`
     /// spells them, in order.
     public static IReadOnlyList<string> Merged(IEnumerable<string> names, IEnumerable<string> preferred)
@@ -132,7 +175,7 @@ public static class OrganizationDiscovery
     }
 
     /// Whether you have an active pull request in `organization`, as its author or a reviewer. One you can't read, in
-    /// another tenant or without access, has nothing of yours to show; anything else throws.
+    /// another directory you aren't signed in to, or without access, has nothing of yours to show; anything else throws.
     internal static async Task<bool> HasPullRequestsAsync(string organization, ADOClient client, CancellationToken cancellationToken)
     {
         try
@@ -153,9 +196,9 @@ public static class OrganizationDiscovery
             }
             return false;
         }
-        catch (ADOException error) when (error.Error.Kind is ADOErrorKind.Unauthorized or ADOErrorKind.Forbidden or ADOErrorKind.NotFound)
+        catch (ADOException error) when (error.Error.Kind is ADOErrorKind.Unauthorized or ADOErrorKind.Forbidden or ADOErrorKind.NotFound or ADOErrorKind.OtherDirectory)
         {
-            // Another tenant, or no access: nothing of yours to show there.
+            // Another directory you aren't signed in to, or no access: nothing of yours to show there.
             return false;
         }
     }

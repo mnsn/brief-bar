@@ -32,9 +32,13 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             + "and keeps them in memory only. It runs the Azure CLI in the background, without a window, with fixed "
             + "arguments only.");
 
-    /// What Sign in runs, in a console window: `az login`, which signs in through Windows or your browser, without
-    /// listing your subscriptions. BriefBar picks the sign-in up within a minute.
-    public static IReadOnlyList<string> SignInArguments { get; } = ["login", "--allow-no-subscriptions", "--output", "none"];
+    /// What Sign in runs, in a console window: `az login`, which signs in through Windows or your browser, without listing
+    /// your subscriptions; with `tenant`, a directory's ID, `--tenant` with it, in that directory: an organization's, or your
+    /// sign-in's own when it wants you to sign in again there. Only a directory's ID goes on (`TenantId`). BriefBar picks
+    /// the sign-in up within a minute.
+    public static IReadOnlyList<string> SignInArguments(string? tenant) => TenantId.From(text: tenant) is { } directory
+        ? ["login", "--tenant", directory, "--allow-no-subscriptions", "--output", "none"]
+        : ["login", "--allow-no-subscriptions", "--output", "none"];
 
     /// Sign in runs with your own environment, as you'd run it in a terminal.
     static readonly Dictionary<string, string?> yourEnvironment = [];
@@ -59,6 +63,12 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
     /// Ends a search for your organizations under way, as the source stops.
     CancellationTokenSource? stopping;
     Task? discovery;
+    /// Checks of organizations you're adding, while they run: by name, ignoring case, the number of the latest, so that an
+    /// earlier one for the same name, superseded as you add it again, changes nothing.
+    readonly Dictionary<string, int> accessChecks = new(comparer: StringComparer.OrdinalIgnoreCase);
+    /// Those checks, which stopping waits for before it lets go of what ends them.
+    readonly List<Task> checking = [];
+    int checksMade;
     /// Which start what arrives belongs to, so that a stopped engine's late snapshot, or a search that ends after the
     /// source stopped, changes nothing.
     int generation;
@@ -154,8 +164,11 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
             ticker = null;
             cancel = stopping;
             stopping = null;
-            finding = discovery;
+            // Checks of organizations you're adding stop too: nothing is added, or told.
+            finding = Task.WhenAll(tasks: [discovery ?? Task.CompletedTask, .. checking]);
             discovery = null;
+            checking.Clear();
+            accessChecks.Clear();
             settings.Changed -= SettingsChanged;
         }
         NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
@@ -288,6 +301,40 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
     }
 
+    /// Watches `name`, an organization you add, once a check of whether your sign-in can read it finds it should (in another
+    /// directory, or not checked for now, too), and hands `found` what the check found, on the thread pool. Adding it again
+    /// checks again, and the earlier check changes nothing. Returns false when Azure DevOps isn't reading now, and checks
+    /// nothing; stopping it, or turning it off, ends a check under way, which then adds nothing and tells nothing. The Mac's
+    /// `PRStore.add(organization:found:)`.
+    public bool AddOrganization(string name, Action<OrganizationAccess> found)
+    {
+        ArgumentNullException.ThrowIfNull(argument: name);
+        ArgumentNullException.ThrowIfNull(argument: found);
+        lock (gate)
+        {
+            if (engine is null || turnedOff || stopping is null)
+            {
+                return false;
+            }
+            var check = ++checksMade;
+            accessChecks[name] = check;
+            var current = generation;
+            var cancellationToken = stopping.Token;
+            checking.RemoveAll(match: earlier => earlier.IsCompleted);
+            var task = Task.Run(
+                function: () => CheckAccessAsync(name: name, check: check, fromGeneration: current, found: found, cancellationToken: cancellationToken),
+                cancellationToken: CancellationToken.None);
+            checking.Add(item: task);
+            _ = task.ContinueWith(
+                continuationAction: failed => Failed(error: failed.Exception!, fromGeneration: current),
+                cancellationToken: CancellationToken.None,
+                continuationOptions: TaskContinuationOptions.OnlyOnFaulted,
+                scheduler: TaskScheduler.Default);
+        }
+        Log.Write(line: $"azureDevOps: checking an organization you added");
+        return true;
+    }
+
     /// Stops it as `StopAsync` does, without waiting, and lets go of its connection to Azure DevOps once it has stopped.
     public void Dispose() => _ = StopAsync().ContinueWith(
         continuationAction: _ => reading.Dispose(),
@@ -327,7 +374,7 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         }
     }
 
-    /// Does what the section's footer or banner asked; false for a command that isn't the section's.
+    /// Does what the section's footer or banner asked, or Settings; false for a command that isn't the section's.
     bool PerformForSection(string command)
     {
         switch (command)
@@ -339,7 +386,10 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
                 Refresh();
                 return true;
             case AzureDevOpsCommands.SignIn:
-                SignIn();
+                SignIn(tenant: null);
+                return true;
+            case var _ when AzureDevOpsCommands.SignInTenant(command: command) is { } tenant:
+                SignIn(tenant: tenant);
                 return true;
             case AzureDevOpsCommands.InstallCli:
                 access.OpenLink(obj: AzureDevOpsRows.InstallCliPage);
@@ -364,19 +414,19 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
         FindOrganizations(wanted: _ => store.NeedsDiscovery);
     }
 
-    /// Runs `az login` in a console window, which stays open once it's done, so you can read what it said; or, without
-    /// the Azure CLI, or with one it can't start, opens the page that says how to install it.
-    void SignIn()
+    /// Runs `az login` in a console window, which stays open once it's done, so you can read what it said: with `tenant`,
+    /// in that directory. Without the Azure CLI, or with one it can't start, it opens the page that says how to install it.
+    void SignIn(string? tenant)
     {
         if (reading.LocateCli() is not { } program)
         {
             access.OpenLink(obj: AzureDevOpsRows.InstallCliPage);
             return;
         }
-        Log.Write(line: $"azureDevOps: signing in with az login");
+        Log.Write(line: $"azureDevOps: signing in with az login, in a directory it names {tenant is not null}");
         try
         {
-            processes.StartInConsole(program: program, arguments: SignInArguments, workingDirectory: null, environment: yourEnvironment, keepOpen: true);
+            processes.StartInConsole(program: program, arguments: SignInArguments(tenant: tenant), workingDirectory: null, environment: yourEnvironment, keepOpen: true);
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or ArgumentException)
         {
@@ -469,9 +519,51 @@ public sealed class AzureDevOpsSource : ISectionSource, IDisposable
                 return;
             }
             store.Receive(snapshot: state, now: time.GetUtcNow());
+            KeepAccountOrigin(account: state.Account);
             Rebuild();
         }
         Changed?.Invoke(sender: this, e: EventArgs.Empty);
+    }
+
+    /// Keeps where `account`, the one the engine read as, is from, for after a restart, as its directory is kept with what
+    /// it has seen: a sign-in that your own directory wants again then isn't taken for someone else's. Only while the
+    /// sign-in's tokens are still that account's, so that one account's is never kept for another; and under the lock,
+    /// after the generation's check, so that a read the engine queued before Azure DevOps was turned off saves nothing.
+    void KeepAccountOrigin(string? account)
+    {
+        if (account is not null && reading.AccountOrigin(account: account) is { } origin)
+        {
+            settings.AccountOrigin = origin;
+        }
+    }
+
+    /// Checks whether your sign-in can read `name`, as you add it: unless Azure DevOps stopped meanwhile, or you added it
+    /// again since (`check` isn't the latest), it watches it if it should, and tells `found` what it found.
+    async Task CheckAccessAsync(string name, int check, int fromGeneration, Action<OrganizationAccess> found, CancellationToken cancellationToken)
+    {
+        OrganizationAccess access;
+        try
+        {
+            access = await reading.CheckAccessAsync(organization: name, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        lock (gate)
+        {
+            if (fromGeneration != generation || !accessChecks.TryGetValue(key: name, value: out var latest) || latest != check)
+            {
+                return;
+            }
+            accessChecks.Remove(key: name);
+            if (access.Watches && !settings.IsWatching(name: name))
+            {
+                settings.ToggleOrganization(name: name);
+            }
+        }
+        Log.Write(line: $"azureDevOps: checked an organization you added: {access.Kind}");
+        found(obj: access);
     }
 
     /// Times move on: what's new, done or idle may have changed, and how long ago each pull request was created, which

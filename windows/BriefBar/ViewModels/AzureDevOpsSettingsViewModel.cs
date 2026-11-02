@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using BriefBar.Core;
 using BriefBar.Core.AzureDevOps;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Controls;
 
 namespace BriefBar.ViewModels;
 
@@ -8,21 +10,36 @@ namespace BriefBar.ViewModels;
 /// reads, how long Done and Idle wait, To review in the bar, the pipelines after your merges, your organizations and the
 /// pull requests you watch. Each change is saved at once, and the list follows it. Its lists follow changes made
 /// elsewhere too, such as your organizations once they're found, or a pull request you stopped watching in the panel, until
-/// Settings closes (`Detach`). Made on the UI thread.
+/// Settings closes (`Detach`). An organization you add is checked first, as on the Mac: whether your sign-in can read it,
+/// and if not, why, which shows under the box. Made on the UI thread.
 public sealed class AzureDevOpsSettingsViewModel : Observable
 {
     readonly AzureDevOpsSettings settings;
     readonly Action findOrganizations;
+    readonly Func<string, Action<OrganizationAccess>, bool> addOrganization;
+    readonly Action<string> signIn;
     readonly DispatcherQueue queue;
+    /// The organizations you added whose checks haven't said yet, by name.
+    readonly HashSet<string> checking = new(comparer: StringComparer.OrdinalIgnoreCase);
+    /// The directory the note under the box offers to sign in to.
+    string? noteSignInTenant;
     int updateQueued;
 
-    /// `findOrganizations` asks Azure DevOps to look for your organizations again.
-    public AzureDevOpsSettingsViewModel(AzureDevOpsSettings settings, Action findOrganizations)
+    /// - `findOrganizations` asks Azure DevOps to look for your organizations again.
+    /// - `addOrganization` asks Azure DevOps to check whether your sign-in can read an organization you add, and watch it
+    ///   if it should, then hands what it found to its second argument, on any thread; false when Azure DevOps isn't reading.
+    /// - `signIn` signs in to the Azure CLI in a directory, an organization's.
+    public AzureDevOpsSettingsViewModel(
+        AzureDevOpsSettings settings, Action findOrganizations, Func<string, Action<OrganizationAccess>, bool> addOrganization, Action<string> signIn)
     {
         ArgumentNullException.ThrowIfNull(argument: settings);
         ArgumentNullException.ThrowIfNull(argument: findOrganizations);
+        ArgumentNullException.ThrowIfNull(argument: addOrganization);
+        ArgumentNullException.ThrowIfNull(argument: signIn);
         this.settings = settings;
         this.findOrganizations = findOrganizations;
+        this.addOrganization = addOrganization;
+        this.signIn = signIn;
         queue = DispatcherQueue.GetForCurrentThread();
         settings.Changed += OnSettingsChanged;
         ShowLists();
@@ -95,6 +112,25 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
 
     public bool HasOrganizationError { get; private set => Set(storage: ref field, value: value); }
 
+    /// "Checking whether your sign-in can read contoso…", while an organization you added is checked.
+    public string Checking { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    public bool IsChecking { get; private set => Set(storage: ref field, value: value); }
+
+    /// What a check found, when your sign-in can't read the organization you added: what's wrong, and what to do.
+    public string NoteTitle { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    public string NoteDetail { get; private set => Set(storage: ref field, value: value); } = string.Empty;
+
+    /// A warning for an organization that's watched all the same, as one in another directory; an error for one that isn't.
+    public InfoBarSeverity NoteSeverity { get; private set => Set(storage: ref field, value: value); } = InfoBarSeverity.Warning;
+
+    /// Whether the note shows: until you close it, or add another organization.
+    public bool HasNote { get; set => Set(storage: ref field, value: value); }
+
+    /// Whether the note offers to sign in, to the directory of an organization in another one.
+    public bool NoteOffersSignIn { get; private set => Set(storage: ref field, value: value); }
+
     public ObservableCollection<WatchedPullRequestViewModel> Watched { get; } = [];
 
     public bool HasNoWatched { get; private set => Set(storage: ref field, value: value); }
@@ -106,7 +142,9 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
 
     public bool HasLinkError { get; private set => Set(storage: ref field, value: value); }
 
-    /// Watches the organization `OrganizationInput` names, or says why it can't.
+    /// Watches the organization `OrganizationInput` names once Azure DevOps has checked that your sign-in can read it, or
+    /// says why it can't. While Azure DevOps isn't reading, as for a moment while it starts or stops, it's watched without a
+    /// check, as before: its list says what's wrong once it reads.
     public void AddOrganization()
     {
         if (OrganizationDiscovery.NameFrom(input: OrganizationInput) is not { } name)
@@ -114,12 +152,29 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
             ShowOrganizationError(error: "That isn't an organization's name. Names are letters, digits and hyphens, like the contoso in dev.azure.com/contoso.");
             return;
         }
-        if (!settings.IsWatching(name: name))
-        {
-            settings.ToggleOrganization(name: name);
-        }
         OrganizationInput = string.Empty;
         ShowOrganizationError(error: string.Empty);
+        HasNote = false;
+        if (settings.IsWatching(name: name))
+        {
+            return;
+        }
+        if (!addOrganization(arg1: name, arg2: access => queue.TryEnqueue(callback: () => ShowAccess(name: name, access: access))))
+        {
+            settings.ToggleOrganization(name: name);
+            return;
+        }
+        checking.Add(item: name);
+        ShowChecking();
+    }
+
+    /// Signs in to the directory of the organization the note is about.
+    public void SignInFromNote()
+    {
+        if (noteSignInTenant is { } tenant)
+        {
+            signIn(obj: tenant);
+        }
     }
 
     public void FindOrganizations() => findOrganizations();
@@ -201,6 +256,32 @@ public sealed class AzureDevOpsSettingsViewModel : Observable
     {
         OrganizationError = error;
         HasOrganizationError = error.Length > 0;
+    }
+
+    /// Which organizations you added are being checked, if any.
+    void ShowChecking()
+    {
+        IsChecking = checking.Count > 0;
+        Checking = IsChecking ? "Checking whether your sign-in can read " + ListWords.Join(names: [.. checking.Order(comparer: OrganizationDiscovery.NameOrder)]) + "…" : string.Empty;
+    }
+
+    /// What the check of `name` found: nothing to say when your sign-in reads it, or it couldn't be checked for now, as its
+    /// list says what's wrong then; otherwise what's wrong and what to do, with Sign in for an organization in another
+    /// directory. The latest check's note shows.
+    void ShowAccess(string name, OrganizationAccess access)
+    {
+        checking.Remove(item: name);
+        ShowChecking();
+        if (access.Explanation(organization: name) is not { } explanation)
+        {
+            return;
+        }
+        NoteTitle = explanation.Title;
+        NoteDetail = explanation.Detail;
+        NoteSeverity = access.Watches ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
+        noteSignInTenant = access.SignInTenant;
+        NoteOffersSignIn = noteSignInTenant is not null;
+        HasNote = true;
     }
 
     void ShowLinkError(string error)
