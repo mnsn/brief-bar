@@ -1654,8 +1654,9 @@ Prompts to Copilot Sessions or Azure DevOps off: a request that no extension too
 nothing more is written, copied or opened. One that an extension took goes on, and BriefBar still waits for how it went,
 so that the session takes no other prompt from it meanwhile.
 
-When BriefBar can't send it, it does what **Open in Copilot** did: it copies the prompt, and shows the
-session, for you to paste and send. For a fork, it copies `/fork` and the prompt, and shows the session:
+When BriefBar can't send it, it copies the prompt, and shows the session, for you to paste and send;
+when the window knows that beforehand, its button says **Open in Copilot** (`CopilotComposerView.sendTitle`).
+For a fork, it copies `/fork` and the prompt, and shows the session:
 pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. Once the
 session forked but the prompt didn't reach the fork, it copies the prompt and shows the fork. When the
 window didn't say beforehand that it would, it stays open to say why; and when the extension took the
