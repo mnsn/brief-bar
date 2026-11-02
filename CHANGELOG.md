@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-- **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
-  clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
-  you like. It sends nothing, so the comments it quotes stay on **Needs You**.
-- **With Nest Sessions Under Their Parents, a finished parent stays in Running or Needs You while its child sessions do.**
-  Its row says it's waiting for child sessions and how many need you or are running.
 - **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
   window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
   app, as your own message, instead of copying it for you to paste. **Send to a Fork** forks the session, with
@@ -15,6 +10,22 @@
   Settings › Agents. Until then, and whenever BriefBar can't send it, it copies the prompt and opens the session
   for you to paste, as **Open in Copilot** did, or for a fork `/fork` and the prompt. The window says which
   before you send it.
+
+## 0.11.0 - 2026-11-02
+
+- **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
+  click a pull request to see it beside the list, or over it in a narrow window: where it stands,
+  **What's Left** before you can complete it, each item saying when it's your turn and taking you to
+  what it's about, its comment threads with the ones that wait on you first, its builds and checks with
+  where one failed and its first error, who reviews it and how each voted, and the work items and
+  Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
+  has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
+  menu-bar list and widgets still open pull requests in Azure DevOps.
+- **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
+  clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
+  you like. It sends nothing, so the comments it quotes stay on **Needs You**.
+- **With Nest Sessions Under Their Parents, a finished parent stays in Running or Needs You while its child sessions do.**
+  Its row says it's waiting for child sessions and how many need you or are running.
 - **GitHub's list says All quiet only once it has read all your pull requests.** It said so under a note
   that you were offline, that GitHub couldn't be reached or that some pull requests couldn't be read, and
   even before it had read any. Now it shows only the note.

@@ -71,6 +71,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     private var workLinks: WorkLinksStore?
     /// The work item whose details show beside the sprint.
     private var details: WorkItemDetailsStore?
+    /// The pull request whose details show beside the window's list.
+    private var pullRequestDetails: PullRequestDetailsStore?
     /// For `--render`: the Sprint page with a story's details, and with a task's.
     private var renderedDetails: [(name: String, details: WorkItemDetailsStore)] = []
     private let changes = PassthroughSubject<Void, Never>()
@@ -92,12 +94,13 @@ package final class AzureDevOpsSource: BriefBarSource {
     }
 
     private func environment<V: View>(_ view: V) -> AnyView {
-        guard let store, let sprint, let pipelines, let copilot, let details else { return AnyView(EmptyView()) }
+        guard let store, let sprint, let pipelines, let copilot, let details, let pullRequestDetails else { return AnyView(EmptyView()) }
         return AnyView(view
             .interfaceOptions(from: services)
             .environmentObject(store)
             .environmentObject(sprint)
             .environmentObject(details)
+            .environmentObject(pullRequestDetails)
             .environmentObject(pipelines)
             .environmentObject(copilot)
             .environmentObject(settings)
@@ -137,18 +140,31 @@ package final class AzureDevOpsSource: BriefBarSource {
         let details = WorkItemDetailsStore(mode: store.mode, client: store.client, board: sprint.$board.eraseToAnyPublisher())
         details.hasPage = { [services] in services.hasPage(.azureDevOpsSprint) }
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
+        let pullRequestDetails = makePullRequestDetails(store: store)
         // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()
-            .sink { [weak details, weak workLinks] account in
+            .sink { [weak details, weak workLinks, weak pullRequestDetails] account in
                 MainActor.assumeIsolated {
                     details?.accountChanged(account)
                     workLinks?.accountChanged(account)
+                    pullRequestDetails?.accountChanged(account)
                 }
             }
             .store(in: &cancellables)
         self.details = details
+        self.pullRequestDetails = pullRequestDetails
         workLinks?.details = details
         return store
+    }
+
+    /// The pull request whose details show beside the window's list, which follows the list as it refreshes, and sees what
+    /// it shows as opening it does.
+    private func makePullRequestDetails(store: PRStore) -> PullRequestDetailsStore {
+        let details = PullRequestDetailsStore()
+        details.use(store)
+        details.hasPage = { [services] in services.hasPage(.azureDevOpsPullRequests) }
+        details.openPage = { [services] in services.openWindow(.azureDevOpsPullRequests) }
+        return details
     }
 
     // MARK: Lifecycle
@@ -266,6 +282,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot?.stop()
         workLinks?.stop()
         details?.stop()
+        pullRequestDetails?.stop()
         services.sentTasks.withdraw(.azureDevOps)
         services.summaries.setYourName(.azureDevOps, nil)
         store = nil
@@ -274,6 +291,7 @@ package final class AzureDevOpsSource: BriefBarSource {
         copilot = nil
         workLinks = nil
         details = nil
+        pullRequestDetails = nil
         services.fullDiskAccess.unregister(.azureDevOps)
     }
 
@@ -624,6 +642,7 @@ package final class AzureDevOpsSource: BriefBarSource {
                 renderings.append((name: name + suffix, view: environment(page)))
             }
         }
+        renderings += pullRequestDetailsRenderings()
         if let copilot, let item = sprint?.board?.myWork.first(where: { copilot.latest(for: $0) == nil }) {
             let composer = CopilotComposerView(item: item.copilotTask, options: settings.copilotOptions, template: settings.copilotPromptTemplate) {}
                 .environment(\.isRendering, true)
@@ -687,6 +706,50 @@ package final class AzureDevOpsSource: BriefBarSource {
             sessionPrompt: PullRequestPrompt.fixComments(record, workplace: .agent), createdAt: pr.createdAt,
             session: (choice, .listening(canFork: true))
         ) {}
+    }
+
+    /// The Pull Requests page with a pull request's details: the first of yours that needs you, beside the list as in a big
+    /// window and in BriefBar's window as it opens, over it in a narrow one, all of it in a tall one, and with the page of
+    /// the first work item linked to it over them; and the first that's failing. Each in a store of its own, so the
+    /// window's own picture of the page shows none.
+    private func pullRequestDetailsRenderings() -> [(name: String, view: AnyView)] {
+        guard let store else { return [] }
+        let yours = store.items.first { $0.group == .needsYou && $0.role == .author } ?? store.items.first
+        let failing = store.items.first { $0.group == .failing }
+        let wide = CGSize(width: 1_000, height: 720)
+        let shown: [(name: String, item: PRSnapshot?, sizes: [(suffix: String, size: CGSize)], page: ItemRef.Kind?)] = [
+            ("pull-requests-details", yours, [
+                ("", wide), ("-medium", CGSize(width: 820, height: 680)), ("-narrow", CGSize(width: 560, height: 720)),
+                ("-tall", CGSize(width: 1_000, height: 1_500)),
+            ], nil),
+            ("pull-requests-details-page", yours, [("", wide)], .workItem),
+            ("pull-requests-failing-details", failing, [("", wide), ("-tall", CGSize(width: 1_000, height: 1_100))], nil),
+        ]
+        var renderings: [(name: String, view: AnyView)] = []
+        for (name, item, sizes, page) in shown {
+            guard let item else { continue }
+            let details = PullRequestDetailsStore()
+            details.readRecord = { [weak store] key in store?.record(for: key) }
+            details.itemsChanged(store.items)
+            details.show(item)
+            if let page {
+                guard let linked = services.links.connections(of: item.key.linkRef).first(where: { $0.item.ref.kind == page }) else {
+                    continue
+                }
+                details.open(page: linked.item.ref)
+            }
+            for (suffix, size) in sizes {
+                let view = PullRequestsPage()
+                    .environmentObject(details)
+                    .environment(\.panelStyle, .page)
+                    .textSize(from: services)
+                    .frame(width: size.width, height: size.height)
+                    .background(WindowBackdrop())
+                    .environment(\.isRendering, true)
+                renderings.append((name: name + suffix, view: environment(view)))
+            }
+        }
+        return renderings
     }
 }
 
