@@ -88,7 +88,8 @@ section names and the like, so nothing you see can reach it: a line with a strin
   **Settings**. It closes when you press Esc, click anywhere else, Settings included, bring another app or Settings
   to the front, or press its item again.
 - **Settings**, a window like Windows 11's own, opens from the bar's right-click menu, a panel's **Settings**
-  button, or the empty Overview. **General** lists each source and whether it's on. A source's page says, before you
+  button, or the empty Overview. **General** lists each source and whether it's on, and what comes next ("Microsoft
+  Teams comes to BriefBar for Windows next."), until Windows has every source. A source's page says, before you
   turn it on, what BriefBar reads for it, where it connects and what it needs, as the Mac's does; turning it on is
   your consent to that, saved with the version of what it said (`SourceChoices`). A source that reads more after an
   update waits, paused, reading nothing, until you've seen what it reads now and kept it on. Turning one off, which
@@ -151,9 +152,17 @@ section names and the like, so nothing you see can reach it: a line with a strin
   auth login --hostname github.com --web` in a console window; without the GitHub CLI, or with one it can't start, it
   links to its installation. Its setting is the Mac's: Refresh, every 1, 2, 5 or 15 minutes.
 - **It looks like Windows 11**: acrylic, [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
-  Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. It follows light, dark and High
-  Contrast as Windows changes, and its state colors meet WCAG AA against its background in light and dark (text
-  4.5:1, icons 3:1), which a test checks. States never rely on color alone: each has its own icon and words.
+  Segoe UI Variable, sentence case, and the panel's rounded corners and shadow. The bar and the panel follow Windows'
+  mode, and the bar the taskbar's accent color, as the taskbar does ([below](#choices-for-windows)). Where Windows
+  draws no acrylic, as over Remote Desktop, with Transparency effects off or with energy saver, the bar and the panel
+  show the flat color Windows shows in its place, `#EEEEEE` in light and `#1C1C1C` in dark, as the taskbar does there.
+  It follows light, dark, the accent and High Contrast as Windows changes, the panel's and Settings' window frames
+  included, with Windows' own colors in a contrast theme. Its state colors meet WCAG AA in light and dark (text 4.5:1,
+  icons 3:1) on the acrylic and on that flat color alike, and on the accent, and the bar's behind an item that's open
+  and pointed at too, where Windows' highlight lies under them twice, which tests check. The bar's words are in
+  Windows' colors wherever those read, and a little lighter (or darker) where they don't. States never rely on color
+  alone: each has its own icon and words. Narrator reads each item in the bar and each row as one, in words, and
+  Settings' section titles are headings.
 - **It steps aside for full screen.** While a full-screen window, such as a game or a video, is in front on a
   display, that display's bar hides, and it stays hidden while that window stays on that display, even as you
   work on another, as the taskbar does.
@@ -176,6 +185,13 @@ Where Windows differs, these were decided:
 - **Hiding the panel and the window from screen sharing and recordings** will be a choice in Settings, off by
   default.
 - **Sentence case** ("Needs you"), as Windows writes it.
+- **The bar and the panel look like the taskbar and its flyouts**: in Windows' mode, which Settings › Personalization ›
+  Colors can set apart from the apps' mode that Settings, an app, follows; and with **Show accent color on Start and
+  taskbar**, which Windows offers in dark, the bar takes the shade of the accent color the taskbar takes
+  (`AccentDark2`), its state colors lightened as much as they need to stand out on it.
+- **Where Windows draws no acrylic, the bar is flat**, as the taskbar is there, such as over Remote Desktop, rather
+  than see-through: a tint without blur does show the wallpaper through, but leaves the counts' colors under 4.5:1
+  over a dark one.
 - **The keyboard reaches the bar's items from a panel**, with Ctrl+1 to Ctrl+9 and Ctrl+Tab, since Windows has no
   key like the Mac's Ctrl+F8 for a bar like this one. Starting BriefBar again opens the Overview, as reopening it
   shows the Mac's first item.
@@ -261,6 +277,20 @@ SDK ships inside the app.
   null one (`E_INVALIDARG`), which ended BriefBar. `ActiveAcrylic` follows the theme as its content does instead, and
   `SystemBackdropTests` checks that every backdrop in the app overrides it, and that nothing calls the base.
 - **Windows 11 draws a 1-pixel border** around windows; the bar turns it off (`DWMWA_BORDER_COLOR`).
+- **WinUI leaves a window's frame light in dark**: Windows drew the dark panel's border and shadow for light, until
+  the panel and Settings said their theme (`DWMWA_USE_IMMERSIVE_DARK_MODE`, `FrameTheme`).
+- **Windows draws no acrylic over Remote Desktop**, even with Transparency effects on, and neither Mica nor its
+  own backdrops, checked on Windows 11 25H2: every one shows its flat color, and so does the taskbar (`#EEEEEE` in
+  light). That color is darker than light acrylic, so `StatePalette` checks contrast on both; on it, Needs you's
+  orange first stood 2.97:1.
+- **WinUI and `UISettings` know only the apps' mode**, not Windows' own, which the taskbar follows: that's in the
+  registry, as `Personalize\SystemUsesLightTheme`, with `ColorPrevalence` for the accent on the taskbar, and a change
+  comes as `WM_SETTINGCHANGE` with `ImmersiveColorSet` (`ShellColors`). With the accent, Windows paints the taskbar
+  `AccentDark2`, checked against its pixels over Remote Desktop.
+- **`AutomationProperties.AccessibilityView="Raw"` hides only the element it's on**, not what's in it: Narrator read
+  a row's words again, one by one, after its name. Its words are raw each, through an implicit style, and a bar item
+  is a button without children (`BarItemButtonAutomationPeer`). That style doesn't reach into a list's own item
+  template, such as a row's checklist and links, so their words say it themselves.
 - **A click on the bar could be spent activating it** while some apps were in front, such as the Xbox app or a
   Windows Security prompt; the bar answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`.
 - **XAML moves focus to the bar on a press**, before the press reaches the item, which takes activation from an

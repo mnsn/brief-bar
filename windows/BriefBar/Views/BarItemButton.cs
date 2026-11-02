@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace BriefBar.Views;
@@ -24,6 +25,8 @@ public sealed partial class BarItemButton : Button
         base.OnApplyTemplate();
         ShowOpenState(useTransitions: false);
     }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new BarItemButtonAutomationPeer(owner: this);
 
     static void OnIsOpenChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
         ((BarItemButton)sender).ShowOpenState(useTransitions: true);
