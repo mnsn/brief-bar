@@ -577,6 +577,9 @@ public actor PulseEngine {
         } else if !errors.isEmpty || !linkedElsewhere.isEmpty {
             // The others' pull requests are listed: this says which organizations weren't read, and what fixes it.
             problem = PulseProblem.organizations(errors + linkedElsewhere)
+            // Only pull requests sent to you, and none to list: nothing could be read, as when no organization could, so
+            // a sign-in there is picked up within a minute.
+            if organizations.isEmpty && active.isEmpty { failures += 1 }
         } else {
             problem = nil
         }
@@ -596,8 +599,12 @@ public actor PulseEngine {
             .filter { linkedFailures[$0].map { date.timeIntervalSince($0) > 3_600 } ?? true }
             .sorted { (linked[$0]?.readAt ?? .distantPast, $0) < (linked[$1]?.readAt ?? .distantPast, $1) }
         var elsewhere: [(organization: String, error: ADOError)] = []
-        for key in due.prefix(10) {
+        // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others.
+        var reads = 0
+        for key in due {
             if elsewhere.contains(where: { $0.organization.lowercased() == key.organization.lowercased() }) { continue }
+            guard reads < 10 else { break }
+            reads += 1
             do {
                 let me: String
                 if let known = identities[key.organization] {

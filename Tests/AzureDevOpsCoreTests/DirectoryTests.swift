@@ -434,6 +434,25 @@ final class FakeAzureCLI: ProcessRunning, Sendable {
         #expect(snapshot.problem == nil)
     }
 
+    @Test func pullRequestsYouWatchInAnotherDirectoryDontKeepTheOthersWaiting() async throws {
+        let server = StubServer()
+        let tokens = FakeTokens(server.id, tenant: Tenants.home)
+        server.on("/contoso/_apis/connectionData", json: ["authenticatedUser": ["id": Fixture.me.uppercased()]])
+        server.on("/contoso/_apis/git/pullrequests/11", json: Fixture.pullRequest(11, title: "Theirs", author: People.sam))
+        server.on("/_apis/policy/evaluations", json: Fixture.list([]))
+        server.on("/threads", json: Fixture.list([]))
+        // adatum's ten come first, more than a refresh reads.
+        server.put("adatum", in: Tenants.other)
+        let engine = PulseEngine(client: server.client(tokens: tokens), configuration: PulseEngine.Configuration(organizations: [])) { _ in }
+        await engine.setLinkedPullRequests(Set((1...10).map { PRKey("adatum", $0) } + [PRKey(Fixture.org, 11)]))
+        await engine.refreshNow()
+        let snapshot = await engine.currentSnapshot()
+        #expect(snapshot.records.map(\.id) == [PRKey(Fixture.org, 11)])
+        #expect(snapshot.problem == .otherDirectory(organizations: ["adatum"], tenant: Tenants.other, others: nil))
+        // One of adatum's was tried; the rest waited without taking contoso's turn.
+        #expect(server.requests.filter { $0.url?.path.hasPrefix("/adatum/") == true }.count == 1)
+    }
+
     @Test func pinnedPipelinesInAnotherDirectorySayWhichOrganization() async throws {
         let server = StubServer()
         let tokens = FakeTokens(server.id, tenant: Tenants.home)
