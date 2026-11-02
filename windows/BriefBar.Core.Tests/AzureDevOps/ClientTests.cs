@@ -163,8 +163,9 @@ public sealed class ClientTests
     }
 
     /// Azure DevOps' source says it connects to dev.azure.com and app.vssps.visualstudio.com only: sent elsewhere, as by a
-    /// proxy's sign-in page, it sends nothing there, and says where it was sent. Its handler follows no redirect, which
-    /// `HttpClient`'s handlers do by default, to any host, and keeps no cookies or credentials.
+    /// proxy's sign-in page, it sends nothing there, and says so without naming the host, which can carry an organization's
+    /// name, as the Mac's does. Its handler follows no redirect, which `HttpClient`'s handlers do by default, to any host,
+    /// and keeps no cookies or credentials.
     [Theory]
     [InlineData(302)]
     [InlineData(307)]
@@ -183,9 +184,9 @@ public sealed class ClientTests
 
         var error = await Assert.ThrowsAsync<ADOException>(testCode: () => client.GetAsync(
             url: ADOEndpoint.ConnectionData(organization: "contoso"), read: ADOConnectionData.Read, cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Equal(expected: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, sso.example.org, which it doesn't connect to."), actual: error.Error);
+        Assert.Equal(expected: ADOError.Network(message: "Azure DevOps redirected BriefBar to another host, which it doesn't connect to."), actual: error.Error);
         Assert.Equal(
-            expected: "Can't read contoso: Azure DevOps redirected BriefBar to another host, sso.example.org, which it doesn't connect to. The list may be out of date.",
+            expected: "Can't read contoso: Azure DevOps redirected BriefBar to another host, which it doesn't connect to. The list may be out of date.",
             actual: PulseProblem.From(error: error.Error, now: TestTimes.Reference, organization: "contoso").Message);
         Assert.Single(collection: server.Requests);
         Assert.Equal(expected: 0, actual: tokens.Invalidations);

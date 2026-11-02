@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-11-02
 
+- **See a pull request's details without leaving BriefBar.** On the window's **Pull Requests** page,
+  click a pull request to see it beside the list, or over it in a narrow window: where it stands,
+  **What's Left** before you can complete it, each item saying when it's your turn and taking you to
+  what it's about, its comment threads with the ones that wait on you first, its builds and checks with
+  where one failed and its first error, who reviews it and how each voted, and the work items and
+  Copilot sessions linked to it. **↗** opens it in Azure DevOps, at the comment that needs you, and **⋯**
+  has the row's actions. Drag the details' edge to make them wider; **✕** or **Esc** closes them. The
+  menu-bar list and widgets still open pull requests in Azure DevOps.
 - **Copy the prompt from the Send to Copilot window.** **Copy**, above the prompt, puts it on the
   clipboard as it stands, with your changes, whatever you choose under **Where It Goes**, to paste where
   you like. It sends nothing, so the comments it quotes stay on **Needs You**.
@@ -34,6 +42,17 @@
   both, still as you. **Add Organization…** now checks that your sign-in can read an organization as
   you add it, and says why when it can't, with where a project's organization is when you entered a
   project's name.
+- **Teams' read markers come only from the files Teams still uses.** Teams can leave behind a file it no
+  longer needs, which may hold a conversation it has since deleted. BriefBar read those files too, so a
+  deleted conversation's old read marker could come back; it now reads only the files Teams' database
+  lists, as Teams does. If that list is damaged, or names files that aren't there, the lists say some read
+  markers couldn't be read.
+- **A Teams account whose chats were never opened no longer says Teams' read markers have changed.** None
+  of its chats had a read marker yet, which BriefBar took for a Teams update that changed them. It now goes
+  by the field that holds one, which a chat never read has too.
+- **A damaged record in Teams' data says some read markers couldn't be read.** A record whose checksum
+  doesn't match may have held any chat's read marker, and the lists said nothing of it, so a chat you'd
+  read in Teams could stay unread here without a word.
 
 ## 0.10.2 - 2026-11-01
 

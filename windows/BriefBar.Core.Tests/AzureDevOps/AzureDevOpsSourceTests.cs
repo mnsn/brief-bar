@@ -11,6 +11,11 @@ namespace BriefBar.Core.Tests.AzureDevOps;
 /// requests.
 public sealed class AzureDevOpsSourceTests
 {
+    /// Made-up directories' IDs: your sign-in's, and another one.
+    const string HomeTenant = "0a0a0a0a-1111-4111-8111-111111111111";
+    const string OtherTenant = "0b0b0b0b-2222-4222-8222-222222222222";
+    const string ThirdTenant = "0c0c0c0c-3333-4333-8333-333333333333";
+
     static readonly DateTimeOffset now = TestTimes.T(seconds: 0);
 
     [Fact]
@@ -132,6 +137,132 @@ public sealed class AzureDevOpsSourceTests
         other.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.SignIn));
         Assert.Empty(collection: withoutCli.Processes.Consoles);
         Assert.Equal(expected: AzureDevOpsRows.InstallCliPage, actual: Assert.Single(collection: withoutCli.Opened));
+    }
+
+    /// Sign in for an organization in another directory, or for your own directory when it wants you to sign in again
+    /// there, runs `az login --tenant` with the directory's ID, as fixed words; a command that names anything else as a
+    /// directory signs in to nothing.
+    [Fact]
+    public async Task SignsInToTheDirectoryItNeeds()
+    {
+        var made = Make(cli: @"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd");
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.SignInTo(tenant: OtherTenant)));
+        var console = Assert.Single(collection: made.Processes.Consoles);
+        Assert.Equal(expected: ["login", "--tenant", OtherTenant, "--allow-no-subscriptions", "--output", "none"], actual: console.Arguments);
+        Assert.True(condition: console.KeepOpen);
+        Assert.Equal(
+            expected: "/d /v:off /s /k \"\"C:\\Program Files\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd\" login --tenant " + OtherTenant + " --allow-no-subscriptions --output none\"",
+            actual: ProcessRunner.CmdArguments(program: console.Program, arguments: console.Arguments, keepOpen: true));
+
+        source.Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: "signIn.contoso & calc"));
+        Assert.Single(collection: made.Processes.Consoles);
+        Assert.Equal(expected: ["login", "--allow-no-subscriptions", "--output", "none"], actual: AzureDevOpsSource.SignInArguments(tenant: "contoso & calc"));
+        Assert.Equal(expected: ["login", "--allow-no-subscriptions", "--output", "none"], actual: AzureDevOpsSource.SignInArguments(tenant: null));
+    }
+
+    /// Where the account it reads as is from is kept, for after a restart, while the sign-in's tokens are that account's,
+    /// so one account's is never kept for another: a read as another account they aren't for forgets the last one's.
+    /// Turning Azure DevOps off forgets it, with what you've seen, and a read the engine queued before it stopped saves
+    /// neither again.
+    [Fact]
+    public async Task KeepsWhereYourAccountIsFromUntilItsTurnedOff()
+    {
+        var storage = new MemorySettings();
+        var settings = AzureDevOpsDemoData.Settings(storage: storage, now: now);
+        const string yours = HomeTenant + "/robin";
+        const string theirs = ThirdTenant + "/sam";
+        // The account the sign-in's tokens are for now, if any.
+        string? signedIn = yours;
+        var made = Make(settings: settings, origin: account => account != signedIn ? null : account == yours ? "live.com" : ThirdTenant);
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = yours, HasLoaded = true });
+        Assert.Equal(expected: "live.com", actual: settings.AccountOrigin);
+        Assert.Equal(expected: "live.com", actual: storage.Read(key: AzureDevOpsSettings.AccountOriginKey)?.GetValue<string>());
+        Assert.Equal(expected: "live.com", actual: new AzureDevOpsSettings(settings: storage, now: now).AccountOrigin);
+        // A read as the same account, once the sign-in's tokens aren't its, leaves it as it was: it's still that account's.
+        signedIn = null;
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = yours, HasLoaded = true });
+        Assert.Equal(expected: "live.com", actual: settings.AccountOrigin);
+        // A read as another account they aren't for, as one the engine started before the sign-in changed again, forgets
+        // it: it was the last account's, and this one's isn't known.
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
+        Assert.Equal(expected: theirs, actual: settings.Account);
+        Assert.Null(@object: settings.AccountOrigin);
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.AccountOriginKey));
+        // Once they're that account's, its own is kept.
+        signedIn = theirs;
+        await Received(made: made, snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
+        Assert.Equal(expected: ThirdTenant, actual: settings.AccountOrigin);
+
+        source.DeleteSavedData();
+        Assert.Null(@object: settings.AccountOrigin);
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.AccountOriginKey));
+        // The engine's last read, queued before it stopped, arrives after, with who's signed in.
+        made.Engine().Publish(snapshot: new PulseSnapshot { Organizations = [AzureDevOpsDemoData.Organization], Account = theirs, HasLoaded = true });
+        await Task.Delay(millisecondsDelay: 200, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(@object: settings.Account);
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.SeenKey));
+        Assert.Null(@object: storage.Read(key: AzureDevOpsSettings.AccountOriginKey));
+    }
+
+    /// An organization you add is checked first: one your sign-in reads, or one in another directory, is watched, and one
+    /// that isn't yours isn't; each says what the check found. Added again, by any spelling, only the last check counts,
+    /// and the earlier one ends without a word; turned off meanwhile, nothing is added, and the check ends without a word;
+    /// and while it isn't reading, nothing is checked.
+    [Fact]
+    public async Task ChecksAnOrganizationAsYouAddIt()
+    {
+        var slow = new TaskCompletionSource<OrganizationAccess>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var late = new TaskCompletionSource<OrganizationAccess>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var made = Make(check: (name, cancellationToken) => name.ToLowerInvariant() switch
+        {
+            "fabrikam" => Task.FromResult(result: OrganizationAccess.OtherDirectory(tenant: OtherTenant)),
+            "shop" => Task.FromResult(result: OrganizationAccess.NotYours),
+            "slow" => slow.Task.WaitAsync(cancellationToken: cancellationToken),
+            "late" => late.Task.WaitAsync(cancellationToken: cancellationToken),
+            _ => Task.FromResult(result: OrganizationAccess.Readable),
+        });
+        using var source = made.Source;
+        Assert.False(condition: source.AddOrganization(name: "adatum", found: _ => { }));
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: OrganizationAccess.Readable, actual: await AddedAsync(source: source, name: "adatum"));
+        Assert.True(condition: made.Settings.IsWatching(name: "adatum"));
+        Assert.Equal(expected: OrganizationAccess.OtherDirectory(tenant: OtherTenant), actual: await AddedAsync(source: source, name: "fabrikam"));
+        Assert.True(condition: made.Settings.IsWatching(name: "fabrikam"));
+        Assert.Equal(expected: OrganizationAccess.NotYours, actual: await AddedAsync(source: source, name: "shop"));
+        Assert.False(condition: made.Settings.IsWatching(name: "shop"));
+
+        var superseded = Told(source: source, name: "slow");
+        var adding = AddedAsync(source: source, name: "SLOW");
+        slow.SetResult(result: OrganizationAccess.NotYours);
+        Assert.Equal(expected: OrganizationAccess.NotYours, actual: await adding);
+        Assert.Null(@object: await superseded.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(condition: made.Settings.IsWatching(name: "slow"));
+
+        var turnedOff = Told(source: source, name: "late");
+        source.DeleteSavedData();
+        late.SetResult(result: OrganizationAccess.Readable);
+        Assert.Null(@object: await turnedOff.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(condition: made.Settings.IsWatching(name: "late"));
+        Assert.False(condition: source.AddOrganization(name: "after", found: _ => { }));
+    }
+
+    /// Stopped while it checks an organization you add, it adds nothing, and the check ends without a word.
+    [Fact]
+    public async Task StoppingEndsACheckWithoutAWord()
+    {
+        var never = new TaskCompletionSource<OrganizationAccess>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        var made = Make(check: (_, cancellationToken) => never.Task.WaitAsync(cancellationToken: cancellationToken));
+        using var source = made.Source;
+        await source.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var told = Told(source: source, name: "adatum");
+        await source.StopAsync().WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Null(@object: await told.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(condition: made.Settings.IsWatching(name: "adatum"));
     }
 
     /// Sign in can't start `az login` when `az.cmd` was removed since BriefBar found it, or is at a path with a percent
@@ -339,12 +470,15 @@ public sealed class AzureDevOpsSourceTests
     }
 
     /// A source of the demo's settings, unless `settings` says otherwise, with a made-up engine, organizations from `find`,
-    /// and the Azure CLI at `cli`, which `runner` starts, or a made-up runner that starts nothing (`Made.Processes`).
+    /// organizations you add checked by `check`, readable unless said, accounts from where `origin` says, nowhere unless
+    /// said, and the Azure CLI at `cli`, which `runner` starts, or a made-up runner that starts nothing (`Made.Processes`).
     static Made Make(
         AzureDevOpsSettings? settings = null,
         Func<CancellationToken, Task<OrganizationsFound>>? find = null,
         string? cli = @"C:\az\az.cmd",
-        IProcessRunner? runner = null)
+        IProcessRunner? runner = null,
+        Func<string, CancellationToken, Task<OrganizationAccess>>? check = null,
+        Func<string, string?>? origin = null)
     {
         var engines = new List<FakePulseEngine>();
         var opened = new List<Uri>();
@@ -362,6 +496,8 @@ public sealed class AzureDevOpsSourceTests
                 return engine;
             },
             findOrganizations: find ?? (_ => Task.FromResult(result: new OrganizationsFound(All: [], WithPullRequests: []))),
+            checkAccess: check ?? ((_, _) => Task.FromResult(result: OrganizationAccess.Readable)),
+            accountOrigin: origin ?? (_ => null),
             locateCli: () => cli);
         var source = new AzureDevOpsSource(
             settings: chosen,
@@ -385,6 +521,26 @@ public sealed class AzureDevOpsSourceTests
         var changed = Waiting.NextChange(source: made.Source);
         made.Engine().Publish(snapshot: AzureDevOpsDemoData.Snapshot(now: now));
         await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+    }
+
+    /// Hands `made`'s started source `snapshot`, from its engine, and waits for it to take it.
+    static async Task Received(Made made, PulseSnapshot snapshot)
+    {
+        var changed = Waiting.NextChange(source: made.Source);
+        made.Engine().Publish(snapshot: snapshot);
+        await changed.WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken);
+    }
+
+    /// Adds the organization `name` with `source`, and waits for what its check found.
+    static async Task<OrganizationAccess> AddedAsync(AzureDevOpsSource source, string name) =>
+        Assert.IsType<OrganizationAccess>(@object: await Told(source: source, name: name).WaitAsync(timeout: Waiting.Limit, cancellationToken: TestContext.Current.CancellationToken));
+
+    /// Adds the organization `name` with `source`: what its check finds, or null when it ends without anything to act on.
+    static Task<OrganizationAccess?> Told(AzureDevOpsSource source, string name)
+    {
+        var found = new TaskCompletionSource<OrganizationAccess?>(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+        Assert.True(condition: source.AddOrganization(name: name, found: access => found.TrySetResult(result: access)));
+        return found.Task;
     }
 
     static CommandRequest Request(string command, string rowId) => new(Section: SectionId.AzureDevOpsPullRequests, Command: command, RowId: rowId);

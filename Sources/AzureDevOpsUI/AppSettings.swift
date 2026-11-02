@@ -98,6 +98,10 @@ final class AppSettings: ObservableObject {
     @Published var sprintDetailsWidth: Double? {
         didSet { defaults.set(sprintDetailsWidth, forKey: Key.sprintDetailsWidth) }
     }
+    /// How wide you made a pull request's details beside the window's list, in points; nil for their usual width.
+    @Published var pullRequestDetailsWidth: Double? {
+        didSet { defaults.set(pullRequestDetailsWidth, forKey: Key.pullRequestDetailsWidth) }
+    }
     /// The pipelines in the Pipelines section, in the order you pinned them.
     @Published var pinnedPipelines: [PipelineRef] {
         didSet { Self.store(pinnedPipelines, in: defaults, forKey: Key.pinnedPipelines) }
@@ -175,7 +179,8 @@ final class AppSettings: ObservableObject {
         chatLinksEnabled = defaults.bool(forKey: Key.chatLinksEnabled)
         sprintTeam = Self.load(TeamRef.self, from: defaults, forKey: Key.sprintTeam)
         sprintJustMine = defaults.bool(forKey: Key.sprintJustMine)
-        sprintDetailsWidth = (defaults.object(forKey: Key.sprintDetailsWidth) as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        sprintDetailsWidth = Self.width(defaults.object(forKey: Key.sprintDetailsWidth))
+        pullRequestDetailsWidth = Self.width(defaults.object(forKey: Key.pullRequestDetailsWidth))
         pinnedPipelines = Self.load([PipelineRef].self, from: defaults, forKey: Key.pinnedPipelines) ?? []
         copilotEnabled = defaults.bool(forKey: Key.copilotEnabled)
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
@@ -249,6 +254,12 @@ final class AppSettings: ObservableObject {
 
     private static func choice(_ value: Int, in choices: [Int], default fallback: Int) -> Int {
         choices.contains(value) ? value : fallback
+    }
+
+    /// A width kept in the preferences, in points; nil for anything that isn't one, which any program running as you
+    /// could put there.
+    private static func width(_ value: Any?) -> Double? {
+        (value as? Double).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     }
 
     var engineConfiguration: PulseEngine.Configuration {
@@ -497,6 +508,7 @@ enum SettingsKey {
     static let sprintTeam = "ado.sprintTeam"
     static let sprintJustMine = "ado.sprintJustMine"
     static let sprintDetailsWidth = "ado.sprintDetailsWidth"
+    static let pullRequestDetailsWidth = "ado.pullRequestDetailsWidth"
     static let pinnedPipelines = "ado.pinnedPipelines"
     static let copilotEnabled = "ado.copilot.enabled"
     static let copilotOptions = "ado.copilot.options"
