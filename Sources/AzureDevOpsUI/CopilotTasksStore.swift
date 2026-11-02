@@ -479,6 +479,7 @@ final class CopilotTasksStore: ObservableObject {
         case .couldntStart?: return "Copilot couldn't start"
         case .openInApp?: return "the Copilot app has the session open"
         case .sharedCheckout?: return "another session works in the checkout"
+        case .cantFork?: return "the Copilot CLI didn't fork the session"
         case nil: return "unexpected error"
         }
     }

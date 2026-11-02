@@ -47,11 +47,16 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
     /// of BriefBar's: BriefBar never removes that folder, and goes on with it in the app rather than in Terminal. Nil
     /// otherwise, as runs that BriefBar kept before it had this were.
     public var isAppSession: Bool?
+    /// The session it forked, when it works in a fork of one, a new session with that one's whole history, in a worktree of
+    /// its own (`CopilotLauncher.Request.forking`): its ID, to say so, and not to read anything by, unless it's checked to be
+    /// a session's. Nil otherwise, as runs that BriefBar kept before it had this were.
+    public var forkedFrom: String?
 
     public init(
         id: String, workItem: WorkItemReference?, onPullRequest: PullRequestReference? = nil, action: PullRequestAction? = nil,
         options: CopilotRunOptions, repository: URL, worktree: URL, startedAt: Date, process: DetachedProgram.Handle,
-        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil
+        ended: RunPhase? = nil, pullRequest: URL? = nil, stoppedByYou: Bool? = nil, isAppSession: Bool? = nil,
+        forkedFrom: String? = nil
     ) {
         self.id = id
         self.workItem = workItem
@@ -66,6 +71,7 @@ public struct CopilotRun: Sendable, Codable, Equatable, Identifiable {
         self.pullRequest = pullRequest
         self.stoppedByYou = stoppedByYou
         self.isAppSession = isAppSession
+        self.forkedFrom = forkedFrom
     }
 
     /// Its ID is a session's, as BriefBar writes them: a lowercase UUID, which can't step out of a folder; and it's for a

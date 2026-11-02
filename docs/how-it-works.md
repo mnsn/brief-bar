@@ -1598,6 +1598,38 @@ its `config.json`). The CLI gives a worktree of a repository you trust the same 
 more: a worktree of one you don't trust loads only your own configuration. BriefBar doesn't pass
 `--trust-folder`: the CLI refuses it with `--session-id`, and wouldn't start.
 
+**Forking a session, and asking one a side question.** Nothing offers these yet: the pull request panel will
+(`CopilotLauncher.Request.forking`, `SessionQuestions`). The Copilot CLI's `/fork` and `/ask` are commands of its
+terminal: with `-p`, tried with 1.0.105, they're words sent to the model, and join the session's history. So BriefBar
+asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts `copilot --headless --stdio` with your
+shell's environment, responsible for itself (`RunningProgram`), and sends it JSON-RPC requests, each after a
+`Content-Length` header. It refuses whatever the server asks of it, ignores what it says unasked, and ends its input
+once it's done, which ends it, or ends it five seconds later.
+
+- **A fork** (`sessions.fork`) is a new session with the session's whole history, as the CLI saved it: it takes a
+  moment, and no request to the model. The session itself stays as it was, even while it works or the Copilot app has
+  it open; the CLI only leaves an empty `.workspace-fork.lock` in its folder, as its own `/fork` does. A task in a fork
+  gets a worktree of its own, `copilot-worktrees/<repository>/wi-<id>-fork` or `pr-<id>-fork`, detached at the commit
+  the session's checkout has, when the repository has that commit too, as its worktrees do (`Git.head(of:in:)`); for a
+  session that works elsewhere, such as a folder of repositories, where a new task's worktree would start. What the
+  session changed without committing stays in its checkout, as with the CLI's `/fork worktree`. The fork is named for
+  the task, and the CLI goes on with it as with any session that's there: its `--session-id`, without `--name`, in that
+  worktree, which it works in from then on. If the worktree can't be made, or Copilot can't start, the fork is deleted
+  (`session.delete`).
+- **A side question** (`session.ui.ephemeralQuery`) is what `/ask` sends: one request to the model, with the session's
+  conversation and no tools, which neither the question nor the answer joins. Asked of the session itself, the CLI would
+  have to open it, and its log records both, among the model's calls. So BriefBar asks a fork of it instead, `BriefBar
+  question`, opened with no tools, without your skills, MCP servers or plugins, and with the model you choose or else
+  the session's own, and deletes the fork once it's answered, failed or been cancelled: a fork that's been asked for is
+  waited for, even once the question's cancelled, so that it can be deleted, and one the server can't delete, having
+  ended, another one does. The session's log and `workspace.yaml` stay as they were, byte for byte, and it can be asked
+  while it works, or while the Copilot app has it open.
+
+Forking with an older CLI can change the session it forks: tried on a session that 1.0.105 wrote, 1.0.78 added a line
+to its log, and 1.0.87 replaced the whole log with that line. 1.0.95, 1.0.99, 1.0.102, 1.0.103 and 1.0.105 left it as it
+was, so BriefBar forks nothing with a CLI older than 1.0.95, as the server's `connect` says
+(`CopilotServer.forksSafelyFrom`).
+
 **Following it.** Copilot logs the session to `~/.copilot/session-state/<id>/events.jsonl` (under
 `COPILOT_HOME`, if your shell sets it), as for the app's sessions, and BriefBar reads it the same way
 ([below](#how-a-status-is-decided)), every three seconds while a task runs, and not at all otherwise or

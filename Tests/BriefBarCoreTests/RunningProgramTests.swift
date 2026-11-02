@@ -144,6 +144,65 @@ import Testing
         #expect(!program.inputState.isOpen)
     }
 
+    /// A program that frames what it writes itself, such as the Copilot CLI's server, whose messages say how long they
+    /// are and end with no newline: it's heard as it writes, and written to as BriefBar writes, without a newline added.
+    @Test(.timeLimit(.minutes(1)))
+    func talksToAProgramThatFramesItsOwnMessages() async throws {
+        let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
+        let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
+        let program = try RunningProgram.start(
+            URL(fileURLWithPath: "/bin/cat"), callbackQueue: DispatchQueue(label: "RunningProgramTests"),
+            onOutput: { chunkSink.yield($0) },
+            onExit: { status in
+                chunkSink.finish()
+                exitSink.yield(status)
+                exitSink.finish()
+            }
+        )
+        let message = Data("Content-Length: 2\r\n\r\n{}".utf8)
+        program.write(message)
+        var heard = Data()
+        var iterator = chunks.makeAsyncIterator()
+        // No newline ends it, and it's heard all the same.
+        while heard.count < message.count, let chunk = await iterator.next() {
+            heard += chunk
+        }
+        #expect(heard == message)
+        program.write(Data("é".utf8))
+        program.send(Data("line".utf8))
+        program.closeInput()
+        while let chunk = await iterator.next() {
+            heard += chunk
+        }
+        #expect(String(decoding: heard, as: UTF8.self) == "Content-Length: 2\r\n\r\n{}éline\n")
+        var exitIterator = exits.makeAsyncIterator()
+        #expect(await exitIterator.next() == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deliversEverythingAProgramWritesBeforeItsExit() async throws {
+        let (chunks, chunkSink) = AsyncStream.makeStream(of: Data.self)
+        let (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
+        _ = try RunningProgram.start(
+            URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "printf 'one'; head -c 100000 /dev/zero | tr '\\0' a; printf 'end'; exit 4"],
+            callbackQueue: DispatchQueue(label: "RunningProgramTests"), onOutput: { chunkSink.yield($0) },
+            onExit: { status in
+                chunkSink.finish()
+                exitSink.yield(status)
+                exitSink.finish()
+            }
+        )
+        var heard = Data()
+        for await chunk in chunks {
+            heard += chunk
+        }
+        // Nothing is dropped, however long, nor split anywhere but where it came.
+        #expect(heard.count == 100_006)
+        #expect(heard.prefix(3) == Data("one".utf8) && heard.suffix(3) == Data("end".utf8))
+        var exitIterator = exits.makeAsyncIterator()
+        #expect(await exitIterator.next() == 4)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func writingToAProgramThatStoppedReadingFailsQuietly() async throws {
         let recorder = Recorder()

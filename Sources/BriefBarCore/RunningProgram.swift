@@ -3,7 +3,8 @@ import Foundation
 import os
 
 /// A program that runs alongside BriefBar until it quits, such as its updater, with a pipe to its standard input
-/// and one from its standard output; its standard error goes nowhere. It runs in a process group of its own, with
+/// and one from its standard output, which it hears line by line, or as it comes for a program that frames what it
+/// writes itself; its standard error goes nowhere. It runs in a process group of its own, with
 /// no other open descriptors. Like every program BriefBar starts, it's responsible for itself (see
 /// `Responsibility`), and here that's checked before any of its code runs: it starts suspended, and a program that
 /// macOS doesn't hold responsible for itself, and that could use BriefBar's privacy permissions, is ended instead, and
@@ -16,9 +17,8 @@ public final class RunningProgram: @unchecked Sendable {
     private let writeQueue = DispatchQueue(label: "BriefBar.RunningProgram.input")
     private var input: Int32
     private let output: Int32
-    private let maxLineLength: Int
+    private let delivery: Delivery
     private let callbackQueue: DispatchQueue
-    private let onLine: @Sendable (Data) -> Void
     private let onExit: @Sendable (Int32) -> Void
     private var pending = Data()
     private var skippingLine = false
@@ -26,6 +26,14 @@ public final class RunningProgram: @unchecked Sendable {
     private var exitWatch: DispatchSourceProcess?
     private var status: Int32?
     private var finished = false
+
+    /// How what it writes reaches BriefBar.
+    private enum Delivery {
+        /// Line by line, without the newline; lines longer than `maxLength` are dropped.
+        case lines(maxLength: Int, onLine: @Sendable (Data) -> Void)
+        /// As it comes, in pieces of any size, in order: for a program that frames what it writes itself.
+        case chunks(@Sendable (Data) -> Void)
+    }
 
     /// Starts a program.
     /// - Parameters:
@@ -37,6 +45,33 @@ public final class RunningProgram: @unchecked Sendable {
     public static func start(
         _ executable: URL, arguments: [String] = [], environment: [String: String]? = nil, maxLineLength: Int = 16_384,
         callbackQueue: DispatchQueue = .main, onLine: @escaping @Sendable (Data) -> Void,
+        onExit: @escaping @Sendable (Int32) -> Void
+    ) throws -> RunningProgram {
+        try start(
+            executable, arguments: arguments, environment: environment, delivery: .lines(maxLength: maxLineLength, onLine: onLine),
+            callbackQueue: callbackQueue, onExit: onExit
+        )
+    }
+
+    /// Starts a program whose output BriefBar hears as it comes, rather than line by line: for one that frames what it
+    /// writes itself, such as a server whose messages each say how long they are.
+    /// - Parameters:
+    ///   - environment: its environment; BriefBar's when nil.
+    ///   - onOutput: what it writes, in pieces of any size, in order, on `callbackQueue`.
+    ///   - onExit: once it has exited, its exit status (or the signal that ended it), on `callbackQueue`, after the last
+    ///     of its output.
+    public static func start(
+        _ executable: URL, arguments: [String] = [], environment: [String: String]? = nil, callbackQueue: DispatchQueue = .main,
+        onOutput: @escaping @Sendable (Data) -> Void, onExit: @escaping @Sendable (Int32) -> Void
+    ) throws -> RunningProgram {
+        try start(
+            executable, arguments: arguments, environment: environment, delivery: .chunks(onOutput), callbackQueue: callbackQueue,
+            onExit: onExit
+        )
+    }
+
+    private static func start(
+        _ executable: URL, arguments: [String], environment: [String: String]?, delivery: Delivery, callbackQueue: DispatchQueue,
         onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> RunningProgram {
         var toProgram: [Int32] = [-1, -1]
@@ -114,8 +149,7 @@ public final class RunningProgram: @unchecked Sendable {
         _ = fcntl(toProgram[1], F_SETNOSIGPIPE, 1)
 
         let program = RunningProgram(
-            pid: pid, input: toProgram[1], output: fromProgram[0], maxLineLength: maxLineLength,
-            callbackQueue: callbackQueue, onLine: onLine, onExit: onExit
+            pid: pid, input: toProgram[1], output: fromProgram[0], delivery: delivery, callbackQueue: callbackQueue, onExit: onExit
         )
         program.queue.sync { program.watch() }
         kill(pid, SIGCONT)
@@ -123,15 +157,14 @@ public final class RunningProgram: @unchecked Sendable {
     }
 
     private init(
-        pid: pid_t, input: Int32, output: Int32, maxLineLength: Int, callbackQueue: DispatchQueue,
-        onLine: @escaping @Sendable (Data) -> Void, onExit: @escaping @Sendable (Int32) -> Void
+        pid: pid_t, input: Int32, output: Int32, delivery: Delivery, callbackQueue: DispatchQueue,
+        onExit: @escaping @Sendable (Int32) -> Void
     ) {
         self.pid = pid
         self.input = input
         self.output = output
-        self.maxLineLength = maxLineLength
+        self.delivery = delivery
         self.callbackQueue = callbackQueue
-        self.onLine = onLine
         self.onExit = onExit
     }
 
@@ -141,13 +174,17 @@ public final class RunningProgram: @unchecked Sendable {
 
     /// Writes a line to it, adding the newline. Once it's gone, or its input is closed, nothing happens.
     public func send(_ line: Data) {
-        let data = line + Data([UInt8(ascii: "\n")])
+        write(line + Data([UInt8(ascii: "\n")]))
+    }
+
+    /// Writes to it, as it is, after what was written before. Once it's gone, or its input is closed, nothing happens.
+    public func write(_ data: Data) {
         writeQueue.async { [self] in
-            guard input >= 0 else { return }
+            guard input >= 0, !data.isEmpty else { return }
             let complete = data.withUnsafeBytes { bytes -> Bool in
                 var offset = 0
                 while offset < bytes.count {
-                    let written = write(input, bytes.baseAddress! + offset, bytes.count - offset)
+                    let written = Darwin.write(input, bytes.baseAddress! + offset, bytes.count - offset)
                     if written > 0 {
                         offset += written
                     } else if written < 0 && errno == EINTR {
@@ -219,8 +256,19 @@ public final class RunningProgram: @unchecked Sendable {
         }
     }
 
-    /// Delivers what it wrote line by line, dropping lines that are too long.
+    /// Delivers what it wrote: as it came, or line by line, dropping lines that are too long.
     private func take(_ bytes: ArraySlice<UInt8>) {
+        let maxLineLength: Int
+        let onLine: @Sendable (Data) -> Void
+        switch delivery {
+        case .chunks(let onOutput):
+            let chunk = Data(bytes)
+            callbackQueue.async { onOutput(chunk) }
+            return
+        case .lines(let maxLength, let deliver):
+            maxLineLength = maxLength
+            onLine = deliver
+        }
         pending.append(contentsOf: bytes)
         while let newline = pending.firstIndex(of: UInt8(ascii: "\n")) {
             let line = Data(pending[pending.startIndex..<newline])
@@ -228,7 +276,7 @@ public final class RunningProgram: @unchecked Sendable {
             if skippingLine {
                 skippingLine = false
             } else if line.count <= maxLineLength {
-                callbackQueue.async { [onLine] in onLine(line) }
+                callbackQueue.async { onLine(line) }
             }
         }
         if pending.count > maxLineLength {

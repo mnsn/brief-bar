@@ -97,8 +97,9 @@ Sources/GitHubCore/            GitHub: sign-in with the GitHub CLI, the client (
 Sources/CopilotCore/           the Copilot app's database and event logs, and session statuses
 Sources/CopilotTasks/          Send Work to Copilot: the prompt, your login shell's environment, finding
                                the Copilot CLI, the git worktree, starting a run and following it from
-                               its session log; and BriefBar, and its plugin, among the CLI's MCP servers
-                               and plugins
+                               its session log, and forking a session or asking one a side question
+                               through the CLI's server; and BriefBar, and its plugin, among the CLI's MCP
+                               servers and plugins
 Sources/BriefBarUI/            shared app code: the source protocol, menu-bar drawing, desktop widgets,
                                the windows' look, the notifier, Full Disk Access, the on-device model,
                                Launch at Login, and the agents' server (--mcp)
