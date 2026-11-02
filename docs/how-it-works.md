@@ -1611,7 +1611,8 @@ asks the CLI's server, as the Copilot SDK does (`CopilotServer`): it starts `cop
 shell's environment, responsible for itself (`RunningProgram`), and sends it JSON-RPC requests, each after a
 `Content-Length` header. It refuses whatever the server asks of it, ignores what it says unasked, and ends its input
 once it's done, which ends it; once it has quit, or five seconds later if it hasn't, its whole process group is asked to
-stop, and two seconds later made to, so nothing it started stays behind (`RunningProgram.end(grace:)`).
+stop, and two seconds later made to, as it is when the server quits by itself first, so that nothing it started stays
+behind (`RunningProgram.end(grace:)`, `endsWhatItStartedWhenItQuits`).
 
 - **A fork** (`sessions.fork`) is a new session with the session's whole history, as the CLI saved it: it takes a
   moment, and no request to the model. The session itself stays as it was, even while it works or the Copilot app has

@@ -276,6 +276,35 @@ import Testing
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
     }
 
+    /// One that quits by itself before it's closed, rather than when its input ends, takes what it started along all the
+    /// same, even what ignores being asked to stop.
+    @Test(.timeLimit(.minutes(1)))
+    func endsWhatTheServerStartedWhenItQuitsByItself() async throws {
+        let folder = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let copilot = folder.appendingPathComponent("copilot")
+        let childFile = folder.appendingPathComponent("child")
+        // What it starts says who it is once it ignores being asked to stop, and then the server quits.
+        try """
+            #!/bin/sh
+            /bin/sh -c 'trap "" TERM; echo $$ > "$CHILD"; exec > /dev/null; while :; do sleep 1; done' &
+            while [ ! -s "$CHILD" ]; do sleep 0.05; done
+            exit 5
+
+            """.write(to: copilot, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copilot.path)
+        let server = try CopilotServer.start(copilot, environment: ["PATH": "/usr/bin:/bin", "CHILD": childFile.path], grace: 0.3)
+        await #expect(throws: CopilotServer.Failure.exited(5)) { try await server.connectForForking(timeout: 20) }
+        let child = (try? String(contentsOf: childFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let pid = try #require(child)
+        // Without being closed, what it started is made to stop.
+        for _ in 0..<400 where kill(pid, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(kill(pid, 0) == -1 && errno == ESRCH)
+        #expect(await server.close() == 5)
+    }
+
     /// One that ignores both its input ending and being asked to stop, while BriefBar waits for a fork it may have made,
     /// is made to stop, and nothing waits for it any longer.
     @Test(.timeLimit(.minutes(1)))

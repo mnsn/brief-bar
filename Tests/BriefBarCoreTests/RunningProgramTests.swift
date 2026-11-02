@@ -16,10 +16,12 @@ import Testing
             (exits, exitSink) = AsyncStream.makeStream(of: Int32.self)
         }
 
-        func start(_ path: String, _ arguments: [String] = [], maxLineLength: Int = 16_384) throws -> RunningProgram {
+        func start(
+            _ path: String, _ arguments: [String] = [], maxLineLength: Int = 16_384, endsWhatItStartedWhenItQuits: Bool = false
+        ) throws -> RunningProgram {
             try RunningProgram.start(
                 URL(fileURLWithPath: path), arguments: arguments, maxLineLength: maxLineLength,
-                callbackQueue: DispatchQueue(label: "RunningProgramTests"),
+                endsWhatItStartedWhenItQuits: endsWhatItStartedWhenItQuits, callbackQueue: DispatchQueue(label: "RunningProgramTests"),
                 onLine: { [lineSink] in lineSink.yield(String(decoding: $0, as: UTF8.self)) },
                 onExit: { [lineSink, exitSink] status in
                     lineSink.finish()
@@ -254,6 +256,41 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(kill(child, 0) == -1 && errno == ESRCH)
+    }
+
+    /// A program that quits by itself, without being ended, takes what it started along, even what ignores being asked to
+    /// stop, when it's started to, as the Copilot CLI's server is; otherwise what it started is left alone, as the
+    /// updater's is.
+    @Test(.timeLimit(.minutes(1)), arguments: [true, false])
+    func endsWhatItStartedWhenItQuitsByItselfOnlyIfStartedTo(_ endsWhatItStarted: Bool) async throws {
+        let recorder = Recorder()
+        // What it starts says who it is once it ignores being asked to stop, then doesn't hold the output open. The
+        // program quits once it reads a line, by itself, its input still open.
+        let program = try recorder.start(
+            "/bin/sh", ["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec > /dev/null; while :; do sleep 1; done' & read line; exit 3"],
+            endsWhatItStartedWhenItQuits: endsWhatItStarted
+        )
+        var lines = recorder.lines.makeAsyncIterator()
+        let child = try #require(await lines.next().flatMap { pid_t($0) })
+        program.send(Data("quit".utf8))
+        var exits = recorder.exits.makeAsyncIterator()
+        #expect(await exits.next() == 3)
+        if endsWhatItStarted {
+            for _ in 0..<400 where kill(child, 0) == 0 {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(kill(child, 0) == -1 && errno == ESRCH)
+            // And it's reaped then, leaving no zombie.
+            for _ in 0..<400 where kill(program.pid, 0) == 0 {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(kill(program.pid, 0) == -1 && errno == ESRCH)
+        } else {
+            // Longer than what it started would have been given to stop.
+            try await Task.sleep(for: .milliseconds(2500))
+            #expect(kill(child, 0) == 0)
+            kill(child, SIGKILL)
+        }
     }
 
     /// Ended again and again, as it ends and after, it's still reaped once it's gone, and leaves no zombie.

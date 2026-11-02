@@ -8,7 +8,8 @@ import Synchronization
 /// 2.0 requests over its standard input and output, each message after a `Content-Length` header, as the Copilot SDK
 /// sends them (its protocol version 3). Nothing else is asked of it: what it asks of BriefBar, such as for permission,
 /// is refused, and what it says unasked is ignored. It runs as a `RunningProgram`, responsible for itself, with your
-/// environment, until it's closed: it quits once its input ends.
+/// environment, until it's closed: it quits once its input ends. Nothing it starts outlives it, even once it quits by
+/// itself.
 final class CopilotServer: Sendable {
     /// What `copilot` is started with.
     static let arguments = ["--headless", "--stdio"]
@@ -155,8 +156,9 @@ final class CopilotServer: Sendable {
         defer { server.queue.resume() }
         do {
             let program = try RunningProgram.start(
-                copilot, arguments: arguments, environment: environment, callbackQueue: server.queue,
-                onOutput: { [weak server] in server?.heard($0) }, onExit: { [weak server] in server?.exited(status: $0) }
+                copilot, arguments: arguments, environment: environment, endsWhatItStartedWhenItQuits: true,
+                callbackQueue: server.queue, onOutput: { [weak server] in server?.heard($0) },
+                onExit: { [weak server] in server?.exited(status: $0) }
             )
             server.program.withLock { $0 = program }
         } catch {

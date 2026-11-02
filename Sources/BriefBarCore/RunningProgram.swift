@@ -4,11 +4,12 @@ import os
 
 /// A program that runs alongside BriefBar until it quits, such as its updater, with a pipe to its standard input
 /// and one from its standard output, which it hears line by line, or as it comes for a program that frames what it
-/// writes itself; its standard error goes nowhere. It runs in a process group of its own, with
-/// no other open descriptors. Like every program BriefBar starts, it's responsible for itself (see
-/// `Responsibility`), and here that's checked before any of its code runs: it starts suspended, and a program that
-/// macOS doesn't hold responsible for itself, and that could use BriefBar's privacy permissions, is ended instead, and
-/// `start` throws. Its input ends when `closeInput()` is called or BriefBar quits, which tells it to quit.
+/// writes itself; its standard error goes nowhere. It runs in a process group of its own, with no other open
+/// descriptors: what it starts there is ended with it when it's ended (`end(grace:)`), and, if it was started so, when
+/// it quits by itself too (`endsWhatItStartedWhenItQuits`). Like every program BriefBar starts, it's responsible for
+/// itself (see `Responsibility`), and here that's checked before any of its code runs: it starts suspended, and a
+/// program that macOS doesn't hold responsible for itself, and that could use BriefBar's privacy permissions, is ended
+/// instead, and `start` throws. Its input ends when `closeInput()` is called or BriefBar quits, which tells it to quit.
 public final class RunningProgram: @unchecked Sendable {
     public let pid: pid_t
     /// Reading its output and collecting its exit happen on `queue`; writing to it on `writeQueue`, so that a
@@ -20,6 +21,8 @@ public final class RunningProgram: @unchecked Sendable {
     private let delivery: Delivery
     private let callbackQueue: DispatchQueue
     private let onExit: @Sendable (Int32) -> Void
+    /// Once it quits by itself, what's left of its process group is made to stop too, as when it's ended.
+    private let endsWhatItStartedWhenItQuits: Bool
     private var pending = Data()
     private var skippingLine = false
     private var reading: DispatchSourceRead?
@@ -27,8 +30,9 @@ public final class RunningProgram: @unchecked Sendable {
     private var status: Int32?
     /// It was reaped: from then on, its process group's number can be another's, so nothing is sent to it.
     private var reaped = false
-    /// It's being ended, with whatever it started (`end(grace:)`): it isn't reaped until they've been made to stop, so that
-    /// its group's number stays its own.
+    /// It's being ended, with whatever it started (`end(grace:)`), or has quit by itself and takes that along
+    /// (`endsWhatItStartedWhenItQuits`): it isn't reaped until they've been made to stop, so that its group's number stays
+    /// its own.
     private var ending = false
     /// Its process group was asked to stop, as it's ended.
     private var askedGroup = false
@@ -46,17 +50,20 @@ public final class RunningProgram: @unchecked Sendable {
     /// - Parameters:
     ///   - environment: its environment; BriefBar's when nil.
     ///   - maxLineLength: lines it writes that are longer are dropped.
+    ///   - endsWhatItStartedWhenItQuits: once it quits by itself, what's left of its process group is asked to stop, and
+    ///     two seconds later made to, as when it's ended (`end(grace:)`): for a program nothing it starts should outlive.
+    ///     Otherwise, what it started is left alone then.
     ///   - onLine: each line it writes, without the newline, on `callbackQueue`.
     ///   - onExit: once it has exited, its exit status (or the signal that ended it), on `callbackQueue`, after its
     ///     last line.
     public static func start(
         _ executable: URL, arguments: [String] = [], environment: [String: String]? = nil, maxLineLength: Int = 16_384,
-        callbackQueue: DispatchQueue = .main, onLine: @escaping @Sendable (Data) -> Void,
-        onExit: @escaping @Sendable (Int32) -> Void
+        endsWhatItStartedWhenItQuits: Bool = false, callbackQueue: DispatchQueue = .main,
+        onLine: @escaping @Sendable (Data) -> Void, onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> RunningProgram {
         try start(
             executable, arguments: arguments, environment: environment, delivery: .lines(maxLength: maxLineLength, onLine: onLine),
-            callbackQueue: callbackQueue, onExit: onExit
+            endsWhatItStartedWhenItQuits: endsWhatItStartedWhenItQuits, callbackQueue: callbackQueue, onExit: onExit
         )
     }
 
@@ -64,22 +71,26 @@ public final class RunningProgram: @unchecked Sendable {
     /// writes itself, such as a server whose messages each say how long they are.
     /// - Parameters:
     ///   - environment: its environment; BriefBar's when nil.
+    ///   - endsWhatItStartedWhenItQuits: once it quits by itself, what's left of its process group is asked to stop, and
+    ///     two seconds later made to, as when it's ended (`end(grace:)`): for a program nothing it starts should outlive.
+    ///     Otherwise, what it started is left alone then.
     ///   - onOutput: what it writes, in pieces of any size, in order, on `callbackQueue`.
     ///   - onExit: once it has exited, its exit status (or the signal that ended it), on `callbackQueue`, after the last
     ///     of its output.
     public static func start(
-        _ executable: URL, arguments: [String] = [], environment: [String: String]? = nil, callbackQueue: DispatchQueue = .main,
+        _ executable: URL, arguments: [String] = [], environment: [String: String]? = nil,
+        endsWhatItStartedWhenItQuits: Bool = false, callbackQueue: DispatchQueue = .main,
         onOutput: @escaping @Sendable (Data) -> Void, onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> RunningProgram {
         try start(
-            executable, arguments: arguments, environment: environment, delivery: .chunks(onOutput), callbackQueue: callbackQueue,
-            onExit: onExit
+            executable, arguments: arguments, environment: environment, delivery: .chunks(onOutput),
+            endsWhatItStartedWhenItQuits: endsWhatItStartedWhenItQuits, callbackQueue: callbackQueue, onExit: onExit
         )
     }
 
     private static func start(
-        _ executable: URL, arguments: [String], environment: [String: String]?, delivery: Delivery, callbackQueue: DispatchQueue,
-        onExit: @escaping @Sendable (Int32) -> Void
+        _ executable: URL, arguments: [String], environment: [String: String]?, delivery: Delivery,
+        endsWhatItStartedWhenItQuits: Bool, callbackQueue: DispatchQueue, onExit: @escaping @Sendable (Int32) -> Void
     ) throws -> RunningProgram {
         var toProgram: [Int32] = [-1, -1]
         var fromProgram: [Int32] = [-1, -1]
@@ -156,7 +167,8 @@ public final class RunningProgram: @unchecked Sendable {
         _ = fcntl(toProgram[1], F_SETNOSIGPIPE, 1)
 
         let program = RunningProgram(
-            pid: pid, input: toProgram[1], output: fromProgram[0], delivery: delivery, callbackQueue: callbackQueue, onExit: onExit
+            pid: pid, input: toProgram[1], output: fromProgram[0], delivery: delivery,
+            endsWhatItStartedWhenItQuits: endsWhatItStartedWhenItQuits, callbackQueue: callbackQueue, onExit: onExit
         )
         program.queue.sync { program.watch() }
         kill(pid, SIGCONT)
@@ -164,13 +176,14 @@ public final class RunningProgram: @unchecked Sendable {
     }
 
     private init(
-        pid: pid_t, input: Int32, output: Int32, delivery: Delivery, callbackQueue: DispatchQueue,
-        onExit: @escaping @Sendable (Int32) -> Void
+        pid: pid_t, input: Int32, output: Int32, delivery: Delivery, endsWhatItStartedWhenItQuits: Bool,
+        callbackQueue: DispatchQueue, onExit: @escaping @Sendable (Int32) -> Void
     ) {
         self.pid = pid
         self.input = input
         self.output = output
         self.delivery = delivery
+        self.endsWhatItStartedWhenItQuits = endsWhatItStartedWhenItQuits
         self.callbackQueue = callbackQueue
         self.onExit = onExit
     }
@@ -322,9 +335,9 @@ public final class RunningProgram: @unchecked Sendable {
         }
     }
 
-    /// Reads its exit status once it has exited, without reaping it, then reaps it unless it's being ended
-    /// (`reapIfDone`). It waits for that: the exit can be reported a moment before the status can be read, and isn't
-    /// reported again.
+    /// Reads its exit status once it has exited, without reaping it, then reaps it unless it's being ended, or what it
+    /// started goes with it (`reapIfDone`). It waits for that: the exit can be reported a moment before the status can be
+    /// read, and isn't reported again.
     private func noteExit() {
         guard status == nil else { return }
         var info = siginfo_t()
@@ -336,7 +349,9 @@ public final class RunningProgram: @unchecked Sendable {
         exitWatch?.cancel()
         // Exited normally: its exit code. Ended by a signal: the signal.
         status = info.si_code == CLD_EXITED ? info.si_status & 0xff : info.si_status & 0x7f
-        // Being ended, what it started is asked to stop now that it has quit.
+        // Being ended, or quitting by itself when what it started goes with it, what it started is asked to stop now that
+        // it has quit. Once its group has been asked, it's reaped when they've been made to, and isn't ended again.
+        if endsWhatItStartedWhenItQuits, !askedGroup { ending = true }
         if ending { stopGroup() }
         reapIfDone()
         closeInput()
