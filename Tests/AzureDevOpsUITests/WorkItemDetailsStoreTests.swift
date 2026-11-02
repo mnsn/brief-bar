@@ -67,8 +67,8 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
 
     private struct NoTokens: AccessTokenProvider {
         struct Unused: Error {}
-        func token() async throws -> AccessToken { throw Unused() }
-        func invalidate() async {}
+        func token(tenant: String?) async throws -> AccessToken { throw Unused() }
+        func invalidate(tenant: String?) async {}
     }
 
     /// A clock the tests move.

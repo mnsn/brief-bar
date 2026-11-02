@@ -74,7 +74,7 @@ public enum Diagnostics {
         }
         lines.append("  Folders: " + (folders.isEmpty ? "none" : folders.joined(separator: ", ")))
         lines.append("  Conversation stores: \(report.stores), conversations: \(report.conversations), "
-            + "chats with a read marker: \(report.withMarker)")
+            + "chats with a read marker: \(report.withMarker), conversations with a read marker field: \(report.withHorizon)")
         for (format, count) in report.formats.sorted(by: { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }) {
             lines.append("  \(count) x \(format)")
         }
