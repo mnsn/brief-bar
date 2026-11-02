@@ -427,6 +427,52 @@ private func text(_ excerpt: ThreadExcerpt?) -> [String] {
         #expect(excerpt.lines.first { $0.isCommented }?.text == "line two")
     }
 
+    @Test func findsAThreadsFileByItsTrackingIDThenWhereItIsNow() async throws {
+        let server = codeServer()
+        // The file at /src/Payments.cs moved to /src/Billing.cs, and another was added in its place.
+        server.on("/iterations/2/changes", query: ["$compareTo": "0"], json: CodeFixture.changes([
+            CodeFixture.change("/src/Billing.cs", "rename", objectId: "base", original: "base", tracking: 1, originalPath: "/src/Payments.cs"),
+            CodeFixture.change("/src/Payments.cs", "add", objectId: "fresh", tracking: 2),
+        ]))
+        server.on("/blobs/fresh") { _ in CodeFixture.file("fresh\n") }
+        let code = PullRequestCode(pr, client: server.client())
+        let tracked = try await code.excerpt(of: CodeFixture.thread(21, at: CodeFixture.location(right: 1...1, madeOn: (2, 2), tracking: 2)),
+                                             in: pr).get()
+        #expect(text(tracked) == [">+fresh"])
+        let untracked = try await code.excerpt(
+            of: CodeFixture.thread(22, at: CodeFixture.location(right: 1...1, madeOn: (2, 2), tracking: nil)), in: pr
+        ).get()
+        #expect(text(untracked) == [">+fresh"])
+        let moved = try await code.excerpt(of: CodeFixture.thread(23, at: CodeFixture.location(right: 1...1, madeOn: (2, 2), tracking: 1)),
+                                           in: pr).get()
+        #expect(moved.path == "/src/Billing.cs")
+        #expect(moved.originalPath == "/src/Payments.cs")
+    }
+
+    @Test func saysWhenItCantTellAmongMoreFilesThanItReads() async throws {
+        let server = codeServer()
+        // Pages of one file each, for as long as it reads them; each file with a tracking ID of its own.
+        for (iteration, comparedTo) in [(1, 0), (2, 1)] {
+            server.on("/iterations/\(iteration)/changes", query: ["$compareTo": String(comparedTo)]) { request in
+                let skip = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first { $0.name == "$skip" }?.value.flatMap { Int($0) } ?? 0
+                let payments = skip == 0 && iteration == 1
+                let change = CodeFixture.change(payments ? "/src/Payments.cs" : "/src/f\(iteration)-\(skip).cs", objectId: "first",
+                                                original: "base", tracking: payments ? 1 : 100 * iteration + skip)
+                return .json(CodeFixture.changes([change], nextSkip: skip + 1))
+            }
+        }
+        let code = PullRequestCode(pr, source: AzureDevOpsCode(client: server.client(), maxPages: 2))
+        // On a file among those read, which changed since unless it's among those left out.
+        let found = try await code.excerpt(of: CodeFixture.thread(21, at: CodeFixture.location(right: 5...5, tracking: nil)), in: pr).get()
+        #expect(found.lines.first { $0.isCommented }?.text == "line five")
+        #expect(found.changedSince == nil)
+        // On one of those left out.
+        let elsewhere = CodeFixture.thread(22, at: CodeFixture.location("/src/Elsewhere.cs", right: 1...1, tracking: nil))
+        #expect(await code.excerpt(of: elsewhere, in: pr) == .failure(.tooManyFiles))
+        #expect(requests(server).filter { $0.hasPrefix("/iterations/1/changes") }.count == 2)
+    }
+
     @Test func showsADeletedFilesLines() async throws {
         let server = codeServer()
         server.on("/iterations/2/changes", query: ["$compareTo": "0"], json: CodeFixture.changes([
@@ -617,9 +663,11 @@ private actor FakeCode: CodeSource {
         return [PRIteration(id: 1, sourceCommit: "abc", commonCommit: "b1")]
     }
 
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> [FileChange] {
+    /// Three files added, and one edited that's now the same as "a".
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
         asked.append("changes")
-        return ["a", "b", "c"].map { (name: String) in FileChange(path: "/\(name).cs", kind: .add, objectId: name) }
+        let added = ["a", "b", "c"].map { (name: String) in FileChange(path: "/\(name).cs", kind: .add, objectId: name) }
+        return FileChanges(files: added + [FileChange(path: "/e.cs", kind: .edit, objectId: "a", originalObjectId: "e1")])
     }
 
     func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
@@ -697,9 +745,9 @@ private actor SwitchingCode: CodeSource {
         return (1...(pullRequest.key.number == 7 ? 1 : 2)).map { PRIteration(id: $0, sourceCommit: "s\($0)", commonCommit: "b") }
     }
 
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> [FileChange] {
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
         asked.append("\(pullRequest.key.number): changes \(iteration) \(comparedTo)")
-        return [FileChange(path: "/a.cs", kind: .add, objectId: "a")]
+        return FileChanges(files: [FileChange(path: "/a.cs", kind: .add, objectId: "a")])
     }
 
     func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
@@ -783,6 +831,28 @@ private actor SwitchingCode: CodeSource {
         }
         // Each read went to the pull request it was for: none of the first's after it was left.
         #expect(await fake.asked.sorted() == ["7: iterations", "8: a", "8: changes 2 0", "8: iterations"])
+    }
+
+    @Test func goesNoFurtherForAThreadThatStoppedWaiting() async throws {
+        let fake = FakeCode()
+        await fake.hold(true)
+        let code = PullRequestCode(pr, source: fake)
+        let stays = Task { await code.excerpt(of: thread(1, "a"), in: pr) }
+        try await waitUntil("a thread waiting on the file") { await code.waiting(.object("a")) == 1 }
+        // A thread on another file that's now the same.
+        let leaves = Task { await code.excerpt(of: thread(2, "e"), in: pr) }
+        try await waitUntil("both threads waiting on the file") { await code.waiting(.object("a")) == 2 }
+        leaves.cancel()
+        try await waitUntil("one thread waiting on the file") { await code.waiting(.object("a")) == 1 }
+        await fake.hold(false)
+        #expect(try await stays.value.get().lines.count == 2)
+        guard case .failure(.unreadable) = await leaves.value else {
+            Issue.record("A thread that stopped waiting still showed its code")
+            return
+        }
+        // What only the thread that stopped waiting needed, the file before the change, wasn't read.
+        #expect(await fake.count("e1") == 0)
+        #expect(await fake.count("a") == 1)
     }
 
     @Test func forgetsTheFilesReadFirstPastTheMemoryItMayUse() async throws {

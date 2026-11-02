@@ -1085,23 +1085,28 @@ private enum MarkdownReader {
     // MARK: HTML in Markdown
 
     /// The lines without the HTML comments that start a line and end on a later one, which show nothing, as bots leave
-    /// them in their comments; what follows the end of one stays. Code keeps them, and a comment that ends on the line it
-    /// starts goes with the rest of the line's inline HTML.
+    /// them in their comments, even with blank lines in them; what follows the end of one stays. Code keeps them: a fenced
+    /// block, which ends as the block reader ends it, and an indented one, tabs counted as the columns they reach. A
+    /// comment that ends on the line it starts goes with the rest of the line's inline HTML.
     static func droppingHTMLComments(_ lines: [String]) -> [String] {
         var kept: [String] = []
-        var fence: String?
+        /// The fence of the code block it's in, and how far that's indented.
+        var fence: (mark: String, indent: Int)?
         var index = 0
         while index < lines.count {
             let line = lines[index]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let expanded = expandingIndentation(line)
+            let indent = expanded.prefix { $0 == " " }.count
+            let trimmed = expanded.trimmingCharacters(in: .whitespaces)
             index += 1
             if let open = fence {
-                if trimmed.count >= open.count, trimmed.allSatisfy({ $0 == open.first }) { fence = nil }
+                // As far into what it's in as its opening fence may be, three columns, or less: further, it's code.
+                if closes(open.mark, expanded, indentedUpTo: open.indent + 3) { fence = nil }
                 kept.append(line)
             } else if let mark = Self.fence(trimmed) {
-                fence = mark
+                fence = (mark, indent)
                 kept.append(line)
-            } else if trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->"), line.prefix(while: { $0 == " " }).count < 4 {
+            } else if indent < 4, trimmed.hasPrefix("<!--"), !trimmed.dropFirst(4).contains("-->") {
                 while index < lines.count, !lines[index].contains("-->") { index += 1 }
                 if index < lines.count, let end = lines[index].range(of: "-->") {
                     let rest = String(lines[index][end.upperBound...])
@@ -1117,7 +1122,8 @@ private enum MarkdownReader {
 
     /// Inline Markdown with `transform` applied to its text outside code spans, reading from left to right as CommonMark
     /// does: a run of backticks starts a code span, which the next run of as many ends, and an HTML comment goes on to its
-    /// end, whatever looks like code in it. Without a run to end it, or after a backslash, backticks are just backticks.
+    /// end, whatever looks like code in it. Without a run to end it, or after a backslash, backticks are just backticks,
+    /// and a bracket after a backslash starts no tag: it goes to the Markdown reader as it is, which shows it.
     static func outsideCode(_ text: String, _ transform: (Substring) -> String) -> String {
         guard text.contains("<") else { return text }
         // The runs of backticks, outside backslashes' escapes, in order.
@@ -1160,8 +1166,15 @@ private enum MarkdownReader {
                     index = run.range.upperBound
                 }
             } else if text[index] == "\\" {
-                index = text.index(after: index)
-                if index < text.endIndex { index = text.index(after: index) }
+                let escaped = text.index(after: index)
+                if escaped < text.endIndex, text[escaped] == "<" {
+                    result += transform(text[plain..<index])
+                    result += text[index...escaped]
+                    plain = text.index(after: escaped)
+                    index = plain
+                } else {
+                    index = escaped < text.endIndex ? text.index(after: escaped) : escaped
+                }
             } else if text[index...].hasPrefix("<!--") {
                 let end = text.range(of: "-->", range: text.index(index, offsetBy: 4)..<text.endIndex)
                 index = end?.upperBound ?? text.endIndex
@@ -1181,11 +1194,11 @@ private enum MarkdownReader {
 
     /// Text without the HTML it's formatted with, as Azure DevOps shows it: comments show nothing, line breaks and the
     /// ends of blocks such as paragraphs break the line, a table's cells are apart, an image is Markdown's, and the other
-    /// tags that format text keep their text. What isn't one of those stays, such as the `<T>` of `List<T>`.
+    /// tags that format text keep their text. What isn't one of those stays, such as the `<T>` of `List<T>`, and so does
+    /// the start of a comment that doesn't end in the same paragraph, as CommonMark has it.
     static func withoutHTML(_ text: Substring) -> String {
         guard text.contains("<") else { return String(text) }
-        var text = String(text)
-        text = text.replacing(/<!--[\s\S]*?(?:-->|\z)/, with: "")
+        var text = withoutComments(text)
         text = text.replacing(/<img\b[^<>]*>/.ignoresCase()) { image(String($0.output)) }
         return text.replacing(htmlTag) { tag in
             let closes = !tag.output.1.isEmpty
@@ -1198,6 +1211,17 @@ private enum MarkdownReader {
             default: return ""
             }
         }
+    }
+
+    /// Text without its HTML comments: each from `<!--` to the next `-->`. Once one has no end, none after it has.
+    private static func withoutComments(_ text: Substring) -> String {
+        var result = ""
+        var rest = text[...]
+        while let start = rest.range(of: "<!--"), let end = rest[start.upperBound...].range(of: "-->") {
+            result += rest[..<start.lowerBound]
+            rest = rest[end.upperBound...]
+        }
+        return result + rest
     }
 
     /// An `<img>` tag as Markdown's image of a web page's picture, or else its description.

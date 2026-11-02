@@ -44,6 +44,8 @@ public struct ThreadExcerpt: Sendable, Equatable {
         case tooLarge
         /// The file doesn't have the lines it's on.
         case linesNotFound
+        /// The pull request changed more files than BriefBar reads, and this one isn't among those it read.
+        case tooManyFiles
         /// Azure DevOps couldn't be read.
         case unreadable(ADOError)
 
@@ -54,6 +56,7 @@ public struct ThreadExcerpt: Sendable, Equatable {
             case .binary: return "The file isn't text."
             case .tooLarge: return "The file is too long to show here."
             case .linesNotFound: return "The file doesn't have the lines it's on."
+            case .tooManyFiles: return "The pull request changes too many files to find this one."
             case .unreadable(let error): return error.description
             }
         }

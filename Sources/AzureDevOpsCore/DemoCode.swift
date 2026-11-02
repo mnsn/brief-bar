@@ -50,9 +50,9 @@ struct DemoCode: CodeSource {
         }
     }
 
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> [FileChange] {
-        guard let made = Self.pullRequests[pullRequest.key.number] else { return [] }
-        return made.files.enumerated().compactMap { index, file in
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
+        guard let made = Self.pullRequests[pullRequest.key.number] else { return FileChanges(files: []) }
+        return FileChanges(files: made.files.enumerated().compactMap { index, file in
             let old = file.text(comparedTo)
             let new = file.text(iteration)
             guard old != new else { return nil }
@@ -61,7 +61,7 @@ struct DemoCode: CodeSource {
                 path: file.path, kind: kind, objectId: new.map(Self.objectId), originalObjectId: old.map(Self.objectId),
                 changeTrackingId: index + 1
             )
-        }
+        })
     }
 
     func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {

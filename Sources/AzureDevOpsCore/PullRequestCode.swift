@@ -98,11 +98,19 @@ public struct FileChange: Sendable, Equatable, Hashable {
         )
     }
 
-    /// Whether it's the file at `path`, before or after the change, or the one Azure DevOps tracks as `trackingId`.
-    func isFile(_ path: String, trackingId: Int?) -> Bool {
-        if self.path == path || originalPath == path { return true }
-        guard let trackingId, let changeTrackingId else { return false }
-        return changeTrackingId == trackingId
+}
+
+/// The files a diff changed: all of them, or as many as BriefBar reads of a diff that changed more.
+struct FileChanges: Sendable, Equatable {
+    var files: [FileChange]
+    /// False when the diff changed more files than were read, and the rest aren't here.
+    var isComplete = true
+
+    /// The change to a thread's file: the one Azure DevOps tracks as `trackingId`, or else the one at `path` after the
+    /// change, or else before it, so that a file renamed from that path doesn't stand for one added there.
+    func change(to path: String, trackingId: Int?) -> FileChange? {
+        if let trackingId, let tracked = files.first(where: { $0.changeTrackingId == trackingId }) { return tracked }
+        return files.first { $0.path == path } ?? files.first { $0.originalPath == path }
     }
 }
 
@@ -152,7 +160,7 @@ protocol CodeSource: Sendable {
     /// Oldest first.
     func iterations(of pullRequest: PullRequest) async throws -> [PRIteration]
     /// The files `iteration` changed since the base when `comparedTo` is 0, or since that iteration.
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> [FileChange]
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges
     func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText
     func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText
 }
@@ -160,9 +168,8 @@ protocol CodeSource: Sendable {
 /// The code as Azure DevOps has it, read through `ADOClient`, with GETs.
 struct AzureDevOpsCode: CodeSource {
     let client: ADOClient
-
     /// How many pages of an iteration's changes it reads: 10,000 files.
-    static let maxPages = 5
+    var maxPages = 5
 
     func iterations(of pullRequest: PullRequest) async throws -> [PRIteration] {
         let address = ADOEndpoint.pullRequestIterations(
@@ -172,18 +179,20 @@ struct AzureDevOpsCode: CodeSource {
         return try await client.get(address, as: ADOList<ADOPullRequestIteration>.self).value.compactMap(PRIteration.init).sorted { $0.id < $1.id }
     }
 
-    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> [FileChange] {
-        var changes: [FileChange] = []
+    func changes(of pullRequest: PullRequest, iteration: Int, comparedTo: Int) async throws -> FileChanges {
+        var changes = FileChanges(files: [])
         var skip = 0
-        for _ in 0..<Self.maxPages {
+        for page in 0..<max(1, maxPages) {
             let address = ADOEndpoint.iterationChanges(
                 organization: pullRequest.key.organization, projectId: pullRequest.projectId,
                 repositoryId: pullRequest.repositoryId, pullRequestId: pullRequest.key.number, iteration: iteration,
                 comparedTo: comparedTo, skip: skip
             )
-            let page = try await client.get(address, as: ADOIterationChanges.self)
-            changes += page.changeEntries.compactMap(FileChange.init)
-            guard let next = page.nextSkip, next > skip, !page.changeEntries.isEmpty else { break }
+            let read = try await client.get(address, as: ADOIterationChanges.self)
+            changes.files += read.changeEntries.compactMap(FileChange.init)
+            guard let next = read.nextSkip, next > skip, !read.changeEntries.isEmpty else { break }
+            // More than it reads: the rest are left out, and it says so.
+            if page == max(1, maxPages) - 1 { changes.isComplete = false }
             skip = next
         }
         return changes
@@ -359,7 +368,9 @@ public actor PullRequestCode {
         let leftCommit = comparison.isWithBase ? right.commonCommit : iterations.first { $0.id == comparison.first }?.sourceCommit
 
         let changes = try await changes(iteration: right.id, comparedTo: comparison.isWithBase ? 0 : comparison.first, for: generation)
-        let change = changes.first { $0.isFile(anchor.path, trackingId: anchor.changeTrackingId) }
+        let change = changes.change(to: anchor.path, trackingId: anchor.changeTrackingId)
+        // Among the files left out of a diff that changed more than it reads, it can't tell whether this one changed.
+        if change == nil, !changes.isComplete { throw ThreadExcerpt.Problem.tooManyFiles }
         // The file after the change, then before it: a file the diff didn't change is the same on both sides.
         let newText: String
         let oldText: String
@@ -377,13 +388,16 @@ public actor PullRequestCode {
             throw ThreadExcerpt.Problem.linesNotFound
         }
 
-        // Whether it changed since: whether the diff from that iteration to the latest has it.
+        // Whether it changed since: whether the diff from that iteration to the latest has it. Unknown when that can't be
+        // read, or when it changed more files than were read and this one isn't among them.
         var changedSince: Bool? = false
         if latest.id > right.id {
-            let path = change?.path ?? anchor.path
-            let trackingId = change?.changeTrackingId ?? anchor.changeTrackingId
-            changedSince = try? await self.changes(iteration: latest.id, comparedTo: right.id, for: generation)
-                .contains { $0.isFile(path, trackingId: trackingId) }
+            let later = try? await self.changes(iteration: latest.id, comparedTo: right.id, for: generation)
+            if let later, later.change(to: change?.path ?? anchor.path, trackingId: change?.changeTrackingId ?? anchor.changeTrackingId) != nil {
+                changedSince = true
+            } else {
+                changedSince = later?.isComplete == true ? false : nil
+            }
         }
         let excerpt = ThreadExcerpt(
             threadId: threadId, path: change?.path ?? anchor.path, originalPath: change?.originalPath, change: change?.kind,
@@ -423,9 +437,9 @@ public actor PullRequestCode {
         return again
     }
 
-    private func changes(iteration: Int, comparedTo: Int, for generation: Int) async throws -> [FileChange] {
+    private func changes(iteration: Int, comparedTo: Int, for generation: Int) async throws -> FileChanges {
         let key = ReadKey.changes(iteration: iteration, comparedTo: comparedTo)
-        guard case .changes(let changes) = try await read(key, for: generation) else { return [] }
+        guard case .changes(let changes) = try await read(key, for: generation) else { return FileChanges(files: []) }
         return changes
     }
 
@@ -444,9 +458,11 @@ public actor PullRequestCode {
     }
 
     /// What's read under a key: read once, and kept, unless it failed in a way that asking again might not. Nothing is
-    /// read for a pull request it no longer reads for: `generation` is the one the ask began with.
+    /// read for a pull request it no longer reads for (`generation` is the one the ask began with), or for an ask that
+    /// stopped waiting, which a read that others still wait on doesn't stop: it goes no further.
     private func read(_ key: ReadKey, for generation: Int) async throws -> Read {
         guard generation == self.generation else { throw CancellationError() }
+        try Task.checkCancellation()
         let task: Task<Read, Error>
         if let kept = reads[key] {
             task = kept
@@ -470,18 +486,20 @@ public actor PullRequestCode {
         let ask = lastAsk
         asks[key, default: []].insert(ask)
         defer { stopAsking(ask, on: key) }
+        let read: Read
         do {
-            let read = try await withTaskCancellationHandler {
+            read = try await withTaskCancellationHandler {
                 try await task.value
             } onCancel: {
                 Task { await self.giveUp(ask, on: key, task) }
             }
-            keep(read, under: key, task)
-            return read
         } catch {
             if !Self.lasts(error), reads[key] == task { forget(key) }
             throw error
         }
+        keep(read, under: key, task)
+        try Task.checkCancellation()
+        return read
     }
 
     /// How many asks wait on a read, for tests.
@@ -561,7 +579,7 @@ public actor PullRequestCode {
 
     enum Read: Sendable {
         case iterations([PRIteration])
-        case changes([FileChange])
+        case changes(FileChanges)
         case file(FileText)
     }
 

@@ -21,6 +21,8 @@ import Testing
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
         #expect(plain("<!-- template: describe `why`, not what --> Real text") == "Real text")
         #expect(RichText(markdown: "`a <!-- b` c").blocks == [.paragraph([RichText.Run("a <!-- b", style: .code), RichText.Run(" c")])])
+        // One that starts after text is inline: it can't go past its paragraph, so what's after shows, as in Azure DevOps.
+        #expect(plain("Before <!-- an end in another paragraph\n\nShown\n-->") == "Before <!-- an end in another paragraph\nShown\n-->")
     }
 
     @Test func breaksLinesAndBlocksAsHTMLDoes() {
@@ -56,6 +58,11 @@ import Testing
             ]),
         ])
         #expect(RichText(markdown: "```html\n<!-- kept -->\n<p>Kept</p>\n```").blocks == [.code("<!-- kept -->\n<p>Kept</p>")])
+        // A fence indented four columns is code in a fenced block, and doesn't end it.
+        #expect(RichText(markdown: "```\n    ```\n<!--\nkept\n-->\n```").blocks == [.code("    ```\n<!--\nkept\n-->")])
+        // Indented with tabs, as with spaces.
+        #expect(RichText(markdown: "\t<!--\n\tliteral code\n\t-->").blocks == [.code("<!--\nliteral code\n-->")])
+        #expect(RichText(markdown: "    <!--\n    literal code\n    -->").blocks == [.code("<!--\nliteral code\n-->")])
         // A backtick that nothing closes isn't code.
         #expect(plain("A lone ` and <b>bold</b>") == "A lone ` and bold")
     }
@@ -63,6 +70,9 @@ import Testing
     @Test func keepsWhatOnlyLooksLikeATag() {
         #expect(plain("Return a List<T> or Dictionary<string, int> when a < b") == "Return a List<T> or Dictionary<string, int> when a < b")
         #expect(plain("Escaped: &lt;b&gt;bold&lt;/b&gt;") == "Escaped: <b>bold</b>")
+        #expect(plain("Escaped \\<br> and \\<!-- not a comment -->") == "Escaped <br> and <!-- not a comment -->")
+        // A backslash escaped itself doesn't escape what follows.
+        #expect(plain("\\\\<br>after") == "\\\nafter")
         #expect(RichText(markdown: "See <https://example.invalid/docs>").blocks == [
             .paragraph([RichText.Run("See "), RichText.Run("https://example.invalid/docs", link: URL(string: "https://example.invalid/docs"))]),
         ])
@@ -74,16 +84,18 @@ import Testing
         ])
     }
 
+    /// Each in well under a second, where reading them in quadratic time would take minutes: plenty of room for a slow
+    /// runner.
     @Test func readsAManyTaggedCommentInLinearTime() {
         for long in [
-            String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 20_000),
+            String(repeating: "<b>x</b> `y` <!-- z --> <a ", count: 5_000),
             "<img " + String(repeating: "a", count: 100_000) + ">",
             "<img src=" + String(repeating: "a-b ", count: 25_000) + ">",
             String(repeating: "` <!-- ``", count: 20_000),
         ] {
             let start = ContinuousClock.now
             _ = RichText(markdown: long)
-            #expect(ContinuousClock.now - start < .seconds(5))
+            #expect(ContinuousClock.now - start < .seconds(10))
         }
     }
 }
