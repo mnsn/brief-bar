@@ -9,6 +9,10 @@ public enum ADOErrorKind
     /// Azure DevOps rejected the token, even a new one.
     Unauthorized,
 
+    /// The organization (`ADOError.Organization`) is in another directory, a Microsoft Entra tenant (`ADOError.Tenant`),
+    /// which the Azure CLI isn't signed in to: `az login --tenant` with its ID signs in there.
+    OtherDirectory,
+
     /// Signed in, but without access to the organization or project.
     Forbidden,
 

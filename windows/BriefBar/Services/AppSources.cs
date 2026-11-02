@@ -87,11 +87,17 @@ internal sealed class AppSources
     static Dictionary<string, string?> EnvironmentOf(IReadOnlyList<string> names) => names.ToDictionary(
         keySelector: name => name, elementSelector: name => Environment.GetEnvironmentVariable(variable: name), comparer: StringComparer.OrdinalIgnoreCase);
 
-    /// Azure DevOps itself, with the Azure CLI's sign-in.
-    static AzureDevOpsReading LiveAzureDevOps()
+    /// Azure DevOps itself, with the Azure CLI's sign-in: in the directory of the account BriefBar last read your pull
+    /// requests with, and knowing where that account is from, as kept with what it has seen.
+    AzureDevOpsReading LiveAzureDevOps()
     {
         var locator = new AzureCLILocator(environment: EnvironmentOf(names: AzureCLILocator.Variables));
-        return AzureDevOpsReading.Live(tokens: new AzureCLITokenProvider(locator: locator, runner: processes), locator: locator);
+        var tokens = new AzureCLITokenProvider(
+            locator: locator,
+            runner: processes,
+            homeTenant: AzureDevOps.Account is { } account ? AccessToken.TenantOfAccount(account: account) : null,
+            homeAccountTenant: AzureDevOps.AccountOrigin);
+        return AzureDevOpsReading.Live(tokens: tokens, locator: locator);
     }
 
     /// GitHub itself, with the GitHub CLI's sign-in.
@@ -155,10 +161,13 @@ internal sealed class AppSources
             makeMarks: () => new TeamsReadMarks(path: TeamsReadMarks.DefaultPath, protector: new WindowsDataProtector(purpose: "BriefBar Teams read marks")));
     }
 
-    /// The demo's made-up pull requests, in its one made-up organization, without the Azure CLI.
+    /// The demo's made-up pull requests, in its one made-up organization, without the Azure CLI: an organization you add is
+    /// watched without a check, as it reads nothing.
     AzureDevOpsReading DemoAzureDevOps() => new(
         makeEngine: onChange => new DemoPulseEngine(madeAt: madeAt, onChange: onChange),
         findOrganizations: _ => Task.FromResult(result: new OrganizationsFound(All: [AzureDevOpsDemoData.Organization], WithPullRequests: [AzureDevOpsDemoData.Organization])),
+        checkAccess: (_, _) => Task.FromResult(result: OrganizationAccess.Readable),
+        accountOrigin: _ => null,
         locateCli: () => null);
 
     /// The demo's made-up pull requests on GitHub, read again as often as GitHub's would be, without the GitHub CLI.

@@ -332,6 +332,74 @@ public sealed class AzureDevOpsRowsTests
         Assert.True(condition: withoutCli.ProblemCommand?.Opens);
     }
 
+    /// Your own directory wants you to sign in again, there, while the Azure CLI is signed in to you in another: it says to
+    /// sign in, as when you're signed out, and Sign in signs in there.
+    [Fact]
+    public void SignsInAgainInYourOwnDirectory()
+    {
+        var (store, settings) = LoadDemo();
+        const string tenant = "0a0a0a0a-1111-4111-8111-111111111111";
+        store.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: now) with { Problem = PulseProblem.SignedOut(detail: "AADSTS50076", tenant: tenant) }, now: now);
+        var snapshot = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        Assert.Equal(expected: new StateCounts(), actual: snapshot.Counts);
+        Assert.Equal(expected: (SectionCondition.Problem, "Sign in"), actual: (snapshot.Status.Condition, snapshot.Status.ShortProblem));
+        Assert.Equal(expected: AzureDevOpsCommands.SignInTo(tenant: tenant), actual: snapshot.ProblemCommand?.Key);
+        Assert.Equal(expected: "Sign in…", actual: snapshot.ProblemCommand?.Title);
+        Assert.True(condition: snapshot.ProblemCommand?.Opens);
+        Assert.Null(@object: snapshot.ProblemHint);
+    }
+
+    /// Some organizations are in a directory the Azure CLI isn't signed in to: the others' pull requests stay listed and
+    /// counted, out of date, and the banner names those organizations, offers to sign in to their directory, and says what
+    /// to do about a project's name entered as an organization's, in the panel only. The directory's ID is only in the
+    /// command that signs in there.
+    [Fact]
+    public void OffersToSignInToTheDirectoryOfOrganizationsInAnother()
+    {
+        var (store, settings) = LoadDemo();
+        const string tenant = "0b0b0b0b-2222-4222-8222-222222222222";
+        var problem = PulseProblem.OtherDirectory(organizations: ["fabrikam"], tenant: tenant);
+        store.Receive(snapshot: AzureDevOpsDemoData.Snapshot(now: now) with { Problem = problem }, now: now);
+        var snapshot = AzureDevOpsRows.Snapshot(store: store, settings: settings, now: now);
+        Assert.Equal(expected: new StateCounts(NeedsYou: 3, Failing: 2, Done: 2), actual: snapshot.Counts);
+        Assert.NotEmpty(collection: snapshot.BriefLines);
+        Assert.Equal(expected: SectionCondition.Stale, actual: snapshot.Status.Condition);
+        Assert.Equal(expected: "fabrikam is in a directory your Azure CLI isn't signed in to.", actual: snapshot.Status.Problem);
+        Assert.Equal(expected: AzureDevOpsCommands.SignInTo(tenant: tenant), actual: snapshot.ProblemCommand?.Key);
+        Assert.Equal(expected: tenant, actual: AzureDevOpsCommands.SignInTenant(command: snapshot.ProblemCommand!.Key));
+        Assert.Equal(expected: "Sign in…", actual: snapshot.ProblemCommand.Title);
+        Assert.Equal(
+            expected: "Sign in runs az login there, in a console window. If it's a project rather than an organization, remove it in Settings: a project's organization is the first part of its link.",
+            actual: snapshot.ProblemHint);
+        Assert.DoesNotContain(expectedSubstring: tenant, actualString: snapshot.Status.Problem + snapshot.ProblemHint + snapshot.ProblemCommand.Title, comparisonType: StringComparison.Ordinal);
+
+        // With nothing else listed, the bar says to sign in.
+        var empty = new PRStore(settings: settings);
+        empty.Receive(
+            snapshot: new PulseSnapshot
+            {
+                Organizations = ["fabrikam", "northwind"],
+                HasLoaded = true,
+                Problem = PulseProblem.OtherDirectory(organizations: ["fabrikam", "northwind"], tenant: tenant),
+            },
+            now: now);
+        var nothing = AzureDevOpsRows.Snapshot(store: empty, settings: settings, now: now);
+        Assert.Equal(expected: (SectionCondition.Problem, "Sign in"), actual: (nothing.Status.Condition, nothing.Status.ShortProblem));
+        Assert.StartsWith(expectedStartString: "Sign in runs az login there, in a console window. If one is a project", actualString: nothing.ProblemHint, comparisonType: StringComparison.Ordinal);
+    }
+
+    /// Only a directory's ID is one to sign in to: any other command that starts as signing in to one isn't.
+    [Fact]
+    public void SignsInOnlyToADirectorysID()
+    {
+        Assert.Equal(expected: "signIn.0b0b0b0b-2222-4222-8222-222222222222", actual: AzureDevOpsCommands.SignInTo(tenant: "0b0b0b0b-2222-4222-8222-222222222222"));
+        Assert.Equal(expected: "0b0b0b0b-2222-4222-8222-222222222222", actual: AzureDevOpsCommands.SignInTenant(command: "signIn.0B0B0B0B-2222-4222-8222-222222222222"));
+        Assert.Null(@object: AzureDevOpsCommands.SignInTenant(command: "signIn.contoso & calc"));
+        Assert.Null(@object: AzureDevOpsCommands.SignInTenant(command: "signIn."));
+        Assert.Null(@object: AzureDevOpsCommands.SignInTenant(command: AzureDevOpsCommands.SignIn));
+        Assert.Null(@object: AzureDevOpsCommands.SignInTenant(command: AzureDevOpsCommands.Sort(order: PROrder.NewestFirst)));
+    }
+
     /// It couldn't read Azure DevOps this time: what it read before stays, out of date, with a way to try again.
     [Fact]
     public void KeepsWhatItReadWhenItCantReadAgain()
