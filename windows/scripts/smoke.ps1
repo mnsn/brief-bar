@@ -311,16 +311,20 @@ function Test-AzureDevOps($process, $bar) {
     $groups = if ($list) { Get-AllGroupNames $list } else { @() }
     Check (-not ($groups -like 'Answered: *') -and $groups -contains 'Idle: 3') "what Answered showed goes back to its group once the panel closes ($($groups -join ', '))"
 
-    # Sort, at the top of the panel: by date, every pull request but Done's and Idle's in one list, counted as by status;
-    # then by status again, in their groups.
+    # Sort, at the top of the panel: by date, every pull request but Done's and Idle's in one list, counted as by status,
+    # from its top; then by status again, in their groups, from their top too.
     if ($list) {
+        $scroll = $list.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
         $sorted = Select-Order $process $bar 'By status' 'Newest first'
+        $atTop = if ($sorted) { Wait-Until { if ((Get-GroupNames $list) -contains 'Newest first: 10' -and $scroll.Current.VerticalScrollPercent -le 0.5) { $true } } 5 }
+        Check ($null -ne $atTop) 'Newest first shows them from the top of the list'
         $byDate = if ($sorted) { Wait-Until { $names = Get-AllGroupNames $list; if ($names -contains 'Newest first: 10') { $names } } 5 }
         Check ($null -ne $byDate -and ($byDate -join ' | ') -eq 'Newest first: 10 | Done: 1 | Idle: 3') "Newest first lists them in one, then Done's and Idle's ($($byDate -join ', '))"
         Check ($null -ne (Get-Button $bar 'Azure DevOps pull requests: 2 need you, 2 went wrong, 2 done or ready.*')) 'and the bar counts them as by status'
         $sorted = Select-Order $process $bar 'Newest first' 'By status'
-        $back = if ($sorted) { Wait-Until { $names = Get-AllGroupNames $list; if ($names -contains 'Needs you: 2') { $names } } 5 }
-        Check ($null -ne $back -and -not ($back -like 'Newest first: *')) "By status lists them in their groups again ($($back -join ', '))"
+        $atTop = if ($sorted) { Wait-Until { if ((Get-GroupNames $list) -contains 'Needs you: 2' -and $scroll.Current.VerticalScrollPercent -le 0.5) { $true } } 5 }
+        $back = if ($atTop) { Get-AllGroupNames $list }
+        Check ($null -ne $back -and -not ($back -like 'Newest first: *')) "By status lists them in their groups again, from the top ($($back -join ', '))"
     }
 
     # Settings, from the panel's foot, at Azure DevOps' page.

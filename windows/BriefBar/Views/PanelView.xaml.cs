@@ -24,6 +24,7 @@ public sealed partial class PanelView : UserControl
         ViewModel = viewModel;
         InitializeComponent();
         GroupedRows.Source = viewModel.Groups;
+        viewModel.Resorted += OnResorted;
         AddItemKeys();
     }
 
@@ -265,6 +266,14 @@ public sealed partial class PanelView : UserControl
         }
         menu.ShowAt(placementTarget: SortButton, showOptions: new FlyoutShowOptions { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight });
     }
+
+    /// Sorted another way, the list starts at its top again, as it does as it opens, once it's laid out: otherwise it would
+    /// keep a row it still has in view, such as one of Done's, and open far down the list.
+    void OnResorted(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(priority: Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, callback: () =>
+    {
+        List.UpdateLayout();
+        ScrollToTop();
+    });
 
     void RequestOf(SectionId section, PanelCommand command) =>
         CommandRequested?.Invoke(sender: this, e: new PanelCommandEventArgs(

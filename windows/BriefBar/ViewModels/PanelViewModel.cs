@@ -108,6 +108,10 @@ public sealed class PanelViewModel : Observable
     /// The source whose page Settings opens at from this panel: its section's, or none for the Overview.
     public SourceId? Source => Target.Section?.Source;
 
+    /// The list it shows was sorted another way, as you chose another order from its sort menu: the panel shows it from
+    /// its top again.
+    public event EventHandler? Resorted;
+
     public void Update(PanelTarget target, IReadOnlyList<SectionSnapshot> snapshots, ThemePalette palette, DateTimeOffset now, bool isDemo)
     {
         ArgumentNullException.ThrowIfNull(argument: snapshots);
@@ -116,6 +120,8 @@ public sealed class PanelViewModel : Observable
         {
             unfolded.Clear();
         }
+        // The order the same list was in, before this update.
+        var sortedBefore = target == Target ? Sort?.Chosen : null;
         this.palette = palette;
         this.now = now;
         Target = target;
@@ -129,6 +135,10 @@ public sealed class PanelViewModel : Observable
         else
         {
             ShowOverview(snapshots: snapshots, palette: palette, now: now);
+        }
+        if (sortedBefore is not null && Sort?.Chosen is { } sorted && sorted != sortedBefore)
+        {
+            Resorted?.Invoke(sender: this, e: EventArgs.Empty);
         }
     }
 
