@@ -633,6 +633,9 @@ package final class AzureDevOpsSource: BriefBarSource {
                 .background(Color(nsColor: .windowBackgroundColor))
             renderings += [(name: "copilot-composer", view: environment(composer)), (name: "copilot-settings", view: environment(options))]
         }
+        if copilot != nil, let composer = sessionComposer() {
+            renderings.append((name: "copilot-composer-session", view: environment(composer.environment(\.isRendering, true))))
+        }
         let links = services.links
         if let linked = store?.items.first(where: { !links.connections(of: $0.key.linkRef).isEmpty }) {
             let picker = LinkPickerView(subject: linked.key.linkRef, links: links) {}
@@ -654,6 +657,34 @@ package final class AzureDevOpsSource: BriefBarSource {
                            (name: "pull-requests-oldest-first-page", view: environment(page))]
         }
         return renderings
+    }
+
+    /// The window that sends the comments that wait on you to one of the Copilot app's sessions, which BriefBar's extension
+    /// listens in, for the first of your pull requests with such comments: a made-up session on its branch.
+    private func sessionComposer() -> CopilotComposerView? {
+        guard let record = store?.records.first(where: { PullRequestTasks.actions(for: $0, canShip: false).contains(.fixComments) }) else {
+            return nil
+        }
+        let pr = record.pullRequest
+        let task = TaskPullRequest(
+            organization: pr.key.organization, project: pr.projectName, repository: pr.repositoryName, id: pr.key.number,
+            title: pr.title, url: pr.webURL, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch,
+            projectId: pr.projectId, repositoryId: pr.repositoryId
+        )
+        let session = AppSession(
+            id: "7d3f9a12-4c8e-4b61-9f2a-5e0c1b8d6a31", name: pr.title, projectName: pr.repositoryName, branch: pr.sourceBranch,
+            lastActive: Date().addingTimeInterval(-25 * 60)
+        )
+        let choice = SessionChoice(
+            kind: .app(session), name: session.name, place: CopilotTasksStore.place(of: session), lastActive: session.lastActive,
+            reasons: [.recordedByCopilot, .onItsBranch]
+        )
+        return CopilotComposerView(
+            subject: .pullRequest(task, .fixComments), options: settings.copilotOptions, template: settings.copilotPromptTemplate,
+            prompt: PullRequestPrompt.fixComments(record, workplace: .worktree),
+            sessionPrompt: PullRequestPrompt.fixComments(record, workplace: .agent), createdAt: pr.createdAt,
+            session: (choice, .listening(canFork: true))
+        ) {}
     }
 }
 

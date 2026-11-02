@@ -50,6 +50,7 @@ private struct DatabaseError: Error {
         settings.copilotEnabled = true
         let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
         store.appHomeForTests = home
+        store.outboxForTests = CopilotOutbox(root: home, path: ["Outbox"])
         store.useEnvironment(["COPILOT_HOME": home.path, "PATH": "/usr/bin:/bin"])
         return store
     }
@@ -289,7 +290,10 @@ private struct DatabaseError: Error {
 
     // MARK: Sending
 
-    @Test func handsThePromptToTheSessionInTheCopilotApp() throws {
+    /// While Send Prompts to Copilot Sessions is off, BriefBar does what Open in Copilot did, as the window says it will:
+    /// it copies the prompt, or `/fork` and the prompt, and opens the session, for you to paste and send. Nothing starts
+    /// here, and the comments the prompt quotes leave Needs You only once the session opened.
+    @Test func copiesThePromptForYouToPasteWhileSendingToSessionsIsOff() async throws {
         let store = store(home: URL(fileURLWithPath: "/nonexistent"))
         var opened: [(String, String)] = []
         var opens = true
@@ -299,7 +303,11 @@ private struct DatabaseError: Error {
         let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
         let session = choice(onBranch, reasons: [.onItsBranch], active: 0)
 
-        #expect(store.openInCopilot(session, prompt: "Fix the comments", handOff: handOff) == nil)
+        #expect(await store.reach(of: session) == .off)
+        let copied = await store.deliver("Fix the comments", to: session, handOff: handOff)
+        #expect(copied == .fellBack(SessionFallback(
+            reason: try #require(SessionReach.off.whyNot(forking: false)), wasForeseen: true, session: onBranch
+        )))
         #expect(opened.map(\.0) == [onBranch])
         #expect(opened.map(\.1) == ["Fix the comments"])
         // It's in your hands now: its comments leave Needs You.
@@ -308,27 +316,36 @@ private struct DatabaseError: Error {
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
 
+        // For a fork, the app's own /fork forks the session itself, and sends the fork the prompt, as you paste it there.
+        guard case .fellBack(let forked) = await store.deliver("Try it another way", to: session, forking: true, handOff: nil) else {
+            Issue.record("BriefBar didn't copy /fork")
+            return
+        }
+        #expect(forked.pastesFork)
+        #expect(forked.wasForeseen)
+        #expect(opened.last.map { [$0.0, $0.1] } == [onBranch, "/fork Try it another way"])
+
         // When it doesn't open, nothing's handed off: the comments still wait on you, and the window says why.
         opens = false
-        #expect(store.openInCopilot(session, prompt: "Fix them again", handOff: handOff) == CopilotTasksStore.cantOpenInApp)
-        #expect(opened.count == 2)
+        #expect(await store.deliver("Fix them again", to: session, handOff: handOff) == .notSent(CopilotTasksStore.cantOpenInApp))
+        #expect(opened.count == 3)
         #expect(handed == ["Fix the comments"])
 
         store.settings.copilotEnabled = false
-        #expect(store.openInCopilot(session, prompt: "Again", handOff: nil) != nil)
-        #expect(opened.count == 2)
+        #expect(await store.deliver("Again", to: session) == .notSent(CopilotTasksStore.cantSendNow))
+        #expect(opened.count == 3)
     }
 
     /// Without the Copilot app, nothing opens its `ghapp://` links: BriefBar doesn't try, leaves the clipboard alone, and
     /// hands nothing off.
-    @Test func handsNothingOffWhenNothingOpensTheAppsSessions() {
+    @Test func handsNothingOffWhenNothingOpensTheAppsSessions() async {
         let store = store(home: URL(fileURLWithPath: "/nonexistent"))
         store.opensLinksForTests = false
         var handed = 0
         store.handedOff = { _, _ in handed += 1 }
         let handOff = CommentHandOff(key: PRKey("contoso", 4071), waiting: [], account: nil, me: "me", dismissedCutoff: .distantPast)
         #expect(!store.canOpenInApp)
-        #expect(store.openInCopilot(choice(onBranch, reasons: [], active: 0), prompt: "Fix it", handOff: handOff) == CopilotTasksStore.cantOpenInApp)
+        #expect(await store.deliver("Fix it", to: choice(onBranch, reasons: [], active: 0), handOff: handOff) == .notSent(CopilotTasksStore.cantOpenInApp))
         #expect(handed == 0)
         store.opensLinksForTests = true
         #expect(store.canOpenInApp)
@@ -358,7 +375,7 @@ private struct DatabaseError: Error {
 
         var opened = 0
         store.openForTests = { _, _ in opened += 1; return true }
-        #expect(store.openInCopilot(busy, prompt: "Fix the comments", handOff: nil) != nil)
+        #expect(await store.deliver("Fix the comments", to: busy) == .notSent(try #require(store.busyReason(for: busy))))
         #expect(opened == 0)
 
         let launched = Mutex(0)
@@ -421,7 +438,7 @@ private struct DatabaseError: Error {
 
         var opened = 0
         store.openForTests = { _, _ in opened += 1; return true }
-        #expect(store.openInCopilot(other, prompt: "Fix the comments", handOff: nil) != nil)
+        #expect(await store.deliver("Fix the comments", to: other) == .notSent(try #require(store.busyReason(for: other))))
         #expect(opened == 0)
         let session = try #require(other.appSession)
         #expect(await store.cliProblem(for: other, subject: subject) == "Copilot is working in the same checkout for another task BriefBar sent.")

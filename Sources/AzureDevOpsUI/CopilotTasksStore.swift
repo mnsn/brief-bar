@@ -111,6 +111,18 @@ final class CopilotTasksStore: ObservableObject {
     var removeWorktreeForTests: ((CopilotRun, _ force: Bool) async throws -> Void)?
     /// Hears of each session whose log the search for mentions read, in tests.
     var mentionReadForTests: ((_ sessionId: String) -> Void)?
+    /// Stands in for showing a session, in the Copilot app or in the terminal of the CLI that has it open, without copying
+    /// anything, in tests: whether it opened.
+    var showForTests: ((_ sessionId: String) -> Bool)?
+    /// Whether the Copilot app holds a session, by the process that holds it, in tests.
+    var appHoldsForTests: ((pid_t) -> Bool)?
+    /// Where BriefBar's requests to its extension in the Copilot app's sessions go, in tests; `CopilotOutbox.standard`
+    /// otherwise.
+    var outboxForTests: CopilotOutbox?
+    /// How long sending to a session waits for each step, in tests.
+    var deliveryTimingForTests: SessionSender.Timing?
+    /// The sessions BriefBar sends a prompt to now, through its extension in them (`deliver`): one at a time, each.
+    @Published var delivering: Set<String> = []
 
     /// Where the Copilot app keeps its sessions.
     var appHome: URL { appHomeForTests ?? AppSessions.home() }
@@ -726,9 +738,21 @@ final class CopilotTasksStore: ObservableObject {
         for entry in entries where !entry.status.phase.isActive { clear(entry) }
     }
 
-    /// What BriefBar saved of the runs it started: what each printed. Called when Azure DevOps is turned off.
-    nonisolated static func deleteOutput() {
-        try? FileManager.default.removeItem(at: outputFolder)
+    /// What BriefBar saved of the runs it started: what each printed; and its requests to its extension in the Copilot
+    /// app's sessions, with their results, which hold its prompts, but not what the extensions that run say. Called when
+    /// Azure DevOps is turned off.
+    nonisolated static func deleteOutput(in folder: URL = outputFolder, outbox: CopilotOutbox = .standard) {
+        outbox.forget()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        guard !LocalFile.isLink(folder), outbox.url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
+              let kept = outbox.path.last, names.contains(kept)
+        else {
+            try? FileManager.default.removeItem(at: folder)
+            return
+        }
+        for name in names where name != kept {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
     }
 
     func openPullRequest(_ entry: CopilotTaskEntry) {

@@ -397,34 +397,6 @@ extension CopilotTasksStore {
         return run
     }
 
-    /// Hands a task to a session in the Copilot app: copies the prompt, and opens the session there, for you to paste and
-    /// send. Copilot works on it there, with the session's own model, mode and permissions, where you see it. It's in your
-    /// hands then: what `handOff` says the prompt takes care of leaves Needs You, but only once the session opened.
-    /// - Returns: why it didn't, or nil once it did.
-    @discardableResult
-    func openInCopilot(_ choice: SessionChoice, prompt: String, handOff: CommentHandOff?) -> String? {
-        guard canSend, isOn, ItemRef.session(choice.id) != nil else { return "BriefBar can't send anything now." }
-        // Opening it while Copilot works in it would fork its history; while Copilot works in its checkout, their work would mix.
-        if let busy = busyReason(for: choice) { return busy }
-        let opened: Bool
-        if let openForTests {
-            opened = openForTests(choice.id, prompt)
-        } else if canOpenInApp {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(prompt, forType: .string)
-            opened = Self.openInApp(choice.id)
-        } else {
-            opened = false
-        }
-        guard opened else {
-            Log.app.error("Couldn't open a session in the Copilot app")
-            return Self.cantOpenInApp
-        }
-        Log.app.info("Handed a task to a session in the Copilot app")
-        if let handOff { handedOff(handOff, prompt) }
-        return nil
-    }
-
     /// Whether BriefBar works in the session now, for a task it sent: one getting its worktree ready, or one whose
     /// Copilot process still runs.
     func isWorking(inSession id: String) -> Bool {
