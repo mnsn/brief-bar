@@ -23,9 +23,15 @@ struct PRRowView: View {
     var stopWatching: (() -> Void)? = nil
     /// Takes it off Needs You (right-click); nil when it isn't there.
     var dismiss: (() -> Void)? = nil
-    /// Shows its details, which a click does then, on the window's page; nil where a click opens it in Azure DevOps, which
-    /// its menu does then.
+    /// Shows its details: beside the list, on the window's page, or else on that page of BriefBar's window; nil where they
+    /// can't show, such as when no window has the page. A click does, unless `opensDetails` says otherwise.
     var showDetails: (() -> Void)? = nil
+    /// Whether a click shows its details, where they can show, rather than opening it in Azure DevOps: in BriefBar's
+    /// window, and in the menu bar's list and widgets once you chose to Open Pull Requests in BriefBar. Its menu has both.
+    var opensDetails = true
+    /// Its details show in BriefBar's window, from the menu bar or a widget, rather than in the window it's in: its menu
+    /// says Show in BriefBar.
+    var showsInWindow = false
     /// Opens it in Azure DevOps.
     var action: () -> Void
 
@@ -36,11 +42,18 @@ struct PRRowView: View {
     /// Needs you with something you haven't seen; without it, it's what you've seen and haven't answered.
     private var isNew: Bool { item.group == .needsYou && item.hasNews }
 
+    /// Its details, when a click shows them.
+    private var clickShows: (() -> Void)? { opensDetails ? showDetails : nil }
+
+    /// Its menu's way to its details: beside the list, or on the window's Pull Requests page, from another; in BriefBar's
+    /// window, from the menu bar or a widget.
+    private var detailsTitle: String { showsInWindow ? "Show in BriefBar" : "Show Details" }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // The row, and its summary under it, which ends where its time does, left of its actions.
             VStack(alignment: .leading, spacing: 0) {
-                Button(action: showDetails ?? action) {
+                Button(action: clickShows ?? action) {
                     content
                         .padding(.horizontal, 8)
                         .padding(.vertical, compact ? 5 : 6)
@@ -51,7 +64,8 @@ struct PRRowView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(item.title), \(item.headline)")
                 .accessibilityValue(accessibilityValue)
-                .accessibilityHint(showDetails == nil ? "Opens the pull request in Azure DevOps" : "Shows its details")
+                .accessibilityHint(clickShows == nil ? "Opens the pull request in Azure DevOps"
+                    : showsInWindow ? "Shows its details in BriefBar's window" : "Shows its details")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityActions { SummarizeMenuItems(item.key.linkRef, divided: false) }
                 RowSummary(subject: item.key.linkRef)
@@ -83,9 +97,11 @@ struct PRRowView: View {
         )
         .onHover { isHovered = $0 }
         .contextMenu { menuItems }
-        .rowActions(for: item.title, openTitle: showDetails == nil ? "Open in Azure DevOps" : "Show Details", open: showDetails ?? action) {
-            if showDetails != nil {
+        .rowActions(for: item.title, openTitle: clickShows == nil ? "Open in Azure DevOps" : detailsTitle, open: clickShows ?? action) {
+            if clickShows != nil {
                 Button("Open in Azure DevOps", action: action)
+            } else if let showDetails {
+                Button(detailsTitle, action: showDetails)
             }
             additionalMenuItems
         }
@@ -144,12 +160,16 @@ struct PRRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// What a click does first, then the other: its details, and opening it in Azure DevOps.
     @ViewBuilder
     private var menuItems: some View {
-        if let showDetails {
-            Button("Show Details", action: showDetails)
+        if let clickShows {
+            Button(detailsTitle, action: clickShows)
         }
         Button("Open in Azure DevOps", action: action)
+        if clickShows == nil, let showDetails {
+            Button(detailsTitle, action: showDetails)
+        }
         additionalMenuItems
     }
 
@@ -186,7 +206,8 @@ struct PRRowView: View {
         if item.group == .needsYou && !isNew {
             lines.append("You've seen it: it stays here until you reply, the comments are resolved, or you remove it")
         }
-        lines.append(showDetails == nil ? "Click to open in Azure DevOps" : "Click to see its details")
+        lines.append(clickShows == nil ? "Click to open in Azure DevOps"
+            : showsInWindow ? "Click to see its details in BriefBar's window" : "Click to see its details")
         let menu = showsActions ? "Use Actions" : "Right-click"
         if let source = item.chatSource {
             lines.append(source.messageURL == nil ? "\(menu) to show \(source.appName)" : "\(menu) to open the message in \(source.appName)")
