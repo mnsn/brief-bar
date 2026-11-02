@@ -31,6 +31,9 @@ internal sealed record StubRequest(HttpMethod Method, Uri Url, string? Authoriza
     /// Its path, decoded.
     public string Path => Uri.UnescapeDataString(stringToUnescape: Url.AbsolutePath);
 
+    /// The directory its made-up token is from, which `FakeTokens` writes after an `@`; null when it doesn't say.
+    public string? Tenant => Authorization is { } token && token.IndexOf(value: '@', comparisonType: StringComparison.Ordinal) is var at and >= 0 ? token[(at + 1)..] : null;
+
     /// Its query's items, decoded.
     public IReadOnlyDictionary<string, string> Query
     {

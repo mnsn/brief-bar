@@ -57,6 +57,10 @@ public sealed class PulseEngine : IPulseEngine
     /// Your pull requests that left the active list without completing: abandoned, or completed just now. Each is looked
     /// up by its ID, a few a refresh, until that works or it's too old to show as done.
     readonly Dictionary<PRKey, PulseVanished> vanished = [];
+    /// The organizations that couldn't be read at the last refresh for want of a sign-in to their directory, by any
+    /// spelling: what's listed from them stays as it was read, and nothing more is asked of them until you've signed in
+    /// there.
+    HashSet<string> waitingOnSignIn = new(comparer: StringComparer.OrdinalIgnoreCase);
     PulseProblem? problem;
     DateTimeOffset? refreshedAt;
     bool hasLoaded;
@@ -261,6 +265,36 @@ public sealed class PulseEngine : IPulseEngine
         waker.Wake();
     }
 
+    /// How long until the next refresh: the usual interval, or a minute while signing in would fix it, or longer, backing
+    /// off, while nothing could be read, or as long as Azure DevOps asked.
+    internal TimeSpan NextDelay()
+    {
+        lock (gate)
+        {
+            var interval = configuration.Interval;
+            switch (problem?.Kind)
+            {
+                case PulseProblemKind.Throttled:
+                    var wait = (problem.Until ?? time.GetUtcNow()) - time.GetUtcNow();
+                    return wait > interval ? wait : interval;
+                case PulseProblemKind.CliNotFound or PulseProblemKind.SignedOut or PulseProblemKind.AuthFailed:
+                    // Picks up an `az login` within a minute: asking the CLI costs nothing on the network.
+                    return interval < TimeSpan.FromMinutes(value: 1) ? interval : TimeSpan.FromMinutes(value: 1);
+                case PulseProblemKind.OtherDirectory when failures > 0:
+                    // Nothing was read until you sign in to an organization's directory: that's picked up within a minute too.
+                    // While other organizations are read, they're read as often as usual.
+                    return interval < TimeSpan.FromMinutes(value: 1) ? interval : TimeSpan.FromMinutes(value: 1);
+                default:
+                    if (failures == 0)
+                    {
+                        return interval;
+                    }
+                    var seconds = interval.TotalSeconds * Math.Pow(x: 2, y: Math.Min(val1: failures, val2: 4));
+                    return TimeSpan.FromSeconds(value: Math.Min(val1: seconds, val2: 600));
+            }
+        }
+    }
+
     static void RemoveWhere<TKey, TValue>(Dictionary<TKey, TValue> dictionary, Func<TKey, bool> predicate)
         where TKey : notnull
     {
@@ -268,6 +302,24 @@ public sealed class PulseEngine : IPulseEngine
         {
             dictionary.Remove(key: key);
         }
+    }
+
+    /// What stops a refresh when no organization's lists could be read, `errors` having one for each of its `organizations`:
+    /// Azure DevOps asking to slow down, as nothing more goes out until then; otherwise the first failure, unless one is for
+    /// want of a sign-in to an organization's directory, when the pull requests people sent you from other organizations are
+    /// read all the same. Null when some lists were read, or when the refresh goes on.
+    static (string Organization, ADOError Error)? FailureToStopAt(List<(string Organization, ADOError Error)> errors, int organizations)
+    {
+        if (errors.Count == 0 || errors.Count != organizations)
+        {
+            return null;
+        }
+        var slowedDown = errors.FindIndex(match: failure => failure.Error.Kind == ADOErrorKind.Throttled);
+        if (slowedDown >= 0)
+        {
+            return errors[slowedDown];
+        }
+        return errors.Exists(match: failure => failure.Error.Kind == ADOErrorKind.OtherDirectory) ? null : errors[0];
     }
 
     async Task LoopAsync(CancellationToken cancellationToken)
@@ -293,7 +345,7 @@ public sealed class PulseEngine : IPulseEngine
         AccessToken token;
         try
         {
-            token = await client.Tokens.TokenAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            token = await client.Tokens.TokenAsync(tenant: null, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         }
         catch (AuthException error)
         {
@@ -329,6 +381,7 @@ public sealed class PulseEngine : IPulseEngine
         var listed = new Dictionary<PRKey, PulseListed>();
         var completed = new Dictionary<PRKey, PullRequest>();
         var errors = new List<(string Organization, ADOError Error)>();
+        var readNone = false;
         lock (gate)
         {
             foreach (var (organization, lists, error) in results)
@@ -368,14 +421,17 @@ public sealed class PulseEngine : IPulseEngine
                     }
                 }
             }
-            if (errors.Count > 0 && errors.Count == organizations.Count)
+            readNone = errors.Count > 0 && errors.Count == organizations.Count;
+            if (FailureToStopAt(errors: errors, organizations: organizations.Count) is { } stop)
             {
-                var (organization, error) = errors[0];
-                problem = PulseProblem.From(error: error, now: time.GetUtcNow(), organization: organizations.Count > 1 ? organization : null);
+                problem = PulseProblem.From(error: stop.Error, now: time.GetUtcNow(), organization: organizations.Count > 1 ? stop.Organization : null);
                 failures++;
                 return;
             }
-            failures = 0;
+            if (!readNone)
+            {
+                failures = 0;
+            }
         }
 
         // The organizations read, by any spelling: a pull request read under another is of the same one.
@@ -398,9 +454,12 @@ public sealed class PulseEngine : IPulseEngine
             RemoveWhere(dictionary: vanished, predicate: key => !watched.Contains(item: key.Organization));
             RemoveWhere(dictionary: firstLoaded, predicate: organization => !watched.Contains(item: organization));
         }
-        await AddLinkedAsync(listed: listed, date: startedAt, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var (linkedElsewhere, linkedRead, linkedThrottled) = await AddLinkedAsync(listed: listed, date: startedAt, cancellationToken: cancellationToken)
+            .ConfigureAwait(continueOnCapturedContext: false);
+        var unread = errors.Concat(second: linkedElsewhere).ToList();
 
         IReadOnlyList<PRKey> keys;
+        HashSet<string> waiting;
         lock (gate)
         {
             active = listed;
@@ -408,19 +467,34 @@ public sealed class PulseEngine : IPulseEngine
                 .ToDictionary(keySelector: pair => pair.Key, elementSelector: pair => pair.Value);
             RemoveWhere(dictionary: details, predicate: key => !listed.ContainsKey(key: key));
             RemoveWhere(dictionary: entries, predicate: key => !listed.ContainsKey(key: key));
-            // Details for every pull request without them, all of them on the first load, and a budget of others.
+            waitingOnSignIn = unread.Where(predicate: failure => failure.Error.Kind == ADOErrorKind.OtherDirectory)
+                .Select(selector: failure => failure.Organization)
+                .ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
+            waiting = waitingOnSignIn;
+            // Details for every pull request without them, all of them on the first load, and a budget of others: but for the
+            // ones in organizations waiting on a sign-in, which stay as they were read.
             keys = RefreshPlanner.Plan(
-                candidates: listed.Values.Select(selector: item => new RefreshPlannerCandidate(Key: item.PullRequest.Key, Fingerprint: item.PullRequest.Fingerprint)),
+                candidates: listed.Values
+                    .Where(predicate: item => !waiting.Contains(item: item.PullRequest.Key.Organization))
+                    .Select(selector: item => new RefreshPlannerCandidate(Key: item.PullRequest.Key, Fingerprint: item.PullRequest.Fingerprint)),
                 cache: entries,
                 now: startedAt,
                 options: configuration.Planner,
                 limit: configuration.Planner.Budget);
         }
-        var throttled = await FetchDetailsAsync(
+        // Asked to slow down already, reading an organization's lists, a pull request that left them or one sent to you:
+        // nothing more goes out until then, and that's what's said.
+        var throttled = errors.Select(selector: failure => failure.Error).FirstOrDefault(predicate: error => error.Kind == ADOErrorKind.Throttled) ?? linkedThrottled;
+        if (throttled is null && client.RemainingWait() is { } wait)
+        {
+            throttled = ADOError.Throttled(retryAfter: wait);
+        }
+        throttled ??= await FetchDetailsAsync(
             pullRequests: keys.Where(predicate: listed.ContainsKey).Select(selector: key => listed[key].PullRequest).ToList(),
             configuration: configuration,
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-        throttled ??= await builds.ReadAsync(wanted: FailedBuilds(), client: client, date: startedAt, interval: configuration.Interval, cancellationToken: cancellationToken)
+        throttled ??= await builds.ReadAsync(
+            wanted: FailedBuilds(), waitingOnSignIn: waiting, client: client, date: startedAt, interval: configuration.Interval, cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
         if (throttled is null)
         {
@@ -429,7 +503,8 @@ public sealed class PulseEngine : IPulseEngine
             {
                 merged = [.. done.Values];
             }
-            throttled = await merges.FollowAsync(done: merged, configuration: configuration, client: client, date: startedAt, cancellationToken: cancellationToken)
+            throttled = await merges.FollowAsync(
+                done: merged, waitingOnSignIn: waiting, configuration: configuration, client: client, date: startedAt, cancellationToken: cancellationToken)
                 .ConfigureAwait(continueOnCapturedContext: false);
         }
 
@@ -440,10 +515,15 @@ public sealed class PulseEngine : IPulseEngine
             {
                 problem = PulseProblem.From(error: throttled, now: time.GetUtcNow());
             }
-            else if (errors.Count > 0)
+            else if (unread.Count > 0)
             {
-                var names = string.Join(separator: ", ", values: errors.Select(selector: failed => failed.Organization + " (" + failed.Error.Description + ")"));
-                problem = new PulseProblem(Kind: PulseProblemKind.SomeOrganizations, Detail: "Couldn't read " + names + ".");
+                // The others' pull requests are listed: this says which organizations weren't read, and what fixes it. Signing
+                // in to a directory comes first, whatever else is wrong: it's the one thing you can do about it.
+                problem = PulseProblem.FromFailures(failures: unread);
+                // Nothing could be read, neither your organizations' lists nor the pull requests sent to you, even if some are
+                // still listed as last read: as when no organization could be, a sign-in there is picked up within a minute.
+                // Pull requests sent to you that could be read count, as any organization's lists do.
+                failures = (readNone || organizations.Count == 0) && linkedRead == 0 ? failures + 1 : 0;
             }
             else
             {
@@ -529,8 +609,12 @@ public sealed class PulseEngine : IPulseEngine
 
     /// Reads the pull requests sent to you or watched that aren't in your lists, ten a refresh: the ones never read first,
     /// then the ones read longest ago. Each stays listed as it was last read in between. One that's closed or couldn't be
-    /// read is tried again an hour later; asked to slow down, it stops, and reads them once it may send again.
-    async Task AddLinkedAsync(Dictionary<PRKey, PulseListed> listed, DateTimeOffset date, CancellationToken cancellationToken)
+    /// read is tried again an hour later; asked to slow down, it stops, and reads them once it may send again. One in an
+    /// organization in a directory the Azure CLI isn't signed in to is read at the next refresh, with the others there,
+    /// rather than an hour later, since signing in there is what reads it: those organizations are returned, to say so,
+    /// with how many pull requests were read, and the error if Azure DevOps asked to slow down.
+    async Task<(List<(string Organization, ADOError Error)> Elsewhere, int Read, ADOError? Throttled)> AddLinkedAsync(
+        Dictionary<PRKey, PulseListed> listed, DateTimeOffset date, CancellationToken cancellationToken)
     {
         List<PRKey> due;
         lock (gate)
@@ -541,11 +625,25 @@ public sealed class PulseEngine : IPulseEngine
                 .Where(predicate: key => !linkedFailures.TryGetValue(key: key, value: out var failed) || date - failed > linkedRetry)
                 .OrderBy(keySelector: key => linked.TryGetValue(key: key, value: out var read) ? read.ReadAt : DateTimeOffset.MinValue)
                 .ThenBy(keySelector: key => key)
-                .Take(count: LinkedPerRefresh)
                 .ToList();
         }
+        var elsewhere = new List<(string Organization, ADOError Error)>();
+        var fetched = 0;
+        ADOError? throttled = null;
+        // Ten reads a refresh; the ones waiting on a directory's sign-in don't count, so they don't hold up the others: each
+        // such organization is tried once a refresh, and the rest of its pull requests wait with it.
+        var reads = 0;
         foreach (var key in due)
         {
+            if (elsewhere.Exists(match: failure => string.Equals(a: failure.Organization, b: key.Organization, comparisonType: StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+            if (reads >= LinkedPerRefresh)
+            {
+                break;
+            }
+            reads++;
             try
             {
                 string? me;
@@ -565,6 +663,7 @@ public sealed class PulseEngine : IPulseEngine
                 var dto = await client.GetAsync(url: ADOEndpoint.PullRequest(organization: key.Organization, id: key.Number), read: ADOPullRequest.Read, cancellationToken: cancellationToken)
                     .ConfigureAwait(continueOnCapturedContext: false);
                 var pr = PullRequest.From(organization: key.Organization, dto: dto);
+                fetched++;
                 lock (gate)
                 {
                     // A closed one is read again an hour later too, in case it's reopened.
@@ -593,7 +692,15 @@ public sealed class PulseEngine : IPulseEngine
             catch (ADOException error) when (error.Error.Kind == ADOErrorKind.Throttled)
             {
                 // Asked to slow down: nothing more is read, and nothing counts as failed.
+                throttled = error.Error;
                 break;
+            }
+            catch (ADOException error) when (error.Error.Kind == ADOErrorKind.OtherDirectory)
+            {
+                // Not this pull request's failure either: it stays as it was last read, until you sign in there. Nor is it one
+                // of the ten.
+                reads--;
+                elsewhere.Add(item: (key.Organization, error.Error));
             }
             catch (ADOException error)
             {
@@ -611,11 +718,12 @@ public sealed class PulseEngine : IPulseEngine
         }
         lock (gate)
         {
-            foreach (var (key, read) in linked)
+            foreach (var (key, kept) in linked)
             {
-                listed[key] = read.Listed;
+                listed[key] = kept.Listed;
             }
         }
+        return (elsewhere, fetched, throttled);
     }
 
     /// Reads the details of `pullRequests`, `Concurrency` at a time. Returns the error when Azure DevOps asked BriefBar to
@@ -794,30 +902,6 @@ public sealed class PulseEngine : IPulseEngine
         catch (ADOException error)
         {
             return (null, error.Error);
-        }
-    }
-
-    TimeSpan NextDelay()
-    {
-        lock (gate)
-        {
-            var interval = configuration.Interval;
-            switch (problem?.Kind)
-            {
-                case PulseProblemKind.Throttled:
-                    var wait = (problem.Until ?? time.GetUtcNow()) - time.GetUtcNow();
-                    return wait > interval ? wait : interval;
-                case PulseProblemKind.CliNotFound or PulseProblemKind.SignedOut or PulseProblemKind.AuthFailed:
-                    // Picks up an `az login` within a minute: asking the CLI costs nothing on the network.
-                    return interval < TimeSpan.FromMinutes(value: 1) ? interval : TimeSpan.FromMinutes(value: 1);
-                default:
-                    if (failures == 0)
-                    {
-                        return interval;
-                    }
-                    var seconds = interval.TotalSeconds * Math.Pow(x: 2, y: Math.Min(val1: failures, val2: 4));
-                    return TimeSpan.FromSeconds(value: Math.Min(val1: seconds, val2: 600));
-            }
         }
     }
 

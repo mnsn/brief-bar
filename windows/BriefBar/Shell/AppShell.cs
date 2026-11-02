@@ -154,7 +154,9 @@ internal sealed class AppShell : IDisposable
                 appearance: new AppearanceSettingsViewModel(
                     settings: appSources.Appearance, transparencyEffects: () => uiSettings.AdvancedEffectsEnabled, barColorNow: BarColorNow),
                 palette: Palette,
-                findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)));
+                findOrganizations: () => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.FindOrganizations)),
+                addOrganization: (name, found) => !quitting && sources.Running<AzureDevOpsSource>() is { } azureDevOps && azureDevOps.AddOrganization(name: name, found: found),
+                signIn: tenant => Perform(request: new CommandRequest(Section: SectionId.AzureDevOpsPullRequests, Command: AzureDevOpsCommands.SignInTo(tenant: tenant))));
             settings = new SettingsWindow(shell: this, viewModel: viewModel);
             var opened = settings;
             opened.Closed += (_, _) =>

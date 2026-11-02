@@ -11,7 +11,11 @@ public sealed class SettingsViewModel
 {
     readonly SourceSwitch sources;
 
-    /// `findOrganizations` asks Azure DevOps to look for your organizations again.
+    /// - `findOrganizations` asks Azure DevOps to look for your organizations again.
+    /// - `addOrganization` asks Azure DevOps to check whether your sign-in can read an organization you add, and watch it
+    ///   if it should, then hands what it found to its second argument, on any thread, once, or null when the check ended
+    ///   without anything to act on; false when Azure DevOps isn't reading.
+    /// - `signIn` signs in to the Azure CLI in a directory, an organization's.
     public SettingsViewModel(
         SourceSwitch sources,
         TeamsSettings teams,
@@ -20,7 +24,9 @@ public sealed class SettingsViewModel
         GitHubSettings gitHub,
         AppearanceSettingsViewModel appearance,
         ThemePalette palette,
-        Action findOrganizations)
+        Action findOrganizations,
+        Func<string, Action<OrganizationAccess?>, bool> addOrganization,
+        Action<string> signIn)
     {
         ArgumentNullException.ThrowIfNull(argument: sources);
         ArgumentNullException.ThrowIfNull(argument: appearance);
@@ -28,7 +34,7 @@ public sealed class SettingsViewModel
         Appearance = appearance;
         Sources = sources.Entries.Select(selector: entry => new SourceSettingsViewModel(entry: entry, palette: palette)).ToList();
         Teams = new TeamsSettingsViewModel(settings: teams);
-        AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations);
+        AzureDevOps = new AzureDevOpsSettingsViewModel(settings: azureDevOps, findOrganizations: findOrganizations, addOrganization: addOrganization, signIn: signIn);
         Copilot = new CopilotSettingsViewModel(settings: copilot);
         GitHub = new GitHubSettingsViewModel(settings: gitHub);
         Refresh();
