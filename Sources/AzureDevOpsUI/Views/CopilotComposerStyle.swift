@@ -285,7 +285,8 @@ struct ComposerCapsuleMenu<Items: View>: View {
 struct ComposerCopyButton: View {
     let text: String
 
-    /// What it copied last, while it says so: once you change the prompt, it's Copy again.
+    /// What it copied, while it says so. Any change to the prompt forgets it, so Undo or Reset back to the same text
+    /// doesn't bring Copied back without another copy.
     @LocalState private var copied: String?
     /// How many times it copied, so that each time says so for as long.
     @LocalState private var copies = 0
@@ -308,6 +309,7 @@ struct ComposerCopyButton: View {
         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .help("Copy the prompt as it stands, to paste it where you like")
         .accessibilityLabel("Copy Prompt")
+        .onChange(of: text) { copied = nil }
         .task(id: copies) {
             guard copies > 0 else { return }
             do {
