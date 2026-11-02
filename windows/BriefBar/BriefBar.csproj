@@ -17,7 +17,11 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <!-- Only the Windows App SDK that BriefBar uses: WinUI, which brings Base, Foundation, InteractiveExperiences and
+         WebView2. The Microsoft.WindowsAppSDK metapackage would add AI, ML (Windows ML, with ONNX Runtime and DirectML),
+         Search, Widgets and DWriteCore, about 60 MB of the app, which BriefBar never loads. Self-contained, it needs no
+         Microsoft.WindowsAppSDK.Runtime. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
   </ItemGroup>
   <ItemGroup>
