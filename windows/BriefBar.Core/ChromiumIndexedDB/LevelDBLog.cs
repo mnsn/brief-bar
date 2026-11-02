@@ -1,0 +1,177 @@
+namespace BriefBar.Core.ChromiumIndexedDB;
+
+/// LevelDB's write-ahead log: every write goes there first, in 32 KiB blocks of checksummed records, each a write batch or
+/// a fragment of one. LevelDB only ever appends to it, so it can be read while it's written, and read on from where the
+/// last complete batch ended. The Mac's `LevelDBLog`.
+public static class LevelDBLog
+{
+    public const int BlockSize = 32_768;
+
+    public const int HeaderSize = 7;
+
+    const byte FullRecord = 1;
+    const byte FirstRecord = 2;
+    const byte MiddleRecord = 3;
+    const byte LastRecord = 4;
+
+    /// Parses `bytes`, which start at `fileOffset` in the log: 0, or a previous `End`. Stops before a record or a batch
+    /// that isn't all there yet. Only writes to keys that `keep` accepts are kept.
+    public static LevelDBLogParse Parse(byte[] bytes, long fileOffset = 0, Func<ArraySegment<byte>, bool>? keep = null)
+    {
+        ArgumentNullException.ThrowIfNull(argument: bytes);
+        keep ??= _ => true;
+        var entries = new List<LevelDBEntry>();
+        var end = fileOffset;
+        var corrupt = 0;
+        var position = 0;
+        List<byte>? pending = null;
+
+        void Batch(ReadOnlySpan<byte> data)
+        {
+            try
+            {
+                entries.AddRange(collection: Writes(batch: data.ToArray(), keep: keep));
+            }
+            catch (FormatErrorException)
+            {
+                corrupt += 1;
+            }
+        }
+
+        // Drops the rest of a block, as LevelDB does with a record it can't trust.
+        void SkipBlock(int left)
+        {
+            corrupt += 1;
+            pending = null;
+            position += left;
+            if (position <= bytes.Length)
+            {
+                end = fileOffset + position;
+            }
+        }
+
+        while (position < bytes.Length)
+        {
+            var left = BlockSize - (int)((fileOffset + position) % BlockSize);
+            if (left < HeaderSize)
+            {
+                // A block's last few bytes are zeros when no header fits.
+                position += left;
+                continue;
+            }
+            if (bytes.Length - position < HeaderSize)
+            {
+                break;
+            }
+            var header = new ByteReader(bytes: bytes, start: position, end: position + HeaderSize);
+            var checksum = header.ReadFixed32();
+            var size = (int)header.ReadLittleEndian(count: 2);
+            var type = header.ReadByte();
+            // Space LevelDB hasn't written yet reads as zeros.
+            if (checksum == 0 && size == 0 && type == 0)
+            {
+                break;
+            }
+            if (HeaderSize + size > left)
+            {
+                SkipBlock(left: left);
+                continue;
+            }
+            if (bytes.Length - position - HeaderSize < size)
+            {
+                break;
+            }
+            var data = bytes.AsSpan(start: position + HeaderSize, length: size);
+            if (CRC32C.Unmask(masked: checksum) != CRC32C.Checksum(bytes: data, initial: CRC32C.Checksum(bytes: [type])))
+            {
+                // At the end of the file, it may still be being written: try again later.
+                if (position + HeaderSize + size >= bytes.Length)
+                {
+                    break;
+                }
+                SkipBlock(left: left);
+                continue;
+            }
+            position += HeaderSize + size;
+            switch (type)
+            {
+                case FullRecord:
+                    if (pending is not null)
+                    {
+                        corrupt += 1;
+                    }
+                    pending = null;
+                    Batch(data: data);
+                    end = fileOffset + position;
+                    break;
+                case FirstRecord:
+                    if (pending is not null)
+                    {
+                        corrupt += 1;
+                    }
+                    pending = [.. data];
+                    break;
+                case MiddleRecord:
+                    if (pending is null)
+                    {
+                        corrupt += 1;
+                    }
+                    else
+                    {
+                        pending.AddRange(collection: data.ToArray());
+                    }
+                    break;
+                case LastRecord:
+                    if (pending is not null)
+                    {
+                        pending.AddRange(collection: data.ToArray());
+                        Batch(data: pending.ToArray());
+                        end = fileOffset + position;
+                    }
+                    else
+                    {
+                        corrupt += 1;
+                    }
+                    pending = null;
+                    break;
+                default:
+                    corrupt += 1;
+                    break;
+            }
+        }
+        return new LevelDBLogParse(Entries: entries, End: end, Corrupt: corrupt);
+    }
+
+    /// A write batch: its first sequence number, how many writes it holds, then each write.
+    internal static List<LevelDBEntry> Writes(byte[] batch, Func<ArraySegment<byte>, bool> keep)
+    {
+        var reader = new ByteReader(bytes: batch);
+        var sequence = reader.ReadFixed64();
+        var count = reader.ReadFixed32();
+        var entries = new List<LevelDBEntry>();
+        for (ulong index = 0; index < count; index++)
+        {
+            var kind = reader.ReadByte();
+            var key = reader.ReadBytes(count: reader.ReadCount());
+            switch (kind)
+            {
+                case 1:
+                    var value = reader.ReadBytes(count: reader.ReadCount());
+                    if (keep(arg: key))
+                    {
+                        entries.Add(item: new LevelDBEntry(Sequence: unchecked(sequence + index), Key: [.. key], Value: [.. value]));
+                    }
+                    break;
+                case 0:
+                    if (keep(arg: key))
+                    {
+                        entries.Add(item: new LevelDBEntry(Sequence: unchecked(sequence + index), Key: [.. key], Value: null));
+                    }
+                    break;
+                default:
+                    throw FormatErrorException.Corrupt(what: "write kind");
+            }
+        }
+        return reader.IsAtEnd ? entries : throw FormatErrorException.Corrupt(what: "write batch");
+    }
+}

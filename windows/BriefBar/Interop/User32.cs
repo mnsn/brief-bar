@@ -36,6 +36,34 @@ internal static class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetWindowRect(nint hWnd, out Win32Rect rect);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetClientRect(nint hWnd, out Win32Rect rect);
+
+    [DllImport("user32.dll")]
+    public static extern int FillRect(nint hdc, ref Win32Rect rect, nint brush);
+
+    /// Repaints the window, or `updateRect` or `updateRegion` of it, as `flags` say (`RDW_INVALIDATE` and the like).
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RedrawWindow(nint hWnd, nint updateRect, nint updateRegion, uint flags);
+
+    /// `RedrawWindow`'s: the window is to be repainted.
+    public const uint RDW_INVALIDATE = 0x0001;
+
+    /// `RedrawWindow`'s: its background with it, through `WM_ERASEBKGND`.
+    public const uint RDW_ERASE = 0x0004;
+
+    /// `RedrawWindow`'s: the background at once, before it returns.
+    public const uint RDW_ERASENOW = 0x0200;
+
+    /// A system metric, such as whether this is a Remote Desktop session (`SM_REMOTESESSION`).
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int index);
+
+    /// `GetSystemMetrics`'s: nonzero in a Remote Desktop session.
+    public const int SM_REMOTESESSION = 0x1000;
+
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(nint hWnd, out uint processId);
 
