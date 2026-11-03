@@ -68,6 +68,8 @@ final class PullRequestSessions: ObservableObject {
     private var checking: Set<PRKey> = []
     /// The pull requests to read again once the read under way ends: their window showed them again meanwhile.
     private var readAgain: Set<PRKey> = []
+    /// The pull requests whose session to check again once the check under way ends: a read asked for one meanwhile.
+    private var checkAgain: Set<PRKey> = []
     private var isScheduled = false
     private var subscriptions: Set<AnyCancellable> = []
 
@@ -304,12 +306,18 @@ final class PullRequestSessions: ObservableObject {
     private func checkDelivery(_ key: PRKey, unlessKnown: Bool = false) async {
         guard isReadable(key), let state = followed[key], state.found != nil, let record = current(state, key),
               let session = sessions[key], session.canChoose, let choice = session.session, !choice.isUnavailable,
-              !checking.contains(key), !unlessKnown || session.delivery == nil
+              !unlessKnown || session.delivery == nil
         else { return }
+        // One under way may have been called off, as its page went off screen and came back: a read's check follows it.
+        guard !checking.contains(key) else {
+            if !unlessKnown { checkAgain.insert(key) }
+            return
+        }
         checking.insert(key)
         deliveryCheckedForTests?(choice.id)
         let value = await copilot.delivery(to: choice, for: PullRequestTasks.task(for: record), checksRepository: false)
         checking.remove(key)
+        if checkAgain.remove(key) != nil { spawn(for: key) { [weak self] in await self?.checkDelivery(key) } }
         guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
         if case .busy = value {
             // Busy says itself as it changes (`update`); but another session you chose meanwhile is checked now.
