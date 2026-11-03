@@ -163,8 +163,7 @@ struct CopilotComposerView: View {
     @LocalState private var choices: [SessionChoice] = []
     /// Still finding sessions, or which of them mention it.
     @LocalState private var isLooking = false
-    /// Whether to look for the sessions again once the look under way ends: you chose one in the details that it hadn't
-    /// found.
+    /// Whether to look for the sessions again once the look under way ends: you chose in the details meanwhile.
     @LocalState private var looksAgain = false
     /// Where it goes: nil for a new session.
     @LocalState private var target: SessionChoice?
@@ -331,7 +330,12 @@ struct CopilotComposerView: View {
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
         // The session you choose for the pull request in its details, until you choose here or change the prompt.
-        .onChange(of: settings.copilotPullRequestSessions) { choseInDetails() }
+        .onChange(of: settings.copilotPullRequestSessions) { old, new in
+            guard case .pullRequest(let pullRequest, _) = subject else { return }
+            let key = PRKey(pullRequest.organization, pullRequest.id)
+            guard old.last(where: { $0.isFor(key) }) != new.last(where: { $0.isFor(key) }) else { return }
+            choseInDetails()
+        }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -908,13 +912,10 @@ struct CopilotComposerView: View {
         findSessions()
     }
 
-    /// You chose where the pull request's work goes in its details: it goes there, until you choose here or change the
-    /// prompt (`update`); once found, when it's a session that started since the window looked for them.
+    /// You chose where the pull request's work goes in its details, or left it to BriefBar again: it goes there, until you
+    /// choose here or change the prompt (`update`), once the sessions are found again, as one may have started since the
+    /// window looked for them.
     private func choseInDetails() {
-        guard let id = store.chosenSession(for: subject)?.session?.id, !choices.contains(where: { $0.id == id }) else {
-            update()
-            return
-        }
         if isLooking {
             looksAgain = true
         } else {
