@@ -38,7 +38,7 @@ import Testing
 
     @Test func theDemoLinksItsPullRequestsWorkItemsAndTasks() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -88,7 +88,7 @@ import Testing
     /// teammate's, which the lists don't have, opens only where it lives.
     @Test func yourPullRequestsShowInBriefBarFromALink() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -127,7 +127,7 @@ import Testing
 
     @Test func itTellsWhatItKnowsOfItsPullRequestsAndTasksWithoutReadingMore() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -169,7 +169,7 @@ import Testing
 
     @Test func whoSentAPullRequestInAChatIsntShared() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -211,7 +211,7 @@ import Testing
         #expect(WorkLinksStore.story(of: working).sentence == "Working: Run the cart tests")
 
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -268,7 +268,7 @@ import Testing
     /// once they are, so a summary asked for then has its description and comments.
     @Test func aWorkItemsStoryIsToldAgainOnceItsDetailsAreRead() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -294,7 +294,7 @@ import Testing
     /// one when asked; the first sign-in, or the same one, changes nothing.
     @Test func anotherAccountForgetsWhatWasToldOfAzureDevOps() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -327,7 +327,7 @@ import Testing
     /// it stops.
     @Test func itReadsMoreOfItsThingsForASummaryFromWhatTheDemoHas() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         let sprint = SprintStore(settings: settings, mode: .demo, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .demo, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: true)
@@ -391,7 +391,7 @@ import Testing
     /// again, and what the engine that read as them still brings is left out; what's read as the new one is taken.
     @Test func anotherAccountForgetsWhatWasReadAsTheLastOne() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .live)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
         let sprint = SprintStore(settings: settings, mode: .live, client: store.client)
         let copilot = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
         let links = Links(defaults: MemoryDefaults(), isDemo: false)
@@ -460,7 +460,7 @@ private struct Timeout: Error, CustomStringConvertible {
 /// Lets the store take what it's told until `condition` holds.
 @MainActor
 private func until(_ what: String, _ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    let deadline = ContinuousClock.now.advanced(by: waitLimit)
     while !condition() {
         guard ContinuousClock.now < deadline else { throw Timeout(description: "Timed out waiting for \(what)") }
         try await Task.sleep(for: .milliseconds(2))

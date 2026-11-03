@@ -332,6 +332,13 @@ extension AppSettings {
         guard copilotPullRequestSessions.contains(where: { $0.isFor(key) }) else { return }
         copilotPullRequestSessions.removeAll { $0.isFor(key) }
     }
+
+    /// Forgets what you chose for a pull request's work once a task started on it in another session after you chose it,
+    /// which takes its place (`PullRequestSession.chosen(_:after:)`), so that clearing that task doesn't bring it back.
+    func forgetChosenSession(for key: PRKey, supersededBy run: CopilotRun) {
+        guard let chosen = chosenSession(for: key), chosen.date < run.startedAt, chosen.session?.id != run.id else { return }
+        forgetChosenSession(for: key)
+    }
 }
 
 extension CopilotTasksStore {

@@ -272,11 +272,11 @@ public enum DemoData {
                 checks: [build("search CI", .passed, ago(5 * day))],
                 activity: [added(81, me, by: chen, ago(5 * day))]
             ),
-            // Waiting for reviewers while the build runs.
+            // Waiting for reviewers while the build runs: its run shows its stages as they are (DemoRunningBuild.swift).
             record(
                 pr(4099, "Log slow database queries", repo: "infra", created: ago(90),
                    reviewers: [reviewer(alex), reviewer(jordan)], branch: "slow-query-log"),
-                checks: [build("infra CI", .running, nil), minimumReviewers(.pending, 2)],
+                checks: [Check(name: "infra CI", kind: .build, state: .running, buildId: runningBuildId), minimumReviewers(.pending, 2)],
                 activity: [Activity(threadId: 91, kind: .push, at: ago(20), actor: me, commitCount: 1)]
             ),
             // Waiting for the author: you asked for changes.

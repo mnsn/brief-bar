@@ -9,7 +9,7 @@ import Testing
 @MainActor
 @Suite struct PullRequestPipelinesStoreTests {
     @Test func publishesAccountAndAuthoredListAtomicallyEvenWhenPRsAreUnchanged() async {
-        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         var snapshot = DemoData.snapshot(now: Date())
         snapshot.account = "tenant/robin"
         store.receive(snapshot)
@@ -26,7 +26,7 @@ import Testing
 
     @Test func includesOnlyAuthoredActivePRsIncludingDraftsAndIdlePRs() async {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         let snapshot = DemoData.snapshot(now: store.now)
         let expected = snapshot.records.filter { $0.role == .author && $0.pullRequest.status == .active }.map(\.pullRequest)
@@ -46,7 +46,7 @@ import Testing
 
     @Test func demoUpdatesAndRemovesPRCardsWithoutChangingPinnedCounts() async {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         let pipelines = PipelinesStore(settings: settings, mode: .demo, client: store.client)
         pipelines.setPullRequests(store.authoredPullRequests)
@@ -62,7 +62,7 @@ import Testing
 
     @Test func createsFreshPlaceholdersWhenPRMetadataChanges() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         var pr = try #require(store.authoredPullRequests.first)
         // A live store can show placeholders without starting its engine or using Azure DevOps.

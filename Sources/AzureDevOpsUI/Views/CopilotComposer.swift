@@ -163,6 +163,9 @@ struct CopilotComposerView: View {
     @LocalState private var choices: [SessionChoice] = []
     /// Still finding sessions, or which of them mention it.
     @LocalState private var isLooking = false
+    /// Whether to look for the sessions again once the look under way ends: you chose one in the details that it hadn't
+    /// found.
+    @LocalState private var looksAgain = false
     /// Where it goes: nil for a new session.
     @LocalState private var target: SessionChoice?
     /// You chose where it goes: what BriefBar finds later doesn't change it.
@@ -328,7 +331,7 @@ struct CopilotComposerView: View {
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
         // The session you choose for the pull request in its details, until you choose here or change the prompt.
-        .onChange(of: settings.copilotPullRequestSessions) { update() }
+        .onChange(of: settings.copilotPullRequestSessions) { choseInDetails() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -905,6 +908,20 @@ struct CopilotComposerView: View {
         findSessions()
     }
 
+    /// You chose where the pull request's work goes in its details: it goes there, until you choose here or change the
+    /// prompt (`update`); once found, when it's a session that started since the window looked for them.
+    private func choseInDetails() {
+        guard let id = store.chosenSession(for: subject)?.session?.id, !choices.contains(where: { $0.id == id }) else {
+            update()
+            return
+        }
+        if isLooking {
+            looksAgain = true
+        } else {
+            findSessions()
+        }
+    }
+
     /// The sessions it can go to: BriefBar's tasks and the Copilot app's sessions first, then which of the app's mention
     /// it, which takes longer. What's suggested goes in unless you've chosen.
     private func findSessions() {
@@ -920,6 +937,10 @@ struct CopilotComposerView: View {
                 update()
             }
             isLooking = false
+            if looksAgain {
+                looksAgain = false
+                findSessions()
+            }
         }
     }
 

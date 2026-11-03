@@ -359,8 +359,9 @@ It opens the session in Copilot, or **Continue in Terminal** for a task BriefBar
 and, under **Use for This Pull Request**, lists the sessions that go with it, each with why and how it
 stands, the app's other sessions, and **New Session**: the one you check is where the pull request's work
 goes from then on, in the Send to Copilot window too, until a task starts on it in another session. **Let
-BriefBar Choose** goes back to BriefBar's choice. Without Send Work to Copilot, the line shows only the
-sessions Show Links links to it, to look at.
+BriefBar Choose** goes back to BriefBar's choice. BriefBar reads the Copilot app's sessions for the line only
+while the details show in a window you can see: as they come on screen, then every ten seconds. Without Send
+Work to Copilot, the line shows only the sessions Show Links links to it, to look at.
 
 **Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
 on, with a few around them, as they were in the update it was made on: their numbers, before and after the
@@ -412,6 +413,22 @@ backoff’, not pushed** or **Couldn't fix it: …**; click it to see the sessio
 the details says **2 fixes ready in ‘Retry backoff’**, which takes you to the threads, with **Push & Reply…**, which
 opens the Send to Copilot window to commit them, push and reply from that session. **Esc** closes a composer, then the
 details, and VoiceOver hears what becomes of each.
+
+**Click a build that failed** in a pull request's details, or **Build failed** in What's Left, to find out why
+without leaving BriefBar: it opens under its row, as it does when the pull request opens at it from elsewhere, such
+as the Pipelines page, and only then does BriefBar read its run. You see its stages,
+where it failed, from its stage to its task, and whether it's the change's doing: that it built an older commit
+than the pull request's latest, that it passed on the very same commit before, so it may be flaky, that it
+passed on this commit before the target branch changed, or that the pipeline's latest run on the target branch
+failed too or passed, each opening the run it names. Then its errors, the tests that failed, with what each said,
+all of it with **Show More** when it's long, and its stack trace when you ask, and the last lines of the failed
+step's log, which you can select and scroll sideways, all of the 200 BriefBar read with **Show All**. **Open Run**,
+**Open Log** and **Open Tests** open the rest in Azure DevOps, and, while Send Work to Copilot is on,
+**Fix the Build with Copilot…** sends it to Copilot, as the pull request's menu does, or says Copilot's on it. A
+build that's still going opens the same way, to show its stages as they are and what it runs now. **↻**, beside
+when it was read, reads it again, as BriefBar does once it finished or runs again, or once someone pushes to the
+pull request or retargets it; it keeps what it read in memory, so opening it again soon after reads little. When it
+can't read it again, what it read stays, with why, unless the run ran again since.
 
 **Needs You** is what waits on you, and a dot marks what's new. Opening a pull request from BriefBar, its
 details in the window, or **Mark as Seen**, sees it: what's new moves on until something new happens, but
@@ -969,7 +986,7 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   item, or a pull request's comments, build, conflicts or review. Copilot then works as you: it changes code in a new worktree, runs commands, uses your MCP
   servers, pushes a branch and opens a pull request. BriefBar itself reads only the repository you
   choose, with git, and Copilot's log of that session; and, as the window that sends one opens, and while
-  a pull request's details show, every ten seconds, the Copilot app's sessions its work could go to,
+  a pull request's details show in a window you can see, every ten seconds, the Copilot app's sessions its work could go to,
   read-only: their names, projects, branches, the pull requests the app records with them and which run a
   turn now, from its database; the folder each works in, from its session state; which ones the app has
   open; and which of those active lately link to it in their logs. It reads nothing of Copilot's while
@@ -995,7 +1012,11 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   they show, and kept in memory only: they're forgotten a quarter of an hour after they're read, unless
   they're still on screen. BriefBar draws their text
   itself, without a web page: nothing they link to or embed, such as an image, is loaded, until you
-  click it and it opens in your browser.
+  click it and it opens in your browser. A pull request's build is read only when you open it in the
+  pull request's details, and again once it finished or runs again while it shows: its steps and errors,
+  the end of the failed step's log, its failed tests with their messages and stack traces, and the
+  pipeline's other runs, to tell whether it's the change's doing. They're kept in memory only, for the
+  last 20 builds you opened, until you open others, someone else signs in or you turn Azure DevOps off.
 - **The code a pull request's comments are on** is read only in its details, for each thread on code
   as it comes on screen: the file it's on, before and after the change the comment was made on, up to
   1 MB, and which files each of the pull request's updates changed, with the same sign-in and GET
@@ -1103,9 +1124,10 @@ lists only the review requests made to you by name too, and can't watch a team's
 
 Azure DevOps doesn't include a build's errors with a pull request's policies, so BriefBar reads the
 build's timeline once, as it does for a pinned pipeline, and shows where it failed and the first
-error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." The
-rest is in the build's log: ↗ beside the build in the pull request's details, in BriefBar's window, opens
-its run. Until the timeline has been read, or when it can't be, the list names the build that failed.
+error there, such as "shop-web CI · Run unit tests: 2 tests failed in DeliveryEstimateTests." Until the
+timeline has been read, or when it can't be, the list names the build that failed. For the rest, click the
+build in the pull request's details, in BriefBar's window: it opens there with its errors, the tests that
+failed and the end of its log, read as it opens. ↗ beside it opens its run in Azure DevOps.
 
 ### How does it pick my team's sprint?
 

@@ -14,7 +14,7 @@ private final class ChangeCounter: Sendable {
         value.withLock { $0 }
     }
 
-    func wait(forMoreThan previous: Int, timeout: Duration = .seconds(5)) async throws {
+    func wait(forMoreThan previous: Int, timeout: Duration = waitLimit) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while clock.now < deadline {

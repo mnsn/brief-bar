@@ -53,12 +53,17 @@ struct PullRequestSessionLine: View {
     }
 
     /// How a session stands (`Standing`): as the source that lists it tells it through Show Links; a task's as BriefBar
-    /// follows it; else whether the Copilot app runs a turn in it, and when it was last active. Busy, while a task of
-    /// BriefBar's works in its checkout for another session.
+    /// follows it, or, once it's done, as Copilot's list tells its session while it works or waits for you, as when you went
+    /// on with it in the Copilot app; else whether the Copilot app runs a turn in it, and when it was last active. Busy,
+    /// while a task of BriefBar's works in its checkout for another session.
     static func standing(of choice: SessionChoice, links: Links, entries: [CopilotTaskEntry]) -> Standing {
         if choice.isFolderBusy, !choice.isBusy { return Standing(text: "Busy", state: nil, date: nil) }
         if choice.run != nil, let entry = entries.first(where: { $0.id == choice.id }) {
             let phase = entry.status.phase
+            if !phase.isActive, links.isOn, let ref = ItemRef.session(choice.id), let live = links.describe(ref, by: .copilot),
+               let state = live.state, state == .needsYou || state == .running, let status = live.status, !status.isEmpty {
+                return Standing(text: status, state: state, date: live.date ?? choice.lastActive)
+            }
             return Standing(text: phase.title, state: phase.state, date: entry.status.since ?? entry.startedAt)
         }
         if links.isOn, let ref = ItemRef.session(choice.id), links.isDescribed(ref) {
@@ -232,7 +237,7 @@ private struct SessionLineRow: View {
                     .fixedSize()
                     .help(date.formatted(date: .abbreviated, time: .shortened))
             }
-            if waitsForYou {
+            if waitsForYou, choice?.isUnavailable != true {
                 Image(systemName: "arrow.up.forward.app")
                     .font(size: 11.5, weight: .medium)
                     .foregroundStyle(ItemState.needsYou.color)
@@ -273,19 +278,20 @@ private struct SessionLineRow: View {
     }
 
     /// What a click does: opens it in the Copilot app while it waits for you there; else shows its page in the details,
-    /// while Show Links is on; else opens one of the app's sessions there.
+    /// while Show Links is on; else opens one of the app's sessions there. Never opens it in the app while Copilot works in
+    /// it, or in its checkout, for a task BriefBar sent.
     private var primaryAction: (perform: () -> Void, help: String)? {
         guard let choice, let ref = ItemRef.session(choice.id) else { return nil }
         let described = links.isOn && links.isDescribed(ref) ? links.describe(ref) : nil
-        let opensInApp = choice.appSession != nil || choice.run?.isAppSession == true
-        if waitsForYou {
-            return ({ PullRequestSessionMenu.openInCopilot(choice, links: links) }, "Opens it in the Copilot app, where you answer it")
+        let opensInApp = !choice.isUnavailable && (choice.appSession != nil || choice.run?.isAppSession == true)
+        if waitsForYou, !choice.isUnavailable {
+            return ({ PullRequestSessionMenu.openInCopilot(choice, links: links, copilot: copilot) }, "Opens it in the Copilot app, where you answer it")
         }
         if described != nil, let navigation {
             return ({ _ = navigation.open(ref) }, "Shows its page")
         }
         if opensInApp {
-            return ({ PullRequestSessionMenu.openInCopilot(choice, links: links) }, "Opens it in the Copilot app")
+            return ({ PullRequestSessionMenu.openInCopilot(choice, links: links, copilot: copilot) }, "Opens it in the Copilot app")
         }
         return nil
     }
@@ -594,19 +600,37 @@ struct PullRequestSessionMenu: View {
             // Not while Copilot works in it, or in its checkout for another task, as the line says Busy then.
             .disabled(entry == nil || entry?.status.phase.isActive == true || choice.isUnavailable || !copilot.canSend)
         } else {
-            Button("Open in Copilot") { Self.openInCopilot(choice, links: links) }
-                .disabled(choice.isBusy)
+            Button("Open in Copilot") { Self.openInCopilot(choice, links: links, copilot: copilot) }
+                .disabled(choice.isUnavailable)
         }
     }
 
     /// Opens a session in the Copilot app: as Copilot's list opens it, while it lists it, where its question is answered;
-    /// else by its link.
-    static func openInCopilot(_ choice: SessionChoice, links: Links) {
+    /// else by its link. Not while Copilot works in it, or in its checkout, for a task BriefBar sent, as things are when you
+    /// click, since opening it then would fork its history or mix their work: then it says so.
+    static func openInCopilot(_ choice: SessionChoice, links: Links, copilot: CopilotTasksStore) {
+        if let reason = busyReason(for: choice, copilot: copilot) {
+            let alert = NSAlert()
+            alert.messageText = "The session didn't open in Copilot"
+            alert.informativeText = reason
+            NSApp.activate()
+            alert.runModal()
+            return
+        }
         if let ref = ItemRef.session(choice.id), links.isOn, links.isDescribed(ref), let open = links.describe(ref).open {
             open()
         } else {
             CopilotTasksStore.openInAppOrSay(choice.id)
         }
+    }
+
+    /// Why a session mustn't open in the Copilot app now: Copilot works in it, or in its checkout, for a task BriefBar sent.
+    /// With Send Work to Copilot off, from what BriefBar knows of it, reading nothing of Copilot's, such as the folder one
+    /// of the app's sessions works in.
+    static func busyReason(for choice: SessionChoice, copilot: CopilotTasksStore) -> String? {
+        if copilot.isOn { return copilot.busyReason(for: choice) }
+        if let folder = choice.folder { return copilot.busyReason(for: choice, in: folder) }
+        return copilot.isWorking(inSession: choice.id) ? "Copilot is still working in it. Try again once it's done." : nil
     }
 
     /// How work would reach a session, in a sentence.

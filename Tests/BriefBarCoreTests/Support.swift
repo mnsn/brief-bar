@@ -44,6 +44,12 @@ struct TestError: Error, CustomStringConvertible {
     }
 }
 
+/// How long a test waits for something before it fails. `make test` runs every test on one thread
+/// (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`), where a test may get its turn only after most of the others. On CI's busy
+/// runner, tests waited half a minute or more, about as long as the whole run takes. A wait that's answered still
+/// returns as soon as it is: only a test that fails takes this long.
+let waitLimit: Duration = .seconds(60)
+
 /// The package's Swift sources that match `pattern`, by path under `Sources/`, such as `BriefBarCore/Attribution.swift`.
 func sourcesMatching(_ pattern: some RegexComponent, filePath: String = #filePath) throws -> Set<String> {
     // Resolved, as the enumerator's paths can be: a checkout under /tmp is under /private/tmp.

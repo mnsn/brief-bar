@@ -9,6 +9,11 @@ import Synchronization
 /// it says it listens, claims its own session's requests by renaming them, acts only on those that pass the contract's
 /// checks, and says how each went, removing what it claimed.
 final class FakeExtension: Sendable {
+    /// How often it looks for requests, and BriefBar's side of these tests at the outbox (`Timing.patient`), as do these
+    /// tests' own waits. Each look reads the outbox's folders, in many tests at once: looking every 25 ms rather than every 5,
+    /// these tests use about a quarter less CPU, and take about as long.
+    static let lookEvery: Duration = .milliseconds(25)
+
     /// How it answers a request it claimed.
     enum Answer: Sendable {
         /// It's done: a send's message ID, or a fork's session.
@@ -54,15 +59,19 @@ final class FakeExtension: Sendable {
         try? FileManager.default.removeItem(at: folder("listening").appendingPathComponent("\(sessionId).json"))
     }
 
-    /// Starts taking its session's requests, looking every few milliseconds, until `stop()`.
+    /// Starts taking its session's requests, looking every `lookEvery`, until `stop()`. Started again, it answers as it's
+    /// told then, and stops looking as it was told before, which would otherwise go on until the tests end.
     func start(answer: @escaping @Sendable (Received) -> Answer = { _ in .done() }) {
         let task = Task { [self] in
             while !Task.isCancelled {
                 takeRequests(answer: answer)
-                try? await Task.sleep(for: .milliseconds(5))
+                try? await Task.sleep(for: Self.lookEvery)
             }
         }
-        state.withLock { $0.task = task }
+        state.withLock {
+            $0.task?.cancel()
+            $0.task = task
+        }
     }
 
     func stop() {
@@ -155,7 +164,7 @@ extension SessionSender.Timing {
     /// as long as the step takes: a test that waits for a step to time out shortens that step's.
     static var patient: SessionSender.Timing {
         var timing = SessionSender.Timing()
-        timing.poll = .milliseconds(5)
+        timing.poll = FakeExtension.lookEvery
         timing.claim = 60
         timing.load = 60
         timing.listen = 60

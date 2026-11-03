@@ -40,19 +40,20 @@ import Testing
 
     @Test func readsNothingUnlessTheAppGivesItNotificationCenter() async {
         // As `--render` makes it: for your own pull requests, with the feature on.
-        let store = PRStore(settings: settings(enabled: true))
+        let store = PRStore(settings: settings(enabled: true), summarizer: .withoutModel)
         store.updateChatMonitor()
         // A monitor would say what it found by now, if only that it may not read.
         try? await Task.sleep(for: .milliseconds(300))
         #expect(store.chatAccess == nil)
         // And the source asks for no Full Disk Access for it.
-        #expect(AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: false)).chats.database == nil)
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: false), summarizer: .withoutModel)
+        #expect(source.chats.database == nil)
     }
 
     @Test func readsThroughWhatTheAppGivesIt() async {
         let standIn = StandIn()
         let settings = settings(enabled: true)
-        let store = PRStore(settings: settings, chats: standIn.reading)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, chats: standIn.reading)
         store.updateChatMonitor()
         for _ in 0..<100 where settings.chatLinks.links.isEmpty {
             try? await Task.sleep(for: .milliseconds(10))
@@ -70,7 +71,7 @@ import Testing
 
     @Test func theDemoNeverReadsIt() {
         let standIn = StandIn()
-        let store = PRStore(settings: settings(enabled: true), mode: .demo, chats: standIn.reading)
+        let store = PRStore(settings: settings(enabled: true), summarizer: .withoutModel, mode: .demo, chats: standIn.reading)
         store.updateChatMonitor()
         #expect(standIn.watched == 0)
     }

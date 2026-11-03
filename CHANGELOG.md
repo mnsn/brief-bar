@@ -15,6 +15,15 @@
   and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
   only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
   now reads this, it asks you to look at what it reads once more after the update.
+- **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
+  failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
+  to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
+  and may be flaky, or the target branch fails too), its errors, the tests that failed with what each said and
+  its stack trace, and the last lines of the failed step's log, selectable, with **Open Run**, **Open Log** and
+  **Open Tests** for the rest, and **Fix the Build with Copilot…** while Send Work to Copilot is on. A build
+  that's still going shows its stages as they are. BriefBar reads all this only as you open a build, with about
+  ten requests, and keeps it in memory only. Azure DevOps says what it reads for it, so it asks you to look
+  again once.
 - **Each pull request has one Copilot session, under its heading in its details.** With Send Work to
   Copilot on, a line names the session its work goes to, why it's its, such as **on its branch**, and how
   it stands, in its state's color: its last task's, the work item's task that opened it, or the Copilot
@@ -24,7 +33,8 @@
   for a task BriefBar runs, and **Use for This Pull Request** sends its work to another session, or to a
   new one, from then on. The Send to Copilot window and agents' `pull_request` go where the line says, so
   when the line asks, or its session is busy, the window starts a new session unless you choose one, rather
-  than guess or go to another.
+  than guess or go to another. BriefBar reads the Copilot app's sessions for it only while those details
+  show on screen.
 - **Show a task's or a link's pull request in BriefBar.** A Copilot task's menu has **Show Pull Request in
   BriefBar**, and one of your pull requests in a row's links **Show in BriefBar**, for its details on the
   window's Pull Requests page, beside opening it in Azure DevOps.
