@@ -150,8 +150,8 @@ actor HeldTokens: AccessTokenProvider {
     }
 }
 
-/// Waits until `condition` holds, for as long as a busy machine could need.
-func waitUntil(_ what: String, timeout: Duration = .seconds(10), _ condition: () async -> Bool) async throws {
+/// Waits until `condition` holds, for as long as a busy machine could need (`waitLimit`).
+func waitUntil(_ what: String, timeout: Duration = waitLimit, _ condition: () async -> Bool) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)
     while clock.now < deadline {
@@ -177,7 +177,7 @@ final class Collected<Snapshot: Sendable>: Sendable {
     }
 
     @discardableResult
-    func wait(_ what: String, timeout: Duration = .seconds(10), until predicate: (Snapshot) -> Bool) async throws -> Snapshot {
+    func wait(_ what: String, timeout: Duration = waitLimit, until predicate: (Snapshot) -> Bool) async throws -> Snapshot {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while clock.now < deadline {
