@@ -80,12 +80,13 @@ import Testing
     }
 
     /// While you need to sign in or you're offline, it tries again every minute, so a fix shows soon.
-    @Test func triesAgainEveryMinuteWhileThereIsSomethingToFix() async {
+    @Test func triesAgainEveryMinuteWhileThereIsSomethingToFix() async throws {
         let store = liveStore(FakeCLI.missing)
         store.start()
         defer { store.stop() }
         await eventually { store.hasLoaded }
-        let started = Date()
+        // From when the read started, as `isDue` counts, however late the wait for it ends.
+        let started = try #require(store.lastAttempt)
 
         #expect(!store.isDue(at: started.addingTimeInterval(30)))
         #expect(store.isDue(at: started.addingTimeInterval(61)))
@@ -94,13 +95,14 @@ import Testing
         #expect(store.isDue(at: started.addingTimeInterval(61)))
     }
 
-    @Test func otherwiseReadsAsOftenAsSet() async {
+    @Test func otherwiseReadsAsOftenAsSet() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
         let store = liveStore(FakeCLI.missing, settings: settings)
         store.start()
         defer { store.stop() }
         await eventually { store.hasLoaded }
-        let started = Date()
+        // From when the read started, as `isDue` counts, however late the wait for it ends.
+        let started = try #require(store.lastAttempt)
 
         store.fail(GitHubError.http(502))
         #expect(!store.isDue(at: started.addingTimeInterval(61)))
@@ -116,6 +118,7 @@ import Testing
         store.start()
         defer { store.stop() }
         await eventually { store.hasLoaded }
+        // GitHub's wait counts from when it asks, which is now, rather than from the read.
         let started = Date()
 
         store.fail(GitHubError.throttled(retryAfter: 600))

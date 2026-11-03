@@ -36,7 +36,8 @@ final class GitHubStore: ObservableObject {
     private var client: GitHubClient?
     private var ticker: Timer?
     private var task: Task<Void, Never>?
-    private var lastAttempt: Date?
+    /// When the last read started: `isDue(at:)` counts from it.
+    private(set) var lastAttempt: Date?
     /// Goes up with every stop, so a read that ends afterwards changes nothing.
     private var generation = 0
 
