@@ -551,6 +551,8 @@ struct PullRequestFilePage: View {
                 codePlaceholder
             }
         }
+        // Gone while the page stays, as after a push that took the file out of the change: what it asked for is let go of.
+        .onDisappear { files.hideDiff(version, of: pullRequest.key, by: viewer) }
         .task(id: DiffReading(version: version, visibilityChanges: code.visibilityChanges)) {
             if let previous = shownVersion, previous != version { files.hideDiff(previous, of: pullRequest.key, by: viewer) }
             shownVersion = version

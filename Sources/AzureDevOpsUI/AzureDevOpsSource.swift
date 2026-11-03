@@ -987,8 +987,8 @@ extension AzureDevOpsSource {
     }
 
     /// The Pull Requests page with the details of the first of your pull requests that needs you at their Files, all of the
-    /// change and what changed since you last looked; and a file's page, beside the list, over it in a narrow window,
-    /// filling the page, at the comment on it that waits on you, and for a file that isn't text.
+    /// change and, for the demo's, what changed since you last looked; and a file's page, beside the list, over it in a
+    /// narrow window, filling the page, at the comment on it that waits on you, and for a file that isn't text.
     func pullRequestFilesRenderings() -> [(name: String, view: AnyView)] {
         guard let store, let files = pullRequestFiles, let item = renderedPullRequests(store).first,
               case .read(let changes)? = files.list(of: item.key, .whole)
@@ -1014,6 +1014,8 @@ extension AzureDevOpsSource {
         var renderings: [(name: String, view: AnyView)] = []
         for (name, file, thread, since, fills, size) in shown {
             if name.hasPrefix("pull-requests-file"), file == nil { continue }
+            // What changed since you last looked is read ahead only for the demo's.
+            if since, store.mode != .demo { continue }
             // A store for each, since each scrolls its details once.
             let details = PullRequestDetailsStore()
             details.readRecord = { [weak store] key in store?.record(for: key) }
