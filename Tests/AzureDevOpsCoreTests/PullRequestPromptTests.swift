@@ -92,6 +92,43 @@ import BriefBarCore
         #expect(conflicts.contains("Don't push"))
     }
 
+    /// Resolving conflicts lists the files that conflict and how, once its details read them for the pull request as it is
+    /// now, and what you want, as yours.
+    @Test func resolveConflictsListsTheFilesThatConflict() {
+        let record = record()
+        let pr = record.pullRequest
+        let conflicts = MergeConflicts(files: [
+            MergeConflict(id: 1, path: "/src/Checkout/Total.cs", kind: .editEdit),
+            MergeConflict(id: 2, path: "/src/Checkout/Legacy.cs", kind: .editDelete, isResolved: true),
+            MergeConflict(id: 3, path: "/docs/totals.md", kind: .rename1to2, sourcePath: "/docs/checkout-totals.md", targetPath: "/docs/old/totals.md"),
+        ], of: pr)
+        let prompt = PullRequestPrompt.resolveConflicts(record, conflicts: conflicts, note: "Keep main's rounding.\nAnd its tests.")
+        #expect(prompt.contains("""
+            Azure DevOps lists 3 files that conflict:
+
+            1. docs/totals.md: renamed to checkout-totals.md on fix-total, and to docs/old/totals.md on main
+            2. src/Checkout/Legacy.cs: changed on fix-total, deleted on main (resolved in Azure DevOps, which hasn't committed it)
+            3. src/Checkout/Total.cs: changed on both branches
+            """))
+        #expect(prompt.contains("How I want them resolved, in my own words:\n\n> Keep main's rounding.\n> And its tests."))
+        #expect(prompt.hasSuffix("Don't push: end with what conflicted and how you resolved it."))
+        // Read before a push, they're left out; and so is a note that's blank.
+        var pushed = record
+        pushed.pullRequest.sourceCommit = "abd"
+        let stale = PullRequestPrompt.resolveConflicts(pushed, conflicts: conflicts, note: "  ")
+        #expect(!stale.contains("Azure DevOps lists"))
+        #expect(!stale.contains("in my own words"))
+        #expect(stale.contains("It has merge conflicts with main."))
+        // Past the most it lists, how many more; and when Azure DevOps listed more than BriefBar read, that there are more.
+        let many = MergeConflicts(
+            files: (1...52).map { MergeConflict(id: $0, path: "/src/F\($0).cs", kind: .editEdit) }, isComplete: false, of: pr
+        )
+        let long = PullRequestPrompt.resolveConflicts(record, conflicts: many)
+        #expect(long.contains("Azure DevOps lists these files that conflict, among more:"))
+        #expect(long.contains("50. src/F50.cs: changed on both branches\nAnd 2 more."))
+        #expect(!long.contains("51. "))
+    }
+
     /// For some threads, such as one session's fixes when fixes are in more than one: it lists those alone, and replies on
     /// them alone.
     @Test func pushAndReplyForSomeThreadsRepliesOnThoseAlone() {

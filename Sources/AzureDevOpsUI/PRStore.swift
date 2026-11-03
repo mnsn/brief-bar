@@ -775,8 +775,9 @@ final class PRStore: ObservableObject {
     }
 
     /// Writes the prompts for what Copilot should do with a pull request, then opens the composer with them: for a failed
-    /// build, once each failed build's errors have been read. Fix Comments and Push & Reply take on the threads their
-    /// prompts list, for each to say what became of it.
+    /// build, once each failed build's errors have been read; for its conflicts, with the files that conflict, once its
+    /// details read them (`conflicts`). Fix Comments and Push & Reply take on the threads their prompts list, for each to
+    /// say what became of it.
     /// - Parameters:
     ///   - start: where it goes to begin with, rather than BriefBar's suggestion, such as the session whose fixes Push &
     ///     Reply ships.
@@ -793,6 +794,7 @@ final class PRStore: ObservableObject {
         // hands off those alone.
         let scope = action == .pushAndReply && !threads.isEmpty ? threads : nil
         let handOff = commentHandOff(action, for: record, threads: scope)
+        let conflicts = action == .resolveConflicts ? self.conflicts(pr) : nil
         // The threads it takes on, as its prompt lists them, for each to say what became of it.
         let threads: [Int] = switch action {
         case .fixComments: PullRequestPrompt.waitingThreads(record).prefix(PullRequestPrompt.threadLimit).map(\.id)
@@ -800,13 +802,17 @@ final class PRStore: ObservableObject {
         default: threads
         }
         Task {
-            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope)
+            let prompts = await PullRequestTasks.prompts(action, for: record, client: client, threads: scope, conflicts: conflicts)
             copilot.compose(
                 task, action: action, prompt: prompts.worktree, sessionPrompt: prompts.session, createdAt: pr.createdAt, handOff: handOff,
                 start: start, threads: threads
             )
         }
     }
+
+    /// The files that conflict with a pull request's target branch, as its details read them for it as it is now; nil
+    /// while they haven't: the source's (`PullRequestConflictsStore.conflicts(for:)`).
+    var conflicts: (PullRequest) -> MergeConflicts? = { _ in nil }
 
     /// What a task takes off Needs You once you send it: for Fix Comments and Push & Reply on your pull request, the comments
     /// that wait on you as the prompt is written from `record`, not as they are when you send it, for the account signed in

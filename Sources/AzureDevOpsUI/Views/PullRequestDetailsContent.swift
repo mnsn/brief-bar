@@ -4,12 +4,13 @@ import BriefBarUI
 import CopilotTasks
 import SwiftUI
 
-/// A pull request's details: what it is and where it stands, what's left before it can complete, its comment threads, the
-/// files its change touched, its builds and checks, who reviews it and what else is linked to it, all from what the list
-/// read but its files. Beside the list on the window's Pull Requests page (`PullRequestDetailsPanel`), and as the page of a
-/// pull request linked to a work item or to another pull request (`LinkedItemPage`), so it reads the same wherever it
-/// opens. It goes where it's asked to (`PullRequestDetailsStore.place`), pointing a thread, a file, a build or a check out
-/// for a moment; and shows a file's page in place of its parts while one is open (`PullRequestDetailsStore.file`).
+/// A pull request's details: what it is and where it stands, what's left before it can complete, the files that conflict
+/// with its target branch while it has conflicts, its comment threads, the files its change touched, its builds and
+/// checks, who reviews it and what else is linked to it, all from what the list read but its files and conflicts. Beside
+/// the list on the window's Pull Requests page (`PullRequestDetailsPanel`), and as the page of a pull request linked to a
+/// work item or to another pull request (`LinkedItemPage`), so it reads the same wherever it opens. It goes where it's
+/// asked to (`PullRequestDetailsStore.place`), pointing a thread, a file, a build or a check out for a moment; and shows a
+/// file's page in place of its parts while one is open (`PullRequestDetailsStore.file`).
 struct PullRequestDetailsContent: View {
     /// What shows it: the panel's, or a page's own.
     @ObservedObject var details: PullRequestDetailsStore
@@ -67,6 +68,11 @@ struct PullRequestDetailsContent: View {
                     PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
                         if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                     }
+                }
+                // While Azure DevOps says its merge conflicts: the files, where What's Left's Merge conflicts leads.
+                if panel.hasConflicts, let pullRequest = record?.pullRequest {
+                    PullRequestConflictsSection(details: details, item: item, pullRequest: pullRequest)
+                        .id(PullRequestDetailsStore.Anchor.section(.conflicts))
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,

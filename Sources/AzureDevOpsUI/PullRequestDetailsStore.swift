@@ -54,11 +54,13 @@ final class PullRequestDetailsStore: ObservableObject {
         }
 
         /// What they scroll to for it, as `anchor(in:)` says: for a thread they don't have, their comments; for a build or a
-        /// check they don't have, such as a run that isn't one a policy queued last, their builds and checks; and for a file
-        /// their Files don't list, as one a push took out of the change, or while they don't list any, their Files.
+        /// check they don't have, such as a run that isn't one a policy queued last, their builds and checks; for its merge
+        /// conflicts, once it has none, their top; and for a file their Files don't list, as one a push took out of the
+        /// change, or while they don't list any, their Files.
         func anchor(in panel: PullRequestPanel, files: ChangedFiles? = nil) -> Anchor {
             switch self {
             case .thread(let id): panel.threads.contains(id) ? .thread(id) : .section(.comments)
+            case .section(.conflicts): panel.hasConflicts ? .section(.conflicts) : .top
             case .section(let section): .section(section)
             case .files: .files
             case .file(let id): files?.file(id) == nil ? .files : .file(id)

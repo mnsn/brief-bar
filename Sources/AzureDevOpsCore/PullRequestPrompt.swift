@@ -97,15 +97,53 @@ public enum PullRequestPrompt {
             """
     }
 
-    public static func resolveConflicts(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
-        let target = record.pullRequest.targetBranch
-        return """
-            \(header(record, workplace: workplace))
-
-            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
-            conflicts, keeping what each side meant. Build, and run the tests that cover what conflicted. Don't push: \
-            end with what conflicted and how you resolved it.
+    /// Merges the target branch in and resolves the conflicts, which it may commit, but doesn't push: Push & Reply does.
+    /// - Parameters:
+    ///   - conflicts: the files that conflict, and how, as Azure DevOps listed them, once read for the pull request as it
+    ///     is now: older ones are left out.
+    ///   - note: how you want them resolved, in your words, quoted as yours; nothing for nil or blank.
+    public static func resolveConflicts(
+        _ record: PRRecord, workplace: Workplace = .worktree, conflicts: MergeConflicts? = nil, note: String? = nil
+    ) -> String {
+        let pr = record.pullRequest
+        let target = pr.targetBranch
+        var parts = [
+            header(record, workplace: workplace),
             """
+            It has merge conflicts with \(target). Fetch origin/\(target), merge it into \(workplace.here), and resolve the \
+            conflicts, keeping what each side meant.
+            """,
+        ]
+        if let conflicts, conflicts.isCurrent(for: pr), !conflicts.files.isEmpty {
+            parts.append(conflictList(conflicts, of: pr))
+        }
+        if let how = yours(note) {
+            parts.append("How I want them resolved, in my own words:\n\n" + how)
+        }
+        parts.append("""
+            Build, and run the tests that cover what conflicted. Don't push: end with what conflicted and how you resolved \
+            it.
+            """)
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// The most conflicts a prompt lists.
+    public static let conflictLimit = 50
+
+    /// The files that conflict, numbered: each one's path and how it conflicts, "1. src/Orders/OrderService.cs: changed on
+    /// both branches".
+    static func conflictList(_ conflicts: MergeConflicts, of pullRequest: PullRequest) -> String {
+        let files = conflicts.files
+        let count = files.count == 1 ? "1 file" : "\(files.count) files"
+        let lead = conflicts.isComplete ? "Azure DevOps lists \(count) that conflict:" : "Azure DevOps lists these files that conflict, among more:"
+        var lines = files.prefix(conflictLimit).enumerated().map { index, conflict in
+            let path = conflict.path.hasPrefix("/") ? String(conflict.path.dropFirst()) : conflict.path
+            let how = conflict.how(source: pullRequest.sourceBranch, target: pullRequest.targetBranch)
+            let resolved = conflict.isResolved ? " (resolved in Azure DevOps, which hasn't committed it)" : ""
+            return "\(index + 1). \(path): \(how.prefix(1).lowercased() + how.dropFirst())\(resolved)"
+        }
+        if files.count > conflictLimit { lines.append("And \(files.count - conflictLimit) more.") }
+        return lead + "\n\n" + lines.joined(separator: "\n")
     }
 
     public static func review(_ record: PRRecord, workplace: Workplace = .worktree) -> String {
