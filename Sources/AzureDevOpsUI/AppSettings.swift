@@ -26,7 +26,9 @@ final class AppSettings: ObservableObject {
 
     typealias Key = SettingsKey
 
-    private let defaults: UserDefaults
+    /// The app's preferences, or the demo's: for what other parts of BriefBar keep there, such as whether Send Prompts to
+    /// Copilot Sessions is on (`CopilotTasksStore.sessionPromptsAreOn`).
+    let defaults: UserDefaults
 
     @Published var refreshSeconds: Int {
         didSet { defaults.set(refreshSeconds, forKey: Key.refreshSeconds) }
@@ -57,6 +59,11 @@ final class AppSettings: ObservableObject {
     /// Follows the pipelines that run after you merge a pull request, while Done keeps it.
     @Published var followMerges: Bool {
         didSet { defaults.set(followMerges, forKey: Key.followMerges) }
+    }
+    /// A pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window,
+    /// rather than opening in Azure DevOps. Off by default: they open in Azure DevOps, as they always did.
+    @Published var opensPullRequestsInBriefBar: Bool {
+        didSet { defaults.set(opensPullRequestsInBriefBar, forKey: Key.opensPullRequestsInBriefBar) }
     }
     /// Pull requests you watch by their links, though you're not on them: listed as if you reviewed them, until
     /// they close or you stop watching them.
@@ -148,6 +155,17 @@ final class AppSettings: ObservableObject {
         get { defaults.string(forKey: Key.accountOrigin) }
         set { defaults.set(newValue, forKey: Key.accountOrigin) }
     }
+    /// Your sign-in's directory, as BriefBar last read with it, whichever section did: so that after a restart, signing in
+    /// to another directory, which makes that one the Azure CLI's default, doesn't read you there instead.
+    var accountDirectory: String? {
+        get { defaults.string(forKey: Key.accountDirectory) }
+        set { defaults.set(newValue, forKey: Key.accountDirectory) }
+    }
+    /// The directory to ask the Azure CLI for your tokens in: the one kept, or, from builds that kept none, the directory
+    /// of the account that saw your pull requests.
+    var pinnedDirectory: String? {
+        accountDirectory ?? seen.account.flatMap(AccessToken.tenant(ofAccount:))
+    }
     /// When you last looked at each pull request that's listed only because someone sent it to you (`SeenState.name(of:)`),
     /// in memory only, like the links: in the preferences, it would say which pull requests people sent you.
     @Published private(set) var seenSentInChats: [String: Date] = [:]
@@ -166,6 +184,7 @@ final class AppSettings: ObservableObject {
         showToReview = defaults.bool(forKey: Key.showToReview)
         pullRequestOrder = defaults.string(forKey: Key.pullRequestOrder).flatMap(PROrder.init(rawValue:)) ?? .status
         followMerges = defaults.object(forKey: Key.followMerges) as? Bool ?? true
+        opensPullRequestsInBriefBar = defaults.bool(forKey: Key.opensPullRequestsInBriefBar)
         watchedPullRequests = Self.load([PullRequestLink].self, from: defaults, forKey: Key.watchedPullRequests) ?? []
         organizations = defaults.stringArray(forKey: Key.organizations) ?? []
         knownOrganizations = defaults.stringArray(forKey: Key.knownOrganizations) ?? []
@@ -209,12 +228,14 @@ final class AppSettings: ObservableObject {
         persistSeen()
     }
 
-    /// Forgets what you've seen, with every account, where that account is from, and the pull requests people sent you,
-    /// when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in chats, stay.
+    /// Forgets what you've seen, with every account, where that account is from and its directory, and the pull requests
+    /// people sent you, when Azure DevOps is turned off. Your organizations, and whether to look for pull requests sent in
+    /// chats, stay.
     func forgetSeen() {
         defaults.removeObject(forKey: Key.seen)
         defaults.removeObject(forKey: Key.otherSeen)
         defaults.removeObject(forKey: Key.accountOrigin)
+        defaults.removeObject(forKey: Key.accountDirectory)
         hasSavedSeen = false
         seen = SeenState.firstRun()
         otherSeen = [:]
@@ -485,6 +506,7 @@ enum SettingsKey {
     static let showToReview = "ado.showToReviewInMenuBar"
     static let pullRequestOrder = "ado.pullRequestOrder"
     static let followMerges = "ado.followMerges"
+    static let opensPullRequestsInBriefBar = "ado.opensPullRequestsInBriefBar"
     static let watchedPullRequests = "ado.watchedPullRequests"
     static let organizations = "ado.organizations"
     static let knownOrganizations = "ado.knownOrganizations"
@@ -494,6 +516,8 @@ enum SettingsKey {
     /// Where the account BriefBar last read your pull requests with is from (`AccessToken.accountTenant`): a directory's
     /// ID, or an identity provider such as live.com.
     static let accountOrigin = "ado.accountOrigin"
+    /// Your sign-in's directory, as BriefBar last read with it (`AccessToken.tenant`): a directory's ID.
+    static let accountDirectory = "ado.accountDirectory"
     static let chatLinksEnabled = "ado.chatLinksEnabled"
     /// Where earlier builds kept the links sent in chats. Nothing writes it now: the app removes it at launch.
     static let chatLinks = "ado.chatLinks"

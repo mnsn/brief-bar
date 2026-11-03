@@ -47,10 +47,15 @@ import Testing
         // Nor one whose comments end on its line, whose text is what follows them, or the paragraph after.
         #expect(RichText(markdown: "- <!-- bot -->\n      <!-- literal code -->").blocks == [.code("<!-- literal code -->")])
         #expect(plain("- <!-- one --> <!-- two --> kept\n- <!-- bot -->\n  more\n- shown") == "• kept\n• more\n• shown")
+        // Only an item's first comment goes on past its line: one after it there that doesn't end on it hides the rest.
+        #expect(plain("- <!-- one --> <!-- two\n  --> Hidden\n\nAfter") == "")
+        #expect(plain("- <!--\n  one\n  --> <!-- two\n  --> Hidden\n\nAfter") == "")
+        #expect(plain("- <!-- one --> <!-- two -->\n  more") == "• more")
         #expect(plain("> <!--\n> hidden\n>\n> -->\n> shown") == "shown")
-        // One in a quote that doesn't end there goes on past it, to its end or the end of the text, as HTML reads it.
+        // One in a quote that doesn't end there hides the rest, past the quote too: text's "-->" doesn't end it, since
+        // Azure DevOps writes its ">" as "&gt;".
         #expect(plain("> <!--\n> hidden\n\nAlso hidden") == "")
-        #expect(plain("> Shown\n> <!--\nhidden\n-->\nAfter") == "Shown\nAfter")
+        #expect(plain("> Shown\n> <!--\nhidden\n-->\nAfter") == "Shown")
         // What looks like code in one is the comment's; code that starts first is code.
         #expect(plain("Fixes the retry.<!-- Link the work item with `AB#1234` before merging --> Thanks!") == "Fixes the retry. Thanks!")
         #expect(plain("<!-- template: describe `why`, not what --> Real text") == "Real text")
@@ -73,7 +78,55 @@ import Testing
         #expect(plain("Line<br><div>Block</div>") == "Line\nBlock")
         #expect(plain("Before\n<div>Inside</div>") == "Before\nInside")
         #expect(plain("`code`<div>Block</div>") == "code\nBlock")
-        #expect(plain("<table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>") == "File Issues\na.cs 2")
+        #expect(plain("<table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>") == "File | Issues\na.cs | 2")
+        #expect(plain("Files: <table><tr><th>File</th><th>Issues</th></tr><tr><td>a.cs</td><td>2</td></tr></table>")
+            == "Files:\nFile Issues\na.cs 2")
+    }
+
+    /// HTML that starts a line starts an HTML block, as CommonMark has them, which Azure DevOps passes on as it is, for
+    /// HTML to show: BriefBar shows it as it shows HTML, Markdown in it as it's written.
+    @Test func showsHTMLBlocksAsHTML() {
+        #expect(RichText(markdown: "<div>**literal**</div>").blocks == [.paragraph([RichText.Run("**literal**")])])
+        #expect(RichText(markdown: "<div>\n*not emphasis*\n  - nor a list\n</div>").blocks == [
+            .paragraph([RichText.Run("*not emphasis* - nor a list")]),
+        ])
+        #expect(RichText(markdown: "<p>A <b>bold</b> word</p>").blocks == [
+            .paragraph([RichText.Run("A "), RichText.Run("bold", style: .bold), RichText.Run(" word")]),
+        ])
+        // To a blank line, after which Markdown is Markdown again.
+        #expect(RichText(markdown: "<div>\n\n**bold**\n\n</div>").blocks == [.paragraph([RichText.Run("bold", style: .bold)])])
+        // One of the elements that start blocks ends a paragraph; another tag alone on its line doesn't, but starts a
+        // block where no paragraph goes on.
+        #expect(RichText(markdown: "Text\n<div>**x**</div>").blocks == [.paragraph([RichText.Run("Text")]), .paragraph([RichText.Run("**x**")])])
+        #expect(RichText(markdown: "Text\n<abbr>\n**more**").blocks.contains(.paragraph([
+            RichText.Run("Text\n\n"), RichText.Run("more", style: .bold),
+        ])))
+        #expect(RichText(markdown: "<abbr>\n**more**").blocks == [.paragraph([RichText.Run("**more**")])])
+        // Those whose text HTML shows as it is, to their end tag, blank lines and all, with scripts and styles left out;
+        // and declarations, instructions and CDATA, to their ends.
+        #expect(RichText(markdown: "<pre>\n**kept**\n\n  as is\n</pre>\nAfter **it**").blocks == [
+            .code("**kept**\n\n  as is"), .paragraph([RichText.Run("After "), RichText.Run("it", style: .bold)]),
+        ])
+        #expect(plain("<script>\nalert('**x**')\n\n</script>\n<style>\np { color: red }\n</style>\nShown") == "Shown")
+        #expect(plain("<!DOCTYPE html>\n<?xml version=\"1.0\"\n?>\n<![CDATA[\nx\n]]>\nShown") == "Shown")
+        // In a list's item, starting it or in it, and in a quote, as on the page.
+        #expect(RichText(markdown: "- <div>**literal**</div>\n- **bold**").blocks == [
+            .listItem(.bullet, depth: 0, [RichText.Run("**literal**")]), .listItem(.bullet, depth: 0, [RichText.Run("bold", style: .bold)]),
+        ])
+        #expect(RichText(markdown: "- one\n\n  <div>**literal**\n  </div>\n- two").blocks == [
+            .listItem(.bullet, depth: 0, [RichText.Run("one")]), .paragraph([RichText.Run("**literal**")]),
+            .listItem(.bullet, depth: 0, [RichText.Run("two")]),
+        ])
+        #expect(RichText(markdown: "> <div>**literal**</div>").blocks == [.quote([RichText.Run("**literal**")])])
+        // A table as a table, and an image on a line of its own as an image.
+        #expect(RichText(markdown: "<table>\n<tr><td>a.cs</td><td>2</td></tr>\n</table>").plainText == "a.cs | 2")
+        #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
+            .image(alt: "Quality gate: passed", url: URL(string: "https://example.invalid/badge.png")),
+        ])
+        // Indented as code, it's code.
+        #expect(RichText(markdown: "    <div>**x**</div>").blocks == [.code("<div>**x**</div>")])
+        // A comment in one that doesn't end there hides the rest.
+        #expect(plain("<div>Shown <!-- hidden\n\nAfter") == "Shown")
     }
 
     @Test func formattingTagsKeepTheirText() {
@@ -84,8 +137,8 @@ import Testing
         #expect(plain("<span title=\"a > b\">shown</span>") == "shown")
         #expect(plain("<span title=\"<!--\">Shown</span><!-- bot marker --> after") == "Shown after")
         #expect(plain("<span title=\"use `x`\">Shown</span> and `<b>`") == "Shown and <b>")
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.svg\" alt=\"A > B\">").blocks == [
-            .paragraph([RichText.Run("A > B", link: URL(string: "https://example.invalid/badge.svg"))]),
+        #expect(RichText(markdown: "See <img src=\"https://example.invalid/badge.svg\" alt=\"A > B\">").blocks == [
+            .paragraph([RichText.Run("See "), RichText.Run("A > B", link: URL(string: "https://example.invalid/badge.svg"))]),
         ])
     }
 
@@ -118,34 +171,36 @@ import Testing
         ])
     }
 
+    /// In text: an image on a line of its own is an HTML block (`showsHTMLBlocksAsHTML`).
     @Test func readsImagesInHTMLAsImages() {
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
-            .paragraph([RichText.Run("Quality gate: passed", link: URL(string: "https://example.invalid/badge.png"))]),
+        let badge = URL(string: "https://example.invalid/badge.png")
+        #expect(RichText(markdown: "Gate: <img src=\"https://example.invalid/badge.png\" alt=\"Quality gate: passed\">").blocks == [
+            .paragraph([RichText.Run("Gate: "), RichText.Run("Quality gate: passed", link: badge)]),
         ])
         // Its description as it's written, which isn't Markdown, but for its character references.
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Build [Linux] **failed** &amp; _x_\">").blocks == [
-            .paragraph([RichText.Run("Build [Linux] **failed** & _x_", link: URL(string: "https://example.invalid/b.png"))]),
+        #expect(RichText(markdown: "Build: <img src=\"https://example.invalid/b.png\" alt=\"Build [Linux] **failed** &amp; _x_\">").blocks == [
+            .paragraph([RichText.Run("Build: "), RichText.Run("Build [Linux] **failed** & _x_", link: URL(string: "https://example.invalid/b.png"))]),
         ])
         // And its source, read once.
-        #expect(RichText(markdown: "<img src=\"https&#58;//example.invalid/b.svg?style=flat&amp;label=a%20b\" alt=\"Badge\">").blocks == [
-            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?style=flat&label=a%20b"))]),
+        #expect(RichText(markdown: "Badge: <img src=\"https&#58;//example.invalid/b.svg?style=flat&amp;label=a%20b\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge: "), RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?style=flat&label=a%20b"))]),
         ])
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.svg?q=&amp;lt;\" alt=\"Badge\">").blocks == [
-            .paragraph([RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?q=&lt;"))]),
+        #expect(RichText(markdown: "Badge: <img src=\"https://example.invalid/b.svg?q=&amp;lt;\" alt=\"Badge\">").blocks == [
+            .paragraph([RichText.Run("Badge: "), RichText.Run("Badge", link: URL(string: "https://example.invalid/b.svg?q=&lt;"))]),
         ])
         // Only of a web page, and otherwise its description.
-        #expect(plain("<img src='javascript:alert(1)' alt='Badge'>") == "Badge")
-        #expect(plain("<img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "Build [Linux] *1*")
-        #expect(plain("<img src=data:image/png;base64,AAAA>") == "")
+        #expect(RichText(markdown: "See <img src='javascript:alert(1)' alt='Badge'>").blocks == [.paragraph([RichText.Run("See Badge")])])
+        #expect(plain("See <img src='javascript:alert(1)' alt='Build [Linux] *1*'>") == "See Build [Linux] *1*")
+        #expect(plain("Before<img src=data:image/png;base64,AAAA> after") == "Before after")
         // A tag its description mentions is text, as the rest of it is.
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/b.png\" alt=\"Use &lt;br /&gt; here\">").blocks == [
-            .paragraph([RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
+        #expect(RichText(markdown: "See <img src=\"https://example.invalid/b.png\" alt=\"Use &lt;br /&gt; here\">").blocks == [
+            .paragraph([RichText.Run("See "), RichText.Run("Use <br /> here", link: URL(string: "https://example.invalid/b.png"))]),
         ])
-        #expect(plain("<img alt='Use &lt;span class=\"x\"&gt; here'>") == "Use <span class=\"x\"> here")
+        #expect(plain("See <img alt='Use &lt;span class=\"x\"&gt; here'>") == "See Use <span class=\"x\"> here")
         // Its own source and description, whatever another attribute's quoted value says.
-        #expect(RichText(markdown: "<img src=\"https://example.invalid/real.png\" alt=\"Real\" "
+        #expect(RichText(markdown: "See <img src=\"https://example.invalid/real.png\" alt=\"Real\" "
             + "data-v2=\" src='https://example.invalid/other.svg' alt='Other'\">").blocks == [
-            .paragraph([RichText.Run("Real", link: URL(string: "https://example.invalid/real.png"))]),
+            .paragraph([RichText.Run("See "), RichText.Run("Real", link: URL(string: "https://example.invalid/real.png"))]),
         ])
     }
 

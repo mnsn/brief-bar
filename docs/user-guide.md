@@ -221,7 +221,8 @@ the model that writes a summary with the rest, and BriefBar keeps none of it.
 
 Azure DevOps posts notifications for what's new on your pull requests, and for the work you send to
 Copilot, as it starts and when it ends ([below](#azure-devops)). Clicking one opens what it's about,
-such as the comment or the run, in front of BriefBar.
+such as the comment or the run, in front of BriefBar: in Azure DevOps, or, for a pull request, in its
+details in BriefBar's window, with **Open Pull Requests in BriefBar** on.
 
 **Notifications Page**, in **Settings › General**, lists what BriefBar notified you of on a page of
 its own in BriefBar's window, right after the Overview, so you can see what you missed: a banner that
@@ -229,7 +230,8 @@ went away, a notification macOS didn't show, during a Focus or with notification
 and each update of a refresh that had more than its notifications show ("3 more pull request
 updates", which opens the page). It's off until you turn it on. Each entry says what it means for
 you, ✋, ✕ or ✓, when it came, and with a dot, that you haven't seen it yet. Click one to open what
-it's about, as its notification would, or right-click it to remove it; **Clear All** empties the
+it's about, as its notification would, but a pull request's right there in the window, in its details,
+or right-click it to remove it; **Clear All** empties the
 page. The page shows only while it lists something. BriefBar keeps the entries for a day, or for 4
 hours or 3 days (**Keep Notifications For**), in memory only: the page starts empty when BriefBar
 restarts or updates.
@@ -315,16 +317,28 @@ turn**, and taking you to its comments, builds or reviewers; its comment threads
 its change lists them, those on the pull request itself first, and in each file the ones that wait on you
 first, the resolved ones behind **Show Resolved**; its builds and checks, what failed first, with where a
 build failed and its first error; who reviews it, which reviewers it requires and how each voted; and,
-with [Show Links](#links) on, the work items and Copilot sessions linked to it, which open in the details
-too, **‹**, **⌘[** or **Esc** going back. **↗** opens the pull request in Azure DevOps, at the comment
-that needs you, as a click in the menu bar's list does, and ↗ on a thread or a build opens that one; **⋯**
-has the row's menu, with Copilot's actions while Send Work to Copilot is on. The details show what
-BriefBar already read, and read nothing more but the code that comments are on (below), and
-showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
-new, and where it was, rather than folding away as you read it, until you remove it from Needs You. Drag their
-left edge to make them wider or narrower: BriefBar keeps the width, separately from the Sprint page's details,
-and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them. In the menu-bar list and
-widgets, a click still opens the pull request in Azure DevOps.
+with [Show Links](#links) on, the work items, Copilot sessions and pull requests linked to it, which open
+in the details too, one of your pull requests with the same details as its own, **‹**, **⌘[** or **Esc**
+going back. **↗** opens the pull request in Azure DevOps, at the comment that needs you, as **Open in
+Azure DevOps** in its menu does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu,
+with Copilot's actions while Send Work to Copilot is on. The details show what BriefBar already read, and
+read nothing more but the code that comments are on (below), and showing them sees the pull request, as
+opening it does: while they show it, what was new in its threads stays new, and where it was, rather than
+folding away as you read it, until you remove it from Needs You. Drag their left edge to make them wider
+or narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
+edge brings back the usual one. **✕** or **Esc** closes them.
+
+**Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
+about: from the window's **Overview** and its brief, the **Notifications** page, and the **Pipelines**
+page, whose **Your Pull Requests** cards show the run you click, or the first that failed, and **After
+Your Merges** the run that failed or waits; and, as pages over a work item's details on the Sprint page,
+the same details for each of your pull requests, the way there in their header, such as **Bug 5110 ›
+!4091**. Opening it in BriefBar sees it, as opening it in Azure DevOps does. In the menu bar's list, widgets
+and notifications, a click opens a pull request in Azure DevOps, unless you turn on **Open Pull Requests in
+BriefBar** in Azure DevOps' settings: then those show its details in BriefBar's window too, at what it's
+about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
+**Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
+that needs you or the run after its merge, from the Pipelines page's cards too.
 
 **Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
 on, with a few around them, as they were in the update it was made on: their numbers, before and after the
@@ -355,7 +369,8 @@ before. The first time, only the last three days count as new, and each account 
 CLI with has its own. Notifications announce new replies, mentions, comments, review requests, votes, new
 commits, failed builds, pull requests that become ready or complete, and, after you merge one, a pipeline
 that fails or waits for an approval, all of them passing, or one canceled. Clicking one opens the
-comment, or the run, it's about. The first time, BriefBar finds the organizations where you have pull
+comment, or the run, it's about: in Azure DevOps, or in the pull request's details in BriefBar's window
+with **Open Pull Requests in BriefBar** on. The first time, BriefBar finds the organizations where you have pull
 requests; **Organizations** in its settings changes them.
 
 **Watch a Pull Request…**, in its settings, follows a pull request you're not on, such as one your team
@@ -398,7 +413,9 @@ With [Show Links](#links) on, the details start with **Where It Stands**: the pu
 pipelines and the Copilot sessions that go with the work item, what needs you first, each saying where
 it stands in a sentence. Under its title, **Waiting on** says who it all waits on, you first, such as
 **you, to complete !4091 · Copilot, on task 5103**; click the title to fold it to just that line. Click
-one, and its page shows what's known of it, right in the details: a pull request's reviewers and their
+one, and its page shows what's known of it, right in the details: for one of your pull requests, the same
+details as on the Pull Requests page, with what's left, its comment threads, builds and checks, and
+reviewers, and how it's linked to the work item; for another, its reviewers and their
 votes, its open comments and the ones waiting on you, conflicts, and each build or check that ran on it,
 with where a failed one failed; a Copilot session's question or plan, and what Copilot recorded of its
 work as it went: the story so far, a line for each of its checkpoints, what it did, what's next, and
@@ -462,7 +479,8 @@ Both start in BriefBar's window only, and read Azure DevOps only while something
 the window's page while it isn't minimized or hidden behind other windows, a widget that isn't
 covered, a menu-bar item or its list. The pipelines after your merges are the exception: they're read
 with your pull requests, so that you hear when one fails. Click a pipeline or a run to open it in Azure
-DevOps, and a work item to see its details.
+DevOps, a work item to see its details, and a pull request, or one of its runs under **Your Pull
+Requests**, to see its details on the Pull Requests page.
 
 <p align="center">
   <picture>
@@ -507,8 +525,8 @@ commit (`copilot-worktrees/<repository>/pr-<id>`),
 in the clone of its repository you choose the first time, and a later one goes on with the last one's
 session, in its worktree, unless you start a new one. As with a work item, a notification says Copilot is
 on it, and the task is listed with your Copilot sessions. The pull request's row shows how its task is
-going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, or you open
-it in Copilot ([below](#sending-to-a-session-thats-already-there)), the comments its prompt quotes are
+going, and its menu has the task's own menu. Once **Fix Comments** or **Push & Reply** starts, or you send
+it to a session in Copilot ([below](#sending-to-a-session-thats-already-there)), the comments its prompt quotes are
 off **Needs You**; one that comes while you check the prompt, in a thread you take out of it, or in one
 reopened meanwhile, still needs you. Comments are written by whoever wrote them, and go to an agent that
 may run any command: send only what you'd hand to Copilot yourself.
@@ -526,8 +544,22 @@ session of the work item's task that opened it, or to the app's session that lik
 
 | Send | What happens |
 |---|---|
-| **Open in Copilot** | BriefBar copies the prompt and opens the session in the Copilot app: paste it there and send it. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it. The default for the app's sessions. |
+| **Send to Session** | BriefBar sends the prompt to the session in the Copilot app, as your own message, and opens it there. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it; a session that's working takes it once it's done. The default for the app's sessions. |
+| **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats, nor **Push & Reply**, which pushes what its last task changed from that task's own session. |
 | **Run with the CLI** | The Copilot CLI goes on with the session now, on its own, in the folder it works in, and BriefBar follows it as it does a new task, with the same limits on what the action may do. The default for BriefBar's own tasks. |
+
+To send prompts to the app's sessions itself, BriefBar needs **Send Prompts to Copilot Sessions**, off until
+you turn it on in Settings › Agents, which adds BriefBar's extension to the sessions that start afterwards.
+Before you send it, the window says what will happen: the prompt goes at once; or the app opens the
+session, which loads it with the extension, and the prompt goes then; or, for a session that's been open
+since before the option was on, that you need to restart the session. Until then, and whenever BriefBar
+can't send it, it copies the prompt and opens the session, for you to paste and send; when the window
+knows that beforehand, its button says **Open in Copilot**. For a fork, it copies `/fork` and the prompt,
+which the app's own `/fork` takes: paste it in the session and send it, and the app forks the session and
+sends the fork the prompt. When a Copilot CLI has the session open in a terminal, BriefBar brings that
+terminal up instead, and the window stays open, since it can't pick the session's window or tab there: find
+it, and paste the prompt. For a fork, fork the session there with `/fork` first, which takes a name for the
+fork rather than a prompt, then paste the prompt in the fork.
 
 **Run with the CLI** is only there while the Copilot app doesn't have the session open: the app keeps an
 open session's history in memory and wouldn't see a turn the CLI runs in it, so the session's history
@@ -535,8 +567,9 @@ would fork. For the same reason, don't open the session in the app until Copilot
 that a task of BriefBar's still works in, or one that shares its checkout, shows as working, and can't be
 chosen until it's done. Nor is **Run with the CLI** there while another of the app's sessions runs a turn in
 the same checkout, wherever in it each works. The window looks again every few seconds while it's open, and BriefBar
-once more as the task starts. For a pull request, the session's folder has to be a clone of its repository. **Open in Copilot** needs the
-Copilot app, and the comments its prompt quotes leave **Needs You** only once the session has opened.
+once more as the task starts. For a pull request, the session's folder has to be a clone of its repository. **Send to Session** and
+**Send to a Fork** need the Copilot app, and the comments the prompt quotes leave **Needs You** only once
+it's sent, or once the session has opened with the prompt copied for you to paste.
 
 The prompt fits where Copilot works. In a session that's already there, which may be on another branch
 or hold work of its own, a pull request's prompt asks Copilot to check out the pull request's latest
@@ -820,6 +853,7 @@ or 3 days (see [Notifications](#notifications)).
 | | Mark All Read When Teams' Badge Clears | on by default |
 | Azure DevOps | Notifications, Summaries by Apple Intelligence, Show To Review in the Menu Bar | on/off |
 | | Follow Pipelines After You Merge | on by default: the pipelines that run after your pull requests merge, while Done keeps them |
+| | Open Pull Requests in BriefBar | off by default: a pull request clicked in the menu bar's list, a widget or a notification shows its details in BriefBar's window, at the comment or the run it's about, rather than opening in Azure DevOps |
 | | Pull Requests Sent in Chats | off by default: reads every app's notifications for links to pull requests, and keeps only the links, in memory. Needs Full Disk Access |
 | | Refresh | every 1, 2 or 5 minutes |
 | | Keep Done For | 4 hours, 1 day, 3 days |
@@ -879,7 +913,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   requests the app records with them and which run a turn now, from its database; the folder each works
   in, from its session state; which ones the app has open; and which of those active lately link to it in
   their logs. It reads nothing of Copilot's while the feature is off.
-  **Open in Copilot** puts the prompt on the clipboard. In its preferences, it keeps which work items you sent, where, with which model, and the link to
+  **Copy** puts the prompt on the clipboard. **Send to Session** and **Send to a Fork** hand it to BriefBar's
+  extension in the session, through a file only you can read, which goes once the extension is done with it,
+  and read what the extension says became of it, and, for a fork, which session the app records it came from;
+  or, when they can't, put it on the clipboard too. In its preferences, it keeps which work items you sent, where, with which model, and the link to
   the pull request, not their titles; and, in a file only you can read, what Copilot printed when it
   ended. Turning Azure DevOps off forgets them and deletes that file; Copilot's worktrees, branches and
   sessions stay.

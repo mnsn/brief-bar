@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, HTML such as a
+  line break (`<br>`), a table or `<details>` shows as it does in Azure DevOps, and an HTML comment shows
+  nothing, rather than showing as they were written.
+- **See each comment with its code, without opening Azure DevOps.** In a pull request's details, its
+  comment threads now go by file, in the order its change lists them, with those on the pull request
+  itself first. Each thread on code shows the lines it's on as its reviewer saw them, with their numbers,
+  what was added and removed, and the lines it's about marked; long lines scroll sideways, and **⟷**
+  makes the details wide enough for them. When the code changed after the comment, it says so, with
+  **↗** to see what changed. Each comment shows in full, formatted as it was written, and a long thread
+  shows its first and latest comments until you ask for the rest. Each thread also says how it stands
+  and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
+  only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
+  now reads this, it asks you to look at what it reads once more after the update.
+
+## 0.11.1 - 2026-11-03
+
+- **Send a prompt straight to one of the Copilot app's sessions, or to a fork of it.** In the Send to Copilot
+  window, for a session that's already there, **Send to Session** sends the prompt to the session in the Copilot
+  app, as your own message, instead of copying it for you to paste. **Send to a Fork** forks the session, with
+  its history and the changes it hasn't committed, into a worktree of its own, and sends the fork the prompt,
+  while the session stays as it is. Both need **Send Prompts to Copilot Sessions**, which you turn on in
+  Settings › Agents. Until then, and whenever BriefBar can't send it, it copies the prompt and opens the session
+  for you to paste, as **Open in Copilot** did, or for a fork `/fork` and the prompt. The window says which
+  before you send it.
 - **Send Prompts to Copilot Sessions, in Settings › Agents.** Turn it on, and BriefBar installs a small
   extension in the GitHub Copilot app's sessions, so that Send to Copilot can send a prompt to a session
   itself, or fork the session and send the prompt to the fork, rather than copy it for you to paste. It's
@@ -13,19 +37,17 @@
 - **A task that goes on with a Copilot session says it failed when Copilot stops before it starts.** When
   the Copilot CLI refused to start, such as **Push & Reply with Copilot…** after an earlier task, the task
   said it was done, as that earlier task had.
-- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, a line break
-  (`<br>`) breaks the line, an HTML comment shows nothing, and tags such as `<b>` or `<details>` keep only
-  their text, rather than showing as they were written.
-- **See each comment with its code, without opening Azure DevOps.** In a pull request's details, its
-  comment threads now go by file, in the order its change lists them, with those on the pull request
-  itself first. Each thread on code shows the lines it's on as its reviewer saw them, with their numbers,
-  what was added and removed, and the lines it's about marked; long lines scroll sideways, and **⟷**
-  makes the details wide enough for them. When the code changed after the comment, it says so, with
-  **↗** to see what changed. Each comment shows in full, formatted as it was written, and a long thread
-  shows its first and latest comments until you ask for the rest. Each thread also says how it stands
-  and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
-  only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
-  now reads this, it asks you to look at what it reads once more after the update.
+- **A pull request opens in its details from anywhere in BriefBar's window.** On the Overview, in its brief and on
+  the Notifications page, clicking a pull request shows its details on the Pull Requests page, at the comment or
+  the run it's about; on the Pipelines page, a pull request's card shows the run you click, or the first that
+  failed. On the Sprint page, one of your pull requests linked to a work item shows the same details, with its
+  comment threads, builds and checks, and reviewers, and the way there in their header, such as
+  **Bug 5110 › !4091**. **Open Pull Requests in BriefBar**, off by default in Azure DevOps' settings, does the
+  same for the menu bar's list, widgets and notifications, rather than opening Azure DevOps. Either way, a pull
+  request's menu has both **Show in BriefBar** and **Open in Azure DevOps**.
+- **Opening a pull request in Azure DevOps from the Pipelines page sees it**, as opening it anywhere else in
+  BriefBar does, so what was new on it isn't anymore. It opens where its row does: at the comment that needs you,
+  or the run after its merge.
 
 ## 0.11.0 - 2026-11-02
 

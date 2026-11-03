@@ -1074,9 +1074,10 @@ pull requests stay listed and counted, as when any of them can't be read, and on
 there, the organization is read with the rest. Until then, what's listed from it stays as it was read: its
 pull requests' details, builds and merges aren't asked for. An organization in such a directory says so,
 whatever else failed reading it, but Azure DevOps asking BriefBar to slow down comes first. A pull
-request you watch, or that was sent to you, in such an organization says the same, and is read at the
-next refresh once you've signed in, rather than an hour later; such organizations don't take the ten
-reads a refresh gives those pull requests, each being tried once a refresh. When every organization you
+request you watch, or that was sent to you, in such an organization says the same, and is read once
+you've signed in there, when its turn comes round, rather than an hour later: such an organization takes
+one of the ten reads a refresh gives those pull requests, then waits behind the others, and is said at
+every refresh until it's read. When every organization you
 watch is in such a directory, the pull requests sent to you from others are still read. The Sprint and
 Pipelines sections, the Add Pipelines sheet, its projects included, and a work item's details say the
 same, and the sheet offers **Try Again** to read its projects and search again once you've signed in;
@@ -1086,11 +1087,15 @@ them with any other organizations whose teams, or your team's sprint, couldn't b
 finds for you then is shown, but kept only once it's been compared with theirs: it's looked for again as
 each of their directories is signed in to, or as its own needs a sign-in, and stays unkept until their
 teams are read. A team whose sprint can't be read for want of such a sign-in counts among them, and
-doesn't take the turn of another. The command line and agents, which have no button, say what to run;
+doesn't take the turn of another; and a team found for you whose organization turns out to wait on such
+a sign-in, as its board or another of its organization's sprints is read, is set aside, neither shown
+nor kept, and another of yours is looked for. The command line and agents, which have no button, say what to run;
 an agent's work item, asked for by its number alone, is looked for in your other organizations too, and
-such an organization is named only when none of them has it. A directory's ID is never shown otherwise,
-and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses or
-the names of directories it quotes.
+such an organization is named only when none of them has it. With no organizations chosen, an agent
+looks in one of yours in such a directory again at most once a minute, so signing in there finds your
+pull requests there. A directory's ID is never shown otherwise,
+and what the Azure CLI says when it can't give a token goes to the log without IDs, email addresses (a
+guest's user name included) or the names of directories it quotes, in single or double quotes, or names.
 The log names none of these organizations, nor the others that couldn't be read with them, and says
 only how many are in such a directory: a pull request sent to you comes from a chat. While nothing could
 be read but such organizations, BriefBar looks again every minute, as it does while the CLI is signed
@@ -1099,9 +1104,10 @@ out.
 Your own tokens come from your sign-in's directory: the CLI's default directory, the first time, and
 then that same directory, asked for with `--tenant`, even once `az login --tenant` has made another
 directory the CLI's default. So signing in to an organization's directory changes neither whose
-sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from the directory of
-the account it last read your pull requests with, and where that account is from, which it keeps with
-it (`ado.accountOrigin`); the command line and agents do too. Turning Azure DevOps off forgets both,
+sign-in BriefBar reads with, nor what it read in your directory. BriefBar starts from your sign-in's
+directory as it last read with it, whichever section did, the pipelines or the sprint without pull
+requests too (`ado.accountDirectory`), and where that account is from (`ado.accountOrigin`); the
+command line and agents do too. Turning Azure DevOps off forgets both,
 with what you've seen, and nothing read before then saves them again. When the CLI can't give a token in your
 directory, BriefBar looks at its default directory's token: a guest's names where its account is from
 (`idp`), its own directory or, for a personal Microsoft account, `live.com`. When that's your account's,
@@ -1159,7 +1165,7 @@ All requests are GETs to the Azure DevOps REST API (version 7.1):
 | `{project}/_apis/build/builds?reasonFilter=buildCompletion,resourceTrigger&minTime=…` | the same, once a run on the merge commit has been found | the runs that runs started, such as a deployment |
 | `{project}/_apis/build/builds/{id}/timeline` | for those runs, each pipeline's latest: every refresh while it runs, and once when it finishes (again if it's retried); four a refresh | its stages, whether one waits for an approval, and where it failed |
 | `_apis/git/pullrequests/{id}` | when one of yours leaves the active list: five a refresh, the ones not looked up yet first; one that fails is tried again on the next refresh, then less and less often | whether it was completed or abandoned |
-| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first; one that's closed or can't be read is tried again an hour later. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
+| `_apis/git/pullrequests/{id}` | for a pull request someone sent you, or that you watch, that isn't in your lists: ten a refresh, the ones never read first, then the ones read or tried longest ago; one that's closed or can't be read is tried again an hour later, and one whose organization waits on a sign-in to its directory is tried, with the others there, when its turn comes round. Once Azure DevOps asks to slow down, the rest are read at a later refresh, and none of them counts as one that can't be read | the pull request, to list it |
 | `{project}/_apis/git/repositories/{repo}/pullRequests/{id}/workitems` | only with [Show Links](#links): once for each of your pull requests, twenty a refresh, then every quarter of an hour, four a refresh; one that can't be read is tried again an hour later | its work items |
 | `_apis/wit/workitems?ids=…&$expand=relations` | only with Show Links, while the sprint is on screen: when its work items change, and every quarter of an hour; 200 work items a request. Azure DevOps doesn't take the fields to return with relations, so all of them come too | the pull requests each of the sprint's work items links to |
 | `_apis/wit/workitems?ids=…&fields=…` | only with Show Links: for the work items linked to your pull requests that the sprint doesn't show, and those you linked, every quarter of an hour; 200 a request | their title, type, state, project and when they changed |
@@ -1284,7 +1290,33 @@ they showed it (`PullRequestDetailsStore.pendingEvents`, with `PRStore.snapshot(
 a resolved thread, which waits on you only while it's new, doesn't fold away as you read it, and what was new
 stays new. Answering it still counts, and removing the pull request from Needs You or sending its comments to
 Copilot ends that look, as showing another one or closing them does: then what you've seen is seen there too.
-In a menu-bar list or a widget, a click still opens it in Azure DevOps.
+
+A pull request opens there from anywhere else in BriefBar too, as the one place it opens
+(`PullRequestDetailsStore`): from the window's other pages, the Overview's rows and its brief (`BriefLine.show`),
+the Notifications page (`openNotificationInWindow`) and the Pipelines page's cards, always; from the menu bar's
+list, a list by state in a popover, widgets, the Overview widget's brief and Notification Center, only with
+**Open Pull Requests in BriefBar** (`ado.opensPullRequestsInBriefBar`, off by default: `open(_:)`), and otherwise
+in Azure DevOps, as before. A row knows which by where it shows: a window's page sets `panelStyle` to `.page`, the
+Overview's rows too. Without a window that has the Pull Requests page, it opens in Azure DevOps all the same, and
+its menu offers only that; otherwise its menu has both, what a click does first: **Show in BriefBar** from the
+menu bar and widgets, **Show Details** in the window, and **Open in Azure DevOps**. Showing it there sees it, as
+opening it in Azure DevOps does. It shows at what its row is about (`Place.about`): where its link leads
+(`PRSnapshot.place`, `PullRequestPlace` in `Sources/AzureDevOpsCore`), the thread of the comment that needs you
+or that you answered, or the run after its merge that failed or waits; else, for one that's failing, the first of
+its builds and checks that failed; else their top, which starts with what's left. A notification shows its own
+thread or run instead, which its link names, or else what its row is about (`reveal(notification:link:)`, by the
+pull request's key the notification keeps, `PRKey(description:)`). A **Your Pull Requests** card on the Pipelines
+page shows the run you click, or for its title the first that failed, else the builds and checks; an **After
+Your Merges** card, the run its merge's pipelines name, while the list still has the pull request.
+
+On the Sprint page, the page of one of your pull requests over a work item's details, and on the Pull Requests page
+one over another pull request's, is the same view as its details (`LinkedItemPage`, `PullRequestDetailsContent`),
+in a store the details keep for their pages, which follows the list and sees it as it shows, keeping what was new in its
+threads new, as the details do, and keeps it while the page shows once the list doesn't have it, such as one under Done
+that showing it sees, or a review that merges, until you go elsewhere; it says how it's linked to what it opened from,
+leaves that out of **Also Linked**, and the header's way there carries on, `Bug 5110 › !4091 › …`, with ↗ and the
+details' menu above it, for the pull request the page shows. A pull request your lists don't have, such as a teammate's,
+keeps the page Show Links tells (`ItemPageView`).
 
 They show what the list read already, so nothing more is read for them but the code that comment threads are on
 ([below](#the-code-comments-are-on)), and they follow the list as it refreshes (`PullRequestPanel` in
@@ -1304,8 +1336,10 @@ that, and **⋯** has the row's menu, its Copilot actions among them while Send 
 Something else can ask the details to show a pull request at a place (`PullRequestDetailsStore.Place`): a thread,
 which unfolds the resolved ones when it's one of them, a build by its run, a check by its name (the first of that
 name), or a part, such as its comments, which What's Left does. They scroll there once it shows, and point a
-thread, a build or a check out for a moment. Taken to a thread, the header names it after the pull request, `!4102
-› PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made
+thread, a build or a check out for a moment; for a thread they don't have, they scroll to their comments, and for
+a run or a check they don't have, such as a run that isn't the one a policy queued last, to their builds and
+checks (`Place.anchor(in:)`). Taken to a thread, the header names it after the pull request, `!4102 ›
+PaymentsClient.cs:88` (`PullRequestDetailsStore.trailThread`), at the line its card shows, where it was made
 (`ThreadCode.place`), until they go elsewhere in them or over them; the pull request's number there takes them
 back to their top (`Place.top`). `reveal(_:at:)` shows them on the window's page and opens it there, unless no
 window has that page. A pull request the list doesn't have anymore, such as a review that merged, stays as it was
@@ -1582,7 +1616,8 @@ that account can read. They start in windows only, hidden in the menu bar and in
 
 **Which sprint.** The first time, BriefBar looks through your teams (up to 25) for one with a sprint
 going on today, and when several have one, picks the team with the most work assigned to you. It
-keeps that team until you choose another. Azure DevOps keeps calling a team's last sprint "current"
+keeps that team until you choose another. Organizations whose teams couldn't be read are named beside
+the sprint, with why, so the team picker's gaps are explained. Azure DevOps keeps calling a team's last sprint "current"
 after it's over, when the team stops planning sprints, so a sprint counts only while today is one of
 its days: its first and last days are dates, which Azure DevOps keeps in UTC, and today is the day
 it is on your Mac.
@@ -1610,14 +1645,16 @@ sprint doesn't know its project, its comments are read after it, and when it mov
 project, they're read again through that one. Then one request reads what the work items it links to
 are. A work item that can't be read says why, with **Sign In…** when that's the reason; comments that
 can't be read leave the rest. Its long text fields come as HTML, or as Markdown for those switched to
-it (`multilineFieldsFormat`), and its comments as HTML too (`renderedText`). BriefBar draws them
-itself (`RichText`, `RichTextView`), without a web view: headings, lists and task lists, quotes, code,
-tables, links and their styles. HTML in Markdown shows as Azure DevOps shows it, outside code: an HTML
-comment shows nothing, a line break breaks the line, a paragraph starts and ends on lines of its own,
-and the other tags that format text keep their text. Scripts and styles are left out, only links to web
-pages and email addresses open (in your browser), and an image is a link to it, never loaded. What's read
-stays in memory only, for up to 30 work items, and is forgotten a quarter of an hour after it's read, but
-for the details on screen, which stay while they show; it shows again without being read for a minute.
+it (`multilineFieldsFormat`), and its comments as HTML too (`renderedText`). BriefBar draws them itself
+(`RichText`, `RichTextView`), without a web view: headings, lists and task lists, quotes, code, tables,
+links and their styles. HTML in Markdown shows as Azure DevOps shows it, outside code: HTML that starts a
+line starts a block of HTML, as CommonMark has them, which shows as BriefBar shows HTML, Markdown in it
+as written; and in text, an HTML comment shows nothing, a line break breaks the line, a paragraph starts
+and ends on lines of its own, and the other tags that format text keep their text. Scripts and styles are
+left out, only links to web pages and email addresses open (in your browser), and an image is a link to
+it, never loaded. What's read stays in memory only, for up to 30 work items, and is forgotten a quarter
+of an hour after it's read, but for the details on screen, which stay while they show; it shows again
+without being read for a minute.
 The sprint's refresh tells when a work item changed (`System.ChangedDate`), which reads its details
 again while they show, or tries again when they couldn't be read, once more when it changed while they
 were read, and a linked work item shows as
@@ -1637,7 +1674,9 @@ failed, it names the first task that failed, the stage it's in and its first err
 Azure DevOps itself, such as scheduled ones, don't name who started them. The timelines never read
 go first, then the ones read longest ago; one that fails is tried again on the next refresh, then
 less and less often, up to every 30 minutes, and one you may not read isn't asked for again until
-the run changes. Stages are kept by organization, project and run, since run IDs are unique only
+the run changes. One whose organization waits on a sign-in to its directory isn't one that fails: it
+takes its turn again at each refresh, behind the others, and the sign-in is said, read then or not,
+until one of that organization's timelines answers or the run is no longer shown. Stages are kept by organization, project and run, since run IDs are unique only
 within an organization.
 
 Below pinned pipelines, **Your Pull Requests** groups validation runs into one expandable card per
@@ -1648,7 +1687,13 @@ run of that shared pipeline on another PR. Results from older commits are marked
 excluded from the current pass/fail summary. If Azure DevOps doesn't provide enough commit information,
 the result says **Commit not verified**, rather than assuming it validates your latest changes.
 Cards disappear when the PR is merged or abandoned. This does not pin those pipelines, change pinned
-pipeline counts or widgets, or affect **After Your Merges**.
+pipeline counts or widgets, or affect **After Your Merges**. A card's title shows the pull request's details on
+the Pull Requests page, at the first run that failed, or else at its builds and checks, and each of its runs
+shows them at that run ([A pull request's details](#a-pull-requests-details)); right-click it to open it in Azure
+DevOps instead. **Open in Azure DevOps**, in its menu or an **After Your Merges** card's, and a click when the
+details can't show, open the pull request as its row does (`PullRequestDetailsStore.openInAzureDevOps(_:link:)`,
+through `PRStore.open`): at the comment that needs you or the run after its merge, which sees it. One the list
+doesn't have, such as a merge it no longer lists, opens at its page.
 The authored PR list carries the account that supplied it. When the pipeline reader detects another
 sign-in, it clears the old runs and suspends PR cards and validation requests until the pull request
 reader supplies a list for that account, even when both accounts can read the same repository.
@@ -1764,16 +1809,20 @@ from the latest default branch, and commits only what it changed for the work it
 prompt, puts it on the clipboard as it stands, with your changes, whatever the session and the way it
 goes. It sends nothing and hands nothing off (`CommentHandOff`), so it works in the demo. A prompt you
 changed stays as you wrote it when you choose another session, and **Reset** goes back to the one for
-the session you chose (`CopilotComposerView.rewritten`). There are two ways to send to a session that's
-there:
+the session you chose (`CopilotComposerView.rewritten`). There are three ways to send to a session that's
+there, side by side (`CopilotComposerView.Delivery`: in the Copilot app or with the CLI, to the session
+itself or to a fork of it):
 
-- **Open in Copilot**, the default for the app's sessions, puts the prompt on the clipboard and opens the
-  session with its `ghapp://sessions/<id>` link, for you to paste and send. The app has no way for
-  another program to send a session a message, and its link for a new session doesn't reach one that's
-  there. Copilot then works with the session's own model, mode and permissions: the CLI's `--deny-tool`
-  limits don't apply, only the prompt's words. It needs an app that opens `ghapp://` links, which only
-  the Copilot app does: without one, it isn't offered. The comments the prompt quotes are handed off
-  only once the session opened; if it didn't, the window stays open and says so.
+- **Send to Session**, the default for the app's sessions, sends the prompt to the session in the Copilot
+  app, as your own message, through BriefBar's extension in it (below), then shows the session. Copilot
+  works with the session's own model, mode and permissions: the CLI's `--deny-tool` limits don't apply,
+  only the prompt's words. A session that's working takes it once its turn is done.
+- **Send to a Fork** forks one of the app's sessions with the app's own fork, and sends the fork the
+  prompt. The fork is a session of the app's, with the session's history and the changes it hasn't
+  committed, in a worktree and branch of its own; the session itself gains no message, only the app's note
+  that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's; nor
+  for Push & Reply, which ships what its last task changed only in that task's session and worktree, where
+  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`).
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
@@ -1802,6 +1851,80 @@ the launcher refuses (`LaunchError.openInApp`), looking again after its git comm
 starts the CLI, and **Continue in Terminal** opens the session in the app instead. A lock whose program is gone, as after the app quits, doesn't count, nor does one whose
 process ID belongs to a program that started after the lock was written, since macOS reuses them. Nothing keeps the app
 from opening a session while the CLI works in it, so the composer asks you not to until Copilot is done.
+**Send to Session** forks nothing: BriefBar's extension sends the prompt through the runtime that has the
+session open.
+
+**Sending to a session, or a fork of it.** The Copilot app offers no way for another program to send one
+of its sessions a message: its `ghapp://sessions/<id>` link only shows a session, and its link for a new
+session doesn't reach one that's there. A program that runs inside the session can, as an extension of
+the Copilot SDK: each runs in its session's runtime, and `session.send` sends that session a message, as
+yours. So **Send Prompts to Copilot Sessions**, off until you turn it on in Settings › Agents
+(`CopilotSessionPrompts`), installs BriefBar's second Copilot plugin, `briefbar-sessions`, whose extension
+runs in each of the app's sessions that start afterwards, acts only on its own session, and only when
+BriefBar asks ([below](#its-extension-for-the-apps-sessions)). BriefBar asks through files in `~/Library/Application Support/BriefBar/Copilot/Outbox`, on
+this Mac only (`CopilotOutbox`):
+
+- **Requests.** As you send it, BriefBar writes `requests/<session>.<request>.json`: the session, and
+  `send` with the prompt, or `fork`, which expires two minutes on. The session's extension claims it by
+  renaming it, so it's handled once, then writes `results/<request>.json`: done, with the message's ID or
+  the fork's session ID, or why not. BriefBar reads the result and removes it. A request that no extension
+  claims in time, BriefBar withdraws by removing it; one that's claimed always gets a result, however long
+  it takes.
+- **Listening.** While it runs, the extension writes `listening/<session>.json`, with its process ID and
+  when it started. BriefBar counts it only while that process runs and started by then, give or take two
+  seconds, as it tells a task's process from one that got its ID later (`CopilotOutbox.isLive`).
+- **Only yours.** Each folder is a real one that only you can open (0700), and each file a regular one that
+  only you can read (0600), written whole to a name starting with `.`, then renamed into place. BriefBar
+  opens each without following a symbolic link below your home folder, uses no folder and reads no file
+  that isn't so, and makes the folders only as it writes a request. As it writes one, it removes its
+  requests and results that are more than an hour old; turning Azure DevOps off removes them all, since
+  they hold its prompts, even from a folder of yours that others could open by then, which goes too, and
+  unlinks a link where one of their folders should be, without following it (`CopilotOutbox.forget`); what
+  it can't remove, it logs. What the extensions say in `listening` stays, theirs while they run.
+
+Before you send it, the window says what will happen, and looks again every five seconds
+(`CopilotTasksStore.reach(of:)`): BriefBar's extension listens in the session, so the prompt goes at once;
+nothing has the session open, so opening it in the app loads it, with the extension, which takes the
+request waiting for it, about 11 seconds later; or the app, or a CLI, has had it open since before the
+option was on, so it needs restarting. While the option is off, BriefBar sends nothing, even to a session
+whose extension still runs, as one does until the session restarts. A task's session that BriefBar started
+with the CLI isn't the app's, which can't load it.
+
+Sending (`CopilotTasksStore.deliver`, `SessionSender`) takes one prompt at a time for each session, and
+waits without blocking a thread: up to 10 seconds for a listening extension to claim a request, 45 for a
+session to load and 30 more for its extension, a minute for a send's result and two for a fork's, which
+took about 22 seconds. To fork, the session's extension runs the app's own `fork_session`, whose text says
+the fork's session ID, beside the session's name, which you or an agent chose. BriefBar sends the fork the
+prompt only once the app's database records it as a fork of the session made since the request
+(`forked_from_session_id` and `created_at`, read-only), and the fork's own extension, which listens by the
+time the fork is made, takes it. Like the session's, the checkout the fork works in has to be free, unless
+it's the session's own, and stays as it is until the fork's prompt has gone or been taken back; when Copilot
+works there for another task BriefBar sent, BriefBar copies the prompt for the fork instead. When the
+extension couldn't name the fork it made, named a session the
+database doesn't record so, as a name that holds another session's ID could have it do, or didn't say how
+the fork went, the fork is the one the database records of the session since the request, if there's just
+one; with none or more, there's no telling, and BriefBar sends nothing. Then the session, or the fork, shows the way BriefBar opens one: in the
+app; or, while a CLI has it open, the terminal that CLI runs in comes to the front, since the app loading
+it too would fork its history. Closing the window stops it, and so does turning Send Work to Copilot, Send
+Prompts to Copilot Sessions or Azure DevOps off: a request that no extension took yet is taken back, and
+nothing more is written, copied or opened, even when BriefBar was still looking how the prompt would reach the
+session, or how to show it. One that an extension took goes on, and BriefBar still waits for how it went,
+so that the session takes no other prompt from it meanwhile.
+
+When BriefBar can't send it, it copies the prompt, and shows the session, for you to paste and send;
+when the window knows that beforehand, its button says **Open in Copilot** (`CopilotComposerView.sendTitle`).
+For a fork, it copies `/fork` and the prompt, and shows the session:
+pasted and sent there, the app's own `/fork` forks the session and sends the fork the prompt. A CLI's
+terminal comes to the front, but not necessarily the session's own window or tab in it, so the window stays
+open to say to find it there; and since the CLI's own `/fork` takes a name for the fork rather than a
+prompt, for a fork there BriefBar copies the prompt alone, to paste once you've forked the session. Once the
+session forked but the prompt didn't reach the fork, it copies the prompt and shows the fork. When the
+window didn't say beforehand that it would, it stays open to say why; and when the extension took the
+request but didn't say how it went, or said it failed, which it also says once it stops waiting for the
+session, it says the session may have it already. What the prompt quotes is handed off
+once it's sent, or once the session shows with the prompt copied; without the Copilot app, nothing shows,
+nothing's copied, and the window says why, along with why BriefBar didn't send it, and, when the session
+may have it already, to look first, rather than send it again with the CLI.
 
 Copilot loads a folder's own skills, MCP servers and hooks only once you trust it (`trustedFolders` in
 its `config.json`). The CLI gives a worktree of a repository you trust the same trust by itself, and no
@@ -1894,9 +2017,14 @@ printed. **Clear** forgets a task and deletes what it printed; **Remove Worktree
 worktree with git, and asks again before deleting changes that aren't committed; it isn't there for one
 of the app's sessions, whose folder is the app's, and doesn't delete one that Copilot works in, for a
 task BriefBar sent in another session, or in one of the app's sessions running a turn there, the task's
-own too once you went on with it in the app, as it looks right before git deletes it, after each answer
-(`CopilotTasksStore.worktreeInUse`); from that look until git is done, its checkout is busy, so no task of
-BriefBar's starts there meanwhile. What **Open in Copilot** hands over isn't kept. Copilot's
+own too once you went on with it in the app, or that a session BriefBar is sending a prompt to works in,
+as it looks right before git deletes it, after each answer (`CopilotTasksStore.worktreeInUse`); from that
+look until git is done, its checkout is busy, so no task of BriefBar's starts there meanwhile, as a
+session's is while BriefBar sends it a prompt, or copies one for it and shows it, and a fork's while
+BriefBar sends the fork one, until the prompt has gone, been taken back, or been copied with the session
+showing
+(`CopilotTasksStore.deliveringFolders`). A prompt sent to a session stays on disk only in its request, until the
+session's extension is done with it or BriefBar withdraws it ([above](#send-work-to-copilot)). Copilot's
 branches, pull requests and sessions are yours, and stay.
 
 ### Notifications
@@ -1907,7 +2035,8 @@ become ready or complete, and what the pipelines after your merges do. What you'
 announced, even while it still waits on you. Events from before BriefBar started aren't announced: they're in the
 panel. When there's a lot at once, it posts the three newest and one "more updates" notification.
 Changing a setting or time passing never causes a notification. Clicking one opens the comment it's
-about, and marks the pull request seen.
+about, in Azure DevOps, or in the pull request's details with **Open Pull Requests in BriefBar** on, and marks the
+pull request seen.
 
 ### The brief
 
@@ -1951,7 +2080,7 @@ The Copilot app already records everything needed, in two places under `~/.copil
 
 | Source | Written by | Provides |
 |---|---|---|
-| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
+| `data.db` (SQLite, WAL mode) | the Copilot app | sessions, names, projects/branches, which session started which and which coordinates which, which one each fork was forked from, the "is running" flag, unread markers, the activity feed, how full each session's context window is; and, only with [Show Links](#links), the pull request each session started from or opened, and its project's GitHub repository and folder name |
 | `session-state/<id>/events.jsonl` | the Copilot agent | a step-by-step log: turns, tool calls, questions, plans, permission prompts, errors; and, only as [Summarize with Copilot](#what-a-summary-reads) writes a summary, what was asked in it and what Copilot answered |
 | `session-state/<id>/checkpoints/` | the Copilot agent | only with [Show Links](#links), for [Where It Stands](#where-it-stands): the notes Copilot writes when it compacts a long session, `index.md` with each one's title, and the latest one's overview, what's done and what's next |
 
@@ -2113,6 +2242,11 @@ log format, and the `ghapp://` link. An app update could change them.
   looked at on every read that fails) is no problem: the Copilot CLI keeps none, so the list is its
   session folders, and nothing is shown, in the panel, the widget, the command line or to agents
   (`CopilotApp.problem(of:)`). With the app installed, it's shown as before.
+- Sending a prompt to a session ([above](#send-work-to-copilot)) relies on the Copilot SDK's extensions, which
+  are supported, on how the app runs them in its sessions, on its `fork_session` tool, which the SDK's
+  `tools.execute` runs and which it marks as experimental, and on `forked_from_session_id`. If any of
+  them changes, BriefBar copies the prompt for you to paste instead, as it does whenever the extension
+  doesn't answer, and does no harm.
 
 ## GitHub
 

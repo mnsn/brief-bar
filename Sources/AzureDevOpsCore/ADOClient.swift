@@ -106,11 +106,11 @@ public struct ADOClient: Sendable {
         return FileBytes(data: read.data, isComplete: read.isComplete)
     }
 
-    /// The only way requests are made: GET, with a bearer token for the organization's directory, retried once with a
-    /// fresh token if it's rejected, and once with a token for the organization's own directory if Azure DevOps names
-    /// another one than the token's, following no redirect. `isAnswer` tells what was asked for from a sign-in page, and
-    /// `send` sends the request with the guard against redirects it's given, and gets the answer's body, and whether
-    /// that's all of it.
+    /// The only way requests are made: GET, with a bearer token for the organization's directory, retried with a fresh
+    /// token once for each directory whose token is rejected, and once with a token for the organization's own directory
+    /// if Azure DevOps names another one than the token's, following no redirect. `isAnswer` tells what was asked for from
+    /// a sign-in page, and `send` sends the request with the guard against redirects it's given, and gets the answer's
+    /// body, and whether that's all of it.
     private func answer(
         _ url: URL, accept: String, isAnswer: (HTTPURLResponse) -> Bool,
         _ send: (URLRequest, RedirectGuard) async throws -> (Data, URLResponse, Bool)
@@ -131,9 +131,10 @@ public struct ADOClient: Sendable {
             tenant = nil
             token = try await accessToken(tenant: nil, for: organization)
         }
-        var refreshed = false
+        // The directories whose token was refreshed: your own, say, and then the organization's, once it's named.
+        var refreshed: Set<String?> = []
         var movedDirectory = false
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             let redirects = RedirectGuard()
             let (data, response, isComplete): (Data, URLResponse, Bool)
             do {
@@ -169,8 +170,8 @@ public struct ADOClient: Sendable {
                     await directories.remember(other, for: organization)
                     continue
                 }
-                if !refreshed {
-                    refreshed = true
+                if !refreshed.contains(tenant) {
+                    refreshed.insert(tenant)
                     await tokens.invalidate(tenant: tenant)
                     token = try await accessToken(tenant: tenant, for: organization)
                     continue
