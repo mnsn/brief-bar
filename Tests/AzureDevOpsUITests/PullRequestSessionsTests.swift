@@ -258,6 +258,8 @@ import Testing
         try database(at: home)
         let store = copilot(home: home)
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        // Between reads, an hour: one read, however slow the Mac.
+        sessions.refreshEvery = .seconds(3_600)
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
         var checked: [String] = []
