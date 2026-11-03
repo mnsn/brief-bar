@@ -53,12 +53,15 @@ struct PullRequestSessionChoice: Codable, Equatable, Sendable {
         return kept(records.compactMap(\.value), now: now)
     }
 
-    /// Leaves in the preferences only what `load` kept of them, when they hold more, such as choices that expired: as Show
-    /// Links forgets the links you made.
+    /// Leaves in the preferences only what `load` kept of them, when they hold more or other, such as choices that expired:
+    /// as Show Links forgets the links you made. Compared as read, since writing the same choices again needn't give the
+    /// same bytes.
     static func prune(to kept: [PullRequestSessionChoice], in defaults: UserDefaults) {
-        let data = kept.isEmpty ? nil : try? JSONEncoder().encode(kept)
-        guard defaults.data(forKey: SettingsKey.copilotPullRequestSessions) != data else { return }
-        if let data {
+        guard defaults.object(forKey: SettingsKey.copilotPullRequestSessions) != nil else { return }
+        let records = defaults.data(forKey: SettingsKey.copilotPullRequestSessions)
+            .flatMap { try? JSONDecoder().decode([Lossy].self, from: $0) }?.map(\.value)
+        guard records != kept.map(Optional.some) else { return }
+        if !kept.isEmpty, let data = try? JSONEncoder().encode(kept) {
             defaults.set(data, forKey: SettingsKey.copilotPullRequestSessions)
         } else {
             defaults.removeObject(forKey: SettingsKey.copilotPullRequestSessions)

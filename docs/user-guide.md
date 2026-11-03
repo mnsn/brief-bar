@@ -545,7 +545,8 @@ whose log links to it; and, under **Other Copilot Sessions**, the rest, the most
 A pull request's task goes where its details say its work goes ([above](#azure-devops)): to the session you
 chose for it there, unless a task started on it since; else on with its last task's session, as before; without
 one, to the session of the work item's task that opened it, or to the app's session that goes with it best. When
-two go with it as well as each other, it starts a new session unless you choose one, as its details ask which.
+two go with it as well as each other, it starts a new session unless you choose one, as its details ask which; and so
+it does while the session they name is busy, rather than go to another.
 Choose **New Session** for a new worktree instead.
 
 | Send | What happens |

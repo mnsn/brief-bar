@@ -1375,8 +1375,9 @@ task. While it waits for your answer, the line is orange, and opens the session 
 it, as Copilot's list does; otherwise it shows the session's page in the details, and it isn't under **Also
 Linked**. **Use for This Pull Request**, in its menu, keeps your choice in the preferences
 (`ado.copilot.pullRequestSessions`), by references only, the pull request's and the session's, never names, as
-Show Links keeps the links you make, and for as long (`PullRequestSessionChoice`); turning Azure DevOps off forgets
-it. The Send to Copilot window goes there too, unless you choose otherwise (`CopilotTasksStore.suggestedChoice`), and
+Show Links keeps the links you make, and for as long (`PullRequestSessionChoice`): what's older leaves the
+preferences as BriefBar reads them, and turning Azure DevOps off forgets it. The Send to Copilot window goes there
+too, unless you choose otherwise (`CopilotTasksStore.suggestedChoice`), and
 so do agents ([below](#agents)). Without Send Work to Copilot, the line shows only the sessions Show Links links to
 the pull request, read from nothing else, to look at; with neither, nothing. The demo makes its sessions up from its
 own tasks and the Copilot demo's sessions that Show Links links, and reads nothing.
@@ -1754,8 +1755,11 @@ with its last task's session, as before; else with the session of the work item'
 app's session that the app records with it, that you linked, or that's on its branch, when one goes with it better
 than the others. When two go with it as well as each other, which its details ask about, or only one whose log
 mentions it and that was there before it was created may have opened it, which they offer, it starts a new session
-unless you choose one, rather than guess. A work item's task starts a new session unless you choose
-one. What BriefBar finds while the composer is open changes where a task goes only until you choose a
+unless you choose one, rather than guess; so it does while the session they name is busy, rather than go to another.
+Its last task is the latest run BriefBar keeps on it (`CopilotTasksStore.lastTask(forPullRequest:)`), so a task that
+goes on with an earlier task's session takes the place of the one you chose only once it starts. A work item's task
+starts a new session unless you choose one. What BriefBar finds while the composer is open changes where a task goes
+only until you choose a
 session or change the prompt (`CopilotComposerView.followsSuggestions`). A session that a task of
 BriefBar's works in (`CopilotTasksStore.isWorking(inSession:)`: one getting
 its worktree ready, or one whose process still runs), for this subject or another, is busy: it's never
