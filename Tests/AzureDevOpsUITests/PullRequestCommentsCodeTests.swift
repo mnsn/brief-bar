@@ -37,6 +37,9 @@ import Testing
         return (panel, page)
     }
 
+    /// The page the comments are on: the Pull Requests page of the window they're in.
+    private let page = PullRequestCodeStore.page(.azureDevOpsPullRequests, window: "test")
+
     private func row(_ record: PRRecord) throws -> PRSnapshot {
         let now = Date()
         return try #require(PRClassifier.snapshot(for: record, seenCutoff: now, dismissedCutoff: .distantPast, now: now))
@@ -52,6 +55,9 @@ import Testing
             )
             .environmentObject(list)
             .environmentObject(code)
+            // On a window's Pull Requests page, as `WindowView` says.
+            .environment(\.shownSection, .azureDevOpsPullRequests)
+            .environment(\.shownWindow, "test")
             .frame(width: 440)
         )
     }
@@ -94,14 +100,14 @@ import Testing
         let (panelRecord, pageRecord) = try records()
         let list = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
         let code = PullRequestCodeStore { _ in Reader() }
-        code.setVisible(true, for: "window.test")
+        code.setVisible(true, for: page)
         let details = PullRequestDetailsStore()
         code.follow(details)
 
         // The panel shows !4102, whose thread 11 is read.
         details.show(try row(panelRecord))
         let panelThread = try #require(panelRecord.details?.threads.first { $0.id == 11 })
-        code.show(panelThread, of: panelRecord.pullRequest, by: UUID())
+        code.show(panelThread, of: panelRecord.pullRequest, by: UUID(), on: page)
         try await settle { isRead(code, 11, of: panelRecord.id, as: "// the code of !4102") }
         #expect(isRead(code, 11, of: panelRecord.id, as: "// the code of !4102"))
 
@@ -145,7 +151,7 @@ import Testing
         #expect(self.code(in: host).isEmpty)
 
         // Shown on screen: it's read.
-        code.setVisible(true, for: "window.test")
+        code.setVisible(true, for: page)
         try await settle { self.code(in: host).contains("// the code of !4999") }
         #expect(self.code(in: host) == ["// the code of !4999"])
         window.contentView = nil
