@@ -231,7 +231,8 @@ final class PullRequestSessions: ObservableObject {
         defer { reading.remove(key) }
         let subject = TaskSubject.pullRequest(PullRequestTasks.task(for: record), .fixComments)
         let found = await copilot.sessionChoices(for: subject)
-        guard followed[key] != nil, copilot.isOn else { return }
+        // Cancelled meanwhile, as when its details closed, what was read is left out: whatever still follows it reads again.
+        guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
         followed[key]?.found = found
         update(key)
         if case .newSession(chosenByYou: false)? = sessions[key]?.pick, followed[key]?.mentioned == nil {
@@ -239,7 +240,8 @@ final class PullRequestSessions: ObservableObject {
                 followed[key]?.mentioned = known.ids
             } else {
                 let mentioned = await copilot.sessionsMentioning(subject, among: found, since: state.createdAt)
-                guard followed[key] != nil, copilot.isOn else { return }
+                // A search cut short isn't kept.
+                guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
                 mentionsRead[key] = (Date(), mentioned)
                 followed[key]?.mentioned = mentioned
             }
@@ -260,7 +262,7 @@ final class PullRequestSessions: ObservableObject {
         deliveryCheckedForTests?(choice.id)
         let value = await copilot.delivery(to: choice, for: PullRequestTasks.task(for: record), checksRepository: false)
         // Busy says itself as it changes (`update`).
-        guard followed[key] != nil, copilot.isOn else { return }
+        guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
         if case .busy = value { return }
         followed[key]?.delivery = (choice.id, value)
         update(key)

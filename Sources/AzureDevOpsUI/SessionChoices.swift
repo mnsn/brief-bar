@@ -101,22 +101,27 @@ extension CopilotTasksStore {
         guard canSend, isOn else { return [] }
         let home = appHome
         let cliHome = CopilotCLI.home(environment: await environment())
-        // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile.
-        guard canSend, isOn else { return [] }
+        // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile, or no longer be
+        // wanted, as when the details that wanted them closed.
+        guard canSend, isOn, !Task.isCancelled else { return [] }
         let tasks = taskChoices(for: subject)
         let ids = Set(tasks.map(\.id))
         // In one pass: the app's sessions, which of them and of BriefBar's the app has open, and the folder each of the
-        // app's sessions works in, which may be shared.
-        let found = await Task.detached(priority: .userInitiated) { () -> (sessions: [AppSession], open: Set<String>, folders: [String: URL]) in
+        // app's sessions works in, which may be shared; no more of it once what wanted them is cancelled.
+        let reading = Task.detached(priority: .userInitiated) { () -> (sessions: [AppSession], open: Set<String>, folders: [String: URL]) in
             let sessions = ((try? AppSessions.load(home: home)) ?? []).filter { !ids.contains($0.id) }
+            guard !Task.isCancelled else { return ([], [], [:]) }
             let open = Set((Array(ids) + sessions.map(\.id)).filter { id in
                 AppSessions.isOpen(id, home: home) || (cliHome != home && AppSessions.isOpen(id, home: cliHome))
             })
+            guard !Task.isCancelled else { return ([], [], [:]) }
             let folders = sessions.reduce(into: [String: URL]()) { folders, session in
                 folders[session.id] = AppSessions.folder(of: session.id, home: home)
             }
             return (sessions, open, folders)
-        }.value
+        }
+        let found = await withTaskCancellationHandler { await reading.value } onCancel: { reading.cancel() }
+        guard !Task.isCancelled else { return [] }
         let linked = linkedReasons(for: subject)
         let apps = found.sessions.map { session in
             SessionChoice(
@@ -312,23 +317,33 @@ extension CopilotTasksStore {
     }
 
     /// The session a task goes to unless you choose another: for a pull request, the one its details name
-    /// (`PullRequestSession.pick`), among those that can be used now. The session you chose for its work, or a new one if
-    /// you chose that; else on with its last task's, as before; else with the session of the work item's task that opened
-    /// it; else with the Copilot app's session that the app records with it, that you linked to it, or that works on its
-    /// branch, when one goes with it better than the others. When two go with it as well as each other, or only a link in
-    /// one's log says it may have opened it, it suggests none, as its details ask which or offer it rather than guess. A
-    /// work item's starts a new session unless you choose one.
+    /// (`PullRequestSession.pick`), picked among all the sessions as they do. The session you chose for its work, or a new
+    /// one if you chose that; else on with its last task's, as before; else with the session of the work item's task that
+    /// opened it; else with the Copilot app's session that the app records with it, that you linked to it, or that works on
+    /// its branch, when one goes with it better than the others. When two go with it as well as each other, or only a link
+    /// in one's log says it may have opened it, it suggests none, as its details ask which or offer it rather than guess;
+    /// and none while the one they name is busy, rather than another. A work item's starts a new session unless you choose
+    /// one.
     /// - Parameters:
-    ///   - continuable: the run its last task's session goes on with.
+    ///   - lastTask: the pull request's last task (`lastTask(forPullRequest:)`), however it stands.
     ///   - chosen: what you chose for the pull request's work, unless a task started on it since (`chosenSession(for:)`).
     static func suggestedChoice(
-        _ choices: [SessionChoice], for subject: TaskSubject, continuable: CopilotRun?, chosen: PullRequestSessionChoice? = nil
+        _ choices: [SessionChoice], for subject: TaskSubject, lastTask: PullRequestSession.LastTask?,
+        chosen: PullRequestSessionChoice? = nil
     ) -> SessionChoice? {
         guard case .pullRequest = subject else { return nil }
-        let usable = choices.filter { !$0.isUnavailable }
-        let lastTask = continuable.map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
-        if case .session(let choice, _) = PullRequestSession.pick(usable, chosen: chosen, lastTask: lastTask) { return choice }
-        return nil
+        guard case .session(let choice, _) = PullRequestSession.pick(choices, chosen: chosen, lastTask: lastTask),
+              !choice.isUnavailable
+        else { return nil }
+        return choice
+    }
+
+    /// The session a pull request's task goes to unless you choose another (`suggestedChoice`), with its last task and what
+    /// you chose for it as they are now: where its details say its work goes.
+    func suggestedChoice(_ choices: [SessionChoice], for subject: TaskSubject) -> SessionChoice? {
+        guard case .pullRequest(let pullRequest, _) = subject else { return nil }
+        let key = PRKey(pullRequest.organization, pullRequest.id)
+        return Self.suggestedChoice(choices, for: subject, lastTask: lastTask(forPullRequest: key), chosen: chosenSession(for: subject))
     }
 
     /// The session you chose for a pull request's work, for a task on it, unless a task started on it since, which has taken

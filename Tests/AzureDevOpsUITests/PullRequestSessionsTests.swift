@@ -334,6 +334,11 @@ import Testing
         searching.cancel()
         #expect(await searching.value.isEmpty)
         #expect(read.isEmpty)
+        // Nor does a look for the sessions it could go to, cancelled as the details that wanted them close.
+        let looking = Task { await store.sessionChoices(for: subject) }
+        looking.cancel()
+        #expect(await looking.value.isEmpty)
+        #expect(await store.sessionChoices(for: subject).count == ids.count)
 
         let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
         sessions.record = { $0 == item.key ? record : nil }

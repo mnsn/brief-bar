@@ -819,6 +819,16 @@ final class CopilotTasksStore: ObservableObject {
         guard let run = entry.run, run.isValid else { return }
         Task {
             let environment = await environment()
+            // Copilot may have started working in it, or in its checkout, meanwhile: going on with it then would fork its
+            // history or mix their work.
+            if isWorking(inSession: run.id) || isWorking(inFolder: run.worktree) {
+                let alert = NSAlert()
+                alert.messageText = "The session didn't open in Terminal"
+                alert.informativeText = "Copilot is working in it, or in its checkout, now. Continue in Terminal once that's done."
+                NSApp.activate()
+                alert.runModal()
+                return
+            }
             let isOpen = AppSessions.isOpen(run.id, home: CopilotCLI.home(environment: environment)) || AppSessions.isOpen(run.id, home: appHome)
             if run.isAppSession == true || isOpen {
                 Self.openInAppOrSay(run.id)

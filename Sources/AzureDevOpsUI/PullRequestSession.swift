@@ -53,6 +53,18 @@ struct PullRequestSessionChoice: Codable, Equatable, Sendable {
         return kept(records.compactMap(\.value), now: now)
     }
 
+    /// Leaves in the preferences only what `load` kept of them, when they hold more, such as choices that expired: as Show
+    /// Links forgets the links you made.
+    static func prune(to kept: [PullRequestSessionChoice], in defaults: UserDefaults) {
+        let data = kept.isEmpty ? nil : try? JSONEncoder().encode(kept)
+        guard defaults.data(forKey: SettingsKey.copilotPullRequestSessions) != data else { return }
+        if let data {
+            defaults.set(data, forKey: SettingsKey.copilotPullRequestSessions)
+        } else {
+            defaults.removeObject(forKey: SettingsKey.copilotPullRequestSessions)
+        }
+    }
+
     /// The latest choice for each pull request, made since `lifetime` ago, the oldest first.
     static func kept(_ choices: [PullRequestSessionChoice], now: Date) -> [PullRequestSessionChoice] {
         let cutoff = now.addingTimeInterval(-lifetime)
@@ -329,14 +341,15 @@ extension CopilotTasksStore {
         let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
         let key = PRKey(pullRequest.organization, pullRequest.id)
         let found = await sessionChoices(for: subject)
-        // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile.
-        guard canSend, isOn else { return nil }
+        // Again after that wait, as before every read of Copilot's: it may have been turned off meanwhile, or no longer be
+        // wanted.
+        guard canSend, isOn, !Task.isCancelled else { return nil }
         let session = PullRequestSession.make(
             found, chosen: settings.chosenSession(for: key), lastTask: lastTask(forPullRequest: key), createdAt: createdAt, canChoose: true
         )
         guard case .newSession(chosenByYou: false) = session.pick else { return session }
         let mentioned = await sessionsMentioning(subject, among: found, since: createdAt)
-        guard canSend, isOn else { return nil }
+        guard canSend, isOn, !Task.isCancelled else { return nil }
         guard !mentioned.isEmpty else { return session }
         return PullRequestSession.make(
             marking(mentioned, in: found, createdAt: createdAt), chosen: settings.chosenSession(for: key),
@@ -346,11 +359,17 @@ extension CopilotTasksStore {
 
     /// The latest task BriefBar started on a pull request, that got as far as starting, whatever its session and however
     /// it stands: the one the Send to Copilot window goes on with, once it's done, and which takes the place of the session
-    /// you chose for its work before it started.
+    /// you chose for its work before it started. As its run was kept when it started: a send that goes on with an earlier
+    /// task's session is the pull request's task only once it starts, so one that couldn't start leaves your choice be.
     func lastTask(forPullRequest key: PRKey) -> PullRequestSession.LastTask? {
         // The demo's made-up tasks have no run.
-        entries.first { $0.isOn(key) && ($0.run != nil || mode == .demo) }
-            .map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
+        if mode == .demo {
+            return entries.first { $0.isOn(key) }.map { PullRequestSession.LastTask(id: $0.id, startedAt: $0.startedAt) }
+        }
+        return settings.copilotRuns
+            .filter { $0.isValid && $0.onPullRequest?.matches(organization: key.organization, id: key.number) == true }
+            .max { $0.startedAt < $1.startedAt }
+            .map(PullRequestSession.LastTask.init)
     }
 
     /// How work for a pull request would reach a session now (`PullRequestSession.delivery`), as the Copilot app's database
@@ -365,9 +384,16 @@ extension CopilotTasksStore {
         let problem = await cliProblem(for: choice, subject: .pullRequest(pullRequest, .fixComments), checksRepository: checksRepository)
         // How a prompt would reach it in the Copilot app, for one that goes there, as the window says it.
         let goesToApp = PullRequestSession.isAppsOwn(choice) || choice.isOpenInApp || problem != nil
-        let reach = goesToApp && canOpenInApp ? await reach(of: choice) : nil
+        let reach = goesToApp && canOpenInApp && !Task.isCancelled ? await reach(of: choice) : nil
         // Copilot may have started working in it, or its checkout, meanwhile.
         let current = availability(of: [choice]).first ?? choice
         return PullRequestSession.delivery(for: current, cliProblem: problem, reach: reach, canOpenInApp: canOpenInApp)
+    }
+}
+
+extension PullRequestSession.LastTask {
+    /// A task's, as its run started.
+    init(_ run: CopilotRun) {
+        self.init(id: run.id, startedAt: run.startedAt)
     }
 }

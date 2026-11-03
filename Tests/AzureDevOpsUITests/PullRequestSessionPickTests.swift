@@ -215,7 +215,7 @@ import Testing
     // MARK: The Send to Copilot window
 
     /// The window goes where you chose for the pull request, too, unless a task started on it since; a new session if you
-    /// chose that; and one that's busy is never where it goes.
+    /// chose that; and to none while the session its details name is busy, or while they ask which, rather than another.
     @Test func theWindowGoesToTheSessionYouChose() throws {
         let pullRequest = TaskPullRequest(
             organization: "Contoso", project: "Storefront", repository: "shop-web", id: 4071, title: "Fix totals",
@@ -225,17 +225,24 @@ import Testing
         let subject = TaskSubject.pullRequest(pullRequest, .fixComments)
         let lastTask = task(fixing, startedAgo: 3_600)
         let choices = [lastTask, app(onBranch, [.onItsBranch], active: -60), app(other, [], active: -7_200)]
-        func suggested(_ chosen: PullRequestSessionChoice?) -> String? {
-            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: lastTask.run, chosen: chosen)?.id
+        func suggested(_ choices: [SessionChoice], _ chosen: PullRequestSessionChoice?) -> String? {
+            CopilotTasksStore.suggestedChoice(choices, for: subject, lastTask: lastTask.run.map(PullRequestSession.LastTask.init), chosen: chosen)?.id
         }
-        #expect(suggested(nil) == fixing)
-        #expect(suggested(chosen(other, ago: 60)) == other)
-        #expect(suggested(chosen(nil, ago: 60)) == nil)
+        #expect(suggested(choices, nil) == fixing)
+        #expect(suggested(choices, chosen(other, ago: 60)) == other)
+        #expect(suggested(choices, chosen(nil, ago: 60)) == nil)
+        // The one you chose, busy, isn't left for another.
         var busy = choices
         busy[2].isBusy = true
-        #expect(CopilotTasksStore.suggestedChoice(busy, for: subject, continuable: lastTask.run, chosen: chosen(other, ago: 60))?.id == fixing)
+        #expect(suggested(busy, chosen(other, ago: 60)) == nil)
+        // Nor, while its details ask which of two, is one taken because the other is busy.
+        var asking = [app(onBranch, [.onItsBranch], active: -60), app(other, [.onItsBranch], active: -7_200)]
+        #expect(CopilotTasksStore.suggestedChoice(asking, for: subject, lastTask: nil) == nil)
+        asking[0].isBusy = true
+        #expect(CopilotTasksStore.suggestedChoice(asking, for: subject, lastTask: nil) == nil)
 
-        // What it's given: what you chose, unless a task started on it since, in whatever session.
+        // What it's given: what you chose, unless a task started on it since, in whatever session; and that task, as its
+        // details have it.
         let settings = AppSettings(defaults: MemoryDefaults())
         settings.copilotEnabled = true
         let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
@@ -243,9 +250,11 @@ import Testing
         settings.choose(session: other, for: key, at: run.startedAt.addingTimeInterval(60))
         settings.copilotRuns = [run]
         #expect(store.chosenSession(for: subject)?.session == ItemRef.session(other))
+        #expect(store.suggestedChoice(choices, for: subject)?.id == other)
         settings.choose(session: other, for: key, at: run.startedAt.addingTimeInterval(-60))
         #expect(store.chosenSession(for: subject) == nil)
         #expect(store.lastTask(forPullRequest: key) == PullRequestSession.LastTask(id: fixing, startedAt: run.startedAt))
+        #expect(store.suggestedChoice(choices, for: subject)?.id == fixing)
     }
 
     // MARK: What's kept
@@ -267,8 +276,10 @@ import Testing
         #expect(text.contains(other) && !text.contains(onBranch))
         #expect(!text.contains("Fix totals"))
         #expect(AppSettings(defaults: defaults, now: now).copilotPullRequestSessions == settings.copilotPullRequestSessions)
-        // Half a year on, it's forgotten, as a link you made is.
+        #expect(defaults.data(forKey: SettingsKey.copilotPullRequestSessions) == data)
+        // Half a year on, it's forgotten, as a link you made is, in the preferences too.
         #expect(AppSettings(defaults: defaults, now: now.addingTimeInterval(PullRequestSessionChoice.lifetime + 60)).copilotPullRequestSessions.isEmpty)
+        #expect(defaults.data(forKey: SettingsKey.copilotPullRequestSessions) == nil)
 
         settings.forgetChosenSession(for: key)
         #expect(settings.chosenSession(for: key) == nil)
@@ -295,5 +306,10 @@ import Testing
         #expect(kept.first?.session == ItemRef.session(onBranch))
         #expect(kept.last?.session == nil)
         #expect(PullRequestSessionChoice(pullRequest: key, session: "not a session", date: now) == nil)
+        // What's left out leaves the preferences, once BriefBar reads them.
+        _ = AppSettings(defaults: defaults, now: now)
+        #expect(PullRequestSessionChoice.load(from: defaults, now: now) == kept)
+        let text = String(decoding: try #require(defaults.data(forKey: SettingsKey.copilotPullRequestSessions)), as: UTF8.self)
+        #expect(!text.contains("junk") && !text.contains("etc") && !text.contains(other))
     }
 }

@@ -886,7 +886,7 @@ struct CopilotComposerView: View {
         guard Self.followsSuggestions(choseTarget: choseTarget, mustContinue: mustContinue, promptChanged: prompt != filledIn) else {
             return
         }
-        let suggested = CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuing, chosen: store.chosenSession(for: subject))
+        let suggested = store.suggestedChoice(choices, for: subject)
         if suggested?.id != target?.id { select(suggested, byYou: false) }
     }
 

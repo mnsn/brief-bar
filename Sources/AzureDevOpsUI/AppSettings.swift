@@ -204,7 +204,10 @@ final class AppSettings: ObservableObject {
         copilotOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotOptions) ?? CopilotModel.standard
         copilotQuickOptions = Self.load(CopilotRunOptions.self, from: defaults, forKey: Key.copilotQuickOptions) ?? CopilotModel.quick
         copilotPrompt = defaults.string(forKey: Key.copilotPrompt)
-        copilotPullRequestSessions = PullRequestSessionChoice.load(from: defaults, now: now)
+        let pullRequestSessions = PullRequestSessionChoice.load(from: defaults, now: now)
+        // Those that expired, or that another program wrote there, leave the preferences too.
+        PullRequestSessionChoice.prune(to: pullRequestSessions, in: defaults)
+        copilotPullRequestSessions = pullRequestSessions
         copilotRepositories = defaults.dictionary(forKey: Key.copilotRepositories) as? [String: String] ?? [:]
         copilotWorktreesFolder = defaults.string(forKey: Key.copilotWorktreesFolder)
         // Any program running as you can write the preferences: a run whose ID isn't a session's is left out, and so is a

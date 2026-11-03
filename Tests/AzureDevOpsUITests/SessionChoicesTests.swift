@@ -258,10 +258,10 @@ private struct DatabaseError: Error {
             choice(recorded, reasons: [.mentionsIt], active: -10, born: -172_800),
             choice(other, reasons: [.mentionsIt], active: -5, born: -3_600),
         ]
-        func suggested(continuable: CopilotRun? = nil) -> String? {
-            CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: continuable)?.id
+        func suggested(lastTask: CopilotRun? = nil) -> String? {
+            CopilotTasksStore.suggestedChoice(choices, for: subject, lastTask: lastTask.map(PullRequestSession.LastTask.init))?.id
         }
-        #expect(suggested(continuable: last) == fixing)
+        #expect(suggested(lastTask: last) == fixing)
         #expect(suggested() == opener)
         choices.removeAll { $0.id == opener }
         // Linked by you, and on its branch: neither goes with it better than the other.
@@ -276,11 +276,11 @@ private struct DatabaseError: Error {
         #expect(suggested() == nil)
         // One that's working is never where it goes.
         choices = [choice(fixing, reasons: [.earlierTask], active: -60, task: last, busy: true)]
-        #expect(suggested(continuable: last) == nil)
+        #expect(suggested(lastTask: last) == nil)
         // A work item's starts a new session, unless you choose one.
         let item = TaskWorkItem(organization: "contoso", project: "Storefront", id: 4217, type: "Task", title: "Totals",
                                 url: URL(string: "https://dev.azure.com/contoso/Storefront/_workitems/edit/4217")!)
-        #expect(CopilotTasksStore.suggestedChoice([choice(onBranch, reasons: [.linkedByYou], active: 0)], for: .workItem(item), continuable: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice([choice(onBranch, reasons: [.linkedByYou], active: 0)], for: .workItem(item), lastTask: nil) == nil)
     }
 
     @Test func listsTheAppsSessionsByWhyThenByWhen() {
@@ -380,7 +380,7 @@ private struct DatabaseError: Error {
         let busy = try #require(choices.first { $0.id == onBranch })
         #expect(busy.isBusy)
         #expect(busy.reasons == [.onItsBranch])
-        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, lastTask: nil) == nil)
 
         var opened = 0
         store.openForTests = { _, _ in opened += 1; return true }
@@ -442,7 +442,7 @@ private struct DatabaseError: Error {
         // Sharing the checkout, both are on the pull request's branch.
         #expect(other.reasons == [.recordedByCopilot, .onItsBranch])
         #expect(choices.first { $0.id == onBranch }?.isBusy == true)
-        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, continuable: nil) == nil)
+        #expect(CopilotTasksStore.suggestedChoice(choices, for: subject, lastTask: nil) == nil)
         #expect(store.busyReason(for: other)?.hasPrefix("Copilot is working in its checkout") == true)
 
         var opened = 0
@@ -474,7 +474,7 @@ private struct DatabaseError: Error {
         #expect(freed.allSatisfy { !$0.isUnavailable })
         #expect(freed.map(\.id) == choices.map(\.id))
         #expect(freed.map(\.reasons) == choices.map(\.reasons))
-        #expect(CopilotTasksStore.suggestedChoice(freed, for: subject, continuable: nil) != nil)
+        #expect(CopilotTasksStore.suggestedChoice(freed, for: subject, lastTask: nil) != nil)
 
         // A task that starts in one of them takes both again, as it gets ready.
         store.launchForTests = { _, _, _ in throw LaunchError.couldntStart("not now") }
@@ -896,7 +896,8 @@ private struct DatabaseError: Error {
 
     /// A pull request's task that goes on with the session of the work item's task that opened it shows on the pull request's
     /// row as you send it, so no other task starts on it meanwhile. If it can't start, the run it went on with stays as it
-    /// was, to go on with again; once it starts, it's the pull request's task, and still the work item's.
+    /// was, to go on with again, and so does the session you chose for the pull request's work; once it starts, it's the
+    /// pull request's task, and still the work item's, in that session's place.
     @Test func showsATaskGoingOnWithTheWorkItemsSessionOnThePullRequestAtOnce() async throws {
         let home = try folder()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -907,6 +908,7 @@ private struct DatabaseError: Error {
         let opened = run(opener, worktree: worktree, workItem: 4217, opened: 4071)
         store.settings.copilotRuns = [opened]
         let key = PRKey("Contoso", 4071)
+        store.settings.choose(session: other, for: key, at: Date().addingTimeInterval(-60))
         let item = WorkItem(
             id: 4217, organization: "Contoso", project: "Storefront", type: "Task", title: "Show the order total in the cart",
             state: "Active", category: .inProgress
@@ -948,6 +950,9 @@ private struct DatabaseError: Error {
         #expect(!store.isWorking(inFolder: worktree))
         let retry = try #require(store.continuable(forPullRequest: key))
         #expect(retry == opened)
+        // No task started on it: the session you chose for its work is still where it goes.
+        #expect(store.lastTask(forPullRequest: key) == nil)
+        #expect(store.chosenSession(for: subject)?.session == ItemRef.session(other))
 
         // Again, and it starts: the run is the pull request's task now, and still the work item's.
         store.launchForTests = { request, _, now in
@@ -971,6 +976,9 @@ private struct DatabaseError: Error {
         #expect(started.workItem == opened.workItem)
         #expect(store.pending.isEmpty)
         #expect(store.latest(forPullRequest: key)?.run == started)
+        // It started after you chose: it takes that session's place.
+        #expect(store.lastTask(forPullRequest: key) == PullRequestSession.LastTask(started))
+        #expect(store.chosenSession(for: subject) == nil)
     }
 
     /// A task on the pull request a work item's task opened is named for the pull request.
