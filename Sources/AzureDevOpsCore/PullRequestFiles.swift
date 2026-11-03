@@ -61,14 +61,18 @@ extension FileChange: Identifiable {
 public struct LineCounts: Sendable, Hashable {
     public var added: Int
     public var removed: Int
+    /// Only about right: of a file that changed in more places than `LineDiff` lines up exactly (`FileDiff.isLinedUp`),
+    /// and of files that one of them is among.
+    public var isApproximate: Bool
 
-    public init(added: Int, removed: Int) {
+    public init(added: Int, removed: Int, isApproximate: Bool = false) {
         self.added = added
         self.removed = removed
+        self.isApproximate = isApproximate
     }
 
     /// Of a diff's lines.
-    public init(_ lines: [DiffLine]) {
+    public init(_ lines: [DiffLine], isApproximate: Bool = false) {
         var added = 0
         var removed = 0
         for line in lines {
@@ -78,24 +82,26 @@ public struct LineCounts: Sendable, Hashable {
             case .unchanged: break
             }
         }
-        self.init(added: added, removed: removed)
+        self.init(added: added, removed: removed, isApproximate: isApproximate)
     }
 
-    /// "+12 −3", "+12", "−3", or "No changes to its lines" for a file renamed as it was.
+    /// "+12 −3", "+12", "−3", "~+12 −3" when it's about right, or "No changes to its lines" for a file renamed as it was.
     public var text: String {
         guard added > 0 || removed > 0 else { return "No changes to its lines" }
-        return [added > 0 ? "+\(added)" : nil, removed > 0 ? "−\(removed)" : nil].compactMap { $0 }.joined(separator: " ")
+        let counts = [added > 0 ? "+\(added)" : nil, removed > 0 ? "−\(removed)" : nil].compactMap { $0 }.joined(separator: " ")
+        return isApproximate ? "~" + counts : counts
     }
 
-    /// "12 lines added, 3 removed", for VoiceOver and tooltips.
+    /// "12 lines added, 3 removed", or "About 12 lines added, 3 removed", for VoiceOver and tooltips.
     public var spoken: String {
         func lines(_ count: Int) -> String { count == 1 ? "1 line" : "\(count) lines" }
-        switch (added, removed) {
-        case (0, 0): return "No lines added or removed"
-        case (_, 0): return "\(lines(added)) added"
-        case (0, _): return "\(lines(removed)) removed"
-        default: return "\(lines(added)) added, \(removed) removed"
+        let counts = switch (added, removed) {
+        case (0, 0): "No lines added or removed"
+        case (_, 0): "\(lines(added)) added"
+        case (0, _): "\(lines(removed)) removed"
+        default: "\(lines(added)) added, \(removed) removed"
         }
+        return isApproximate && (added > 0 || removed > 0) ? "About " + counts : counts
     }
 }
 
@@ -109,7 +115,13 @@ public struct ChangedFiles: Sendable, Equatable {
     /// The pull request's updates, oldest first.
     public var iterations: [PRIteration]
     /// As Azure DevOps' Files page lists them, folder by folder (`PullRequestPanel.listsFirst`).
-    public var files: [FileChange]
+    public var files: [FileChange] {
+        didSet { folders = Self.folders(of: files) }
+    }
+    /// The files by the folder they're right in, folder by folder as they're listed: a folder's folders, each with what
+    /// it has, before its own files. A folder whose only content is another folder isn't listed apart: its path is part
+    /// of that one's, "src/Payments/Retry". Made once, with the list.
+    public private(set) var folders: [Folder]
     /// False when it changed more files than BriefBar reads, and the rest aren't here.
     public var isComplete: Bool
 
@@ -121,6 +133,7 @@ public struct ChangedFiles: Sendable, Equatable {
         self.iterations = iterations
         self.files = files.sorted { PullRequestPanel.listsFirst($0.path, $1.path) }
         self.isComplete = isComplete
+        folders = Self.folders(of: self.files)
     }
 
     public func file(_ id: FileChange.ID) -> FileChange? {
@@ -156,10 +169,8 @@ public struct ChangedFiles: Sendable, Equatable {
         }
     }
 
-    /// The files by the folder they're right in, folder by folder as they're listed: a folder's folders, each with what
-    /// it has, before its own files. A folder whose only content is another folder isn't listed apart: its path is part
-    /// of that one's, "src/Payments/Retry".
-    public var folders: [Folder] {
+    /// The files, listed as they are, by the folder each is right in.
+    private static func folders(of files: [FileChange]) -> [Folder] {
         var folders: [Folder] = []
         for file in files {
             let folder = file.folder
@@ -200,12 +211,17 @@ public struct FileDiff: Sendable, Equatable {
     public var file: FileChange
     /// Every line of both versions, in order.
     public var lines: [DiffLine]
+    /// Whether they're lined up with the fewest removed and added: not for a file that changed in more places than
+    /// `LineDiff` lines up that way (`LineDiff.maxChanges`), lined up only at the lines each version has once, whose
+    /// `counts` are then about right.
+    public var isLinedUp: Bool
     public var counts: LineCounts
 
-    public init(file: FileChange, lines: [DiffLine]) {
+    public init(file: FileChange, lines: [DiffLine], isLinedUp: Bool = true) {
         self.file = file
         self.lines = lines
-        counts = LineCounts(lines)
+        self.isLinedUp = isLinedUp
+        counts = LineCounts(lines, isApproximate: !isLinedUp)
     }
 }
 
@@ -227,17 +243,20 @@ extension PullRequestPanel {
         public var waitingOnYou: Int { threads.filter(\.waitsOnYou).count }
         public var isEmpty: Bool { threads.isEmpty }
 
-        /// "2 open comments, 1 resolved", "1 resolved comment", "No comments".
+        /// "2 open comments and 1 resolved", "1 open comment, waiting on you, and 2 resolved", "3 open comments, 1 of them
+        /// waiting on you", "1 resolved comment", "No comments": those waiting on you are among the open ones.
         public var spoken: String {
-            func comments(_ count: Int, _ what: String) -> String {
-                count == 1 ? "1 \(what) comment" : "\(count) \(what) comments"
+            guard open > 0 else {
+                return resolved == 0 ? "No comments" : resolved == 1 ? "1 resolved comment" : "\(resolved) resolved comments"
             }
-            switch (open, resolved) {
-            case (0, 0): return "No comments"
-            case (_, 0): return comments(open, "open") + (waitingOnYou > 0 ? ", \(waitingOnYou) waiting on you" : "")
-            case (0, _): return comments(resolved, "resolved")
-            default: return comments(open, "open") + (waitingOnYou > 0 ? ", \(waitingOnYou) waiting on you" : "") + ", \(resolved) resolved"
+            let openComments = open == 1 ? "1 open comment" : "\(open) open comments"
+            let waiting: String? = switch waitingOnYou {
+            case 0: nil
+            case open: open == 1 ? "waiting on you" : open == 2 ? "both waiting on you" : "all waiting on you"
+            default: "\(waitingOnYou) of them waiting on you"
             }
+            guard let waiting else { return resolved == 0 ? openComments : "\(openComments) and \(resolved) resolved" }
+            return resolved == 0 ? "\(openComments), \(waiting)" : "\(openComments), \(waiting), and \(resolved) resolved"
         }
     }
 }
@@ -253,13 +272,48 @@ extension PullRequestPanel.Threads {
         return PullRequestPanel.FileComments(threads: onFile(waitingOnYou) + onFile(open) + onFile(resolved))
     }
 
+    /// The threads on each of a change's files, by the file, as `comments(on:)` finds them, but going through the threads
+    /// once, rather than through all of them for each file: those without any aren't there.
+    public func comments(in changes: ChangedFiles) -> [FileChange.ID: PullRequestPanel.FileComments] {
+        // The files, by their places among them, by their tracking IDs and by their paths, after the change and before it.
+        var byTracking: [Int: [Int]] = [:]
+        var byPath: [GitPath: [Int]] = [:]
+        for (index, file) in changes.files.enumerated() {
+            if let tracking = file.changeTrackingId { byTracking[tracking, default: []].append(index) }
+            byPath[GitPath(file.path), default: []].append(index)
+            if let original = file.originalPath { byPath[GitPath(original), default: []].append(index) }
+        }
+        // Those that wait on you, the other open ones, and the resolved ones, of each file with any.
+        var onFiles: [Int: [[PullRequestPanel.Thread]]] = [:]
+        for (group, threads) in [waitingOnYou, open, resolved].enumerated() {
+            for thread in threads {
+                let tracking = thread.thread.location?.changeTrackingId
+                var files = Set(tracking.flatMap { byTracking[$0] } ?? [])
+                // By its path: any file, for a thread without a tracking ID, else one without one, as `isOn` says.
+                if let path = (thread.thread.location?.path ?? thread.thread.filePath).flatMap({ $0.isEmpty ? nil : GitPath($0) }) {
+                    for index in byPath[path] ?? [] where tracking == nil || changes.files[index].changeTrackingId == nil {
+                        files.insert(index)
+                    }
+                }
+                for index in files {
+                    onFiles[index, default: [[], [], []]][group].append(thread)
+                }
+            }
+        }
+        var comments: [FileChange.ID: PullRequestPanel.FileComments] = [:]
+        for (index, groups) in onFiles {
+            comments[changes.files[index].id] = PullRequestPanel.FileComments(threads: groups.flatMap { $0.sorted(by: Self.fromTheTop) })
+        }
+        return comments
+    }
+
     /// The change's files with open threads, by their places among its files, each with its open threads from the top of
     /// the file down: those to go through, from one file's comments on to another's.
     public func openOnFiles(of changes: ChangedFiles) -> [(index: Int, threads: [PullRequestPanel.Thread])] {
-        let open = all.filter { $0.waitsOnYou || !$0.isResolved }
-        guard !open.isEmpty else { return [] }
+        guard all.contains(where: { $0.waitsOnYou || !$0.isResolved }) else { return [] }
+        let byFile = comments(in: changes)
         return changes.files.indices.compactMap { index in
-            let onFile = open.filter { Self.isOn(changes.files[index], $0.thread) }.sorted(by: Self.fromTheTop)
+            let onFile = (byFile[changes.files[index].id]?.threads ?? []).filter { $0.waitsOnYou || !$0.isResolved }.sorted(by: Self.fromTheTop)
             return onFile.isEmpty ? nil : (index, onFile)
         }
     }
@@ -308,6 +362,14 @@ extension FileDiff {
         let number: (DiffLine) -> Int? = span.side == .right ? { $0.newNumber } : { $0.oldNumber }
         let first = lines[...last].lastIndex { number($0) == span.lines.lowerBound } ?? last
         return first...last
+    }
+
+    /// The lines a thread is on that it marks: those `rows(of:in:)` spans in the version it's on, without the lines only the
+    /// other version has between them, such as a line removed between two lines after the change that it's on.
+    public func markedRows(of thread: ReviewThread, in files: ChangedFiles) -> IndexSet {
+        guard let rows = rows(of: thread, in: files), let span = Self.span(of: thread, latest: files.comparison.second) else { return [] }
+        let isOnSide: (DiffLine) -> Bool = span.side == .right ? { $0.newNumber != nil } : { $0.oldNumber != nil }
+        return IndexSet(rows.filter { isOnSide(lines[$0]) })
     }
 
     /// Where a thread is now: in the diff Azure DevOps followed it to, or else the one it was made on, or, when it doesn't

@@ -15,6 +15,8 @@ import Testing
         var holds = false
         var listProblem: ThreadExcerpt.Problem?
         var diffProblems: [String: ThreadExcerpt.Problem] = [:]
+        /// The files whose diffs aren't lined up exactly, as one that changed in too many places.
+        var notLinedUp: Set<String> = []
         private var held: [String: [CheckedContinuation<Void, Never>]] = [:]
 
         func excerpt(of thread: ReviewThread, in pullRequest: PullRequest, context: Int) async -> Result<ThreadExcerpt, ThreadExcerpt.Problem> {
@@ -38,7 +40,7 @@ import Testing
             return .success(FileDiff(file: file, lines: [
                 DiffLine(.removed, "old", old: 1, new: nil), DiffLine(.added, "new", old: nil, new: 1),
                 DiffLine(.added, file.name, old: nil, new: 2),
-            ]))
+            ], isLinedUp: !notLinedUp.contains(file.name)))
         }
 
         private func wait(_ name: String) async {
@@ -64,6 +66,10 @@ import Testing
 
         func failDiff(_ name: String, _ problem: ThreadExcerpt.Problem?) {
             diffProblems[name] = problem
+        }
+
+        func lineUp(_ name: String, _ isLinedUp: Bool) {
+            if isLinedUp { notLinedUp.remove(name) } else { notLinedUp.insert(name) }
         }
     }
 
@@ -295,6 +301,21 @@ import Testing
         #expect(store.totals(of: others, in: key) == LineCounts(added: 2, removed: 1))
     }
 
+    @Test func addsUpLinesThatAreOnlyAboutRightAsAboutRight() async throws {
+        let reader = Reader()
+        let (store, _, _, _) = makeStores(reader)
+        let all = Self.files(head: "c1")
+        let files = ChangedFiles(scope: .whole, comparison: all.comparison, iterations: all.iterations, files: Array(all.files.prefix(2)))
+        await reader.lineUp("A.cs", false)
+        for file in files.files {
+            store.count(file, in: files, of: pullRequest, by: viewer, on: page)
+        }
+        try await settle { files.files.allSatisfy { store.counts(of: .init($0, in: files), in: key) != nil } }
+        #expect(store.counts(of: .init(files.files[0], in: files), in: key) == .success(LineCounts(added: 2, removed: 1, isApproximate: true)))
+        #expect(store.counts(of: .init(files.files[1], in: files), in: key) == .success(LineCounts(added: 2, removed: 1)))
+        #expect(store.totals(of: files, in: key) == LineCounts(added: 4, removed: 2, isApproximate: true))
+    }
+
     @Test func readsAFailedDiffAgainHalfAMinuteLaterIfThatMayHelp() async throws {
         let reader = Reader()
         var now = Date()
@@ -495,6 +516,24 @@ import Testing
         #expect(store.file?.comment == .first)
         store.reachedComment(.first)
         #expect(store.file?.comment == nil && store.file?.from == .thread(11))
+    }
+
+    @Test func showsAThreadsFileInAllOfTheChange() throws {
+        let store = PullRequestDetailsStore()
+        store.itemsChanged(items)
+        store.show(try item(4102))
+        store.scope = .since(1)
+        // From the Files, in what they show, and so on to another file.
+        store.open(file: path)
+        #expect(store.file?.scope == .since(1))
+        store.open(file: "/src/RetryOptions.cs")
+        #expect(store.file?.scope == .since(1))
+        // From a comment, in all of the change, which has its file whatever the Files show, and so on to another file's
+        // comments; the Files go on showing what they did.
+        store.open(file: path, at: 11, from: .thread(11), scope: .whole)
+        #expect(store.file == .init(path: path, thread: 11, from: .thread(11), scope: .whole))
+        store.open(file: "/src/RetryOptions.cs", comment: .first)
+        #expect(store.file?.scope == .whole && store.scope == .since(1))
     }
 
     @Test func goingElsewhereClosesTheFile() throws {

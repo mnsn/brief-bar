@@ -72,10 +72,10 @@ struct PullRequestDetailsContent: View {
                     highlighted: highlighted
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
-                    // A thread's file opens here, at the thread.
+                    // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
                     .environment(\.changedFileOpener, ChangedFileOpener { path, thread in
                         withAnimation(.easeOut(duration: 0.15)) {
-                            details.open(file: path, at: thread, from: thread.map(PullRequestDetailsStore.Place.thread))
+                            details.open(file: path, at: thread, from: thread.map(PullRequestDetailsStore.Place.thread), scope: .whole)
                         }
                     })
                 PullRequestFilesSection(

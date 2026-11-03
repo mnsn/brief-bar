@@ -105,6 +105,22 @@ private enum ChangeFixture {
         #expect(server.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 
+    @Test func saysWhenAFileChangedInMorePlacesThanItLinesUpExactly() async throws {
+        let server = ChangeFixture.server()
+        let code = PullRequestCode(
+            pr, source: AzureDevOpsCode(client: server.client()), comparison: { LineDiff.comparison($0, $1, maxChanges: 1) }
+        )
+        let files = try await code.changedFiles(of: pr).get()
+        let edited = try await code.diff(of: try #require(files.file(FileChange.ID(path: "/src/Payments.cs"))), in: files, of: pr).get()
+        // Past the limit: lined up at the lines each version has once, as the fewest changes would be here, and said so.
+        #expect(!edited.isLinedUp)
+        #expect(edited.lines == LineDiff.compare(CodeFixture.base, CodeFixture.second))
+        #expect(edited.counts == LineCounts(added: 3, removed: 2, isApproximate: true))
+        // A file added whole is lined up.
+        let added = try await code.diff(of: try #require(files.file(FileChange.ID(path: "/src/Retry/Policy.cs"))), in: files, of: pr).get()
+        #expect(added.isLinedUp && !added.counts.isApproximate)
+    }
+
     @Test func readsWhatChangedSinceAnUpdate() async throws {
         let server = ChangeFixture.server()
         let code = PullRequestCode(pr, client: server.client())
@@ -257,6 +273,10 @@ private enum ChangeFixture {
         #expect(files.folders.map(\.path) == ["docs", "src/Retry", "src", nil])
         #expect(files.folders.map { $0.files.map(\.name) } == [["logo.png"], ["Policy.cs"], ["Billing.cs", "Ledger.cs", "Payments.cs"], ["README.md"]])
         #expect(Set(files.folders.map(\.id)).count == 4)
+        // Made with the list, and again as it changes.
+        var fewer = files
+        fewer.files.removeFirst()
+        #expect(fewer.folders.map(\.path) == ["src/Retry", "src", nil])
     }
 
     @Test func tellsApartFoldersThatOnlyLookTheSame() {
@@ -285,6 +305,14 @@ private enum ChangeFixture {
         #expect(LineCounts(added: 0, removed: 4).text == "−4")
         #expect(LineCounts(added: 0, removed: 4).spoken == "4 lines removed")
         #expect(LineCounts(added: 0, removed: 0).text == "No changes to its lines")
+        // Of a file that changed in more places than it lines up exactly: about right.
+        let file = FileChange(path: "/src/Payments.cs", kind: .edit, objectId: "a")
+        let lines = ChangeFixture.lines(5, changed: [1, 3]) + [DiffLine(.removed, "old", old: 9, new: nil)]
+        #expect(!FileDiff(file: file, lines: lines).counts.isApproximate && FileDiff(file: file, lines: lines).isLinedUp)
+        let about = FileDiff(file: file, lines: lines, isLinedUp: false)
+        #expect(about.counts == LineCounts(added: 2, removed: 1, isApproximate: true))
+        #expect(about.counts.text == "~+2 −1")
+        #expect(about.counts.spoken == "About 2 lines added, 1 removed")
     }
 
     @Test func findsTheUpdateYouSawWhenYouLastLooked() {
@@ -346,9 +374,61 @@ private enum ChangeFixture {
         #expect(comments.open == 4)
         #expect(comments.resolved == 1)
         #expect(comments.waitingOnYou == 1)
-        #expect(comments.spoken == "4 open comments, 1 waiting on you, 1 resolved")
+        #expect(comments.spoken == "4 open comments, 1 of them waiting on you, and 1 resolved")
         #expect(threads.comments(on: FileChange(path: "/src/None.cs", kind: .add, objectId: "n")).spoken == "No comments")
         #expect(PullRequestPanel.FileComments(threads: [threads.resolved[0]]).spoken == "1 resolved comment")
+    }
+
+    @Test func saysHowManyThreadsThereAreWithoutCountingAnyTwice() {
+        func comments(waiting: Int, open: Int, resolved: Int) -> PullRequestPanel.FileComments {
+            let waitingThreads = (0..<waiting).map { PullRequestPanel.Thread(thread: thread($0), waitsOnYou: true, isNew: false) }
+            let openThreads = (0..<open).map { PullRequestPanel.Thread(thread: thread(100 + $0), waitsOnYou: false, isNew: false) }
+            let resolvedThreads = (0..<resolved).map {
+                PullRequestPanel.Thread(thread: thread(200 + $0, status: "fixed"), waitsOnYou: false, isNew: false)
+            }
+            return PullRequestPanel.FileComments(threads: waitingThreads + openThreads + resolvedThreads)
+        }
+        // Those waiting on you are among the open ones.
+        #expect(comments(waiting: 1, open: 0, resolved: 2).spoken == "1 open comment, waiting on you, and 2 resolved")
+        #expect(comments(waiting: 1, open: 2, resolved: 0).spoken == "3 open comments, 1 of them waiting on you")
+        #expect(comments(waiting: 2, open: 0, resolved: 0).spoken == "2 open comments, both waiting on you")
+        #expect(comments(waiting: 3, open: 0, resolved: 1).spoken == "3 open comments, all waiting on you, and 1 resolved")
+        #expect(comments(waiting: 0, open: 2, resolved: 1).spoken == "2 open comments and 1 resolved")
+        #expect(comments(waiting: 0, open: 1, resolved: 0).spoken == "1 open comment")
+        #expect(comments(waiting: 0, open: 0, resolved: 3).spoken == "3 resolved comments")
+    }
+
+    @Test func findsEachFilesThreadsAtOnceAsItDoesForOneFile() {
+        // Pay.cs renamed to Payments.cs, tracked as 4; a new Pay.cs, tracked as 8; and two files without tracking IDs.
+        let replacement = FileChange(path: "/src/Pay.cs", kind: .add, objectId: "p", changeTrackingId: 8)
+        let untracked = FileChange(path: "/src/Other.cs", kind: .edit, objectId: "o")
+        let none = FileChange(path: "/src/None.cs", kind: .edit, objectId: "n")
+        let changes = ChangedFiles(
+            scope: .whole, comparison: ReviewThread.Comparison(base: 2), iterations: [], files: [replacement, file, untracked, none]
+        )
+        let threads = PullRequestPanel.Threads(
+            waitingOnYou: [PullRequestPanel.Thread(thread: thread(1, line: 30), waitsOnYou: true, isNew: true)],
+            open: [
+                // By its path alone: the new Pay.cs, and Payments.cs, renamed from it.
+                PullRequestPanel.Thread(thread: thread(2, path: "/src/Pay.cs", line: 2), waitsOnYou: false, isNew: false),
+                // Tracked on Payments.cs, and on the new Pay.cs.
+                PullRequestPanel.Thread(thread: thread(3, path: "/src/Pay.cs", tracking: 4), waitsOnYou: false, isNew: false),
+                PullRequestPanel.Thread(thread: thread(4, path: "/src/Pay.cs", tracking: 8), waitsOnYou: false, isNew: false),
+                // Tracked, on a file without a tracking ID: by its path.
+                PullRequestPanel.Thread(thread: thread(5, path: "/src/Other.cs", tracking: 9), waitsOnYou: false, isNew: false),
+                PullRequestPanel.Thread(thread: thread(6, path: nil), waitsOnYou: false, isNew: false),
+            ],
+            resolved: [PullRequestPanel.Thread(thread: thread(7, line: 1, status: "fixed"), waitsOnYou: false, isNew: false)]
+        )
+        let byFile = threads.comments(in: changes)
+        for file in changes.files {
+            let one = threads.comments(on: file)
+            #expect(byFile[file.id] == (one.isEmpty ? nil : one))
+        }
+        #expect(byFile[none.id] == nil)
+        #expect(byFile[file.id]?.threads.map(\.id) == [1, 2, 3, 7])
+        #expect(byFile[replacement.id]?.threads.map(\.id) == [2, 4])
+        #expect(byFile[untracked.id]?.threads.map(\.id) == [5])
     }
 
     @Test func findsTheFileAThreadIsTrackedOnThoughAnotherTookItsPath() {
@@ -403,6 +483,21 @@ private enum ChangeFixture {
         #expect(diff.rows(of: removed, in: whole) == 5...5)
         // Without its location, as the demo's: its line in the latest diff.
         #expect(diff.row(of: ReviewThread(id: 4, filePath: "/src/Payments.cs", line: 8, comments: []), in: whole) == 9)
+    }
+
+    @Test func marksOnlyTheLinesOfTheVersionAThreadIsOn() {
+        // Line 4 changed: a thread on lines 3 and 4 after the change doesn't mark the line removed between them.
+        let diff = FileDiff(file: FileChange(path: "/src/Payments.cs", kind: .edit, objectId: "b", originalObjectId: "a"), lines: [
+            DiffLine(.unchanged, "1", old: 1, new: 1), DiffLine(.unchanged, "2", old: 2, new: 2), DiffLine(.unchanged, "3", old: 3, new: 3),
+            DiffLine(.removed, "old 4", old: 4, new: nil), DiffLine(.added, "new 4", old: nil, new: 4), DiffLine(.unchanged, "5", old: 5, new: 5),
+        ])
+        let after = CodeFixture.thread(1, at: CodeFixture.location(right: 3...4, madeOn: (2, 2)))
+        #expect(diff.rows(of: after, in: whole) == 2...4)
+        #expect(diff.markedRows(of: after, in: whole) == IndexSet([2, 4]))
+        // Before it, on lines 3 and 4: both, with nothing added between them.
+        let before = CodeFixture.thread(2, at: CodeFixture.location(left: 3...4, madeOn: (2, 2)))
+        #expect(diff.markedRows(of: before, in: whole) == IndexSet([2, 3]))
+        #expect(diff.markedRows(of: CodeFixture.thread(3, at: CodeFixture.location(right: 9...9, madeOn: (2, 2))), in: whole).isEmpty)
     }
 
     @Test func placesAThreadAzureDevOpsFollowedWhereItIsNow() {
@@ -510,5 +605,19 @@ private enum ChangeFixture {
         let since = try await code.changedFiles(of: pr, scope: .since(1)).get()
         #expect(since.files.map(\.name) == ["retry-backoff.png", "PaymentsClient.cs", "RetryOptions.cs", "PaymentsClientTests.cs",
                                             "appsettings.json", "README.md"])
+    }
+
+    @Test func showsALockFileThatChangedInMorePlacesThanItLinesUpExactly() async throws {
+        let pr = try #require(DemoData.records(now: Date()).first { $0.pullRequest.key.number == 4110 }?.pullRequest)
+        let code = PullRequestCode.demo(pr)
+        let files = try await code.changedFiles(of: pr).get()
+        #expect(files.files.map(\.path) == ["/agents/BuildAgent.csproj", "/agents/global.json", "/agents/packages.lock.json"])
+        // Four in five of its 520 packages moved to another version: their requested and resolved versions and their
+        // hashes, as many lines as the fewest changes would take, past the most it lines up exactly.
+        let lock = try await code.diff(of: try #require(files.files.last), in: files, of: pr).get()
+        #expect(!lock.isLinedUp)
+        #expect(lock.counts == LineCounts(added: 1_249, removed: 1_249, isApproximate: true))
+        let project = try await code.diff(of: try #require(files.files.first), in: files, of: pr).get()
+        #expect(project.isLinedUp && project.counts == LineCounts(added: 1, removed: 1))
     }
 }

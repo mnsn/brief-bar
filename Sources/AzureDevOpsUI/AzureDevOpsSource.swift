@@ -998,6 +998,10 @@ extension AzureDevOpsSource {
     /// When `--render` says you last looked at the pull request whose Files it draws since then: before its latest update.
     private static let renderedLook: TimeInterval = -4 * 3_600
 
+    /// The demo's upgrade to .NET 9, whose Files and lock file `--render` draws too: a file that changed in more places
+    /// than BriefBar lines up exactly, whose count is only about right.
+    private static let renderedUpgrade = (number: 4110, file: "/agents/packages.lock.json")
+
     /// Reads the change of the first of your pull requests that needs you before `--render` draws its Files and a file's
     /// page: its files, all of the change and, in the demo, since its first update, each one's lines counted, up to twenty,
     /// and the diffs of the files it draws.
@@ -1011,6 +1015,11 @@ extension AzureDevOpsSource {
         await files.readAll(
             of: record.pullRequest, scopes: isDemo ? [.whole, .since(1)] : [.whole], diffs: isDemo ? Self.renderedFiles : [], counting: 20
         )
+        if isDemo, let upgrade = store.items.first(where: { $0.key.number == Self.renderedUpgrade.number }),
+           let upgradeRecord = store.record(for: upgrade.key) {
+            _ = code.hold(upgrade.key)
+            await files.readAll(of: upgradeRecord.pullRequest, diffs: [Self.renderedUpgrade.file])
+        }
         // From your own, the file its pictures show, which takes its files to choose.
         guard !isDemo, case .read(let changes)? = files.list(of: item.key, .whole), let file = renderedFile(in: changes, of: item, store)
         else { return }
@@ -1026,7 +1035,8 @@ extension AzureDevOpsSource {
 
     /// The Pull Requests page with the details of the first of your pull requests that needs you at their Files, all of the
     /// change and, for the demo's, what changed since you last looked; and a file's page, beside the list, over it in a
-    /// narrow window, filling the page, at the comment on it that waits on you, and for a file that isn't text.
+    /// narrow window, filling the page, at the comment on it that waits on you, and for a file that isn't text. In the demo,
+    /// the Files and the lock file of its upgrade to .NET 9 too, whose counts are only about right.
     func pullRequestFilesRenderings() -> [(name: String, view: AnyView)] {
         guard let store, let files = pullRequestFiles, let item = renderedPullRequests(store).first,
               case .read(let changes)? = files.list(of: item.key, .whole)
@@ -1040,17 +1050,23 @@ extension AzureDevOpsSource {
             }?.id
         }
         let wide = CGSize(width: 1_000, height: 720)
-        let shown: [(name: String, file: FileChange?, thread: Int?, since: Bool, fills: Bool, size: CGSize)] = [
-            ("pull-requests-details-files", nil, nil, false, false, wide),
-            ("pull-requests-details-files-since", nil, nil, true, false, wide),
-            ("pull-requests-file", page, nil, false, false, wide),
-            ("pull-requests-file-narrow", page, nil, false, false, CGSize(width: 560, height: 720)),
-            ("pull-requests-file-filled", page, nil, false, true, wide),
-            ("pull-requests-file-comment", page, thread, false, false, wide),
-            ("pull-requests-file-binary", binary, nil, false, false, CGSize(width: 1_000, height: 560)),
+        var shown: [(name: String, item: PRSnapshot, file: FileChange?, thread: Int?, since: Bool, fills: Bool, size: CGSize)] = [
+            ("pull-requests-details-files", item, nil, nil, false, false, wide),
+            ("pull-requests-details-files-since", item, nil, nil, true, false, wide),
+            ("pull-requests-file", item, page, nil, false, false, wide),
+            ("pull-requests-file-narrow", item, page, nil, false, false, CGSize(width: 560, height: 720)),
+            ("pull-requests-file-filled", item, page, nil, false, true, wide),
+            ("pull-requests-file-comment", item, page, thread, false, false, wide),
+            ("pull-requests-file-binary", item, binary, nil, false, false, CGSize(width: 1_000, height: 560)),
         ]
+        if store.mode == .demo, let upgrade = store.items.first(where: { $0.key.number == Self.renderedUpgrade.number }),
+           case .read(let upgradeChanges)? = files.list(of: upgrade.key, .whole) {
+            let lock = upgradeChanges.files.first { FileChange.ID(path: Self.renderedUpgrade.file) == $0.id }
+            shown.append(("pull-requests-details-files-approximate", upgrade, nil, nil, false, false, wide))
+            shown.append(("pull-requests-file-approximate", upgrade, lock, nil, false, false, wide))
+        }
         var renderings: [(name: String, view: AnyView)] = []
-        for (name, file, thread, since, fills, size) in shown {
+        for (name, item, file, thread, since, fills, size) in shown {
             if name.hasPrefix("pull-requests-file"), file == nil { continue }
             // What changed since you last looked is read ahead only for the demo's.
             if since, store.mode != .demo { continue }

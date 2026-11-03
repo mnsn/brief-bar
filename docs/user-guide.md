@@ -385,7 +385,9 @@ help, as when you were offline, **↻** to try again.
 **See the whole change, file by file.** Under the comments, **Files** lists the files the pull request
 changes, folder by folder as Azure DevOps' Files page lists them, a click on a folder folding it: each with
 what happened to it, added, edited, renamed or deleted, how many lines it adds and removes, and how many
-comment threads are on it, the open ones in your color while one waits on you. Once you've looked at the
+comment threads are on it, the open ones in your color while one waits on you; a file that changed in more
+places than BriefBar lines up exactly, as a lock file of packages can, says about how many, **~+1249 −1249**,
+and its page says why. Once you've looked at the
 pull request before and it changed since, the menu beside **Files** shows only what changed since you last
 looked. Click a file to see its changes in place of the details, as their trail says, **!4102 ›
 PaymentsClient.cs**: what changed, with three lines around each change and the rest folded, **⌃ 20**,
@@ -398,7 +400,7 @@ beside the list, **⤢** makes them fill the page,
 for long lines, until you go back to the details or click **⤡**. A file that isn't text, or is longer than
 1 MB, says so, with **↗** to see it in Azure DevOps, as **↗** on each file's page does. A file's comments
 open its page too, with **🔍** beside its name in the comments, at the first of them, or **Show in Its
-File's Changes** in a thread's menu, at that one. **‹**, **⌘[** or **Esc** go back to the details, at the
+File's Changes** in a thread's menu, at that one, in all of the change, whatever **Files** shows. **‹**, **⌘[** or **Esc** go back to the details, at the
 file's row, or at the comment it opened from; a pull request's page over a work item's details shows its
 files the same way, **Bug 5110 › !4091 › Rounding.cs**. BriefBar reads which files changed as **Files**
 comes on screen, and each file before and after the change, one file at a time, as its row comes on screen,

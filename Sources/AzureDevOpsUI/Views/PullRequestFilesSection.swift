@@ -170,6 +170,9 @@ struct PullRequestFilesSection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         if !changes.files.isEmpty {
+            // Each file's comments, found once, rather than for each row as it's drawn. When any file has some, each row
+            // keeps room for them, so the counts line up.
+            let comments = threads.comments(in: changes)
             // One list, so that the details can scroll to a file's row before it's drawn.
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(entries(changes)) { entry in
@@ -184,8 +187,9 @@ struct PullRequestFilesSection: View {
                         }
                     case .file(let file):
                         ChangedFileRow(
-                            file: file, changes: changes, item: item, pullRequest: pullRequest, comments: threads.comments(on: file),
-                            isHighlighted: highlighted == .file(file.id), reservesComments: hasComments(changes)
+                            file: file, changes: changes, item: item, pullRequest: pullRequest,
+                            comments: comments[file.id] ?? PullRequestPanel.FileComments(threads: []),
+                            isHighlighted: highlighted == .file(file.id), reservesComments: !comments.isEmpty
                         ) {
                             withAnimation(.easeOut(duration: 0.15)) { details.open(file: file.path) }
                         }
@@ -209,11 +213,6 @@ struct PullRequestFilesSection: View {
             case .file(let file): AnyHashable(PullRequestDetailsStore.Anchor.file(file.id))
             }
         }
-    }
-
-    /// Whether any of the files has comments: then each row keeps room for them, so the counts line up.
-    private func hasComments(_ changes: ChangedFiles) -> Bool {
-        changes.files.contains { !threads.comments(on: $0).isEmpty }
     }
 
     /// Each folder's heading, and its files' rows unless you folded it.
@@ -412,8 +411,6 @@ private struct ChangedFileRow: View {
                         Text(file.what)
                             .font(size: 11)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .truncationMode(.middle)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -516,8 +513,8 @@ struct FileKindStyle {
     }
 }
 
-/// How many lines a file adds and removes, "+12 −3", in their colors; or why it can't say, such as a picture's "Binary";
-/// a faint mark while it's counted.
+/// How many lines a file adds and removes, "+12 −3", in their colors, "~+12 −3" when that's only about right; or why it
+/// can't say, such as a picture's "Binary"; a faint mark while it's counted.
 struct FileCountsText: View {
     let counts: Result<LineCounts, ThreadExcerpt.Problem>?
 
@@ -525,6 +522,11 @@ struct FileCountsText: View {
         switch counts {
         case .success(let counts)?:
             HStack(spacing: 4) {
+                if counts.isApproximate {
+                    Text(verbatim: "~")
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, -2)
+                }
                 if counts.added > 0 {
                     Text(verbatim: "+\(counts.added)")
                         .foregroundStyle(ItemState.done.textColor)
@@ -535,7 +537,7 @@ struct FileCountsText: View {
                 }
             }
             .font(size: 11.5, weight: .medium).monospacedDigit()
-            .help(counts.spoken)
+            .help(counts.isApproximate ? counts.spoken + ": it changed in more places than BriefBar lines up exactly" : counts.spoken)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(counts.spoken)
         case .failure(.binary)?:

@@ -121,6 +121,9 @@ final class PullRequestDetailsStore: ObservableObject {
         var from: Place? = nil
         /// Or the first or the last of its open threads, as its page shows them, going on to them from another file's.
         var comment: Edge? = nil
+        /// Which of the change it shows: what the Files showed as it opened from them, all of it from a comment, which
+        /// the Files may not have, and as before going on to another file.
+        var scope: ChangeScope = .whole
 
         enum Edge: Equatable {
             case first, last
@@ -133,6 +136,7 @@ final class PullRequestDetailsStore: ObservableObject {
 
         static func == (lhs: OpenFile, rhs: OpenFile) -> Bool {
             lhs.id == rhs.id && lhs.thread == rhs.thread && lhs.from == rhs.from && lhs.comment == rhs.comment
+                && lhs.scope == rhs.scope
         }
     }
 
@@ -331,13 +335,16 @@ final class PullRequestDetailsStore: ObservableObject {
     /// Shows a file's page in the details, in place of their parts: from their Files, from another file's page, at the first
     /// or last of its open threads (`comment`) going on to them from another file's, or, at one of its comment threads, to
     /// scroll to, from that thread in their comments, to go back to.
-    func open(file path: String, at thread: Int? = nil, from origin: Place? = nil, comment: OpenFile.Edge? = nil) {
+    /// - Parameter scope: which of the change it shows; by default, what another file's page showed, or else the Files.
+    func open(
+        file path: String, at thread: Int? = nil, from origin: Place? = nil, comment: OpenFile.Edge? = nil, scope: ChangeScope? = nil
+    ) {
         guard selected != nil else { return }
         pages = []
         trailThread = nil
         place = nil
-        // From another file's page, back goes where that one would have.
-        file = OpenFile(path: path, thread: thread, from: origin ?? file?.from, comment: comment)
+        // From another file's page, back goes where that one would have, and it shows the same change.
+        file = OpenFile(path: path, thread: thread, from: origin ?? file?.from, comment: comment, scope: scope ?? file?.scope ?? self.scope)
     }
 
     /// Whether it shows a file's page of the pull request a page shows, by its reference: for whatever the page is over to go

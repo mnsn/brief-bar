@@ -66,7 +66,7 @@ struct PullRequestFilePage: View {
     }
 
     var body: some View {
-        let state = pullRequest.flatMap { files.list(of: $0.key, details.scope) }
+        let state = pullRequest.flatMap { files.list(of: $0.key, open.scope) }
         let threadFile = threadFile(state)
         let shown: Shown? = if let pullRequest, case .read(let changes)? = state,
             let file = threadFile ?? changes.file(atPath: open.path) {
@@ -89,7 +89,7 @@ struct PullRequestFilePage: View {
                         "BriefBar can't list the pull request's files. " + (ThreadCode.sentence(for: problem) ?? problem.description),
                         symbol: "eye.slash", url: PullRequestFilesSection.filesPage(item),
                         again: ThreadCode.mayPass(problem)
-                            ? { pullRequest.map { files.showList(of: $0, scope: details.scope, on: page, again: true) } } : nil
+                            ? { pullRequest.map { files.showList(of: $0, scope: open.scope, on: page, again: true) } } : nil
                     )
                 } else {
                     headerPlaceholder
@@ -107,12 +107,12 @@ struct PullRequestFilePage: View {
         // It asks for the whole page while it shows, once you made it fill it.
         .preference(key: DetailsFillsPageKey.self, value: details.fillsPage)
         .task(id: ListReading(
-            visibilityChanges: code.visibilityChanges, head: pullRequest.map(PullRequestFilesStore.Head.init), scope: details.scope
+            visibilityChanges: code.visibilityChanges, head: pullRequest.map(PullRequestFilesStore.Head.init), scope: open.scope
         )) {
             guard let pullRequest else { return }
             // Asked for again every half minute, for what couldn't be read, which the store reads again then.
             while !Task.isCancelled {
-                files.showList(of: pullRequest, scope: details.scope, on: page)
+                files.showList(of: pullRequest, scope: open.scope, on: page)
                 try? await Task.sleep(for: .seconds(PullRequestCodeStore.retryInterval))
             }
         }
@@ -182,7 +182,7 @@ struct PullRequestFilePage: View {
         var placed: [Int: [PullRequestPanel.Thread]] = [:]
         /// Those on the whole file first, then those on lines, as they show.
         var apart: [PullRequestPanel.Thread] = []
-        /// The lines its open threads are on.
+        /// The lines its open threads are on, on the side each is on.
         var marked = IndexSet()
         /// The lines the threads it places are on, all of which show.
         var spans = IndexSet()
@@ -205,7 +205,7 @@ struct PullRequestFilePage: View {
                     placed[row, default: []].append(thread)
                     if let rows = read.rows(of: thread.thread, in: changes) {
                         spans.insert(integersIn: rows)
-                        if Self.isOpen(thread) { marked.insert(integersIn: rows) }
+                        if Self.isOpen(thread) { marked.formUnion(read.markedRows(of: thread.thread, in: changes)) }
                     }
                 } else {
                     apart.append(thread)
@@ -278,6 +278,9 @@ struct PullRequestFilePage: View {
             .foregroundStyle(.secondary)
         if case .read(let diff)? = shown.diff, diff.counts.added > 0 || diff.counts.removed > 0 {
             text = text + Text(" · ").foregroundStyle(.tertiary)
+            if diff.counts.isApproximate {
+                text = text + Text("about ").foregroundStyle(.secondary)
+            }
             if diff.counts.added > 0 {
                 text = text + Text(verbatim: "+\(diff.counts.added)").foregroundStyle(ItemState.done.textColor).fontWeight(.medium)
             }
@@ -286,7 +289,7 @@ struct PullRequestFilePage: View {
                 text = text + Text(verbatim: "−\(diff.counts.removed)").foregroundStyle(ItemState.failing.textColor).fontWeight(.medium)
             }
         }
-        if details.scope != .whole {
+        if open.scope != .whole {
             text = text + Text(" · ").foregroundStyle(.tertiary) + Text("since you last looked").foregroundStyle(ItemState.running.textColor)
         }
         return text
@@ -664,6 +667,16 @@ struct PullRequestFilePage: View {
                     .font(size: 12)
                     .foregroundStyle(.secondary)
             }
+            if !diff.isLinedUp {
+                Label(
+                    "It changed in more places than BriefBar lines up exactly, so what shows as changed, and how many lines, "
+                        + "may differ a little from Azure DevOps.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(size: 12)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
             if !diff.lines.isEmpty {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(entries(blocks, placed: shown.placed)) { entry in
@@ -816,7 +829,7 @@ struct PullRequestFilePage: View {
                 : "This file didn't change since you last looked.")
                 .font(size: 12.5)
                 .foregroundStyle(.secondary)
-            Button("Back to Its Files") {
+            Button(open.from == nil ? "Back to Its Files" : "Back") {
                 withAnimation(.easeOut(duration: 0.15)) { details.closeFile() }
             }
         }

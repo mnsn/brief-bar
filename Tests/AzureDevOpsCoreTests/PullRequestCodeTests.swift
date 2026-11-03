@@ -964,7 +964,7 @@ private actor LaterCode: CodeSource {
         let gate = Gate()
         let code = PullRequestCode(pr, source: FakeCode(), comparison: { old, new in
             await gate.pass()
-            return LineDiff.compare(old, new)
+            return LineDiff.comparison(old, new)
         })
         // A's comparison first, then five more files', more than it keeps once made, all held under way.
         let first = Task { await code.excerpt(of: thread(1, "a"), in: pr) }
@@ -984,7 +984,7 @@ private actor LaterCode: CodeSource {
         let gate = Gate()
         let code = PullRequestCode(pr, source: FakeCode(), comparison: { old, new in
             await gate.pass()
-            return LineDiff.compare(old, new)
+            return LineDiff.comparison(old, new)
         })
         // Two comparisons under way, as many as run at once, and a third waiting its turn.
         let a = Task { await code.excerpt(of: thread(1, "a"), in: pr) }

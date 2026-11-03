@@ -54,7 +54,20 @@ struct DemoCode: CodeSource {
             File(path: "/tests/Coupons/RoundingTests.cs", base: nil, versions: [nil, roundingTests]),
             File(path: "/src/Coupons/CouponService.cs", base: couponServiceBase, versions: [couponServiceRounded, couponService]),
         ]),
+        // Jordan's upgrade of the build agents to .NET 9, waiting for your review (DemoChangedFiles.swift).
+        4110: Changes(pushedAgo: [nil], files: buildAgentsUpgradeFiles),
     ]
+
+    /// Each version of each file, by its object ID, found once rather than for each read.
+    private static let byObjectId: [String: String] = {
+        var texts: [String: String] = [:]
+        for made in pullRequests.values {
+            for file in made.files {
+                for text in ([file.base] + file.versions).compactMap({ $0 }) { texts[objectId(text)] = text }
+            }
+        }
+        return texts
+    }()
 
     func iterations(of pullRequest: PullRequest) async throws -> [PRIteration] {
         let number = pullRequest.key.number
@@ -86,14 +99,8 @@ struct DemoCode: CodeSource {
     }
 
     func file(of pullRequest: PullRequest, objectId: String, limit: Int) async throws -> FileText {
-        for made in Self.pullRequests.values {
-            for file in made.files {
-                if let text = ([file.base] + file.versions).compactMap({ $0 }).first(where: { Self.objectId($0) == objectId }) {
-                    return Self.read(text)
-                }
-            }
-        }
-        throw ADOError.notFound
+        guard let text = Self.byObjectId[objectId] else { throw ADOError.notFound }
+        return Self.read(text)
     }
 
     func file(of pullRequest: PullRequest, path: String, commit: String, limit: Int) async throws -> FileText {

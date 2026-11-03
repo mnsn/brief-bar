@@ -1428,8 +1428,11 @@ A thread on lines of a file shows the code it's on, as its reviewer saw it: in t
 it's on marked, and the removed and added lines among them (`ThreadExcerpt`). `PullRequestCode` reads it, one
 reader for each pull request whose details show, with GETs, four at a time: the pull request's updates, the files
 the diff it was made on changed, and its file before and after that change, by their object IDs, up to 1 MB each,
-each read once for every thread on it, which it compares a line at a time (`LineDiff`); and whether the file
-changed since, from the diff of that update with the latest. `PullRequestCodeStore` asks for a thread's code only
+each read once for every thread on it, which it compares a line at a time (`LineDiff`): with the fewest lines
+removed and added, as Myers' algorithm finds them, up to 2,000 of them; past that, as for a file that changed in
+many places, it lines the two versions up at the lines each has only once, as many of those as come in the same
+order in both, as a patience diff does, and between those looks for the fewest again (`LineDiff.Comparison`,
+`isLinedUp`). And whether the file changed since, from the diff of that update with the latest. `PullRequestCodeStore` asks for a thread's code only
 once it comes on screen, as the details scroll, after a moment, so a thread scrolled past isn't read; it calls the
 read off when the thread leaves the screen first, once no other view shows it, such as the same pull request's
 details in another window. It reads a thread's code only while the window it's in shows its page on screen, the
@@ -1473,31 +1476,37 @@ update you'd seen (`ChangedFiles.lastSeenUpdate`, `ChangeScope`). `PullRequestCo
 again, and with the same rules: only for a view in a window that shows its page on screen, called off once none
 does, and forgotten once nothing shows the pull request. They go by folder, as the Files page lists them
 (`ChangedFiles.folders`, `PullRequestPanel.listsFirst`), a folder whose only content is another folder named with it,
-`src/Payments/Retry`; each says what happened to it (`FileChange.what`), how many lines it adds and removes, and
-how many threads are on it (`PullRequestPanel.Threads.comments(on:)`): those Azure DevOps tracks on it, or else those
-on its path, after the change or before it, the open ones counted first. A file's lines are counted
+`src/Payments/Retry`, grouped once with the list; each says what happened to it (`FileChange.what`), how many lines
+it adds and removes, and how many threads are on it (`PullRequestPanel.Threads.comments(in:)`, for all of them at
+once): those Azure DevOps tracks on it, or else those on its path, after the change or before it, the open ones
+counted first, "1 open comment, waiting on you, and 2 resolved". A file's lines are counted
 (`LineCounts`) as its row comes on screen, one file at a time, in the order the rows came, by comparing its two
 versions (`PullRequestCode.diff(of:in:of:)`), each read once, by its object ID, up to 1 MB; a row that leaves the
 screen before its turn isn't counted, and a file that isn't text, or is longer, says so; a row on screen asks again
 every half minute, for a count that failed in a way that may pass. What's counted is kept, by the versions it
 compares, for as long as the pull request is: the same file changed the same way, in all of the change and since an
-update, is counted once. Their lines are added up once each file is counted, but for those that aren't text, and not
-while one that is text can't be (`PullRequestFilesStore.totals(of:in:)`).
+update, is counted once. A file that changed in more places than the diff lines up exactly, as a lock file of
+packages can, is counted as it's lined up, and says that's about right (`FileDiff.isLinedUp`,
+`LineCounts.isApproximate`), "~+1249 −1249". Their lines are added up once each file is counted, but for those
+that aren't text, and not while one that is text can't be (`PullRequestFilesStore.totals(of:in:)`); about right when
+one is.
 
 A file opens in place of the details' parts (`PullRequestFilePage`, `PullRequestDetailsStore.file`), the header's
 trail saying so, `!4102 › PaymentsClient.cs`, or `Bug 5110 › !4091 › Rounding.cs` on a pull request's page over a
 work item's details; **‹**, **⌘[** or Esc go back to the details, at its row (`Place.file`), or at the thread it
-opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`): on
-the file Azure DevOps tracks it on (`ChangedFiles.file(of:)`), though another file took the path it names since. Its
+opened from in their comments, whose file's heading, or its menu, opens it at that thread (`ChangedFileOpener`): in
+all of the change, which has it whatever the Files show (`OpenFile.scope`), and on the file Azure DevOps tracks it on
+(`ChangedFiles.file(of:)`), though another file took the path it names since. Its
 diff is the two versions compared a line at a time (`LineDiff`), its changes with three lines around each, and all
 the lines its threads are on with three around them, the rest folded, to unfold twenty lines at a time, up from the
 code below a fold or down from the code above it, or all of it (`DiffLayout`). A thread shows under the line it ends on
 (`FileDiff.row(of:in:)`): where Azure DevOps followed it to, or else where it was made, when that's the version the
-diff shows after the change, or, before it, the same diff; its lines marked in the accent color. Those on the whole
+diff shows after the change, or, before it, the same diff; its lines on that side marked in the accent color
+(`FileDiff.markedRows(of:in:)`). Those on the whole
 file, and those on lines of a version it doesn't show, as one made on an earlier update that Azure DevOps didn't follow
 since, show above it, the latter with the code they were made on, as in the comments, as do all its threads when its
-diff can't show; resolved ones fold to a line.
-Its code is drawn by `CodeView`, two hundred lines to a view in a lazy stack, so that only those on screen are laid
+diff can't show; resolved ones fold to a line. A file that changed in more places than the diff lines up exactly says
+so above its diff. Its code is drawn by `CodeView`, two hundred lines to a view in a lazy stack, so that only those on screen are laid
 out, each with room for the file's longest number, so the code lines up from one part to the next. **‹** and **›**,
 or ⌥⌘↑ and ⌥⌘↓, go to the files before and after it, and ⌃⌘↑ and ⌃⌘↓ through its open threads, as it shows them,
 then on to another file's (`PullRequestPanel.Threads.openOnFiles(of:)`), at its first or last as that one's page shows
