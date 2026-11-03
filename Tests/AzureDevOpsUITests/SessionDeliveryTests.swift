@@ -645,6 +645,25 @@ private final class ExtensionStandIn: Sendable {
         #expect(ext.received == ["Fix them again"])
     }
 
+    /// Push & Reply ships what its last task changed only in that task's session and worktree, so Send to a Fork isn't there
+    /// for it, even when that task went on with one of the app's sessions: a fork would push a copy of those changes from a
+    /// worktree of its own, and leave them uncommitted where they are. It's there otherwise, for a session the app can fork.
+    @Test func offersNoForkForPushAndReply() {
+        let worktree = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarFork-\(UUID().uuidString)", isDirectory: true)
+        let run = CopilotRun(
+            id: session, workItem: nil, options: CopilotModel.standard, repository: worktree, worktree: worktree, startedAt: Date(),
+            process: DetachedProgram.Handle(pid: 0, startedAt: nil), ended: .finished, isAppSession: true
+        )
+        let task = SessionChoice(kind: .task(run), name: "Fix Comments", reasons: [.earlierTask])
+        #expect(task.canFork)
+        #expect(CopilotComposerView.offersFork(task, mustContinue: false))
+        #expect(!CopilotComposerView.offersFork(task, mustContinue: true))
+        #expect(CopilotComposerView.offersFork(choice(session), mustContinue: false))
+        #expect(!CopilotComposerView.offersFork(choice(session), mustContinue: true))
+        #expect(!CopilotComposerView.offersFork(choice(session, isChat: true), mustContinue: false))
+        #expect(!CopilotComposerView.offersFork(nil, mustContinue: false))
+    }
+
     /// While a prompt is on its way to a session, where it works stays as it is: git removes no task's worktree there, and
     /// no task starts there, until the prompt has gone, or been taken back.
     @Test func keepsTheCheckoutOfASessionAPromptIsOnItsWayTo() async throws {
@@ -1013,7 +1032,8 @@ private final class ExtensionStandIn: Sendable {
     }
 
     /// Turning Azure DevOps off deletes what Copilot printed, and BriefBar's requests and results, which hold its prompts,
-    /// but not what the extensions in open sessions say, theirs while they run; and only the link, when the folder is one.
+    /// even from a folder that others can open by then, but not what the extensions in open sessions say, theirs while they
+    /// run; and only the link, when the folder, or the outbox, is one.
     @Test func turningAzureDevOpsOffKeepsWhatExtensionsSay() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("BriefBarOutput-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -1030,6 +1050,13 @@ private final class ExtensionStandIn: Sendable {
         let left = try FileManager.default.subpathsOfDirectory(atPath: folder.path).sorted()
         #expect(left == ["Outbox", "Outbox/listening", "Outbox/listening/\(session).json", "Outbox/requests", "Outbox/results"])
 
+        // A folder of requests that others can open by then goes, with them, rather than keeping the prompts it holds.
+        try outbox.write(.send("Fix them again", to: session))
+        chmod(outbox.url.appendingPathComponent("requests").path, 0o755)
+        CopilotTasksStore.deleteOutput(in: folder, outbox: outbox)
+        let kept = try FileManager.default.subpathsOfDirectory(atPath: folder.path).sorted()
+        #expect(kept == ["Outbox", "Outbox/listening", "Outbox/listening/\(session).json", "Outbox/results"])
+
         // A folder that's a link is only unlinked.
         let elsewhere = home.appendingPathComponent("elsewhere", isDirectory: true)
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
@@ -1038,6 +1065,15 @@ private final class ExtensionStandIn: Sendable {
         try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: elsewhere)
         CopilotTasksStore.deleteOutput(in: linked, outbox: CopilotOutbox(root: home, path: ["Linked", "Outbox"]))
         #expect(!FileManager.default.fileExists(atPath: linked.path))
+        #expect(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("keep.log").path))
+
+        // So is an outbox that's a link, with what Copilot printed beside it.
+        let other = home.appendingPathComponent("Other", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try Data("Done.".utf8).write(to: other.appendingPathComponent("\(session).log"))
+        try FileManager.default.createSymbolicLink(at: other.appendingPathComponent("Outbox"), withDestinationURL: elsewhere)
+        CopilotTasksStore.deleteOutput(in: other, outbox: CopilotOutbox(root: home, path: ["Other", "Outbox"]))
+        #expect(!FileManager.default.fileExists(atPath: other.path))
         #expect(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("keep.log").path))
     }
 

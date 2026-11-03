@@ -525,7 +525,7 @@ session of the work item's task that opened it, or to the app's session that lik
 | Send | What happens |
 |---|---|
 | **Send to Session** | BriefBar sends the prompt to the session in the Copilot app, as your own message, and opens it there. Copilot works on it in that session, with the session's own model, mode and permissions, where you can follow it; a session that's working takes it once it's done. The default for the app's sessions. |
-| **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats. |
+| **Send to a Fork** | The Copilot app forks the session, with its history and the changes it hasn't committed, into a worktree and branch of its own, and BriefBar sends the fork the prompt. The session itself stays as it is, with a note that it forked. For the app's sessions, but not chats, nor **Push & Reply**, which pushes what its last task changed from that task's own session. |
 | **Run with the CLI** | The Copilot CLI goes on with the session now, on its own, in the folder it works in, and BriefBar follows it as it does a new task, with the same limits on what the action may do. The default for BriefBar's own tasks. |
 
 To send prompts to the app's sessions itself, BriefBar needs **Send Prompts to Copilot Sessions**, off until

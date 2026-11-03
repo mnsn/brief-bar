@@ -333,10 +333,50 @@ public struct CopilotOutbox: Sendable {
         }
     }
 
-    /// Removes every request and result, whatever its age, as when Azure DevOps is turned off: they hold its prompts.
-    /// What extensions say in `listening` stays, theirs while they run.
-    public func forget() {
-        removeOld(now: .distantFuture, age: 0)
+    /// Removes every request and result, whatever its age, as when Azure DevOps is turned off: they hold its prompts. A
+    /// folder of them that isn't only yours anymore, such as one that others can open now, is emptied all the same, and
+    /// goes too, for the next request to make it anew; a link or a file in its place is unlinked, never followed. What
+    /// extensions say in `listening` stays, theirs while they run.
+    /// - Returns: false when some of them may stay: what couldn't be removed, or what couldn't be opened to look.
+    @discardableResult
+    public func forget() -> Bool {
+        // The outbox, without following a link below `root`, as `openFolder` opens it, but whatever its mode: what's in it
+        // was written while it was only yours.
+        var outbox = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard outbox >= 0 else { return errno == ENOENT }
+        for name in path {
+            let next = openat(outbox, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            let failure = errno
+            close(outbox)
+            // Not there, or no real folder, such as a link: BriefBar wrote nothing there.
+            guard next >= 0 else { return failure == ENOENT || failure == ENOTDIR || failure == ELOOP }
+            outbox = next
+        }
+        defer { close(outbox) }
+        guard Self.isOwnFolder(outbox) else { return false }
+        var forgotten = true
+        for kind in [Folder.requests, .results] where !Self.empty(kind, in: outbox) { forgotten = false }
+        return forgotten
+    }
+
+    /// Removes BriefBar's requests, or their results, from the outbox: what's in their folder, without following a link,
+    /// and the folder too unless it's only yours, as BriefBar makes it; or a link or a file in its place. False when
+    /// something stays, such as a folder of someone else's.
+    static func empty(_ kind: Folder, in outbox: Int32) -> Bool {
+        let name = kind.rawValue
+        var info = stat()
+        guard fstatat(outbox, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { return errno == ENOENT }
+        guard info.st_mode & S_IFMT == S_IFDIR else { return unlinkat(outbox, name, 0) == 0 }
+        guard info.st_uid == getuid() else { return false }
+        let folder = openat(outbox, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard folder >= 0 else { return false }
+        var emptied = true
+        // Requests, claimed or not, results, and what was being written: files, or links, never followed.
+        for entry in names(in: folder) where unlinkat(folder, entry, 0) != 0 { emptied = false }
+        let isOnlyYours = isPrivateFolder(folder)
+        close(folder)
+        if emptied, !isOnlyYours { emptied = unlinkat(outbox, name, AT_REMOVEDIR) == 0 }
+        return emptied
     }
 
     // MARK: Files

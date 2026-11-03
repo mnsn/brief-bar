@@ -1750,7 +1750,9 @@ itself or to a fork of it):
 - **Send to a Fork** forks one of the app's sessions with the app's own fork, and sends the fork the
   prompt. The fork is a session of the app's, with the session's history and the changes it hasn't
   committed, in a worktree and branch of its own; the session itself gains no message, only the app's note
-  that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's.
+  that it forked. It isn't there for a chat, nor for BriefBar's own sessions, which aren't the app's; nor
+  for Push & Reply, which ships what its last task changed only in that task's session and worktree, where
+  a fork would push a copy of them and leave them uncommitted (`CopilotComposerView.offersFork`).
 - **Run with the CLI**, the default for BriefBar's own tasks, starts the CLI as for a later task: the
   session's `--session-id`, without `--name`, in the folder it works in. That's an earlier task's
   worktree, or the `cwd` in the app's session's `session-state/<id>/workspace.yaml`, read without
@@ -1806,7 +1808,9 @@ this Mac only (`CopilotOutbox`):
   opens each without following a symbolic link below your home folder, uses no folder and reads no file
   that isn't so, and makes the folders only as it writes a request. As it writes one, it removes its
   requests and results that are more than an hour old; turning Azure DevOps off removes them all, since
-  they hold its prompts. What the extensions say in `listening` stays, theirs while they run.
+  they hold its prompts, even from a folder of yours that others could open by then, which goes too, and
+  unlinks a link where one of their folders should be, without following it (`CopilotOutbox.forget`); what
+  it can't remove, it logs. What the extensions say in `listening` stays, theirs while they run.
 
 Before you send it, the window says what will happen, and looks again every five seconds
 (`CopilotTasksStore.reach(of:)`): BriefBar's extension listens in the session, so the prompt goes at once;

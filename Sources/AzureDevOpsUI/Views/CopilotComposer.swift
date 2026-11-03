@@ -256,6 +256,13 @@ struct CopilotComposerView: View {
     /// Push & Reply ships what an earlier run changed: only in its session, and its worktree.
     private var mustContinue: Bool { pullRequest?.1 == .pushAndReply }
 
+    /// Send to a Fork is there for the session: the Copilot app can fork it, and it isn't for Push & Reply, which ships what
+    /// its last task changed only in that task's session and worktree. A fork would push a copy of those changes from a
+    /// worktree of its own, and leave them uncommitted where they are.
+    static func offersFork(_ target: SessionChoice?, mustContinue: Bool) -> Bool {
+        target?.canFork == true && !mustContinue
+    }
+
     /// Runs with the CLI, rather than going to the session in the Copilot app: a new session, or the CLI going on with one.
     private var runsHere: Bool { target == nil || delivery.place == .cli }
 
@@ -491,7 +498,7 @@ struct CopilotComposerView: View {
                     choose(.session)
                 }
                 .disabled(!canUseApp)
-                if target?.canFork == true {
+                if Self.offersFork(target, mustContinue: mustContinue) {
                     ComposerChoice(symbol: "arrow.triangle.branch", title: "Send to a Fork", detail: forkDetail, isSelected: delivery == .fork) {
                         choose(.fork)
                     }
@@ -800,7 +807,7 @@ struct CopilotComposerView: View {
         }
         guard !target.isUnavailable else { return false }
         switch delivery.place {
-        case .app: return appProblem == nil && (!delivery.forks || target.canFork)
+        case .app: return appProblem == nil && (!delivery.forks || Self.offersFork(target, mustContinue: mustContinue))
         case .cli: return !isBusy && hasModel && cliProblem == nil && checkingSession == nil
         }
     }
@@ -919,9 +926,9 @@ struct CopilotComposerView: View {
     }
 
     /// Goes the way that works when only one does: in the Copilot app when the CLI can't go on with the session, with the
-    /// CLI when nothing opens the app's sessions; and to the session itself when the app can't fork it.
+    /// CLI when nothing opens the app's sessions; and to the session itself when it can't go to a fork (`offersFork`).
     private func fixDelivery() {
-        if delivery.forks, target?.canFork != true { delivery = .session }
+        if delivery.forks, !Self.offersFork(target, mustContinue: mustContinue) { delivery = .session }
         if delivery.place == .cli, cliProblem != nil, appProblem == nil { delivery = .session }
         if delivery.place == .app, appProblem != nil, cliProblem == nil { delivery = .cli }
     }

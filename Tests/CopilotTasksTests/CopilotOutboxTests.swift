@@ -253,6 +253,43 @@ import Testing
         #expect(outbox.listener(of: session) != nil)
     }
 
+    /// Forgetting them, as when Azure DevOps is turned off, removes BriefBar's requests even from a folder of yours that
+    /// others can open by then, which BriefBar no longer uses, and which goes too, for the next request to make it anew;
+    /// and unlinks a link where their results should be, without following it. What extensions say stays, and what can't be
+    /// removed, it says.
+    @Test func forgetsRequestsInAFolderThatIsntOnlyYoursAnymore() throws {
+        let (outbox, folder) = try outbox()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let request = OutboxRequest.send("Fix it", to: session)
+        try outbox.write(request)
+        let ext = FakeExtension(outbox: outbox.url, sessionId: session)
+        try ext.listen()
+        let requests = outbox.url.appendingPathComponent("requests")
+        chmod(requests.path, 0o755)
+        #expect(!outbox.isWaiting(request))
+        let elsewhere = folder.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: elsewhere.appendingPathComponent("keep.json"))
+        let results = outbox.url.appendingPathComponent("results")
+        try FileManager.default.createSymbolicLink(at: results, withDestinationURL: elsewhere)
+
+        #expect(outbox.forget())
+        #expect(!FileManager.default.fileExists(atPath: requests.path))
+        #expect(mode(results) == -1)
+        #expect(names(elsewhere) == ["keep.json"])
+        #expect(outbox.listener(of: session) != nil)
+
+        // The next request makes the folder anew, only yours.
+        try outbox.write(request)
+        #expect(mode(requests) == 0o700)
+        #expect(outbox.isWaiting(request))
+        // A folder in it, which neither BriefBar nor an extension makes, stays, and forgetting says so.
+        try FileManager.default.createDirectory(at: requests.appendingPathComponent("stray"), withIntermediateDirectories: true)
+        #expect(!outbox.forget())
+        #expect(names(requests) == ["stray"])
+        #expect(!outbox.isWaiting(request))
+    }
+
     // MARK: Sending
 
     /// What a send does beyond the outbox, recorded.

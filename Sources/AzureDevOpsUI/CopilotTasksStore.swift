@@ -750,18 +750,35 @@ final class CopilotTasksStore: ObservableObject {
 
     /// What BriefBar saved of the runs it started: what each printed; and its requests to its extension in the Copilot
     /// app's sessions, with their results, which hold its prompts, but not what the extensions that run say. Called when
-    /// Azure DevOps is turned off.
+    /// Azure DevOps is turned off. What it can't delete, it logs.
     nonisolated static func deleteOutput(in folder: URL = outputFolder, outbox: CopilotOutbox = .standard) {
-        outbox.forget()
+        if !outbox.forget() {
+            Log.app.error("Couldn't remove all of BriefBar's requests to the Copilot app's sessions, which hold its prompts")
+        }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        var isFolder: ObjCBool = false
+        // The outbox stays, for what extensions say in it, only as a real folder in this one: a link goes, not what it
+        // leads to.
         guard !LocalFile.isLink(folder), outbox.url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
-              let kept = outbox.path.last, names.contains(kept)
+              let kept = outbox.path.last, names.contains(kept), !LocalFile.isLink(outbox.url),
+              FileManager.default.fileExists(atPath: outbox.url.path, isDirectory: &isFolder), isFolder.boolValue
         else {
-            try? FileManager.default.removeItem(at: folder)
+            deleteSaved(folder)
             return
         }
         for name in names where name != kept {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+            deleteSaved(folder.appendingPathComponent(name))
+        }
+    }
+
+    /// Deletes a file, or a folder and what's in it, without following a link: a link goes, not what it leads to.
+    private nonisolated static func deleteSaved(_ item: URL) {
+        do {
+            try FileManager.default.removeItem(at: item)
+        } catch CocoaError.fileNoSuchFile {
+            // Nothing was there.
+        } catch {
+            Log.app.error("Couldn't delete all that Copilot printed")
         }
     }
 
