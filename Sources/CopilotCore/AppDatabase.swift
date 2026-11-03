@@ -196,6 +196,22 @@ public struct AppViewState: Sendable, Equatable {
 public struct DatabaseSnapshot: Sendable, Equatable {
     public var sessions: [SessionMeta]
     public var view: AppViewState
+    /// Each fork, by its ID, archived or not: the session it was forked from (`forked_from_session_id`), and when. Nil when
+    /// the app doesn't record forks, as older versions don't.
+    public var forks: [String: SessionFork]? = nil
+}
+
+/// A session that the app forked from another, as its database records it.
+public struct SessionFork: Sendable, Equatable {
+    /// The session it was forked from.
+    public var original: String
+    /// When the fork was made; nil when the app doesn't say.
+    public var createdAt: Date?
+
+    public init(original: String, createdAt: Date?) {
+        self.original = original
+        self.createdAt = createdAt
+    }
 }
 
 /// Read-only access to the Copilot app's SQLite database.
@@ -282,9 +298,9 @@ public enum AppDatabase {
         WHERE parent.session_id IS NOT NULL
         """
 
-    /// The session each forked session was forked from.
+    /// The session each forked session was forked from, and when the fork was made.
     static let forksQuery = """
-        SELECT id, forked_from_session_id
+        SELECT id, forked_from_session_id, created_at
         FROM sessions
         WHERE forked_from_session_id IS NOT NULL
         """
@@ -406,6 +422,9 @@ public enum AppDatabase {
 
         readCoordinators(connection, into: &sessions)
         readParents(connection, into: &sessions)
+        let forks = try? connection.rows(forksQuery) { row in
+            (row.string(0) ?? "", SessionFork(original: row.string(1) ?? "", createdAt: row.date(2)))
+        }.filter { !$0.0.isEmpty && !$0.1.original.isEmpty }
 
         var view = AppViewState()
         if let entries = try? connection.rows(viewStateQuery, { row in (row.string(0) ?? "", row.string(1) ?? "", row.date(2)) }) {
@@ -423,7 +442,9 @@ public enum AppDatabase {
                 }
             }
         }
-        return DatabaseSnapshot(sessions: sessions, view: view)
+        return DatabaseSnapshot(
+            sessions: sessions, view: view, forks: forks.map { Dictionary($0, uniquingKeysWith: { first, _ in first }) }
+        )
     }
 
     private static func loadSessions(_ connection: SQLiteConnection) throws -> [SessionMeta] {

@@ -80,19 +80,22 @@ public sealed class ProcessRunnerTests
         Assert.False(condition: File.Exists(path: folder.Combine("ran.txt")));
     }
 
-    /// A program that isn't a batch file gets them as they are. Windows PowerShell prints the arguments it got after its
-    /// own and its command, which takes the rest of the line as a comment.
+    /// A program that isn't a batch file gets them as they are, line breaks included. The program is the tests' own, which
+    /// prints the arguments it got (`ArgumentsEcho`): it starts at once, where Windows PowerShell can take half a minute
+    /// on a busy machine, and would run what follows a line break as a command.
     [Fact]
     public async Task GivesAnyArgumentsToAProgramThatIsntABatchFile()
     {
-        string[] own = ["-NoProfile", "-NonInteractive", "-Command", "$a = [Environment]::GetCommandLineArgs(); for ($i = 5; $i -lt $a.Length; $i++) { [Console]::Out.WriteLine('[' + $a[$i] + ']') } #"];
-        string[] printable = [.. commandText.Where(predicate: argument => !argument.Contains(value: '\n', comparisonType: StringComparison.Ordinal))];
-
         var result = await new ProcessRunner().RunAsync(
-            program: powerShell, arguments: [.. own, .. printable], environment: noVariables, timeout: enough, cancellationToken: TestContext.Current.CancellationToken);
+            program: ArgumentsEcho.Program,
+            arguments: commandText,
+            environment: new Dictionary<string, string?> { [ArgumentsEcho.Variable] = "1" },
+            timeout: enough,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(expected: 0, actual: result.ExitCode);
-        Assert.Equal(expected: string.Concat(values: printable.Select(selector: argument => "[" + argument + "]\r\n")), actual: result.Output);
+        Assert.Equal(expected: ArgumentsEcho.Printed(arguments: commandText), actual: result.Output);
+        Assert.Equal(expected: string.Empty, actual: result.Error);
     }
 
     [Theory]

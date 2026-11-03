@@ -154,10 +154,21 @@ extension CopilotTasksStore {
         }
     }
 
-    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its checkout, for a task BriefBar sent.
-    func busyReason(for choice: SessionChoice) -> String? {
+    /// The folder a session works in now, for a prompt sent to it through BriefBar's extension: the one the app's session
+    /// state says, for one of the app's sessions and for a task that went on with one, which may have moved since the task
+    /// started; an earlier task's own worktree otherwise.
+    func currentFolder(of choice: SessionChoice) -> URL? {
+        if case .task(let run) = choice.kind, run.isAppSession == true {
+            return AppSessions.folder(of: run.id, home: appHome) ?? run.worktree
+        }
+        return folder(of: choice)
+    }
+
+    /// Why nothing may go to a session now, or nil: Copilot works in it, or in its checkout, for a task BriefBar sent. Its
+    /// checkout is the one in `folder` when given, or the one it works in (`folder(of:)`).
+    func busyReason(for choice: SessionChoice, in folder: URL? = nil) -> String? {
         if isWorking(inSession: choice.id) { return "Copilot is still working in it. Try again once it's done." }
-        if let folder = folder(of: choice), isWorking(inFolder: folder) {
+        if let folder = folder ?? self.folder(of: choice), isWorking(inFolder: folder) {
             return "Copilot is working in its checkout for another task BriefBar sent. Try again once that's done."
         }
         return nil
@@ -415,34 +426,6 @@ extension CopilotTasksStore {
             run.pullRequest = pullRequest.url
         }
         return run
-    }
-
-    /// Hands a task to a session in the Copilot app: copies the prompt, and opens the session there, for you to paste and
-    /// send. Copilot works on it there, with the session's own model, mode and permissions, where you see it. It's in your
-    /// hands then: what `handOff` says the prompt takes care of leaves Needs You, but only once the session opened.
-    /// - Returns: why it didn't, or nil once it did.
-    @discardableResult
-    func openInCopilot(_ choice: SessionChoice, prompt: String, handOff: CommentHandOff?) -> String? {
-        guard canSend, isOn, ItemRef.session(choice.id) != nil else { return "BriefBar can't send anything now." }
-        // Opening it while Copilot works in it would fork its history; while Copilot works in its checkout, their work would mix.
-        if let busy = busyReason(for: choice) { return busy }
-        let opened: Bool
-        if let openForTests {
-            opened = openForTests(choice.id, prompt)
-        } else if canOpenInApp {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(prompt, forType: .string)
-            opened = Self.openInApp(choice.id)
-        } else {
-            opened = false
-        }
-        guard opened else {
-            Log.app.error("Couldn't open a session in the Copilot app")
-            return Self.cantOpenInApp
-        }
-        Log.app.info("Handed a task to a session in the Copilot app")
-        if let handOff { handedOff(handOff, prompt) }
-        return nil
     }
 
     /// Whether BriefBar works in the session now, for a task it sent: one getting its worktree ready, or one whose

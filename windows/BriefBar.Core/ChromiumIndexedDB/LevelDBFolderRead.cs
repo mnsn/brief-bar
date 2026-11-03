@@ -1,8 +1,8 @@
 namespace BriefBar.Core.ChromiumIndexedDB;
 
 /// What reading a LevelDB folder gave: the newest write to each key read (a value, or null once the key was deleted),
-/// what was read and skipped, the files that couldn't be read, by name, and why, and where reading the newest log
-/// stopped. The Mac's `LevelDBFolder.Read`.
+/// what was read, skipped and left unread, the files that couldn't be read, by name, and why, and where reading the newest
+/// log stopped. The Mac's `LevelDBFolder.Read`.
 public sealed class LevelDBFolderRead
 {
     public Dictionary<byte[], LevelDBEntry> Latest { get; } = new(comparer: ByteSequenceComparer.Instance);
@@ -16,6 +16,10 @@ public sealed class LevelDBFolderRead
     public int BlocksSkipped { get; set; }
 
     public int CorruptLogRecords { get; set; }
+
+    /// Tables and logs left unread because the MANIFEST doesn't list them: ones LevelDB no longer needs and hasn't removed
+    /// yet, or a table it's still writing.
+    public int Unlisted { get; set; }
 
     public Dictionary<string, FormatError> Unreadable { get; } = new(comparer: StringComparer.Ordinal);
 
