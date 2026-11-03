@@ -1,0 +1,1072 @@
+import Foundation
+
+// The order pull requests that go together merge in: from what their sources show of them, such as a pull request that
+// targets another's branch, or a GitHub stack, and from what Copilot sessions told BriefBar (`DeclaredOrders`). It says
+// what can merge next and what waits on what, and when a session suggested reviewing one later and why. It never says a
+// pull request is ready, and never changes where its source says it stands.
+
+// MARK: - What the sources show
+
+/// Where a pull request stands, as its source shows it now.
+public enum PullRequestState: String, Codable, Sendable, CaseIterable {
+    case open
+    case draft
+    case merged
+    /// Closed without merging: abandoned in Azure DevOps, closed on GitHub.
+    case closed
+
+    public var isOpen: Bool { self == .open || self == .draft }
+}
+
+/// A GitHub stack, as one of its pull requests shows it: its pull requests by their place in it, from the bottom, with
+/// where each stands, the ones that merged or closed included.
+public struct GitHubStack: Equatable, Sendable {
+    public struct Member: Equatable, Sendable {
+        /// Its place in the stack, from 1 at the bottom.
+        public var position: Int
+        public var ref: ItemRef
+        /// Nil when GitHub doesn't say.
+        public var state: PullRequestState?
+
+        public init(position: Int, ref: ItemRef, state: PullRequestState? = nil) {
+            self.position = position
+            self.ref = ref
+            self.state = state
+        }
+    }
+
+    /// `owner/name`, lowercased.
+    public var repository: String
+    public var number: Int
+    /// The branch its bottom pull request merges into, when GitHub says.
+    public var baseBranch: String?
+    public var members: [Member]
+
+    public init(repository: String, number: Int, baseBranch: String? = nil, members: [Member]) {
+        self.repository = repository.lowercased()
+        self.number = number
+        self.baseBranch = baseBranch
+        self.members = members
+    }
+}
+
+/// A pull request a source lists now, with what its order needs to know: never its title.
+public struct OrderPullRequest: Equatable, Sendable {
+    public var ref: ItemRef
+    /// Its repository, as its source names it, lowercased: an Azure DevOps repository by its organization, project ID and
+    /// repository ID; a GitHub repository by its owner and name. Two pull requests are in the same repository only when
+    /// these are the same.
+    public var repository: String
+    public var sourceBranch: String
+    public var targetBranch: String
+    /// Whether its source branch is in another repository, as a fork's is; nil when its source doesn't say.
+    public var isFork: Bool?
+    /// Its repository's default branch, when its source says.
+    public var defaultBranch: String?
+    /// Who opened it, by its source's ID for them, when it says: only compared, never shown.
+    public var author: String?
+    public var state: PullRequestState
+    /// What it means for you now, as its source's lists count it: for which group of pull requests shows first.
+    public var attention: ItemState?
+    public var createdAt: Date?
+    /// The GitHub stack it's in.
+    public var stack: GitHubStack?
+
+    public init(
+        ref: ItemRef, repository: String, sourceBranch: String, targetBranch: String, isFork: Bool? = nil,
+        defaultBranch: String? = nil, author: String? = nil, state: PullRequestState = .open, attention: ItemState? = nil,
+        createdAt: Date? = nil, stack: GitHubStack? = nil
+    ) {
+        self.ref = ref
+        self.repository = repository.lowercased()
+        self.sourceBranch = sourceBranch
+        self.targetBranch = targetBranch
+        self.isFork = isFork
+        self.defaultBranch = defaultBranch
+        self.author = author
+        self.state = state
+        self.attention = attention
+        self.createdAt = createdAt
+        self.stack = stack
+    }
+}
+
+/// A Copilot session, as the Copilot app records it: the sessions that started and coordinate it, and the pull requests it
+/// opened or works on.
+public struct OrderSession: Equatable, Sendable {
+    public var ref: ItemRef
+    public var parent: ItemRef?
+    public var coordinator: ItemRef?
+    public var pullRequests: [ItemRef]
+
+    public init(ref: ItemRef, parent: ItemRef? = nil, coordinator: ItemRef? = nil, pullRequests: [ItemRef] = []) {
+        self.ref = ref
+        self.parent = parent
+        self.coordinator = coordinator
+        self.pullRequests = pullRequests
+    }
+}
+
+/// What a source shows of a pull request now, for `OrderEvidence` to keep what merged or closed.
+public struct OrderObservation: Equatable, Sendable {
+    public var ref: ItemRef
+    public var state: PullRequestState
+    public var witness: OrderEvidence.Witness
+
+    public init(ref: ItemRef, state: PullRequestState, witness: OrderEvidence.Witness) {
+        self.ref = ref
+        self.state = state
+        self.witness = witness
+    }
+}
+
+/// What the sources that are on show now, for the order: their pull requests, and Copilot's sessions.
+public struct OrderFacts: Equatable, Sendable {
+    public private(set) var pullRequests: [ItemRef: OrderPullRequest]
+    public private(set) var sessions: [ItemRef: OrderSession]
+    /// The kinds of pull request whose source is on: one of another kind can't be seen because its source is off.
+    public var sourcesOn: Set<ItemRef.Kind>
+
+    /// - Parameters:
+    ///   - pullRequests: the first of each wins.
+    ///   - sessions: the first of each wins.
+    public init(
+        pullRequests: [OrderPullRequest] = [], sessions: [OrderSession] = [],
+        sourcesOn: Set<ItemRef.Kind> = [.pullRequest, .gitHubPullRequest]
+    ) {
+        var byRef: [ItemRef: OrderPullRequest] = [:]
+        for pullRequest in pullRequests where pullRequest.ref.kind.isPullRequest && byRef[pullRequest.ref] == nil {
+            byRef[pullRequest.ref] = pullRequest
+        }
+        var sessionsByRef: [ItemRef: OrderSession] = [:]
+        for session in sessions where session.ref.kind == .session && sessionsByRef[session.ref] == nil {
+            sessionsByRef[session.ref] = session
+        }
+        self.pullRequests = byRef
+        self.sessions = sessionsByRef
+        self.sourcesOn = sourcesOn
+    }
+
+    /// Where each pull request of a GitHub stack stands, as the stack shows it, though no list has it, such as one that
+    /// merged.
+    var stackStates: [ItemRef: PullRequestState] {
+        var states: [ItemRef: PullRequestState] = [:]
+        for pullRequest in pullRequests.values.sorted(by: { $0.ref < $1.ref }) {
+            for member in pullRequest.stack?.members ?? [] where member.ref.kind.isPullRequest && states[member.ref] == nil {
+                if let state = member.state { states[member.ref] = state }
+            }
+        }
+        return states
+    }
+
+    /// What the sources show now of each pull request, for the evidence to keep: each one's own state, then the states of
+    /// a GitHub stack's pull requests that no list has, as the stack shows them.
+    public var observations: [OrderObservation] {
+        var observations = pullRequests.values.sorted { $0.ref < $1.ref }.map {
+            OrderObservation(ref: $0.ref, state: $0.state, witness: .list)
+        }
+        for (ref, state) in stackStates.sorted(by: { $0.key < $1.key }) where pullRequests[ref] == nil {
+            observations.append(OrderObservation(ref: ref, state: state, witness: .gitHubStack))
+        }
+        return observations
+    }
+}
+
+/// What BriefBar knows of a pull request in an order: where its source shows it stands, or what BriefBar saw become of it,
+/// or nothing.
+public enum OrderStatus: Equatable, Sendable {
+    case open
+    case draft
+    case merged
+    case closed
+    /// BriefBar can't see it now, and never saw it merge or close: it may have, or not.
+    case unknown(Unseen)
+
+    public enum Unseen: Equatable, Sendable {
+        /// Its source is on but doesn't list it: it isn't yours or one you review, or it closed a while ago.
+        case notListed
+        /// Its source is off in BriefBar.
+        case sourceOff
+    }
+
+    init(_ state: PullRequestState) {
+        switch state {
+        case .open: self = .open
+        case .draft: self = .draft
+        case .merged: self = .merged
+        case .closed: self = .closed
+        }
+    }
+
+    public var isOpen: Bool { self == .open || self == .draft }
+
+    public var isUnknown: Bool {
+        if case .unknown = self { return true }
+        return false
+    }
+
+    /// Merged or closed.
+    public var hasEnded: Bool { self == .merged || self == .closed }
+}
+
+extension ItemRef {
+    /// How an order names a pull request: !4101 for Azure DevOps, #212 for GitHub; with where it is when that isn't where
+    /// `subject` is, "!4101 in fabrikam", "octo/storefront#212".
+    public func orderLabel(near subject: ItemRef? = nil) -> String {
+        guard let subject, subject.kind != kind || subject.scope != scope else { return shortOrderLabel }
+        return fullOrderLabel
+    }
+
+    /// !4101, #212.
+    public var shortOrderLabel: String {
+        switch kind {
+        case .pullRequest: return "!\(id)"
+        case .gitHubPullRequest: return "#\(id)"
+        case .workItem, .session: return id
+        }
+    }
+
+    /// "!4101 in contoso", "octo/storefront#212".
+    public var fullOrderLabel: String {
+        switch kind {
+        case .pullRequest: return "!\(id) in \(scope)"
+        case .gitHubPullRequest: return "\(scope)#\(id)"
+        case .workItem, .session: return id
+        }
+    }
+}
+
+// MARK: - What goes before what
+
+/// Why one pull request merges after another.
+public enum OrderOrigin: Hashable, Sendable {
+    /// A session's order says so, at this revision of it.
+    case declared(revision: Int)
+    /// It targets the other's branch.
+    case branch
+    /// They're next to each other in a GitHub stack: its number, and the later one's place in it, of how many.
+    case gitHubStack(number: Int, position: Int, size: Int)
+
+    /// Which says the most, for the one a row names first: a session's order, then GitHub's stack, then a branch.
+    var rank: Int {
+        switch self {
+        case .declared: return 0
+        case .gitHubStack: return 1
+        case .branch: return 2
+        }
+    }
+
+    static func ordered(_ origins: some Sequence<OrderOrigin>) -> [OrderOrigin] {
+        origins.sorted { ($0.rank, $0.sortKey) < ($1.rank, $1.sortKey) }
+    }
+
+    private var sortKey: Int {
+        switch self {
+        case .declared(let revision): return revision
+        case .gitHubStack(let number, _, _): return number
+        case .branch: return 0
+        }
+    }
+}
+
+/// One pull request that merges before another.
+public struct OrderEdge: Hashable, Sendable {
+    public var before: ItemRef
+    public var after: ItemRef
+
+    public init(_ before: ItemRef, _ after: ItemRef) {
+        self.before = before
+        self.after = after
+    }
+}
+
+/// The order BriefBar sees in the pull requests themselves, without a session telling it: a pull request that targets
+/// another's branch, in the same repository, merges after it; so does one higher in a GitHub stack.
+public enum OrderInference {
+    /// More open pull requests than this into one branch make it a branch people share, such as an integration branch,
+    /// not one layer of a stack.
+    public static let mostTargeting = 3
+
+    /// Every pull request that merges before another, with why.
+    public static func edges(_ facts: OrderFacts) -> [OrderEdge: Set<OrderOrigin>] {
+        var edges: [OrderEdge: Set<OrderOrigin>] = [:]
+        for (edge, origin) in branchEdges(facts) + stackEdges(facts) where edge.before != edge.after {
+            edges[edge, default: []].insert(origin)
+        }
+        return edges
+    }
+
+    /// A branch as edges compare it: `users/robin/fix` from `refs/heads/users/robin/fix`, lowercased.
+    static func branchKey(_ name: String) -> String {
+        BranchHint.name(name).lowercased()
+    }
+
+    /// B targets A's source branch, in A's repository. Only when that branch is a stack's: not the repository's default
+    /// branch or one everybody works on, not one that more than `mostTargeting` open pull requests merge into, and not one
+    /// that another open pull request comes from too. A pull request from a fork stacks nothing, and one that its source
+    /// doesn't say is from a fork or not stacks only its own author's.
+    static func branchEdges(_ facts: OrderFacts) -> [(OrderEdge, OrderOrigin)] {
+        var found: [(OrderEdge, OrderOrigin)] = []
+        let byRepository = Dictionary(grouping: facts.pullRequests.values, by: \.repository)
+        for repository in byRepository.keys.sorted() {
+            let pullRequests = (byRepository[repository] ?? []).sorted { $0.ref < $1.ref }
+            let defaults = Set(pullRequests.compactMap { $0.defaultBranch.map(branchKey) })
+            var targeting: [String: Int] = [:]
+            var openFrom: [String: [ItemRef]] = [:]
+            for pullRequest in pullRequests where pullRequest.state.isOpen {
+                targeting[branchKey(pullRequest.targetBranch), default: 0] += 1
+                openFrom[branchKey(pullRequest.sourceBranch), default: []].append(pullRequest.ref)
+            }
+            for before in pullRequests where before.isFork != true {
+                let branch = branchKey(before.sourceBranch)
+                guard !branch.isEmpty, !BranchLinks.shared.contains(branch), !defaults.contains(branch),
+                      branch != branchKey(before.targetBranch), targeting[branch, default: 0] <= mostTargeting
+                else { continue }
+                let from = openFrom[branch] ?? []
+                guard from.isEmpty || from == [before.ref] else { continue }
+                for after in pullRequests where after.ref != before.ref && branchKey(after.targetBranch) == branch {
+                    if before.isFork == nil {
+                        guard let author = before.author, author == after.author else { continue }
+                    }
+                    found.append((OrderEdge(before.ref, after.ref), .branch))
+                }
+            }
+        }
+        return found
+    }
+
+    /// Each pull request of a GitHub stack merges after the one below it.
+    static func stackEdges(_ facts: OrderFacts) -> [(OrderEdge, OrderOrigin)] {
+        var stacks: [String: GitHubStack] = [:]
+        for pullRequest in facts.pullRequests.values.sorted(by: { $0.ref < $1.ref }) {
+            guard let stack = pullRequest.stack else { continue }
+            let key = "\(stack.repository)#\(stack.number)"
+            if stacks[key] == nil { stacks[key] = stack }
+        }
+        var found: [(OrderEdge, OrderOrigin)] = []
+        for key in stacks.keys.sorted() {
+            guard let stack = stacks[key] else { continue }
+            var seen: Set<ItemRef> = []
+            let members = stack.members.filter { $0.ref.kind.isPullRequest && seen.insert($0.ref).inserted }
+                .sorted { $0.position < $1.position }
+            for (lower, upper) in zip(members, members.dropFirst()) {
+                found.append((
+                    OrderEdge(lower.ref, upper.ref),
+                    .gitHubStack(number: stack.number, position: upper.position, size: members.count)
+                ))
+            }
+        }
+        return found
+    }
+}
+
+/// What an order's pull requests' edges say about each other.
+enum OrderGraph {
+    /// The groups of `nodes` that go before each other, so none of them can go first, each in the order of `nodes`.
+    /// - Parameter before: what goes before each one.
+    static func cycles(_ nodes: [ItemRef], before: [ItemRef: [ItemRef]]) -> [[ItemRef]] {
+        let members = Set(nodes)
+        func reach(from start: ItemRef) -> Set<ItemRef> {
+            var reached: Set<ItemRef> = []
+            var pending = before[start, default: []].filter { members.contains($0) && $0 != start }
+            while let ref = pending.popLast() {
+                guard reached.insert(ref).inserted else { continue }
+                pending += before[ref, default: []].filter { members.contains($0) && $0 != ref }
+            }
+            return reached
+        }
+        let reaches = Dictionary(nodes.map { ($0, reach(from: $0)) }, uniquingKeysWith: { first, _ in first })
+        var grouped: Set<ItemRef> = []
+        var cycles: [[ItemRef]] = []
+        for ref in nodes where !grouped.contains(ref) && reaches[ref]?.contains(ref) == true {
+            let cycle = nodes.filter { other in reaches[ref]?.contains(other) == true && reaches[other]?.contains(ref) == true }
+            grouped.formUnion(cycle)
+            cycles.append(cycle)
+        }
+        return cycles
+    }
+
+    /// `nodes` in an order where each comes after what goes before it, choosing, of those that can go next, the one
+    /// `isEarlier` puts first; then those that go before each other, and what comes after them, as `isEarlier` puts them.
+    static func ordered(
+        _ nodes: [ItemRef], before: [ItemRef: [ItemRef]], isEarlier: (ItemRef, ItemRef) -> Bool
+    ) -> (order: [ItemRef], cycles: [[ItemRef]]) {
+        let members = Set(nodes)
+        var waitingFor: [ItemRef: Int] = [:]
+        var afterIt: [ItemRef: [ItemRef]] = [:]
+        for ref in nodes {
+            let earlier = Set(before[ref, default: []].filter { members.contains($0) && $0 != ref })
+            waitingFor[ref] = earlier.count
+            for other in earlier { afterIt[other, default: []].append(ref) }
+        }
+        var ready = nodes.filter { waitingFor[$0] == 0 }
+        var order: [ItemRef] = []
+        var placed: Set<ItemRef> = []
+        while !ready.isEmpty {
+            ready.sort(by: isEarlier)
+            let ref = ready.removeFirst()
+            order.append(ref)
+            placed.insert(ref)
+            for later in afterIt[ref, default: []] {
+                waitingFor[later, default: 0] -= 1
+                if waitingFor[later] == 0 { ready.append(later) }
+            }
+        }
+        let left = nodes.filter { !placed.contains($0) }.sorted(by: isEarlier)
+        return (order + left, cycles(left, before: before))
+    }
+}
+
+// MARK: - Missions
+
+/// Which group of pull requests a mission is, so that Focus finds it again: a session's order, by the ID BriefBar gave it;
+/// a GitHub stack; a chain of branches, by its earliest pull request; or the pull requests opened under a session.
+public enum MissionKey: Hashable, Sendable, CustomStringConvertible {
+    case plan(UUID)
+    /// `owner/name`, lowercased, and the stack's number.
+    case stack(repository: String, number: Int)
+    case chain(ItemRef)
+    case family(ItemRef)
+
+    /// `plan/<id>`, `stack/octo/storefront/41`, `chain/pullRequest/contoso/4101`, `family/session//<id>`: what the
+    /// preferences keep.
+    public var description: String {
+        switch self {
+        case .plan(let id): return "plan/\(id.uuidString.lowercased())"
+        case .stack(let repository, let number): return "stack/\(repository)/\(number)"
+        case .chain(let ref): return "chain/\(ref.description)"
+        case .family(let ref): return "family/\(ref.description)"
+        }
+    }
+
+    /// The key a description names, checked as when it was made: nil for anything else.
+    public init?(_ description: String) {
+        guard let slash = description.firstIndex(of: "/") else { return nil }
+        let rest = String(description[description.index(after: slash)...])
+        switch description[..<slash] {
+        case "plan":
+            guard let id = UUID(uuidString: rest) else { return nil }
+            self = .plan(id)
+        case "stack":
+            guard let last = rest.lastIndex(of: "/") else { return nil }
+            let repository = String(rest[..<last])
+            guard ItemRef.isRepository(repository), repository == repository.lowercased(),
+                  let number = ItemRef.number(String(rest[rest.index(after: last)...]))
+            else { return nil }
+            self = .stack(repository: repository, number: number)
+        case "chain":
+            guard let ref = ItemRef(rest), ref.kind.isPullRequest else { return nil }
+            self = .chain(ref)
+        case "family":
+            guard let ref = ItemRef(rest), ref.kind == .session else { return nil }
+            self = .family(ref)
+        default:
+            return nil
+        }
+    }
+}
+
+/// A pull request that goes before one in its order, with why, and what BriefBar knows of it.
+public struct OrderPrerequisite: Equatable, Sendable {
+    public var ref: ItemRef
+    /// Why, what says the most first.
+    public var origins: [OrderOrigin]
+    public var status: OrderStatus
+
+    public init(ref: ItemRef, origins: [OrderOrigin], status: OrderStatus) {
+        self.ref = ref
+        self.origins = origins
+        self.status = status
+    }
+}
+
+/// Where a pull request stands in its order: about merging only, beside where its source says it stands, which it never
+/// changes or repeats.
+public enum OrderStanding: Equatable, Sendable {
+    case merged
+    case closed
+    /// BriefBar can't see it now.
+    case notVisible(OrderStatus.Unseen)
+    /// Everything before it merged, or nothing goes before it, and something goes after it.
+    case next
+    /// Its order puts nothing before or after it.
+    case anyTime
+    /// Some of what goes before it is still open; BriefBar can't see whether the unknown ones merged.
+    case waiting(open: [ItemRef], unknown: [ItemRef])
+    /// What goes before it and hasn't merged is all what BriefBar can't see.
+    case unresolved([ItemRef])
+    /// One that goes before it was closed without merging.
+    case prerequisiteClosed(ItemRef)
+    /// One that goes before it merged, and it still targets that one's branch: to the branch that one merged into, when
+    /// BriefBar knows it.
+    case retarget(after: ItemRef, to: String?)
+    /// It and these go before each other, so none of them can go first.
+    case inCycle(with: [ItemRef])
+    /// Not in the order: stacked on, or under, its pull requests.
+    case notInOrder
+    /// In a group whose order nobody told BriefBar.
+    case unordered
+}
+
+/// What more a step says, as facts, never as a promise.
+public enum OrderNote: Equatable, Sendable {
+    /// Its changes show against this one's branch, which may still change.
+    case showsAgainst(ItemRef)
+    /// BriefBar sees this one go before it, which its order doesn't say: the order decides.
+    case orderDisagrees(ItemRef, OrderOrigin)
+    /// It's in these other orders too.
+    case alsoIn([UUID])
+    /// Stacked with one of the order's pull requests: it comes after that one, or before it.
+    case stackedWith(ItemRef, comesAfter: Bool, OrderOrigin)
+}
+
+/// A pull request in a mission.
+public struct OrderStep: Equatable, Sendable {
+    public var ref: ItemRef
+    /// Its place in the order, from 1; nil for one that merges any time, or in a group with no order.
+    public var number: Int?
+    public var status: OrderStatus
+    public var standing: OrderStanding
+    /// What goes before it.
+    public var prerequisites: [OrderPrerequisite]
+    /// When its session suggested reviewing it: advice, never a promise; nil when no session said.
+    public var review: ReviewTiming?
+    public var notes: [OrderNote]
+
+    public init(
+        ref: ItemRef, number: Int? = nil, status: OrderStatus, standing: OrderStanding, prerequisites: [OrderPrerequisite] = [],
+        review: ReviewTiming? = nil, notes: [OrderNote] = []
+    ) {
+        self.ref = ref
+        self.number = number
+        self.status = status
+        self.standing = standing
+        self.prerequisites = prerequisites
+        self.review = review
+        self.notes = notes
+    }
+}
+
+/// Pull requests that go together, in their order: a session's order, a stack BriefBar sees, or the pull requests opened
+/// under a session, whose order nobody told BriefBar.
+public struct OrderMission: Identifiable, Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        /// A session's order: who said it was theirs, for information only, and when it last changed.
+        case declared(id: UUID, revision: Int, declaredBy: ItemRef?, updatedAt: Date)
+        /// A stack BriefBar sees: a GitHub stack, or pull requests that target each other's branches.
+        case stack
+        /// Pull requests opened under this session, whose order nobody told BriefBar.
+        case family(session: ItemRef)
+    }
+
+    public var key: MissionKey
+    public var kind: Kind
+    /// In their order: those with a place first, then those that merge any time.
+    public var steps: [OrderStep]
+    /// Pull requests its order doesn't name that are stacked with its own.
+    public var attached: [OrderStep]
+    /// Its pull requests that go before each other, so none of them can go first.
+    public var cycles: [[ItemRef]]
+    public var isFocused: Bool
+    /// Every pull request in it merged or closed.
+    public var isFinished: Bool
+    /// A session's order that hasn't finished and that hasn't changed for `DeclaredOrders.staleAfter`: it stays until you
+    /// forget it.
+    public var isStale: Bool
+    /// What the pull requests in it that are still open mean for you, the most pressing.
+    public var attention: ItemState?
+    /// When it last changed: a session's order when it last told BriefBar, else when its newest pull request was opened.
+    public var date: Date?
+
+    public var id: MissionKey { key }
+
+    /// Whether it's a group with no known order.
+    public var isFamily: Bool {
+        if case .family = kind { return true }
+        return false
+    }
+}
+
+// MARK: - The board
+
+/// The missions to show, from what the sources show now, the orders sessions told BriefBar, and what BriefBar saw become
+/// of their pull requests.
+public enum OrderBoard {
+    /// Each session's order is a mission of its own, however many a session told, even when they share pull requests.
+    /// The pull requests no order names group by what BriefBar sees: those stacked with only one order's pull requests
+    /// show with it, apart from what it names; others stacked together are a stack of their own; the rest group by the
+    /// session they were opened under, two or more, with no order. A pull request alone isn't shown.
+    /// - Parameter focus: the mission you keep on top.
+    public static func missions(
+        facts: OrderFacts, orders: DeclaredOrders, evidence: OrderEvidence, focus: MissionKey? = nil, now: Date = Date()
+    ) -> [OrderMission] {
+        let board = Board(facts: facts, evidence: evidence)
+        var plansByRef: [ItemRef: [UUID]] = [:]
+        for plan in orders.plans {
+            for ref in plan.refs { plansByRef[ref, default: []].append(plan.id) }
+        }
+        var attached: [UUID: [ItemRef]] = [:]
+        var stacks: [[ItemRef]] = []
+        var alone: [ItemRef] = []
+        for component in board.components(of: board.known.subtracting(plansByRef.keys)) {
+            var touched: Set<UUID> = []
+            for ref in component {
+                for neighbor in board.neighbors(of: ref) { touched.formUnion(plansByRef[neighbor] ?? []) }
+            }
+            if touched.count == 1, let plan = touched.first {
+                attached[plan, default: []] += component
+            } else if component.count > 1 {
+                stacks.append(component)
+            } else {
+                alone += component
+            }
+        }
+        var missions = orders.plans.map { board.mission(for: $0, orders: orders, attached: attached[$0.id] ?? [], now: now) }
+        missions += stacks.map(board.stackMission)
+        missions += board.familyMissions(alone)
+        for index in missions.indices {
+            missions[index].isFocused = missions[index].key == focus
+        }
+        return missions.sorted(by: showsFirst)
+    }
+
+    /// The one you focus on first, then those still going, then those with an order; the most pressing for you first, then
+    /// the latest.
+    static func showsFirst(_ lhs: OrderMission, _ rhs: OrderMission) -> Bool {
+        if lhs.isFocused != rhs.isFocused { return lhs.isFocused }
+        if lhs.isFinished != rhs.isFinished { return !lhs.isFinished }
+        if lhs.isFamily != rhs.isFamily { return !lhs.isFamily }
+        let urgency = { (mission: OrderMission) in
+            mission.attention.flatMap { ItemState.allCases.firstIndex(of: $0) } ?? ItemState.allCases.count
+        }
+        if urgency(lhs) != urgency(rhs) { return urgency(lhs) < urgency(rhs) }
+        if lhs.date != rhs.date { return (lhs.date ?? .distantPast) > (rhs.date ?? .distantPast) }
+        return lhs.key.description < rhs.key.description
+    }
+}
+
+/// What the missions are made of: the sources' pull requests, what BriefBar saw become of them, and the order it sees.
+private struct Board {
+    struct StackPlace: Equatable {
+        var stack: String
+        var position: Int
+    }
+
+    let facts: OrderFacts
+    let evidence: OrderEvidence
+    let inferred: [OrderEdge: Set<OrderOrigin>]
+    let stackStates: [ItemRef: PullRequestState]
+    let stackPlaces: [ItemRef: StackPlace]
+    /// What BriefBar sees go before each pull request, and after it.
+    let before: [ItemRef: Set<ItemRef>]
+    let after: [ItemRef: Set<ItemRef>]
+
+    init(facts: OrderFacts, evidence: OrderEvidence) {
+        self.facts = facts
+        self.evidence = evidence
+        inferred = OrderInference.edges(facts)
+        stackStates = facts.stackStates
+        var places: [ItemRef: StackPlace] = [:]
+        for pullRequest in facts.pullRequests.values.sorted(by: { $0.ref < $1.ref }) {
+            guard let stack = pullRequest.stack else { continue }
+            for member in stack.members where places[member.ref] == nil {
+                places[member.ref] = StackPlace(stack: "\(stack.repository)#\(stack.number)", position: member.position)
+            }
+        }
+        stackPlaces = places
+        var before: [ItemRef: Set<ItemRef>] = [:]
+        var after: [ItemRef: Set<ItemRef>] = [:]
+        for edge in inferred.keys {
+            before[edge.after, default: []].insert(edge.before)
+            after[edge.before, default: []].insert(edge.after)
+        }
+        self.before = before
+        self.after = after
+    }
+
+    /// Every pull request the sources show, those only a GitHub stack shows included.
+    var known: Set<ItemRef> {
+        Set(facts.pullRequests.keys).union(stackStates.keys)
+    }
+
+    func neighbors(of ref: ItemRef) -> Set<ItemRef> {
+        before[ref, default: []].union(after[ref, default: []])
+    }
+
+    /// What BriefBar knows of a pull request: where its source, or its GitHub stack, shows it stands now; else what
+    /// BriefBar saw become of it; else nothing. One that's gone from a list hasn't merged or closed for all that.
+    func status(_ ref: ItemRef) -> OrderStatus {
+        if let pullRequest = facts.pullRequests[ref] { return OrderStatus(pullRequest.state) }
+        if let state = stackStates[ref] { return OrderStatus(state) }
+        if let record = evidence.records[ref] { return record.outcome == .merged ? .merged : .closed }
+        return .unknown(facts.sourcesOn.contains(ref.kind) ? .notListed : .sourceOff)
+    }
+
+    /// Why BriefBar sees one go before the other, what says the most first.
+    func origins(_ earlier: ItemRef, _ later: ItemRef) -> [OrderOrigin] {
+        OrderOrigin.ordered(inferred[OrderEdge(earlier, later)] ?? [])
+    }
+
+    /// The groups of these that BriefBar sees stacked together, each in reference order, the groups by their first.
+    func components(of refs: Set<ItemRef>) -> [[ItemRef]] {
+        var seen: Set<ItemRef> = []
+        var components: [[ItemRef]] = []
+        for start in refs.sorted() where seen.insert(start).inserted {
+            var component: [ItemRef] = []
+            var pending = [start]
+            while let ref = pending.popLast() {
+                component.append(ref)
+                for neighbor in neighbors(of: ref).sorted() where refs.contains(neighbor) && seen.insert(neighbor).inserted {
+                    pending.append(neighbor)
+                }
+            }
+            components.append(component.sorted())
+        }
+        return components
+    }
+
+    /// Lower in the same GitHub stack first, else the one opened first, else by reference.
+    func isEarlier(_ lhs: ItemRef, _ rhs: ItemRef) -> Bool {
+        if let left = stackPlaces[lhs], let right = stackPlaces[rhs], left.stack == right.stack, left.position != right.position {
+            return left.position < right.position
+        }
+        switch (facts.pullRequests[lhs]?.createdAt, facts.pullRequests[rhs]?.createdAt) {
+        case let (left?, right?) where left != right: return left < right
+        case (.some, nil): return true
+        case (nil, .some): return false
+        default: return lhs < rhs
+        }
+    }
+
+    /// Where a pull request stands in its order, from what goes before it there: only a merge BriefBar saw counts.
+    /// - Parameter declared: in a session's order, where one with nothing before or after it merges any time.
+    func standing(
+        of ref: ItemRef, prerequisites: [ItemRef], hasDependents: Bool, declared: Bool, cycle: [ItemRef]?
+    ) -> OrderStanding {
+        switch status(ref) {
+        case .merged: return .merged
+        case .closed: return .closed
+        case .unknown(let unseen): return .notVisible(unseen)
+        case .open, .draft: break
+        }
+        if let cycle { return .inCycle(with: cycle.filter { $0 != ref }) }
+        if let closed = prerequisites.first(where: { status($0) == .closed }) { return .prerequisiteClosed(closed) }
+        if let merged = prerequisites.first(where: { status($0) == .merged && stillTargets(ref, branchOf: $0) }) {
+            return .retarget(after: merged, to: mergedInto(merged, below: ref))
+        }
+        let open = prerequisites.filter { status($0).isOpen }
+        let unknown = prerequisites.filter { status($0).isUnknown }
+        if !open.isEmpty { return .waiting(open: open, unknown: unknown) }
+        if !unknown.isEmpty { return .unresolved(unknown) }
+        return declared && prerequisites.isEmpty && !hasDependents ? .anyTime : .next
+    }
+
+    /// Whether it still targets the branch of one that merged, in that one's repository.
+    func stillTargets(_ ref: ItemRef, branchOf merged: ItemRef) -> Bool {
+        guard let pullRequest = facts.pullRequests[ref], let below = facts.pullRequests[merged],
+              pullRequest.repository == below.repository
+        else { return false }
+        let branch = OrderInference.branchKey(below.sourceBranch)
+        return !branch.isEmpty && OrderInference.branchKey(pullRequest.targetBranch) == branch
+    }
+
+    /// The branch one that merged went into, to retarget the one above it to: as its source shows it, or else its GitHub
+    /// stack's base. Never a guess, such as main.
+    func mergedInto(_ merged: ItemRef, below ref: ItemRef) -> String? {
+        if let target = facts.pullRequests[merged].map({ BranchHint.name($0.targetBranch) }), !target.isEmpty { return target }
+        let base = (facts.pullRequests[merged]?.stack ?? facts.pullRequests[ref]?.stack)?.baseBranch.map(BranchHint.name)
+        return base?.isEmpty == false ? base : nil
+    }
+
+    /// That its changes show against the branch of an open pull request BriefBar sees it target.
+    func showsAgainst(_ ref: ItemRef) -> [OrderNote] {
+        before[ref, default: []].sorted()
+            .filter { inferred[OrderEdge($0, ref)]?.contains(.branch) == true && status($0).isOpen }
+            .map(OrderNote.showsAgainst)
+    }
+
+    /// When a session suggested reviewing a pull request, without what it said to wait for that has merged or closed since.
+    func review(_ timing: ReviewTiming?) -> ReviewTiming? {
+        guard case .after(let refs, let reason) = timing else { return timing }
+        let left = refs.filter { !status($0).hasEnded }
+        return left.isEmpty ? nil : .after(left, reason)
+    }
+
+    /// What the open pull requests among these mean for you, the most pressing.
+    func attention(_ refs: [ItemRef]) -> ItemState? {
+        let states = refs.filter { status($0).isOpen }.compactMap { facts.pullRequests[$0]?.attention }
+        return ItemState.allCases.first { states.contains($0) }
+    }
+
+    func newest(_ refs: [ItemRef]) -> Date? {
+        refs.compactMap { facts.pullRequests[$0]?.createdAt }.max()
+    }
+
+    func cycleMembers(_ cycles: [[ItemRef]]) -> [ItemRef: [ItemRef]] {
+        var members: [ItemRef: [ItemRef]] = [:]
+        for cycle in cycles {
+            for ref in cycle { members[ref] = cycle }
+        }
+        return members
+    }
+}
+
+// MARK: Building missions
+
+extension Board {
+    /// A session's order: its pull requests in the order it gave, those it puts nothing before or after last, numberless;
+    /// with the pull requests it doesn't name that are stacked with its own, apart.
+    func mission(for plan: OrderPlan, orders: DeclaredOrders, attached: [ItemRef], now: Date) -> OrderMission {
+        let refs = plan.refs
+        let place = Dictionary(refs.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        var prerequisites: [ItemRef: [ItemRef]] = [:]
+        var dependents: Set<ItemRef> = []
+        for entry in plan.entries {
+            prerequisites[entry.ref] = entry.after
+            dependents.formUnion(entry.after)
+        }
+        let (order, cycles) = OrderGraph.ordered(refs, before: prerequisites) { place[$0, default: 0] < place[$1, default: 0] }
+        let inCycle = cycleMembers(cycles)
+        let anyTime = Set(refs.filter { prerequisites[$0, default: []].isEmpty && !dependents.contains($0) })
+        var steps: [OrderStep] = []
+        for ref in order where !anyTime.contains(ref) {
+            guard let entry = plan.entry(for: ref) else { continue }
+            steps.append(step(
+                entry, of: plan, orders: orders, number: steps.count + 1, hasDependents: dependents.contains(ref), cycle: inCycle[ref]
+            ))
+        }
+        for entry in plan.entries where anyTime.contains(entry.ref) {
+            steps.append(step(entry, of: plan, orders: orders, number: nil, hasDependents: false, cycle: nil))
+        }
+        let group = Set(refs).union(attached)
+        let isFinished = !steps.isEmpty && steps.allSatisfy { $0.status.hasEnded }
+        return OrderMission(
+            key: .plan(plan.id),
+            kind: .declared(id: plan.id, revision: plan.revision, declaredBy: plan.declaredBy, updatedAt: plan.updatedAt),
+            steps: steps, attached: attached.sorted(by: isEarlier).map { attachedStep($0, among: group) }, cycles: cycles,
+            isFocused: false, isFinished: isFinished,
+            isStale: !isFinished && now.timeIntervalSince(plan.updatedAt) > DeclaredOrders.staleAfter,
+            attention: attention(refs), date: plan.updatedAt
+        )
+    }
+
+    /// One of a session's order's pull requests: what the order puts before it, with what BriefBar sees too; and where
+    /// BriefBar sees one of the order's own go before it when the order doesn't say so, which the order decides.
+    func step(
+        _ entry: OrderPlan.Entry, of plan: OrderPlan, orders: DeclaredOrders, number: Int?, hasDependents: Bool, cycle: [ItemRef]?
+    ) -> OrderStep {
+        let ref = entry.ref
+        let prerequisites = entry.after.map { earlier in
+            OrderPrerequisite(ref: earlier, origins: [.declared(revision: plan.revision)] + origins(earlier, ref), status: status(earlier))
+        }
+        var notes = showsAgainst(ref)
+        for earlier in before[ref, default: []].sorted() where plan.contains(earlier) && !plan.puts(earlier, before: ref) {
+            if let origin = origins(earlier, ref).first { notes.append(.orderDisagrees(earlier, origin)) }
+        }
+        let others = orders.plans.filter { $0.id != plan.id && $0.contains(ref) }.map(\.id)
+        if !others.isEmpty { notes.append(.alsoIn(others)) }
+        return OrderStep(
+            ref: ref, number: number, status: status(ref),
+            standing: standing(of: ref, prerequisites: entry.after, hasDependents: hasDependents, declared: true, cycle: cycle),
+            prerequisites: prerequisites, review: review(entry.review), notes: notes
+        )
+    }
+
+    /// A pull request the order doesn't name, with how it's stacked with the others.
+    func attachedStep(_ ref: ItemRef, among group: Set<ItemRef>) -> OrderStep {
+        var notes: [OrderNote] = []
+        for earlier in before[ref, default: []].sorted() where group.contains(earlier) {
+            if let origin = origins(earlier, ref).first { notes.append(.stackedWith(earlier, comesAfter: true, origin)) }
+        }
+        for later in after[ref, default: []].sorted() where group.contains(later) {
+            if let origin = origins(ref, later).first { notes.append(.stackedWith(later, comesAfter: false, origin)) }
+        }
+        return OrderStep(ref: ref, status: status(ref), standing: .notInOrder, notes: notes)
+    }
+
+    /// Pull requests BriefBar sees stacked together that no order names, in their order, each with a place: a GitHub
+    /// stack, by its number, or a chain of branches, by its earliest pull request.
+    func stackMission(_ refs: [ItemRef]) -> OrderMission {
+        let members = Set(refs)
+        var prerequisites: [ItemRef: [ItemRef]] = [:]
+        var dependents: Set<ItemRef> = []
+        for ref in refs {
+            let earlier = before[ref, default: []].filter(members.contains).sorted(by: isEarlier)
+            prerequisites[ref] = earlier
+            dependents.formUnion(earlier)
+        }
+        let (order, cycles) = OrderGraph.ordered(refs, before: prerequisites, isEarlier: isEarlier)
+        let inCycle = cycleMembers(cycles)
+        let steps = order.enumerated().map { index, ref in
+            let earlier = prerequisites[ref, default: []]
+            return OrderStep(
+                ref: ref, number: index + 1, status: status(ref),
+                standing: standing(
+                    of: ref, prerequisites: earlier, hasDependents: dependents.contains(ref), declared: false, cycle: inCycle[ref]
+                ),
+                prerequisites: earlier.map { OrderPrerequisite(ref: $0, origins: origins($0, ref), status: status($0)) },
+                notes: showsAgainst(ref)
+            )
+        }
+        let stacks = refs.compactMap { facts.pullRequests[$0]?.stack }
+        let key: MissionKey
+        if let stack = stacks.min(by: { ($0.number, $0.repository) < ($1.number, $1.repository) }) {
+            key = .stack(repository: stack.repository, number: stack.number)
+        } else {
+            key = .chain(refs.min(by: isEarlier) ?? refs[0])
+        }
+        return OrderMission(
+            key: key, kind: .stack, steps: steps, attached: [], cycles: cycles, isFocused: false,
+            isFinished: steps.allSatisfy { $0.status.hasEnded }, isStale: false, attention: attention(refs), date: newest(refs)
+        )
+    }
+
+    /// Open pull requests that no order names and that BriefBar sees stacked with none, grouped one level up from the
+    /// session that opened each: under the session that coordinates it, or else the one that started it, or else that
+    /// session itself. Never higher, since a session at the top may coordinate a project's work for months. Only two or
+    /// more together, with no order.
+    func familyMissions(_ refs: [ItemRef]) -> [OrderMission] {
+        var openers: [ItemRef: OrderSession] = [:]
+        for session in facts.sessions.values.sorted(by: { $0.ref < $1.ref }) {
+            for ref in session.pullRequests where openers[ref] == nil { openers[ref] = session }
+        }
+        var groups: [ItemRef: [ItemRef]] = [:]
+        for ref in refs {
+            guard facts.pullRequests[ref]?.state.isOpen == true, let opener = openers[ref] else { continue }
+            groups[opener.coordinator ?? opener.parent ?? opener.ref, default: []].append(ref)
+        }
+        return groups.keys.sorted().compactMap { session in
+            guard let refs = groups[session], refs.count > 1 else { return nil }
+            return OrderMission(
+                key: .family(session), kind: .family(session: session),
+                steps: refs.sorted(by: isEarlier).map { OrderStep(ref: $0, status: status($0), standing: .unordered) },
+                attached: [], cycles: [], isFocused: false, isFinished: false, isStale: false, attention: attention(refs),
+                date: newest(refs)
+            )
+        }
+    }
+}
+
+// MARK: - Words
+
+/// What the order says, in BriefBar's words, for its page and for agents: pull requests by their numbers, never their
+/// titles. Where one stands in its order is about merging only, beside what its source says, which it never repeats.
+public enum OrderText {
+    /// "!4101", "!4101 and !4102", "!4101, !4102 and !4103", each named as it reads beside `subject`.
+    public static func list(_ refs: [ItemRef], near subject: ItemRef? = nil) -> String {
+        join(refs.map { $0.orderLabel(near: subject) })
+    }
+
+    static func join(_ words: [String]) -> String {
+        switch words.count {
+        case 0: return ""
+        case 1: return words[0]
+        default: return words.dropLast().joined(separator: ", ") + " and " + words[words.count - 1]
+        }
+    }
+
+    /// Where a step stands in its order, "Merge after !4101"; nil when its notes say it all, or it has no order.
+    public static func standing(_ step: OrderStep) -> String? {
+        standing(step.standing, of: step.ref)
+    }
+
+    public static func standing(_ standing: OrderStanding, of ref: ItemRef) -> String? {
+        switch standing {
+        case .merged:
+            return "Merged"
+        case .closed:
+            return "Closed without merging"
+        case .notVisible(.notListed):
+            return "BriefBar can't see it now"
+        case .notVisible(.sourceOff):
+            return "\(source(of: ref)) is off in BriefBar"
+        case .next:
+            return "Next to merge"
+        case .anyTime:
+            return "Any time"
+        case .waiting(let open, let unknown):
+            let after = "Merge after \(list(open + unknown, near: ref))"
+            return unknown.isEmpty ? after : "\(after) · \(cantSee(unknown, near: ref))"
+        case .unresolved(let unknown):
+            return "Merge after \(list(unknown, near: ref)) · \(cantSee(unknown, near: ref))"
+        case .prerequisiteClosed(let earlier):
+            return "\(earlier.orderLabel(near: ref)) was closed without merging: check the order"
+        case .retarget(let earlier, let branch):
+            let label = earlier.orderLabel(near: ref)
+            return "\(label) merged: retarget it to \(branch ?? "the branch \(label) merged into")"
+        case .inCycle(let others):
+            return "It and \(list(others, near: ref)) go before each other: check the order"
+        case .notInOrder, .unordered:
+            return nil
+        }
+    }
+
+    /// When a session suggested reviewing a pull request, and why, as advice: "Review after !4102: it builds on !4102's
+    /// changes, which may still change".
+    /// - Parameter session: the name of the session whose order it is, when known.
+    public static func review(_ timing: ReviewTiming, of ref: ItemRef, session: String? = nil) -> String {
+        switch timing {
+        case .now:
+            return session.map { "‘\($0)’ says it can be reviewed now" } ?? "Its order says it can be reviewed now"
+        case .after(let refs, let reason):
+            let names = list(refs, near: ref)
+            let one = refs.count == 1
+            let why = switch reason {
+            case .buildsOnChanges:
+                one ? "it builds on \(names)'s changes, which may still change" : "it builds on their changes, which may still change"
+            case .sameCode:
+                one ? "it changes the same code as \(names)" : "it changes the same code as they do"
+            case .stackedDiff:
+                one ? "its changes include \(names)'s until \(names) merges" : "its changes include theirs until they merge"
+            case .needsDecision:
+                one ? "it depends on a decision in \(names)" : "it depends on decisions in them"
+            }
+            return "Review after \(names): \(why)"
+        }
+    }
+
+    /// A note, as a fact: "Its changes show against !4101's branch, which may still change".
+    public static func note(_ note: OrderNote, of ref: ItemRef) -> String {
+        switch note {
+        case .showsAgainst(let earlier):
+            return "Its changes show against \(earlier.orderLabel(near: ref))'s branch, which may still change"
+        case .orderDisagrees(let earlier, let origin):
+            let label = earlier.orderLabel(near: ref)
+            if case .gitHubStack(let number, _, _) = origin {
+                return "GitHub stack \(number) puts it after \(label); its order doesn't"
+            }
+            return "It targets \(label)'s branch; its order doesn't put it after \(label)"
+        case .alsoIn(let plans):
+            return plans.count == 1 ? "Also in another order" : "Also in \(plans.count) other orders"
+        case .stackedWith(let other, let comesAfter, let origin):
+            let label = other.orderLabel(near: ref)
+            if case .gitHubStack(let number, _, _) = origin {
+                return "\(comesAfter ? "After" : "Before") \(label) in GitHub stack \(number)"
+            }
+            return comesAfter ? "Targets \(label)'s branch" : "\(label) targets its branch"
+        }
+    }
+
+    /// Why one merges after the other, for a tooltip: "Its order says so (revision 3)", "It targets !4101's branch",
+    /// "GitHub stack 41, 3 of 4".
+    public static func origin(_ origin: OrderOrigin, earlier: ItemRef, later: ItemRef) -> String {
+        switch origin {
+        case .declared(let revision): return "Its order says so (revision \(revision))"
+        case .branch: return "It targets \(earlier.orderLabel(near: later))'s branch"
+        case .gitHubStack(let number, let position, let size): return "GitHub stack \(number), \(position) of \(size)"
+        }
+    }
+
+    /// "!4101 and !4102 go before each other: check the order".
+    public static func cycle(_ refs: [ItemRef]) -> String {
+        "\(list(refs, near: refs.first)) go before each other: check the order"
+    }
+
+    static func cantSee(_ refs: [ItemRef], near ref: ItemRef) -> String {
+        "BriefBar can't see whether \(list(refs, near: ref)) merged"
+    }
+
+    static func source(of ref: ItemRef) -> String {
+        ref.kind == .gitHubPullRequest ? "GitHub" : "Azure DevOps"
+    }
+}
