@@ -16,7 +16,7 @@ import Testing
     }
 
     @Test func listsWhatTheMenuBarCountsByState() {
-        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true))
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), summarizer: .withoutModel)
         source.start()
         defer { source.stop() }
 
@@ -39,7 +39,7 @@ import Testing
     }
 
     @Test func saysTheSamePullRequestsInTheBriefAndAsksTheModelOnlyWithSummaries() {
-        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true))
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), summarizer: .withoutModel)
         source.start()
         defer { source.stop() }
 
@@ -59,7 +59,7 @@ import Testing
 
     @Test func readableWidgetsGrowWithoutStartingASourceOrChangingOtherSettings() {
         let services = AppServices(defaults: MemoryDefaults(), isDemo: true)
-        let source = AzureDevOpsSource(services: services)
+        let source = AzureDevOpsSource(services: services, summarizer: .withoutModel)
         for section in [SectionID.azureDevOpsPullRequests, .azureDevOpsSprint, .azureDevOpsPipelines] {
             let height = source.widgetHeight(for: section, rows: 3)
             #expect(height == 162)
@@ -77,7 +77,7 @@ import Testing
 
     /// Turning Summaries off asks lists to look again at once, though no pull request changed.
     @Test func listsLookAgainWhenSummariesChange() async {
-        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true))
+        let source = AzureDevOpsSource(services: AppServices(defaults: MemoryDefaults(), isDemo: true), summarizer: .withoutModel)
         source.start()
         defer { source.stop() }
         final class Count: @unchecked Sendable { var value = 0 }

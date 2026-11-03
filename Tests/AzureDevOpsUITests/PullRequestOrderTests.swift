@@ -24,7 +24,7 @@ import Testing
     }
 
     @Test func byDateListsTheSamePullRequestsByWhenEachWasCreated() async {
-        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), mode: .demo)
+        let store = PRStore(settings: AppSettings(defaults: MemoryDefaults()), summarizer: .withoutModel, mode: .demo)
         await store.loadOnce()
         #expect(!store.items.isEmpty)
         #expect(store.items(by: .status) == store.items)
