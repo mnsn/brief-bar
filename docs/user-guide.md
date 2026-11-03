@@ -313,19 +313,20 @@ it, are in the same order, and Done's stay apart, the latest first. BriefBar kee
 **Click a pull request on the window's page** to see its details beside the list, without leaving
 BriefBar, or over it when the window is narrow: where it stands and since when, its branch and who wrote
 it, and **✨ Summarize**; **What's Left**, as its row's line says it, each item saying when it's **Your
-turn**, and taking you to its comments, builds or reviewers; its comment threads, with where each is and
-what everyone said, the ones that wait on you first and the resolved ones behind **Show Resolved**; its
-builds and checks, what failed first, with where a build failed and its first error; who reviews it,
-which reviewers it requires and how each voted; and, with [Show Links](#links) on, the work items,
-Copilot sessions and pull requests linked to it, which open in the details too, one of your pull requests
-with the same details as its own, **‹**, **⌘[** or **Esc** going back. **↗**
-opens the pull request in Azure DevOps, at the comment that needs you, as **Open in Azure DevOps** in its
-menu does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu, with Copilot's actions while
-Send Work to Copilot is on. The details show what BriefBar already read, so they read nothing more, and
-showing them sees the pull request, as opening it does: while they show it, what was new in its threads stays
-new, and where it was, rather than folding away as you read it, until you remove it from Needs You. Drag their
-left edge to make them wider or narrower: BriefBar keeps the width, separately from the Sprint page's details,
-and double-clicking the edge brings back the usual one. **✕** or **Esc** closes them.
+turn**, and taking you to its comments, builds or reviewers; its comment threads, by file, in the order
+its change lists them, those on the pull request itself first, and in each file the ones that wait on you
+first, the resolved ones behind **Show Resolved**; its builds and checks, what failed first, with where a
+build failed and its first error; who reviews it, which reviewers it requires and how each voted; and,
+with [Show Links](#links) on, the work items, Copilot sessions and pull requests linked to it, which open
+in the details too, one of your pull requests with the same details as its own, **‹**, **⌘[** or **Esc**
+going back. **↗** opens the pull request in Azure DevOps, at the comment that needs you, as **Open in
+Azure DevOps** in its menu does, and ↗ on a thread or a build opens that one; **⋯** has the row's menu,
+with Copilot's actions while Send Work to Copilot is on. The details show what BriefBar already read, and
+read nothing more but the code that comments are on (below), and showing them sees the pull request, as
+opening it does: while they show it, what was new in its threads stays new, and where it was, rather than
+folding away as you read it, until you remove it from Needs You. Drag their left edge to make them wider
+or narrower: BriefBar keeps the width, separately from the Sprint page's details, and double-clicking the
+edge brings back the usual one. **✕** or **Esc** closes them.
 
 **Open a pull request from anywhere else** and its details show here too, at the comment or the run it's
 about: from the window's **Overview** and its brief, the **Notifications** page, and the **Pipelines**
@@ -338,6 +339,24 @@ BriefBar** in Azure DevOps' settings: then those show its details in BriefBar's 
 about, while a window shows the Pull Requests page. Either way, its menu has both: **Show in BriefBar**, or
 **Show Details** in the window, and **Open in Azure DevOps**, which opens it where its row does, at the comment
 that needs you or the run after its merge, from the Pipelines page's cards too.
+
+**Each comment thread shows as its reviewer saw it in Azure DevOps.** A thread on code shows the lines it's
+on, with a few around them, as they were in the update it was made on: their numbers, before and after the
+change when lines were removed, what was added in green and removed in red, and the lines it's about marked in
+your accent color. Select the code to copy it, without the numbers. A long line scrolls sideways rather than
+wrapping, and while the details are beside the list, **⟷** makes them wide enough for it. When the file
+changed after the comment, the thread says **The code changed since this comment**, or that it may have when
+BriefBar can't tell, with **↗** to see what changed in Azure DevOps. Each comment shows in full, formatted as
+it was written, with who wrote it and when; in a thread of more than three, the first and the latest show, and
+**Show 2 more comments** shows the rest. Each thread says how it stands, **Active**, **Resolved**, **Won't
+fix** and so on, and who it waits on: **Waits on you**, or someone else, such as **Waiting on Sam**, for
+whoever the latest comment mentions, or else whoever has to answer; when the latest comment mentions you, it's
+your turn. BriefBar reads a thread's code only as it comes on screen, in a window you can see, and stops if
+you scroll past it first or minimize, hide or cover the window; it keeps it in memory only, while the details
+show that pull request. VoiceOver reads the code a line at a time, with each line's number, whether it was
+added or removed, and whether the comment is on it. When it can't show a thread's code, such as a file that
+isn't text, it says why in a few words, with **↗** to see it in Azure DevOps, and, when reading it again may
+help, as when you were offline, **↻** to try again.
 
 **Click a build that failed** in a pull request's details, or **Build failed** in What's Left, to find out why
 without leaving BriefBar: it opens under its row, as it does when the pull request opens at it from elsewhere, such
@@ -929,6 +948,10 @@ right-click menu, and Settings › Widgets turns on the **Overview** widget.
   the end of the failed step's log, its failed tests with their messages and stack traces, and the
   pipeline's other runs, to tell whether it's the change's doing. They're kept in memory only, for the
   last 20 builds you opened, until you open others, someone else signs in or you turn Azure DevOps off.
+- **The code a pull request's comments are on** is read only in its details, for each thread on code
+  as it comes on screen: the file it's on, before and after the change the comment was made on, up to
+  1 MB, and which files each of the pull request's updates changed, with the same sign-in and GET
+  requests. It's kept in memory only, while those details show that pull request.
 - **Pull Requests Sent in Chats** reads the notifications that every app posts, not only Teams', and
   only if you turn it on. It keeps only the links to pull requests, with who sent them, in which app
   and chat, and when, never the messages, and only in memory, as it does which of those pull requests

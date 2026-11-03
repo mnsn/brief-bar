@@ -297,6 +297,7 @@ struct WindowView: View {
         } else if let section = content.current, let source = content.model.source(for: section) {
             source.page(for: section)
                 .environment(\.shownSection, section)
+                .environment(\.shownWindow, content.id)
                 .id(section)
         } else {
             VStack(spacing: 8) {

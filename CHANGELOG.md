@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, HTML such as a
+  line break (`<br>`), a table or `<details>` shows as it does in Azure DevOps, and an HTML comment shows
+  nothing, rather than showing as they were written.
+- **See each comment with its code, without opening Azure DevOps.** In a pull request's details, its
+  comment threads now go by file, in the order its change lists them, with those on the pull request
+  itself first. Each thread on code shows the lines it's on as its reviewer saw them, with their numbers,
+  what was added and removed, and the lines it's about marked; long lines scroll sideways, and **⟷**
+  makes the details wide enough for them. When the code changed after the comment, it says so, with
+  **↗** to see what changed. Each comment shows in full, formatted as it was written, and a long thread
+  shows its first and latest comments until you ask for the rest. Each thread also says how it stands
+  and who it waits on: you, or someone else, such as **Waiting on Sam**. BriefBar reads a comment's code
+  only as it comes on screen, and keeps it in memory only while those details show. Since Azure DevOps
+  now reads this, it asks you to look at what it reads once more after the update.
 - **Find out why a build failed without leaving BriefBar.** In a pull request's details, click a build that
   failed, or **Build failed** in What's Left, and it opens in place: its stages, where it failed, from its stage
   to its task, whether it's the change's doing (it built an older commit, it passed on the same commit before
