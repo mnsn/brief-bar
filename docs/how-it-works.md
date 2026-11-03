@@ -2204,8 +2204,9 @@ In a pull request's details, while Send Work to Copilot is on, each open thread'
 while comments wait on you. Each opens a composer in place (`CommentComposer`, over `CopilotPartComposer` and
 `CopilotAskComposer`, which a failed build and conflicts use too, each with what it asks about and the prompts it sends,
 `CopilotAsking`): a field for your words, where it goes, and its button, which Return in the field presses, with a beep
-while it can't send. One is open at a time in the comments (`CopilotComposing`), which keep what you wrote in each until
-you send it (`CopilotDrafts`), and it scrolls itself into view as it opens. Where it goes (`CopilotDestinations`) is
+while it can't send. One is open at a time in the details, in their comments, builds and conflicts alike
+(`CopilotComposing`, which `PullRequestDetailsContent` keeps, as a file's page does its own), which keep what you wrote
+in each until you send it (`CopilotDrafts`), and it scrolls itself into view as it opens. Where it goes (`CopilotDestinations`) is
 first the session that last worked on the thread, as its line says, when the pull request's
 session line knows it, else the pull request's own (`PullRequestSession.pick`), chosen unless the line asks which, or,
 for a fix while it's one of BriefBar's tasks and busy, a fork of it; for a fix, a fork of it and a new session; then the

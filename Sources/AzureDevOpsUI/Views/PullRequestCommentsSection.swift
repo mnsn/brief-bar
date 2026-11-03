@@ -19,14 +19,14 @@ struct PullRequestCommentsSection: View {
     let place: PullRequestDetailsStore.Place?
     /// The thread the details just went to, pointed out for a moment.
     let highlighted: PullRequestDetailsStore.Anchor?
+    /// The composer in place that's open in the details, one at a time in them, so Esc, Return and the keyboard's focus are
+    /// its own; and what you wrote in each.
+    @Binding var composing: CopilotComposing?
+    let drafts: CopilotDrafts
 
     @EnvironmentObject private var store: PRStore
     @EnvironmentObject private var code: PullRequestCodeStore
     @LocalState private var showsResolved = false
-    /// The composer in place that's open in them, one at a time, so Esc, Return and the keyboard's focus are its own; and
-    /// what you wrote in each.
-    @LocalState private var composing: CopilotComposing?
-    @LocalState private var drafts = CopilotDrafts()
 
     var body: some View {
         let threads = panel.threads
@@ -88,9 +88,8 @@ struct PullRequestCommentsSection: View {
             }
             code.release(hold)
         }
-        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens; and all of it as the comments
-        // go, with the details, or for another pull request or page.
-        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
+        // What a composer sends is called off as the comments go, with the details, or for another pull request, file or page;
+        // as it closes, or another opens, the details call it off.
         .onDisappear { drafts.callOffAll() }
     }
 
