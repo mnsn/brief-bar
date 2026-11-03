@@ -199,7 +199,7 @@ private struct BuildHintLine: View {
                 .frame(width: 16)
                 .accessibilityHidden(true)
             // ↗ after a space that doesn't break, so it never ends up alone on a line.
-            (Text(hint.sentence) + (opens ? Text("\u{00A0}") + Text(Image(systemName: "arrow.up.forward")).foregroundStyle(.secondary) : Text("")))
+            (opens ? Text("\(hint.sentence)\u{00A0}\(Text(Image(systemName: "arrow.up.forward")).foregroundStyle(.secondary))") : Text(hint.sentence))
                 .font(size: 12)
                 .foregroundStyle(hint.state.textColor)
                 .fixedSize(horizontal: false, vertical: true)

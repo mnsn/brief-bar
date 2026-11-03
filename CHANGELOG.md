@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **BriefBar now needs macOS 26 or later.** On macOS 15, BriefBar keeps the version it has: its updater doesn't
+  offer this release or any later one.
 - **HTML in work items' Markdown shows as Azure DevOps shows it.** In a work item's details, HTML such as a
   line break (`<br>`), a table or `<details>` shows as it does in Azure DevOps, and an HTML comment shows
   nothing, rather than showing as they were written.

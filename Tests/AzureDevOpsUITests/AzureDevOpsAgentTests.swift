@@ -523,10 +523,12 @@ import Testing
     @Test func quotesCommentsAndSaysWhenTheyCouldntBeRead() throws {
         let now = Date()
         let item = WorkItem(id: 7, organization: "contoso", project: "Storefront", type: "Bug", title: "Totals", state: "New", category: .proposed)
-        let comments = (1...7).map { index in
-            WorkItemDetails.Comment(
-                id: index, author: Person(id: index == 1 ? "me" : "sam", name: index == 1 ? "Robin Diaz" : "Sam Rivera"),
-                createdAt: now.addingTimeInterval(-Double(index) * 3_600), text: RichText(html: "<div>Line \(index)</div><div>More</div>")
+        let comments = (1...7).map { (index: Int) -> WorkItemDetails.Comment in
+            let mine = index == 1
+            let createdAt = now.addingTimeInterval(-3_600 * Double(index))
+            return WorkItemDetails.Comment(
+                id: index, author: Person(id: mine ? "me" : "sam", name: mine ? "Robin Diaz" : "Sam Rivera"),
+                createdAt: createdAt, text: RichText(html: "<div>Line \(index)</div><div>More</div>")
             )
         }
         let details = WorkItemDetails(item: item, comments: comments, commentCount: 9, readAt: now)

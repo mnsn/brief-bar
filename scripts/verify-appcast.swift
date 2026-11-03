@@ -1,8 +1,9 @@
 // Checks a signed appcast before it's published, the way Sparkle checks it in the app, but with
 // only the public EdDSA key: the appcast's signature, and its one update: the download URL, length,
-// version, Apple silicon requirement, and the zip's signature. See SPUExtractAppcastContent and
-// SUSignatureVerifier in Sparkle.
-//   swift scripts/verify-appcast.swift <appcast.xml> <zip> <download URL prefix> <public key> <version>
+// version, Apple silicon requirement, minimum macOS, and the zip's signature. See SPUExtractAppcastContent
+// and SUSignatureVerifier in Sparkle.
+//   swift scripts/verify-appcast.swift <appcast.xml> <zip> <download URL prefix> <public key> <version> <minimum macOS>
+// The minimum macOS is the app's LSMinimumSystemVersion, such as 26.0.
 import CryptoKit
 import Foundation
 
@@ -20,11 +21,11 @@ func read(_ path: String) -> Data {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard arguments.count == 5 else {
-    fail("usage: verify-appcast.swift <appcast.xml> <zip> <download URL prefix> <public key> <version>")
+guard arguments.count == 6 else {
+    fail("usage: verify-appcast.swift <appcast.xml> <zip> <download URL prefix> <public key> <version> <minimum macOS>")
 }
-let (appcastPath, zipPath, prefix, publicKeyBase64, version) =
-    (arguments[0], arguments[1], arguments[2], arguments[3], arguments[4])
+let (appcastPath, zipPath, prefix, publicKeyBase64, version, minimumSystemVersion) =
+    (arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], arguments[5])
 
 guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
       let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKeyData)
@@ -76,6 +77,11 @@ guard item.elements(forLocalName: "hardwareRequirements", uri: sparkle).count ==
       text("hardwareRequirements") == "arm64" else {
     fail("the update must require Apple silicon (hardwareRequirements=arm64)")
 }
+// Sparkle doesn't offer an update to a Mac on an older macOS, which keeps the version it has.
+guard item.elements(forLocalName: "minimumSystemVersion", uri: sparkle).count == 1,
+      text("minimumSystemVersion") == minimumSystemVersion else {
+    fail("the update must require macOS \(minimumSystemVersion) or later (minimumSystemVersion=\(minimumSystemVersion))")
+}
 guard text("releaseNotesLink") == nil, item.elements(forName: "description").first?.stringValue?.isEmpty == false else {
     fail("the release notes must be embedded in the appcast")
 }
@@ -92,4 +98,4 @@ guard enclosure.attribute(forName: "length")?.stringValue == String(zip.count) e
 }
 verify(enclosure.attribute(forLocalName: "edSignature", uri: sparkle)?.stringValue, for: zip, zipName)
 
-print("Verified \(appcastPath): signed, and offers version \(version) at \(prefix + zipName), signed.")
+print("Verified \(appcastPath): signed, and offers version \(version), for macOS \(minimumSystemVersion) or later, at \(prefix + zipName), signed.")

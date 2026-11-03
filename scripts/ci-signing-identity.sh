@@ -1,6 +1,6 @@
 #!/bin/bash
 # Creates a throwaway keychain holding a throwaway "BriefBar Signing" certificate, for CI and for make package
-# on your Mac, puts it on the keychain search list, where codesign on macOS 15 and 26 looks, and prints its
+# on your Mac, puts it on the keychain search list, where codesign looks, and prints its
 # path. codesign may use its key without asking, so that nothing asks for a password: don't give a build signed
 # with it Full Disk Access. Nothing can export the key. Build with it, then delete it, which takes it off the
 # search list too, and its folder:

@@ -84,7 +84,7 @@ struct LayoutPage: View {
                     .foregroundStyle(.secondary)
             } else {
                 if options.simpleLayoutControls {
-                    // Swift 6.1 can crash emitting the actor-isolation thunk for a method-reference setter.
+                    // Swift 6.1 and 6.3 can crash emitting the actor-isolation thunk for a method-reference setter.
                     Picker("Layout", selection: Binding(get: { layoutChoice }, set: { choice in choose(choice) })) {
                         ForEach(LayoutChoice.allCases, id: \.self) { choice in
                             Text(choice.rawValue).tag(choice)

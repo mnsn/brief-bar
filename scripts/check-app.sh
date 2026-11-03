@@ -6,7 +6,8 @@
 # - Its updater (Contents/Helpers/BriefBar Updater.app) has its own bundle identifier and the same signature, with
 #   the hardened runtime and exactly one entitlement, which turns off library validation for Sparkle, in its own
 #   Frameworks, the only folder it looks in.
-# - It's set up for signed updates. On this Mac it launches, starts the updater, which loads its Sparkle, and sorts
+# - It's set up for signed updates, and BriefBar's Info.plist says the macOS that it and its updater need, which the
+#   appcast says too. On this Mac it launches, starts the updater, which loads its Sparkle, and sorts
 #   every source's demo data into the expected groups. (That the updater can't use BriefBar's permissions is
 #   checked where it shows, in a copy macOS opens: scripts/test-updater-isolation.sh.)
 # - It carries BriefBar's plugins for Copilot (Contents/Resources/CopilotPlugin), at its own version, without their tests.
@@ -41,9 +42,9 @@ fail() {
 }
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "${2:-$PLIST}" 2>/dev/null; }
 requirement() { codesign -d -r- "$1" 2>&1 | sed -n 's/^#* *designated => //p'; }
-# The entitlements of signed code, as JSON, or nothing when it has none. macOS 15's codesign prints nothing then, and
-# its plutil writes its error about that to standard output, so only what codesign printed is converted, and output
-# that plutil can't read fails the check.
+# The entitlements of signed code, as JSON, or nothing when it has none. codesign can print nothing then, and plutil
+# writes its error about that to standard output, so only what codesign printed is converted, and output that plutil
+# can't read fails the check.
 entitlements() {
     local xml json
     xml="$(codesign -d --entitlements - --xml "$1" 2>/dev/null || true)"
@@ -160,10 +161,16 @@ for i in 0 1; do
         fail "has a Copilot plugin, $NAME, at another version than its own, $(plist CFBundleShortVersionString)."
 done
 [[ -z "$(find "$PLUGIN" -name '*.test.*' -print -quit)" ]] || fail "ships the Copilot plugins' tests."
-# Summaries need macOS 26's FoundationModels; linked weakly, the app still opens on macOS 15.
-if otool -l "$BIN" | grep -B2 'FoundationModels.framework' | grep 'cmd LC_LOAD_DYLIB$' >/dev/null; then
-    fail "links FoundationModels strongly, so it won't open before macOS 26."
-fi
+# BriefBar and its updater need the macOS that BriefBar's Info.plist says (LSMinimumSystemVersion), which Sparkle's
+# generate_appcast copies into the appcast, so that a Mac on an older macOS isn't offered an update that won't open.
+minimum_macos() { otool -arch arm64 -l "$1" | awk '$1 == "cmd" { build = ($2 == "LC_BUILD_VERSION") } build && $1 == "minos" { print $2 }'; }
+MINIMUM="$(plist LSMinimumSystemVersion)"
+[[ -n "$MINIMUM" && "$(plist LSMinimumSystemVersion "$UPDATER_PLIST")" == "$MINIMUM" ]] ||
+    fail "has an updater whose LSMinimumSystemVersion isn't BriefBar's (${MINIMUM:-none})."
+for binary in "$BIN" "$UPDATER_BIN"; do
+    [[ "$(minimum_macos "$binary")" == "$MINIMUM" ]] ||
+        fail "${binary#"$APP/"} needs macOS $(minimum_macos "$binary"), but its Info.plist says $MINIMUM (LSMinimumSystemVersion)."
+done
 
 # Running it shows that it launches with library validation on, and starts its updater, which loads its own
 # Sparkle with library validation off.

@@ -174,7 +174,7 @@ and Teams' summaries:
 - Copilot's lines stay in BriefBar's own words.
 
 The model only words the lines BriefBar picked, and only while a list or the window shows them, never
-for the widget. Without Apple Intelligence (macOS 15, Apple Intelligence turned off or
+for the widget. Without Apple Intelligence (on a Mac that can't run it, or with it turned off or
 still getting ready), the brief stays in BriefBar's own words, without ✨, and Settings › Menu Bar says
 why.
 
@@ -243,7 +243,7 @@ restarts or updates.
 
 Each chat shows its newest unread message (with the sender in group chats), how long ago it arrived
 and how many are unread; hover for the last few. Click a chat to open it in Teams at its oldest unread
-message. Click ✨ for a one-sentence summary from Apple's on-device model (macOS 26 or later).
+message. Click ✨ for a one-sentence summary from Apple's on-device model.
 
 Notification Center doesn't record what you've read, so BriefBar decides:
 
@@ -547,10 +547,10 @@ Unless you choose a model, Claude Haiku 5.5 writes it through Copilot when the C
 and Apple Intelligence on your Mac when it isn't. In the picker, you can choose any model through Copilot,
 from Claude Haiku 5.5, the cheapest, to Claude Opus 5.5, the most capable, which costs the most: it gets
 those details through the Copilot CLI, one request on your Copilot plan, at the model's rate, each time
-one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs macOS 26 or
-later and Apple Intelligence on and ready, uses no Copilot requests or subscription, and never Private
-Cloud Compute, but it can take less, so it reads a shorter cut of each thing, and, being a small model,
-it often gets details wrong, even in short histories. Neither gets tools, so it can only write. The card says
+one's written, and the card says so as it opens. Or choose Apple Intelligence, free: it needs Apple
+Intelligence on and ready, uses no Copilot requests or subscription, and never Private Cloud Compute,
+but it can take less, so it reads a shorter cut of each thing, and, being a small model, it often gets
+details wrong, even in short histories. Neither gets tools, so it can only write. The card says
 when it was written, and its tooltip by which model and from what. When one can't be written, it says
 why and what would help: Apple Intelligence isn't available or the item is too long, the Copilot CLI
 isn't signed in, the model isn't on your plan (**Choose Model…**), or your premium requests ran out; one
@@ -836,7 +836,8 @@ keep the extension until they start again.
 
 ## Install
 
-BriefBar needs macOS 15 or later, on Apple silicon (M1 or later). Intel Macs aren't supported.
+BriefBar needs macOS 26 or later, on Apple silicon (M1 or later). Intel Macs aren't supported. A Mac
+on an older macOS keeps the version of BriefBar it has: the updater doesn't offer it newer ones.
 
 To install it with [Homebrew](https://brew.sh), run:
 
@@ -1192,12 +1193,12 @@ flags.
 Apple Intelligence summaries use the languages Apple's on-device model supports, which depend on your
 macOS version. For others it may still
 manage; if not, Teams says it can't summarize that language yet, Azure DevOps shows no brief, and the
-brief across sources keeps BriefBar's own words. These on-device summaries need macOS 26 or later,
-and Apple Intelligence turned on in System Settings. The plain-language brief works without it.
+brief across sources keeps BriefBar's own words. These on-device summaries need Apple Intelligence
+turned on in System Settings. The plain-language brief works without it.
 
 **Summaries** of work items, pull requests and sessions use Apple Intelligence too when the Copilot CLI
 isn't installed, unless you choose a model through Copilot. Through Copilot, they go through the Copilot
-CLI, don't need Apple Intelligence or macOS 26, and their language support depends on that model.
+CLI, don't need Apple Intelligence, and their language support depends on that model.
 
 ### Why isn't it notarized?
 

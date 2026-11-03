@@ -64,7 +64,8 @@ struct PullRequestPanelHeading: View {
     private var standing: some View {
         let state = item.group.state(showToReview: settings.showToReview)
         let since = panel.since.map { (panel.sentence.isEmpty ? "" : " · ") + WorkItemDetailsPanel.ago($0, now: store.now) } ?? ""
-        return (WhereItStandsSection.sentenceText(panel.sentence, state: state) + Text(since).foregroundStyle(.secondary))
+        let sentence = WhereItStandsSection.sentenceText(panel.sentence, state: state)
+        return Text("\(sentence)\(Text(since).foregroundStyle(.secondary))")
             .font(size: 12.5)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)

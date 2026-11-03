@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // The look of BriefBar's windows, and of the pages sources put in them: translucent, with floating panels and
-// frosted cards, in light and dark mode. Liquid Glass from macOS 26; offscreen, for `--render`, plain colors.
+// frosted cards, in light and dark mode. Liquid Glass on screen; offscreen, for `--render`, plain colors.
 
 private struct RenderingKey: EnvironmentKey {
     static let defaultValue = false
@@ -73,7 +73,7 @@ package struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
-/// A floating panel, such as the sidebar: Liquid Glass from macOS 26, a frosted fill before it and offscreen.
+/// A floating panel, such as the sidebar: Liquid Glass, and a frosted fill offscreen, where glass doesn't draw.
 package struct FloatingPanel: ViewModifier {
     var cornerRadius: CGFloat = 20
 
@@ -85,16 +85,10 @@ package struct FloatingPanel: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if options.quietAppearance {
             content.background(Color(nsColor: .controlBackgroundColor), in: shape)
-        } else {
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *), !isRendering {
-                content.glassEffect(.regular, in: shape)
-            } else {
-                frosted(content, shape)
-            }
-            #else
+        } else if isRendering {
             frosted(content, shape)
-            #endif
+        } else {
+            content.glassEffect(.regular, in: shape)
         }
     }
 
@@ -164,7 +158,7 @@ extension View {
         modifier(FloatingPanel(cornerRadius: cornerRadius))
     }
 
-    /// A glass button from macOS 26; a bordered one before it, and offscreen, where glass doesn't draw.
+    /// A glass button, and a bordered one offscreen, where glass doesn't draw.
     package func glassButtonStyle() -> some View {
         modifier(GlassButtonStyle())
     }
@@ -174,15 +168,11 @@ private struct GlassButtonStyle: ViewModifier {
     @Environment(\.isRendering) private var isRendering
 
     func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *), !isRendering {
-            content.buttonStyle(.glass)
-        } else {
+        if isRendering {
             content.buttonStyle(.bordered)
+        } else {
+            content.buttonStyle(.glass)
         }
-        #else
-        content.buttonStyle(.bordered)
-        #endif
     }
 }
 

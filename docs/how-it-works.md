@@ -506,7 +506,7 @@ picker, even the one that was the default, saves it, and it stays whatever's fou
 on/off setting stay as they were, under the same `summaries.copilot.*` preferences; whoever had summaries on in 0.9.0
 with Claude Haiku 5.5, its default then, keeps it while the CLI is there. Apple Intelligence runs through
 `OnDeviceModel` and `SystemLanguageModel.default`, never Private Cloud Compute, with no tools, Copilot requests,
-sign-in or subscription; it needs a supported Mac, macOS 26 or later and Apple Intelligence enabled and ready, and the
+sign-in or subscription; it needs a supported Mac and Apple Intelligence enabled and ready, and the
 setting explains when it isn't available. Opening something writes nothing with a model that can't write it there,
 Apple Intelligence where this Mac can't run it, or one through Copilot where the CLI wasn't found
 (`StorySummaries.canRunModel`), so each thing opened doesn't say so; ✨ still asks, and says why. Local failures never
@@ -986,12 +986,8 @@ The brief asks it the same of the chats it shows, while a list by state or the O
   are kept, each cut at 600, to stay within the model's context window.
 - A summary is kept in memory for as long as it covers the chat's newest message, and never saved.
 - With **Show Message Previews** off, summaries are hidden too, since they'd reveal the same.
-- Without Apple Intelligence (before macOS 26, on a Mac that can't run it, or with it turned off),
-  the setting says why. An unsupported language, a refusal or a busy model shows a short note
-  instead of a summary.
-- FoundationModels is linked weakly, so the app still opens on macOS 15. Built with an SDK that
-  doesn't have it, such as Xcode 16's, the app leaves the summarizer out, and the setting says that
-  summaries need a build made with the macOS 26 SDK.
+- Without Apple Intelligence (on a Mac that can't run it, or with it turned off), the setting says
+  why. An unsupported language, a refusal or a busy model shows a short note instead of a summary.
 
 ### When the formats change
 
@@ -3072,8 +3068,10 @@ when BriefBar does.
   cookies, and the same `Accept-Language` for everyone, and Sparkle's anonymous system profiling stays
   off.
 - **What it accepts**: only an appcast and a zip signed with the project's EdDSA key, and it checks the
-  zip before unpacking it. The appcast requires arm64 hardware, so existing Intel installs aren't
-  offered an incompatible update. [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
+  zip before unpacking it. The appcast requires arm64 hardware and the macOS the app needs
+  (`LSMinimumSystemVersion`), so existing Intel installs aren't offered an incompatible update, and a
+  Mac on an older macOS keeps the version it has.
+  [SECURITY.md](../SECURITY.md#how-updates-are-verified) has the details.
 - **Gently**: right after launch, Sparkle shows a new version itself. A later, scheduled check doesn't
   take the focus from the app you're using: the updater tells BriefBar, and the lists, the window and
   every gear menu say that an update is waiting instead.
@@ -3098,15 +3096,15 @@ when BriefBar does.
   `AzureDevOpsCore` and `GitHubCore` use networking APIs, and only `BriefBarCore` starts programs. It
   also fails if those stop using them, since the check could no longer tell. It reads BriefBar's own
   modules, the updater's included, not Sparkle, whose requests are only for updates.
-- `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar
-  has no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the
-  updater has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in
-  its own `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and
-  its updater contain only arm64 code; a designated requirement that names a certificate, unless
-  `--allow-ad-hoc` says a build of your own may be ad hoc; the update settings (the feed, the
-  signed-appcast keys, and with `--release` the
-  public key); FoundationModels linked weakly so it opens on macOS 15; its Copilot plugins, at its own
-  version, without their tests; and that it runs, starts the updater, which loads Sparkle, and passes the demo check.
+- `scripts/check-app.sh` checks a built app: its signatures and the hardened runtime; that BriefBar has
+  no entitlements and links only Apple's libraries, with no run path or `Frameworks`; that the updater
+  has its own identity, the one entitlement, the same signature as BriefBar, and Sparkle in its own
+  `Frameworks`, without the XPC services, with its license and arm64 code; that BriefBar and its updater
+  contain only arm64 code; a designated requirement that names a certificate, unless `--allow-ad-hoc`
+  says a build of your own may be ad hoc; the update settings (the feed, the signed-appcast keys, and
+  with `--release` the public key); that BriefBar and its updater need the macOS its `Info.plist` says,
+  which the appcast says too; its Copilot plugins, at its own version, without their tests; and that it
+  runs, starts the updater, which loads Sparkle, and passes the demo check.
 - `scripts/test-updater-isolation.sh` (`make updater-check`) shows, on a copy of a build that macOS
   opens, that the updater is responsible for itself and that other code in place of Sparkle never runs
   as BriefBar ([above](#the-hardened-runtime-and-library-validation)). CI runs it on every package.

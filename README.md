@@ -16,7 +16,7 @@
 
 <p align="center">
   or <code>brew install --cask mnsn/tap/briefbar</code><br>
-  <sub>Free and open source · macOS 15 or later · Apple silicon</sub>
+  <sub>Free and open source · macOS 26 or later · Apple silicon</sub>
 </p>
 
 <p align="center">
@@ -111,8 +111,8 @@ requests and sessions get one too: on their page, or under their row from **✨*
 
 | | What you get | Where it runs |
 |---|---|---|
-| **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Claude Haiku 5.5 by default when the Copilot CLI is installed: the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each, and you can choose any model from Haiku, the cheapest, to Claude Opus 5.5, the most capable. Or Apple Intelligence on your Mac, the default without the CLI: free, macOS 26+, with Apple Intelligence available and enabled, and no Copilot requests, but a small model that often gets details wrong. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
-| **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires macOS 26+ with Apple Intelligence available and enabled. |
+| **Summaries** | Summaries of work items, pull requests and sessions as you open them, or only when you ask, using what BriefBar knows about them and their links | Claude Haiku 5.5 by default when the Copilot CLI is installed: the details go through your signed-in Copilot CLI to GitHub Copilot, one request on your Copilot plan each, and you can choose any model from Haiku, the cheapest, to Claude Opus 5.5, the most capable. Or Apple Intelligence on your Mac, the default without the CLI: free, with Apple Intelligence available and enabled, and no Copilot requests, but a small model that often gets details wrong. Either way, nothing from Teams is included and no tools are allowed: summarizing cannot change files or take actions. |
+| **Chat summaries and the brief** | Summaries of unread Teams chats and more concise briefs about what needs you | Apple's on-device model, on your Mac. Requires Apple Intelligence, available and enabled. |
 
 Summaries of your work are written **as you open** a work item's details or a page, never in the
 background, and the card says what it's about to do first, with **Not Now**; or, if you choose, **only
@@ -191,7 +191,7 @@ VS Code and Cursor. Agent tools expose Azure DevOps and Copilot data, not Teams 
 | **GitHub** | Install the GitHub CLI (`brew install gh`) and run `gh auth login`, or use **Sign In…** in Settings. Authorize the CLI for your organization's SSO if needed. |
 | **Copilot sessions** | Your local Copilot app or CLI session files. No extra sign-in for BriefBar to show them. |
 | **Teams** | Grant BriefBar **Full Disk Access** using its setup guide. It reads Teams notifications and local read markers, not your complete chat history. |
-| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence (macOS 26+). |
+| **Connected work and summaries** | Turn on **Show Links**, then optionally **Summaries**, in **Settings › General**. Summaries use Claude Haiku 5.5 through the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) when it's installed and signed in, or another model you choose there; without it, Apple Intelligence. |
 
 You can enable **Launch BriefBar at Login** and allow automatic update checks. Later releases install
 through the built-in updater, even if you installed with Homebrew (`brew upgrade` skips BriefBar
