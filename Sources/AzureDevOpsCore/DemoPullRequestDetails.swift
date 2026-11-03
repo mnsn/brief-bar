@@ -25,7 +25,7 @@ extension DemoData {
                     comment(1, priya, "Is the stub that fails every other call checked in, so that CI runs it too?", 24),
                     comment(2, me, "Yes, it's in tests/Stubs, and it runs with the unit tests.", 23),
                 ]),
-            ]
+            ] + codeThreads(of: number, now: now)
         case 4088:
             return [
                 ReviewThread(id: 43, status: "fixed", filePath: "/src/Delivery/DeliveryEstimate.cs", line: 27, comments: [

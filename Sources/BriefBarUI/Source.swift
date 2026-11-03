@@ -304,6 +304,10 @@ private struct ShownSectionKey: EnvironmentKey {
     static let defaultValue: SectionID? = nil
 }
 
+private struct ShownWindowKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
 extension EnvironmentValues {
     package var panelStyle: PanelStyle {
         get { self[PanelStyleKey.self] }
@@ -314,6 +318,13 @@ extension EnvironmentValues {
     package var shownSection: SectionID? {
         get { self[ShownSectionKey.self] }
         set { self[ShownSectionKey.self] = newValue }
+    }
+
+    /// The window whose page this is, by the ID its `SectionViewer` has: what a source tells it apart by, as a window
+    /// starts or stops showing the page on screen (`sectionVisibilityChanged`). Nil outside a window's page.
+    package var shownWindow: String? {
+        get { self[ShownWindowKey.self] }
+        set { self[ShownWindowKey.self] = newValue }
     }
 }
 

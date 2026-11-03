@@ -202,13 +202,20 @@ public struct ReviewThread: Sendable, Codable, Equatable {
     public var filePath: String?
     public var line: Int?
     public var comments: [ReviewComment]
+    /// Where on its file it is, in full: its lines on each side of the diff, and which diff. Nil for a thread that isn't
+    /// on a file.
+    public var location: Location?
 
-    public init(id: Int, status: String? = "active", filePath: String? = nil, line: Int? = nil, comments: [ReviewComment]) {
+    public init(
+        id: Int, status: String? = "active", filePath: String? = nil, line: Int? = nil, comments: [ReviewComment],
+        location: Location? = nil
+    ) {
         self.id = id
         self.status = status
         self.filePath = filePath
         self.line = line
         self.comments = comments
+        self.location = location
     }
 
     /// Nil when nothing is left once system and deleted comments are removed.
@@ -228,6 +235,7 @@ public struct ReviewThread: Sendable, Codable, Equatable {
                 id: comment.id,
                 author: Person(author),
                 text: CommentText.plain(content, names: names),
+                markdown: CommentText.naming(content, names: names),
                 mentions: CommentText.mentionedIds(content),
                 publishedAt: comment.publishedDate ?? thread.publishedDate ?? .distantPast
             )
@@ -238,7 +246,8 @@ public struct ReviewThread: Sendable, Codable, Equatable {
             status: thread.status,
             filePath: thread.threadContext?.filePath,
             line: thread.threadContext?.rightFileStart?.line ?? thread.threadContext?.leftFileStart?.line,
-            comments: comments.sorted { $0.publishedAt < $1.publishedAt }
+            comments: comments.sorted { $0.publishedAt < $1.publishedAt },
+            location: Location(thread.threadContext, thread.pullRequestThreadContext)
         )
     }
 
@@ -259,14 +268,19 @@ public struct ReviewComment: Sendable, Codable, Equatable {
     public var author: Person
     /// Plain text: markdown and HTML removed, mentions shown as names.
     public var text: String
+    /// All of it, as its author wrote it, in Markdown, with each mention as a name ("@Sam Rivera"), to show with
+    /// `RichText(markdown:)`.
+    public var markdown: String
     /// Lowercased IDs of the people it @mentions.
     public var mentions: [String]
     public var publishedAt: Date
 
-    public init(id: Int, author: Person, text: String, mentions: [String] = [], publishedAt: Date) {
+    /// `markdown` is `text` unless it's given.
+    public init(id: Int, author: Person, text: String, markdown: String? = nil, mentions: [String] = [], publishedAt: Date) {
         self.id = id
         self.author = author
         self.text = text
+        self.markdown = markdown ?? text
         self.mentions = mentions.map { $0.lowercased() }
         self.publishedAt = publishedAt
     }

@@ -206,12 +206,38 @@ struct PullRequestDetailsPanel: View {
         return item.group == .needsYou ? "\(title), at the comment that needs you" : "\(title), at the comment you answered"
     }
 
-    /// "!4102", which the heading under it names in full, or, on a page, the way there: "!4102 › 5160", the pull request
-    /// and each page but the last one going back to it.
+    /// "!4102", which the heading under it names in full; the thread they were taken to after it, "!4102 ›
+    /// PaymentsClient.cs:41", the pull request going back to their top; or, on a page, the way there: "!4102 › 5160", the
+    /// pull request and each page but the last one going back to it.
     @ViewBuilder
     private func crumbs(_ item: PRSnapshot) -> some View {
         let pages = details.pages
-        if pages.isEmpty {
+        if pages.isEmpty, let thread = trailThread(item) {
+            HStack(spacing: 5) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { details.goToTop() }
+                } label: {
+                    Text(verbatim: "!\(item.key.number)")
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Back to the top of " + Self.name(of: item))
+                .layoutPriority(1)
+                Image(systemName: "chevron.right")
+                    .font(size: 8.5, weight: .semibold)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+                // Where its card says it is, where it was made.
+                Text(ThreadCode.place(of: thread.thread) ?? "Comment")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(ThreadCode.placeHelp(of: thread.thread))
+            }
+            .font(size: 12, weight: .medium).monospacedDigit()
+        } else if pages.isEmpty {
             Text(verbatim: "!\(item.key.number)")
                 .font(size: 12, weight: .medium).monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -260,6 +286,14 @@ struct PullRequestDetailsPanel: View {
             }
             .font(size: 12, weight: .medium).monospacedDigit()
         }
+    }
+
+    /// The thread the details were taken to, which the trail names, while they have it.
+    private func trailThread(_ item: PRSnapshot) -> PullRequestPanel.Thread? {
+        guard let id = details.trailThread else { return nil }
+        let record = details.record
+        let panel = PullRequestPanel(item, record: record, events: details.pendingEvents(of: item, record: record))
+        return panel.threads.all.first { $0.id == id }
     }
 
     static func copy(_ text: String) {
