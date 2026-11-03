@@ -384,6 +384,34 @@ import Testing
         #expect(sessions.session(for: first.key)?.delivery != nil && sessions.session(for: second.key)?.delivery != nil)
     }
 
+    /// A session you choose while how work would reach the last one is still being checked is checked once that's done,
+    /// rather than at the next turn.
+    @Test func checksASessionYouChooseWhileAnotherIsChecked() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        let another = other
+        var checked: [String] = []
+        sessions.deliveryCheckedForTests = { id in
+            checked.append(id)
+            // As the session on its branch is checked, you choose another.
+            if checked.count == 1, let choice = sessions.session(for: item.key)?.others.first(where: { $0.id == another }) {
+                sessions.use(choice, for: item.key)
+            }
+        }
+        let following = followOnScreen(sessions, item, record: record)
+        defer { following.cancel() }
+        try await until { checked.count == 2 }
+        #expect(checked == [onBranch, other])
+        try await until { sessions.session(for: item.key)?.session?.id == other && sessions.session(for: item.key)?.delivery != nil }
+        #expect(sessions.session(for: item.key)?.basis == .chosenByYou)
+    }
+
     /// A closed pull request's work goes nowhere: its details show the sessions Show Links links to it, to look at, and
     /// nothing of Copilot's is read for it, though Send Work to Copilot is on.
     @Test func readsNothingForAClosedPullRequest() async throws {

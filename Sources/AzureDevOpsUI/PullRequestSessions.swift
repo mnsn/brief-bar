@@ -307,13 +307,17 @@ final class PullRequestSessions: ObservableObject {
               !checking.contains(key), !unlessKnown || session.delivery == nil
         else { return }
         checking.insert(key)
-        defer { checking.remove(key) }
         deliveryCheckedForTests?(choice.id)
         let value = await copilot.delivery(to: choice, for: PullRequestTasks.task(for: record), checksRepository: false)
-        // Busy says itself as it changes (`update`).
+        checking.remove(key)
         guard !Task.isCancelled, followed[key] != nil, copilot.isOn else { return }
-        if case .busy = value { return }
+        if case .busy = value {
+            // Busy says itself as it changes (`update`); but another session you chose meanwhile is checked now.
+            if sessions[key]?.session?.id != choice.id { update(key) }
+            return
+        }
         followed[key]?.delivery = (choice.id, value)
+        // And another session you chose meanwhile is checked now.
         update(key)
     }
 
