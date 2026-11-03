@@ -49,8 +49,8 @@ struct PullRequestDetailsContent: View {
             // Its summary, of it and what's linked to it, under what it is.
             PageSummary(ref: ref)
             if let readiness = panel.readiness, !readiness.items.isEmpty {
-                PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { section in
-                    details.go(to: .section(section))
+                PullRequestLeftSection(readiness: readiness, copilotAction: copilotAction) { left in
+                    if let place = PullRequestDetailsStore.Place.of(left, in: panel) { details.go(to: place) }
                 }
             }
             PullRequestCommentsSection(item: item, panel: panel, me: record?.me, place: details.place, highlighted: highlighted)

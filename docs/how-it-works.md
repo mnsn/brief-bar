@@ -1355,10 +1355,13 @@ closes it.
 **A build in the details.** One of a pull request's builds that failed, or is still running or queued, opens
 under its row with a click, or Space (`PullRequestPanel.CheckLine.canInvestigate`); one that passed, expired or
 hasn't run, a status check, and the pipelines after a merge, which built the target branch rather than the pull
-request, don't. A place in the details opens its build too: its run, or the details' builds and checks, as
-What's Left's failed build asks, which open the first build that failed. Only then is its run read
-(`BuildInvestigationStore`, through `BuildInvestigator` and `BuildInvestigationReader`), with the requests in the
-table above: its run first, then, at once, its timeline,
+request, don't. A place in the details opens its build too, by its run: **Build failed** in What's Left leads to the
+first required build that failed and can be opened (`PullRequestPanel.build(openedBy:)`); a run on the Pipelines page
+leads to that run; and a failing pull request opened from elsewhere leads to the first of its builds and checks that
+failed (`Place.about`), which opens when it's a build. What's Left's other items about builds and checks, such as
+**Build passed**, only scroll to them. Only then is its run read (`BuildInvestigationStore`, through
+`BuildInvestigator` and `BuildInvestigationReader`), with the requests in the table above: its run first, then, at
+once, its timeline,
 its logs, its test runs, the pipeline's runs on the pull request and its latest finished ones on the target
 branch, then the end of the failed step's log and the failed tests of its first test runs with failures: ten
 requests, and one more for each hundred test runs past the first hundred, up to five hundred. What was read is
@@ -1372,8 +1375,10 @@ finished or runs again under the same ID; and a push or a retarget of its pull r
 which says again whether the run built the latest commit, or reads it for the new target branch: at once while
 it's open, or as it opens again (`BuildInvestigationStore.Stamp`). The investigator shares a read under way with
 whoever asks for the run meanwhile, even to read it anew, so a read asked for then waits for it, and starts after.
-Showing another pull request, or closing the details, folds the builds and lets go of what shows of them. It
-shows, from what was read (`BuildInvestigationPanel.swift`): its stages, as the
+Only one pull request's builds are open at a time, wherever its details show, beside the list or as a page over a
+work item's or another pull request's: opening one of another's folds them, and so do the details beside the list
+showing another pull request, or closing, for the one they showed; what shows of them goes. It shows, from what was
+read (`BuildInvestigationPanel.swift`): its stages, as the
 Pipelines page draws them (`StageFlow`); where it failed, from its stage to its task, without a name said twice
 in a row (`failurePlace`), or what it does while it's going (`progress`); whether it's the change's doing, the
 comparison's hints (`BuildHint`), each a sentence in its state's color, orange for an older commit or a pass on

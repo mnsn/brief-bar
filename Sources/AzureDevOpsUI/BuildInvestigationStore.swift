@@ -7,9 +7,10 @@ import Foundation
 /// what it read for a while, and opening the run again asks it again, so what it keeps answers while it's fresh, and the
 /// run is read anew once it isn't: what was read before shows meanwhile. A run whose check changed since, as when it
 /// finished or runs again, is read anew, and one whose pull request has other commits, or another target branch, is asked
-/// for again, which revises what's kept, or reads it for that branch: at once while it's open, or as it opens. Only the
-/// pull request whose details show has builds open: showing another, or closing them, folds them and lets go of what was
-/// read for them here.
+/// for again, which revises what's kept, or reads it for that branch: at once while it's open, or as it opens. Only one
+/// pull request's builds are open at a time, wherever its details show, beside the list or as a page: opening one of
+/// another's folds them, and so does the details beside the list showing another pull request, or closing, for the one
+/// they showed; what was read for them here goes.
 @MainActor
 final class BuildInvestigationStore: ObservableObject {
     /// What's read of a run, for its row.
@@ -192,6 +193,13 @@ final class BuildInvestigationStore: ObservableObject {
         guard key != pullRequest else { return }
         letGo()
         pullRequest = key
+    }
+
+    /// Details stopped showing a pull request, as when they show another or close: its builds fold, and what was read of
+    /// them goes, unless another's opened since.
+    func close(_ key: PRKey) {
+        guard pullRequest == key else { return }
+        show(nil)
     }
 
     /// Someone signed in to the Azure CLI, as the pull requests' refresh tells. When it's someone else than before, nothing

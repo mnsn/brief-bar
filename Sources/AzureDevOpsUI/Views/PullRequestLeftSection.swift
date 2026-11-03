@@ -12,8 +12,8 @@ struct PullRequestLeftSection: View {
     /// What the task Copilot is at work on for it does, while Send Work to Copilot is on: what it takes care of is
     /// Copilot's turn.
     var copilotAction: PullRequestAction?
-    /// Takes the details to one of their parts.
-    let go: (PullRequestPanel.Section) -> Void
+    /// Takes the details to where an item leads (`PullRequestDetailsStore.Place.of(_:in:)`).
+    let go: (PRReadiness.Item) -> Void
 
     var body: some View {
         let left = readiness.left.count
@@ -56,7 +56,7 @@ private struct LeftRow: View {
     let section: PullRequestPanel.Section?
     /// Copilot's at work on it.
     let isCopilots: Bool
-    let go: (PullRequestPanel.Section) -> Void
+    let go: (PRReadiness.Item) -> Void
 
     @LocalState private var isHovered = false
 
@@ -74,7 +74,7 @@ private struct LeftRow: View {
     var body: some View {
         if let section {
             Button {
-                go(section)
+                go(item)
             } label: {
                 row
             }

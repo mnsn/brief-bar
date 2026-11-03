@@ -13,7 +13,7 @@ struct PullRequestChecksSection: View {
     /// What the list read of it: a build is read, to open it, in its project.
     let pullRequest: PullRequest?
     let panel: PullRequestPanel
-    /// Where the details are asked to go: a build there opens; its builds and checks open the first that failed.
+    /// Where the details are asked to go: a build there opens.
     let place: PullRequestDetailsStore.Place?
     /// The build or the check the details just went to, pointed out for a moment.
     let highlighted: PullRequestDetailsStore.Anchor?
@@ -58,17 +58,17 @@ struct PullRequestChecksSection: View {
         .onChange(of: place, initial: true) { open(place) }
     }
 
-    /// Opens the build the details are asked to go to, as from the Pipelines page; or, asked to go to its builds and
-    /// checks, as What's Left's failed build does, the first that failed.
+    /// Opens the build the details are asked to go to, as What's Left's failed build asks, or the Pipelines page, or a
+    /// failing pull request opened from the menu bar. Asked to go to its builds and checks, they only scroll there.
     private func open(_ place: PullRequestDetailsStore.Place?) {
         guard let place, let pullRequest else { return }
-        let line: PullRequestPanel.CheckLine?
         switch place {
-        case .run, .check: line = panel.checks.first { PullRequestDetailsStore.Place.of($0) == place }
-        case .section(.checks): line = panel.checks.first { $0.canInvestigate && $0.run.state == .failing }
-        case .thread, .section: line = nil
+        case .run, .check: break
+        case .thread, .section: return
         }
-        guard let line, line.canInvestigate, let buildId = line.buildId else { return }
+        guard let line = panel.checks.first(where: { PullRequestDetailsStore.Place.of($0) == place }), line.canInvestigate,
+              let buildId = line.buildId
+        else { return }
         investigations.expand(buildId, of: pullRequest, check: line.check)
     }
 }

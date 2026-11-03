@@ -339,7 +339,8 @@ about, while a window shows the Pull Requests page. Either way, its menu has bot
 **Show Details** in the window, and **Open in Azure DevOps**.
 
 **Click a build that failed** in a pull request's details, or **Build failed** in What's Left, to find out why
-without leaving BriefBar: it opens under its row, and only then does BriefBar read its run. You see its stages,
+without leaving BriefBar: it opens under its row, as it does when the pull request opens at it from elsewhere, such
+as the Pipelines page, and only then does BriefBar read its run. You see its stages,
 where it failed, from its stage to its task, and whether it's the change's doing: that it built an older commit
 than the pull request's latest, that it passed on the very same commit before, so it may be flaky, that it
 passed on this commit before the target branch changed, or that the pipeline's latest run on the target branch

@@ -73,6 +73,40 @@ import Testing
         #expect(afterMerge.checks.allSatisfy { !$0.canInvestigate })
     }
 
+    /// What's left's builds that failed open the first required one that failed and can be looked into; nothing else it
+    /// lists opens one, however its builds stand.
+    @Test func whatsLeftOpensOnlyARequiredBuildThatFailed() throws {
+        func item(_ kind: PRReadiness.Item.Kind, _ state: ItemState?) -> PRReadiness.Item {
+            PRReadiness.Item(kind: kind, state: state, label: "")
+        }
+        let failed = try panel([
+            Check(name: "perf", kind: .build, state: .failed, isBlocking: false, completedAt: t(-minute), buildId: 1),
+            Check(name: "status", kind: .status, state: .failed, completedAt: t(-minute)),
+            Check(name: "lint", kind: .build, state: .failed, completedAt: t(-hour), buildId: 2),
+            Check(name: "tests", kind: .build, state: .failed, completedAt: t(-2 * hour), buildId: 3),
+        ])
+        #expect(failed.build(openedBy: item(.builds, .failing))?.buildId == 2)
+        for other in [item(.checks, .failing), item(.builds, .done), item(.builds, .running), item(.comments, .needsYou),
+                      item(.approvals, nil), item(.draft, .needsYou)] {
+            #expect(failed.build(openedBy: other) == nil, "\(other.kind)")
+        }
+
+        // A required build passed and an optional one failed: what's left says it passed, and opens neither.
+        let optionalFailed = try panel([
+            Check(name: "shop-web CI", kind: .build, state: .passed, completedAt: t(-hour), buildId: 4),
+            Check(name: "perf", kind: .build, state: .failed, isBlocking: false, completedAt: t(-minute), buildId: 5),
+        ])
+        #expect(optionalFailed.build(openedBy: item(.builds, .done)) == nil)
+        #expect(optionalFailed.build(openedBy: item(.builds, .failing)) == nil)
+        // A required build that failed without a run, or that expired, can't be opened; an optional one isn't instead.
+        let unopenable = try panel([
+            Check(name: "tests", kind: .build, state: .failed, completedAt: t(-hour)),
+            Check(name: "lint", kind: .build, state: .expired, completedAt: t(-day), buildId: 6),
+            Check(name: "perf", kind: .build, state: .failed, isBlocking: false, completedAt: t(-minute), buildId: 7),
+        ])
+        #expect(unopenable.build(openedBy: item(.builds, .failing)) == nil)
+    }
+
     // MARK: Where it failed, and what it's doing
 
     @Test func itSaysWhereItFailedFromItsStageToItsTask() {

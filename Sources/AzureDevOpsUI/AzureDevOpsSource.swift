@@ -151,9 +151,15 @@ package final class AzureDevOpsSource: BriefBarSource {
         details.openPage = { [services] in services.openWindow(.azureDevOpsSprint) }
         let pullRequestDetails = makePullRequestDetails(store: store)
         let buildInvestigations = BuildInvestigationStore(mode: store.mode, client: store.client)
-        // Only the pull request whose details show has builds open.
+        // The details beside the list stop showing a pull request: its builds fold, unless another's opened since, such as on
+        // a pull request's page in a work item's details.
         pullRequestDetails.$selected.map { $0?.key }.removeDuplicates()
-            .sink { [weak buildInvestigations] key in MainActor.assumeIsolated { buildInvestigations?.show(key) } }
+            .scan((previous: PRKey?.none, current: PRKey?.none)) { pair, key in (previous: pair.current, current: key) }
+            .sink { [weak buildInvestigations] pair in
+                MainActor.assumeIsolated {
+                    if let previous = pair.previous { buildInvestigations?.close(previous) }
+                }
+            }
             .store(in: &cancellables)
         // Someone else signed in to the Azure CLI: the details read as the last one go, and what was told of them.
         store.$authoredPullRequestList.map(\.account).removeDuplicates()

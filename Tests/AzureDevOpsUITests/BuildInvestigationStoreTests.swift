@@ -344,7 +344,13 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.expand(1, of: delivery)
         #expect(store.pullRequest == delivery.key)
         #expect(store.expanded == [1])
-        // Closing the details folds it.
+        // The details beside the list stop showing another pull request, such as the one before: these stay.
+        store.close(slowQueries.key)
+        #expect(store.isExpanded(1, of: delivery.key))
+        // They stop showing this one: it folds.
+        store.close(delivery.key)
+        #expect(store.pullRequest == nil && store.expanded.isEmpty && store.looks.isEmpty)
+        store.expand(1, of: delivery)
         store.show(nil)
         #expect(store.pullRequest == nil && store.expanded.isEmpty && store.looks.isEmpty)
     }
@@ -390,6 +396,41 @@ private func until(_ what: String, _ condition: () -> Bool) async throws {
         store.expand(1, of: delivery)
         #expect(store.look(1, of: delivery.key)?.failure == .notFound)
         #expect(store.look(1, of: delivery.key)?.isReading == false)
+    }
+
+    /// What's left's failed build leads to its run, which the details open; what's left's other items lead to their part,
+    /// only to scroll there, and the details don't open a build for that.
+    @Test func whatsLeftLeadsToTheFailedBuildToOpenIt() throws {
+        let now = Date()
+        let seen = DemoData.seenState(now: now)
+        let records = DemoData.records(now: now)
+        func panel(_ number: Int) throws -> PullRequestPanel {
+            let record = try #require(records.first { $0.id.number == number })
+            let row = try #require(PRClassifier.snapshot(
+                for: record, seenCutoff: seen.cutoff(for: record.id), dismissedCutoff: seen.dismissedCutoff(for: record.id), now: now
+            ))
+            return PullRequestPanel(row, record: record)
+        }
+        typealias Place = PullRequestDetailsStore.Place
+        /// Where each item of what's left leads, by its label; one that leads nowhere isn't there.
+        func places(_ number: Int) throws -> (labels: [String], places: [String: Place]) {
+            let panel = try panel(number)
+            let items = try #require(panel.readiness).items
+            var places: [String: Place] = [:]
+            for item in items { places[item.label] = Place.of(item, in: panel) }
+            return (items.map(\.label), places)
+        }
+        let delivery = try places(4088)
+        #expect(delivery.places["Build failed"] == .run(204_417))
+        #expect(delivery.places["Approved"] == .section(.reviewers))
+        let slowQueries = try places(4099)
+        #expect(slowQueries.places["Build running"] == .section(.checks))
+        let coupons = try places(4091)
+        #expect(coupons.places["Build passed"] == .section(.checks))
+        #expect(coupons.places["Comments resolved"] == .section(.comments))
+        let draft = try places(4105)
+        #expect(draft.places["Build hasn't run"] == .section(.checks))
+        #expect(draft.labels.contains("Publish the draft") && draft.places["Publish the draft"] == nil)
     }
 
     @Test func itSaysWhyARunCantBeRead() {

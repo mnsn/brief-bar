@@ -5,6 +5,16 @@ import Foundation
 // builds can be looked into, the run's stages, where it failed or what it's doing, whether it's the change's doing, its
 // tests and its log's end, and what couldn't be read.
 
+extension PullRequestPanel {
+    /// The build an item of what's left opens, as it takes you to the builds and checks: for builds that failed, the first
+    /// required one that failed and can be looked into. Nil for anything else, such as builds that passed, run or expired, or
+    /// a status check, which only take you there; and when no required build that failed can be looked into.
+    public func build(openedBy item: PRReadiness.Item) -> CheckLine? {
+        guard item.kind == .builds, item.state == .failing else { return nil }
+        return checks.first { $0.isRequired && $0.canInvestigate && $0.run.state == .failing }
+    }
+}
+
 extension PullRequestPanel.CheckLine {
     /// Whether the details can look into it: one of the pull request's builds, with a run, that failed or is still going.
     /// One that passed, expired or hasn't run has nothing to look into, and neither has a status check, which has no run;
