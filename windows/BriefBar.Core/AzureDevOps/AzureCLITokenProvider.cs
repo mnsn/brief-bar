@@ -215,17 +215,18 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
             : AuthError.Failed(message: message);
     }
 
-    /// What the Azure CLI says, without IDs (a directory's, a request's), email addresses, or the name of a tenant or
-    /// directory it quotes or names: before it's cut short, so that no part of one is left. A quoted name, in single or
-    /// double quotes, goes up to the last of the same quote on its line that can end one, as a name can hold quotes itself,
-    /// as in Fabrikam's Lab or Students' Lab; one it names, to the line's end. The panel shows it, and it could reach the
-    /// log, which never holds IDs, as on the Mac.
+    /// What the Azure CLI says, without email addresses, IDs (a directory's, a request's), or the name of a tenant or
+    /// directory it quotes or names: before it's cut short, so that no part of one is left. Addresses go first, so one
+    /// whose user name or domain holds an ID goes whole, rather than leaving the rest of it around `<id>`. A quoted name, in
+    /// single or double quotes, goes up to the last of the same quote on its line that can end one, as a name can hold
+    /// quotes itself, as in Fabrikam's Lab or Students' Lab; one it names, to the line's end. The panel shows it, and it
+    /// could reach the log, which never holds IDs, as on the Mac.
     internal static string Redacted(string message)
     {
         ArgumentNullException.ThrowIfNull(argument: message);
-        var withoutIds = IdPattern().Replace(input: message, replacement: "<id>");
-        var withoutAccounts = AccountPattern().Replace(input: withoutIds, replacement: "<account>");
-        var withoutQuotedNames = QuotedDirectoryPattern().Replace(input: withoutAccounts, replacement: "$1 $2<name>$2");
+        var withoutAccounts = AccountPattern().Replace(input: message, replacement: "<account>");
+        var withoutIds = IdPattern().Replace(input: withoutAccounts, replacement: "<id>");
+        var withoutQuotedNames = QuotedDirectoryPattern().Replace(input: withoutIds, replacement: "$1 $2<name>$2");
         return NamedDirectoryPattern().Replace(input: withoutQuotedNames, replacement: "$1 named <name>");
     }
 
@@ -246,8 +247,11 @@ public sealed partial class AzureCLITokenProvider : IAccessTokenProvider
     [GeneratedRegex(pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", options: RegexOptions.CultureInvariant)]
     private static partial Regex IdPattern();
 
-    /// An email address, or a guest's sign-in name in another directory, as in robin_contoso.example#EXT#@fabrikam.onmicrosoft.com.
-    [GeneratedRegex(pattern: @"[A-Za-z0-9._%+#-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
+    /// An address, whatever a Microsoft Entra user name holds: apostrophes, wherever they are, as in O'Brien or robin',
+    /// and ! # ^ ~, as in a guest's sign-in name in another directory, robin_contoso.example#EXT#@fabrikam.onmicrosoft.com,
+    /// which holds their own address and their directory's domain. A user name of apostrophes only goes too, with any quote
+    /// before it, as nothing tells them apart; one that starts with a letter or digit keeps the quote before it.
+    [GeneratedRegex(pattern: @"(?:[A-Za-z0-9._%+!#^~-]+(?:'+[A-Za-z0-9._%+!#^~-]+)*'*|'+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", options: RegexOptions.CultureInvariant)]
     private static partial Regex AccountPattern();
 
     /// A tenant's or directory's name in single or double quotes, up to the last of the same quote on its line that can end
