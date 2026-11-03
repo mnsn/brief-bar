@@ -111,6 +111,7 @@ private struct FileThreadsView<Card: View>: View {
     @ViewBuilder var card: (PullRequestPanel.Thread) -> Card
 
     @EnvironmentObject private var code: PullRequestCodeStore
+    @Environment(\.changedFileOpener) private var opener
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -131,33 +132,50 @@ private struct FileThreadsView<Card: View>: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: file.path == nil ? "text.bubble" : "doc.text")
-                .font(size: 11, weight: .medium)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(file.name ?? "On the pull request")
-                .font(size: 12.5, weight: .semibold)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(1)
-            if let folder = file.folder {
-                Text(folder)
-                    .font(size: 11.5)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: file.path == nil ? "text.bubble" : "doc.text")
+                    .font(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
-            if let change {
-                Text(change)
-                    .font(size: 11)
-                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(file.name ?? "On the pull request")
+                    .font(size: 12.5, weight: .semibold)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .layoutPriority(1)
+                if let folder = file.folder {
+                    Text(folder)
+                        .font(size: 11.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                if let change {
+                    Text(change)
+                        .font(size: 11)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .help(file.path.map { path in change.map { "\(path) · \($0)" } ?? path } ?? "Comments on the whole pull request")
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            if let path = file.path, let opener {
+                Spacer(minLength: 4)
+                // Its whole diff, with these threads at their lines.
+                Button {
+                    opener.open(path, file.threads.first?.id)
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(size: 11, weight: .medium)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("See this file's changes, with its comments at their lines")
+                .accessibilityLabel("Show Its Changes")
             }
         }
-        .help(file.path.map { path in change.map { "\(path) · \($0)" } ?? path } ?? "Comments on the whole pull request")
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
     }
 
     /// What the change did to the file, as the code read of its threads says, when it did more than edit it: "Added",
@@ -176,8 +194,9 @@ private struct FileThreadsView<Card: View>: View {
     }
 }
 
-/// One thread: how it stands and who it waits on, the code it's on, and what each person said in it, the first first.
-private struct ThreadCard: View {
+/// One thread: how it stands and who it waits on, the code it's on, and what each person said in it, the first first. In
+/// the details' comments, and at its line on its file's page (`PullRequestFilePage`), which shows its code already.
+struct ThreadCard: View {
     let thread: PullRequestPanel.Thread
     let item: PRSnapshot
     let pullRequest: PullRequest?
@@ -188,10 +207,16 @@ private struct ThreadCard: View {
     /// The composer in place that's open in the comments, and what you wrote in each.
     @Binding var composing: CommentComposing?
     let drafts: CommentDrafts
+    /// Whether it shows the code it's on: not on its file's page, around it already.
+    var showsCode = true
 
     @Environment(\.detailsWidening) private var widening
+    /// Opens its file's changes, from the details' comments; nil on its file's page, which shows them.
+    @Environment(\.changedFileOpener) private var opener
     /// The comments folded between the first and the latest show.
     @LocalState private var isUnfolded = false
+    /// VoiceOver goes to it as the details point it out, going to it or coming back to it.
+    @AccessibilityFocusState private var isFocused: Bool
     /// How much wider its code's longest line is than the room it has.
     @LocalState private var codeOverflow: CGFloat = 0
 
@@ -209,8 +234,8 @@ private struct ThreadCard: View {
             header
                 .padding(.horizontal, 10)
                 .padding(.top, 9)
-                .padding(.bottom, span == nil ? 2 : 8)
-            if span != nil, let pullRequest {
+                .padding(.bottom, span == nil || !showsCode ? 2 : 8)
+            if showsCode, span != nil, let pullRequest {
                 ThreadCodeArea(thread: thread.thread, item: item, pullRequest: pullRequest, overflow: $codeOverflow)
             }
             comments
@@ -228,11 +253,20 @@ private struct ThreadCard: View {
                 .strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.8 : 0), lineWidth: 1.5)
         }
         .contextMenu {
+            if let path = thread.thread.filePath, !path.isEmpty, let opener {
+                Button("Show in Its File's Changes") { opener.open(path, thread.id) }
+            }
             Button("Open in Azure DevOps") { AzureDevOps.open(url) }
             Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityFocused($isFocused)
+        // Also as it's made, once the details scrolled to it.
+        .onAppear { if isHighlighted { isFocused = true } }
+        .onChange(of: isHighlighted) {
+            if isHighlighted { isFocused = true }
+        }
     }
 
     // MARK: Header

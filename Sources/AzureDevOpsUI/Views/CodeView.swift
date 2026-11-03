@@ -19,6 +19,9 @@ struct CodeView: NSViewRepresentable {
     var showsOldNumbers = true
     /// What VoiceOver says the list of its rows is: "Code of PaymentsClient.cs, lines 85 to 91".
     var label = "Code"
+    /// How many digits its gutter has room for, at least: as many as a file's longest number, so that the code of each
+    /// part of a file's diff starts in the same place.
+    var numberDigits = 2
     /// Told how much wider than the room it has its longest line is, in points, as that changes: 0 once they all fit.
     var onOverflow: ((CGFloat) -> Void)? = nil
 
@@ -32,7 +35,7 @@ struct CodeView: NSViewRepresentable {
     func updateNSView(_ view: CodeNSView, context: Context) {
         view.update(
             rows: rows, metrics: CodeMetrics(scale: context.environment.textScale), showsOldNumbers: showsOldNumbers, label: label,
-            onOverflow: onOverflow
+            numberDigits: numberDigits, onOverflow: onOverflow
         )
     }
 
@@ -160,14 +163,19 @@ final class CodeNSView: NSView {
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 == $1 && $0.text.utf8.elementsEqual($1.text.utf8) }
     }
 
-    func update(rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool, label: String, onOverflow: ((CGFloat) -> Void)?) {
+    func update(
+        rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool, label: String, numberDigits: Int = 2,
+        onOverflow: ((CGFloat) -> Void)?
+    ) {
         self.onOverflow = onOverflow
         gutter.setAccessibilityLabel(label)
         textView.setAccessibilityLabel(Self.textLabel)
-        guard !Self.same(rows, self.rows) || metrics != self.metrics || showsOldNumbers != gutter.showsOldNumbers else { return }
+        guard !Self.same(rows, self.rows) || metrics != self.metrics || showsOldNumbers != gutter.showsOldNumbers
+            || numberDigits != gutter.numberDigits
+        else { return }
         self.rows = rows
         self.metrics = metrics
-        gutter.update(rows: rows, metrics: metrics, showsOldNumbers: showsOldNumbers)
+        gutter.update(rows: rows, metrics: metrics, showsOldNumbers: showsOldNumbers, numberDigits: numberDigits)
         textView.update(rows: rows, metrics: metrics)
         contentWidth = textView.contentWidth
         lastOverflow = -1
@@ -285,6 +293,8 @@ final class CodeGutterView: NSView {
     private var rows: [CodeRow] = []
     private var metrics = CodeMetrics(scale: 1)
     private(set) var showsOldNumbers = true
+    /// The fewest digits it has room for.
+    private(set) var numberDigits = 2
     private var digits = 2
     /// The rows, for VoiceOver: made as they're first asked for after the rows change.
     private var rowElements: [CodeRowElement]?
@@ -303,12 +313,13 @@ final class CodeGutterView: NSView {
         return (Self.bar + Self.padding + numbers + Self.spacing + metrics.digitWidth).rounded(.up)
     }
 
-    func update(rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool) {
+    func update(rows: [CodeRow], metrics: CodeMetrics, showsOldNumbers: Bool, numberDigits: Int = 2) {
         self.rows = rows
         self.metrics = metrics
         self.showsOldNumbers = showsOldNumbers
+        self.numberDigits = numberDigits
         let largest = rows.compactMap { max($0.oldNumber ?? 0, $0.newNumber ?? 0) }.max() ?? 0
-        digits = max(2, String(largest).count)
+        digits = max(2, numberDigits, String(largest).count)
         needsDisplay = true
         if rowElements != nil {
             rowElements = nil

@@ -43,8 +43,9 @@ struct DetailsLayout: Equatable {
 }
 
 /// A page's list or board, and the details of what you clicked in it, in a floating panel: beside it, taking room from
-/// it, as wide as you drag them, or over it when the page is narrower than `DetailsLayout.besideWidth`. The Sprint page's
-/// work items and the Pull Requests page's pull requests show their details this way, each page keeping its own width.
+/// it, as wide as you drag them, or over it when the page is narrower than `DetailsLayout.besideWidth`, or while what they
+/// show asks for the whole page (`DetailsFillsPageKey`), as a file's diff can. The Sprint page's work items and the Pull
+/// Requests page's pull requests show their details this way, each page keeping its own width.
 struct DetailsSplit<Content: View, Details: View>: View {
     /// Whether details show.
     let showsDetails: Bool
@@ -55,6 +56,9 @@ struct DetailsSplit<Content: View, Details: View>: View {
 
     /// How far you're dragging the details' edge, while you do. The width it makes is saved once you let go.
     @GestureState private var resizing: CGFloat? = nil
+    /// What shows in the details asks for the whole page, while the page shows them beside the list or board.
+    @LocalState private var fillsPage = false
+    @Environment(\.isRendering) private var isRendering
 
     var body: some View {
         // The width the window offers, whatever the list needs: what it needs depends on where the details go.
@@ -69,40 +73,47 @@ struct DetailsSplit<Content: View, Details: View>: View {
         let isBeside = layout.isBeside
         // As wide as you're dragging them, while you do.
         let panelWidth = resizing.map(layout.panelWidth(draggedBy:)) ?? layout.panelWidth
-        // The details beside the list take room from it; in a narrow window, they cover it, and it's out of reach until they
-        // close. Before the overlay, so the details aren't.
+        // Over the list or board: in a narrow window, or, beside it, while what they show fills the page.
+        let covers = layout.coversContent || showsDetails && isBeside && fillsPage
+        let room: DetailsRoom = !isBeside ? .over : covers ? .fillingPage : .beside
+        // The details beside the list take room from it; over it, it's out of reach until they close or go back beside
+        // it. Before the overlay, so the details aren't.
         return content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.trailing, showsDetails && isBeside ? panelWidth + 14 : 0)
-            .accessibilityHidden(layout.coversContent)
-            .disabled(layout.coversContent)
+            .accessibilityHidden(covers)
+            .disabled(covers)
             .overlay(alignment: .topTrailing) {
                 if showsDetails {
-                    if isBeside {
+                    // One place for the details, beside it or over it, so that what they show stays as it is when they
+                    // move.
+                    ZStack(alignment: .topTrailing) {
+                        if covers {
+                            WindowBackdrop()
+                                .transition(.opacity)
+                        }
                         panel
                             // What in them shows more once they're wider, such as long lines of code, can make them so.
-                            .environment(\.detailsWidening, DetailsWidening(width: panelWidth, widest: layout.panelWidths.upperBound) {
+                            .environment(\.detailsWidening, covers ? nil : DetailsWidening(width: panelWidth, widest: layout.panelWidths.upperBound) {
                                 resize(to: layout.panelWidth(nearest: $0))
                             })
-                            .frame(width: panelWidth)
+                            .environment(\.detailsRoom, room)
+                            .frame(width: covers ? nil : panelWidth)
                             .overlay(alignment: .leading) {
-                                if layout.panelWidths.upperBound > layout.panelWidths.lowerBound {
+                                if !covers, layout.panelWidths.upperBound > layout.panelWidths.lowerBound {
                                     edge(layout, panelWidth: panelWidth)
                                 }
                             }
-                            .padding(.trailing, 14)
-                            .padding(.bottom, 14)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    } else {
-                        ZStack {
-                            WindowBackdrop()
-                            panel
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 12)
-                        }
-                        .transition(.opacity)
+                            .padding(.leading, covers ? 12 : 0)
+                            .padding(.trailing, covers ? 12 : 14)
+                            .padding(.bottom, covers ? 12 : 14)
                     }
+                    .transition(isBeside ? .move(edge: .trailing).combined(with: .opacity) : .opacity)
                 }
+            }
+            // What shows in them asks for the whole page while it shows, such as a file's diff.
+            .onPreferenceChange(DetailsFillsPageKey.self) { fills in
+                if fills != fillsPage { withAnimation(isRendering ? nil : .easeOut(duration: 0.2)) { fillsPage = fills } }
             }
     }
 
@@ -198,5 +209,33 @@ extension EnvironmentValues {
     var detailsWidening: DetailsWidening? {
         get { self[DetailsWideningKey.self] }
         set { self[DetailsWideningKey.self] = newValue }
+    }
+
+    /// Where the details around a view are on their page; nil outside them.
+    var detailsRoom: DetailsRoom? {
+        get { self[DetailsRoomKey.self] }
+        set { self[DetailsRoomKey.self] = newValue }
+    }
+}
+
+/// Where a page's details are: beside its list or board, over it in a narrow window, or over all of it while what they show
+/// fills the page, such as a file's diff.
+enum DetailsRoom: Equatable {
+    case beside
+    case over
+    case fillingPage
+}
+
+private struct DetailsRoomKey: EnvironmentKey {
+    static var defaultValue: DetailsRoom? { nil }
+}
+
+/// Whether what shows in a page's details asks for the whole page, beside the list or board: true while any view in them
+/// asks for it.
+struct DetailsFillsPageKey: PreferenceKey {
+    static var defaultValue: Bool { false }
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }

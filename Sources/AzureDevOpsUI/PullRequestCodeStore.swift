@@ -3,9 +3,23 @@ import BriefBarCore
 import Combine
 import Foundation
 
-/// Reads the code of a pull request's comment threads, one at a time: `PullRequestCode`, or a stand-in in tests.
+/// Reads a pull request's code: the code its comment threads are on, and, for its Files, the files its change touched and
+/// each one's diff. `PullRequestCode`, or a stand-in in tests.
 protocol ThreadCodeReader: Sendable {
     func excerpt(of thread: ReviewThread, in pullRequest: PullRequest, context: Int) async -> Result<ThreadExcerpt, ThreadExcerpt.Problem>
+    func changedFiles(of pullRequest: PullRequest, scope: ChangeScope) async -> Result<ChangedFiles, ThreadExcerpt.Problem>
+    func diff(of file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest) async -> Result<FileDiff, ThreadExcerpt.Problem>
+}
+
+extension ThreadCodeReader {
+    /// A stand-in that reads only threads' code has no files.
+    func changedFiles(of pullRequest: PullRequest, scope: ChangeScope) async -> Result<ChangedFiles, ThreadExcerpt.Problem> {
+        .failure(.noIterations)
+    }
+
+    func diff(of file: FileChange, in files: ChangedFiles, of pullRequest: PullRequest) async -> Result<FileDiff, ThreadExcerpt.Problem> {
+        .failure(.noIterations)
+    }
 }
 
 extension PullRequestCode: ThreadCodeReader {}
@@ -192,6 +206,21 @@ final class PullRequestCodeStore: ObservableObject {
             reads[key] = nil
             states[key] = nil
         }
+        forgot()
+    }
+
+    /// Called once it's forgotten the pull requests nothing shows anymore: the files' store forgets them too.
+    var forgot: () -> Void = {}
+
+    /// The reader of a pull request something shows, for its files: the one its threads' code is read with, so that a
+    /// file read for one isn't read again for the other. Nil while nothing shows it.
+    func reader(for pullRequest: PullRequest) -> (any ThreadCodeReader)? {
+        let key = pullRequest.key
+        guard shows(key) else { return nil }
+        if let reader = reads[key]?.reader { return reader }
+        let reader = makeReader(pullRequest)
+        reads[key, default: Reads()].reader = reader
+        return reader
     }
 
     // MARK: Reading
