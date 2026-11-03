@@ -53,7 +53,7 @@ import Testing
         return AnyView(
             PullRequestCommentsSection(
                 item: item, panel: PullRequestPanel(item, record: record), pullRequest: record.pullRequest, me: record.me,
-                place: nil, highlighted: nil
+                place: nil, highlighted: nil, composing: .constant(nil), drafts: CopilotDrafts()
             )
             .environmentObject(list)
             .environmentObject(code)

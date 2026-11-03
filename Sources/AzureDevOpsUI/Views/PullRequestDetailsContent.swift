@@ -31,6 +31,11 @@ struct PullRequestDetailsContent: View {
 
     /// The thread, the build or the check it just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
+    /// The composer in place that's open in its comments, builds or conflicts: one at a time in all of them, so Esc, Return,
+    /// the keyboard's focus and the scroll that shows it as it opens are its own; and what you wrote in each, until you send
+    /// it. A file's page has its own, since it shows in their place.
+    @LocalState private var composing: CopilotComposing?
+    @LocalState private var drafts = CopilotDrafts()
     /// `--render` draws it without waiting for animations, which it doesn't run.
     @Environment(\.isRendering) private var isRendering
 
@@ -76,7 +81,7 @@ struct PullRequestDetailsContent: View {
                 }
                 PullRequestCommentsSection(
                     item: item, panel: panel, pullRequest: record?.pullRequest, me: record?.me, place: details.place,
-                    highlighted: highlighted
+                    highlighted: highlighted, composing: $composing, drafts: drafts
                 )
                     .id(PullRequestDetailsStore.Anchor.section(.comments))
                     // A thread's file opens here, at the thread, in all of the change, which has it whatever the Files show.
@@ -103,6 +108,9 @@ struct PullRequestDetailsContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
+        // What a composer sends is called off as it closes, with ✕ or Esc, or another opens, in any of its parts; and all of
+        // it as they go (`PullRequestCommentsSection`).
+        .onChange(of: composing) { old, _ in if let old { drafts.callOff(old) } }
         // Its Copilot session, kept up to date while it shows on screen; in pictures, as it was read for them (`prepare`).
         .task(id: SessionFollowing(key: item.key, page: page)) {
             guard !isRendering else { return }
