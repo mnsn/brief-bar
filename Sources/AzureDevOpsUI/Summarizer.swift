@@ -21,7 +21,14 @@ final class Summarizer: ObservableObject {
     var isEnabled = true
 
     /// Whether the on-device model can be used on this Mac right now.
-    var isAvailable: Bool { Self.modelIsAvailable() }
+    var isAvailable: Bool { available() }
+    private let available: @MainActor () -> Bool
+
+    /// - Parameter isAvailable: whether the on-device model can be used now. Tests' summarizers say it can't, so they
+    ///   never ask it.
+    init(isAvailable: @escaping @MainActor () -> Bool = { Summarizer.modelIsAvailable() }) {
+        available = isAvailable
+    }
 
     func text(for request: Request) -> String? {
         isEnabled ? results[request] : nil

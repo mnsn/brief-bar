@@ -70,7 +70,7 @@ private final class FakeCLI: ProcessRunning, Sendable {
     @Test func aReadArrivingAfterAzureDevOpsIsTurnedOffSavesNothing() {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)
-        let store = PRStore(settings: settings, mode: .live)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live)
         // Turned off: the source stops the store, then deletes what was saved.
         store.stop()
         settings.forgetSeen()
@@ -86,7 +86,7 @@ private final class FakeCLI: ProcessRunning, Sendable {
         let settings = AppSettings(defaults: defaults)
         let cli = FakeCLI(defaultTenant: Self.tenant)
         let tokens = AzureDevOpsCommandLine.tokens(defaults, runner: cli, locator: Self.locator)
-        let store = PRStore(settings: settings, mode: .live, tokens: tokens)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .live, tokens: tokens)
         // Only the pipelines or the sprint read, with your sign-in's token: no pull requests, so nothing they've seen.
         #expect(try await tokens.token().tenant == Self.tenant)
         await store.keepSignIn()

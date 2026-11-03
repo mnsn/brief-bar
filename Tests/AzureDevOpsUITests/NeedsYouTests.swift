@@ -61,7 +61,7 @@ import Testing
     private func loadDemo() async -> Demo {
         let defaults = MemoryDefaults()
         let settings = AppSettings(defaults: defaults)
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         // What `loadOnce` makes the demo up as of.
         let now = store.now
         await store.loadOnce()

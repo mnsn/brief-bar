@@ -61,6 +61,8 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// Notification Center, for pull requests sent in chats: only the app passes it, so `--render`, the demo and tests
     /// read nothing there.
     let chats: ChatReading
+    /// What writes its store's brief; nil for one that asks the on-device model.
+    private let summarizer: Summarizer?
     /// Made when Azure DevOps starts, so its notifications count from then.
     private var store: PRStore?
     /// Made with it, sharing its client: they read only while their sections are on screen.
@@ -85,9 +87,16 @@ package final class AzureDevOpsSource: BriefBarSource {
     /// Hears about the pull requests and pipelines an agent watches or pins through `--mcp`.
     private var agentChanges: AnyObject?
 
-    package init(services: AppServices, chats: ChatReading = .inert) {
+    package convenience init(services: AppServices, chats: ChatReading = .inert) {
+        self.init(services: services, chats: chats, summarizer: nil)
+    }
+
+    /// - Parameter summarizer: writes the brief of its pull requests, rather than one that asks the on-device model:
+    ///   tests pass one that never does.
+    init(services: AppServices, chats: ChatReading = .inert, summarizer: Summarizer?) {
         self.services = services
         self.chats = chats
+        self.summarizer = summarizer
         settings = AppSettings(defaults: services.defaults)
     }
 
@@ -116,7 +125,10 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     /// The pull requests' store, and the Sprint and Pipelines sections' stores, sharing its client.
     private func makeStores(notifier: Notifier?) -> PRStore {
-        let store = PRStore(settings: settings, notifier: notifier, mode: services.isDemo ? .demo : .live, chats: chats)
+        let store = PRStore(
+            settings: settings, summarizer: summarizer ?? Summarizer(), notifier: notifier, mode: services.isDemo ? .demo : .live,
+            chats: chats
+        )
         self.store = store
         let sprint = SprintStore(settings: settings, mode: store.mode, client: store.client)
         self.sprint = sprint

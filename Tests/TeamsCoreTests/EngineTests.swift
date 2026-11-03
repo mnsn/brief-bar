@@ -194,8 +194,7 @@ import BriefBarCore
         engine.start()
         defer { engine.stop() }
 
-        // Up to a minute each: on a busy machine, the engine can take longer than a wait's usual 10 s.
-        let missing = try await collector.wait("no database", timeout: .seconds(60)) { $0.access == .missing }
+        let missing = try await collector.wait("no database") { $0.access == .missing }
         #expect(missing.notifications == nil)
         #expect(missing.problem == .databaseMissing(path: paths.database.path))
 
@@ -207,7 +206,7 @@ import BriefBarCore
         db.close()
         try FileManager.default.createDirectory(at: paths.directory, withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: made, to: paths.database)
-        try await collector.wait("the database", timeout: .seconds(60)) { $0.access == .granted && $0.notifications?.count == 1 }
+        try await collector.wait("the database") { $0.access == .granted && $0.notifications?.count == 1 }
     }
 
     @Test func reportsAChangedFormat() throws {

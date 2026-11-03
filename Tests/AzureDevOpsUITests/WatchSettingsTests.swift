@@ -44,7 +44,7 @@ import Testing
         #expect(settings.isWatching(PRKey(DemoData.organization, 4071)))
         #expect(!settings.watch(PullRequestLink(organization: "Contoso", project: "Storefront", repository: "search", number: 4071)))
 
-        let store = PRStore(settings: settings, mode: .demo)
+        let store = PRStore(settings: settings, summarizer: .withoutModel, mode: .demo)
         store.receive(DemoData.snapshot(now: store.now))
         let rows = store.items.filter { $0.key.number == 4071 }
         #expect(rows.count == 1)
