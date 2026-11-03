@@ -139,8 +139,10 @@ the pull request instead of starting from scratch.
   </picture>
 </p>
 
-**Open in Copilot** copies the prompt and opens the selected session in the Copilot app for you to
-paste and send. **Run with the CLI** runs it directly on your Mac, when the session is safe to use.
+**Send to Session** sends the prompt straight to the selected session in the Copilot app, and **Send to a
+Fork** to a fork of it, with its history, in a worktree of its own, once you turn on **Send Prompts to
+Copilot Sessions** in **Settings › Agents**; until then, BriefBar copies the prompt and opens the session
+for you to paste. **Run with the CLI** runs it directly on your Mac, when the session is safe to use.
 A new work-item task runs autonomously in its own worktree and can change code, run commands, push
 and open a pull request as you. Pull-request fixes don't push; **Push & Reply** is a separate action.
 Pre-review changes and posts nothing.
