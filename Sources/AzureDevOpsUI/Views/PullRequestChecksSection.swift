@@ -5,14 +5,21 @@ import BriefBarUI
 import SwiftUI
 
 /// A pull request's builds and status checks, in its details, what failed first: where each stands and since when, where a
-/// build failed and its first error, whether it's optional, and ↗ to its run. A merged one's are the pipelines that ran
-/// after it merged.
+/// build failed and its first error, whether it's optional, and ↗ to its run. A build that failed, or is still going,
+/// opens under its row, to find out why without leaving BriefBar (`BuildInvestigationView`). A merged one's are the
+/// pipelines that ran after it merged.
 struct PullRequestChecksSection: View {
+    let item: PRSnapshot
+    /// What the list read of it: a build is read, to open it, in its project.
+    let pullRequest: PullRequest?
     let panel: PullRequestPanel
+    /// Where the details are asked to go: a build there opens.
+    let place: PullRequestDetailsStore.Place?
     /// The build or the check the details just went to, pointed out for a moment.
     let highlighted: PullRequestDetailsStore.Anchor?
 
     @EnvironmentObject private var store: PRStore
+    @EnvironmentObject private var investigations: BuildInvestigationStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -39,7 +46,7 @@ struct PullRequestChecksSection: View {
                         }
                         // Its own, which no other row has, whatever their names.
                         let anchor = PullRequestDetailsStore.Anchor.check(line.id)
-                        CheckRow(line: line, now: store.now, isHighlighted: highlighted == anchor)
+                        CheckRow(line: line, item: item, pullRequest: pullRequest, now: store.now, isHighlighted: highlighted == anchor)
                             .id(anchor)
                     }
                 }
@@ -48,20 +55,127 @@ struct PullRequestChecksSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: place, initial: true) { open(place) }
+        // A run that isn't listed any more, such as one a newer run replaced, goes, with what was read of it.
+        .onChange(of: panel.checks.compactMap(\.buildId), initial: true) {
+            investigations.retain(Set(panel.checks.compactMap(\.buildId)), of: item.key)
+        }
+    }
+
+    /// Opens the build the details are asked to go to, as What's Left's failed build asks, or the Pipelines page, or a
+    /// failing pull request opened from the menu bar. Asked to go to its builds and checks, they only scroll there.
+    private func open(_ place: PullRequestDetailsStore.Place?) {
+        guard let place, let pullRequest else { return }
+        switch place {
+        case .run, .check: break
+        case .thread, .section, .top: return
+        }
+        guard let line = panel.checks.first(where: { PullRequestDetailsStore.Place.of($0) == place }), line.canInvestigate,
+              let buildId = line.buildId
+        else { return }
+        investigations.expand(buildId, of: pullRequest, check: line.check)
     }
 }
 
-/// A build or a check: where it stands, as the Pipelines page draws it, and why it failed.
+/// A build or a check: where it stands, as the Pipelines page draws it, and why it failed. One that failed or is still
+/// going opens with a click, or Space, to look into its run.
 private struct CheckRow: View {
     let line: PullRequestPanel.CheckLine
+    let item: PRSnapshot
+    let pullRequest: PullRequest?
     let now: Date
     let isHighlighted: Bool
 
+    @EnvironmentObject private var investigations: BuildInvestigationStore
     @LocalState private var isHovered = false
 
     private var run: ItemStory.Run { line.run }
 
+    /// Its run, when it can be looked into.
+    private var investigable: (buildId: Int, pullRequest: PullRequest)? {
+        guard line.canInvestigate, let buildId = line.buildId, let pullRequest else { return nil }
+        return (buildId, pullRequest)
+    }
+
+    private var isExpanded: Bool {
+        investigable.map { investigations.isExpanded($0.buildId, of: item.key) } ?? false
+    }
+
+    private var look: BuildInvestigationStore.Look? {
+        investigable.flatMap { investigations.look($0.buildId, of: item.key) }
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if investigable != nil {
+                    Button(action: toggle) {
+                        heading
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isHovered = $0 }
+                    .help("Click to \(isExpanded ? "hide" : "see") " + (run.state == .failing ? "why it failed" : "how it's going"))
+                    .accessibilityLabel("\(run.name): \(status)")
+                    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint(run.state == .failing ? "Shows why it failed" : "Shows how it's going")
+                } else {
+                    heading
+                }
+                if let url = run.url {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(size: 11.5, weight: .medium)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open \(run.name)'s run in Azure DevOps")
+                    .accessibilityLabel("Open its run in Azure DevOps")
+                }
+            }
+            if let detail = run.detail, !showsErrors {
+                Text(detail)
+                    .font(size: 11).monospaced()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, 24)
+                    .padding(.top, 2)
+            }
+            if isExpanded, let investigable {
+                BuildInvestigationView(
+                    line: line, item: item, pullRequest: investigable.pullRequest, buildId: investigable.buildId, look: look, now: now
+                )
+                .padding(.leading, 24)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+                .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.accentColor.opacity(isHighlighted ? 0.14 : 0))
+                .padding(.horizontal, 3)
+        )
+        .contextMenu { menuItems }
+        // Its check, or its pull request, changed since what shows was read, as when the run finished or runs again, or
+        // someone pushed or retargeted it, while it was open or off screen, such as under a page: it's asked for again.
+        .onChange(of: investigable.map { BuildInvestigationStore.Stamp(check: line.check, pullRequest: $0.pullRequest) }, initial: true) {
+            guard let investigable else { return }
+            investigations.changed(investigable.buildId, of: investigable.pullRequest, check: line.check)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(run.name): \(status)" + (line.isRequired || line.check == nil ? "" : ", optional")
+            + (run.detail.map { ". \($0)" } ?? ""))
+    }
+
+    /// Its symbol, name and status, and, when it opens, a chevron that says whether it's open.
+    private var heading: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: symbol)
                 .font(size: 12, weight: .semibold)
@@ -84,47 +198,57 @@ private struct CheckRow: View {
                     .font(size: 11.5)
                     .foregroundStyle(run.state == .failing ? AnyShapeStyle(ItemState.failing.textColor) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
-                if let detail = run.detail {
-                    Text(detail)
-                        .font(size: 11).monospaced()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let url = run.url {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "arrow.up.forward.app")
-                        .font(size: 11.5, weight: .medium)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Open \(run.name)'s run in Azure DevOps")
-                .accessibilityLabel("Open its run in Azure DevOps")
+            if investigable != nil {
+                Image(systemName: "chevron.right")
+                    .font(size: 10, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.accentColor.opacity(isHighlighted ? 0.14 : 0))
-                .padding(.horizontal, 3)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(isHovered && !isHighlighted ? 0.06 : 0))
+                .padding(.horizontal, -6)
+                .padding(.vertical, -4)
         )
-        .contextMenu {
-            if let url = run.url {
-                Button("Open Run in Azure DevOps") { NSWorkspace.shared.open(url) }
-                Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        if let investigable {
+            Button((isExpanded ? "Hide " : "Show ") + (run.state == .failing ? "Why It Failed" : "How It's Going"), action: toggle)
+            if isExpanded {
+                Button("Read Again") {
+                    investigations.read(investigable.buildId, of: investigable.pullRequest, check: line.check, again: true)
+                }
+                .disabled(look?.isReading == true)
             }
-            Button("Copy Name") { PullRequestDetailsPanel.copy(run.name) }
+            Divider()
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(run.name): \(status)" + (line.isRequired || line.check == nil ? "" : ", optional")
-            + (run.detail.map { ". \($0)" } ?? ""))
+        if let url = run.url {
+            Button("Open Run in Azure DevOps") { NSWorkspace.shared.open(url) }
+            if let investigation = look?.investigation, let log = investigation.log {
+                Button("Open Log in Azure DevOps") { NSWorkspace.shared.open(investigation.logPage(for: log.stepId)) }
+            }
+            Button("Copy Link") { PullRequestDetailsPanel.copy(url.absoluteString) }
+        }
+        Button("Copy Name") { PullRequestDetailsPanel.copy(run.name) }
+    }
+
+    /// Open, its errors say what the first one does.
+    private var showsErrors: Bool {
+        isExpanded && look?.investigation?.errors.isEmpty == false
+    }
+
+    private func toggle() {
+        guard let investigable else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            investigations.toggle(investigable.buildId, of: investigable.pullRequest, check: line.check)
+        }
     }
 
     /// "Failed at Run unit tests · 12m ago".
