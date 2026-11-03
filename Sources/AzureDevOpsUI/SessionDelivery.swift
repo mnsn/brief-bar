@@ -230,8 +230,11 @@ extension CopilotTasksStore {
     func deliver(
         _ prompt: String, to choice: SessionChoice, forking: Bool = false, handOff: CommentHandOff? = nil, about: SentPrompt.About? = nil
     ) async -> SessionDelivery {
+        // Sent as delivering it starts: what the session does from then on is its turn, even one over before BriefBar heard
+        // it went. It's free then, or nothing goes.
+        let sentAt = Date()
         let outcome = await deliverPrompt(prompt, to: choice, forking: forking, handOff: handOff)
-        if let about { keep(about, sentTo: outcome, from: choice.id, forking: forking) }
+        if let about { keep(about, sentTo: outcome, from: choice.id, forking: forking, at: sentAt) }
         return outcome
     }
 

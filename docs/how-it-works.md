@@ -2120,11 +2120,12 @@ ended, and Push & Reply ships them, after which a fix starts afresh (`CopilotRun
 prompt sent to one of the Copilot app's sessions, or copied for you to paste there, is kept by references only, never what
 it says: the pull request, the session that took it and the one it forked, the threads, what for, and when (`SentPrompt`,
 `ado.copilot.sentPrompts`), for as long as a link you make. The app runs it, so BriefBar follows it from the session's log
-since it was sent (`SessionTurn`), read as a task's is, every three seconds, with which sessions the app runs a turn in and
-whether something has the session open, only while one hasn't ended and Send Work to Copilot is on: a turn that's over
-twice in a row, a few seconds apart, ended, which its record keeps; one copied as `/fork` follows the fork the app records
-as made since. One you didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix
-that's done and not pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
+since it began to send it, so that a turn that's over before BriefBar hears the prompt went counts too (`SessionTurn`),
+read as a task's is, every three seconds, with which sessions the app runs a turn in and whether something has the
+session open, only while one hasn't ended and Send Work to Copilot is on: a turn that's over twice in a row, a few seconds
+apart, ended, which its record keeps; one copied as `/fork` follows the fork the app records as made since. One you
+didn't paste goes after half an hour, and one whose turn hasn't ended after twelve hours. A fix that's done and not
+pushed, on a thread that's still open, counts in the bar at the details' foot (`ReadyFixesBar`,
 `CopilotTasksStore.readyFixes`), whose **Push & Reply…** opens the Send to Copilot window in the session the fixes are in.
 The demo's are made up (`SentPrompt.demo`).
 

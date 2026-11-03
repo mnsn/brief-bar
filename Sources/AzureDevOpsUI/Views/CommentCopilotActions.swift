@@ -890,12 +890,14 @@ struct ReadyFixesBar: View {
                         }
                     }
                     .menuStyle(.button)
+                    .font(size: 12, weight: .semibold)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .fixedSize()
                     .help("Push and reply on the threads the fixes of one session addressed")
                 } else {
                     Button("Push & Reply…") { pushAndReply(first, names: names) }
+                        .font(size: 12, weight: .semibold)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .fixedSize()

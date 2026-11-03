@@ -448,8 +448,9 @@ final class CopilotTasksStore: ObservableObject {
             exitStatuses[id] = nil
             goneSince[id] = nil
         }
-        // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready.
-        notifyStarted(entry)
+        // Copilot works on its own, and nothing opens: say it's on it, now, rather than once its worktree is ready. A fork,
+        // once the CLI made it (`rekey`): the notification goes by its ID, for the one that says how it ended to replace.
+        if forking == nil { notifyStarted(entry) }
         let request = CopilotLauncher.Request(
             subject: subject, prompt: prompt, options: options, repository: repository,
             worktreesFolder: settings.copilotWorktreesFolder.map { URL(fileURLWithPath: $0, isDirectory: true) }, continuing: continuing,
@@ -511,13 +512,17 @@ final class CopilotTasksStore: ObservableObject {
         }
     }
 
-    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on.
+    /// A fork's send, by the ID BriefBar gave it until the CLI made the fork, goes by the fork's from then on. Only then
+    /// does it say it's working, by the fork's ID, which the notification that says how it ended, or stopping it, replaces.
     private func rekey(_ id: String, to fork: String) {
         guard fork != id else { return }
+        var moved: CopilotTaskEntry?
         for index in pending.indices where pending[index].id == id {
             pending[index].id = fork
+            moved = pending[index]
         }
         if let status = statuses.removeValue(forKey: id) { statuses[fork] = status }
+        if let moved, moved.status.phase.isActive { notifyStarted(moved) }
     }
 
     /// The checkouts that tasks of BriefBar's work in now (`checkoutKey`): those of sends that go on with a session, while

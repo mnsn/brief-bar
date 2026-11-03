@@ -584,10 +584,14 @@ struct CopilotComposerView: View {
     }
 
     private func choose(_ way: Delivery) {
+        go(way)
+        deliveryProblem = nil
+    }
+
+    /// Goes this way from now on: a fork works in a checkout of its own, wherever that is, which its prompt says.
+    private func go(_ way: Delivery) {
         let forked = delivery.forks
         delivery = way
-        deliveryProblem = nil
-        // A fork works in a checkout of its own, wherever that is: its prompt says so.
         if way.forks != forked { refreshPrompt() }
     }
 
@@ -859,11 +863,12 @@ struct CopilotComposerView: View {
         guard let target else {
             return !mustContinue && !isBusy && repository != nil && !isChecking && hasModel
         }
+        // A fork works in a worktree of its own, so the session's own checkout and state don't matter, nor whether Copilot
+        // works in it now.
+        if delivery == .cliFork { return hasModel && Self.offersCLIFork(target, mustContinue: mustContinue) }
         guard !target.isUnavailable else { return false }
         switch delivery.place {
         case .app: return appProblem == nil && (!delivery.forks || Self.offersFork(target, mustContinue: mustContinue))
-        // A fork works in a worktree of its own, so the session's own checkout and state don't matter.
-        case .cli where delivery.forks: return hasModel && Self.offersCLIFork(target, mustContinue: mustContinue)
         case .cli: return !isBusy && hasModel && cliProblem == nil && checkingSession == nil
         }
     }
@@ -935,8 +940,9 @@ struct CopilotComposerView: View {
         guard !isDelivering, fallback == nil else { return }
         if let current = target, let found = choices.first(where: { $0.id == current.id }), found != current {
             target = found
-            // While it couldn't be used, neither could the way to send it be chosen: it's back to the usual one.
-            if current.isUnavailable, !found.isUnavailable { delivery = found.opensInApp ? .session : .cli }
+            // While it couldn't be used, neither could the way to send it be chosen, but for a fork with the CLI, which it
+            // didn't keep from: it's back to the usual one.
+            if current.isUnavailable, !found.isUnavailable, delivery != .cliFork { go(found.opensInApp ? .session : .cli) }
             checkSession()
         }
         guard Self.followsSuggestions(choseTarget: choseTarget, mustContinue: mustContinue, promptChanged: prompt != filledIn) else {
@@ -985,10 +991,10 @@ struct CopilotComposerView: View {
     /// CLI when nothing opens the app's sessions; and to the session itself when it can't go to a fork (`offersFork`).
     private func fixDelivery() {
         if delivery == .cliFork {
-            if !Self.offersCLIFork(target, mustContinue: mustContinue) { delivery = .cli }
+            if !Self.offersCLIFork(target, mustContinue: mustContinue) { go(.cli) }
             return
         }
-        if delivery.forks, !Self.offersFork(target, mustContinue: mustContinue) { delivery = .session }
+        if delivery.forks, !Self.offersFork(target, mustContinue: mustContinue) { go(.session) }
         if delivery.place == .cli, cliProblem != nil, appProblem == nil { delivery = .session }
         if delivery.place == .app, appProblem != nil, cliProblem == nil { delivery = .cli }
     }

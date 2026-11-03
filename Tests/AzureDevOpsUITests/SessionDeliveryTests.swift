@@ -75,6 +75,17 @@ private final class ExtensionStandIn: Sendable {
     }
 }
 
+/// When the extension stand-in took a request.
+private final class TakenAt: Sendable {
+    private let taken = Mutex<Date?>(nil)
+
+    var date: Date? { taken.withLock { $0 } }
+
+    func stamp() {
+        taken.withLock { $0 = $0 ?? Date() }
+    }
+}
+
 /// Sending a prompt to one of the Copilot app's sessions, or to a fork of it, through BriefBar's extension in it
 /// (`CopilotTasksStore.deliver`): only while Send Prompts to Copilot Sessions is on; and, when the extension can't,
 /// copying the prompt for you to paste, as Open in Copilot did.
@@ -215,6 +226,34 @@ private final class ExtensionStandIn: Sendable {
         // Nothing starts here.
         #expect(store.pending.isEmpty)
         #expect(store.settings.copilotRuns.isEmpty)
+    }
+
+    /// A prompt about comments is kept as sent from when delivering it started, before the session's extension took it:
+    /// whatever the session does from then on is its turn, even one that's over before BriefBar hears it went.
+    @Test func keepsAPromptAboutCommentsAsSentFromWhenDeliveringItStarted() async throws {
+        let (store, home) = try store()
+        defer { try? FileManager.default.removeItem(at: home) }
+        store.showForTests = { _ in true }
+        let ext = ExtensionStandIn(outbox: home.appendingPathComponent("Outbox"), sessionId: session)
+        try ext.listen()
+        let taken = TakenAt()
+        ext.start { _ in
+            taken.stamp()
+            return ["ok": true]
+        }
+        defer { ext.stop() }
+        try hold(session, home: home)
+
+        let before = Date()
+        let about = SentPrompt.About(pullRequest: PRKey("contoso", 4071), purpose: .fix, threads: [11])
+        #expect(await store.deliver("Fix this comment", to: choice(session), about: about) == .sent)
+        let kept = try #require(store.settings.copilotSentPrompts.first)
+        #expect(kept.session == session)
+        #expect(kept.threads == [11])
+        #expect(!kept.copied)
+        let tookIt = try #require(taken.date)
+        #expect(kept.sentAt >= before)
+        #expect(kept.sentAt <= tookIt)
     }
 
     /// A session that nothing has open loads as the app opens it, with BriefBar's extension, which takes the request that

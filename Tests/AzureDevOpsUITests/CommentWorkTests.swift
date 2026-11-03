@@ -47,9 +47,9 @@ import Testing
         )
     }
 
-    private func store(_ settings: AppSettings = AppSettings(defaults: MemoryDefaults())) -> CopilotTasksStore {
+    private func store(_ settings: AppSettings = AppSettings(defaults: MemoryDefaults()), notifier: Notifier? = nil) -> CopilotTasksStore {
         settings.copilotEnabled = true
-        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: nil)
+        let store = CopilotTasksStore(settings: settings, mode: .live, notifier: notifier)
         store.useEnvironment(["COPILOT_HOME": "/nonexistent"])
         // Never the Copilot app's own folder.
         store.appHomeForTests = URL(fileURLWithPath: "/nonexistent/copilot-app", isDirectory: true)
@@ -149,10 +149,12 @@ import Testing
     }
 
     /// A fork's ID is the CLI's: its send goes by BriefBar's until the fork is made, then by the fork's, which its run keeps,
-    /// with the session it forked.
+    /// with the session it forked. It says it's working once the fork is made, by the fork's ID, for the notification that
+    /// says how it ended to replace.
     @Test func aForkGoesByItsOwnIDOnceItsMade() async throws {
         let settings = AppSettings(defaults: MemoryDefaults())
-        let store = store(settings)
+        let recent = RecentNotifications(defaults: MemoryDefaults(), isDemo: false)
+        let store = store(settings, notifier: Notifier(recent: recent, posts: false))
         let (go, letItGo) = AsyncStream<Void>.makeStream()
         let fork = fork
         store.launchForTests = { request, _, now in
@@ -167,8 +169,10 @@ import Testing
         let waiting = try #require(store.commentWork(on: 11, of: key))
         #expect(waiting.forkedFrom == task)
         #expect(waiting.session != task)
+        #expect(recent.history.entries.isEmpty)
         letItGo.yield()
         try await settle { settings.copilotRuns.count == 2 }
+        #expect(recent.history.entries.map(\.id) == [CopilotTasksStore.notificationID(fork)])
         let forked = try #require(settings.copilotRuns.first { $0.id == fork })
         #expect(forked.forkedFrom == task)
         #expect(forked.threads?.map(\.id) == [11])
