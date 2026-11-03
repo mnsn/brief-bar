@@ -1364,10 +1364,14 @@ and more, aren't ranked by which was active last: the line asks which is its, an
 One whose log only has a link to it, and that was there before it was created, is a guess (`PullRequestSession.guess`),
 which the line's menu offers and nothing picks; the logs are read for it only when no session goes with it, and what
 they said is kept for a quarter of an hour. The sessions are those the Send to Copilot window lists
-(`CopilotTasksStore.sessionChoices`), read the same way, off the main thread, as the details show and every ten
-seconds while they do (`PullRequestSessions`), so the line follows the app's sessions as they start, end, open and
-close; the last eight it showed are kept a while, to show at once as their details show again, until they're read
-again; BriefBar's tasks, your choice and Show Links' links as they change. How work would reach the session
+(`CopilotTasksStore.sessionChoices`), read the same way, off the main thread, and only while the window they're in
+shows their page on screen, as for the code comments are on (`PullRequestSessions.setVisible`, from
+`sectionVisibilityChanged`, with the window each view is in, `shownWindow`): as it does, then every ten seconds, so the
+line follows the app's sessions as they start, end, open and close; once that window is minimized, hidden or covered,
+what's being read or checked for them, such as a search of the logs, is called off, and they're read again, with how
+work would reach their session, as it shows them again. The last eight it showed are kept a while, to show at once as
+their details show again, until they're read again; and it follows BriefBar's tasks, your choice and Show Links' links
+as they change. How work would reach the session
 (`PullRequestSession.Delivery`), which its menu says first, is the way the window would send it unless you choose
 otherwise, worked out as the window does: a task of BriefBar's with the Copilot CLI while it can go on with it
 (`CopilotTasksStore.cliProblem`, without its git check, which the window still makes); the Copilot app's sessions, and

@@ -22,6 +22,9 @@ struct PullRequestDetailsContent: View {
     @EnvironmentObject private var sessions: PullRequestSessions
     @EnvironmentObject private var services: AppServices
     @Environment(\.itemNavigation) private var navigation
+    /// The window's page it's on, which its Copilot session is read only while the window shows on screen.
+    @Environment(\.shownSection) private var section
+    @Environment(\.shownWindow) private var window
 
     /// The thread, the build or the check it just went to, pointed out for a moment.
     @LocalState private var highlighted: PullRequestDetailsStore.Anchor?
@@ -72,8 +75,8 @@ struct PullRequestDetailsContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: details.place, initial: true) { go(in: panel) }
-        // Its Copilot session, kept up to date while it shows.
-        .task(id: item.key) { await sessions.follow(item, record: record) }
+        // Its Copilot session, kept up to date while it shows on screen.
+        .task(id: SessionFollowing(key: item.key, page: page)) { await sessions.follow(item, record: record, on: page) }
         .tellsStory(of: ref)
         // Once it's shown a moment, its summary, unless one that's current is there, as for a work item's details.
         .writesSummary(of: ref)
@@ -91,6 +94,18 @@ struct PullRequestDetailsContent: View {
     private var ownSession: Set<ItemRef> {
         guard let id = sessions.session(for: item.key)?.session?.id, let ref = ItemRef.session(id) else { return [] }
         return [ref]
+    }
+
+    /// The window's page it's on (`PullRequestCodeStore.page`): nil outside one, where its session isn't read.
+    private var page: String? {
+        guard let section, let window else { return nil }
+        return PullRequestCodeStore.page(section, window: window)
+    }
+
+    /// What its session is followed for: the pull request, on the window's page it's on.
+    private struct SessionFollowing: Equatable {
+        let key: PRKey
+        let page: String?
     }
 
     /// What the task Copilot is at work on for the pull request does, while Send Work to Copilot is on.

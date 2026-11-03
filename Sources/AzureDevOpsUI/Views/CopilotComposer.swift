@@ -288,7 +288,7 @@ struct CopilotComposerView: View {
         // After the change: a published value emits before it's set.
         .onReceive(store.objectWillChange.receive(on: DispatchQueue.main)) { _ in refreshAvailability() }
         // The session you choose for the pull request in its details, until you choose here or change the prompt.
-        .onChange(of: settings.copilotPullRequestSessions) { update() }
+        .onChange(of: settings.copilotPullRequestSessions) { choseInDetails() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -844,6 +844,16 @@ struct CopilotComposerView: View {
             }
         }
         findSessions()
+    }
+
+    /// You chose where the pull request's work goes in its details: it goes there, until you choose here or change the
+    /// prompt (`update`); once found, when it's a session that started since the window looked for them.
+    private func choseInDetails() {
+        guard let id = store.chosenSession(for: subject)?.session?.id, !choices.contains(where: { $0.id == id }) else {
+            update()
+            return
+        }
+        if !isLooking { findSessions() }
     }
 
     /// The sessions it can go to: BriefBar's tasks and the Copilot app's sessions first, then which of the app's mention

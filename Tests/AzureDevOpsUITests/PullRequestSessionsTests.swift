@@ -107,6 +107,15 @@ import Testing
     /// beside them on the one thread they share (`LIBDISPATCH_COOPERATIVE_POOL_STRICT`).
     private let refresh: Duration = .milliseconds(250)
 
+    /// The window's page the details are on, which a window shows on screen unless a test says otherwise.
+    private let page = PullRequestCodeStore.page(.azureDevOpsPullRequests, window: "1")
+
+    /// Follows a pull request as its details on `page` do, while a window shows `page` on screen.
+    private func followOnScreen(_ sessions: PullRequestSessions, _ item: PRSnapshot, record: PRRecord?) -> Task<Void, Never> {
+        sessions.setVisible(true, for: page)
+        return Task { await sessions.follow(item, record: record, on: page) }
+    }
+
     /// Waits, a little at a time, until something is so, as the store reads and keeps up off the main thread: for as long
     /// as a busy Mac may take, since it stops as soon as it is.
     private func until(_ condition: () -> Bool) async throws {
@@ -127,7 +136,7 @@ import Testing
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
 
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         try await until { sessions.session(for: key)?.session?.id == onBranch }
         var session = try #require(sessions.session(for: key))
         #expect(session.basis == .onItsBranch)
@@ -174,7 +183,7 @@ import Testing
         #expect(open.count > PullRequestSessions.keptLimit)
         sessions.record = { key in read.records.first { $0.id == key } }
         for item in open {
-            let following = Task { await sessions.follow(item, record: sessions.record(item.key)) }
+            let following = followOnScreen(sessions, item, record: sessions.record(item.key))
             try await until { sessions.session(for: item.key) != nil }
             following.cancel()
             await following.value
@@ -209,7 +218,7 @@ import Testing
         sessions.refreshEvery = refresh
         let (item, record) = try await pullRequest()
         sessions.record = { $0 == item.key ? record : nil }
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         defer { following.cancel() }
 
         try await until { sessions.session(for: key)?.delivery == .cli }
@@ -268,12 +277,54 @@ import Testing
         sessions.record = { $0 == item.key ? record : nil }
         var checked: [String] = []
         sessions.deliveryCheckedForTests = { checked.append($0) }
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         defer { following.cancel() }
 
         try await until { sessions.session(for: key)?.delivery != nil }
         try await Task.sleep(for: .milliseconds(300))
         #expect(checked == [onBranch])
+    }
+
+    /// Its sessions are read only while a window shows its details' page on screen: as it does, at once, with how work
+    /// would reach its session; not while it's minimized, hidden or covered, however often it would be; nor for another
+    /// window's page.
+    @Test func readsOnlyWhileAWindowShowsItsDetailsOnScreen() async throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try database(at: home)
+        let store = copilot(home: home)
+        let sessions = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        // Between reads, an hour: what's read is what showing it reads.
+        sessions.refreshEvery = .seconds(3_600)
+        let (item, record) = try await pullRequest()
+        sessions.record = { $0 == item.key ? record : nil }
+        var checked = 0
+        sessions.deliveryCheckedForTests = { _ in checked += 1 }
+        let following = Task { await sessions.follow(item, record: record, on: page) }
+        defer { following.cancel() }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(sessions.session(for: item.key) == nil && checked == 0)
+
+        sessions.setVisible(true, for: page)
+        try await until { sessions.session(for: item.key)?.delivery != nil }
+        #expect(sessions.session(for: item.key)?.session?.id == onBranch && checked == 1)
+
+        sessions.setVisible(false, for: page)
+        sessions.setVisible(true, for: PullRequestCodeStore.page(.azureDevOpsSprint, window: "2"))
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(checked == 1)
+        sessions.setVisible(true, for: page)
+        try await until { checked == 2 }
+        #expect(checked == 2)
+        following.cancel()
+
+        // Every quarter second, while covered: nothing's read.
+        sessions.setVisible(false, for: page)
+        sessions.refreshEvery = refresh
+        let covered = Task { await sessions.follow(item, record: record, on: page) }
+        defer { covered.cancel() }
+        try await Task.sleep(for: .milliseconds(1_000))
+        #expect(checked == 2)
     }
 
     /// A closed pull request's work goes nowhere: its details show the sessions Show Links links to it, to look at, and
@@ -299,7 +350,7 @@ import Testing
         sessions.deliveryCheckedForTests = { _ in checked += 1 }
         var read = 0
         store.mentionReadForTests = { _ in read += 1 }
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         defer { following.cancel() }
 
         try await until { sessions.session(for: item.key) != nil }
@@ -352,7 +403,7 @@ import Testing
             read.append(id)
             sessions.stopAll()
         }
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         // Should it not stop, the test ends all the same, and says so, however slow the Mac.
         let gaveUp = Mutex(false)
         let limit = Task {
@@ -387,7 +438,7 @@ import Testing
             state: .needsYou, status: "Waiting for your answer", place: "shop-web · delivery-estimates", date: now
         )])
 
-        let following = Task { await sessions.follow(item, record: record) }
+        let following = followOnScreen(sessions, item, record: record)
         defer { following.cancel() }
         try await until { sessions.session(for: key) != nil }
         let session = try #require(sessions.session(for: key))
@@ -473,9 +524,9 @@ import Testing
         #expect(checked == 0 && searched == 0)
 
         // As its details show it, its sessions' logs are searched.
-        let following = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
-        following.record = { records[$0] }
-        let task = Task { await following.follow(none, record: noneRecord) }
+        let shown = PullRequestSessions(copilot: store, links: Links(defaults: MemoryDefaults(), isDemo: false))
+        shown.record = { records[$0] }
+        let task = followOnScreen(shown, none, record: noneRecord)
         defer { task.cancel() }
         try await until { searched > 0 }
         #expect(searched > 0)

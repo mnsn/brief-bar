@@ -8,7 +8,8 @@ import Foundation
 /// The Copilot session of each pull request whose details show (`PullRequestSession`), kept up to date while they show it:
 /// as BriefBar's tasks start and end, as you choose another, as Show Links' links change, and every ten seconds, as the
 /// Copilot app's sessions start and stop, open and close. With Send Work to Copilot on, from the sessions its work could go
-/// to, read as the details show (`CopilotTasksStore.sessionChoices`), and how work would reach its own
+/// to, read only while a window shows their details' page on screen (`setVisible`), as it does and every ten seconds while
+/// it does (`CopilotTasksStore.sessionChoices`), and how work would reach its own
 /// (`CopilotTasksStore.delivery(to:for:checksRepository:)`); with it off, only the sessions Show Links links to it, with
 /// nothing to choose; with neither, none. The demo makes them up from its own tasks and the sessions Show Links links to
 /// it, and reads nothing.
@@ -34,8 +35,9 @@ final class PullRequestSessions: ObservableObject {
     private struct Followed {
         var record: PRRecord?
         var createdAt: Date?
-        /// How many follow it: the details that show it, and pictures being drawn, which don't stop.
-        var followers = 0
+        /// The window's page each of what follows it is on (`PullRequestCodeStore.page`): the details that show it, nil
+        /// outside a window's page, and pictures being drawn, which don't stop.
+        var followers: [UUID: String?] = [:]
         /// The sessions its work could go to, as read last; nil until they're read.
         var found: [SessionChoice]?
         /// Which of the Copilot app's sessions mention it, once read: only when no session goes with it.
@@ -57,6 +59,8 @@ final class PullRequestSessions: ObservableObject {
     private var spawned: [PRKey: [UUID: Task<Void, Never>]] = [:]
     /// Stopped for good: nothing more is read.
     private var hasStopped = false
+    /// The pages where a pull request's details can show that windows show on screen (`PullRequestCodeStore.page`).
+    private var visiblePages: Set<String> = []
     /// For pictures (`prepare`): read once, without the search for mentions or how work would reach a session.
     private var isForPictures = false
     /// The pull requests read for now, and the sessions whose way there is checked now: one at a time, each.
@@ -84,12 +88,16 @@ final class PullRequestSessions: ObservableObject {
 
     // MARK: Following
 
-    /// Follows a pull request's session while its details show it: reads the sessions its work could go to now, then
-    /// every ten seconds, until the task that follows it is cancelled, as when its details close or show another.
-    func follow(_ item: PRSnapshot, record: PRRecord?) async {
+    /// Follows a pull request's session while its details show it on a window's page: reads the sessions its work could go
+    /// to while a window shows that page on screen, as it does, then every ten seconds, until the task that follows it is
+    /// cancelled, as when its details close or show another.
+    /// - Parameter page: the window's page its details are on (`PullRequestCodeStore.page`); nil outside one, where
+    ///   nothing's read for it.
+    func follow(_ item: PRSnapshot, record: PRRecord?, on page: String?) async {
         let key = item.key
-        start(following: key, record: record, createdAt: item.createdAt)
-        defer { stop(following: key) }
+        let follower = UUID()
+        start(following: key, record: record, createdAt: item.createdAt, by: follower, on: page)
+        defer { stop(following: key, by: follower) }
         let pause = refreshEvery
         while !Task.isCancelled, !hasStopped {
             // Each as a task of its own, which stopping cancels too, such as a search of the logs that's under way.
@@ -110,25 +118,25 @@ final class PullRequestSessions: ObservableObject {
     func prepare(_ items: [PRSnapshot]) async {
         isForPictures = true
         for item in items {
-            start(following: item.key, record: record(item.key), createdAt: item.createdAt)
+            start(following: item.key, record: record(item.key), createdAt: item.createdAt, by: UUID(), on: nil)
             await read(item.key)
         }
     }
 
-    private func start(following key: PRKey, record: PRRecord?, createdAt: Date?) {
+    private func start(following key: PRKey, record: PRRecord?, createdAt: Date?, by follower: UUID, on page: String?) {
         kept.removeAll { $0 == key }
         var state = followed[key] ?? Followed()
-        state.followers += 1
+        state.followers.updateValue(page, forKey: follower)
         state.record = record ?? state.record
         state.createdAt = createdAt ?? record?.pullRequest.createdAt ?? state.createdAt
         followed[key] = state
         update(key)
     }
 
-    private func stop(following key: PRKey) {
+    private func stop(following key: PRKey, by follower: UUID) {
         guard var state = followed[key] else { return }
-        state.followers -= 1
-        if state.followers > 0 {
+        state.followers.removeValue(forKey: follower)
+        if !state.followers.isEmpty {
             followed[key] = state
         } else {
             followed[key] = nil
@@ -151,6 +159,25 @@ final class PullRequestSessions: ObservableObject {
         kept = []
         sessions = [:]
         mentionsRead = [:]
+    }
+
+    /// A window started or stopped showing, on screen, a page where a pull request's details can show
+    /// (`PullRequestCodeStore.page`), as for the code their comments are on: its pull requests' sessions are read only
+    /// while one does. As it shows them, they're read again at once, with how work would reach their sessions; once none
+    /// of their pages shows on screen, minimized, hidden or covered, what's being read or checked for them, such as a
+    /// search of the logs for mentions, is called off.
+    func setVisible(_ visible: Bool, for page: String) {
+        if visible {
+            guard visiblePages.insert(page).inserted else { return }
+            for (key, state) in followed where state.followers.values.contains(page) {
+                spawn(for: key) { [weak self] in await self?.read(key) }
+            }
+        } else {
+            guard visiblePages.remove(page) != nil else { return }
+            for (key, state) in followed where state.followers.values.contains(page) && !isOnScreen(state) {
+                spawned[key]?.values.forEach { $0.cancel() }
+            }
+        }
     }
 
     /// Reads or checks for a followed pull request, until it's no longer followed or everything stops.
@@ -213,13 +240,18 @@ final class PullRequestSessions: ObservableObject {
 
     // MARK: Reading
 
-    /// Whether a followed pull request's sessions can be read now: Send Work to Copilot is on, outside the demo, and it's
-    /// open.
+    /// Whether a followed pull request's sessions can be read now: Send Work to Copilot is on, outside the demo, it's open,
+    /// and a window shows its details on screen, or pictures are being drawn.
     private func isReadable(_ key: PRKey) -> Bool {
         guard !hasStopped, !Task.isCancelled, copilot.mode == .live, copilot.canSend, copilot.isOn, let state = followed[key],
-              let record = current(state, key)
+              isForPictures || isOnScreen(state), let record = current(state, key)
         else { return false }
         return record.pullRequest.status == .active
+    }
+
+    /// Whether a window shows on screen the page that something following it is on.
+    private func isOnScreen(_ state: Followed) -> Bool {
+        state.followers.values.contains { $0.map(visiblePages.contains) ?? false }
     }
 
     /// Reads the sessions a followed pull request's work could go to, the Copilot app's database and the sessions' state,

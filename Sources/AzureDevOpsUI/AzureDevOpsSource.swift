@@ -520,9 +520,12 @@ package final class AzureDevOpsSource: BriefBarSource {
 
     package func sectionVisibilityChanged(_ section: SectionID, isShowing: Bool, by viewer: SectionViewer) {
         // A pull request's details show on a window's Pull Requests page, and over a work item's details on its Sprint
-        // page: the code their comments are on is read only while the window they're in shows that page on screen.
+        // page: the code their comments are on, and the Copilot sessions their work could go to, are read only while the
+        // window they're in shows that page on screen.
         if viewer.kind == .window, section == .azureDevOpsPullRequests || section == .azureDevOpsSprint {
-            pullRequestCode?.setVisible(isShowing, for: PullRequestCodeStore.page(section, window: viewer.id))
+            let page = PullRequestCodeStore.page(section, window: viewer.id)
+            pullRequestCode?.setVisible(isShowing, for: page)
+            pullRequestSessions?.setVisible(isShowing, for: page)
         }
         // The sprint and pipelines are read only while something shows them.
         switch section {
